@@ -180,6 +180,21 @@ bool RPNBuilderTreeNode::isConstant() const
     }
 }
 
+bool RPNBuilderTreeNode::isSubqueryOrSet() const
+{
+    if (ast_node)
+    {
+        return
+            typeid_cast<const ASTSubquery *>(ast_node) ||
+            typeid_cast<const ASTTableIdentifier *>(ast_node);
+    }
+    else
+    {
+        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+        return node_without_alias->result_type->getTypeId() == TypeIndex::Set;
+    }
+}
+
 ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
 {
     if (!isConstant())
@@ -288,7 +303,7 @@ ConstSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
     {
         auto set = column_set->getData();
 
-        if (set && set->isCreated())
+        if (set->isCreated())
             return set;
     }
 
@@ -305,8 +320,8 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
     {
         auto prepared_sets_with_same_hash = prepared_sets->getByTreeHash(ast_node->getTreeHash());
         for (auto & set : prepared_sets_with_same_hash)
-            if (set.isCreated())
-                return set.get();
+            if (set->isCreated())
+                return set;
     }
     else if (dag_node)
     {
@@ -368,8 +383,8 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
         auto tree_hash = ast_node->getTreeHash();
         for (const auto & set : prepared_sets->getByTreeHash(tree_hash))
         {
-            if (set.isCreated() && types_match(set.get()))
-                return set.get();
+            if (types_match(set))
+                return set;
         }
     }
     else

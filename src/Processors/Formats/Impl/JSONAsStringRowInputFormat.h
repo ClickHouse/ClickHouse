@@ -18,8 +18,8 @@ class JSONAsRowInputFormat : public IRowInputFormat
 public:
     JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
 
-    void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
 private:
     JSONAsRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_);

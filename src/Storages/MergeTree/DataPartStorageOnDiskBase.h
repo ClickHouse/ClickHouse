@@ -39,7 +39,6 @@ public:
     bool supportZeroCopyReplication() const override;
     bool supportParallelWrite() const override;
     bool isBroken() const override;
-    bool isReadonly() const override;
     void syncRevision(UInt64 revision) const override;
     UInt64 getRevision() const override;
     std::string getDiskPath() const override;
@@ -50,7 +49,6 @@ public:
     ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const override;
 
     void backup(
-        const ReadSettings & read_settings,
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
         const String & path_in_backup,

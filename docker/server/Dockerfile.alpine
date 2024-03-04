@@ -23,7 +23,6 @@ COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 COPY entrypoint.sh /entrypoint.sh
 
 ARG TARGETARCH
-
 RUN arch=${TARGETARCH:-amd64} \
     && case $arch in \
         amd64) mkdir -p /lib64 && ln -sf /lib/ld-2.31.so /lib64/ld-linux-x86-64.so.2 ;; \
@@ -33,7 +32,7 @@ RUN arch=${TARGETARCH:-amd64} \
 # lts / testing / prestable / etc
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
-ARG VERSION="23.4.2.11"
+ARG VERSION="23.2.4.12"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
@@ -45,16 +44,14 @@ ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 RUN arch=${TARGETARCH:-amd64} \
     && for package in ${PACKAGES}; do \
-        { \
-            { echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
-                && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" -O "/tmp/${package}-${VERSION}-${arch}.tgz" \
-                && tar xvzf "/tmp/${package}-${VERSION}-${arch}.tgz" --strip-components=1 -C / ; \
-            } || \
-            { echo "Fallback to ${REPOSITORY}/${package}-${VERSION}.tgz" \
-                && wget -c -q "${REPOSITORY}/${package}-${VERSION}.tgz" -O "/tmp/${package}-${VERSION}.tgz" \
-                && tar xvzf "/tmp/${package}-${VERSION}.tgz" --strip-components=2 -C / ; \
-            } ; \
-        } || exit 1 \
+    ( \
+        cd /tmp \
+        && echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
+            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
+            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz.sha512" \
+            && sed 's:/output/:/tmp/:' < "${package}-${VERSION}-${arch}.tgz.sha512" | sha512sum -c \
+            && tar xvzf "${package}-${VERSION}-${arch}.tgz" --strip-components=1 -C / \
+    ) \
     ; done \
     && rm /tmp/*.tgz /install -r \
     && addgroup -S -g 101 clickhouse \

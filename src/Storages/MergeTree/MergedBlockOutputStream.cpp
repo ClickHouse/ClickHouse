@@ -2,7 +2,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Parsers/queryToString.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -23,7 +22,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeTransactionPtr & txn,
     bool reset_columns_,
     bool blocks_are_granules_size,
-    const WriteSettings & write_settings_)
+    const WriteSettings & write_settings_,
+    const MergeTreeIndexGranularity & computed_index_granularity)
     : IMergedBlockOutputStream(data_part, metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
@@ -47,7 +47,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     data_part->version.setCreationTID(tid, nullptr);
     data_part->storeVersionMetadata();
 
-    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings, {});
+    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings, computed_index_granularity);
 }
 
 /// If data is pre-sorted.
@@ -176,7 +176,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         serialization_infos.replaceData(new_serialization_infos);
         files_to_remove_after_sync = removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
 
-        new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
+        new_part->setColumns(part_columns, serialization_infos);
     }
 
     auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
@@ -286,14 +286,6 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         /// Write a file with a description of columns.
         auto out = new_part->getDataPartStorage().writeFile("columns.txt", 4096, write_settings);
         new_part->getColumns().writeText(*out);
-        out->preFinalize();
-        written_files.emplace_back(std::move(out));
-    }
-
-    {
-        /// Write a file with a description of columns.
-        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, write_settings);
-        DB::writeIntText(new_part->getMetadataVersion(), *out);
         out->preFinalize();
         written_files.emplace_back(std::move(out));
     }

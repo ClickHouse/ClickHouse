@@ -60,7 +60,13 @@ bool ColumnFixedString::isDefaultAt(size_t index) const
 void ColumnFixedString::insert(const Field & x)
 {
     const String & s = x.get<const String &>();
-    insertData(s.data(), s.size());
+
+    if (s.size() > n)
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string '{}' for FixedString column", s);
+
+    size_t old_size = chars.size();
+    chars.resize_fill(old_size + n);
+    memcpy(chars.data() + old_size, s.data(), s.size());
 }
 
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
@@ -81,9 +87,8 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string for FixedString column");
 
     size_t old_size = chars.size();
-    chars.resize(old_size + n);
+    chars.resize_fill(old_size + n);
     memcpy(chars.data() + old_size, pos, length);
-    memset(chars.data() + old_size + length, 0, n - length);
 }
 
 StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const
@@ -273,7 +278,7 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
 
     ssize_t index = mask.size() - 1;
     ssize_t from = size() - 1;
-    chars.resize_fill(mask.size() * n);
+    chars.resize_fill(mask.size() * n, 0);
     while (index >= 0)
     {
         if (!!mask[index] ^ inverted)

@@ -23,11 +23,11 @@ ZstdDeflatingAppendableWriteBuffer::ZstdDeflatingAppendableWriteBuffer(
 {
     cctx = ZSTD_createCCtx();
     if (cctx == nullptr)
-        throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD stream encoder init failed: ZSTD version: {}", ZSTD_VERSION_STRING);
+        throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder init failed: zstd version: {}", ZSTD_VERSION_STRING);
     size_t ret = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, compression_level);
     if (ZSTD_isError(ret))
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED,
-                        "ZSTD stream encoder option setting failed: error code: {}; zstd version: {}",
+                        "zstd stream encoder option setting failed: error code: {}; zstd version: {}",
                         ret, ZSTD_VERSION_STRING);
 
     input = {nullptr, 0, 0};
@@ -64,7 +64,7 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
             if (ZSTD_isError(compression_result))
                 throw Exception(
                                 ErrorCodes::ZSTD_ENCODER_FAILED,
-                                "ZSTD stream decoding failed: error code: {}; ZSTD version: {}",
+                                "Zstd stream encoding failed: error code: {}; zstd version: {}",
                                 ZSTD_getErrorName(compression_result), ZSTD_VERSION_STRING);
 
             first_write = false;
@@ -138,7 +138,7 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeBefore()
     {
         if (ZSTD_isError(remaining))
             throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED,
-                            "ZSTD stream encoder end failed: error: '{}' ZSTD version: {}",
+                            "Zstd stream encoder end failed: error: '{}' zstd version: {}",
                             ZSTD_getErrorName(remaining), ZSTD_VERSION_STRING);
 
         remaining = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_end);

@@ -114,18 +114,9 @@ public:
 
     ~ParallelDictionaryLoader()
     {
-        try
-        {
-            for (auto & queue : shards_queues)
-                queue->clearAndFinish();
-
-            /// NOTE: It is OK to not pass the exception next, since on success finish() should be called which will call wait()
-            pool.wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(dictionary.log, "Exception had been thrown during parallel load of the dictionary");
-        }
+        for (auto & queue : shards_queues)
+            queue->clearAndFinish();
+        pool.wait();
     }
 
 private:
@@ -139,13 +130,13 @@ private:
     void threadWorker(size_t shard)
     {
         Block block;
-        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder_;
+        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
         auto & shard_queue = *shards_queues[shard];
 
         while (shard_queue.pop(block))
         {
             Stopwatch watch;
-            dictionary.blockToAttributes(block, arena_holder_, shard);
+            dictionary.blockToAttributes(block, arena_holder, shard);
             UInt64 elapsed_ms = watch.elapsedMilliseconds();
             if (elapsed_ms > 1'000)
                 LOG_TRACE(dictionary.log, "Block processing for shard #{} is slow {}ms (rows {}).", shard, elapsed_ms, block.rows());
@@ -761,9 +752,6 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(c
         auto & attribute = attributes[attribute_index];
         bool attribute_is_nullable = attribute.is_nullable_sets.has_value();
 
-        /// Number of elements should not take into account multiple attributes.
-        new_element_count = 0;
-
         getAttributeContainers(attribute_index, [&](auto & containers)
         {
             using ContainerType = std::decay_t<decltype(containers.front())>;
@@ -960,15 +948,6 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
 
     for (size_t attribute_index = 0; attribute_index < attributes_size; ++attribute_index)
     {
-        /// bucket_count should be a sum over all shards (CollectionsHolder),
-        /// but it should not be a sum over all attributes, since it is used to
-        /// calculate load_factor like this:
-        ///
-        ///    element_count / bucket_count
-        ///
-        /// While element_count is a sum over all shards, not over all attributes.
-        bucket_count = 0;
-
         getAttributeContainers(attribute_index, [&](const auto & containers)
         {
             for (const auto & container : containers)
@@ -985,12 +964,12 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
                     /// and since this is sparsehash, empty cells should not be significant,
                     /// and since items cannot be removed from the dictionary, deleted is also not important.
                     bytes_allocated += container.size() * (sizeof(KeyType) + sizeof(AttributeValueType));
-                    bucket_count += container.bucket_count();
+                    bucket_count = container.bucket_count();
                 }
                 else
                 {
                     bytes_allocated += container.getBufferSizeInBytes();
-                    bucket_count += container.getBufferSizeInCells();
+                    bucket_count = container.getBufferSizeInCells();
                 }
             }
         });
@@ -1014,12 +993,12 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
             if constexpr (sparse)
             {
                 bytes_allocated += container.size() * (sizeof(KeyType));
-                bucket_count += container.bucket_count();
+                bucket_count = container.bucket_count();
             }
             else
             {
                 bytes_allocated += container.getBufferSizeInBytes();
-                bucket_count += container.getBufferSizeInCells();
+                bucket_count = container.getBufferSizeInCells();
             }
         }
     }
@@ -1034,7 +1013,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
     }
 
     for (const auto & arena : string_arenas)
-        bytes_allocated += arena->allocatedBytes();
+        bytes_allocated += arena->size();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>

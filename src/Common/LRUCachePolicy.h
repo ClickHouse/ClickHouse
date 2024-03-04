@@ -5,6 +5,8 @@
 #include <list>
 #include <unordered_map>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 /// Cache policy LRU evicts entries which are not used for a long time.
@@ -27,8 +29,7 @@ public:
       * max_count == 0 means no elements size restrictions.
       */
     LRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, OnWeightLossFunction on_weight_loss_function_)
-        : Base(std::make_unique<NoCachePolicyUserQuota>())
-        , max_size_in_bytes(std::max(1uz, max_size_in_bytes_))
+        : max_size_in_bytes(std::max(1uz, max_size_in_bytes_))
         , max_count(max_count_)
         , on_weight_loss_function(on_weight_loss_function_)
     {
@@ -173,7 +174,7 @@ private:
             auto it = cells.find(key);
             if (it == cells.end())
             {
-                // Queue became inconsistent
+                LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
                 abort();
             }
 
@@ -191,7 +192,7 @@ private:
 
         if (current_size_in_bytes > (1ull << 63))
         {
-            // Queue became inconsistent
+            LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
             abort();
         }
     }

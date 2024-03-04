@@ -192,6 +192,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.get<Int32>()));
     }
+    else if (which_type.isDateTime64() && which_from_type.isDate())
+    {
+        const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
+        const auto value = date_time64_type.getTimeZone().fromDayNum(DayNum(src.get<UInt16>()));
+        return DecimalField(
+            DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
+            date_time64_type.getScale());
+    }
+    else if (which_type.isDateTime64() && which_from_type.isDate32())
+    {
+        const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
+        const auto value = date_time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.get<Int32>())));
+        return DecimalField(
+            DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
+            date_time64_type.getScale());
+    }
     else if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
         if (which_type.isUInt8()) return convertNumericType<UInt8>(src, type);
@@ -235,20 +251,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             /// Already in needed type.
             return src;
-        }
-
-        /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
-        /// produce wrong result in some special cases.
-        if (which_type.isDate() && src.getType() == Field::Types::Int64)
-        {
-            return convertNumericType<UInt64>(src, type);
-        }
-
-        /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
-        /// produce wrong result in some special cases.
-        if (which_type.isDate32() && src.getType() == Field::Types::UInt64)
-        {
-            return convertNumericType<Int64>(src, type);
         }
 
         if (which_type.isDateTime64()

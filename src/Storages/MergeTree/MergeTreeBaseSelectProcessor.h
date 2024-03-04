@@ -34,7 +34,7 @@ struct ParallelReadingExtension
     /// This is needed to estimate the number of bytes
     /// between a pair of marks to perform one request
     /// over the network for a 1Gb of data.
-    Names columns_to_read;
+    Names colums_to_read;
 };
 
 /// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm

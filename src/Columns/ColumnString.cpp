@@ -176,7 +176,7 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     /// (if not, one of exceptions below will throw) and we can calculate the resulting chars size.
     UInt64 last_offset = offsets_data[from] + (mask.size() - offsets_data.size());
     offsets_data.resize(mask.size());
-    chars_data.resize_fill(last_offset);
+    chars_data.resize_fill(last_offset, 0);
     while (index >= 0)
     {
         offsets_data[index] = last_offset;

@@ -32,8 +32,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         ContextPtr context_,
-        bool structure_argument_was_provided_,
-        bool format_argument_was_provided_);
+        bool structure_argument_was_provided_);
 
     std::string getName() const override { return "S3Cluster"; }
 
@@ -48,9 +47,6 @@ public:
     RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
     ClusterPtr getCluster(ContextPtr context) const override;
 
-protected:
-    void updateConfigurationIfChanged(ContextPtr local_context);
-
 private:
     Poco::Logger * log;
     StorageS3::Configuration s3_configuration;
@@ -60,7 +56,6 @@ private:
     NamesAndTypesList virtual_columns;
     Block virtual_block;
     bool structure_argument_was_provided;
-    bool format_argument_was_provided;
 };
 
 

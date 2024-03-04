@@ -34,18 +34,9 @@ function(clickhouse_import_crate)
     else()
         set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};debug")
     endif()
+    # NOTE: we may use LTO for rust too
 
-    if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-        set(profile "")
-    else()
-        if (ENABLE_THINLTO)
-            set(profile "release-thinlto")
-        else()
-            set(profile "release")
-        endif()
-    endif()
-
-    corrosion_import_crate(NO_STD ${ARGN} PROFILE ${profile})
+    corrosion_import_crate(NO_STD ${ARGN})
 endfunction()
 
 # Add crate from the build directory.

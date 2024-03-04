@@ -2,6 +2,7 @@
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
+#include <Parsers/toOneLineQuery.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
 
@@ -62,7 +63,7 @@
 #include "config_version.h"
 
 #if defined(OS_DARWIN)
-#   pragma clang diagnostic ignored "-Wunused-macros"
+#   pragma GCC diagnostic ignored "-Wunused-macros"
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
@@ -358,13 +359,10 @@ private:
             /// NOTE: This still require memory allocations and mutex lock inside logger.
             ///       BTW we can also print it to stderr using write syscalls.
 
-            DB::WriteBufferFromOwnString bare_stacktrace;
-            DB::writeString("Stack trace:", bare_stacktrace);
+            std::stringstream bare_stacktrace; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            bare_stacktrace << "Stack trace:";
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-            {
-                DB::writeChar(' ', bare_stacktrace);
-                DB::writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
-            }
+                bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
 
             LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
         }

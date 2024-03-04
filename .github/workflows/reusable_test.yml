@@ -1,0 +1,113 @@
+### For the pure soul wishes to move it to another place
+# https://github.com/orgs/community/discussions/9050
+
+name: Testing workflow
+'on':
+  workflow_call:
+    inputs:
+      test_name:
+        description: the value of test type from tests/ci/ci_config.py, ends up as $CHECK_NAME ENV
+        required: true
+        type: string
+      runner_type:
+        description: the label of runner to use
+        required: true
+        type: string
+      run_command:
+        description: the command to launch the check. Usually starts with `cd '$REPO_COPY/tests/ci'`
+        required: true
+        type: string
+      batches:
+        description: how many batches for the test will be launched
+        default: 1
+        type: number
+      checkout_depth:
+        description: the value of the git shallow checkout
+        required: false
+        type: number
+        default: 1
+      submodules:
+        description: if the submodules should be checked out
+        required: false
+        type: boolean
+        default: false
+      additional_envs:
+        description: additional ENV variables to setup the job
+        type: string
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+  CHECK_NAME: ${{inputs.test_name}}
+
+jobs:
+  PrepareStrategy:
+    # batches < 1 is misconfiguration,
+    # and we need this step only for batches > 1
+    if: ${{ inputs.batches > 1 }}
+    runs-on: [self-hosted, style-checker-aarch64]
+    outputs:
+      batches: ${{steps.batches.outputs.batches}}
+    steps:
+      - name: Calculate batches
+        id: batches
+        run: |
+          batches_output=$(python3 -c 'import json; print(json.dumps(list(range(${{inputs.batches}}))))')
+          echo "batches=${batches_output}" >> "$GITHUB_OUTPUT"
+  Test:
+    # If PrepareStrategy is skipped for batches == 1,
+    # we still need to launch the test.
+    # `! failure()` is mandatory here to launch on skipped Job
+    # `&& !cancelled()` to allow the be cancelable
+    if: ${{ ( !failure() && !cancelled() ) && inputs.batches > 0 }}
+    # Do not add `-0` to the end, if there's only one batch
+    name: ${{inputs.test_name}}${{ inputs.batches > 1 && format('-{0}',matrix.batch) || '' }}
+    env:
+      GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}${{ inputs.batches > 1 && format('-{0}',matrix.batch) || '' }}
+    runs-on: [self-hosted, '${{inputs.runner_type}}']
+    needs: [PrepareStrategy]
+    strategy:
+      fail-fast: false  # we always wait for entire matrix
+      matrix:
+        # if PrepareStrategy does not have batches, we use 0
+        batch: ${{ needs.PrepareStrategy.outputs.batches
+          && fromJson(needs.PrepareStrategy.outputs.batches)
+          || fromJson('[0]')}}
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+          submodules: ${{inputs.submodules}}
+          fetch-depth: ${{inputs.checkout_depth}}
+          filter: tree:0
+      - name: Set build envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          ${{inputs.additional_envs}}
+          ${{secrets.secret_envs}}
+          EOF
+      - name: Common setup
+        uses: ./.github/actions/common_setup
+        with:
+          job_type: test
+      - name: Download json reports
+        uses: actions/download-artifact@v3
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Setup batch
+        if: ${{ inputs.batches > 1}}
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          RUN_BY_HASH_NUM=${{matrix.batch}}
+          RUN_BY_HASH_TOTAL=${{inputs.batches}}
+          EOF
+      - name: Run test
+        run: ${{inputs.run_command}}
+      - name: Clean
+        if: always()
+        uses: ./.github/actions/clean

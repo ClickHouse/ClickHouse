@@ -733,7 +733,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
             data_type = WhichDataType(low_cardinality.getDictionaryType());
         }
 
-        if (!data_type.isString() && !data_type.isFixedString())
+        if (!data_type.isString() && !data_type.isFixedString() && !data_type.isIPv6())
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Ngram and token bloom filter indexes can only be used with column types `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }

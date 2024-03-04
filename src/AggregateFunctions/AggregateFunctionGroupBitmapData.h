@@ -122,13 +122,12 @@ public:
             size_t size;
             readVarUInt(size, in);
 
-            static constexpr size_t max_size = 1_GiB;
+            static constexpr size_t max_size = 100_GiB;
 
             if (size == 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect size (0) in groupBitmap.");
             if (size > max_size)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                                "Too large array size in groupBitmap (maximum: {})", max_size);
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in groupBitmap.");
 
             /// TODO: this is unnecessary copying - it will be better to read and deserialize in one pass.
             std::unique_ptr<char[]> buf(new char[size]);

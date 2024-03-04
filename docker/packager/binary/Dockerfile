@@ -1,34 +1,32 @@
 # docker build -t clickhouse/binary-builder .
 ARG FROM_TAG=latest
-FROM clickhouse/test-util:latest AS cctools
+FROM clickhouse/test-util:48280 AS cctools
 # The cctools are built always from the clickhouse/test-util:latest and cached inline
 # Theoretically, it should improve rebuild speed significantly
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-# DO NOT PUT ANYTHING BEFORE THREE NEXT `RUN` DIRECTIVES
+# DO NOT PUT ANYTHING BEFORE THE NEXT TWO `RUN` DIRECTIVES
 # THE MOST HEAVY OPERATION MUST BE THE FIRST IN THE CACHE
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # libtapi is required to support .tbh format from recent MacOS SDKs
-RUN git clone --depth 1 https://github.com/tpoechtrager/apple-libtapi.git \
+RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
     && cd apple-libtapi \
+    && git checkout 15dfc2a8c9a2a89d06ff227560a69f5265b692f9 \
     && INSTALLPREFIX=/cctools ./build.sh \
     && ./install.sh \
     && cd .. \
     && rm -rf apple-libtapi
 
 # Build and install tools for cross-linking to Darwin (x86-64)
-RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
+# Build and install tools for cross-linking to Darwin (aarch64)
+RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
+    && git checkout 2a3e1c2a6ff54a30f898b70cfb9ba1692a55fad7 \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
     && make install -j$(nproc) \
-    && cd ../.. \
-    && rm -rf cctools-port
-
-# Build and install tools for cross-linking to Darwin (aarch64)
-RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
-    && cd cctools-port/cctools \
+    && make clean \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=aarch64-apple-darwin \
     && make install -j$(nproc) \
@@ -50,6 +48,8 @@ ENV PATH="/rust/cargo/env:${PATH}"
 ENV PATH="/rust/cargo/bin:${PATH}"
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     chmod 777 -R /rust && \
+    rustup toolchain install 1.71.0 && \
+    rustup default 1.71.0 && \
     rustup target add aarch64-unknown-linux-gnu && \
     rustup target add x86_64-apple-darwin && \
     rustup target add x86_64-unknown-freebsd && \
@@ -87,7 +87,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && dpkg -i /tmp/nfpm.deb \
     && rm /tmp/nfpm.deb
 
-ARG GO_VERSION=1.19.5
+ARG GO_VERSION=1.19.10
 # We need go for clickhouse-diagnostics
 RUN arch=${TARGETARCH:-amd64} \
     && curl -Lo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \

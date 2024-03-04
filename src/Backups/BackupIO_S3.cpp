@@ -5,7 +5,7 @@
 #include <Disks/ObjectStorages/S3/copyS3FileToDisk.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
-#include <IO/SharedThreadPools.h>
+#include <IO/BackupsIOThreadPool.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/HTTPHeaderEntries.h>
@@ -65,12 +65,11 @@ namespace
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             settings.auth_settings.server_side_encryption_customer_key_base64,
-            settings.auth_settings.server_side_encryption_kms_config,
             std::move(headers),
             S3::CredentialsConfiguration
             {
                 settings.auth_settings.use_environment_credentials.value_or(
-                    context->getConfigRef().getBool("s3.use_environment_credentials", true)),
+                    context->getConfigRef().getBool("s3.use_environment_credentials", false)),
                 settings.auth_settings.use_insecure_imds_request.value_or(
                     context->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
                 settings.auth_settings.expiration_window_seconds.value_or(
@@ -162,9 +161,9 @@ void BackupReaderS3::copyFileToDisk(const String & file_name, size_t size, DiskP
 
 BackupWriterS3::BackupWriterS3(
     const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, const ContextPtr & context_)
-    : IBackupWriter(context_)
-    , s3_uri(s3_uri_)
+    : s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
+    , read_settings(context_->getReadSettings())
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
     , log(&Poco::Logger::get("BackupWriterS3"))
 {
@@ -190,7 +189,7 @@ void BackupWriterS3::copyFileNative(DiskPtr src_disk, const String & src_file_na
     auto objects = src_disk->getStorageObjects(src_file_name);
     if (objects.size() > 1)
     {
-        auto create_read_buffer = [this, src_disk, src_file_name] { return src_disk->readFile(src_file_name, read_settings); };
+        auto create_read_buffer = [src_disk, src_file_name] { return src_disk->readFile(src_file_name); };
         copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name);
     }
     else
@@ -198,7 +197,7 @@ void BackupWriterS3::copyFileNative(DiskPtr src_disk, const String & src_file_na
         auto object_storage = src_disk->getObjectStorage();
         std::string src_bucket = object_storage->getObjectsNamespace();
         auto file_path = fs::path(s3_uri.key) / dest_file_name;
-        copyS3File(client, src_bucket, objects[0].remote_path, src_offset, src_size, s3_uri.bucket, file_path, request_settings, {},
+        copyS3File(client, src_bucket, objects[0].absolute_path, src_offset, src_size, s3_uri.bucket, file_path, request_settings, {},
                    threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
     }
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 

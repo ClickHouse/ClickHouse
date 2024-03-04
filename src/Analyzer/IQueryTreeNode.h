@@ -11,6 +11,7 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <Analyzer/Identifier.h>
+#include <Analyzer/ConstantValue.h>
 
 class SipHash;
 

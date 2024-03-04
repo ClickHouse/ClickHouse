@@ -72,7 +72,7 @@ void JSONColumnsReaderBase::skipColumn()
 
 JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
     ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_)
-    : IInputFormat(header_, &in_)
+    : IInputFormat(header_, in_)
     , format_settings(format_settings_)
     , fields(header_.getNamesAndTypes())
     , serializations(header_.getSerializations())
@@ -117,6 +117,7 @@ Chunk JSONColumnsBlockInputFormatBase::generate()
     if (reader->checkChunkEnd())
         return Chunk(std::move(columns), 0);
 
+    size_t chunk_start = getDataOffsetMaybeCompressed(*in);
     std::vector<UInt8> seen_columns(columns.size(), 0);
     Int64 rows = -1;
     size_t iteration = 0;
@@ -150,6 +151,8 @@ Chunk JSONColumnsBlockInputFormatBase::generate()
         ++iteration;
     }
     while (!reader->checkChunkEndOrSkipColumnDelimiter());
+
+    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*in) - chunk_start;
 
     if (rows <= 0)
         return Chunk(std::move(columns), 0);

@@ -460,13 +460,4 @@ void MultiplexedConnections::invalidateReplica(ReplicaState & state)
     --active_connection_count;
 }
 
-void MultiplexedConnections::setAsyncCallback(AsyncCallback async_callback)
-{
-    for (ReplicaState & state : replica_states)
-    {
-        if (state.connection)
-            state.connection->setAsyncCallback(async_callback);
-    }
-}
-
 }

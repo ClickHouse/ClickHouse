@@ -54,7 +54,7 @@ bool isParseError(int code)
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
-    : IInputFormat(std::move(header), &in_), serializations(getPort().getHeader().getSerializations()), params(params_)
+    : IInputFormat(std::move(header), in_), serializations(getPort().getHeader().getSerializations()), params(params_)
 {
 }
 
@@ -96,6 +96,7 @@ Chunk IRowInputFormat::generate()
     block_missing_values.clear();
 
     size_t num_rows = 0;
+    size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
 
     try
     {
@@ -242,6 +243,7 @@ Chunk IRowInputFormat::generate()
         column->finalize();
 
     Chunk chunk(std::move(columns), num_rows);
+    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
     return chunk;
 }
 

@@ -26,14 +26,4 @@ String getFileNameFromReadBuffer(const ReadBuffer & in)
         return getFileName(in);
 }
 
-String getExceptionEntryWithFileName(const ReadBuffer & in)
-{
-    auto filename = getFileNameFromReadBuffer(in);
-
-    if (filename.empty())
-        return "";
-
-    return fmt::format(": While reading from: {}", filename);
-}
-
 }

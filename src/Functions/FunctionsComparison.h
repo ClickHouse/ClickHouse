@@ -42,8 +42,12 @@
 #include <type_traits>
 
 #if USE_EMBEDDED_COMPILER
-#    include <DataTypes/Native.h>
-#    include <llvm/IR/IRBuilder.h>
+#include <DataTypes/Native.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <llvm/IR/IRBuilder.h>
+#pragma GCC diagnostic pop
 #endif
 
 
@@ -591,7 +595,7 @@ template <> struct CompileOp<NotEqualsOp>
 {
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
     {
-        return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, y) : b.CreateFCmpONE(x, y);
+        return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, y) : b.CreateFCmpUNE(x, y);
     }
 };
 
@@ -1111,6 +1115,11 @@ private:
     {
         bool c0_const = isColumnConst(*c0);
         bool c1_const = isColumnConst(*c1);
+
+        /// This is a paranoid check to protect from a broken query analysis.
+        if (c0->isNullable() != c1->isNullable())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Logical error: columns are assumed to be of identical types, but they are different in Nullable");
 
         if (c0_const && c1_const)
         {

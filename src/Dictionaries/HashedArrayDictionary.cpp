@@ -797,7 +797,7 @@ void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
         bytes_allocated += hierarchical_index_bytes_allocated;
     }
 
-    bytes_allocated += string_arena.allocatedBytes();
+    bytes_allocated += string_arena.size();
 }
 
 template <DictionaryKeyType dictionary_key_type>

@@ -11,9 +11,16 @@ ccache_status () {
 
 [ -O /build ] || git config --global --add safe.directory /build
 
-mkdir -p /build/cmake/toolchain/darwin-x86_64
-tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
-ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
+if [ "$EXTRACT_TOOLCHAIN_DARWIN" = "1" ]; then
+  mkdir -p /build/cmake/toolchain/darwin-x86_64
+  tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
+  ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
+
+  if [ "$EXPORT_SOURCES_WITH_SUBMODULES" = "1" ]; then
+    cd /build
+    tar --exclude-vcs-ignores --exclude-vcs --exclude build --exclude build_docker --exclude debian --exclude .git --exclude .github --exclude .cache --exclude docs --exclude tests/integration -c . | pigz -9 > /output/source_sub.tar.gz
+  fi
+fi
 
 # Uncomment to debug ccache. Don't put ccache log in /output right away, or it
 # will be confusingly packed into the "performance" package.
@@ -152,10 +159,16 @@ then
     # This is why we add this repository snapshot from CI to the performance test
     # package.
     mkdir "$PERF_OUTPUT"/ch
-    git -C "$PERF_OUTPUT"/ch init --bare
-    git -C "$PERF_OUTPUT"/ch remote add origin /build
-    git -C "$PERF_OUTPUT"/ch fetch --no-tags --depth 50 origin HEAD:pr
-    git -C "$PERF_OUTPUT"/ch fetch --no-tags --depth 50 origin master:master
+    # Copy .git only, but skip modules, using tar
+    tar c -C /build/ --exclude='.git/modules/**' .git | tar x -C "$PERF_OUTPUT"/ch
+    # Create branch pr and origin/master to have them for the following performance comparison
+    git -C "$PERF_OUTPUT"/ch branch pr
+    git -C "$PERF_OUTPUT"/ch fetch --no-tags --no-recurse-submodules --depth 50 origin master:origin/master
+    # Clean remote, to not have it stale
+    git -C "$PERF_OUTPUT"/ch remote | xargs -n1 git -C "$PERF_OUTPUT"/ch remote remove
+    # And clean all tags
+    echo "Deleting $(git -C "$PERF_OUTPUT"/ch tag | wc -l) tags"
+    git -C "$PERF_OUTPUT"/ch tag | xargs git -C "$PERF_OUTPUT"/ch tag -d >/dev/null
     git -C "$PERF_OUTPUT"/ch reset --soft pr
     git -C "$PERF_OUTPUT"/ch log -5
     (

@@ -1,11 +1,15 @@
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/HashTable/HashMap.h>
+
+#include <numeric>
 
 namespace DB
 {
@@ -295,7 +299,14 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}",
                 arguments[2]->getName(), getName());
 
-        return std::make_shared<DataTypeString>();
+        if (isString(arguments[0]))
+            return std::make_shared<DataTypeString>();
+        else
+        {
+            const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
+            chassert(ptr);
+            return std::make_shared<DataTypeFixedString>(ptr->getN());
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override

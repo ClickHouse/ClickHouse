@@ -275,9 +275,7 @@ void executeQueryWithParallelReplicas(
     auto shard_info = not_optimized_cluster->getShardsInfo().front();
 
     const auto & settings = context->getSettingsRef();
-    ClusterPtr new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings);
-
-    auto all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
+    auto all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), shard_info.all_addresses.size());
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(all_replicas_count);
     auto remote_plan = std::make_unique<QueryPlan>();
     auto plans = std::vector<QueryPlanPtr>();
@@ -289,13 +287,35 @@ void executeQueryWithParallelReplicas(
     /// to then tell it about the reading method we chose.
     query_info.coordinator = coordinator;
 
+    UUID parallel_group_id = UUIDHelpers::generateV4();
+
+    plans.emplace_back(createLocalPlan(
+        query_ast,
+        stream_factory.header,
+        context,
+        stream_factory.processed_stage,
+        shard_info.shard_num,
+        /*shard_count*/1,
+        0,
+        all_replicas_count,
+        coordinator,
+        parallel_group_id));
+
+    if (!shard_info.hasRemoteConnections())
+    {
+        if (!plans.front())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "An empty plan was generated to read from local shard and there is no remote connections. This is a bug");
+        query_plan = std::move(*plans.front());
+        return;
+    }
+
     auto new_context = Context::createCopy(context);
     auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
     auto external_tables = new_context->getExternalTables();
 
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,
-        new_cluster,
+        std::move(shard_info),
         coordinator,
         stream_factory.header,
         stream_factory.processed_stage,
@@ -306,7 +326,8 @@ void executeQueryWithParallelReplicas(
         std::move(scalars),
         std::move(external_tables),
         &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
-        query_info.storage_limits);
+        query_info.storage_limits,
+        parallel_group_id);
 
     remote_plan->addStep(std::move(read_from_remote));
     remote_plan->addInterpreterContext(context);

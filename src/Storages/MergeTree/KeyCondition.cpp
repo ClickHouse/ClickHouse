@@ -421,7 +421,12 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromRegularExpression(value.get<const String &>());
+            const String & expression = value.get<const String &>();
+            // This optimization can't process alternation - this would require a comprehensive parsing of regular expression.
+            if (expression.contains('|'))
+                return false;
+
+            String prefix = extractFixedPrefixFromRegularExpression(expression);
             if (prefix.empty())
                 return false;
 
@@ -743,16 +748,9 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
-    size_t key_index = 0;
     for (const auto & name : key_column_names)
-    {
         if (!key_columns.contains(name))
-        {
             key_columns[name] = key_columns.size();
-            key_indices.push_back(key_index);
-        }
-        ++key_index;
-    }
 
     auto filter_node = buildFilterNode(query, additional_filter_asts);
 
@@ -815,16 +813,9 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
-    size_t key_index = 0;
     for (const auto & name : key_column_names)
-    {
         if (!key_columns.contains(name))
-        {
             key_columns[name] = key_columns.size();
-            key_indices.push_back(key_index);
-        }
-        ++key_index;
-    }
 
     if (!filter_dag)
     {
@@ -1183,7 +1174,7 @@ bool KeyCondition::tryPrepareSetIndex(
         /// Note: in case of ActionsDAG, tuple may be a constant.
         /// In this case, there is no keys in tuple. So, we don't have to check it.
         auto left_arg_tuple = left_arg.toFunctionNode();
-        if (left_arg_tuple.getFunctionName() == "tuple")
+        if (left_arg_tuple.getFunctionName() == "tuple" && left_arg_tuple.getArgumentsSize() > 1)
         {
             left_args_count = left_arg_tuple.getArgumentsSize();
             for (size_t i = 0; i < left_args_count; ++i)
@@ -1334,6 +1325,10 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
                 arguments.push_back(const_arg);
                 kind = FunctionWithOptionalConstArg::Kind::RIGHT_CONST;
             }
+
+            /// If constant arg of binary operator is NULL, there will be no monotonicity.
+            if (const_arg.column->isNullAt(0))
+                return false;
         }
         else
             arguments.push_back({ nullptr, key_column_type, "" });
@@ -1999,9 +1994,9 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
         else if (left_bounded)
-            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true);
         else if (right_bounded)
-            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true);
 
         return callback(hyperrectangle);
     }
@@ -2573,6 +2568,25 @@ bool KeyCondition::alwaysFalse() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::alwaysFalse");
 
     return rpn_stack[0] == 0;
+}
+
+size_t KeyCondition::getMaxKeyColumn() const
+{
+    size_t res = 0;
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IS_NULL
+            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
+            || element.function == RPNElement::FUNCTION_IN_SET
+            || element.function == RPNElement::FUNCTION_NOT_IN_SET)
+        {
+            if (element.key_column > res)
+                res = element.key_column;
+        }
+    }
+    return res;
 }
 
 bool KeyCondition::hasMonotonicFunctionsChain() const

@@ -18,7 +18,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/IStorage.h>
-#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/DateLUT.h>
@@ -41,7 +40,6 @@ namespace ProfileEvents
 {
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
-    extern const Event AsyncInsertRows;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -107,10 +105,9 @@ bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other)
     return query_str == other.query_str && settings == other.settings;
 }
 
-AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_, MemoryTracker * user_memory_tracker_)
+AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_)
     : bytes(std::move(bytes_))
     , query_id(std::move(query_id_))
-    , user_memory_tracker(user_memory_tracker_)
     , create_time(std::chrono::system_clock::now())
 {
 }
@@ -119,15 +116,6 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
 {
     if (finished.exchange(true))
         return;
-
-    {
-        // To avoid races on counter of user's MemoryTracker we should free memory at this moment.
-        // Entries data must be destroyed in context of user who runs async insert.
-        // Each entry in the list may correspond to a different user,
-        // so we need to switch current thread's MemoryTracker.
-        UserMemoryTrackerSwitcher switcher(user_memory_tracker);
-        bytes = "";
-    }
 
     if (exception_)
     {
@@ -248,7 +236,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     if (auto quota = query_context->getQuota())
         quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
 
-    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), CurrentThread::getUserMemoryTracker());
+    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
 
     InsertQuery key{query, settings};
     InsertDataPtr data_to_process;
@@ -354,15 +342,10 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
     }
 }
 
-namespace
-{
-
-using TimePoint = std::chrono::time_point<std::chrono::system_clock>;
-
-void appendElementsToLogSafe(
+static void appendElementsToLogSafe(
     AsynchronousInsertLog & log,
     std::vector<AsynchronousInsertLogElement> elements,
-    TimePoint flush_time,
+    std::chrono::time_point<std::chrono::system_clock> flush_time,
     const String & flush_query_id,
     const String & flush_exception)
 try
@@ -382,8 +365,6 @@ try
 catch (...)
 {
     tryLogCurrentException("AsynchronousInsertQueue", "Failed to add elements to AsynchronousInsertLog");
-}
-
 }
 
 // static
@@ -450,20 +431,13 @@ try
         log_elements.reserve(data->entries.size());
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
-    std::unique_ptr<ReadBuffer> last_buffer;
     auto chunk_info = std::make_shared<ChunkOffsets>();
     for (const auto & entry : data->entries)
     {
         auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
-        auto bytes_size = entry->bytes.size();
-        size_t num_rows = executor.execute(*buffer);
-        total_rows += num_rows;
+        total_rows += executor.execute(*buffer);
         chunk_info->offsets.push_back(total_rows);
-
-        /// Keep buffer, because it still can be used
-        /// in destructor, while resetting buffer at next iteration.
-        last_buffer = std::move(buffer);
 
         if (insert_log)
         {
@@ -472,8 +446,7 @@ try
             elem.event_time_microseconds = timeInMicroseconds(entry->create_time);
             elem.query = key.query;
             elem.query_id = entry->query_id;
-            elem.bytes = bytes_size;
-            elem.rows = num_rows;
+            elem.bytes = entry->bytes.size();
             elem.exception = current_exception;
             current_exception.clear();
 
@@ -492,30 +465,10 @@ try
         }
     }
 
-    format->addBuffer(std::move(last_buffer));
     auto insert_query_id = insert_context->getCurrentQueryId();
-    ProfileEvents::increment(ProfileEvents::AsyncInsertRows, total_rows);
-
-    auto finish_entries = [&]
-    {
-        for (const auto & entry : data->entries)
-        {
-            if (!entry->isFinished())
-                entry->finish();
-        }
-
-        if (!log_elements.empty())
-        {
-            auto flush_time = std::chrono::system_clock::now();
-            appendElementsToLogSafe(*insert_log, std::move(log_elements), flush_time, insert_query_id, "");
-        }
-    };
 
     if (total_rows == 0)
-    {
-        finish_entries();
         return;
-    }
 
     try
     {
@@ -543,7 +496,17 @@ try
         throw;
     }
 
-    finish_entries();
+    for (const auto & entry : data->entries)
+    {
+        if (!entry->isFinished())
+            entry->finish();
+    }
+
+    if (!log_elements.empty())
+    {
+        auto flush_time = std::chrono::system_clock::now();
+        appendElementsToLogSafe(*insert_log, std::move(log_elements), flush_time, insert_query_id, "");
+    }
 }
 catch (const Exception & e)
 {

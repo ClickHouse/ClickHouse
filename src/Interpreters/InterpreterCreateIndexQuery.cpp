@@ -4,6 +4,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -20,6 +21,7 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateIndexQuery::execute()
 {
+    FunctionNameNormalizer().visit(query_ptr.get());
     auto current_context = getContext();
     const auto & create_index = query_ptr->as<ASTCreateIndexQuery &>();
 

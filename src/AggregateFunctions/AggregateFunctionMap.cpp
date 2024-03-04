@@ -100,6 +100,10 @@ public:
                     return std::make_shared<AggregateFunctionMap<UInt256>>(nested_function, arguments);
                 case TypeIndex::UUID:
                     return std::make_shared<AggregateFunctionMap<UUID>>(nested_function, arguments);
+                case TypeIndex::IPv4:
+                    return std::make_shared<AggregateFunctionMap<IPv4>>(nested_function, arguments);
+                case TypeIndex::IPv6:
+                    return std::make_shared<AggregateFunctionMap<IPv6>>(nested_function, arguments);
                 case TypeIndex::FixedString:
                 case TypeIndex::String:
                     return std::make_shared<AggregateFunctionMap<String>>(nested_function, arguments);

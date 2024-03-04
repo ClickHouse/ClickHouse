@@ -137,11 +137,7 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
-    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t metadata_version_);
-
-    /// Version of metadata for part (columns, pk and so on)
-    int32_t getMetadataVersion() const { return metadata_version; }
+    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos);
 
     const NamesAndTypesList & getColumns() const { return columns; }
     const ColumnsDescription & getColumnsDescription() const { return columns_description; }
@@ -316,9 +312,6 @@ public:
 
     mutable VersionMetadata version;
 
-    /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
-    int32_t metadata_version;
-
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -390,11 +383,7 @@ public:
     /// (number of rows, number of rows with default values, etc).
     static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
-    /// Version used for transactions.
     static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
-
-
-    static inline constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
 
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
@@ -458,11 +447,7 @@ public:
 
     void writeDeleteOnDestroyMarker();
     void removeDeleteOnDestroyMarker();
-    /// It may look like a stupid joke. but these two methods are absolutely unrelated.
-    /// This one is about removing file with metadata about part version (for transactions)
     void removeVersionMetadata();
-    /// This one is about removing file with version of part's metadata (columns, pk and so on)
-    void removeMetadataVersion();
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
@@ -600,8 +585,6 @@ private:
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
 
     static void appendFilesOfDefaultCompressionCodec(Strings & files);
-
-    static void appendFilesOfMetadataVersion(Strings & files);
 
     /// Found column without specific compression and return codec
     /// for this column with default parameters.

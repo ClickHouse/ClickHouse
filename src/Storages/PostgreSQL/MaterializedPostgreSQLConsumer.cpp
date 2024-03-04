@@ -246,14 +246,6 @@ void MaterializedPostgreSQLConsumer::readTupleData(
             case 't': /// Text formatted value
             {
                 Int32 col_len = readInt32(message, pos, size);
-
-                /// Sanity check for protocol misuse.
-                /// PostgreSQL uses a fixed page size (commonly 8 kB), and does not allow tuples to span multiple pages.
-                static constexpr Int32 sanity_check_max_col_len = 1024 * 8 * 2; /// *2 -- just in case.
-                if (unlikely(col_len > sanity_check_max_col_len))
-                    throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
-                                    "Column length is suspiciously long: {}", col_len);
-
                 String value;
                 for (Int32 i = 0; i < col_len; ++i)
                     value += readInt8(message, pos, size);
@@ -269,6 +261,20 @@ void MaterializedPostgreSQLConsumer::readTupleData(
                 insertDefaultValue(buffer, column_idx);
                 break;
             }
+            case 'b': /// Binary data.
+            {
+                LOG_WARNING(log, "We do not yet process this format of data, will insert default value");
+                insertDefaultValue(buffer, column_idx);
+                break;
+            }
+            default:
+            {
+                LOG_WARNING(log, "Unexpected identifier: {}. This is a bug! Please report an issue on github", identifier);
+                chassert(false);
+
+                insertDefaultValue(buffer, column_idx);
+                break;
+            }
         }
     };
 
@@ -281,6 +287,10 @@ void MaterializedPostgreSQLConsumer::readTupleData(
         }
         catch (...)
         {
+            LOG_ERROR(log,
+                      "Got error while receiving value for column {}, will insert default value. Error: {}",
+                      column_idx, getCurrentExceptionMessage(true));
+
             insertDefaultValue(buffer, column_idx);
             /// Let's collect only the first exception.
             /// This delaying of error throw is needed because

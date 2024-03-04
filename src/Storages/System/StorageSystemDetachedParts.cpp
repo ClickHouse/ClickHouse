@@ -8,7 +8,7 @@
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
-#include <IO/SharedThreadPools.h>
+#include <IO/IOThreadPool.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <mutex>

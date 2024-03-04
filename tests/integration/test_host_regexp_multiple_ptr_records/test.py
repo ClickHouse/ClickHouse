@@ -1,4 +1,10 @@
 import pytest
+
+# FIXME This test is too flaky
+# https://github.com/ClickHouse/ClickHouse/issues/51471
+
+pytestmark = pytest.mark.skip
+
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 import os
 

@@ -3,7 +3,6 @@
 import csv
 import logging
 import subprocess
-import os
 import sys
 from pathlib import Path
 from typing import List, Tuple
@@ -17,7 +16,7 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import RerunHelper, get_commit, post_commit_status
-from docker_pull_helper import get_image_with_version
+from docker_pull_helper import get_image_with_version, DockerImage
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
@@ -29,53 +28,47 @@ from upload_result_helper import upload_results
 
 
 def get_run_command(
-    build_path, result_folder, repo_tests_path, server_log_folder, image
-):
+    build_path: Path,
+    result_path: Path,
+    repo_tests_path: Path,
+    server_log_path: Path,
+    image: DockerImage,
+) -> str:
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
-        # a static link, don't use S3_URL or S3_DOWNLOAD
-        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         # For dmesg and sysctl
         "--privileged "
+        # a static link, don't use S3_URL or S3_DOWNLOAD
+        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         f"--volume={build_path}:/package_folder "
-        f"--volume={result_folder}:/test_output "
+        f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={server_log_folder}:/var/log/clickhouse-server {image} "
+        f"--volume={server_log_path}:/var/log/clickhouse-server {image} "
     )
 
     return cmd
 
 
 def process_results(
-    result_folder: str, server_log_path: str, run_log_path: str
-) -> Tuple[str, str, TestResults, List[str]]:
+    result_directory: Path, server_log_path: Path, run_log_path: Path
+) -> Tuple[str, str, TestResults, List[Path]]:
     test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content
     # of result_folder.
-    if os.path.exists(result_folder):
-        test_files = [
-            f
-            for f in os.listdir(result_folder)
-            if os.path.isfile(os.path.join(result_folder, f))
-        ]
-        additional_files = [os.path.join(result_folder, f) for f in test_files]
+    if result_directory.exists():
+        additional_files = [p for p in result_directory.iterdir() if p.is_file()]
 
-    if os.path.exists(server_log_path):
-        server_log_files = [
-            f
-            for f in os.listdir(server_log_path)
-            if os.path.isfile(os.path.join(server_log_path, f))
-        ]
+    if server_log_path.exists():
         additional_files = additional_files + [
-            os.path.join(server_log_path, f) for f in server_log_files
+            p for p in server_log_path.iterdir() if p.is_file()
         ]
 
     additional_files.append(run_log_path)
 
-    status_path = os.path.join(result_folder, "check_status.tsv")
-    if not os.path.exists(status_path):
+    status_path = result_directory / "check_status.tsv"
+    if not status_path.exists():
         return (
             "failure",
             "check_status.tsv doesn't exists",
@@ -92,7 +85,7 @@ def process_results(
     state, description = status[0][0], status[0][1]
 
     try:
-        results_path = Path(result_folder) / "test_results.tsv"
+        results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path, True)
         if len(test_results) == 0:
             raise Exception("Empty results")
@@ -107,19 +100,17 @@ def process_results(
     return state, description, test_results, additional_files
 
 
-def run_stress_test(docker_image_name):
+def run_stress_test(docker_image_name: str) -> None:
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
-    temp_path = TEMP_PATH
-    repo_path = REPO_COPY
-    repo_tests_path = os.path.join(repo_path, "tests")
-    reports_path = REPORTS_PATH
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
+    repo_path = Path(REPO_COPY)
+    repo_tests_path = repo_path / "tests"
+    reports_path = Path(REPORTS_PATH)
 
     check_name = sys.argv[1]
-
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
 
     pr_info = PRInfo()
 
@@ -133,24 +124,25 @@ def run_stress_test(docker_image_name):
 
     docker_image = get_image_with_version(reports_path, docker_image_name)
 
-    packages_path = os.path.join(temp_path, "packages")
-    if not os.path.exists(packages_path):
-        os.makedirs(packages_path)
+    packages_path = temp_path / "packages"
+    packages_path.mkdir(parents=True, exist_ok=True)
 
     download_all_deb_packages(check_name, reports_path, packages_path)
 
-    server_log_path = os.path.join(temp_path, "server_log")
-    if not os.path.exists(server_log_path):
-        os.makedirs(server_log_path)
+    server_log_path = temp_path / "server_log"
+    server_log_path.mkdir(parents=True, exist_ok=True)
 
-    result_path = os.path.join(temp_path, "result_path")
-    if not os.path.exists(result_path):
-        os.makedirs(result_path)
+    result_path = temp_path / "result_path"
+    result_path.mkdir(parents=True, exist_ok=True)
 
-    run_log_path = os.path.join(temp_path, "run.log")
+    run_log_path = temp_path / "run.log"
 
     run_command = get_run_command(
-        packages_path, result_path, repo_tests_path, server_log_path, docker_image
+        packages_path,
+        result_path,
+        repo_tests_path,
+        server_log_path,
+        docker_image,
     )
     logging.info("Going to run func tests: %s", run_command)
 

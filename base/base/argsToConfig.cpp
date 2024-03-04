@@ -3,29 +3,13 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Util/MapConfiguration.h>
 
-void argsToConfig(const Poco::Util::Application::ArgVec & argv,
-                  Poco::Util::LayeredConfiguration & config,
-                  int priority,
-                  const std::unordered_set<std::string>* alias_names)
+
+void argsToConfig(const Poco::Util::Application::ArgVec & argv, Poco::Util::LayeredConfiguration & config, int priority)
 {
     /// Parsing all args and converting to config layer
     /// Test: -- --1=1 --1=2 --3 5 7 8 -9 10 -11=12 14= 15== --16==17 --=18 --19= --20 21 22 --23 --24 25 --26 -27 28 ---29=30 -- ----31 32 --33 3-4
     Poco::AutoPtr<Poco::Util::MapConfiguration> map_config = new Poco::Util::MapConfiguration;
     std::string key;
-
-    auto add_arg = [&map_config, &alias_names](const std::string & k, const std::string & v)
-    {
-        map_config->setString(k, v);
-
-        if (alias_names && !alias_names->contains(k))
-        {
-            std::string alias_key = k;
-            std::replace(alias_key.begin(), alias_key.end(), '-', '_');
-            if (alias_names->contains(alias_key))
-                map_config->setString(alias_key, v);
-        }
-    };
-
     for (const auto & arg : argv)
     {
         auto key_start = arg.find_first_not_of('-');
@@ -35,7 +19,7 @@ void argsToConfig(const Poco::Util::Application::ArgVec & argv,
         // old saved '--key', will set to some true value "1"
         if (!key.empty() && pos_minus != std::string::npos && pos_minus < key_start)
         {
-            add_arg(key, "1");
+            map_config->setString(key, "1");
             key = "";
         }
 
@@ -45,7 +29,7 @@ void argsToConfig(const Poco::Util::Application::ArgVec & argv,
             {
                 if (pos_minus == std::string::npos || pos_minus > key_start)
                 {
-                    add_arg(key, arg);
+                    map_config->setString(key, arg);
                 }
                 key = "";
             }
@@ -71,7 +55,7 @@ void argsToConfig(const Poco::Util::Application::ArgVec & argv,
         if (arg.size() > pos_eq)
             value = arg.substr(pos_eq + 1);
 
-        add_arg(key, value);
+        map_config->setString(key, value);
         key = "";
     }
 

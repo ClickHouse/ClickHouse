@@ -40,21 +40,14 @@ ls -1 -d ${LIBS_PATH}/*/ | ${GREP_CMD} -F -v -- '-cmake' | LC_ALL=C sort | while
          ${GREP_CMD} -q -i -F 'Altered source versions must be plainly marked as such' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'This notice may not be removed or altered' "$LIB_LICENSE" &&
          echo "zLib") ||
-        (${GREP_CMD} -q -i -F 'This program, "bzip2", the associated library "libbzip2"' "$LIB_LICENSE" &&
-         echo "bzip2") ||
         (${GREP_CMD} -q -i -F 'Permission is hereby granted, free of charge, to any person' "$LIB_LICENSE" &&
-         ${GREP_CMD} -q -i -F 'The above copyright notice and this permission notice shall be' "$LIB_LICENSE" &&
+         ${GREP_CMD} -q -i -F 'The above copyright notice and this permission notice shall be included' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND' "$LIB_LICENSE" &&
          echo "MIT") ||
-        (${GREP_CMD} -q -F 'PostgreSQL' "$LIB_LICENSE" &&
-         echo "PostgreSQL") ||
         (${GREP_CMD} -q -i -F 'Permission to use, copy, modify, and distribute this software for any purpose' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'the name of a copyright holder shall not' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND' "$LIB_LICENSE" &&
          echo "MIT/curl") ||
-        (${GREP_CMD} -q -i -F 'OpenLDAP Public License' "$LIB_LICENSE" &&
-         ${GREP_CMD} -q -i -F 'Version 2.8' "$LIB_LICENSE" &&
-         echo "OpenLDAP Version 2.8") ||
         (${GREP_CMD} -q -i -F 'Redistributions of source code must retain the above copyright' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'Redistributions in binary form must reproduce' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'Neither the name' "$LIB_LICENSE" &&
@@ -62,14 +55,6 @@ ls -1 -d ${LIBS_PATH}/*/ | ${GREP_CMD} -F -v -- '-cmake' | LC_ALL=C sort | while
         (${GREP_CMD} -q -i -F 'Redistributions of source code must retain the above copyright' "$LIB_LICENSE" &&
          ${GREP_CMD} -q -i -F 'Redistributions in binary form must reproduce' "$LIB_LICENSE" &&
          echo "BSD 2-clause") ||
-        (${GREP_CMD} -q -i -F 'Permission to use, copy, modify, and distribute this software' "$LIB_LICENSE" &&
-         ${GREP_CMD} -q -i -F 'documentation for any purpose and without fee is hereby granted' "$LIB_LICENSE" &&
-         ${GREP_CMD} -q -i -F 'the above copyright notice appear in all copies and that both that copyright' "$LIB_LICENSE" &&
-         ${GREP_CMD} -q -i -F 'notice and this permission notice appear in supporting documentation' "$LIB_LICENSE" &&
-         ${GREP_CMD} -q -i -F 'not be used in advertising or publicity pertaining' "$LIB_LICENSE" &&
-         ${GREP_CMD} -q -i -F 'distribution of the software without specific, written prior permission' "$LIB_LICENSE" &&
-         ${GREP_CMD} -q -i -F 'makes no representations about the suitability of this software' "$LIB_LICENSE" &&
-         echo "HPND") ||
         echo "Unknown")
 
         RELATIVE_PATH=$(echo "$LIB_LICENSE" | sed -r -e 's!^.+/contrib/!/contrib/!')

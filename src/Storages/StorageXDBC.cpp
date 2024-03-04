@@ -145,7 +145,7 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         compression_method);
 }
 
-bool StorageXDBC::supportsSubsetOfColumns() const
+bool StorageXDBC::supportsSubsetOfColumns(const ContextPtr &) const
 {
     return true;
 }

@@ -214,7 +214,7 @@ void ColumnNullable::insertFromNotNullable(const IColumn & src, size_t n)
 void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length)
 {
     getNestedColumn().insertRangeFrom(src, start, length);
-    getNullMapData().resize_fill(getNullMapData().size() + length);
+    getNullMapData().resize_fill(getNullMapData().size() + length, 0);
 }
 
 void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t position, size_t length)

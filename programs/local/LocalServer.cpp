@@ -26,13 +26,12 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-#include <Common/ThreadPool.h>
 #include <Loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
-#include <IO/SharedThreadPools.h>
+#include <IO/IOThreadPool.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
@@ -134,11 +133,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
-
-    OutdatedPartsLoadingThreadPool::initialize(
-        config().getUInt("max_outdated_parts_loading_thread_pool_size", 16),
-        0, // We don't need any threads one all the parts will be loaded
-        config().getUInt("outdated_part_loading_thread_pool_queue_size", 10000));
 }
 
 

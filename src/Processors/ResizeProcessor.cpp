@@ -138,11 +138,11 @@ ResizeProcessor::Status ResizeProcessor::prepare()
     while (!is_end_input() && !is_end_output())
     {
         auto output = get_next_out();
-        auto input = get_next_input();
 
         if (output == outputs.end())
             return get_status_if_no_outputs();
 
+        auto input = get_next_input();
 
         if (input == inputs.end())
             return get_status_if_no_inputs();
@@ -164,10 +164,7 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
         initialized = true;
 
         for (auto & input : inputs)
-        {
-            input.setNeeded();
             input_ports.push_back({.port = &input, .status = InputStatus::NotActive});
-        }
 
         for (auto & output : outputs)
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
@@ -195,6 +192,13 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
                 waiting_outputs.push(output_number);
             }
         }
+    }
+
+    if (!is_reading_started && !waiting_outputs.empty())
+    {
+        for (auto & input : inputs)
+            input.setNeeded();
+        is_reading_started = true;
     }
 
     if (num_finished_outputs == outputs.size())

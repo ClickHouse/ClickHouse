@@ -236,11 +236,6 @@ bool Set::insertFromBlock(const Columns & columns)
     return limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
-void Set::checkIsCreated() const
-{
-    if (!is_created.load())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Trying to use set before it has been built.");
-}
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {

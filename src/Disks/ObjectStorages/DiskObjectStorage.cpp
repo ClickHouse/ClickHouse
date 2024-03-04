@@ -15,7 +15,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
-#include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 
@@ -297,7 +296,7 @@ String DiskObjectStorage::getUniqueId(const String & path) const
     String id;
     auto blobs_paths = metadata_storage->getStorageObjects(path);
     if (!blobs_paths.empty())
-        id = blobs_paths[0].remote_path;
+        id = blobs_paths[0].absolute_path;
     return id;
 }
 
@@ -309,7 +308,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
         return false;
     }
 
-    auto object = StoredObject(id);
+    auto object = StoredObject::create(*object_storage, id, {}, {}, true);
     return object_storage->exists(object);
 }
 
@@ -533,6 +532,14 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
 {
     object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
+}
+
+FileCachePtr DiskObjectStorage::getCache() const
+{
+    const auto * cached_object_storage = typeid_cast<CachedObjectStorage *>(object_storage.get());
+    if (!cached_object_storage)
+        return nullptr;
+    return cached_object_storage->getCache();
 }
 
 NameSet DiskObjectStorage::getCacheLayersNames() const

@@ -17,7 +17,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ThreadPool_fwd.h>
 #include <base/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -323,7 +322,7 @@ using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
 /// one is at GlobalThreadPool level, the other is at ThreadPool level, so tracing context will be initialized on the same thread twice.
 ///
 /// Once the worker on ThreadPool gains the control of execution, it won't return until it's shutdown,
-/// which means the tracing context initialized at underlying worker level won't be deleted for a very long time.
+/// which means the tracing context initialized at underlying worker level won't be delete for a very long time.
 /// This would cause wrong context for further jobs scheduled in ThreadPool.
 ///
 /// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.

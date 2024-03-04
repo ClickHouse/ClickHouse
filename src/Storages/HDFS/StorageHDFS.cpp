@@ -30,6 +30,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/getVirtualsForStorage.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/ReadFromStorageProgress.h>
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
@@ -535,9 +536,9 @@ private:
 };
 
 
-bool StorageHDFS::supportsSubsetOfColumns() const
+bool StorageHDFS::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context_);
 }
 
 Pipe StorageHDFS::read(
@@ -586,7 +587,7 @@ Pipe StorageHDFS::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (supportsSubsetOfColumns())
+    if (supportsSubsetOfColumns(context_))
     {
         auto fetch_columns = column_names;
         const auto & virtuals = getVirtuals();

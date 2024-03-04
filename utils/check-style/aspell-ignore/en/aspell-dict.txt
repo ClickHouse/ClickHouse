@@ -22,9 +22,9 @@ CSVWithNamesAndTypes
 CamelCase
 CapnProto
 CentOS
+ClickableSquare
 ClickHouse
 ClickHouse's
-ClickableSquare
 CodeBlock
 CodeLLDB
 Config
@@ -56,7 +56,6 @@ Homebrew
 Homebrew's
 HorizontalDivide
 Hostname
-INSERTed
 IPv
 IntN
 Integrations
@@ -86,7 +85,6 @@ Jepsen
 KDevelop
 LGPL
 LLDB
-LLVM's
 LOCALTIME
 LOCALTIMESTAMP
 LibFuzzer
@@ -95,8 +93,20 @@ LinksDeployment
 LowCardinality
 MEMTABLE
 MSan
-MVCC
 MacOS
+MapState
+MarkCacheBytes
+MarkCacheFiles
+MarksLoaderThreads
+MarksLoaderThreadsActive
+MaterializedMySQL
+MaterializedPostgreSQL
+MaterializedView
+MaxDDLEntryID
+MaxMind
+MaxPartCountForPartition
+MaxPushedDDLEntryID
+Mbps
 Memcheck
 MemorySanitizer
 MergeTree
@@ -114,14 +124,12 @@ NuRaft
 OLAP
 OLTP
 ObjectId
-Observability
 Ok
 OpenSSL
 OpenSUSE
 OpenStack
 OpenTelemetry
 PAAMAYIM
-ParquetMetadata
 Parsers
 Postgres
 Precompiled
@@ -129,7 +137,6 @@ PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
 PrettyCompactNoEscapesMonoBlock
-PrettyJSONEachRow
 PrettyMonoBlock
 PrettyNoEscapes
 PrettyNoEscapesMonoBlock
@@ -152,10 +159,8 @@ RowBinaryWithNames
 RowBinaryWithNamesAndTypes
 Runtime
 SATA
-SELECTs
 SERIALIZABLE
 SIMD
-SLES
 SMALLINT
 SQLInsert
 SQLSTATE
@@ -180,7 +185,6 @@ Testflows
 Tgz
 Toolset
 Tradeoff
-Transactional
 TwoColumnList
 UBSan
 UInt
@@ -212,7 +216,6 @@ analytics
 anonymized
 ansi
 async
-atomicity
 autogeneration
 autostart
 avro
@@ -294,7 +297,6 @@ dmesg
 dont
 dragonbox
 durations
-encodings
 endian
 enum
 exFAT
@@ -306,7 +308,6 @@ flatbuffers
 fmtlib
 formatschema
 formatter
-fsync
 fuzzer
 fuzzers
 gRPC
@@ -386,7 +387,6 @@ llvm
 localhost
 macOS
 mariadb
-mdadm
 miniselect
 msgpack
 msgpk
@@ -405,7 +405,6 @@ num
 obfuscator
 odbc
 ok
-openSUSE
 openldap
 opentelemetry
 overcommit
@@ -433,7 +432,6 @@ prettycompact
 prettycompactmonoblock
 prettycompactnoescapes
 prettycompactnoescapesmonoblock
-prettyjsoneachrow
 prettymonoblock
 prettynoescapes
 prettynoescapesmonoblock
@@ -527,7 +525,6 @@ tokenization
 toml
 toolchain
 toolset
-transactional
 transactionally
 tskv
 tsv

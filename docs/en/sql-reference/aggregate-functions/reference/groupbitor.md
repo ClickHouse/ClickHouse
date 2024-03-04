@@ -13,11 +13,11 @@ groupBitOr(expr)
 
 **Arguments**
 
-`expr` – An expression that results in `UInt*` or `Int*` type.
+`expr` – An expression that results in `UInt*` type.
 
 **Returned value**
 
-Value of the `UInt*` or `Int*` type.
+Value of the `UInt*` type.
 
 **Example**
 

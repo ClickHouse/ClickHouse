@@ -55,6 +55,9 @@ struct ModuloByConstantImpl
 
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
         /// Modulo with too small divisor.
         if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
         {
@@ -71,6 +74,8 @@ struct ModuloByConstantImpl
                 dst[i] = static_cast<ResultType>(src[i]);
             return;
         }
+
+#pragma GCC diagnostic pop
 
         if (unlikely(static_cast<A>(b) == 0))
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");

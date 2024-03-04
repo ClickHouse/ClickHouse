@@ -17,6 +17,7 @@
 #include <Poco/Net/TCPServerParams.h>
 #include <Poco/Net/TCPServer.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Version.h>
 #include <Poco/Environment.h>
 #include <sys/stat.h>
 #include <pwd.h>
@@ -57,7 +58,7 @@ int mainEntryClickHouseKeeper(int argc, char ** argv)
     }
 }
 
-#ifdef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifdef KEEPER_STANDALONE_BUILD
 
 // Weak symbols don't work correctly on Darwin
 // so we have a stub implementation to avoid linker errors

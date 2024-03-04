@@ -23,12 +23,6 @@ namespace ErrorCodes
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
 }
 
-
-bool MutationCommand::isBarrierCommand() const
-{
-    return type == RENAME_COLUMN;
-}
-
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command, bool parse_alter_commands)
 {
     if (command->type == ASTAlterCommand::DELETE)
@@ -213,16 +207,6 @@ bool MutationCommands::hasNonEmptyMutationCommands() const
     for (const auto & command : *this)
     {
         if (command.type != MutationCommand::Type::EMPTY && command.type != MutationCommand::Type::ALTER_WITHOUT_MUTATION)
-            return true;
-    }
-    return false;
-}
-
-bool MutationCommands::containBarrierCommand() const
-{
-    for (const auto & command : *this)
-    {
-        if (command.isBarrierCommand())
             return true;
     }
     return false;

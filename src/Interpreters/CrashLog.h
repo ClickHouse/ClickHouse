@@ -3,7 +3,6 @@
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Core/Field.h>
 
 
 /// Call this function on crash.

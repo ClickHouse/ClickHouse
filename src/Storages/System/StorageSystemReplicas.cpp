@@ -11,7 +11,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ThreadPool.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 
 
@@ -39,7 +38,6 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "is_session_expired",                   std::make_shared<DataTypeUInt8>()    },
         { "future_parts",                         std::make_shared<DataTypeUInt32>()   },
         { "parts_to_check",                       std::make_shared<DataTypeUInt32>()   },
-        { "zookeeper_name",                       std::make_shared<DataTypeString>()   },
         { "zookeeper_path",                       std::make_shared<DataTypeString>()   },
         { "replica_name",                         std::make_shared<DataTypeString>()   },
         { "replica_path",                         std::make_shared<DataTypeString>()   },
@@ -61,7 +59,6 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "absolute_delay",                       std::make_shared<DataTypeUInt64>()   },
         { "total_replicas",                       std::make_shared<DataTypeUInt8>()    },
         { "active_replicas",                      std::make_shared<DataTypeUInt8>()    },
-        { "lost_part_count",                      std::make_shared<DataTypeUInt64>()   },
         { "last_queue_update_exception",          std::make_shared<DataTypeString>()   },
         { "zookeeper_exception",                  std::make_shared<DataTypeString>()   },
         { "replica_is_active",                    std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt8>()) }
@@ -115,7 +112,6 @@ Pipe StorageSystemReplicas::read(
             || column_name == "log_pointer"
             || column_name == "total_replicas"
             || column_name == "active_replicas"
-            || column_name == "lost_part_count"
             || column_name == "zookeeper_exception"
             || column_name == "replica_is_active")
         {
@@ -195,7 +191,6 @@ Pipe StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.is_session_expired);
         res_columns[col_num++]->insert(status.queue.future_parts);
         res_columns[col_num++]->insert(status.parts_to_check);
-        res_columns[col_num++]->insert(status.zookeeper_name);
         res_columns[col_num++]->insert(status.zookeeper_path);
         res_columns[col_num++]->insert(status.replica_name);
         res_columns[col_num++]->insert(status.replica_path);
@@ -217,7 +212,6 @@ Pipe StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.absolute_delay);
         res_columns[col_num++]->insert(status.total_replicas);
         res_columns[col_num++]->insert(status.active_replicas);
-        res_columns[col_num++]->insert(status.lost_part_count);
         res_columns[col_num++]->insert(status.last_queue_update_exception);
         res_columns[col_num++]->insert(status.zookeeper_exception);
 

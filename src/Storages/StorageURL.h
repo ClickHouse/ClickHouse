@@ -18,6 +18,7 @@ namespace DB
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+class IInputFormat;
 struct ConnectionTimeouts;
 class NamedCollection;
 
@@ -98,11 +99,7 @@ protected:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
-    bool supportsSubsetOfColumns() const override;
-
-    bool prefersLargeBlocks() const override;
-
-    bool parallelizeOutputAfterReading(ContextPtr context) const override;
+    virtual bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;

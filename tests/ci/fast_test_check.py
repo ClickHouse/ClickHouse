@@ -13,7 +13,6 @@ from github import Github
 
 from clickhouse_helper import (
     ClickHouseHelper,
-    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
@@ -22,8 +21,8 @@ from commit_status_helper import (
     post_commit_status,
     update_mergeable_check,
 )
-from docker_pull_helper import get_image_with_version
-from env_helper import S3_BUILDS_BUCKET, TEMP_PATH
+from docker_pull_helper import get_image_with_version, DockerImage
+from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from report import TestResults, read_test_results
@@ -38,7 +37,14 @@ NAME = "Fast test"
 csv.field_size_limit(sys.maxsize)
 
 
-def get_fasttest_cmd(workspace, output_path, repo_path, pr_number, commit_sha, image):
+def get_fasttest_cmd(
+    workspace: Path,
+    output_path: Path,
+    repo_path: Path,
+    pr_number: int,
+    commit_sha: str,
+    image: DockerImage,
+) -> str:
     return (
         f"docker run --cap-add=SYS_PTRACE "
         "--network=host "  # required to get access to IAM credentials
@@ -53,45 +59,32 @@ def get_fasttest_cmd(workspace, output_path, repo_path, pr_number, commit_sha, i
     )
 
 
-def process_results(result_folder: str) -> Tuple[str, str, TestResults, List[str]]:
+def process_results(result_directory: Path) -> Tuple[str, str, TestResults]:
     test_results = []  # type: TestResults
-    additional_files = []
-    # Just upload all files from result_folder.
+    # Just upload all files from result_directory.
     # If task provides processed results, then it's responsible for content of
-    # result_folder
-    if os.path.exists(result_folder):
-        test_files = [
-            f
-            for f in os.listdir(result_folder)
-            if os.path.isfile(os.path.join(result_folder, f))
-        ]
-        additional_files = [os.path.join(result_folder, f) for f in test_files]
+    # result_directory
 
     status = []
-    status_path = os.path.join(result_folder, "check_status.tsv")
-    if os.path.exists(status_path):
+    status_path = result_directory / "check_status.tsv"
+    if status_path.exists():
         logging.info("Found test_results.tsv")
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
     if len(status) != 1 or len(status[0]) != 2:
-        logging.info("Files in result folder %s", os.listdir(result_folder))
-        return "error", "Invalid check_status.tsv", test_results, additional_files
+        logging.info("Files in result folder %s", os.listdir(result_directory))
+        return "error", "Invalid check_status.tsv", test_results
     state, description = status[0][0], status[0][1]
 
     try:
-        results_path = Path(result_folder) / "test_results.tsv"
+        results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path)
         if len(test_results) == 0:
-            return "error", "Empty test_results.tsv", test_results, additional_files
+            return "error", "Empty test_results.tsv", test_results
     except Exception as e:
-        return (
-            "error",
-            f"Cannot parse test_results.tsv ({e})",
-            test_results,
-            additional_files,
-        )
+        return ("error", f"Cannot parse test_results.tsv ({e})", test_results)
 
-    return state, description, test_results, additional_files
+    return state, description, test_results
 
 
 def main():
@@ -99,10 +92,10 @@ def main():
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
+    reports_path = Path(REPORTS_PATH)
+    reports_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
@@ -114,26 +107,20 @@ def main():
     rerun_helper = RerunHelper(commit, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
-        status = rerun_helper.get_finished_status()
-        if status is not None and status.state != "success":
-            sys.exit(1)
         sys.exit(0)
 
-    docker_image = get_image_with_version(temp_path, "clickhouse/fasttest")
+    docker_image = get_image_with_version(reports_path, "clickhouse/fasttest")
 
     s3_helper = S3Helper()
 
-    workspace = os.path.join(temp_path, "fasttest-workspace")
-    if not os.path.exists(workspace):
-        os.makedirs(workspace)
+    workspace = temp_path / "fasttest-workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
 
-    output_path = os.path.join(temp_path, "fasttest-output")
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
+    output_path = temp_path / "fasttest-output"
+    output_path.mkdir(parents=True, exist_ok=True)
 
-    repo_path = os.path.join(temp_path, "fasttest-repo")
-    if not os.path.exists(repo_path):
-        os.makedirs(repo_path)
+    repo_path = temp_path / "fasttest-repo"
+    repo_path.mkdir(parents=True, exist_ok=True)
 
     run_cmd = get_fasttest_cmd(
         workspace,
@@ -145,11 +132,10 @@ def main():
     )
     logging.info("Going to run fasttest with cmd %s", run_cmd)
 
-    logs_path = os.path.join(temp_path, "fasttest-logs")
-    if not os.path.exists(logs_path):
-        os.makedirs(logs_path)
+    logs_path = temp_path / "fasttest-logs"
+    logs_path.mkdir(parents=True, exist_ok=True)
 
-    run_log_path = os.path.join(logs_path, "run.log")
+    run_log_path = logs_path / "run.log"
     with TeePopen(run_cmd, run_log_path, timeout=40 * 60) as process:
         retcode = process.wait()
         if retcode == 0:
@@ -160,9 +146,8 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     test_output_files = os.listdir(output_path)
-    additional_logs = []
-    for f in test_output_files:
-        additional_logs.append(os.path.join(output_path, f))
+    additional_logs = [f for f in output_path.iterdir() if f.is_file()]
+    additional_logs.append(run_log_path)
 
     test_log_exists = (
         "test_log.txt" in test_output_files or "test_result.txt" in test_output_files
@@ -185,17 +170,16 @@ def main():
         description = "Cannot install or start ClickHouse"
         state = "failure"
     else:
-        state, description, test_results, additional_logs = process_results(output_path)
+        state, description, test_results = process_results(output_path)
 
     ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, NAME, test_results)
 
     report_url = upload_results(
         s3_helper,
         pr_info.number,
         pr_info.sha,
         test_results,
-        [run_log_path] + additional_logs,
+        additional_logs,
         NAME,
     )
     print(f"::notice ::Report url: {report_url}")

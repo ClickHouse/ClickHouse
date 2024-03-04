@@ -36,7 +36,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         settings_,
         avg_value_size_hints_)
     , marks_loader(
-          data_part_info_for_read_,
+          data_part_info_for_read_->getDataPartStorage(),
           mark_cache,
           data_part_info_for_read_->getIndexGranularityInfo().getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
           data_part_info_for_read_->getMarksCount(),

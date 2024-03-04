@@ -145,7 +145,7 @@ StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & pat
     for (auto & [object_relative_path, size] : object_storage_relative_paths)
     {
         auto object_path = fs::path(metadata->getBlobsCommonPrefix()) / object_relative_path;
-        StoredObject object{ object_path, size, path };
+        StoredObject object{ object_path, size, path, [](const String & path_){ return path_; }};
         object_storage_paths.push_back(object);
     }
 
@@ -340,9 +340,12 @@ void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & p
     addOperation(std::make_unique<AddBlobOperation>(path, blob_name, metadata_storage.object_storage_root_path, size_in_bytes, *metadata_storage.disk, metadata_storage));
 }
 
-void MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
+UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
 {
-    addOperation(std::make_unique<UnlinkMetadataFileOperation>(path, *metadata_storage.disk, metadata_storage));
+    auto operation = std::make_unique<UnlinkMetadataFileOperation>(path, *metadata_storage.getDisk(), metadata_storage);
+    auto result = operation->outcome;
+    addOperation(std::move(operation));
+    return result;
 }
 
 }

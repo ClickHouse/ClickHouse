@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
-#include <IO/SharedThreadPools.h>
+#include <IO/IOThreadPool.h>
 #include <Common/EventFD.h>
 
 namespace DB

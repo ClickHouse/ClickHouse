@@ -9,8 +9,6 @@
 #include <Common/ConcurrencyControl.h>
 #include <Common/randomSeed.h>
 
-using namespace DB;
-
 struct ConcurrencyControlTest
 {
     ConcurrencyControl cc;
@@ -278,9 +276,9 @@ TEST(ConcurrencyControl, MultipleThreads)
             queries.emplace_back([&, max_threads = max_threads_distribution(rng)]
             {
                 run_query(max_threads);
-                ++finished;
+                finished++;
             });
-            ++started;
+            started++;
         }
         sleepForMicroseconds(5); // wait some queries to finish
         t.cc.setMaxConcurrency(cfg_max_concurrency - started % 3); // emulate configuration updates

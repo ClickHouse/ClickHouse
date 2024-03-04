@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/IDataType.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -265,25 +264,23 @@ static bool checkTupleType(const capnp::Type & capnp_type, const DataTypePtr & d
         return false;
     }
 
-    bool have_explicit_names = tuple_data_type->haveExplicitNames();
-    const auto & nested_names = tuple_data_type->getElementNames();
-    for (uint32_t i = 0; i != nested_names.size(); ++i)
+    if (!tuple_data_type->haveExplicitNames())
     {
-        if (have_explicit_names)
+        error_message += "Only named Tuple can be converted to CapnProto Struct";
+        return false;
+    }
+    for (const auto & name : tuple_data_type->getElementNames())
+    {
+        KJ_IF_MAYBE(field, struct_schema.findFieldByName(name))
         {
-            KJ_IF_MAYBE (field, struct_schema.findFieldByName(nested_names[i]))
-            {
-                if (!checkCapnProtoType(field->getType(), nested_types[tuple_data_type->getPositionByName(nested_names[i])], mode, error_message, nested_names[i]))
-                    return false;
-            }
-            else
-            {
-                error_message += "CapnProto struct doesn't contain a field with name " + nested_names[i];
+            if (!checkCapnProtoType(field->getType(), nested_types[tuple_data_type->getPositionByName(name)], mode, error_message, name))
                 return false;
-            }
         }
-        else if (!checkCapnProtoType(struct_schema.getFields()[i].getType(), nested_types[tuple_data_type->getPositionByName(nested_names[i])], mode, error_message, nested_names[i]))
+        else
+        {
+            error_message += "CapnProto struct doesn't contain a field with name " + name;
             return false;
+        }
     }
 
     return true;
@@ -310,129 +307,41 @@ static bool checkArrayType(const capnp::Type & capnp_type, const DataTypePtr & d
     return checkCapnProtoType(list_schema.getElementType(), nested_type, mode, error_message, column_name);
 }
 
-static bool checkMapType(const capnp::Type & capnp_type, const DataTypePtr & data_type, FormatSettings::EnumComparingMode mode, String & error_message)
-{
-    /// We output/input Map type as follow CapnProto schema
-    ///
-    /// struct Map {
-    ///     struct Entry {
-    ///         key @0: Key;
-    ///         value @1: Value;
-    ///     }
-    ///     entries @0 :List(Entry);
-    /// }
-
-    if (!capnp_type.isStruct())
-        return false;
-    auto struct_schema = capnp_type.asStruct();
-
-    if (checkIfStructContainsUnnamedUnion(struct_schema))
-    {
-        error_message += "CapnProto struct contains unnamed union";
-        return false;
-    }
-
-    if (struct_schema.getFields().size() != 1)
-    {
-        error_message += "CapnProto struct that represents Map type can contain only one field";
-        return false;
-    }
-
-    const auto & field_type = struct_schema.getFields()[0].getType();
-    if (!field_type.isList())
-    {
-        error_message += "Field of CapnProto struct that represents Map is not a list";
-        return false;
-    }
-
-    auto list_element_type = field_type.asList().getElementType();
-    if (!list_element_type.isStruct())
-    {
-        error_message += "Field of CapnProto struct that represents Map is not a list of structs";
-        return false;
-    }
-
-    auto key_value_struct = list_element_type.asStruct();
-    if (checkIfStructContainsUnnamedUnion(key_value_struct))
-    {
-        error_message += "CapnProto struct contains unnamed union";
-        return false;
-    }
-
-    if (key_value_struct.getFields().size() != 2)
-    {
-        error_message += "Key-value structure for Map struct should have exactly 2 fields";
-        return false;
-    }
-
-    const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
-    DataTypes types = {map_type.getKeyType(), map_type.getValueType()};
-    Names names = {"key", "value"};
-
-    for (size_t i = 0; i != types.size(); ++i)
-    {
-        KJ_IF_MAYBE(field, key_value_struct.findFieldByName(names[i]))
-        {
-            if (!checkCapnProtoType(field->getType(), types[i], mode, error_message, names[i]))
-                return false;
-        }
-        else
-        {
-            error_message += R"(Key-value structure for Map struct should have exactly 2 fields with names "key" and "value")";
-            return false;
-        }
-    }
-
-    return true;
-}
-
-static bool isCapnInteger(const capnp::Type & capnp_type)
-{
-    return capnp_type.isInt8() || capnp_type.isUInt8() || capnp_type.isInt16() || capnp_type.isUInt16() || capnp_type.isInt32()
-        || capnp_type.isUInt32() || capnp_type.isInt64() || capnp_type.isUInt64();
-}
-
 static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr & data_type, FormatSettings::EnumComparingMode mode, String & error_message, const String & column_name)
 {
     switch (data_type->getTypeId())
     {
         case TypeIndex::UInt8:
-            return capnp_type.isBool() || isCapnInteger(capnp_type);
-        case TypeIndex::Int8: [[fallthrough]];
-        case TypeIndex::Int16: [[fallthrough]];
-        case TypeIndex::UInt16: [[fallthrough]];
-        case TypeIndex::Int32: [[fallthrough]];
-        case TypeIndex::UInt32: [[fallthrough]];
-        case TypeIndex::Int64: [[fallthrough]];
-        case TypeIndex::UInt64:
-            /// Allow integer conversions durin input/output.
-            return isCapnInteger(capnp_type);
-        case TypeIndex::Date:
+            return capnp_type.isBool() || capnp_type.isUInt8();
+        case TypeIndex::Date: [[fallthrough]];
+        case TypeIndex::UInt16:
             return capnp_type.isUInt16();
         case TypeIndex::DateTime: [[fallthrough]];
-        case TypeIndex::IPv4:
+        case TypeIndex::IPv4: [[fallthrough]];
+        case TypeIndex::UInt32:
             return capnp_type.isUInt32();
+        case TypeIndex::UInt64:
+            return capnp_type.isUInt64();
+        case TypeIndex::Int8:
+            return capnp_type.isInt8();
+        case TypeIndex::Int16:
+            return capnp_type.isInt16();
         case TypeIndex::Date32: [[fallthrough]];
-        case TypeIndex::Decimal32:
-            return capnp_type.isInt32() || capnp_type.isUInt32();
+        case TypeIndex::Decimal32: [[fallthrough]];
+        case TypeIndex::Int32:
+            return capnp_type.isInt32();
         case TypeIndex::DateTime64: [[fallthrough]];
-        case TypeIndex::Decimal64:
-            return capnp_type.isInt64() || capnp_type.isUInt64();
-        case TypeIndex::Float32:[[fallthrough]];
+        case TypeIndex::Decimal64: [[fallthrough]];
+        case TypeIndex::Int64:
+            return capnp_type.isInt64();
+        case TypeIndex::Float32:
+            return capnp_type.isFloat32();
         case TypeIndex::Float64:
-            /// Allow converting between Float32 and isFloat64
-            return capnp_type.isFloat32() || capnp_type.isFloat64();
+            return capnp_type.isFloat64();
         case TypeIndex::Enum8:
             return checkEnums<Int8>(capnp_type, data_type, mode, INT8_MAX, error_message);
         case TypeIndex::Enum16:
             return checkEnums<Int16>(capnp_type, data_type, mode, INT16_MAX, error_message);
-        case TypeIndex::Int128: [[fallthrough]];
-        case TypeIndex::UInt128: [[fallthrough]];
-        case TypeIndex::Int256: [[fallthrough]];
-        case TypeIndex::UInt256: [[fallthrough]];
-        case TypeIndex::Decimal128: [[fallthrough]];
-        case TypeIndex::Decimal256:
-            return capnp_type.isData();
         case TypeIndex::Tuple:
             return checkTupleType(capnp_type, data_type, mode, error_message);
         case TypeIndex::Nullable:
@@ -450,8 +359,6 @@ static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr
         case TypeIndex::IPv6: [[fallthrough]];
         case TypeIndex::String:
             return capnp_type.isText() || capnp_type.isData();
-        case TypeIndex::Map:
-            return checkMapType(capnp_type, data_type, mode, error_message);
         default:
             return false;
     }

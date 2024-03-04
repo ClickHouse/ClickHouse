@@ -345,7 +345,6 @@ private:
         PreparedInsert(pqxx::connection & connection_, const String & table, const String & schema,
                        const ColumnsWithTypeAndName & columns, const String & on_conflict_)
             : Inserter(connection_)
-            , statement_name("insert_" + getHexUIntLowercase(thread_local_rng()))
         {
             WriteBufferFromOwnString buf;
             buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotes);
@@ -358,14 +357,12 @@ private:
             }
             buf << ") ";
             buf << on_conflict_;
-            connection.prepare(statement_name, buf.str());
-            prepared = true;
+            connection.prepare("insert", buf.str());
         }
 
         void complete() override
         {
-            connection.unprepare(statement_name);
-            prepared = false;
+            connection.unprepare("insert");
             tx.commit();
         }
 
@@ -374,24 +371,8 @@ private:
             pqxx::params params;
             params.reserve(row.size());
             params.append_multi(row);
-            tx.exec_prepared(statement_name, params);
+            tx.exec_prepared("insert", params);
         }
-
-        ~PreparedInsert() override
-        {
-            try
-            {
-                if (prepared)
-                    connection.unprepare(statement_name);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        const String statement_name;
-        bool prepared = false;
     };
 
     StorageMetadataPtr metadata_snapshot;
@@ -416,7 +397,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
         required_arguments.insert("table");
 
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
-        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"});
+        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port"});
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())

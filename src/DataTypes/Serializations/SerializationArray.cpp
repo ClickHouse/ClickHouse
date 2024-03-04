@@ -520,35 +520,6 @@ void SerializationArray::serializeTextJSON(const IColumn & column, size_t row_nu
     writeChar(']', ostr);
 }
 
-void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
-{
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets & offsets = column_array.getOffsets();
-
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
-
-    const IColumn & nested_column = column_array.getData();
-
-    if (offset == next_offset)
-    {
-        writeCString("[]", ostr);
-        return;
-    }
-
-    writeCString("[\n", ostr);
-    for (size_t i = offset; i < next_offset; ++i)
-    {
-        if (i != offset)
-            writeCString(",\n", ostr);
-        writeChar(' ', (indent + 1) * 4, ostr);
-        nested->serializeTextJSONPretty(nested_column, i, ostr, settings, indent + 1);
-    }
-    writeChar('\n', ostr);
-    writeChar(' ', indent * 4, ostr);
-    writeChar(']', ostr);
-}
-
 
 void SerializationArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {

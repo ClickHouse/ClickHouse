@@ -5,6 +5,7 @@
 #include <Access/GSSAcceptor.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <base/extended_types.h>
 
 #include <chrono>
 #include <map>
@@ -42,7 +43,7 @@ public:
 private:
     struct LDAPCacheEntry
     {
-        std::size_t last_successful_params_hash = 0;
+        UInt128 last_successful_params_hash = 0;
         std::chrono::steady_clock::time_point last_successful_authentication_timestamp;
         LDAPClient::SearchResultsList last_successful_role_search_results;
     };

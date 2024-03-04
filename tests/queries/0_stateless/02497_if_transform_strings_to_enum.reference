@@ -405,6 +405,16 @@ QUERY id: 0
     TABLE id: 7, table_name: system.numbers
   LIMIT
     CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt64
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
 SELECT transform(number, [NULL], _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\'), _CAST(\'other\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\'))
 FROM
 (
@@ -414,38 +424,56 @@ FROM
 )
 QUERY id: 0
   PROJECTION COLUMNS
-    transform(number, [NULL], [\'google\', \'censor.net\', \'yahoo\'], \'other\') String
+    transform(number, [NULL], [\'google\', \'censor.net\', \'yahoo\'], \'other\') Nullable(Nothing)
   PROJECTION
     LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
+      FUNCTION id: 2, function_name: transform, function_type: ordinary, result_type: Nullable(Nothing)
         ARGUMENTS
-          LIST id: 3, nodes: 1
-            FUNCTION id: 4, function_name: transform, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-              ARGUMENTS
-                LIST id: 5, nodes: 4
-                  COLUMN id: 6, column_name: number, result_type: Nullable(Nothing), source_id: 7
-                  CONSTANT id: 8, constant_value: Array_[NULL], constant_value_type: Array(Nullable(Nothing))
-                  FUNCTION id: 9, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-                    ARGUMENTS
-                      LIST id: 10, nodes: 2
-                        CONSTANT id: 11, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
-                        CONSTANT id: 12, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
-                  FUNCTION id: 13, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-                    ARGUMENTS
-                      LIST id: 14, nodes: 2
-                        CONSTANT id: 15, constant_value: \'other\', constant_value_type: String
-                        CONSTANT id: 16, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
+          LIST id: 3, nodes: 4
+            COLUMN id: 4, column_name: number, result_type: Nullable(Nothing), source_id: 5
+            CONSTANT id: 6, constant_value: Array_[NULL], constant_value_type: Array(Nullable(Nothing))
+            CONSTANT id: 7, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
+            CONSTANT id: 8, constant_value: \'other\', constant_value_type: String
   JOIN TREE
-    QUERY id: 7, is_subquery: 1
+    QUERY id: 5, is_subquery: 1
       PROJECTION COLUMNS
         number Nullable(Nothing)
       PROJECTION
-        LIST id: 17, nodes: 1
-          CONSTANT id: 18, constant_value: NULL, constant_value_type: Nullable(Nothing)
+        LIST id: 9, nodes: 1
+          CONSTANT id: 10, constant_value: NULL, constant_value_type: Nullable(Nothing)
       JOIN TREE
-        TABLE id: 19, table_name: system.numbers
+        TABLE id: 11, table_name: system.numbers
       LIMIT
-        CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt64
+        CONSTANT id: 12, constant_value: UInt64_10, constant_value_type: UInt64
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+SELECT transform(number, NULL, _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\'), _CAST(\'other\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\'))
+FROM system.numbers
+LIMIT 10
+QUERY id: 0
+  PROJECTION COLUMNS
+    transform(number, NULL, [\'google\', \'censor.net\', \'yahoo\'], \'other\') Nullable(Nothing)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: transform, function_type: ordinary, result_type: Nullable(Nothing)
+        ARGUMENTS
+          LIST id: 3, nodes: 4
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+            CONSTANT id: 6, constant_value: NULL, constant_value_type: Nullable(Nothing)
+            CONSTANT id: 7, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
+            CONSTANT id: 8, constant_value: \'other\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, table_name: system.numbers
+  LIMIT
+    CONSTANT id: 9, constant_value: UInt64_10, constant_value_type: UInt64
 other
 other
 google

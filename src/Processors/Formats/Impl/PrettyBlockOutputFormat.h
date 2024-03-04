@@ -29,6 +29,8 @@ protected:
     void consumeExtremes(Chunk) override;
 
     size_t total_rows = 0;
+    size_t terminal_width = 0;
+
     size_t row_number_width = 7; // "10000. "
 
     const FormatSettings format_settings;
@@ -39,7 +41,7 @@ protected:
 
     void write(Chunk chunk, PortKind port_kind);
     virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
-    void writeSquashedChunkIfNeeded();
+    void writeMonoChunkIfNeeded();
     void writeSuffix() override;
 
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
@@ -59,11 +61,11 @@ protected:
 
 private:
     bool mono_block;
-    Chunk squashed_chunk;
-    Stopwatch time_after_previous_chunk; /// For squashing.
+    /// For mono_block == true only
+    Chunk mono_chunk;
 };
 
-template <typename OutputFormat>
+template <class OutputFormat>
 void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, const String & base_name)
 {
     auto creator = [&](FormatFactory & fact, const String & name, bool no_escapes, bool mono_block)
@@ -81,6 +83,8 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
             }
             return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block);
         });
+        if (!mono_block)
+            factory.markOutputFormatSupportsParallelFormatting(name);
     };
     creator(factory, base_name, false, false);
     creator(factory, base_name + "NoEscapes", true, false);

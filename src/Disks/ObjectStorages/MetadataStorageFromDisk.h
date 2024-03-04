@@ -11,6 +11,9 @@
 namespace DB
 {
 
+struct UnlinkMetadataFileOperationOutcome;
+using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
+
 /// Store metadata on a separate disk
 /// (used for object storages, like S3 and related).
 class MetadataStorageFromDisk final : public IMetadataStorage
@@ -131,7 +134,7 @@ public:
 
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
-    void unlinkMetadata(const std::string & path) override;
+    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
 
 };

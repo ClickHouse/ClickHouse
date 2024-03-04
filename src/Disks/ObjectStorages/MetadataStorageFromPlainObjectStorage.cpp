@@ -108,7 +108,7 @@ StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std
 {
     std::string blob_name = object_storage->generateBlobNameForPath(path);
     size_t object_size = getFileSize(blob_name);
-    auto object = StoredObject(getAbsolutePath(blob_name), object_size, path);
+    auto object = StoredObject::create(*object_storage, getAbsolutePath(blob_name), object_size, path, /* exists */true);
     return {std::move(object)};
 }
 
@@ -119,7 +119,7 @@ const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getSt
 
 void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path)
 {
-    auto object = StoredObject(metadata_storage.getAbsolutePath(path));
+    auto object = StoredObject::create(*metadata_storage.object_storage, metadata_storage.getAbsolutePath(path));
     metadata_storage.object_storage->removeObject(object);
 }
 
@@ -136,9 +136,11 @@ void MetadataStorageFromPlainObjectStorageTransaction::addBlobToMetadata(
 {
     /// Noop, local metadata files is only one file, it is the metadata file itself.
 }
-void MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string &)
+
+UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string &)
 {
-    /// Noop, no separate metadata.
+    /// No hardlinks, so will always remove file.
+    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
 }
 
 }

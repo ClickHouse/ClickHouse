@@ -110,6 +110,9 @@ static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & colu
     if (node.isConstant())
         return;
 
+    if (node.isSubqueryOrSet())
+        return;
+
     if (!node.isFunction())
     {
         auto column_name = node.getColumnName();

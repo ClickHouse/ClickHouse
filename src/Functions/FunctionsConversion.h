@@ -33,6 +33,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -3080,14 +3081,40 @@ private:
         {
             return &ConvertImplGenericFromString<ColumnString>::execute;
         }
-        else
+        else if (const auto * agg_type = checkAndGetDataType<DataTypeAggregateFunction>(from_type_untyped.get()))
         {
-            if (cast_type == CastType::accurateOrNull)
-                return createToNullableColumnWrapper();
-            else
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
-                    from_type_untyped->getName(), to_type->getName());
+            if (agg_type->getFunction()->haveSameStateRepresentation(*to_type->getFunction()))
+            {
+                return [function = to_type->getFunction()](
+                           ColumnsWithTypeAndName & arguments,
+                           const DataTypePtr & /* result_type */,
+                           const ColumnNullable * /* nullable_source */,
+                           size_t /*input_rows_count*/) -> ColumnPtr
+                {
+                    const auto & argument_column = arguments.front();
+                    const auto * col_agg = checkAndGetColumn<ColumnAggregateFunction>(argument_column.column.get());
+                    if (col_agg)
+                    {
+                        auto new_col_agg = ColumnAggregateFunction::create(*col_agg);
+                        new_col_agg->set(function);
+                        return new_col_agg;
+                    }
+                    else
+                    {
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Illegal column {} for function CAST AS AggregateFunction",
+                            argument_column.column->getName());
+                    }
+                };
+            }
         }
+
+        if (cast_type == CastType::accurateOrNull)
+            return createToNullableColumnWrapper();
+        else
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
+                from_type_untyped->getName(), to_type->getName());
     }
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const
@@ -3098,18 +3125,12 @@ private:
             return &ConvertImplGenericFromString<ColumnString>::execute;
         }
 
-        DataTypePtr from_type_holder;
         const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
         const auto * from_type_map = checkAndGetDataType<DataTypeMap>(from_type_untyped.get());
 
         /// Convert from Map
         if (from_type_map)
-        {
-            /// Recreate array of unnamed tuples because otherwise it may work
-            /// unexpectedly while converting to array of named tuples.
-            from_type_holder = from_type_map->getNestedTypeWithUnnamedTuple();
-            from_type = assert_cast<const DataTypeArray *>(from_type_holder.get());
-        }
+            from_type = checkAndGetDataType<DataTypeArray>(from_type_map->getNestedType().get());
 
         if (!from_type)
         {
@@ -3301,7 +3322,7 @@ private:
         };
     }
 
-    WrapperType createMapToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
+    WrapperType createMapToMapWrrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
@@ -3322,7 +3343,7 @@ private:
     }
 
     /// The case of: [(key1, value1), (key2, value2), ...]
-    WrapperType createArrayToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
+    WrapperType createArrayToMapWrrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
@@ -3348,12 +3369,8 @@ private:
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get()))
         {
             if (from_tuple->getElements().size() != 2)
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "CAST AS Map from tuple requires 2 elements. "
-                    "Left type: {}, right type: {}",
-                    from_tuple->getName(),
-                    to_type->getName());
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Map from tuple requeires 2 elements. "
+                    "Left type: {}, right type: {}", from_tuple->getName(), to_type->getName());
 
             DataTypes from_kv_types;
             const auto & to_kv_types = to_type->getKeyValueTypes();
@@ -3374,18 +3391,14 @@ private:
         {
             const auto * nested_tuple = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
             if (!nested_tuple || nested_tuple->getElements().size() != 2)
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "CAST AS Map from array requires nested tuple of 2 elements. "
-                    "Left type: {}, right type: {}",
-                    from_array->getName(),
-                    to_type->getName());
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Map from array requeires nested tuple of 2 elements. "
+                    "Left type: {}, right type: {}", from_array->getName(), to_type->getName());
 
-            return createArrayToMapWrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
+            return createArrayToMapWrrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
         }
         else if (const auto * from_type = checkAndGetDataType<DataTypeMap>(from_type_untyped.get()))
         {
-            return createMapToMapWrapper(from_type->getKeyValueTypes(), to_type->getKeyValueTypes());
+            return createMapToMapWrrapper(from_type->getKeyValueTypes(), to_type->getKeyValueTypes());
         }
         else
         {
@@ -3868,7 +3881,16 @@ private:
             safe_convert_custom_types = to_type->getCustomName() && from_type_custom_name->getName() == to_type->getCustomName()->getName();
 
         if (from_type->equals(*to_type) && safe_convert_custom_types)
-            return createIdentityWrapper(from_type);
+        {
+            /// We can only use identity conversion for DataTypeAggregateFunction when they are strictly equivalent.
+            if (typeid_cast<const DataTypeAggregateFunction *>(from_type.get()))
+            {
+                if (DataTypeAggregateFunction::strictEquals(from_type, to_type))
+                    return createIdentityWrapper(from_type);
+            }
+            else
+                return createIdentityWrapper(from_type);
+        }
         else if (WhichDataType(from_type).isNothing())
             return createNothingWrapper(to_type.get());
 

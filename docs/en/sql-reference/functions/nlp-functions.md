@@ -1,7 +1,8 @@
 ---
 slug: /en/sql-reference/functions/nlp-functions
-sidebar_position: 130
-sidebar_label: NLP (experimental)
+sidebar_position: 67
+sidebar_label: NLP
+title: "[experimental] Natural Language Processing functions"
 ---
 
 :::note
@@ -20,8 +21,8 @@ stem('language', word)
 
 **Arguments**
 
-- `language` — Language which rules will be applied. Must be in lowercase. [String](../../sql-reference/data-types/string.md#string).
-- `word` — word that needs to be stemmed. Must be in lowercase. [String](../../sql-reference/data-types/string.md#string).
+-   `language` — Language which rules will be applied. Must be in lowercase. [String](../../sql-reference/data-types/string.md#string).
+-   `word` — word that needs to be stemmed. Must be in lowercase. [String](../../sql-reference/data-types/string.md#string).
 
 **Examples**
 
@@ -51,8 +52,8 @@ lemmatize('language', word)
 
 **Arguments**
 
-- `language` — Language which rules will be applied. [String](../../sql-reference/data-types/string.md#string).
-- `word` — Word that needs to be lemmatized. Must be lowercase. [String](../../sql-reference/data-types/string.md#string).
+-   `language` — Language which rules will be applied. [String](../../sql-reference/data-types/string.md#string).
+-   `word` — Word that needs to be lemmatized. Must be lowercase. [String](../../sql-reference/data-types/string.md#string).
 
 **Examples**
 
@@ -96,8 +97,8 @@ synonyms('extension_name', word)
 
 **Arguments**
 
-- `extension_name` — Name of the extension in which search will be performed. [String](../../sql-reference/data-types/string.md#string).
-- `word` — Word that will be searched in extension. [String](../../sql-reference/data-types/string.md#string).
+-   `extension_name` — Name of the extension in which search will be performed. [String](../../sql-reference/data-types/string.md#string).
+-   `word` — Word that will be searched in extension. [String](../../sql-reference/data-types/string.md#string).
 
 **Examples**
 
@@ -145,7 +146,7 @@ detectLanguage('text_to_be_analyzed')
 
 **Arguments**
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
+-   `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
@@ -183,11 +184,11 @@ detectLanguageMixed('text_to_be_analyzed')
 
 **Arguments**
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
+-   `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
-- `Map(String, Float32)`: The keys are 2-letter ISO codes and the values are a percentage of text found for that language
+- `Map(String, Float32)`: The keys are 2-letter ISO codes and the values are a perentage of text found for that language
 
 
 **Examples**
@@ -219,7 +220,7 @@ detectLanguageUnknown('text_to_be_analyzed')
 
 **Arguments**
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
+-   `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
@@ -259,7 +260,7 @@ detectCharset('text_to_be_analyzed')
 
 **Arguments**
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
+-   `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 

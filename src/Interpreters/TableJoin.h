@@ -19,6 +19,7 @@
 #include <utility>
 #include <memory>
 #include <base/types.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -215,7 +216,9 @@ public:
     JoinStrictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
-    VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
+    VolumePtr getTemporaryVolume() { return tmp_volume; }
+
+    ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {

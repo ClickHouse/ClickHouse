@@ -15,8 +15,8 @@ ClickHouse supports special functions for working with dictionaries that can be 
 
 ClickHouse supports:
 
-- Dictionaries with a [set of functions](../../sql-reference/functions/ext-dict-functions.md).
-- [Embedded dictionaries](#embedded_dictionaries) with a specific [set of functions](../../sql-reference/functions/ym-dict-functions.md).
+-   Dictionaries with a [set of functions](../../sql-reference/functions/ext-dict-functions.md).
+-   [Embedded dictionaries](#embedded_dictionaries) with a specific [set of functions](../../sql-reference/functions/ym-dict-functions.md).
 
 
 :::tip Tutorial
@@ -27,9 +27,9 @@ You can add your own dictionaries from various data sources. The source for a di
 
 ClickHouse:
 
-- Fully or partially stores dictionaries in RAM.
-- Periodically updates dictionaries and dynamically loads missing values. In other words, dictionaries can be loaded dynamically.
-- Allows creating dictionaries with xml files or [DDL queries](../../sql-reference/statements/create/dictionary.md).
+-   Fully or partially stores dictionaries in RAM.
+-   Periodically updates dictionaries and dynamically loads missing values. In other words, dictionaries can be loaded dynamically.
+-   Allows creating dictionaries with xml files or [DDL queries](../../sql-reference/statements/create/dictionary.md).
 
 The configuration of dictionaries can be located in one or more xml-files. The path to the configuration is specified in the [dictionaries_config](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) parameter.
 
@@ -37,9 +37,9 @@ Dictionaries can be loaded at server startup or at first use, depending on the [
 
 The [dictionaries](../../operations/system-tables/dictionaries.md#system_tables-dictionaries) system table contains information about dictionaries configured at server. For each dictionary you can find there:
 
-- Status of the dictionary.
-- Configuration parameters.
-- Metrics like amount of RAM allocated for the dictionary or a number of queries since the dictionary was successfully loaded.
+-   Status of the dictionary.
+-   Configuration parameters.
+-   Metrics like amount of RAM allocated for the dictionary or a number of queries since the dictionary was successfully loaded.
 
 <CloudDetails />
 
@@ -133,13 +133,13 @@ Caching is not recommended because of potentially poor performance and difficult
 
 There are several ways to improve dictionary performance:
 
-- Call the function for working with the dictionary after `GROUP BY`.
-- Mark attributes to extract as injective. An attribute is called injective if different attribute values correspond to different keys. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
+-   Call the function for working with the dictionary after `GROUP BY`.
+-   Mark attributes to extract as injective. An attribute is called injective if different attribute values correspond to different keys. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
 
 ClickHouse generates an exception for errors with dictionaries. Examples of errors:
 
-- The dictionary being accessed could not be loaded.
-- Error querying a `cached` dictionary.
+-   The dictionary being accessed could not be loaded.
+-   Error querying a `cached` dictionary.
 
 You can view the list of dictionaries and their statuses in the [system.dictionaries](../../operations/system-tables/dictionaries.md) table.
 
@@ -201,22 +201,22 @@ Configuration example of a composite key (key has one element with [String](../.
 
 ## Ways to Store Dictionaries in Memory
 
-- [flat](#flat)
-- [hashed](#hashed)
-- [sparse_hashed](#sparse_hashed)
-- [complex_key_hashed](#complex_key_hashed)
-- [complex_key_sparse_hashed](#complex_key_sparse_hashed)
-- [hashed_array](#hashed_array)
-- [complex_key_hashed_array](#complex_key_hashed_array)
-- [range_hashed](#range_hashed)
-- [complex_key_range_hashed](#complex_key_range_hashed)
-- [cache](#cache)
-- [complex_key_cache](#complex_key_cache)
-- [ssd_cache](#ssd_cache)
-- [complex_key_ssd_cache](#complex_key_ssd_cache)
-- [direct](#direct)
-- [complex_key_direct](#complex_key_direct)
-- [ip_trie](#ip_trie)
+-   [flat](#flat)
+-   [hashed](#hashed)
+-   [sparse_hashed](#sparse_hashed)
+-   [complex_key_hashed](#complex_key_hashed)
+-   [complex_key_sparse_hashed](#complex_key_sparse_hashed)
+-   [hashed_array](#hashed_array)
+-   [complex_key_hashed_array](#complex_key_hashed_array)
+-   [range_hashed](#range_hashed)
+-   [complex_key_range_hashed](#complex_key_range_hashed)
+-   [cache](#cache)
+-   [complex_key_cache](#complex_key_cache)
+-   [ssd_cache](#ssd_cache)
+-   [complex_key_ssd_cache](#complex_key_ssd_cache)
+-   [direct](#direct)
+-   [complex_key_direct](#complex_key_direct)
+-   [ip_trie](#ip_trie)
 
 ### flat
 
@@ -476,10 +476,10 @@ This function returns the value for the specified `id`s and the date range that 
 
 Details of the algorithm:
 
-- If the `id` is not found or a range is not found for the `id`, it returns the default value of the attribute's type.
-- If there are overlapping ranges and `range_lookup_strategy=min`, it returns a matching range with minimal `range_min`, if several ranges found, it returns a range with minimal `range_max`, if again several ranges found (several ranges had the same `range_min` and `range_max` it returns a random range of them.
-- If there are overlapping ranges and `range_lookup_strategy=max`, it returns a matching range with maximal `range_min`, if several ranges found, it returns a range with maximal `range_max`, if again several ranges found (several ranges had the same `range_min` and `range_max` it returns a random range of them.
-- If the `range_max` is `NULL`, the range is open. `NULL` is treated as maximal possible value. For the `range_min` `1970-01-01` or `0` (-MAX_INT) can be used as the open value.
+-   If the `id` is not found or a range is not found for the `id`, it returns the default value of the attribute's type.
+-   If there are overlapping ranges and `range_lookup_strategy=min`, it returns a matching range with minimal `range_min`, if several ranges found, it returns a range with minimal `range_max`, if again several ranges found (several ranges had the same `range_min` and `range_max` it returns a random range of them.
+-   If there are overlapping ranges and `range_lookup_strategy=max`, it returns a matching range with maximal `range_min`, if several ranges found, it returns a range with maximal `range_max`, if again several ranges found (several ranges had the same `range_min` and `range_max` it returns a random range of them.
+-   If the `range_max` is `NULL`, the range is open. `NULL` is treated as maximal possible value. For the `range_min` `1970-01-01` or `0` (-MAX_INT) can be used as the open value.
 
 Configuration example:
 
@@ -919,14 +919,14 @@ In this case, ClickHouse can reload the dictionary earlier if the dictionary con
 
 When updating the dictionaries, the ClickHouse server applies different logic depending on the type of [source](#dictionary-sources):
 
-- For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
-- For MySQL source, the time of modification is checked using a `SHOW TABLE STATUS` query (in case of MySQL 8 you need to disable meta-information caching in MySQL by `set global information_schema_stats_expiry=0`).
-- Dictionaries from other sources are updated every time by default.
+-   For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
+-   For MySQL source, the time of modification is checked using a `SHOW TABLE STATUS` query (in case of MySQL 8 you need to disable meta-information caching in MySQL by `set global information_schema_stats_expiry=0`).
+-   Dictionaries from other sources are updated every time by default.
 
 For other sources (ODBC, PostgreSQL, ClickHouse, etc), you can set up a query that will update the dictionaries only if they really changed, rather than each time. To do this, follow these steps:
 
-- The dictionary table must have a field that always changes when the source data is updated.
-- The settings of the source must specify a query that retrieves the changing field. The ClickHouse server interprets the query result as a row, and if this row has changed relative to its previous state, the dictionary is updated. Specify the query in the `<invalidate_query>` field in the settings for the [source](#dictionary-sources).
+-   The dictionary table must have a field that always changes when the source data is updated.
+-   The settings of the source must specify a query that retrieves the changing field. The ClickHouse server interprets the query result as a row, and if this row has changed relative to its previous state, the dictionary is updated. Specify the query in the `<invalidate_query>` field in the settings for the [source](#dictionary-sources).
 
 Example of settings:
 
@@ -949,13 +949,13 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 ...
 ```
 
-For `Cache`, `ComplexKeyCache`, `SSDCache`, and `SSDComplexKeyCache` dictionaries both synchronious and asynchronous updates are supported.
+For `Cache`, `ComplexKeyCache`, `SSDCache`, and `SSDComplexKeyCache` dictionaries both synchronious and asynchronious updates are supported.
 
 It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to only request data that was changed after the previous update. If `update_field` is specified as part of the dictionary source configuration, value of the previous update time in seconds will be added to the data request. Depends on source type (Executable, HTTP, MySQL, PostgreSQL, ClickHouse, or ODBC) different logic will be applied to `update_field` before request data from an external source.
 
-- If the source is HTTP then `update_field` will be added as a query parameter with the last update time as the parameter value.
-- If the source is Executable then `update_field` will be added as an executable script argument with the last update time as the argument value.
-- If the source is ClickHouse, MySQL, PostgreSQL, ODBC there will be an additional part of `WHERE`, where `update_field` is compared as greater or equal with the last update time.
+-   If the source is HTTP then `update_field` will be added as a query parameter with the last update time as the parameter value.
+-   If the source is Executable then `update_field` will be added as an executable script argument with the last update time as the argument value.
+-   If the source is ClickHouse, MySQL, PostgreSQL, ODBC there will be an additional part of `WHERE`, where `update_field` is compared as greater or equal with the last update time.
     - Per default, this `WHERE`-condition is checked at the highest level of the SQL-Query. Alternatively, the condition can be checked in any other `WHERE`-clause within the query using the `{condition}`-keyword. Example:
     ```sql
     ...
@@ -1054,18 +1054,18 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 
 Types of sources (`source_type`):
 
-- [Local file](#local_file)
-- [Executable File](#executable)
-- [Executable Pool](#executable_pool)
-- [HTTP(s)](#http)
-- DBMS
-    - [ODBC](#odbc)
-    - [MySQL](#mysql)
-    - [ClickHouse](#clickhouse)
-    - [MongoDB](#mongodb)
-    - [Redis](#redis)
-    - [Cassandra](#cassandra)
-    - [PostgreSQL](#postgresql)
+-   [Local file](#local_file)
+-   [Executable File](#executable)
+-   [Executable Pool](#executable_pool)
+-   [HTTP(s)](#http)
+-   DBMS
+    -   [ODBC](#odbc)
+    -   [MySQL](#mysql)
+    -   [ClickHouse](#clickhouse)
+    -   [MongoDB](#mongodb)
+    -   [Redis](#redis)
+    -   [Cassandra](#cassandra)
+    -   [PostgreSQL](#postgresql)
 
 ## Local File {#local_file}
 
@@ -1088,14 +1088,14 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 
 Setting fields:
 
-- `path` – The absolute path to the file.
-- `format` – The file format. All the formats described in [Formats](../../interfaces/formats.md#formats) are supported.
+-   `path` – The absolute path to the file.
+-   `format` – The file format. All the formats described in [Formats](../../interfaces/formats.md#formats) are supported.
 
 When a dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in the `user_files` directory to prevent DB users from accessing arbitrary files on the ClickHouse node.
 
 **See Also**
 
-- [Dictionary function](../../sql-reference/table-functions/dictionary.md#dictionary-function)
+-   [Dictionary function](../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
 ## Executable File {#executable}
 
@@ -1115,14 +1115,14 @@ Example of settings:
 
 Setting fields:
 
-- `command` — The absolute path to the executable file, or the file name (if the command's directory is in the `PATH`).
-- `format` — The file format. All the formats described in [Formats](../../interfaces/formats.md#formats) are supported.
-- `command_termination_timeout` — The executable script should contain a main read-write loop. After the dictionary is destroyed, the pipe is closed, and the executable file will have `command_termination_timeout` seconds to shutdown before ClickHouse will send a SIGTERM signal to the child process. `command_termination_timeout` is specified in seconds. Default value is 10. Optional parameter.
-- `command_read_timeout` - Timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
-- `command_write_timeout` - Timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
-- `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false.
-- `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using a whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional parameter.
-- `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
+-   `command` — The absolute path to the executable file, or the file name (if the command's directory is in the `PATH`).
+-   `format` — The file format. All the formats described in [Formats](../../interfaces/formats.md#formats) are supported.
+-   `command_termination_timeout` — The executable script should contain a main read-write loop. After the dictionary is destroyed, the pipe is closed, and the executable file will have `command_termination_timeout` seconds to shutdown before ClickHouse will send a SIGTERM signal to the child process. `command_termination_timeout` is specified in seconds. Default value is 10. Optional parameter.
+-   `command_read_timeout` - Timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
+-   `command_write_timeout` - Timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
+-   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false.
+-   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using a whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional parameter.
+-   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled; otherwise, the DB user would be able to execute arbitrary binaries on the ClickHouse node.
 
@@ -1148,16 +1148,16 @@ Example of settings:
 
 Setting fields:
 
-- `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
-- `format` — The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
-- `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions. Default value is `16`.
-- `command_termination_timeout` — executable script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
-- `max_command_execution_time` — Maximum executable script command execution time for processing block of data. Specified in seconds. Default value is 10. Optional parameter.
-- `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
-- `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
-- `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false. Optional parameter.
-- `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
-- `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
+-   `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
+-   `format` — The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
+-   `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions. Default value is `16`.
+-   `command_termination_timeout` — executable script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
+-   `max_command_execution_time` — Maximum executable script command execution time for processing block of data. Specified in seconds. Default value is 10. Optional parameter.
+-   `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
+-   `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
+-   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false. Optional parameter.
+-   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
+-   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
@@ -1201,15 +1201,15 @@ In order for ClickHouse to access an HTTPS resource, you must [configure openSSL
 
 Setting fields:
 
-- `url` – The source URL.
-- `format` – The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
-- `credentials` – Basic HTTP authentication. Optional parameter.
-- `user` – Username required for the authentication.
-- `password` – Password required for the authentication.
-- `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
-- `header` – Single HTTP header entry.
-- `name` – Identifiant name used for the header send on the request.
-- `value` – Value set for a specific identifiant name.
+-   `url` – The source URL.
+-   `format` – The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
+-   `credentials` – Basic HTTP authentication. Optional parameter.
+-   `user` – Username required for the authentication.
+-   `password` – Password required for the authentication.
+-   `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
+-   `header` – Single HTTP header entry.
+-   `name` – Identifiant name used for the header send on the request.
+-   `value` – Value set for a specific identifiant name.
 
 When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 
@@ -1461,11 +1461,11 @@ SOURCE(ODBC(
 
 Setting fields:
 
-- `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
-- `table` – Name of the table and schema if exists.
-- `connection_string` – Connection string.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
-- `query` – The custom query. Optional parameter.
+-   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
+-   `table` – Name of the table and schema if exists.
+-   `connection_string` – Connection string.
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
+-   `query` – The custom query. Optional parameter.
 
 :::note
 The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
@@ -1523,28 +1523,28 @@ SOURCE(MYSQL(
 
 Setting fields:
 
-- `port` – The port on the MySQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `port` – The port on the MySQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 
-- `user` – Name of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `user` – Name of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 
-- `password` – Password of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `password` – Password of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 
-- `replica` – Section of replica configurations. There can be multiple sections.
+-   `replica` – Section of replica configurations. There can be multiple sections.
 
         - `replica/host` – The MySQL host.
         - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 
-- `db` – Name of the database.
+-   `db` – Name of the database.
 
-- `table` – Name of the table.
+-   `table` – Name of the table.
 
-- `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional parameter.
+-   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional parameter.
 
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
 
-- `fail_on_connection_loss` – The configuration parameter that controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the ClickHouse server retries to execute the query three times before throwing an exception. Note that retrying leads to increased response times. Default value: `false`.
+-   `fail_on_connection_loss` – The configuration parameter that controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the ClickHouse server retries to execute the query three times before throwing an exception. Note that retrying leads to increased response times. Default value: `false`.
 
-- `query` – The custom query. Optional parameter.
+-   `query` – The custom query. Optional parameter.
 
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
@@ -1630,16 +1630,16 @@ SOURCE(CLICKHOUSE(
 
 Setting fields:
 
-- `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../../engines/table-engines/special/distributed.md) table and enter it in subsequent configurations.
-- `port` – The port on the ClickHouse server.
-- `user` – Name of the ClickHouse user.
-- `password` – Password of the ClickHouse user.
-- `db` – Name of the database.
-- `table` – Name of the table.
-- `where` – The selection criteria. May be omitted.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
-- `secure` - Use ssl for connection.
-- `query` – The custom query. Optional parameter.
+-   `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../../engines/table-engines/special/distributed.md) table and enter it in subsequent configurations.
+-   `port` – The port on the ClickHouse server.
+-   `user` – Name of the ClickHouse user.
+-   `password` – Password of the ClickHouse user.
+-   `db` – Name of the database.
+-   `table` – Name of the table.
+-   `where` – The selection criteria. May be omitted.
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
+-   `secure` - Use ssl for connection.
+-   `query` – The custom query. Optional parameter.
 
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
@@ -1658,7 +1658,6 @@ Example of settings:
         <password></password>
         <db>test</db>
         <collection>dictionary_source</collection>
-        <options>ssl=true</options>
     </mongodb>
 </source>
 ```
@@ -1673,20 +1672,17 @@ SOURCE(MONGODB(
     password ''
     db 'test'
     collection 'dictionary_source'
-    options 'ssl=true'
 ))
 ```
 
 Setting fields:
 
-- `host` – The MongoDB host.
-- `port` – The port on the MongoDB server.
-- `user` – Name of the MongoDB user.
-- `password` – Password of the MongoDB user.
-- `db` – Name of the database.
-- `collection` – Name of the collection.
-- `options` -  MongoDB connection string options (optional parameter).
-
+-   `host` – The MongoDB host.
+-   `port` – The port on the MongoDB server.
+-   `user` – Name of the MongoDB user.
+-   `password` – Password of the MongoDB user.
+-   `db` – Name of the database.
+-   `collection` – Name of the collection.
 
 ### Redis
 
@@ -1716,10 +1712,10 @@ SOURCE(REDIS(
 
 Setting fields:
 
-- `host` – The Redis host.
-- `port` – The port on the Redis server.
-- `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
-- `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
+-   `host` – The Redis host.
+-   `port` – The port on the Redis server.
+-   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
+-   `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
 ### Cassandra
 
@@ -1746,18 +1742,18 @@ Example of settings:
 
 Setting fields:
 
-- `host` – The Cassandra host or comma-separated list of hosts.
-- `port` – The port on the Cassandra servers. If not specified, default port 9042 is used.
-- `user` – Name of the Cassandra user.
-- `password` – Password of the Cassandra user.
-- `keyspace` – Name of the keyspace (database).
-- `column_family` – Name of the column family (table).
-- `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
-- `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table. Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra. Default value is 1 (the first key column is a partition key and other key columns are clustering key).
-- `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default value is `One`.
-- `where` – Optional selection criteria.
-- `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
-- `query` – The custom query. Optional parameter.
+-   `host` – The Cassandra host or comma-separated list of hosts.
+-   `port` – The port on the Cassandra servers. If not specified, default port 9042 is used.
+-   `user` – Name of the Cassandra user.
+-   `password` – Password of the Cassandra user.
+-   `keyspace` – Name of the keyspace (database).
+-   `column_family` – Name of the column family (table).
+-   `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
+-   `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table. Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra. Default value is 1 (the first key column is a partition key and other key columns are clustering key).
+-   `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default value is `One`.
+-   `where` – Optional selection criteria.
+-   `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
+-   `query` – The custom query. Optional parameter.
 
 :::note
 The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
@@ -1802,19 +1798,19 @@ SOURCE(POSTGRESQL(
 
 Setting fields:
 
-- `host` – The host on the PostgreSQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-- `port` – The port on the PostgreSQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-- `user` – Name of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-- `password` – Password of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
-- `replica` – Section of replica configurations. There can be multiple sections:
-    - `replica/host` – The PostgreSQL host.
-    - `replica/port` – The PostgreSQL port.
-    - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
-- `db` – Name of the database.
-- `table` – Name of the table.
-- `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional parameter.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
-- `query` – The custom query. Optional parameter.
+-   `host` – The host on the PostgreSQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `port` – The port on the PostgreSQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `user` – Name of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `password` – Password of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `replica` – Section of replica configurations. There can be multiple sections:
+    -   `replica/host` – The PostgreSQL host.
+    -   `replica/port` – The PostgreSQL port.
+    -   `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+-   `db` – Name of the database.
+-   `table` – Name of the table.
+-   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional parameter.
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
+-   `query` – The custom query. Optional parameter.
 
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
@@ -1864,8 +1860,8 @@ XML description:
 
 Attributes are described in the elements:
 
-- `<id>` — Key column
-- `<attribute>` — Data column: there can be a multiple number of attributes.
+-   `<id>` — Key column
+-   `<attribute>` — Data column: there can be a multiple number of attributes.
 
 DDL query:
 
@@ -1880,15 +1876,15 @@ PRIMARY KEY Id
 
 Attributes are described in the query body:
 
-- `PRIMARY KEY` — Key column
-- `AttrName AttrType` — Data column. There can be a multiple number of attributes.
+-   `PRIMARY KEY` — Key column
+-   `AttrName AttrType` — Data column. There can be a multiple number of attributes.
 
 ## Key
 
 ClickHouse supports the following types of keys:
 
-- Numeric key. `UInt64`. Defined in the `<id>` tag or using `PRIMARY KEY` keyword.
-- Composite key. Set of values of different types. Defined in the tag `<key>` or `PRIMARY KEY` keyword.
+-   Numeric key. `UInt64`. Defined in the `<id>` tag or using `PRIMARY KEY` keyword.
+-   Composite key. Set of values of different types. Defined in the tag `<key>` or `PRIMARY KEY` keyword.
 
 An xml structure can contain either `<id>` or `<key>`. DDL-query must contain single `PRIMARY KEY`.
 
@@ -1910,7 +1906,7 @@ Configuration example:
 
 Configuration fields:
 
-- `name` – The name of the column with keys.
+-   `name` – The name of the column with keys.
 
 For DDL-query:
 
@@ -1923,7 +1919,7 @@ PRIMARY KEY Id
 ...
 ```
 
-- `PRIMARY KEY` – The name of the column with keys.
+-   `PRIMARY KEY` – The name of the column with keys.
 
 ### Composite Key
 
@@ -2122,8 +2118,8 @@ LAYOUT(POLYGON(STORE_POLYGON_KEY_COLUMN 1))
 
 When configuring the polygon dictionary, the key must have one of two types:
 
-- A simple polygon. It is an array of points.
-- MultiPolygon. It is an array of polygons. Each polygon is a two-dimensional array of points. The first element of this array is the outer boundary of the polygon, and subsequent elements specify areas to be excluded from it.
+-   A simple polygon. It is an array of points.
+-   MultiPolygon. It is an array of polygons. Each polygon is a two-dimensional array of points. The first element of this array is the outer boundary of the polygon, and subsequent elements specify areas to be excluded from it.
 
 Points can be specified as an array or a tuple of their coordinates. In the current implementation, only two-dimensional points are supported.
 
@@ -2131,17 +2127,17 @@ The user can upload their own data in all formats supported by ClickHouse.
 
 There are 3 types of [in-memory storage](#storig-dictionaries-in-memory) available:
 
-- `POLYGON_SIMPLE`. This is a naive implementation, where a linear pass through all polygons is made for each query, and membership is checked for each one without using additional indexes.
+-   `POLYGON_SIMPLE`. This is a naive implementation, where a linear pass through all polygons is made for each query, and membership is checked for each one without using additional indexes.
 
-- `POLYGON_INDEX_EACH`. A separate index is built for each polygon, which allows you to quickly check whether it belongs in most cases (optimized for geographical regions).
+-   `POLYGON_INDEX_EACH`. A separate index is built for each polygon, which allows you to quickly check whether it belongs in most cases (optimized for geographical regions).
 Also, a grid is superimposed on the area under consideration, which significantly narrows the number of polygons under consideration.
 The grid is created by recursively dividing the cell into 16 equal parts and is configured with two parameters.
 The division stops when the recursion depth reaches `MAX_DEPTH` or when the cell crosses no more than `MIN_INTERSECTIONS` polygons.
 To respond to the query, there is a corresponding cell, and the index for the polygons stored in it is accessed alternately.
 
-- `POLYGON_INDEX_CELL`. This placement also creates the grid described above. The same options are available. For each sheet cell, an index is built on all pieces of polygons that fall into it, which allows you to quickly respond to a request.
+-   `POLYGON_INDEX_CELL`. This placement also creates the grid described above. The same options are available. For each sheet cell, an index is built on all pieces of polygons that fall into it, which allows you to quickly respond to a request.
 
-- `POLYGON`. Synonym to `POLYGON_INDEX_CELL`.
+-   `POLYGON`. Synonym to `POLYGON_INDEX_CELL`.
 
 Dictionary queries are carried out using standard [functions](../../sql-reference/functions/ext-dict-functions.md) for working with dictionaries.
 An important difference is that here the keys will be the points for which you want to find the polygon containing them.
@@ -2276,10 +2272,10 @@ ClickHouse contains a built-in feature for working with a geobase.
 
 This allows you to:
 
-- Use a region’s ID to get its name in the desired language.
-- Use a region’s ID to get the ID of a city, area, federal district, country, or continent.
-- Check whether a region is part of another region.
-- Get a chain of parent regions.
+-   Use a region’s ID to get its name in the desired language.
+-   Use a region’s ID to get the ID of a city, area, federal district, country, or continent.
+-   Check whether a region is part of another region.
+-   Get a chain of parent regions.
 
 All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with web analytics dictionaries”.
 
@@ -2296,15 +2292,15 @@ You can also create these files yourself. The file format is as follows:
 
 `regions_hierarchy*.txt`: TabSeparated (no header), columns:
 
-- region ID (`UInt32`)
-- parent region ID (`UInt32`)
-- region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types do not have values
-- population (`UInt32`) — optional column
+-   region ID (`UInt32`)
+-   parent region ID (`UInt32`)
+-   region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types do not have values
+-   population (`UInt32`) — optional column
 
 `regions_names_*.txt`: TabSeparated (no header), columns:
 
-- region ID (`UInt32`)
-- region name (`String`) — Can’t contain tabs or line feeds, even escaped ones.
+-   region ID (`UInt32`)
+-   region name (`String`) — Can’t contain tabs or line feeds, even escaped ones.
 
 A flat array is used for storing in RAM. For this reason, IDs shouldn’t be more than a million.
 
@@ -2325,10 +2321,10 @@ ClickHouse contains a built-in feature for working with a geobase.
 
 This allows you to:
 
-- Use a region’s ID to get its name in the desired language.
-- Use a region’s ID to get the ID of a city, area, federal district, country, or continent.
-- Check whether a region is part of another region.
-- Get a chain of parent regions.
+-   Use a region’s ID to get its name in the desired language.
+-   Use a region’s ID to get the ID of a city, area, federal district, country, or continent.
+-   Check whether a region is part of another region.
+-   Get a chain of parent regions.
 
 All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with web analytics dictionaries”.
 
@@ -2345,15 +2341,15 @@ You can also create these files yourself. The file format is as follows:
 
 `regions_hierarchy*.txt`: TabSeparated (no header), columns:
 
-- region ID (`UInt32`)
-- parent region ID (`UInt32`)
-- region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types do not have values
-- population (`UInt32`) — optional column
+-   region ID (`UInt32`)
+-   parent region ID (`UInt32`)
+-   region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types do not have values
+-   population (`UInt32`) — optional column
 
 `regions_names_*.txt`: TabSeparated (no header), columns:
 
-- region ID (`UInt32`)
-- region name (`String`) — Can’t contain tabs or line feeds, even escaped ones.
+-   region ID (`UInt32`)
+-   region name (`String`) — Can’t contain tabs or line feeds, even escaped ones.
 
 A flat array is used for storing in RAM. For this reason, IDs shouldn’t be more than a million.
 

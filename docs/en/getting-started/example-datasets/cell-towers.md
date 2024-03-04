@@ -308,7 +308,7 @@ To build a Superset dashboard using the OpenCelliD dataset you should:
   ![Choose clickhouse connect as database type](@site/docs/en/getting-started/example-datasets/images/superset-choose-a-database.png)
 
 :::note
-  If **ClickHouse Connect** is not one of your options, then you will need to install it. The command is `pip install clickhouse-connect`, and more info is [available here](https://pypi.org/project/clickhouse-connect/).
+  If **ClickHouse Connect** is not one of your options, then you will need to install it.  The comand is `pip install clickhouse-connect`, and more info is [available here](https://pypi.org/project/clickhouse-connect/).
 :::
 
 #### Add your connection details:

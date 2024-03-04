@@ -124,8 +124,6 @@ TRUSTED_CONTRIBUTORS = {
         "tylerhannan",  # ClickHouse Employee
         "myrrc",  # Mike Kot, DoubleCloud
         "thevar1able",  # ClickHouse Employee
-        "aalexfvk",
-        "MikhailBurdukov",
     ]
 }
 

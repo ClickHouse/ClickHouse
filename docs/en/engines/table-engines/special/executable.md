@@ -120,7 +120,7 @@ Some comments about the `sentiment` table:
 - The `TabSeparated` format means our Python script needs to generate rows of raw data that contain tab-separated values
 - The query selects two columns from `hackernews`. The Python script will need to parse out those column values from the incoming rows
 
-Here is the definition of `sentiment.py`:
+Here is the defintion of `sentiment.py`:
 
 ```python
 #!/usr/local/bin/python3.9

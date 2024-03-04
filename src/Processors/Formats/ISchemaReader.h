@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 /// Base class for schema inference for the data in some specific format.
-/// It reads some data from read buffer and tries to determine the schema
+/// It reads some data from read buffer and try to determine the schema
 /// from read data.
 class ISchemaReader
 {

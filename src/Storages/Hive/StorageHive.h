@@ -7,6 +7,7 @@
 #include <Poco/URI.h>
 #include <ThriftHiveMetastore.h>
 
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/HDFS/HDFSCommon.h>
@@ -65,7 +66,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns() const;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const override;

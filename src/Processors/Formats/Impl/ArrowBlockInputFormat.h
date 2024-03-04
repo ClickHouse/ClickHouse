@@ -27,6 +27,8 @@ public:
 
     const BlockMissingValues & getMissingValues() const override;
 
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
+
 private:
     Chunk generate() override;
 
@@ -48,6 +50,7 @@ private:
     int record_batch_current = 0;
 
     BlockMissingValues block_missing_values;
+    size_t approx_bytes_read_for_chunk;
 
     const FormatSettings format_settings;
 

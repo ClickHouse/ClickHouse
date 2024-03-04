@@ -375,22 +375,15 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
                 try
                 {
-                    String source = binary_self_path.string();
-                    String destination = main_bin_tmp_path.string();
+                    ReadBufferFromFile in(binary_self_path.string());
+                    WriteBufferFromFile out(main_bin_tmp_path.string());
+                    copyData(in, out);
+                    out.sync();
 
-                    /// Try to make a hard link first, as an optimization.
-                    /// It is possible if the source and the destination are on the same filesystems.
-                    if (0 != link(source.c_str(), destination.c_str()))
-                    {
-                        ReadBufferFromFile in(binary_self_path.string());
-                        WriteBufferFromFile out(main_bin_tmp_path.string());
-                        copyData(in, out);
-                        out.sync();
-                        out.finalize();
-                    }
-
-                    if (0 != chmod(destination.c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                    if (0 != fchmod(out.getFD(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
                         throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
+
+                    out.finalize();
                 }
                 catch (const Exception & e)
                 {
@@ -992,7 +985,9 @@ namespace
         {
             /// sudo respects limits in /etc/security/limits.conf e.g. open files,
             /// that's why we are using it instead of the 'clickhouse su' tool.
-            command = fmt::format("sudo -u '{}' {}", user, command);
+            /// by default, sudo resets all the ENV variables, but we should preserve
+            /// the values /etc/default/clickhouse in /etc/init.d/clickhouse file
+            command = fmt::format("sudo --preserve-env -u '{}' {}", user, command);
         }
 
         fmt::print("Will run {}\n", command);

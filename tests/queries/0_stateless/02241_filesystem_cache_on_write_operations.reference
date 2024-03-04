@@ -7,25 +7,25 @@ file_segment_range_begin: 0
 file_segment_range_end:   745
 size:                     746
 state:                    DOWNLOADED
-8
-8
+7
+7
 0
 2
 2
-8
+7
 Row 1:
 ──────
 file_segment_range_begin: 0
 file_segment_range_end:   1659
 size:                     1660
 state:                    DOWNLOADED
-8
-8
-8
-8
-24
-35
-43
+7
+7
+7
+7
+21
+31
+38
 5010500
 18816
 Using storage policy: local_cache
@@ -37,24 +37,24 @@ file_segment_range_begin: 0
 file_segment_range_end:   745
 size:                     746
 state:                    DOWNLOADED
-8
-8
+7
+7
 0
 2
 2
-8
+7
 Row 1:
 ──────
 file_segment_range_begin: 0
 file_segment_range_end:   1659
 size:                     1660
 state:                    DOWNLOADED
-8
-8
-8
-8
-24
-35
-43
+7
+7
+7
+7
+21
+31
+38
 5010500
 18816

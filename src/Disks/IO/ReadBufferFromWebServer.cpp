@@ -41,15 +41,18 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
 std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
 {
     Poco::URI uri(url);
+    ReadWriteBufferFromHTTP::Range range;
     if (read_until_position)
     {
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
 
+        range = { .begin = static_cast<size_t>(offset), .end = read_until_position - 1 };
         LOG_DEBUG(log, "Reading with range: {}-{}", offset, read_until_position);
     }
     else
     {
+        range = { .begin = static_cast<size_t>(offset), .end = std::nullopt };
         LOG_DEBUG(log, "Reading from offset: {}", offset);
     }
 
@@ -57,7 +60,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
     const auto & config = context->getConfigRef();
     Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 20), 0};
 
-    auto res = std::make_unique<ReadWriteBufferFromHTTP>(
+    return std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
@@ -71,16 +74,10 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
         buf_size,
         read_settings,
         HTTPHeaderEntries{},
+        range,
         &context->getRemoteHostFilter(),
         /* delay_initialization */true,
         use_external_buffer);
-
-    if (read_until_position)
-        res->setReadUntilPosition(read_until_position);
-    if (offset)
-        res->seek(offset, SEEK_SET);
-
-    return res;
 }
 
 
@@ -88,6 +85,15 @@ void ReadBufferFromWebServer::setReadUntilPosition(size_t position)
 {
     read_until_position = position;
     impl.reset();
+}
+
+
+SeekableReadBuffer::Range ReadBufferFromWebServer::getRemainingReadRange() const
+{
+    return Range{
+        .left = static_cast<size_t>(offset),
+        .right = read_until_position ? std::optional{read_until_position - 1} : std::nullopt
+    };
 }
 
 

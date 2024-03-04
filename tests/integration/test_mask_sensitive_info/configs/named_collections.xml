@@ -1,5 +1,4 @@
 <clickhouse>
-    <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
     <named_collections>
         <named_collection_1/>
         <named_collection_2/>

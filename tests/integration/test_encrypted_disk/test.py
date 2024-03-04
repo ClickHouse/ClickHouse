@@ -30,7 +30,7 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        node.query("DROP TABLE IF EXISTS encrypted_test SYNC")
+        node.query("DROP TABLE IF EXISTS encrypted_test NO DELAY")
 
 
 @pytest.mark.parametrize(
@@ -83,7 +83,7 @@ def test_part_move(policy, destination_disks):
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
-        SETTINGS storage_policy='{}'
+        SETTINGS storage_policy='{}', temporary_directories_lifetime=1
         """.format(
             policy
         )
@@ -294,4 +294,4 @@ def test_restart():
 
         assert node.query(select_query) == "(0,'data'),(1,'data')"
 
-        node.query("DROP TABLE encrypted_test SYNC;")
+        node.query("DROP TABLE encrypted_test NO DELAY;")

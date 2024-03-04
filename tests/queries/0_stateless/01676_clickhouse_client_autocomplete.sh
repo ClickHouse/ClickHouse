@@ -89,6 +89,8 @@ client_compwords_positive=(
     clusterAllReplicas
     # system.data_type_families
     SimpleAggregateFunction
+    # system.merge_tree_settings
+    write_ahead_log_interval_ms_to_fsync
     # system.settings
     max_concurrent_queries_for_all_users
     # system.clusters

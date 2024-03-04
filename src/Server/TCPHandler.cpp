@@ -505,12 +505,27 @@ void TCPHandler::runImpl()
             /// the MemoryTracker will be wrong for possible deallocations.
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
-            last_sent_snapshots = ProfileEvents::ThreadIdToCountersSnapshot{};
             query_scope.reset();
+            last_sent_snapshots.clear();
             thread_trace_context.reset();
         }
         catch (const Exception & e)
         {
+            /// Authentication failure with interserver secret
+            /// - early exit without trying to send the exception to the client.
+            /// Because the server should not try to skip (parse, decompress) the remaining packets sent by the client,
+            /// as it will lead to additional work and unneeded exposure to unauthenticated connections.
+
+            /// Note that the exception AUTHENTICATION_FAILED can be here in two cases:
+            /// 1. The authentication in receiveHello is skipped with "interserver secret",
+            /// postponed to receiving the query, and then failed.
+            /// 2. Receiving exception from a query using a table function to authenticate with another server.
+            /// In this case, the user is already authenticated with this server,
+            /// is_interserver_mode is false, and we can send the exception to the client normally.
+
+            if (is_interserver_mode && e.code() == ErrorCodes::AUTHENTICATION_FAILED)
+                throw;
+
             state.io.onException();
             exception.reset(e.clone());
 
@@ -598,6 +613,13 @@ void TCPHandler::runImpl()
             network_error = true;
             LOG_WARNING(log, "Client has gone away.");
         }
+
+        /// Interserver authentication is done only after we read the query.
+        /// This fact can be abused by producing exception before or while we read the query.
+        /// To avoid any potential exploits, we simply close connection on any exceptions
+        /// that happen before the first query is authenticated with the cluster secret.
+        if (is_interserver_mode && exception && !is_interserver_authenticated)
+            exception->rethrow();
 
         try
         {
@@ -1202,8 +1224,7 @@ void TCPHandler::receiveHello()
             throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }
         else
-            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-                               "Unexpected packet from client (expected Hello, got {})", packet_type);
+            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client");
     }
 
     readStringBinary(client_name, *in);
@@ -1506,7 +1527,18 @@ void TCPHandler::receiveQuery()
     {
         client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
 #if USE_SSL
-        String cluster_secret = server.context()->getCluster(cluster)->getSecret();
+
+        String cluster_secret;
+        try
+        {
+            cluster_secret = server.context()->getCluster(cluster)->getSecret();
+        }
+        catch (const Exception & e)
+        {
+            auto exception = Exception::createRuntime(ErrorCodes::AUTHENTICATION_FAILED, e.message());
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), exception);
+            throw exception; /// NOLINT
+        }
 
         if (salt.empty() || cluster_secret.empty())
         {
@@ -1558,6 +1590,8 @@ void TCPHandler::receiveQuery()
             /// address.
             session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
         }
+
+        is_interserver_authenticated = true;
 #else
         auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
             "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
@@ -1901,7 +1935,7 @@ void TCPHandler::sendData(const Block & block)
         {
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
-                writeVarUInt(VAR_UINT_MAX, *out);
+                writeVarUInt(UInt64(-1), *out);
         }
 
         writeVarUInt(Protocol::Server::Data, *out);

@@ -205,8 +205,7 @@ struct FormatSettings
 
     struct
     {
-        UInt64 row_group_rows = 1000000;
-        UInt64 row_group_bytes = 512 * 1024 * 1024;
+        UInt64 row_group_size = 1000000;
         bool import_nested = false;
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
@@ -214,9 +213,6 @@ struct FormatSettings
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
-        // TODO: This should probably be shared among all formats and with
-        //       https://github.com/ClickHouse/ClickHouse/issues/38755
-        bool preserve_order = false;
         UInt64 max_block_size = 8192;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
@@ -227,7 +223,6 @@ struct FormatSettings
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
         UInt64 max_value_width = 10000;
-        UInt64 squash_milliseconds = 100;
         bool color = true;
 
         bool output_format_pretty_row_numbers = false;

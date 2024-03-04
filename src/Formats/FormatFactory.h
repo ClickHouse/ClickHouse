@@ -6,7 +6,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
-#include <IO/ParallelReadBuffer.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 
@@ -72,39 +71,11 @@ public:
         size_t max_rows)>;
 
 private:
-    // On the input side, there are two kinds of formats:
-    //  * InputCreator - formats parsed sequentially, e.g. CSV. Almost all formats are like this.
-    //    FormatFactory uses ParallelReadBuffer to read in parallel, and ParallelParsingInputFormat
-    //    to parse in parallel; the formats mostly don't need to worry about it.
-    //  * RandomAccessInputCreator - column-oriented formats that require seeking back and forth in
-    //    the file when reading. E.g. Parquet has metadata at the end of the file (needs to be read
-    //    before we can parse any data), can skip columns by seeking in the file, and often reads
-    //    many short byte ranges from the file. ParallelReadBuffer and ParallelParsingInputFormat
-    //    are a poor fit. Instead, the format implementation is in charge of parallelizing both
-    //    reading and parsing.
-
     using InputCreator = std::function<InputFormatPtr(
             ReadBuffer & buf,
             const Block & header,
             const RowInputFormatParams & params,
             const FormatSettings & settings)>;
-
-    // Incompatible with FileSegmentationEngine.
-    // When created using SeekableReadBufferFactoryPtr, the IInputFormat doesn't support
-    // resetParser() and setReadBuffer().
-    //
-    // In future we may also want to pass some information about WHERE conditions (SelectQueryInfo?)
-    // and get some information about projections (min/max/count per column per row group).
-    using RandomAccessInputCreator = std::function<InputFormatPtr(
-            // exactly one of these two is nullptr
-            ReadBuffer * buf,
-            SeekableReadBufferFactoryPtr buf_factory,
-            const Block & header,
-            const FormatSettings & settings,
-            const ReadSettings& read_settings,
-            bool is_remote_fs,
-            size_t max_download_threads,
-            size_t max_parsing_threads)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
@@ -130,21 +101,23 @@ private:
     /// and the name of the message.
     using AdditionalInfoForSchemaCacheGetter = std::function<String(const FormatSettings & settings)>;
 
+    /// Some formats can support reading subset of columns depending on settings.
+    /// The checker should return true if format support append.
+    using SubsetOfColumnsSupportChecker = std::function<bool(const FormatSettings & settings)>;
+
     struct Creators
     {
         InputCreator input_creator;
-        RandomAccessInputCreator random_access_input_creator;
         OutputCreator output_creator;
         FileSegmentationEngine file_segmentation_engine;
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
         bool supports_subcolumns{false};
-        bool supports_subset_of_columns{false};
-        bool prefers_large_blocks{false};
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
+        SubsetOfColumnsSupportChecker subset_of_columns_support_checker;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -153,32 +126,21 @@ private:
 public:
     static FormatFactory & instance();
 
-    // Format parser from a single ReadBuffer.
-    // Parallelizes parsing (when possible) but not reading.
     InputFormatPtr getInput(
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
         ContextPtr context,
         UInt64 max_block_size,
-        const std::optional<FormatSettings> & format_settings = std::nullopt,
-        std::optional<size_t> max_parsing_threads = std::nullopt) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
-    // Format parser from a random-access source (factory of seekable read buffers).
-    // Parallelizes both parsing and reading when possible.
-    // Prefer this over getInput() when reading from random-access source like file or HTTP.
-    InputFormatPtr getInputRandomAccess(
+    InputFormatPtr getInputFormat(
         const String & name,
-        SeekableReadBufferFactoryPtr buf_factory,
+        ReadBuffer & buf,
         const Block & sample,
         ContextPtr context,
         UInt64 max_block_size,
-        bool is_remote_fs,
-        CompressionMethod compression,
-        // if nullopt, getFormatSettings(context) is used
-        const std::optional<FormatSettings> & format_settings = std::nullopt,
-        std::optional<size_t> max_download_threads = std::nullopt,
-        std::optional<size_t> max_parsing_threads = std::nullopt) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(
@@ -225,7 +187,6 @@ public:
 
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
-    void registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
 
     /// Register file extension for format
@@ -238,19 +199,17 @@ public:
     void registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator);
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
-    void markOutputFormatPrefersLargeBlocks(const String & name);
     void markFormatSupportsSubcolumns(const String & name);
-    void markFormatSupportsSubsetOfColumns(const String & name);
 
     bool checkIfFormatSupportsSubcolumns(const String & name) const;
-    bool checkIfFormatSupportsSubsetOfColumns(const String & name) const;
+
+    void markFormatSupportsSubsetOfColumns(const String & name);
+    void registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker);
+    bool checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     bool checkIfFormatHasSchemaReader(const String & name) const;
     bool checkIfFormatHasExternalSchemaReader(const String & name) const;
     bool checkIfFormatHasAnySchemaReader(const String & name) const;
-    bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
-
-    bool checkParallelizeOutputAfterReading(const String & name, ContextPtr context) const;
 
     void registerAdditionalInfoForSchemaCacheGetter(const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter);
     String getAdditionalInfoForSchemaCache(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
@@ -272,29 +231,6 @@ private:
 
     const Creators & getCreators(const String & name) const;
 
-    InputFormatPtr getInputImpl(
-        const String & name,
-        // exactly one of the following two is nullptr
-        SeekableReadBufferFactoryPtr buf_factory,
-        ReadBuffer * buf,
-        const Block & sample,
-        ContextPtr context,
-        UInt64 max_block_size,
-        bool is_remote_fs,
-        CompressionMethod compression,
-        const std::optional<FormatSettings> & format_settings,
-        std::optional<size_t> max_download_threads,
-        std::optional<size_t> max_parsing_threads) const;
-
-    // Creates a ReadBuffer to give to an input format.
-    // Returns nullptr if we should give it the whole factory.
-    std::unique_ptr<ReadBuffer> prepareReadBuffer(
-        SeekableReadBufferFactoryPtr & buf_factory,
-        CompressionMethod compression,
-        const Creators & creators,
-        const FormatSettings & format_settings,
-        const Settings & settings,
-        size_t max_download_threads) const;
 };
 
 }

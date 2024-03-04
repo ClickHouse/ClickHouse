@@ -42,8 +42,6 @@ public:
     bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const override;
 
 private:
-    Poco::Logger * const log;
-
     std::set<std::pair<String /* database_zk_path */, String /* table_name */>> acquired_tables_in_replicated_databases;
     std::unordered_set<String /* table_zk_path */> acquired_data_in_replicated_tables;
     mutable std::mutex mutex;

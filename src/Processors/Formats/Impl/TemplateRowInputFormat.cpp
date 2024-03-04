@@ -288,12 +288,19 @@ void TemplateRowInputFormat::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
     end_of_stream = false;
-    buf->reset();
 }
 
 void TemplateRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    RowInputFormatWithDiagnosticInfo::setReadBuffer(*buf);
+    format_reader->setReadBuffer(*buf);
+}
+
+void TemplateRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    RowInputFormatWithDiagnosticInfo::resetReadBuffer();
 }
 
 TemplateFormatReader::TemplateFormatReader(

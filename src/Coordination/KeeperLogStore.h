@@ -4,6 +4,7 @@
 #include <mutex>
 #include <Core/Types.h>
 #include <Coordination/Changelog.h>
+#include <Common/logger_useful.h>
 #include <base/defines.h>
 
 namespace DB

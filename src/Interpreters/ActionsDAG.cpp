@@ -1067,7 +1067,7 @@ ActionsDAGPtr ActionsDAG::clone() const
 void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     compileFunctions(min_count_to_compile_expression, lazy_executed_nodes);
-    removeUnusedActions(/*allow_remove_inputs = */ false);
+    removeUnusedActions();
 }
 #endif
 
@@ -1874,10 +1874,10 @@ struct ConjunctionNodes
     ActionsDAG::NodeRawConstPtrs rejected;
 };
 
-/// Take a node which result is predicate.
+/// Take a node which result is a predicate.
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
-/// Allowed predicate is a predicate which can be calculated using only nodes from allowed_nodes set.
+/// Allowed predicate is a predicate which can be calculated using only nodes from the allowed_nodes set.
 ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes)
 {
     ConjunctionNodes conjunction;
@@ -2111,9 +2111,9 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
-                filter_name,
-                dumpDAG());
+            "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
+            filter_name,
+            dumpDAG());
 
     /// If condition is constant let's do nothing.
     /// It means there is nothing to push down or optimization was already applied.
@@ -2140,14 +2140,28 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
-    if (conjunction.rejected.size() == 1 && WhichDataType{removeNullable(conjunction.rejected.front()->result_type)}.isFloat())
+    if (conjunction.allowed.empty())
         return nullptr;
+
+    chassert(predicate->result_type);
+
+    if (conjunction.rejected.size() == 1)
+    {
+        chassert(conjunction.rejected.front()->result_type);
+
+        if (conjunction.allowed.front()->type == ActionType::COLUMN
+            && !conjunction.rejected.front()->result_type->equals(*predicate->result_type))
+        {
+            /// No further optimization can be done
+            return nullptr;
+        }
+    }
 
     auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return nullptr;
 
-    /// Now, when actions are created, update current DAG.
+    /// Now, when actions are created, update the current DAG.
 
     if (conjunction.rejected.empty())
     {
@@ -2511,64 +2525,6 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     }
 
     return result_dag;
-}
-
-FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr & actions_)
-    :actions(actions_)
-{
-    const auto & actions_outputs = actions->getOutputs();
-    for (const auto * output_node : actions_outputs)
-    {
-        /// find input node which refers to the output node
-        /// consider only aliases on the path
-        const auto * node = output_node;
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            /// alias has only one child
-            chassert(node->children.size() == 1);
-            node = node->children.front();
-        }
-        if (node && node->type == ActionsDAG::ActionType::INPUT)
-            index.emplace(output_node->result_name, node);
-    }
-}
-
-const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & output_name)
-{
-    const auto it = index.find(output_name);
-    if (it == index.end())
-        return nullptr;
-
-    return it->second;
-}
-
-FindAliasForInputName::FindAliasForInputName(const ActionsDAGPtr & actions_)
-    :actions(actions_)
-{
-    const auto & actions_outputs = actions->getOutputs();
-    for (const auto * output_node : actions_outputs)
-    {
-        /// find input node which corresponds to alias
-        const auto * node = output_node;
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            /// alias has only one child
-            chassert(node->children.size() == 1);
-            node = node->children.front();
-        }
-        if (node && node->type == ActionsDAG::ActionType::INPUT)
-            /// node can have several aliases but we consider only the first one
-            index.emplace(node->result_name, output_node);
-    }
-}
-
-const ActionsDAG::Node * FindAliasForInputName::find(const String & name)
-{
-    const auto it = index.find(name);
-    if (it == index.end())
-        return nullptr;
-
-    return it->second;
 }
 
 }

@@ -80,8 +80,6 @@ template <
 class ClearableHashSet
     : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
 {
-    using Cell = ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>;
-
 public:
     using Base = HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>;
     using typename Base::LookupResult;
@@ -90,13 +88,6 @@ public:
     {
         ++this->version;
         this->m_size = 0;
-
-        if constexpr (Cell::need_zero_value_storage)
-        {
-            /// clear ZeroValueStorage
-            if (this->hasZero())
-                this->clearHasZero();
-        }
     }
 };
 
@@ -112,20 +103,11 @@ class ClearableHashSetWithSavedHash : public HashTable<
                                           Grower,
                                           Allocator>
 {
-    using Cell = ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>;
-
 public:
     void clear()
     {
         ++this->version;
         this->m_size = 0;
-
-        if constexpr (Cell::need_zero_value_storage)
-        {
-            /// clear ZeroValueStorage
-            if (this->hasZero())
-                this->clearHasZero();
-        }
     }
 };
 

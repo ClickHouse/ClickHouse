@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTBackupQuery.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB

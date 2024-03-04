@@ -320,20 +320,13 @@ template void readStringUntilEOFInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8
 template <typename Vector, typename ReturnType = void>
 static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
-    {
-        if constexpr (throw_exception)
-            throw Exception::createDeprecated(message, code);
-        return ReturnType(false);
-    };
-
     ++buf.position();
-
     if (buf.eof())
     {
-        return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+        if constexpr (std::is_same_v<ReturnType, void>)
+            throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Cannot parse escape sequence");
+        else
+            return ReturnType(false);
     }
 
     char char_after_backslash = *buf.position();
@@ -343,14 +336,7 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         ++buf.position();
         /// escape sequence of the form \xAA
         char hex_code[2];
-
-        auto bytes_read = buf.read(hex_code, sizeof(hex_code));
-
-        if (bytes_read != sizeof(hex_code))
-        {
-            return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
-        }
-
+        readPODBinary(hex_code, buf);
         s.push_back(unhex2(hex_code));
     }
     else if (char_after_backslash == 'N')
@@ -384,10 +370,6 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
     return ReturnType(true);
 }
 
-bool parseComplexEscapeSequence(String & s, ReadBuffer & buf)
-{
-    return parseComplexEscapeSequence<String, bool>(s, buf);
-}
 
 template <typename Vector, typename ReturnType>
 static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)

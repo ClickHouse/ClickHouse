@@ -21,7 +21,6 @@
 #include <Common/Exception.h>
 #include <Common/getResource.h>
 #include <Common/XMLUtils.h>
-#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>

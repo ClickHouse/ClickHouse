@@ -73,11 +73,11 @@ void ASTProjectionSelectQuery::formatImpl(const FormatSettings & s, FormatState 
 
     if (orderBy())
     {
-        /// Let's convert the ASTFunction into ASTExpressionList, which generates consistent format
+        /// Let's convert tuple ASTFunction into ASTExpressionList, which generates consistent format
         /// between GROUP BY and ORDER BY projection definition.
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY " << (s.hilite ? hilite_none : "");
         ASTPtr order_by;
-        if (auto * func = orderBy()->as<ASTFunction>())
+        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple")
             order_by = func->arguments;
         else
         {

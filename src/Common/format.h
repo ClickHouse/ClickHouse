@@ -17,18 +17,18 @@ namespace Format
 {
     using IndexPositions = PODArrayWithStackMemory<UInt64, 64>;
 
-    static inline void parseNumber(const String & description, UInt64 l, UInt64 r, UInt64 & res, UInt64 argument_number)
+    static inline UInt64 parseNumber(const String & description, UInt64 l, UInt64 r, UInt64 argument_number)
     {
-        res = 0;
+        UInt64 res = 0;
         for (UInt64 pos = l; pos < r; ++pos)
         {
             if (!isNumericASCII(description[pos]))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not a number in curly braces at position {}", std::to_string(pos));
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not a number in curly braces at position {}", pos);
             res = res * 10 + description[pos] - '0';
             if (res >= argument_number)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too big number for arguments, must be at most {}",
-                    argument_number - 1);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too big number for arguments, must be at most {}", argument_number - 1);
         }
+        return res;
     }
 
     static inline void init(
@@ -132,8 +132,7 @@ namespace Format
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot switch from automatic field numbering to manual field specification");
                     is_plain_numbering = false;
 
-                    UInt64 arg;
-                    parseNumber(pattern, last_open, i, arg, argument_number);
+                    UInt64 arg = parseNumber(pattern, last_open, i, argument_number);
 
                     if (arg >= argument_number)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument is too big for formatting. Note that indexing starts from zero");

@@ -114,6 +114,10 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     while (!stack.empty())
     {
+        /// NOTE: optimizePrewhere can modify the stack.
+        optimizePrewhere(stack, nodes);
+        optimizePrimaryKeyCondition(stack);
+
         auto & frame = stack.back();
 
         if (frame.next_child == 0)
@@ -144,6 +148,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         if (optimization_settings.optimize_projection)
         {
+            /// Projection optimization relies on PK optimization
             if (optimizeUseNormalProjections(stack, nodes))
             {
                 ++num_applied_projection;
@@ -160,9 +165,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
-        optimizePrewhere(stack, nodes);
-        optimizePrimaryKeyCondition(stack);
-        enableMemoryBoundMerging(*frame.node, nodes);
+        enableMemoryBoundMerging(*stack.back().node, nodes);
 
         stack.pop_back();
     }
@@ -170,7 +173,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     if (optimization_settings.force_use_projection && has_reading_from_mt && num_applied_projection == 0)
         throw Exception(
             ErrorCodes::PROJECTION_NOT_USED,
-            "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
+            "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1");
 }
 
 }

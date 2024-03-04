@@ -8,9 +8,13 @@
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Poco/URI.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
+
+class IInputFormat;
+
 /**
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
@@ -57,7 +61,7 @@ public:
     /// Is is useful because column oriented formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr & context_) const;
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,

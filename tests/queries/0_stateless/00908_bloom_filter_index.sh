@@ -150,3 +150,15 @@ CREATE TABLE bloom_filter_idx_na
     INDEX bf na TYPE bloom_filter(0.1) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY na" 2>&1 | grep -c 'DB::Exception: Unexpected type Array(Array(String)) of bloom filter index'
+
+# NGRAM BF with IPv6
+$CLICKHOUSE_CLIENT -n --query="
+CREATE TABLE bloom_filter_ipv6_idx
+(
+    foo IPv6,
+    INDEX fooIndex foo TYPE ngrambf_v1(8,512,3,0) GRANULARITY 1
+) ENGINE = MergeTree() ORDER BY foo;"
+
+$CLICKHOUSE_CLIENT --query="INSERT INTO bloom_filter_ipv6_idx VALUES ('::1.2.3.4'),('::0'),('::1')"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM bloom_filter_ipv6_idx WHERE foo IN ('::1')"
+$CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_ipv6_idx"

@@ -7,7 +7,8 @@ namespace DB
 
 void updateRowsProgressApprox(
     ISource & source,
-    const Chunk & chunk,
+    size_t num_rows,
+    UInt64 chunk_bytes_size,
     UInt64 total_result_size,
     UInt64 & total_rows_approx_accumulated,
     size_t & total_rows_count_times,
@@ -15,8 +16,6 @@ void updateRowsProgressApprox(
 {
     if (!total_result_size)
         return;
-
-    const size_t num_rows = chunk.getNumRows();
 
     if (!num_rows)
         return;
@@ -32,7 +31,7 @@ void updateRowsProgressApprox(
         }
     }
 
-    const auto bytes_per_row = std::ceil(static_cast<double>(chunk.bytes()) / num_rows);
+    const auto bytes_per_row = std::ceil(static_cast<double>(chunk_bytes_size) / num_rows);
     size_t total_rows_approx = static_cast<size_t>(std::ceil(static_cast<double>(total_result_size) / bytes_per_row));
     total_rows_approx_accumulated += total_rows_approx;
     ++total_rows_count_times;

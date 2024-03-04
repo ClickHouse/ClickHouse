@@ -51,28 +51,3 @@ TEST(ThreadPool, ExceptionFromSchedule)
 {
     EXPECT_TRUE(check());
 }
-
-static bool check2()
-{
-    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, 2);
-
-    pool.scheduleOrThrowOnError([&]{ throw std::runtime_error("Hello, world!"); });
-    pool.scheduleOrThrowOnError([]{});
-
-    try
-    {
-        pool.wait();
-    }
-    catch (const std::runtime_error &)
-    {
-        return true;
-    }
-
-    return false;
-}
-
-TEST(ThreadPool, ExceptionFromWait)
-{
-    for (size_t i = 0; i < 1000; ++i)
-        EXPECT_TRUE(check2());
-}

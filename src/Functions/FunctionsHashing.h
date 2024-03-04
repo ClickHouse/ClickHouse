@@ -81,7 +81,7 @@ namespace impl
 
     static SipHashKey parseSipHashKey(const ColumnWithTypeAndName & key)
     {
-        SipHashKey ret;
+        SipHashKey ret{};
 
         const auto * tuple = checkAndGetColumn<ColumnTuple>(key.column.get());
         if (!tuple)
@@ -89,6 +89,9 @@ namespace impl
 
         if (tuple->tupleSize() != 2)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "wrong tuple size: key must be a tuple of 2 UInt64");
+
+        if (tuple->empty())
+            return ret;
 
         if (const auto * key0col = checkAndGetColumn<ColumnUInt64>(&(tuple->getColumn(0))))
             ret.key0 = key0col->get64(0);
@@ -494,28 +497,6 @@ struct GccMurmurHashImpl
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-/// To be compatible with Default Partitioner in Kafka:
-///     murmur2: https://github.com/apache/kafka/blob/461c5cfe056db0951d9b74f5adc45973670404d7/clients/src/main/java/org/apache/kafka/common/utils/Utils.java#L480
-///     Default Partitioner: https://github.com/apache/kafka/blob/139f7709bd3f5926901a21e55043388728ccca78/clients/src/main/java/org/apache/kafka/clients/producer/internals/BuiltInPartitioner.java#L328
-struct KafkaMurmurHashImpl
-{
-    static constexpr auto name = "kafkaMurmurHash";
-
-    using ReturnType = UInt32;
-
-    static UInt32 apply(const char * data, const size_t size)
-    {
-        return MurmurHash2(data, size, 0x9747b28cU) & 0x7fffffff;
-    }
-
-    static UInt32 combineHashes(UInt32 h1, UInt32 h2)
-    {
-        return IntHash32Impl::apply(h1) ^ h2;
-    }
-
-    static constexpr bool use_int_hash_for_pods = false;
-};
-
 struct MurmurHash3Impl32
 {
     static constexpr auto name = "murmurHash3_32";
@@ -808,20 +789,23 @@ struct ImplBLAKE3
     static constexpr auto name = "BLAKE3";
     enum { length = 32 };
 
-#if !USE_BLAKE3
-    [[noreturn]] static void apply(const char * /*begin*/, const size_t /*size*/, unsigned char * /*out_char_data*/)
+    #if !USE_BLAKE3
+    [[noreturn]] static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
+        UNUSED(begin);
+        UNUSED(size);
+        UNUSED(out_char_data);
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "BLAKE3 is not available. Rust code or BLAKE3 itself may be disabled.");
     }
-#else
+    #else
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
-#    if defined(MEMORY_SANITIZER)
+        #if defined(MEMORY_SANITIZER)
             auto err_msg = blake3_apply_shim_msan_compat(begin, safe_cast<uint32_t>(size), out_char_data);
             __msan_unpoison(out_char_data, length);
-#    else
+        #else
             auto err_msg = blake3_apply_shim(begin, safe_cast<uint32_t>(size), out_char_data);
-#    endif
+        #endif
         if (err_msg != nullptr)
         {
             auto err_st = std::string(err_msg);
@@ -829,7 +813,7 @@ struct ImplBLAKE3
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function returned error message: {}", err_st);
         }
     }
-#endif
+    #endif
 };
 
 template <typename Impl>
@@ -1449,7 +1433,10 @@ public:
         if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
         {
             auto col_to_fixed_string = ColumnFixedString::create(sizeof(UInt128));
-            col_to_fixed_string->getChars() = std::move(*reinterpret_cast<ColumnFixedString::Chars *>(&col_to->getData()));
+            const auto & data = col_to->getData();
+            auto & chars = col_to_fixed_string->getChars();
+            chars.resize(data.size() * sizeof(UInt128));
+            memcpy(chars.data(), data.data(), data.size() * sizeof(UInt128));
             return col_to_fixed_string;
         }
 
@@ -1746,7 +1733,6 @@ using FunctionMetroHash64 = FunctionAnyHash<ImplMetroHash64>;
 using FunctionMurmurHash2_32 = FunctionAnyHash<MurmurHash2Impl32>;
 using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
 using FunctionGccMurmurHash = FunctionAnyHash<GccMurmurHashImpl>;
-using FunctionKafkaMurmurHash = FunctionAnyHash<KafkaMurmurHashImpl>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionAnyHash<MurmurHash3Impl128>;

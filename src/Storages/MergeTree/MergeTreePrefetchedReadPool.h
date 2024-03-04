@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <IO/AsyncReadCounters.h>
-#include <boost/heap/priority_queue.hpp>
 #include <queue>
 
 namespace DB
@@ -102,12 +101,11 @@ private:
 
     struct TaskHolder
     {
-        explicit TaskHolder(MergeTreeReadTask * task_, size_t thread_id_) : task(task_), thread_id(thread_id_) {}
+        explicit TaskHolder(MergeTreeReadTask * task_) : task(task_) {}
         MergeTreeReadTask * task;
-        size_t thread_id;
         bool operator <(const TaskHolder & other) const;
     };
-    mutable std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
+    mutable boost::heap::priority_queue<TaskHolder> prefetch_queue;
     bool started_prefetches = false;
 
     /// A struct which allows to track max number of tasks which were in the

@@ -37,20 +37,13 @@ public:
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
-    bool supportsReadingSubsetOfColumns() override;
+    bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
 
     std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
     {
         return {"_path", "_file"};
     }
-
-    struct ArgumentParseResult
-    {
-        bool has_format_argument = false;
-        bool has_structure_argument = false;
-    };
-
-    static ArgumentParseResult parseArgumentsImpl(
+    static void parseArgumentsImpl(
         const String & error_message,
         ASTs & args,
         ContextPtr context,
@@ -72,6 +65,30 @@ protected:
 
     mutable StorageS3::Configuration configuration;
     ColumnsDescription structure_hint;
+};
+
+class TableFunctionCOS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "cosn";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "COSN"; }
+};
+
+class TableFunctionOSS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "oss";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "OSS"; }
 };
 
 }

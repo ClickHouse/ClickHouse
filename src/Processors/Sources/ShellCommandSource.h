@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <Common/logger_useful.h>
 #include <base/BorrowedObjectPool.h>
 
 #include <Common/ShellCommand.h>

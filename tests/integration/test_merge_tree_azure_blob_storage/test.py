@@ -66,6 +66,7 @@ def create_table(node, table_name, **additional_settings):
         "storage_policy": "blob_storage_policy",
         "old_parts_lifetime": 1,
         "index_granularity": 512,
+        "temporary_directories_lifetime": 1,
     }
     settings.update(additional_settings)
 
@@ -461,7 +462,7 @@ def test_move_replace_partition_to_another_table(cluster):
         == "(512)"
     )
 
-    azure_query(node, f"DROP TABLE {table_clone_name} SYNC")
+    azure_query(node, f"DROP TABLE {table_clone_name} NO DELAY")
     assert azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     assert (
         azure_query(node, f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values")
@@ -470,7 +471,7 @@ def test_move_replace_partition_to_another_table(cluster):
 
     azure_query(node, f"ALTER TABLE {TABLE_NAME} FREEZE")
 
-    azure_query(node, f"DROP TABLE {TABLE_NAME} SYNC")
+    azure_query(node, f"DROP TABLE {TABLE_NAME} NO DELAY")
 
 
 def test_freeze_unfreeze(cluster):

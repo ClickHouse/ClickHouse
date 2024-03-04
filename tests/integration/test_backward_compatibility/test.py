@@ -12,9 +12,7 @@ node1 = cluster.add_instance(
     with_installed_binary=True,
 )
 node2 = cluster.add_instance(
-    "node2",
-    main_configs=["configs/wide_parts_only.xml", "configs/no_compress_marks.xml"],
-    with_zookeeper=True,
+    "node2", main_configs=["configs/wide_parts_only.xml"], with_zookeeper=True
 )
 
 

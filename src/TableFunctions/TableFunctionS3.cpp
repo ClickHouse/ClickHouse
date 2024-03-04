@@ -31,15 +31,9 @@ namespace ErrorCodes
 
 
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
-TableFunctionS3::ArgumentParseResult TableFunctionS3::parseArgumentsImpl(
-    const String & error_message,
-    ASTs & args,
-    ContextPtr context,
-    StorageS3::Configuration & s3_configuration,
-    bool get_format_from_file)
+void TableFunctionS3::parseArgumentsImpl(
+    const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration, bool get_format_from_file)
 {
-    ArgumentParseResult result;
-
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         StorageS3::processNamedCollectionResult(s3_configuration, *named_collection);
@@ -139,16 +133,10 @@ TableFunctionS3::ArgumentParseResult TableFunctionS3::parseArgumentsImpl(
         s3_configuration.url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
 
         if (args_to_idx.contains("format"))
-        {
             s3_configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
-            result.has_format_argument = true;
-        }
 
         if (args_to_idx.contains("structure"))
-        {
             s3_configuration.structure = checkAndGetLiteralArgument<String>(args[args_to_idx["structure"]], "structure");
-            result.has_structure_argument = true;
-        }
 
         if (args_to_idx.contains("compression_method"))
             s3_configuration.compression_method = checkAndGetLiteralArgument<String>(args[args_to_idx["compression_method"]], "compression_method");
@@ -162,13 +150,9 @@ TableFunctionS3::ArgumentParseResult TableFunctionS3::parseArgumentsImpl(
         s3_configuration.auth_settings.no_sign_request = no_sign_request;
     }
 
-    s3_configuration.keys = {s3_configuration.url.key};
-
     /// For DataLake table functions, we should specify default format.
     if (s3_configuration.format == "auto" && get_format_from_file)
         s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url.uri.getPath(), true);
-
-    return result;
 }
 
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -191,16 +175,15 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        configuration.update(context);
         return StorageS3::getTableStructureFromData(configuration, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
 }
 
-bool TableFunctionS3::supportsReadingSubsetOfColumns()
+bool TableFunctionS3::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context);
 }
 
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
@@ -215,11 +198,11 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
 
     StoragePtr storage = std::make_shared<StorageS3>(
         configuration,
-        context,
         StorageID(getDatabaseName(), table_name),
         columns,
         ConstraintsDescription{},
         String{},
+        context,
         /// No format_settings for table function S3
         std::nullopt);
 
@@ -229,61 +212,9 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
 }
 
 
-class TableFunctionGCS : public TableFunctionS3
-{
-public:
-    static constexpr auto name = "gcs";
-    std::string getName() const override
-    {
-        return name;
-    }
-private:
-    const char * getStorageTypeName() const override { return "GCS"; }
-};
-
-class TableFunctionCOS : public TableFunctionS3
-{
-public:
-    static constexpr auto name = "cosn";
-    std::string getName() const override
-    {
-        return name;
-    }
-private:
-    const char * getStorageTypeName() const override { return "COSN"; }
-};
-
-class TableFunctionOSS : public TableFunctionS3
-{
-public:
-    static constexpr auto name = "oss";
-    std::string getName() const override
-    {
-        return name;
-    }
-private:
-    const char * getStorageTypeName() const override { return "OSS"; }
-};
-
-
-void registerTableFunctionGCS(TableFunctionFactory & factory)
-{
-    factory.registerFunction<TableFunctionGCS>(
-        {.documentation
-         = {R"(The table function can be used to read the data stored on Google Cloud Storage.)",
-            Documentation::Examples{{"gcs", "SELECT * FROM gcs(url, hmac_key, hmac_secret)"}},
-            Documentation::Categories{"DataLake"}},
-         .allow_readonly = false});
-}
-
 void registerTableFunctionS3(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionS3>(
-        {.documentation
-         = {R"(The table function can be used to read the data stored on AWS S3.)",
-            Documentation::Examples{{"s3", "SELECT * FROM s3(url, access_key_id, secret_access_key)"}},
-            Documentation::Categories{"DataLake"}},
-         .allow_readonly = false});
+    factory.registerFunction<TableFunctionS3>();
 }
 
 void registerTableFunctionCOS(TableFunctionFactory & factory)

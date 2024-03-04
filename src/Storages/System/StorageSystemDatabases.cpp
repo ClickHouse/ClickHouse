@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Access/ContextAccess.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -32,7 +31,7 @@ NamesAndAliases StorageSystemDatabases::getNamesAndAliases()
     };
 }
 
-static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database)
+static String getEngineFull(const DatabasePtr & database)
 {
     DDLGuardPtr guard;
     while (true)
@@ -60,7 +59,7 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
     if (!ast_create || !ast_create->storage)
         return {};
 
-    String engine_full = format({ctx, *ast_create->storage});
+    String engine_full = ast_create->storage->formatWithSecretsHidden();
     static const char * const extra_head = " ENGINE = ";
 
     if (startsWith(engine_full, extra_head))
@@ -88,7 +87,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[2]->insert(context->getPath() + database->getDataPath());
         res_columns[3]->insert(database->getMetadataPath());
         res_columns[4]->insert(database->getUUID());
-        res_columns[5]->insert(getEngineFull(context, database));
+        res_columns[5]->insert(getEngineFull(database));
         res_columns[6]->insert(database->getDatabaseComment());
    }
 }

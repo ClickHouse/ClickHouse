@@ -2,6 +2,7 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 
+#include <Common/Arena.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -269,10 +270,10 @@ private:
     }
 
     /// Collects all temporary buffers into main WriteBuffer.
-    void collectorThreadFunction(const ThreadGroupPtr & thread_group);
+    void collectorThreadFunction(const ThreadGroupStatusPtr & thread_group);
 
     /// This function is executed in ThreadPool and the only purpose of it is to format one Chunk into a continuous buffer in memory.
-    void formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group);
+    void formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupStatusPtr & thread_group);
 
     void setRowsBeforeLimit(size_t rows_before_limit) override
     {

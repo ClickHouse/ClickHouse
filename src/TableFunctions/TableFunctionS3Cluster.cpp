@@ -45,6 +45,9 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
 
     ASTs & args = args_func.at(0)->children;
 
+    for (auto & arg : args)
+        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+
     constexpr auto fmt_string = "The signature of table function {} could be the following:\n"
                                 " - cluster, url\n"
                                 " - cluster, url, format\n"
@@ -58,10 +61,7 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
     if (args.size() < 2 || args.size() > 7)
         throw Exception::createDeprecated(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    /// evaluate only first argument, everything else will be done TableFunctionS3
-    args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context);
-
-    /// Cluster name is always the first
+    /// This arguments are always the first
     configuration.cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
 
     if (!context->tryGetCluster(configuration.cluster_name))
@@ -69,11 +69,11 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
 
     /// Just cut the first arg (cluster_name) and try to parse s3 table function arguments as is
     ASTs clipped_args;
-    clipped_args.reserve(args.size() - 1);
+    clipped_args.reserve(args.size());
     std::copy(args.begin() + 1, args.end(), std::back_inserter(clipped_args));
 
     /// StorageS3ClusterConfiguration inherints from StorageS3::Configuration, so it is safe to upcast it.
-    argument_parse_result = TableFunctionS3::parseArgumentsImpl(message.text, clipped_args, context, static_cast<StorageS3::Configuration &>(configuration));
+    TableFunctionS3::parseArgumentsImpl(message.text, clipped_args, context, static_cast<StorageS3::Configuration &>(configuration));
 }
 
 
@@ -81,7 +81,6 @@ ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr co
 {
     context->checkAccess(getSourceAccessType());
 
-    configuration.update(context);
     if (configuration.structure == "auto")
         return StorageS3::getTableStructureFromData(configuration, std::nullopt, context);
 
@@ -94,8 +93,9 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
 {
     StoragePtr storage;
     ColumnsDescription columns;
+    bool structure_argument_was_provided = configuration.structure != "auto";
 
-    if (argument_parse_result.has_structure_argument)
+    if (structure_argument_was_provided)
     {
         columns = parseColumnsListFromString(configuration.structure, context);
     }
@@ -109,11 +109,11 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageS3>(
             configuration,
-            context,
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
             /* comment */String{},
+            context,
             /* format_settings */std::nullopt, /// No format_settings for S3Cluster
             /*distributed_processing=*/true);
     }
@@ -125,8 +125,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
             columns,
             ConstraintsDescription{},
             context,
-            argument_parse_result.has_structure_argument,
-            argument_parse_result.has_format_argument);
+            structure_argument_was_provided);
     }
 
     storage->startup();

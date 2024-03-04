@@ -11,6 +11,8 @@ if (COMPILER_CLANG)
     if (NOT EXISTS "${BUILTINS_LIBRARY}")
         set (BUILTINS_LIBRARY "-lgcc")
     endif ()
+else ()
+    set (BUILTINS_LIBRARY "-lgcc")
 endif ()
 
 if (OS_ANDROID)

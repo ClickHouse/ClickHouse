@@ -19,24 +19,20 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client2.expect(prompt)
 
-    client1.send(
-        "SET allow_experimental_analyzer = 0, output_format_pretty_squash_ms = 0;"
-    )
+    client1.send("SET allow_experimental_analyzer = 0")
     client1.expect(prompt)
     client1.send("SET allow_experimental_window_view = 1")
     client1.expect(prompt)
     client1.send("SET window_view_heartbeat_interval = 1")
     client1.expect(prompt)
-    client2.send(
-        "SET allow_experimental_window_view = 1, output_format_pretty_squash_ms = 0;"
-    )
+    client2.send("SET allow_experimental_window_view = 1")
     client2.expect(prompt)
 
     client1.send("CREATE DATABASE IF NOT EXISTS 01082_window_view_watch_limit")
     client1.expect(prompt)
     client1.send("DROP TABLE IF EXISTS 01082_window_view_watch_limit.mt")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01082_window_view_watch_limit.wv SYNC")
+    client1.send("DROP TABLE IF EXISTS 01082_window_view_watch_limit.wv NO DELAY")
     client1.expect(prompt)
 
     client1.send(
@@ -65,7 +61,7 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect("1 row" + end_of_block)
     client1.expect(prompt)
 
-    client1.send("DROP TABLE 01082_window_view_watch_limit.wv SYNC")
+    client1.send("DROP TABLE 01082_window_view_watch_limit.wv NO DELAY")
     client1.expect(prompt)
     client1.send("DROP TABLE 01082_window_view_watch_limit.mt")
     client1.expect(prompt)

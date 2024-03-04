@@ -16,9 +16,9 @@ format(format_name, [structure], data)
 
 **Parameters**
 
-- `format_name` — The [format](../../interfaces/formats.md#formats) of the data.
-- `structure` - Structure of the table. Optional. Format 'column1_name column1_type, column2_name column2_type, ...'.
-- `data` — String literal or constant expression that returns a string containing data in specified format
+-   `format_name` — The [format](../../interfaces/formats.md#formats) of the data.
+-   `structure` - Structure of the table. Optional. Format 'column1_name column1_type, column2_name column2_type, ...'.
+-   `data` — String literal or constant expression that returns a string containing data in specified format
 
 **Returned value**
 
@@ -95,4 +95,4 @@ $$)
 
 **See Also**
 
-- [Formats](../../interfaces/formats.md)
+-   [Formats](../../interfaces/formats.md)

@@ -9,6 +9,8 @@
 #include <list>
 
 #include <base/types.h>
+#include <Common/logger_useful.h>
+#include <Common/ThreadPool.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
@@ -58,10 +60,6 @@ public:
 private:
     void allocateBuffer();
 
-    void processWithStrictParts();
-    void processWithDynamicParts();
-
-    void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & req);
     void createMultipartUpload();
     void writePart();
     void completeMultipartUpload();
@@ -79,9 +77,9 @@ private:
     void fillPutRequest(S3::PutObjectRequest & req);
     void processPutRequest(const PutObjectTask & task);
 
-    void waitForReadyBackgroundTasks();
-    void waitForAllBackgroundTasks();
-    void waitForAllBackgroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
+    void waitForReadyBackGroundTasks();
+    void waitForAllBackGroundTasks();
+    void waitForAllBackGroundTasksUnlocked(std::unique_lock<std::mutex> & bg_tasks_lock);
 
     const String bucket;
     const String key;
@@ -90,10 +88,7 @@ private:
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
 
-    /// Strict/static Part size, no adjustments will be done on fly.
-    size_t strict_upload_part_size = 0;
-    /// Part size will be adjusted on fly (for bigger uploads)
-    size_t current_upload_part_size = 0;
+    size_t upload_part_size = 0;
     std::shared_ptr<Aws::StringStream> temporary_buffer; /// Buffer to accumulate data.
     size_t last_part_size = 0;
     size_t part_number = 0;

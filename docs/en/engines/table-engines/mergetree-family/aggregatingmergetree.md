@@ -122,7 +122,3 @@ FROM test.mv_visits
 GROUP BY StartDate
 ORDER BY StartDate;
 ```
-
-## Related Content
-
-- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

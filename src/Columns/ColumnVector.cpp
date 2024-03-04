@@ -910,6 +910,9 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     max = NearestFieldType<T>(cur_max);
 }
 
+
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+
 template <typename T>
 ColumnPtr ColumnVector<T>::compress() const
 {

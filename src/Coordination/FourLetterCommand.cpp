@@ -14,8 +14,11 @@
 #include <IO/Operators.h>
 
 #include <unistd.h>
-#include <bit>
 
+#if USE_JEMALLOC
+#include <Common/Jemalloc.h>
+#include <jemalloc/jemalloc.h>
+#endif
 
 namespace DB
 {
@@ -36,7 +39,7 @@ int32_t IFourLetterCommand::code()
 
 String IFourLetterCommand::toName(int32_t code)
 {
-    int reverted_code = std::byteswap(code);
+    int reverted_code = __builtin_bswap32(code);
     return String(reinterpret_cast<char *>(&reverted_code), 4);
 }
 
@@ -44,7 +47,7 @@ int32_t IFourLetterCommand::toCode(const String & name)
 {
     int32_t res = *reinterpret_cast<const int32_t *>(name.data());
     /// keep consistent with Coordination::read method by changing big endian to little endian.
-    return std::byteswap(res);
+    return __builtin_bswap32(res);
 }
 
 IFourLetterCommand::~IFourLetterCommand() = default;
@@ -152,6 +155,20 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
 
         FourLetterCommandPtr clean_resources_command = std::make_shared<CleanResourcesCommand>(keeper_dispatcher);
         factory.registerCommand(clean_resources_command);
+
+#if USE_JEMALLOC
+        FourLetterCommandPtr jemalloc_dump_stats = std::make_shared<JemallocDumpStats>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_dump_stats);
+
+        FourLetterCommandPtr jemalloc_flush_profile = std::make_shared<JemallocFlushProfile>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_flush_profile);
+
+        FourLetterCommandPtr jemalloc_enable_profile = std::make_shared<JemallocEnableProfile>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_enable_profile);
+
+        FourLetterCommandPtr jemalloc_disable_profile = std::make_shared<JemallocDisableProfile>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_disable_profile);
+#endif
 
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -534,5 +551,38 @@ String CleanResourcesCommand::run()
     keeper_dispatcher.cleanResources();
     return "ok";
 }
+
+#if USE_JEMALLOC
+
+void printToString(void * output, const char * data)
+{
+    std::string * output_data = reinterpret_cast<std::string *>(output);
+    *output_data += std::string(data);
+}
+
+String JemallocDumpStats::run()
+{
+    std::string output;
+    malloc_stats_print(printToString, &output, nullptr);
+    return output;
+}
+
+String JemallocFlushProfile::run()
+{
+    return flushJemallocProfile("/tmp/jemalloc_keeper");
+}
+
+String JemallocEnableProfile::run()
+{
+    setJemallocProfileActive(true);
+    return "ok";
+}
+
+String JemallocDisableProfile::run()
+{
+    setJemallocProfileActive(false);
+    return "ok";
+}
+#endif
 
 }

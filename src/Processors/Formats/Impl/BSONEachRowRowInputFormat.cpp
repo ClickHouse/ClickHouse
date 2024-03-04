@@ -446,6 +446,11 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
 
     const auto * data_type_map = assert_cast<const DataTypeMap *>(data_type.get());
     const auto & key_data_type = data_type_map->getKeyType();
+    if (!isStringOrFixedString(key_data_type))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Only maps with String key type are supported in BSON, got key type: {}",
+                        key_data_type->getName());
+
     const auto & value_data_type = data_type_map->getValueType();
     auto & column_map = assert_cast<ColumnMap &>(column);
     auto & key_column = column_map.getNestedData().getColumn(0);
@@ -459,8 +464,7 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     {
         auto nested_bson_type = getBSONType(readBSONType(*in));
         auto name = readBSONKeyName(*in, current_key_name);
-        ReadBufferFromMemory buf(name.data, name.size);
-        key_data_type->getDefaultSerialization()->deserializeWholeText(key_column, buf, format_settings);
+        key_column.insertData(name.data, name.size);
         readField(value_column, value_data_type, nested_bson_type);
     }
 
@@ -507,7 +511,6 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             lc_column.insertFromFullColumn(*tmp_column, 0);
             return res;
         }
-        case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             readAndInsertInteger<Int8>(*in, column, data_type, bson_type);
@@ -518,7 +521,6 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             readAndInsertInteger<UInt8>(*in, column, data_type, bson_type);
             return true;
         }
-        case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
             readAndInsertInteger<Int16>(*in, column, data_type, bson_type);
@@ -1005,9 +1007,6 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
                 "Size of BSON document is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. Increase "
                 "the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely BSON is malformed",
                 min_bytes, document_size);
-
-        if (document_size < sizeof(document_size))
-            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);

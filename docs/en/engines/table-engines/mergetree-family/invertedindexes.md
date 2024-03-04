@@ -191,7 +191,3 @@ is performance. In practice, users often search for multiple terms at once. For 
 '%big%'` can be evaluated directly using an inverted index by forming the union of the row id lists for terms "little" and "big". This also
 means that the parameter `GRANULARITY` supplied to index creation has no meaning (it may be removed from the syntax in the future).
 :::
-
-## Related Content
-
-- Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)

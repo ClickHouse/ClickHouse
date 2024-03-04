@@ -80,7 +80,7 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 - `PARTITION BY` - defines how to break a resultset into groups.
 - `ORDER BY` - defines how to order rows inside the group during calculation aggregate_function.
 - `ROWS or RANGE` - defines bounds of a frame, aggregate_function is calculated within a frame.
-- `WINDOW` - allows to reuse a window definition with multiple expressions.
+- `WINDOW` - allows to reuse a window definition with multiple exressions.
 
 ### Functions
 
@@ -140,8 +140,8 @@ ORDER BY
 │        1 │     1 │     1 │ [1,2,3]      │   <┐   
 │        1 │     2 │     2 │ [1,2,3]      │    │  1-st group
 │        1 │     3 │     3 │ [1,2,3]      │   <┘ 
-│        2 │     0 │     0 │ [0]          │   <- 2-nd group
-│        3 │     0 │     0 │ [0]          │   <- 3-d group
+│        2 │     0 │     0 │ [0]          │   <-  2-nd group
+│        3 │     0 │     0 │ [0]          │   <-  3-d group
 └──────────┴───────┴───────┴──────────────┘
 ```
 

@@ -20,13 +20,12 @@ class ReadBufferFromRemoteFSGather final : public ReadBuffer
 friend class ReadIndirectBufferFromRemoteFS;
 
 public:
-    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(const std::string & path, size_t read_until_position)>;
+    using ReadBufferCreator = std::function<std::shared_ptr<ReadBufferFromFileBase>(const std::string & path, size_t read_until_position)>;
 
     ReadBufferFromRemoteFSGather(
         ReadBufferCreator && read_buffer_creator_,
         const StoredObjects & blobs_to_read_,
-        const ReadSettings & settings_,
-        std::shared_ptr<FilesystemCacheLog> cache_log_);
+        const ReadSettings & settings_);
 
     ~ReadBufferFromRemoteFSGather() override;
 
@@ -94,7 +93,7 @@ private:
 
     size_t total_bytes_read_from_current_file = 0;
 
-    std::shared_ptr<FilesystemCacheLog> cache_log;
+    bool enable_cache_log = false;
 };
 
 }
