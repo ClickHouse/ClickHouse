@@ -245,12 +245,12 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        String container_name = config.getString(config_prefix + ".container_name", "default-container");
-        return createObjectStorage<AzureObjectStorage>(
+        AzureBlobStorageEndpoint endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
+        return std::make_unique<AzureObjectStorage>(
             ObjectStorageType::Azure, config, config_prefix, name,
             getAzureBlobContainerClient(config, config_prefix),
             getAzureBlobStorageSettings(config, config_prefix, context),
-            container_name);
+            endpoint.prefix.empty() ? endpoint.container_name : endpoint.container_name + "/" + endpoint.prefix);
 
     });
 }
