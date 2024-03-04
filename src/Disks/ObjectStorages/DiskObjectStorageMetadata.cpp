@@ -20,13 +20,14 @@ namespace ErrorCodes
 void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
 {
     readIntText(version, buf);
-    assertChar('\n', buf);
 
     if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_FULL_OBJECT_KEY)
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT,
             "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
             metadata_file_path, toString(version), toString(VERSION_FULL_OBJECT_KEY));
+
+    assertChar('\n', buf);
 
     UInt32 keys_count;
     readIntText(keys_count, buf);
@@ -104,7 +105,7 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 
     if (version == VERSION_FULL_OBJECT_KEY && !storage_metadata_write_full_object_key)
     {
-        LoggerPtr logger = getLogger("DiskObjectStorageMetadata");
+        Poco::Logger * logger = &Poco::Logger::get("DiskObjectStorageMetadata");
         LOG_WARNING(
             logger,
             "Metadata file {} is written with VERSION_FULL_OBJECT_KEY version"
@@ -121,7 +122,6 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 
     chassert(write_version >= VERSION_ABSOLUTE_PATHS && write_version <= VERSION_FULL_OBJECT_KEY);
     writeIntText(write_version, buf);
-
     writeChar('\n', buf);
 
     writeIntText(keys_with_meta.size(), buf);
@@ -192,7 +192,7 @@ void DiskObjectStorageMetadata::addObject(ObjectStorageKey key, size_t size)
         bool storage_metadata_write_full_object_key = getWriteFullObjectKeySetting();
         if (!storage_metadata_write_full_object_key)
         {
-            LoggerPtr logger = getLogger("DiskObjectStorageMetadata");
+            Poco::Logger * logger = &Poco::Logger::get("DiskObjectStorageMetadata");
             LOG_WARNING(
                 logger,
                 "Metadata file {} has at least one key {} without fixed common key prefix."

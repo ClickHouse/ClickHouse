@@ -4,14 +4,14 @@
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 upstream_node = cluster.add_instance("upstream_node", allow_analyzer=False)
 old_node = cluster.add_instance(
     "old_node",
     image="clickhouse/clickhouse-server",
-    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    tag="22.6",
     with_installed_binary=True,
     allow_analyzer=False,
 )

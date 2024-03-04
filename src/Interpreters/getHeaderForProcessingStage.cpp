@@ -98,7 +98,23 @@ Block getHeaderForProcessingStage(
         case QueryProcessingStage::FetchColumns:
         {
             Block header = storage_snapshot->getSampleBlockForColumns(column_names);
-            header = SourceStepWithFilter::applyPrewhereActions(header, query_info.prewhere_info);
+
+            if (query_info.prewhere_info)
+            {
+                auto & prewhere_info = *query_info.prewhere_info;
+
+                if (prewhere_info.row_level_filter)
+                {
+                    header = prewhere_info.row_level_filter->updateHeader(std::move(header));
+                    header.erase(prewhere_info.row_level_column_name);
+                }
+
+                if (prewhere_info.prewhere_actions)
+                    header = prewhere_info.prewhere_actions->updateHeader(std::move(header));
+
+                if (prewhere_info.remove_prewhere_column)
+                    header.erase(prewhere_info.prewhere_column_name);
+            }
             return header;
         }
         case QueryProcessingStage::WithMergeableState:
@@ -137,8 +153,7 @@ Block getHeaderForProcessingStage(
 
             if (context->getSettingsRef().allow_experimental_analyzer)
             {
-                auto storage = std::make_shared<StorageDummy>(
-                    storage_snapshot->storage.getStorageID(), storage_snapshot->metadata->getColumns(), storage_snapshot);
+                auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), storage_snapshot->metadata->getColumns());
                 InterpreterSelectQueryAnalyzer interpreter(query, context, storage, SelectQueryOptions(processed_stage).analyze());
                 result = interpreter.getSampleBlock();
             }
@@ -152,7 +167,8 @@ Block getHeaderForProcessingStage(
             return result;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown processed stage.");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical Error: unknown processed stage.");
 }
 
 }
+

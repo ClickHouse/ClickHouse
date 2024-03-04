@@ -8,7 +8,7 @@
 
 #include <memory>
 
-#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include <Poco/URI.h>
 
@@ -45,7 +45,7 @@ String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
     String content;
     for (const auto & [header_name, header_value] : message_header)
     {
-        if (header_name.starts_with("x-amz-server-side-encryption"))
+        if (boost::algorithm::starts_with(header_name, "x-amz-server-side-encryption"))
         {
             content += header_name + ": " + header_value + "\n";
         }
@@ -55,7 +55,7 @@ String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
             boost::split(parts, header_value, [](char c){ return c == ' '; });
             for (const auto & part : parts)
             {
-                if (part.starts_with("SignedHeaders="))
+                if (boost::algorithm::starts_with(part, "SignedHeaders="))
                     content += header_name + ": ... " + part + " ...\n";
             }
         }
@@ -94,7 +94,7 @@ void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::
         client,
         uri.bucket,
         uri.key,
-        DB::DBMS_DEFAULT_BUFFER_SIZE,
+        DBMS_DEFAULT_BUFFER_SIZE,
         request_settings,
         {}
     );
@@ -140,15 +140,10 @@ void testServerSideEncryption(
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 
-    DB::S3::ClientSettings client_settings{
-        .use_virtual_addressing = uri.is_virtual_hosted_style,
-        .disable_checksum = disable_checksum,
-        .gcs_issue_compose_request = false,
-    };
-
     std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
         client_configuration,
-        client_settings,
+        uri.is_virtual_hosted_style,
+        disable_checksum,
         access_key_id,
         secret_access_key,
         server_side_encryption_customer_key_base64,

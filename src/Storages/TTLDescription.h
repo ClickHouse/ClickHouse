@@ -35,15 +35,6 @@ struct TTLAggregateDescription
 
 using TTLAggregateDescriptions = std::vector<TTLAggregateDescription>;
 
-class PreparedSets;
-using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
-
-struct ExpressionAndSets
-{
-    ExpressionActionsPtr expression;
-    PreparedSetsPtr sets;
-};
-
 /// Common struct for TTL record in storage
 struct TTLDescription
 {
@@ -53,10 +44,9 @@ struct TTLDescription
     /// TTL d + INTERVAL 1 DAY
     ///    ^~~~~~~~~~~~~~~~~~~^
     ASTPtr expression_ast;
-    NamesAndTypesList expression_columns;
 
     /// Expression actions evaluated from AST
-    ExpressionAndSets buildExpression(const ContextPtr & context) const;
+    ExpressionActionsPtr expression;
 
     /// Result column of this TTL expression
     String result_column;
@@ -64,9 +54,7 @@ struct TTLDescription
     /// WHERE part in TTL expression
     /// TTL ... WHERE x % 10 == 0 and y > 5
     ///              ^~~~~~~~~~~~~~~~~~~~~~^
-    ASTPtr where_expression_ast;
-    NamesAndTypesList where_expression_columns;
-    ExpressionAndSets buildWhereExpression(const ContextPtr & context) const;
+    ExpressionActionsPtr where_expression;
 
     /// Name of result column from WHERE expression
     String where_result_column;

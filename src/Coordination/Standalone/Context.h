@@ -14,7 +14,7 @@
 #include <Core/BackgroundSchedulePool.h>
 
 #include <IO/AsyncReadCounters.h>
-#include <Common/Scheduler/IResourceManager.h>
+#include <IO/IResourceManager.h>
 
 #include <Poco/Util/Application.h>
 

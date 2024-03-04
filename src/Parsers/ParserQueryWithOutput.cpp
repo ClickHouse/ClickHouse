@@ -2,7 +2,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserAlterQuery.h>
-#include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ParserCheckQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDescribeTableQuery.h>
@@ -66,7 +65,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserShowGrantsQuery show_grants_p;
     ParserShowPrivilegesQuery show_privileges_p;
     ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
-    ParserBackupQuery backup_p;
 
     ASTPtr query;
 
@@ -96,8 +94,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || show_access_p.parse(pos, query, expected)
         || show_access_entities_p.parse(pos, query, expected)
         || show_grants_p.parse(pos, query, expected)
-        || show_privileges_p.parse(pos, query, expected)
-        || backup_p.parse(pos, query, expected);
+        || show_privileges_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;

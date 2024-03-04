@@ -210,7 +210,7 @@ public:
     static constexpr int SanitizerTrap = -3;
 
     explicit SignalListener(BaseDaemon & daemon_)
-        : log(getLogger("BaseDaemon"))
+        : log(&Poco::Logger::get("BaseDaemon"))
         , daemon(daemon_)
     {
     }
@@ -281,21 +281,13 @@ public:
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                try
-                {
-                    std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); }).detach();
-                }
-                catch (...)
-                {
-                    /// Likely cannot allocate thread
-                    onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr);
-                }
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); }).detach();
             }
         }
     }
 
 private:
-    LoggerPtr log;
+    Poco::Logger * log;
     BaseDaemon & daemon;
 
     void onTerminate(std::string_view message, UInt32 thread_num) const

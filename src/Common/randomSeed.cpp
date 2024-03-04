@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 
-UInt64 randomSeed()
+DB::UInt64 randomSeed()
 {
     struct timespec times;
     if (clock_gettime(CLOCK_MONOTONIC, &times))

@@ -1,9 +1,3 @@
-#if !defined(SANITIZER)
-
-/// This test is slow due to exhaustive checking of time zones.
-/// Better to replace with randomization.
-/// Also, recommended to replace with a functional test for better maintainability.
-
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 
@@ -554,5 +548,3 @@ INSTANTIATE_TEST_SUITE_P(AllTimezones_Year1970,
 //            {0, 0 + 11 * 3600 * 24 + 12, 11},
         }))
 );
-
-#endif

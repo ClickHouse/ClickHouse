@@ -6,7 +6,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Columns/IColumn.h>
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -60,10 +59,11 @@ struct SessionLogElement
 
     static std::string name() { return "SessionLog"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 

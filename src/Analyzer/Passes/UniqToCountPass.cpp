@@ -1,4 +1,4 @@
-#include <Analyzer/Passes/UniqToCountPass.h>
+#include "UniqToCountPass.h"
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -185,7 +185,7 @@ public:
 };
 
 
-void UniqToCountPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void UniqToCountPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     UniqToCountVisitor visitor(context);
     visitor.visit(query_tree_node);

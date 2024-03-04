@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
 [[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
 {
@@ -279,19 +284,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 if (ParserKeyword{"STRICT"}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::STRICT;
                 else if (ParserKeyword{"LIGHTWEIGHT"}.ignore(pos, expected))
-                {
                     res->sync_replica_mode = SyncReplicaMode::LIGHTWEIGHT;
-                    if (ParserKeyword{"FROM"}.ignore(pos, expected))
-                    {
-                        do
-                        {
-                            ASTPtr replica_ast;
-                            if (!ParserStringLiteral{}.parse(pos, replica_ast, expected))
-                                return false;
-                            res->src_replicas.emplace_back(replica_ast->as<ASTLiteral &>().value.safeGet<String>());
-                        } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
-                    }
-                }
                 else if (ParserKeyword{"PULL"}.ignore(pos, expected))
                     res->sync_replica_mode = SyncReplicaMode::PULL;
             }
@@ -392,8 +385,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_PULLING_REPLICATION_LOG:
         case Type::STOP_CLEANUP:
         case Type::START_CLEANUP:
-        case Type::STOP_VIRTUAL_PARTS_UPDATE:
-        case Type::START_VIRTUAL_PARTS_UPDATE:
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
@@ -467,15 +458,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-        case Type::DROP_DISTRIBUTED_CACHE:
-        {
-            ParserLiteral parser;
-            ASTPtr ast;
-            if (!parser.parse(pos, ast, expected))
-                return false;
-            res->distributed_cache_servive_id = ast->as<ASTLiteral>()->value.safeGet<String>();
-            break;
-        }
         case Type::SYNC_FILESYSTEM_CACHE:
         {
             ParserLiteral path_parser;
@@ -488,9 +470,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::DROP_DISK_METADATA_CACHE:
         {
-            if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
-                return false;
-            break;
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
         }
         case Type::DROP_SCHEMA_CACHE:
         {

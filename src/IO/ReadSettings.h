@@ -6,7 +6,7 @@
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/Priority.h>
-#include <Common/Scheduler/ResourceLink.h>
+#include <IO/ResourceLink.h>
 
 namespace DB
 {

@@ -62,7 +62,7 @@ protected:
     bool convertImpl(String & out, IParser::Pos & pos) override;
 };
 
-class ExtractJSON : public IParserKQLFunction
+class ExtractJson : public IParserKQLFunction
 {
 protected:
     const char * getName() const override { return "extract_json(), extractjson()"; }
@@ -125,7 +125,7 @@ protected:
     bool convertImpl(String & out, IParser::Pos & pos) override;
 };
 
-class ParseJSON : public IParserKQLFunction
+class ParseJson : public IParserKQLFunction
 {
 protected:
     const char * getName() const override { return "parse_json()"; }

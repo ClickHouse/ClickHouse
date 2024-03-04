@@ -199,16 +199,6 @@ Type: Bool
 
 Default: 0
 
-
-## dns_cache_max_entries
-
-Internal DNS cache max entries.
-
-Type: UInt64
-
-Default: 10000
-
-
 ## dns_cache_update_period
 
 Internal DNS cache update period in seconds.
@@ -468,38 +458,6 @@ Type: Double
 
 Default: 0.9
 
-## cgroups_memory_usage_observer_wait_time
-
-Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups. (see
-settings `cgroup_memory_watcher_hard_limit_ratio` and `cgroup_memory_watcher_soft_limit_ratio`).
-
-Type: UInt64
-
-Default: 15
-
-## cgroup_memory_watcher_hard_limit_ratio
-
-Specifies the "hard" threshold with regards to the memory consumption of the server process according to cgroups after which the server's
-maximum memory consumption is adjusted to the threshold value.
-
-See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watcher_soft_limit_ratio`
-
-Type: Double
-
-Default: 0.95
-
-## cgroup_memory_watcher_soft_limit_ratio
-
-Specifies the "soft" threshold with regards to the memory consumption of the server process according to cgroups after which arenas in
-jemalloc are purged.
-
-
-See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watcher_hard_limit_ratio`
-
-Type: Double
-
-Default: 0.95
-
 ## max_table_size_to_drop
 
 Restriction on deleting tables.
@@ -514,10 +472,10 @@ The value 0 means that you can delete all tables without any restrictions.
 ``` xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
+  
 
-
-## max\_database\_num\_to\_warn {#max-database-num-to-warn}
-If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+## max\_database\_num\_to\_warn {#max-database-num-to-warn}  
+If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.    
 Default value: 1000
 
 **Example**
@@ -525,10 +483,10 @@ Default value: 1000
 ``` xml
 <max_database_num_to_warn>50</max_database_num_to_warn>
 ```
-
-## max\_table\_num\_to\_warn {#max-table-num-to-warn}
-If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
-Default value: 5000
+  
+## max\_table\_num\_to\_warn {#max-table-num-to-warn}   
+If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
+Default value: 5000    
 
 **Example**
 
@@ -537,9 +495,9 @@ Default value: 5000
 ```
 
 
-## max\_part\_num\_to\_warn {#max-part-num-to-warn}
-If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
-Default value: 100000
+## max\_part\_num\_to\_warn {#max-part-num-to-warn}  
+If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
+Default value: 100000  
 
 **Example**
 
@@ -2908,30 +2866,3 @@ This also allows a mix of resolver types can be used.
 ### disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
 
 By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
-
-## max_materialized_views_count_for_table {#max_materialized_views_count_for_table}
-
-A limit on the number of materialized views attached to a table.
-Note that only directly dependent views are considered here, and the creation of one view on top of another view is not considered.
-
-Default value: `0`.
-
-## format_alter_operations_with_parentheses {#format_alter_operations_with_parentheses}
-
-If set to true, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.
-
-Type: Bool
-
-Default: 0
-
-## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
-
-If true, ClickHouse doesn't write defaults for empty SQL security statement in CREATE VIEW queries. 
-
-:::note
-This setting is only necessary for the migration period and will become obsolete in 24.4
-:::
-
-Type: Bool
-
-Default: 1

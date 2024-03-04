@@ -11,10 +11,9 @@
 namespace DB
 {
 
-ColumnsDescription FilesystemReadPrefetchesLogElement::getColumnsDescription()
+NamesAndTypesList FilesystemReadPrefetchesLogElement::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
+    return {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},

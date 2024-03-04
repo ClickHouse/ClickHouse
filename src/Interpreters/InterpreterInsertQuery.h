@@ -46,30 +46,21 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const Names & columns,
         ThreadStatusesHolderPtr thread_status_holder = {},
-        std::atomic_uint64_t * elapsed_counter_ms = nullptr,
-        bool check_access = false);
+        std::atomic_uint64_t * elapsed_counter_ms = nullptr);
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
     StoragePtr getTable(ASTInsertQuery & query);
-    static Block getSampleBlock(
-        const ASTInsertQuery & query,
-        const StoragePtr & table,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context_,
-        bool no_destination = false,
-        bool allow_materialized = false);
+    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
 
     bool supportsTransactions() const override { return true; }
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.push_back(std::move(buffer)); }
 
-    bool shouldAddSquashingFroStorage(const StoragePtr & table) const;
-
 private:
-    static Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, bool allow_materialized);
+    Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
 
     ASTPtr query_ptr;
     const bool allow_materialized;
@@ -90,7 +81,8 @@ private:
         const Block & subsequent_header,
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
-        const Block & query_sample_block);
+        const Block & query_sample_block,
+        ThreadStatusesHolderPtr thread_status_holder);
 };
 
 

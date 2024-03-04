@@ -66,7 +66,7 @@ public:
 
         std::unique_ptr<Stopwatch> execution_watch = {};
 
-        explicit operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
+        operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
     };
 
     /// Submit request and obtain a handle. This method don't perform any waits.
