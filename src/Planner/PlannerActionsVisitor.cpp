@@ -110,7 +110,7 @@ public:
                 }
                 else
                 {
-                    if (constant_node.hasSourceExpression())
+                    if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
                     {
                         if (constant_node.receivedFromInitiatorServer())
                             result = calculateActionNodeNameForConstant(constant_node);
@@ -566,7 +566,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         }
         else
         {
-            if (constant_node.hasSourceExpression())
+            if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
             {
                 if (constant_node.receivedFromInitiatorServer())
                     return calculateActionNodeNameForConstant(constant_node);
