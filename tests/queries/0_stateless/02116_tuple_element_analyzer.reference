@@ -15,8 +15,8 @@ SELECT __table1.`t2.1` AS `tupleElement(t2, 1)`
 FROM default.t_tuple_element AS __table1
 1	2
 SELECT
-    1 AS `tupleElement(t, 1)`,
-    2 AS `tupleElement(t, 2)`
+    _CAST(1, \'UInt8\') AS `tupleElement(t, 1)`,
+    _CAST(2, \'UInt8\') AS `tupleElement(t, 2)`
 FROM system.one AS __table1
 1	2
 SELECT
