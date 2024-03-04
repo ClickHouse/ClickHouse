@@ -114,7 +114,6 @@ bool ReadBufferFromWebServer::nextImpl()
 
     chassert(working_buffer.begin() != nullptr);
     chassert(impl->buffer().begin() != nullptr);
-    chassert(working_buffer.begin() == impl->buffer().begin());
 
     chassert(impl->available() == 0);
 
