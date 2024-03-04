@@ -1,8 +1,10 @@
 #include "VFSLogItem.h"
-#include "Common/logger_useful.h"
-#include "IO/ReadBufferFromMemory.h"
-#include "IO/ReadHelpers.h"
-#include "IO/WriteHelpers.h"
+
+#include <Disks/ObjectStorages/VFSSnapshotStorage.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Common/logger_useful.h>
 
 using ItemPair = DB::VFSLogItemStorage::value_type;
 template <>
@@ -71,29 +73,23 @@ void VFSLogItem::merge(VFSLogItem && other)
         (*this)[std::move(elem.first)] += elem.second;
 }
 
-VFSMergeResult VFSLogItem::mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer & new_snapshot, Poco::Logger * log) &&
+VFSMergeResult
+VFSLogItem::mergeWithSnapshot(IVFSSnapshotReadStream & snapshot, IVFSSnapshotWriteStream & new_snapshot, Poco::Logger * log) &&
 {
     // TODO myrrc this algo is ugly
     /// Both snapshot and batch data are sorted so we can merge them in one traversal
     VFSMergeResult out;
-
-    using Pair = std::remove_cvref_t<decltype(out.invalid)::reference>;
-    std::optional<Pair> left;
     auto batch_it = begin();
 
-    auto read_left = [&] -> decltype(left)
+    auto read_left = [&]()
     {
-        if (snapshot.eof())
-            return {};
-        Pair entry;
-        readStringUntilWhitespace(entry.first, snapshot);
-        checkChar(' ', snapshot);
-        readIntTextUnsafe(entry.second, snapshot);
-        checkChar('\n', snapshot);
-        LOG_TRACE(log, "Old snapshot entry: {} {}", entry.first, entry.second);
+        auto entry = snapshot.next();
+        if (!entry)
+            return entry;
+        LOG_TRACE(log, "Old snapshot entry: {} {}", entry->remote_path, entry->link_count);
         return entry;
     };
-    left = read_left();
+    auto left = read_left();
 
     auto write = [&](std::string_view remote, int links)
     {
@@ -102,9 +98,8 @@ VFSMergeResult VFSLogItem::mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer 
             out.invalid.emplace(remote, links);
             return;
         }
-        const String entry = fmt::format("{} {}\n", remote, links);
-        LOG_TRACE(log, "New snapshot entry: {}", entry);
-        writeString(entry, new_snapshot);
+        LOG_TRACE(log, "New snapshot entry: {} {}", remote, links);
+        new_snapshot.write(VFSSnapshotEntry{String(remote), links});
     };
 
     while (left && batch_it != cend())

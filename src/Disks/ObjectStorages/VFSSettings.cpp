@@ -1,5 +1,6 @@
 #include "VFSSettings.h"
-#include "Common/Exception.h"
+
+#include <Common/Exception.h>
 
 namespace DB
 {

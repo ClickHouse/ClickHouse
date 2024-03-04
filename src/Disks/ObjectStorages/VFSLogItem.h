@@ -13,6 +13,8 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 using VFSLogItemStorage = boost::container::flat_map<String /* remote_path */, int /*references delta */>;
+class IVFSSnapshotReadStream;
+class IVFSSnapshotWriteStream;
 
 struct VFSMergeResult
 {
@@ -27,7 +29,7 @@ struct VFSLogItem : VFSLogItemStorage
     void add(const StoredObject & obj);
     void remove(const StoredObject & obj);
     void merge(VFSLogItem && other);
-    VFSMergeResult mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer & new_snapshot, Poco::Logger * log) &&;
+    VFSMergeResult mergeWithSnapshot(IVFSSnapshotReadStream & snapshot, IVFSSnapshotWriteStream & new_snapshot, Poco::Logger * log) &&;
 };
 }
 

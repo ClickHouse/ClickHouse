@@ -176,7 +176,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
             --attempts_left;
         }
 
-        if (blob_list_response.HasPage())
+        if (blob_list_response.NextPageToken.HasValue() && !blob_list_response.NextPageToken.Value().empty())
             options.ContinuationToken = blob_list_response.NextPageToken;
         else
             break;
