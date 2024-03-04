@@ -24,7 +24,7 @@ public:
         ContextPtr context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<NATSSettings> nats_settings_,
-        bool is_attach_);
+        LoadingStrictnessLevel mode);
 
     std::string getName() const override { return "NATS"; }
 
@@ -78,7 +78,7 @@ private:
     size_t num_consumers;
     size_t max_rows_per_message;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     NATSConnectionManagerPtr connection; /// Connection for all consumers
     NATSConfiguration configuration;
@@ -117,7 +117,7 @@ private:
     std::mutex loop_mutex;
 
     mutable bool drop_table = false;
-    bool is_attach;
+    bool throw_on_startup_failure;
 
     NATSConsumerPtr createConsumer();
 

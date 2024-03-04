@@ -8,8 +8,10 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -17,18 +19,19 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <QueryPipeline/QueryPipeline.h>
+#include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/MessageQueueSink.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Kafka/KafkaProducer.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
+#include <Storages/MessageQueueSink.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/NamedCollectionsHelpers.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/Stopwatch.h>
-#include <Common/logger_useful.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -37,11 +40,13 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Formats/FormatFactory.h>
 
 #include <Storages/ColumnDefault.h>
 #include <Common/config_version.h>
@@ -174,70 +179,150 @@ struct StorageKafkaInterceptors
     }
 };
 
+class ReadFromStorageKafka final : public ReadFromStreamLikeEngine
+{
+public:
+    ReadFromStorageKafka(
+        const Names & column_names_,
+        StoragePtr storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        SelectQueryInfo & query_info,
+        ContextPtr context_)
+        : ReadFromStreamLikeEngine{column_names_, storage_snapshot_, query_info.storage_limits, context_}
+        , column_names{column_names_}
+        , storage{storage_}
+        , storage_snapshot{storage_snapshot_}
+    {
+    }
+
+    String getName() const override { return "ReadFromStorageKafka"; }
+
+private:
+    Pipe makePipe() final
+    {
+        auto & kafka_storage = storage->as<StorageKafka &>();
+        if (kafka_storage.shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
+        if (kafka_storage.mv_attached)
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
+
+        ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
+
+        /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
+        Pipes pipes;
+        pipes.reserve(kafka_storage.num_consumers);
+        auto modified_context = Context::createCopy(getContext());
+        modified_context->applySettingsChanges(kafka_storage.settings_adjustments);
+
+        // Claim as many consumers as requested, but don't block
+        for (size_t i = 0; i < kafka_storage.num_consumers; ++i)
+        {
+            /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
+            /// TODO: probably that leads to awful performance.
+            /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
+            pipes.emplace_back(std::make_shared<KafkaSource>(
+                kafka_storage,
+                storage_snapshot,
+                modified_context,
+                column_names,
+                kafka_storage.log,
+                1,
+                kafka_storage.kafka_settings->kafka_commit_on_select));
+        }
+
+        LOG_DEBUG(kafka_storage.log, "Starting reading {} streams", pipes.size());
+        return Pipe::unitePipes(std::move(pipes));
+    }
+
+    const Names column_names;
+    StoragePtr storage;
+    StorageSnapshotPtr storage_snapshot;
+};
+
 namespace
 {
     const String CONFIG_KAFKA_TAG = "kafka";
     const String CONFIG_KAFKA_TOPIC_TAG = "kafka_topic";
     const String CONFIG_NAME_TAG = "name";
 
+    void setKafkaConfigValue(cppkafka::Configuration & kafka_config, const String & key, const String & value)
+   {
+        if (key.starts_with(CONFIG_KAFKA_TOPIC_TAG) || key == CONFIG_NAME_TAG) /// multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
+                return; /// used by new per-topic configuration, ignore
+
+        /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
+        /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+        const String setting_name_in_kafka_config = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
+        kafka_config.set(setting_name_in_kafka_config, value);
+    }
+
     /// Read server configuration into cppkafka configuration, used by global configuration and by legacy per-topic configuration
-    void loadFromConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    void loadFromConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String& collection_name, const String & config_prefix)
     {
+        if (!collection_name.empty())
+        {
+            const auto & collection = NamedCollectionFactory::instance().get(collection_name);
+            for (const auto & key : collection->getKeys(-1, config_prefix))
+            {
+                // Cut prefix with '.' before actual config tag.
+                const auto param_name = key.substr(config_prefix.size() + 1);
+                setKafkaConfigValue(kafka_config, param_name, collection->get<String>(key));
+            }
+            return;
+        }
+
         /// Read all tags one level below <kafka>
         Poco::Util::AbstractConfiguration::Keys tags;
         config.keys(config_prefix, tags);
 
         for (const auto & tag : tags)
         {
-            if (tag.starts_with(CONFIG_KAFKA_TOPIC_TAG)) /// multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
-                continue; /// used by new per-topic configuration, ignore
-
-            const String setting_path = config_prefix + "." + tag;
-            const String setting_value = config.getString(setting_path);
-
-            /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
-            /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
-            const String setting_name_in_kafka_config = (tag == "log_level") ? tag : boost::replace_all_copy(tag, "_", ".");
-            kafka_config.set(setting_name_in_kafka_config, setting_value);
+            const String setting_path = fmt::format("{}.{}", config_prefix, tag);
+            setKafkaConfigValue(kafka_config, tag, config.getString(setting_path));
         }
     }
 
     /// Read server configuration into cppkafa configuration, used by new per-topic configuration
-    void loadTopicConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const String & topic)
+    void loadTopicConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String& collection_name, const String& config_prefix, const String& topic)
     {
-        /// Read all tags one level below <kafka>
-        Poco::Util::AbstractConfiguration::Keys tags;
-        config.keys(config_prefix, tags);
-
-        for (const auto & tag : tags)
+        if (!collection_name.empty())
         {
-            /// Only consider tag <kafka_topic>. Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
-            if (!tag.starts_with(CONFIG_KAFKA_TOPIC_TAG))
-                continue;
-
-            /// Read topic name between <name>...</name>
-            const String kafka_topic_path = config_prefix + "." + tag;
-            const String kafpa_topic_name_path = kafka_topic_path + "." + CONFIG_NAME_TAG;
-
-            const String topic_name = config.getString(kafpa_topic_name_path);
-            if (topic_name == topic)
+            const auto topic_prefix = fmt::format("{}.{}", config_prefix, CONFIG_KAFKA_TOPIC_TAG);
+            const auto & collection = NamedCollectionFactory::instance().get(collection_name);
+            for (const auto & key : collection->getKeys(1, config_prefix))
             {
-                /// Found it! Now read the per-topic configuration into cppkafka.
-                Poco::Util::AbstractConfiguration::Keys inner_tags;
-                config.keys(kafka_topic_path, inner_tags);
-                for (const auto & inner_tag : inner_tags)
-                {
-                    if (inner_tag == CONFIG_NAME_TAG)
-                        continue; // ignore <name>
+                /// Only consider key <kafka_topic>. Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
+                if (!key.starts_with(topic_prefix))
+                    continue;
 
-                    /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
-                    /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
-                    const String setting_path = kafka_topic_path + "." + inner_tag;
-                    const String setting_value = config.getString(setting_path);
+                const String kafka_topic_path = config_prefix + "." + key;
+                const String kafka_topic_name_path = kafka_topic_path + "." + CONFIG_NAME_TAG;
+                if (topic == collection->get<String>(kafka_topic_name_path))
+                    /// Found it! Now read the per-topic configuration into cppkafka.
+                    loadFromConfig(kafka_config, config, collection_name, kafka_topic_path);
+            }
+        }
+        else
+        {
+            /// Read all tags one level below <kafka>
+            Poco::Util::AbstractConfiguration::Keys tags;
+            config.keys(config_prefix, tags);
 
-                    const String setting_name_in_kafka_config = (inner_tag == "log_level") ? inner_tag : boost::replace_all_copy(inner_tag, "_", ".");
-                    kafka_config.set(setting_name_in_kafka_config, setting_value);
-                }
+            for (const auto & tag : tags)
+            {
+                /// Only consider tag <kafka_topic>. Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
+                if (!tag.starts_with(CONFIG_KAFKA_TOPIC_TAG))
+                    continue;
+
+                /// Read topic name between <name>...</name>
+                const String kafka_topic_path = fmt::format("{}.{}", config_prefix, tag);
+                const String kafka_topic_name_path = fmt::format("{}.{}", kafka_topic_path, CONFIG_NAME_TAG);
+
+                const String topic_name = config.getString(kafka_topic_name_path);
+                if (topic_name == topic)
+                    /// Found it! Now read the per-topic configuration into cppkafka.
+                    loadFromConfig(kafka_config, config, collection_name, kafka_topic_path);
             }
         }
     }
@@ -261,7 +346,7 @@ StorageKafka::StorageKafka(
     , max_rows_per_message(kafka_settings->kafka_max_rows_per_message.value)
     , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value, macros_info))
     , num_consumers(kafka_settings->kafka_num_consumers.value)
-    , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageKafka (" + table_id_.table_name + ")"))
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
@@ -347,45 +432,18 @@ String StorageKafka::getDefaultClientId(const StorageID & table_id_)
     return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id_.database_name, table_id_.table_name);
 }
 
-
-Pipe StorageKafka::read(
+void StorageKafka::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr local_context,
+    SelectQueryInfo & query_info,
+    ContextPtr query_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    if (shutdown_called)
-        throw Exception(ErrorCodes::ABORTED, "Table is detached");
-
-    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
-                        "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
-
-    if (mv_attached)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
-
-    ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
-
-    /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
-    Pipes pipes;
-    pipes.reserve(num_consumers);
-    auto modified_context = Context::createCopy(local_context);
-    modified_context->applySettingsChanges(settings_adjustments);
-
-    // Claim as many consumers as requested, but don't block
-    for (size_t i = 0; i < num_consumers; ++i)
-    {
-        /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
-        /// TODO: probably that leads to awful performance.
-        /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
-        pipes.emplace_back(std::make_shared<KafkaSource>(*this, storage_snapshot, modified_context, column_names, log, 1, kafka_settings->kafka_commit_on_select));
-    }
-
-    LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    return Pipe::unitePipes(std::move(pipes));
+    query_plan.addStep(std::make_unique<ReadFromStorageKafka>(
+        column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
 }
 
 
@@ -689,13 +747,6 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
         : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
 }
 
-String StorageKafka::getConfigPrefix() const
-{
-    if (!collection_name.empty())
-        return "named_collections." + collection_name + "." + CONFIG_KAFKA_TAG; /// Add one more level to separate librdkafka configuration.
-    return CONFIG_KAFKA_TAG;
-}
-
 void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
 {
     // Update consumer configuration from the configuration. Example:
@@ -704,9 +755,7 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
     //         <fetch_min_bytes>100000</fetch_min_bytes>
     //     </kafka>
     const auto & config = getContext()->getConfigRef();
-    auto config_prefix = getConfigPrefix();
-    if (config.has(config_prefix))
-        loadFromConfig(kafka_config, config, config_prefix);
+    loadFromConfig(kafka_config, config, collection_name, CONFIG_KAFKA_TAG);
 
 #if USE_KRB5
     if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
@@ -745,9 +794,7 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
     // as <kafka> are ugly.
     for (const auto & topic : topics)
     {
-        const auto topic_config_key = config_prefix + "_" + topic;
-        if (config.has(topic_config_key))
-            loadFromConfig(kafka_config, config, topic_config_key);
+        loadFromConfig(kafka_config, config, collection_name, CONFIG_KAFKA_TAG + "_" + topic);
     }
 
     // Update consumer topic-specific configuration (new syntax). Example with topics "football" and "baseball":
@@ -766,8 +813,7 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
     // Advantages: The period restriction no longer applies (e.g. <name>sports.football</name> will work), everything
     // Kafka-related is below <kafka>.
     for (const auto & topic : topics)
-        if (config.has(config_prefix))
-            loadTopicConfig(kafka_config, config, config_prefix, topic);
+        loadTopicConfig(kafka_config, config, collection_name, CONFIG_KAFKA_TAG, topic);
 
     // No need to add any prefix, messages can be distinguished
     kafka_config.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & facility, const std::string & message)
@@ -778,7 +824,7 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
 
     /// NOTE: statistics should be consumed, otherwise it creates too much
     /// entries in the queue, that leads to memory leak and slow shutdown.
-    if (!config.has(config_prefix + "." + "statistics_interval_ms"))
+    if (!kafka_config.has_property("statistics.interval.ms"))
     {
         // every 3 seconds by default. set to 0 to disable.
         kafka_config.set("statistics.interval.ms", "3000");

@@ -34,14 +34,14 @@ public:
 
     size_t getBytesAllocated() const override { return 0; }
 
-    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load(std::memory_order_relaxed);
+        size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override { return 1.0; }
@@ -70,17 +70,17 @@ public:
 
     Columns getColumns(
         const Strings & attribute_names,
-        const DataTypes & result_types,
+        const DataTypes & attribute_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const Columns & default_values_columns) const override;
+        DefaultsOrFilter defaults_or_filter) const override;
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        DefaultOrFilter default_or_filter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 

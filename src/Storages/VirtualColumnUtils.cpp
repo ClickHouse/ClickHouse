@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <memory>
+#include <stack>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
 
@@ -211,7 +212,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
         const auto * expr_const_node = actions->tryFindInOutputs(expr_column_name);
         if (!expr_const_node)
             return false;
-        auto filter_actions = ActionsDAG::buildFilterActionsDAG({expr_const_node}, {}, context);
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG({expr_const_node});
         const auto & nodes = filter_actions->getNodes();
         bool has_dependent_columns = std::any_of(nodes.begin(), nodes.end(), [&](const auto & node)
         {
@@ -222,7 +223,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
 
         auto expression_actions = std::make_shared<ExpressionActions>(actions);
         auto block_with_constants = block;
-        expression_actions->execute(block_with_constants);
+        expression_actions->execute(block_with_constants, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
         return block_with_constants.has(expr_column_name) && isColumnConst(*block_with_constants.getByName(expr_column_name).column);
     };
 
@@ -265,7 +266,7 @@ void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
     auto actions = std::make_shared<ExpressionActions>(dag);
     makeSets(actions, context);
     Block block_with_filter = block;
-    actions->execute(block_with_filter);
+    actions->execute(block_with_filter, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
     /// Filter the block.
     String filter_column_name = dag->getOutputs().at(0)->result_name;
@@ -312,7 +313,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     makeSets(actions, context);
 
     Block block_with_filter = block;
-    actions->execute(block_with_filter);
+    actions->execute(block_with_filter, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
     /// Filter the block.
     String filter_column_name = expression_ast->getColumnName();

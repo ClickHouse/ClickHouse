@@ -12,7 +12,7 @@ class StorageSystemScheduler final : public IStorageSystemOneBlock<StorageSystem
 {
 public:
     std::string getName() const override { return "SystemScheduler"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

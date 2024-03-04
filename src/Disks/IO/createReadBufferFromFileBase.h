@@ -21,6 +21,5 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     std::optional<size_t> file_size = {},
     int flags_ = -1,
     char * existing_memory = nullptr,
-    size_t alignment = 0,
-    bool use_external_buffer = false);
+    size_t alignment = 0);
 }

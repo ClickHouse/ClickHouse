@@ -1,6 +1,7 @@
-use prql_compiler::sql::Dialect;
-use prql_compiler::{Options, Target};
+use prqlc::sql::Dialect;
+use prqlc::{Options, Target};
 use std::ffi::{c_char, CString};
+use std::panic;
 use std::slice;
 
 fn set_output(result: String, out: *mut *mut u8, out_size: *mut u64) {
@@ -13,8 +14,7 @@ fn set_output(result: String, out: *mut *mut u8, out_size: *mut u64) {
     *out_ptr = CString::new(result).unwrap().into_raw() as *mut u8;
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn prql_to_sql(
+pub unsafe extern "C" fn prql_to_sql_impl(
     query: *const u8,
     size: u64,
     out: *mut *mut u8,
@@ -37,7 +37,7 @@ pub unsafe extern "C" fn prql_to_sql(
         signature_comment: false,
         color: false,
     };
-    let (is_err, res) = match prql_compiler::compile(&prql_query, &opts) {
+    let (is_err, res) = match prqlc::compile(&prql_query, &opts) {
         Ok(sql_str) => (false, sql_str),
         Err(err) => (true, err.to_string()),
     };
@@ -47,6 +47,23 @@ pub unsafe extern "C" fn prql_to_sql(
     match is_err {
         true => 1,
         false => 0,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn prql_to_sql(
+    query: *const u8,
+    size: u64,
+    out: *mut *mut u8,
+    out_size: *mut u64,
+) -> i64 {
+    let ret = panic::catch_unwind(|| {
+        return prql_to_sql_impl(query, size, out, out_size);
+    });
+    return match ret {
+        // NOTE: using cxxbridge we can return proper Result<> type.
+        Err(_err) => 1,
+        Ok(res) => res,
     }
 }
 

@@ -86,7 +86,7 @@ function download
 
     chmod +x clickhouse
     # clickhouse may be compressed - run once to decompress
-    ./clickhouse ||:
+    ./clickhouse --query "SELECT 1" ||:
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
     ln -s ./clickhouse ./clickhouse-local
@@ -242,7 +242,7 @@ quit
         --create-query-fuzzer-runs=50 \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         $NEW_TESTS_OPT \
-        > >(tail -n 100000 > fuzzer.log) \
+        > fuzzer.log \
         2>&1 &
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
@@ -387,9 +387,15 @@ if [ -f core.zst ]; then
 fi
 
 rg --text -F '<Fatal>' server.log > fatal.log ||:
+FATAL_LINK=''
+if [ -s fatal.log ]; then
+    FATAL_LINK='<a href="fatal.log">fatal.log</a>'
+fi
+
 dmesg -T > dmesg.log ||:
 
-zstd --threads=0 server.log
+zstd --threads=0 --rm server.log
+zstd --threads=0 --rm fuzzer.log
 
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
@@ -413,11 +419,12 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
 <h1>AST Fuzzer for PR <a href="https://github.com/ClickHouse/ClickHouse/pull/${PR_TO_TEST}">#${PR_TO_TEST}</a> @ ${SHA_TO_TEST}</h1>
 <p class="links">
   <a href="run.log">run.log</a>
-  <a href="fuzzer.log">fuzzer.log</a>
+  <a href="fuzzer.log.zst">fuzzer.log.zst</a>
   <a href="server.log.zst">server.log.zst</a>
   <a href="main.log">main.log</a>
   <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}
+  ${FATAL_LINK}
 </p>
 <table>
 <tr>

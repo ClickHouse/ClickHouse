@@ -143,6 +143,14 @@ DataTypePtr DataTypeMap::getNestedTypeWithUnnamedTuple() const
     return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(from_tuple.getElements()));
 }
 
+void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) const
+{
+    callback(*key_type);
+    key_type->forEachChild(callback);
+    callback(*value_type);
+    value_type->forEachChild(callback);
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 2)

@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -38,7 +39,7 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}", name);
 }
 
-FormatSettings getFormatSettings(ContextPtr context)
+FormatSettings getFormatSettings(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -46,7 +47,7 @@ FormatSettings getFormatSettings(ContextPtr context)
 }
 
 template <typename Settings>
-FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
+FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings)
 {
     FormatSettings format_settings;
 
@@ -149,6 +150,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
     format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
+    format_settings.pretty.output_format_pretty_single_large_number_tip_threshold = settings.output_format_pretty_single_large_number_tip_threshold;
     format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
     format_settings.protobuf.output_nullables_with_google_wrappers = settings.output_format_protobuf_nullables_with_google_wrappers;
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference;
@@ -165,6 +167,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
     format_settings.template_settings.row_format = settings.format_template_row;
+    format_settings.template_settings.row_format_template = settings.format_template_row_format;
+    format_settings.template_settings.resultset_format_template = settings.format_template_resultset_format;
     format_settings.tsv.crlf_end_of_line = settings.output_format_tsv_crlf_end_of_line;
     format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
     format_settings.tsv.enum_as_number = settings.input_format_tsv_enum_as_number;
@@ -178,10 +182,13 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.values.allow_data_after_semicolon = settings.input_format_values_allow_data_after_semicolon;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
+    format_settings.values.escape_quote_with_quote = settings.output_format_values_escape_quote_with_quote;
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
     format_settings.with_types_use_header = settings.input_format_with_types_use_header;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
+    format_settings.arrow.use_signed_indexes_for_dictionary = settings.output_format_arrow_use_signed_indexes_for_dictionary;
+    format_settings.arrow.use_64_bit_indexes_for_dictionary = settings.output_format_arrow_use_64_bit_indexes_for_dictionary;
     format_settings.arrow.allow_missing_columns = settings.input_format_arrow_allow_missing_columns;
     format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
@@ -223,6 +230,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.try_infer_integers = settings.input_format_try_infer_integers;
     format_settings.try_infer_dates = settings.input_format_try_infer_dates;
     format_settings.try_infer_datetimes = settings.input_format_try_infer_datetimes;
+    format_settings.try_infer_exponent_floats = settings.input_format_try_infer_exponent_floats;
     format_settings.markdown.escape_special_characters = settings.output_format_markdown_escape_special_characters;
     format_settings.bson.output_string_as_string = settings.output_format_bson_string_as_string;
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_bson_skip_fields_with_unsupported_types_in_schema_inference;
@@ -250,16 +258,16 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     return format_settings;
 }
 
-template FormatSettings getFormatSettings<FormatFactorySettings>(ContextPtr context, const FormatFactorySettings & settings);
+template FormatSettings getFormatSettings<FormatFactorySettings>(const ContextPtr & context, const FormatFactorySettings & settings);
 
-template FormatSettings getFormatSettings<Settings>(ContextPtr context, const Settings & settings);
+template FormatSettings getFormatSettings<Settings>(const ContextPtr & context, const Settings & settings);
 
 
 InputFormatPtr FormatFactory::getInput(
     const String & name,
     ReadBuffer & _buf,
     const Block & sample,
-    ContextPtr context,
+    const ContextPtr & context,
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings,
     std::optional<size_t> _max_parsing_threads,
@@ -392,7 +400,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
         {
             parallel_read = false;
             LOG_TRACE(
-                &Poco::Logger::get("FormatFactory"),
+                getLogger("FormatFactory"),
                 "Failed to setup ParallelReadBuffer because of an exception:\n{}.\n"
                 "Falling back to the single-threaded buffer",
                 e.displayText());
@@ -402,7 +410,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     if (parallel_read)
     {
         LOG_TRACE(
-            &Poco::Logger::get("FormatFactory"),
+            getLogger("FormatFactory"),
             "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
             max_download_threads,
             settings.max_download_buffer_size);
@@ -422,7 +430,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     return res;
 }
 
-static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr context)
+static void addExistingProgressToOutputFormat(OutputFormatPtr format, const ContextPtr & context)
 {
     auto element_id = context->getProcessListElementSafe();
     if (element_id)
@@ -441,7 +449,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     const String & name,
     WriteBuffer & buf,
     const Block & sample,
-    ContextPtr context,
+    const ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & output_getter = getCreators(name).output_creator;
@@ -449,6 +457,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    format_settings.is_writing_to_terminal = isWritingToTerminal(buf);
 
     const Settings & settings = context->getSettingsRef();
 
@@ -478,7 +487,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     const String & name,
     WriteBuffer & buf,
     const Block & sample,
-    ContextPtr context,
+    const ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & output_getter = getCreators(name).output_creator;
@@ -490,6 +499,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     format_settings.max_threads = context->getSettingsRef().max_threads;
+    format_settings.is_writing_to_terminal = format_settings.is_writing_to_terminal = isWritingToTerminal(buf);
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
@@ -511,7 +521,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 
 String FormatFactory::getContentType(
     const String & name,
-    ContextPtr context,
+    const ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & output_getter = getCreators(name).output_creator;
@@ -530,7 +540,7 @@ String FormatFactory::getContentType(
 SchemaReaderPtr FormatFactory::getSchemaReader(
     const String & name,
     ReadBuffer & buf,
-    ContextPtr & context,
+    const ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & schema_reader_creator = dict.at(name).schema_reader_creator;
@@ -546,7 +556,7 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
 
 ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
     const String & name,
-    ContextPtr & context,
+    const ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & external_schema_reader_creator = dict.at(name).external_schema_reader_creator;
@@ -600,7 +610,7 @@ void FormatFactory::markFormatHasNoAppendSupport(const String & name)
     registerAppendSupportChecker(name, [](const FormatSettings &){ return false; });
 }
 
-bool FormatFactory::checkIfFormatSupportAppend(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_)
+bool FormatFactory::checkIfFormatSupportAppend(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_)
 {
     auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
     auto & append_support_checker = dict[name].append_support_checker;
@@ -623,10 +633,10 @@ void FormatFactory::registerFileExtension(const String & extension, const String
     file_extension_formats[boost::to_lower_copy(extension)] = format_name;
 }
 
-String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_found)
+std::optional<String> FormatFactory::tryGetFormatFromFileName(String file_name)
 {
     if (file_name == "stdin")
-        return getFormatFromFileDescriptor(STDIN_FILENO);
+        return tryGetFormatFromFileDescriptor(STDIN_FILENO);
 
     CompressionMethod compression_method = chooseCompressionMethod(file_name, "");
     if (CompressionMethod::None != compression_method)
@@ -638,42 +648,52 @@ String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_
 
     auto pos = file_name.find_last_of('.');
     if (pos == String::npos)
-    {
-        if (throw_if_not_found)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the file format by it's extension");
-        return "";
-    }
+        return std::nullopt;
 
     String file_extension = file_name.substr(pos + 1, String::npos);
     boost::algorithm::to_lower(file_extension);
     auto it = file_extension_formats.find(file_extension);
     if (it == file_extension_formats.end())
-    {
-        if (throw_if_not_found)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the file format by it's extension");
-        return "";
-    }
+        return std::nullopt;
+
     return it->second;
 }
 
-String FormatFactory::getFormatFromFileDescriptor(int fd)
+String FormatFactory::getFormatFromFileName(String file_name)
+{
+    if (auto format = tryGetFormatFromFileName(file_name))
+        return *format;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the format of the file {} by it's extension", file_name);
+}
+
+std::optional<String> FormatFactory::tryGetFormatFromFileDescriptor(int fd)
 {
 #ifdef OS_LINUX
     std::string proc_path = fmt::format("/proc/self/fd/{}", fd);
     char file_path[PATH_MAX] = {'\0'};
     if (readlink(proc_path.c_str(), file_path, sizeof(file_path) - 1) != -1)
-        return getFormatFromFileName(file_path, false);
-    return "";
+        return tryGetFormatFromFileName(file_path);
+    return std::nullopt;
 #elif defined(OS_DARWIN)
     char file_path[PATH_MAX] = {'\0'};
     if (fcntl(fd, F_GETPATH, file_path) != -1)
-        return getFormatFromFileName(file_path, false);
-    return "";
+        return tryGetFormatFromFileName(file_path);
+    return std::nullopt;
 #else
     (void)fd;
-    return "";
+    return std::nullopt;
 #endif
 }
+
+String FormatFactory::getFormatFromFileDescriptor(int fd)
+{
+    if (auto format = tryGetFormatFromFileDescriptor(fd))
+        return *format;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the format of the data by the file descriptor {}", fd);
+}
+
 
 void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)
 {
@@ -744,7 +764,7 @@ void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
     target = true;
 }
 
-bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const DB::String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
+bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
 {
     const auto & target = getCreators(name);
     auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
@@ -760,7 +780,7 @@ void FormatFactory::registerAdditionalInfoForSchemaCacheGetter(
     target = std::move(additional_info_for_schema_cache_getter);
 }
 
-String FormatFactory::getAdditionalInfoForSchemaCache(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_)
+String FormatFactory::getAdditionalInfoForSchemaCache(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_)
 {
     const auto & additional_info_getter = getCreators(name).additional_info_for_schema_cache_getter;
     if (!additional_info_getter)
@@ -805,7 +825,7 @@ bool FormatFactory::checkIfOutputFormatPrefersLargeBlocks(const String & name) c
     return target.prefers_large_blocks;
 }
 
-bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, ContextPtr context) const
+bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const
 {
     if (name == "Parquet" && context->getSettingsRef().input_format_parquet_preserve_order)
         return false;
@@ -818,6 +838,18 @@ void FormatFactory::checkFormatName(const String & name) const
     auto it = dict.find(name);
     if (it == dict.end())
         throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}", name);
+}
+
+std::vector<String> FormatFactory::getAllInputFormats() const
+{
+    std::vector<String> input_formats;
+    for (const auto & [format_name, creators] : dict)
+    {
+        if (creators.input_creator || creators.random_access_input_creator)
+            input_formats.push_back(format_name);
+    }
+
+    return input_formats;
 }
 
 FormatFactory & FormatFactory::instance()

@@ -9,6 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -39,15 +40,23 @@ class FunctionMultiIf final : public FunctionIfBase
 {
 public:
     static constexpr auto name = "multiIf";
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionMultiIf>(context_); }
+    static FunctionPtr create(ContextPtr context_)
+    {
+        const auto & settings = context_->getSettingsRef();
+        return std::make_shared<FunctionMultiIf>(settings.allow_execute_multiif_columnar, settings.allow_experimental_variant_type, settings.use_variant_as_common_type);
+    }
 
-    explicit FunctionMultiIf(ContextPtr context_) : context(context_) { }
+    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool allow_experimental_variant_type_, bool use_variant_as_common_type_)
+        : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
+        , allow_experimental_variant_type(allow_experimental_variant_type_)
+        , use_variant_as_common_type(use_variant_as_common_type_)
+    {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
     {
-        settings.enable_lazy_execution_for_first_argument = false;
+        settings.arguments_with_disabled_lazy_execution.insert(0);
         settings.enable_lazy_execution_for_common_descendants_of_arguments = (number_of_arguments != 3);
         settings.force_enable_lazy_execution = false;
         return true;
@@ -117,6 +126,9 @@ public:
             types_of_branches.emplace_back(arg);
         });
 
+        if (allow_experimental_variant_type && use_variant_as_common_type)
+            return getLeastSupertypeOrVariant(types_of_branches);
+
         return getLeastSupertype(types_of_branches);
     }
 
@@ -142,7 +154,6 @@ public:
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.
         */
-
 
         std::vector<Instruction> instructions;
         instructions.reserve(arguments.size() / 2 + 1);
@@ -237,10 +248,9 @@ public:
             }
         }
 
-        const auto & settings = context->getSettingsRef();
-        const WhichDataType which(result_type);
+        const WhichDataType which(removeNullable(result_type));
         bool execute_multiif_columnar
-            = settings.allow_execute_multiif_columnar && !contains_short && (which.isInt() || which.isUInt() || which.isFloat());
+            = allow_execute_multiif_columnar && !contains_short && (which.isInt() || which.isUInt() || which.isFloat());
 
         size_t rows = input_rows_count;
         if (!execute_multiif_columnar)
@@ -254,8 +264,12 @@ public:
     if (which.is##TYPE()) \
     { \
         MutableColumnPtr res = ColumnVector<TYPE>::create(rows); \
-        executeInstructionsColumnar<TYPE, INDEX>(instructions, rows, res); \
-        return std::move(res); \
+        MutableColumnPtr null_map = result_type->isNullable() ? ColumnUInt8::create(rows) : nullptr; \
+        executeInstructionsColumnar<TYPE, INDEX>(instructions, rows, res, null_map, result_type->isNullable()); \
+        if (!result_type->isNullable()) \
+            return std::move(res); \
+        else \
+            return ColumnNullable::create(std::move(res), std::move(null_map)); \
     }
 
 #define ENUMERATE_NUMERIC_TYPES(M, INDEX) \
@@ -295,6 +309,7 @@ public:
     }
 
 private:
+
     static void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
         for (size_t i = 0; i < rows; ++i)
@@ -374,17 +389,59 @@ private:
     }
 
     template <typename T, typename S>
-    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res, const MutableColumnPtr & null_map, bool nullable)
     {
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
 
         PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
-        for (size_t row_i = 0; row_i < rows; ++row_i)
+        if (!nullable)
         {
-            auto & instruction = instructions[inserts[row_i]];
-            auto ref = instruction.source->getDataAt(row_i);
-            res_data[row_i] = *reinterpret_cast<const T*>(ref.data);
+            for (size_t row_i = 0; row_i < rows; ++row_i)
+            {
+                auto & instruction = instructions[inserts[row_i]];
+                auto ref = instruction.source->getDataAt(row_i);
+                res_data[row_i] = *reinterpret_cast<const T*>(ref.data);
+            }
+        }
+        else
+        {
+            PaddedPODArray<UInt8> & null_map_data = assert_cast<ColumnUInt8 &>(*null_map).getData();
+            std::vector<const T*> data_cols(instructions.size());
+            std::vector<const UInt8 *> null_map_cols(instructions.size());
+            ColumnPtr shared_null_map_col = nullptr;
+            for (size_t i = 0; i < instructions.size(); ++i)
+            {
+                if (instructions[i].source->isNullable())
+                {
+                    const ColumnNullable * nullable_col;
+                    if (!instructions[i].source_is_constant)
+                        nullable_col = assert_cast<const ColumnNullable *>(instructions[i].source.get());
+                    else
+                    {
+                        const ColumnPtr data_column = assert_cast<const ColumnConst &>(*instructions[i].source).getDataColumnPtr();
+                        nullable_col = assert_cast<const ColumnNullable *>(data_column.get());
+                    }
+                    null_map_cols[i] = assert_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumnPtr()).getData().data();
+                    data_cols[i] = assert_cast<const ColumnVector<T> &>(*nullable_col->getNestedColumnPtr()).getData().data();
+                }
+                else
+                {
+                    if (!shared_null_map_col)
+                    {
+                        shared_null_map_col = ColumnUInt8::create(rows, 0);
+                    }
+                    null_map_cols[i] = assert_cast<const ColumnUInt8 &>(*shared_null_map_col).getData().data();
+                    data_cols[i] = assert_cast<const ColumnVector<T> &>(*instructions[i].source).getData().data();
+                }
+            }
+            for (size_t row_i = 0; row_i < rows; ++row_i)
+            {
+                auto & instruction = instructions[inserts[row_i]];
+                size_t index = instruction.source_is_constant ? 0 : row_i;
+                res_data[row_i] = *(data_cols[inserts[row_i]] + index);
+                null_map_data[row_i] = *(null_map_cols[inserts[row_i]] + index);
+            }
         }
     }
 
@@ -457,7 +514,9 @@ private:
             executeColumnIfNeeded(arguments[i], true);
     }
 
-    ContextPtr context;
+    const bool allow_execute_multiif_columnar;
+    const bool allow_experimental_variant_type;
+    const bool use_variant_as_common_type;
 };
 
 }
@@ -469,6 +528,11 @@ REGISTER_FUNCTION(MultiIf)
     /// These are obsolete function names.
     factory.registerFunction<FunctionMultiIf>("caseWithoutExpr");
     factory.registerFunction<FunctionMultiIf>("caseWithoutExpression");
+}
+
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool allow_experimental_variant_type, bool use_variant_as_common_type)
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, allow_experimental_variant_type, use_variant_as_common_type));
 }
 
 }

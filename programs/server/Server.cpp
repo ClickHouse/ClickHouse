@@ -24,6 +24,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/Macros.h>
@@ -44,6 +45,7 @@
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
+#include <Common/CPUID.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/ServerUUID.h>
@@ -58,6 +60,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -75,8 +78,8 @@
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
-#include <IO/Resource/registerSchedulerNodes.h>
-#include <IO/Resource/registerResourceManagers.h>
+#include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
+#include <Common/Scheduler/Nodes/registerResourceManagers.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -96,6 +99,7 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperReadinessHandler.h>
 #include <Server/HTTP/HTTPServer.h>
+#include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Core/ServerSettings.h>
 #include <filesystem>
@@ -152,6 +156,18 @@ namespace ProfileEvents
 {
     extern const Event MainConfigLoads;
     extern const Event ServerStartupMilliseconds;
+    extern const Event InterfaceNativeSendBytes;
+    extern const Event InterfaceNativeReceiveBytes;
+    extern const Event InterfaceHTTPSendBytes;
+    extern const Event InterfaceHTTPReceiveBytes;
+    extern const Event InterfacePrometheusSendBytes;
+    extern const Event InterfacePrometheusReceiveBytes;
+    extern const Event InterfaceInterserverSendBytes;
+    extern const Event InterfaceInterserverReceiveBytes;
+    extern const Event InterfaceMySQLSendBytes;
+    extern const Event InterfaceMySQLReceiveBytes;
+    extern const Event InterfacePostgreSQLSendBytes;
+    extern const Event InterfacePostgreSQLReceiveBytes;
 }
 
 namespace fs = std::filesystem;
@@ -352,7 +368,7 @@ void Server::createServer(
 namespace
 {
 
-void setOOMScore(int value, Poco::Logger * log)
+void setOOMScore(int value, LoggerRawPtr log)
 {
     try
     {
@@ -437,7 +453,7 @@ void checkForUsersNotInMainConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_path,
     const std::string & users_config_path,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     if (config.getBool("skip_check_for_incorrect_settings", false))
         return;
@@ -544,7 +560,7 @@ static void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/kernel/task_delayacct";
         if (readNumber(filename) == 0)
-            server.context()->addWarningMessage("Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. Check " + String(filename));
+            server.context()->addWarningMessage("Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. You can enable it using `echo 1 > " + String(filename) + "` or by using sysctl.");
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -608,6 +624,8 @@ try
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
 
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(server_settings.format_alter_operations_with_parentheses);
+
     StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
 
 #if USE_HDFS
@@ -646,6 +664,7 @@ try
     }
 #endif
 
+    registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -696,6 +715,22 @@ try
         formatReadableSizeWithBinarySuffix(physical_server_memory),
         getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
         std::thread::hardware_concurrency());
+
+#if defined(__x86_64__)
+    String cpu_info;
+#define COLLECT_FLAG(X) \
+    if (CPU::have##X()) \
+    {                   \
+        if (!cpu_info.empty()) \
+            cpu_info += ", ";  \
+        cpu_info += #X; \
+    }
+
+    CPU_ID_ENUMERATE(COLLECT_FLAG)
+#undef COLLECT_FLAG
+
+    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
+#endif
 
     sanityChecks(*this);
 
@@ -811,6 +846,13 @@ try
         server_settings.max_parts_cleaning_thread_pool_size,
         0, // We don't need any threads one all the parts will be deleted
         server_settings.max_parts_cleaning_thread_pool_size);
+
+    auto max_database_replicated_create_table_thread_pool_size = server_settings.max_database_replicated_create_table_thread_pool_size ?
+        server_settings.max_database_replicated_create_table_thread_pool_size : getNumberOfPhysicalCPUCores();
+    getDatabaseReplicatedCreateTablesThreadPool().initialize(
+        max_database_replicated_create_table_thread_pool_size,
+        0, // We don't need any threads once all the tables will be created
+        max_database_replicated_create_table_thread_pool_size);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -1241,6 +1283,18 @@ try
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
+    std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
+    try
+    {
+        UInt64 wait_time = server_settings.cgroups_memory_usage_observer_wait_time;
+        if (wait_time != 0)
+            cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
+    }
+    catch (Exception &)
+    {
+        tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
+    }
+
     const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
     const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
 
@@ -1253,7 +1307,7 @@ try
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
-        config().getString("path", ""),
+        config().getString("path", DBMS_DEFAULT_PATH),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
         [&](ConfigurationPtr config, bool initial_loading)
@@ -1293,6 +1347,15 @@ try
             total_memory_tracker.setHardLimit(max_server_memory_usage);
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+            if (cgroups_memory_usage_observer)
+            {
+                double hard_limit_ratio = new_server_settings.cgroup_memory_watcher_hard_limit_ratio;
+                double soft_limit_ratio = new_server_settings.cgroup_memory_watcher_soft_limit_ratio;
+                cgroups_memory_usage_observer->setLimits(
+                    static_cast<uint64_t>(max_server_memory_usage * hard_limit_ratio),
+                    static_cast<uint64_t>(max_server_memory_usage * soft_limit_ratio));
+            }
 
             size_t merges_mutations_memory_usage_soft_limit = new_server_settings.merges_mutations_memory_usage_soft_limit;
 
@@ -1352,7 +1415,7 @@ try
             global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
             global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
 
-            ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
+            SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
             if (new_server_settings.concurrent_threads_soft_limit_num > 0 && new_server_settings.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
                 concurrent_threads_soft_limit = new_server_settings.concurrent_threads_soft_limit_num;
             if (new_server_settings.concurrent_threads_soft_limit_ratio_to_cores > 0)
@@ -1452,6 +1515,8 @@ try
                     global_context->reloadZooKeeperIfChanged(config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
+
+                global_context->reloadQueryMaskingRulesIfChanged(config);
 
                 std::lock_guard lock(servers_lock);
                 updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
@@ -1709,6 +1774,8 @@ try
     }
     else
     {
+        DNSResolver::instance().setCacheMaxEntries(server_settings.dns_cache_max_entries);
+
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(
             global_context, server_settings.dns_cache_update_period, server_settings.dns_max_consecutive_failures);
@@ -1724,6 +1791,17 @@ try
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
     LoadTaskPtrs load_metadata_tasks;
+
+    // Make sure that if exception is thrown during startup async, new async loading jobs are not going to be called.
+    // This is important for the case when exception is thrown from loading of metadata with `async_load_databases = false`
+    // to avoid simultaneously running table startups and destructing databases.
+    SCOPE_EXIT_SAFE(
+        LOG_INFO(log, "Stopping AsyncLoader.");
+
+        // Waits for all currently running jobs to finish and do not run any other pending jobs.
+        global_context->getAsyncLoader().stop();
+    );
+
     try
     {
         auto & database_catalog = DatabaseCatalog::instance();
@@ -1872,6 +1950,7 @@ try
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
+        global_context->setAsynchronousMetrics(&async_metrics);
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
@@ -1923,6 +2002,11 @@ try
                                                                      "distributed_ddl", "DDLWorker",
                                                                      &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID),
                                          load_metadata_tasks);
+        }
+
+        if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
+        {
+            PlacementInfo::PlacementInfo::instance().initialize(config());
         }
 
         /// Do not keep tasks in server, they should be kept inside databases. Used here to make dependent tasks only.
@@ -1988,6 +2072,12 @@ try
             else
                 LOG_INFO(log, "Closed all listening sockets.");
 
+            /// Wait for unfinished backups and restores.
+            /// This must be done after closing listening sockets (no more backups/restores) but before ProcessList::killAllQueries
+            /// (because killAllQueries() will cancel all running backups/restores).
+            if (server_settings.shutdown_wait_backups_and_restores)
+                global_context->waitAllBackupsAndRestores();
+
             /// Killing remaining queries.
             if (!server_settings.shutdown_wait_unfinished_queries)
                 global_context->getProcessList().killAllQueries();
@@ -2047,7 +2137,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
         if (type == "tcp")
-            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false));
+            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes));
 
         if (type == "tls")
 #if USE_SSL
@@ -2059,20 +2149,20 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (type == "proxy1")
             return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
         if (type == "mysql")
-            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this));
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes));
         if (type == "postgres")
-            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
         if (type == "prometheus")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
             );
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
             );
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
@@ -2205,7 +2295,7 @@ void Server::createServers(
                     port_name,
                     "http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
             });
         }
 
@@ -2225,7 +2315,7 @@ void Server::createServers(
                     port_name,
                     "https://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
 #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
@@ -2248,7 +2338,7 @@ void Server::createServers(
                     port_name,
                     "native protocol (tcp): " + address.toString(),
                     std::make_unique<TCPServer>(
-                        new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false),
+                        new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
                         server_pool,
                         socket,
                         new Poco::Net::TCPServerParams));
@@ -2270,7 +2360,7 @@ void Server::createServers(
                     port_name,
                     "native protocol (tcp) with PROXY: " + address.toString(),
                     std::make_unique<TCPServer>(
-                        new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true),
+                        new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
                         server_pool,
                         socket,
                         new Poco::Net::TCPServerParams));
@@ -2293,7 +2383,7 @@ void Server::createServers(
                     port_name,
                     "secure native protocol (tcp_secure): " + address.toString(),
                     std::make_unique<TCPServer>(
-                        new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false),
+                        new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
                         server_pool,
                         socket,
                         new Poco::Net::TCPServerParams));
@@ -2317,7 +2407,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "MySQL compatibility protocol: " + address.toString(),
-                    std::make_unique<TCPServer>(new MySQLHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+                    std::make_unique<TCPServer>(new MySQLHandlerFactory(*this, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
             });
         }
 
@@ -2334,7 +2424,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "PostgreSQL compatibility protocol: " + address.toString(),
-                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
             });
         }
 
@@ -2368,7 +2458,7 @@ void Server::createServers(
                     port_name,
                     "Prometheus: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
             });
         }
     }
@@ -2414,7 +2504,9 @@ void Server::createInterserverServers(
                         createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
                         server_pool,
                         socket,
-                        http_params));
+                        http_params,
+                        ProfileEvents::InterfaceInterserverReceiveBytes,
+                        ProfileEvents::InterfaceInterserverSendBytes));
             });
         }
 
@@ -2437,7 +2529,9 @@ void Server::createInterserverServers(
                         createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
                         server_pool,
                         socket,
-                        http_params));
+                        http_params,
+                        ProfileEvents::InterfaceInterserverReceiveBytes,
+                        ProfileEvents::InterfaceInterserverSendBytes));
 #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -2452,7 +2546,7 @@ void Server::stopServers(
     const ServerType & server_type
 ) const
 {
-    Poco::Logger * log = &logger();
+    LoggerRawPtr log = &logger();
 
     /// Remove servers once all their connections are closed
     auto check_server = [&log](const char prefix[], auto & server)
@@ -2491,7 +2585,7 @@ void Server::updateServers(
     std::vector<ProtocolServerAdapter> & servers,
     std::vector<ProtocolServerAdapter> & servers_to_start_before_tables)
 {
-    Poco::Logger * log = &logger();
+    LoggerRawPtr log = &logger();
 
     const auto listen_hosts = getListenHosts(config);
     const auto interserver_listen_hosts = getInterserverListenHosts(config);

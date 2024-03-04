@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterBackupQuery.h>
 
 #include <Backups/BackupsWorker.h>
@@ -45,6 +46,15 @@ BlockIO InterpreterBackupQuery::execute()
     BlockIO res_io;
     res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(getResultRow(info)));
     return res_io;
+}
+
+void registerInterpreterBackupQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterBackupQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterBackupQuery", create_fn);
 }
 
 }

@@ -1,3 +1,4 @@
+#include <atomic>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Formats/NativeReader.h>
@@ -578,7 +579,7 @@ IProcessor::Status AggregatingTransform::prepare()
     }
 
     /// Finish data processing, prepare to generating.
-    if (is_consume_finished && !is_generate_initialized)
+    if (is_consume_finished && !is_generate_initialized.test())
     {
         /// Close input port in case max_rows_to_group_by was reached but not all data was read.
         inputs.front().close();
@@ -586,7 +587,7 @@ IProcessor::Status AggregatingTransform::prepare()
         return Status::Ready;
     }
 
-    if (is_generate_initialized && !is_pipeline_created && !processors.empty())
+    if (is_generate_initialized.test() && !is_pipeline_created && !processors.empty())
         return Status::ExpandPipeline;
 
     /// Only possible while consuming.
@@ -599,6 +600,12 @@ IProcessor::Status AggregatingTransform::prepare()
         if (is_consume_finished)
         {
             output.finish();
+            /// input.isFinished() means that merging is done. Now we can release our reference to aggregation states.
+            /// TODO: there is another case, when output port is getting closed first.
+            /// E.g. `select ... group by x limit 10`, if it was two-level aggregation and first few buckets contained already enough rows
+            /// limit will stop merging. It turned out to be not trivial to both release aggregation states and ensure that
+            /// ManyAggregatedData holds the last references to them to trigger parallel destruction in its dtor. Will work on that.
+            many_data.reset();
             return Status::Finished;
         }
         else
@@ -687,10 +694,8 @@ void AggregatingTransform::consume(Chunk chunk)
 
 void AggregatingTransform::initGenerate()
 {
-    if (is_generate_initialized.load(std::memory_order_acquire))
+    if (is_generate_initialized.test_and_set())
         return;
-
-    is_generate_initialized.store(true, std::memory_order_release);
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
@@ -732,14 +737,14 @@ void AggregatingTransform::initGenerate()
     {
         if (!skip_merging)
         {
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(
                 std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads));
         }
         else
         {
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             Pipes pipes;
             for (auto & variant : prepared_data)
             {
@@ -829,8 +834,6 @@ void AggregatingTransform::initGenerate()
 
         processors = Pipe::detachProcessors(std::move(pipe));
     }
-
-    many_data.reset();
 }
 
 }

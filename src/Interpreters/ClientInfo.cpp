@@ -23,7 +23,7 @@ namespace ErrorCodes
 void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: method ClientInfo::write is called for unsupported server revision");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::write is called for unsupported server revision");
 
     writeBinary(static_cast<UInt8>(query_kind), out);
     if (empty())
@@ -103,7 +103,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: method ClientInfo::read is called for unsupported client revision");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::read is called for unsupported client revision");
 
     UInt8 read_query_kind = 0;
     readBinary(read_query_kind, in);

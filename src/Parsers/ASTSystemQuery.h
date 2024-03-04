@@ -28,16 +28,13 @@ public:
         DROP_INDEX_UNCOMPRESSED_CACHE,
         DROP_MMAP_CACHE,
         DROP_QUERY_CACHE,
-#if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
-#endif
         DROP_FILESYSTEM_CACHE,
+        DROP_DISTRIBUTED_CACHE,
         DROP_DISK_METADATA_CACHE,
         DROP_SCHEMA_CACHE,
         DROP_FORMAT_SCHEMA_CACHE,
-#if USE_AWS_S3
         DROP_S3_CLIENT_CACHE,
-#endif
         STOP_LISTEN,
         START_LISTEN,
         RESTART_REPLICAS,
@@ -46,6 +43,10 @@ public:
         WAIT_LOADING_PARTS,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
+        JEMALLOC_PURGE,
+        JEMALLOC_ENABLE_PROFILE,
+        JEMALLOC_DISABLE_PROFILE,
+        JEMALLOC_FLUSH_PROFILE,
         SYNC_REPLICA,
         SYNC_DATABASE_REPLICA,
         SYNC_TRANSACTION_LOG,
@@ -61,6 +62,7 @@ public:
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_USERS,
+        RELOAD_ASYNCHRONOUS_METRICS,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -97,6 +99,8 @@ public:
         STOP_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
+        STOP_VIRTUAL_PARTS_UPDATE,
+        START_VIRTUAL_PARTS_UPDATE,
         END
     };
 
@@ -125,6 +129,8 @@ public:
     UInt64 seconds{};
 
     String filesystem_cache_name;
+    String distributed_cache_servive_id;
+
     std::string key_to_drop;
     std::optional<size_t> offset_to_drop;
 
@@ -137,6 +143,8 @@ public:
     String fail_point_name;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
+
+    std::vector<String> src_replicas;
 
     ServerType server_type;
 

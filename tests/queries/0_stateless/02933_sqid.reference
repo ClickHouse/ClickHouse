@@ -1,13 +1,17 @@
 -- negative tests
 -- const UInt*
-Uk
-XMbT
-86Rf07
-Td1EnWQo
+Uk	[1]
+XMbT	[1,2]
+86Rf07	[1,2,3]
+Td1EnWQo	[1,2,3,4]
 XMbT
 -- non-const UInt*
-Uk
+Uk	[1]
+XMbT	[1,2]
+86Rf07	[1,2,3]
+Td1EnWQo	[1,2,3,4]
 XMbT
-86Rf07
-Td1EnWQo
+-- invalid sqid
+[]
+-- alias
 XMbT

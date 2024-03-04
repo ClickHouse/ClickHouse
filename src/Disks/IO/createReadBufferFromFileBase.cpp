@@ -36,8 +36,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     std::optional<size_t> file_size,
     int flags,
     char * existing_memory,
-    size_t alignment,
-    bool use_external_buffer)
+    size_t alignment)
 {
     if (file_size.has_value() && !*file_size)
         return std::make_unique<ReadBufferFromEmptyFile>();
@@ -149,8 +148,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 existing_memory,
                 buffer_alignment,
                 file_size,
-                settings.local_throttler,
-                use_external_buffer);
+                settings.local_throttler);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown read method");

@@ -8,9 +8,11 @@ namespace DB
 
 static constexpr auto DBMS_DEFAULT_PORT = 9000;
 static constexpr auto DBMS_DEFAULT_SECURE_PORT = 9440;
+
 static constexpr auto DBMS_DEFAULT_CONNECT_TIMEOUT_SEC = 10;
 static constexpr auto DBMS_DEFAULT_SEND_TIMEOUT_SEC = 300;
 static constexpr auto DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC = 300;
+
 /// Timeout for synchronous request-result protocol call (like Ping or TablesStatus).
 static constexpr auto DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC = 5;
 static constexpr auto DBMS_DEFAULT_POLL_INTERVAL = 10;
@@ -34,7 +36,6 @@ static constexpr auto DEFAULT_BLOCK_SIZE
 static constexpr auto DEFAULT_INSERT_BLOCK_SIZE
     = 1048449; /// 1048576 - PADDING_FOR_SIMD - (PADDING_FOR_SIMD - 1) bytes padding that we usually have in arrays
 
-static constexpr auto DEFAULT_PERIODIC_LIVE_VIEW_REFRESH_SEC = 60;
 static constexpr auto SHOW_CHARS_ON_SYNTAX_ERROR = ptrdiff_t(160);
 /// each period reduces the error counter by 2 times
 /// too short a period can cause errors to disappear immediately after creation.
@@ -51,6 +52,7 @@ static constexpr auto DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT = 1;
 /// the number is unmotivated
 static constexpr auto DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT = 15;
 
+static constexpr auto DEFAULT_TCP_KEEP_ALIVE_TIMEOUT = 290;
 static constexpr auto DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT = 30;
 
 static constexpr auto DBMS_DEFAULT_PATH = "/var/lib/clickhouse/";

@@ -30,6 +30,7 @@ public:
 
     static StoragePtr create(const Configuration & base_configuration,
         ContextPtr context_,
+        LoadingStrictnessLevel mode,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -51,28 +52,28 @@ public:
     static ColumnsDescription getTableStructureFromData(
         Configuration & base_configuration,
         const std::optional<FormatSettings> &,
-        ContextPtr local_context);
+        const ContextPtr & local_context);
 
     static Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context)
     {
         return StorageS3::getConfiguration(engine_args, local_context, /* get_format_from_file */false);
     }
 
-    Configuration updateConfigurationAndGetCopy(ContextPtr local_context) override
+    Configuration updateConfigurationAndGetCopy(const ContextPtr & local_context) override
     {
         std::lock_guard lock(configuration_update_mutex);
         updateConfigurationImpl(local_context);
         return StorageS3::getConfiguration();
     }
 
-    void updateConfiguration(ContextPtr local_context) override
+    void updateConfiguration(const ContextPtr & local_context) override
     {
         std::lock_guard lock(configuration_update_mutex);
         updateConfigurationImpl(local_context);
     }
 
 private:
-    void updateConfigurationImpl(ContextPtr local_context);
+    void updateConfigurationImpl(const ContextPtr & local_context);
 
     std::unique_ptr<IcebergMetadata> current_metadata;
     Configuration base_configuration;

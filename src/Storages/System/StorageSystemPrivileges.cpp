@@ -29,6 +29,7 @@ namespace
         VIEW,
         COLUMN,
         NAMED_COLLECTION,
+        USER_NAME,
     };
 
     DataTypeEnum8::Values getLevelEnumValues()
@@ -41,6 +42,7 @@ namespace
         enum_values.emplace_back("VIEW", static_cast<Int8>(VIEW));
         enum_values.emplace_back("COLUMN", static_cast<Int8>(COLUMN));
         enum_values.emplace_back("NAMED_COLLECTION", static_cast<Int8>(NAMED_COLLECTION));
+        enum_values.emplace_back("USER_NAME", static_cast<Int8>(USER_NAME));
         return enum_values;
     }
 }
@@ -64,15 +66,16 @@ const std::vector<std::pair<String, Int16>> & StorageSystemPrivileges::getAccess
 }
 
 
-NamesAndTypesList StorageSystemPrivileges::getNamesAndTypes()
+ColumnsDescription StorageSystemPrivileges::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
+    /// TODO: Fill in all the comments.
+    return ColumnsDescription
+    {
         {"privilege", std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues())},
         {"aliases", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"level", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getLevelEnumValues()))},
         {"parent_group", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues()))},
     };
-    return names_and_types;
 }
 
 
