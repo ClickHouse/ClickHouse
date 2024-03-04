@@ -12,7 +12,16 @@ void AsynchronousMessageProducer::start(const ContextPtr & context)
 {
     LOG_TEST(log, "Executing startup");
 
-    initialize();
+    try
+    {
+        initialize();
+    }
+    catch (...)
+    {
+        finished = true;
+        throw;
+    }
+
     producing_task = context->getSchedulePool().createTask(getProducingTaskName(), [this]
     {
         LOG_TEST(log, "Starting producing task loop");

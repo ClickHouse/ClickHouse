@@ -672,7 +672,9 @@ void DataPartStorageOnDiskBase::remove(
             if (file_name.starts_with(proj_dir_name))
                 files_not_to_remove_for_projection.emplace(fs::path(file_name).filename());
 
-        LOG_DEBUG(log, "Will not remove files [{}] for projection {}", fmt::join(files_not_to_remove_for_projection, ", "), projection.name);
+        if (!files_not_to_remove_for_projection.empty())
+            LOG_DEBUG(
+                log, "Will not remove files [{}] for projection {}", fmt::join(files_not_to_remove_for_projection, ", "), projection.name);
 
         CanRemoveDescription proj_description
         {
@@ -751,8 +753,12 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
-            request.emplace_back(fs::path(dir) / file);
+        {
+            if (isGinFile(file) && (!disk->isFile(fs::path(dir) / file)))
+                continue;
 
+            request.emplace_back(fs::path(dir) / file);
+        }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / "txn_version.txt", true);

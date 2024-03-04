@@ -181,6 +181,23 @@ public:
 
                 node = std::make_shared<ColumnNode>(column, column_source);
             }
+            else if (function_name == "variantElement" && isVariant(column_type) && second_argument_constant_node)
+            {
+                /// Replace `variantElement(variant_argument, type_name)` with `variant_argument.type_name`.
+                const auto & variant_element_constant_value = second_argument_constant_node->getValue();
+                String subcolumn_name;
+
+                if (variant_element_constant_value.getType() != Field::Types::String)
+                    return;
+
+                subcolumn_name = variant_element_constant_value.get<const String &>();
+
+                column.name += '.';
+                column.name += subcolumn_name;
+                column.type = function_node->getResultType();
+
+                node = std::make_shared<ColumnNode>(column, column_source);
+            }
             else if (function_name == "mapContains" && column_type.isMap())
             {
                 const auto & data_type_map = assert_cast<const DataTypeMap &>(*column.type);
@@ -207,7 +224,7 @@ private:
 
 }
 
-void FunctionToSubcolumnsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     FunctionToSubcolumnsVisitor visitor(context);
     visitor.visit(query_tree_node);

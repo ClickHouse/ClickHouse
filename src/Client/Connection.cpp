@@ -316,7 +316,7 @@ void Connection::sendHello()
                         "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
     }
-#if USE_SSL
+#if USE_SSH
     /// Just inform server that we will authenticate using SSH keys.
     else if (!ssh_private_key.isEmpty())
     {
@@ -346,7 +346,7 @@ void Connection::sendAddendum()
 
 void Connection::performHandshakeForSSHAuth()
 {
-#if USE_SSL
+#if USE_SSH
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);

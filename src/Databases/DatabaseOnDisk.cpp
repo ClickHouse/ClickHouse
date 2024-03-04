@@ -59,7 +59,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    bool force_restore)
+    LoadingStrictnessLevel mode)
 {
     ast_create_query.attach = true;
     ast_create_query.setDatabase(database_name);
@@ -83,7 +83,13 @@ std::pair<String, StoragePtr> createTableFromAST(
     ColumnsDescription columns;
     ConstraintsDescription constraints;
 
-    if (!ast_create_query.is_dictionary)
+    bool has_columns = true;
+    if (ast_create_query.is_dictionary)
+        has_columns = false;
+    if (ast_create_query.isParameterizedView())
+        has_columns = false;
+
+    if (has_columns)
     {
         /// We do not directly use `InterpreterCreateQuery::execute`, because
         /// - the database has not been loaded yet;
@@ -115,7 +121,7 @@ std::pair<String, StoragePtr> createTableFromAST(
             context->getGlobalContext(),
             columns,
             constraints,
-            force_restore)
+            mode)
     };
 }
 
