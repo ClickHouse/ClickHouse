@@ -1915,7 +1915,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             for (const auto & [name, value] : set_query->query_parameters)
                 query_parameters.insert_or_assign(name, value);
 
-            global_context->addQueryParameters(set_query->query_parameters);
+            global_context->addQueryParameters(NameToNameMap{set_query->query_parameters.begin(), set_query->query_parameters.end()});
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {

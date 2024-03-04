@@ -233,6 +233,38 @@ KeeperStorage::Node::Node(const Node & other)
     *this = other;
 }
 
+KeeperStorage::Node & KeeperStorage::Node::operator=(Node && other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    czxid = other.czxid;
+    mzxid = other.mzxid;
+    pzxid = other.pzxid;
+    acl_id = other.acl_id;
+    mtime = other.mtime;
+    is_ephemeral_and_ctime = other.is_ephemeral_and_ctime;
+    ephemeral_or_children_data = other.ephemeral_or_children_data;
+    version = other.version;
+    cversion = other.cversion;
+    aversion = other.aversion;
+
+    data_size = other.data_size;
+    data = std::move(other.data);
+
+    other.data_size = 0;
+
+    static_assert(std::is_nothrow_move_assignable_v<ChildrenSet>);
+    children = std::move(other.children);
+
+    return *this;
+}
+
+KeeperStorage::Node::Node(Node && other) noexcept
+{
+    *this = std::move(other);
+}
+
 bool KeeperStorage::Node::empty() const
 {
     return data_size == 0 && mzxid == 0;
@@ -1582,7 +1614,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         {
             auto path_prefix = request.path;
             if (path_prefix.empty())
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: path cannot be empty");
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Path cannot be empty");
 
             const auto & children = node_it->value.getChildren();
             response.names.reserve(children.size());
