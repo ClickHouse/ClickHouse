@@ -74,9 +74,12 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
     /// FIXME: try to prettify this cast using `as<>()`
     if (auto * ast_with_output = dynamic_cast<ASTQueryWithOutput *>(&ast))
     {
-        ast_with_output->format.reset();
         ast_with_output->out_file.reset();
+        ast_with_output->format.reset();
         ast_with_output->settings_ast.reset();
+        ast_with_output->compression.reset();
+        ast_with_output->compression_level.reset();
+        ast_with_output->children.clear();
         return true;
     }
 
