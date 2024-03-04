@@ -76,6 +76,9 @@ public:
         auto current_context = getContext();
         auto dict = current_context->getExternalDictionariesLoader().getDictionary(dictionary_name, current_context);
 
+        if (dict->getDatabaseOrNoDatabaseTag() == DatabaseCatalog::TEMPORARY_DATABASE || dict->getDictionaryID().getTableName().starts_with("_tmp_replace_"))
+            access_checked = true;
+
         if (!access_checked)
         {
             current_context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
