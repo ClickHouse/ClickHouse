@@ -538,7 +538,7 @@ struct ToStartOfInterval<IntervalKind::Microsecond>
         {
             Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000000);
             if (t >= 0) [[likely]] /// When we divide the `t` value we should round the result
-                return (t / microseconds + scale_diff / 2) / scale_diff * microseconds;
+                return (t + scale_diff / 2) / (microseconds * scale_diff) * microseconds;
             else
                 return ((t + 1) / microseconds / scale_diff - 1) * microseconds;
         }
@@ -581,7 +581,7 @@ struct ToStartOfInterval<IntervalKind::Millisecond>
         {
             Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000);
             if (t >= 0) [[likely]]  /// When we divide the `t` value we should round the result
-                return (t / milliseconds + scale_diff / 2) / scale_diff * milliseconds;
+                return (t + scale_diff / 2) / (milliseconds * scale_diff) * milliseconds;
             else
                 return ((t + 1) / milliseconds / scale_diff - 1) * milliseconds;
         }
