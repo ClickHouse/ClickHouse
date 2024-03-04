@@ -247,8 +247,11 @@ quit
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
 
+    # The fuzzer_pid belongs to the timeout process.
+    actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
+
     echo "Attaching gdb to the fuzzer itself"
-    gdb -batch -command script.gdb -p $fuzzer_pid &
+    gdb -batch -command script.gdb -p $actual_fuzzer_pid &
 
     # Wait for the fuzzer to complete.
     # Note that the 'wait || ...' thing is required so that the script doesn't
