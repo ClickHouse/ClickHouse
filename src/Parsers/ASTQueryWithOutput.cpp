@@ -23,6 +23,16 @@ void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
         cloned.settings_ast = settings_ast->clone();
         cloned.children.push_back(cloned.settings_ast);
     }
+    if (compression)
+    {
+        cloned.compression = compression->clone();
+        cloned.children.push_back(cloned.compression);
+    }
+    if (compression_level)
+    {
+        cloned.compression_level = compression_level->clone();
+        cloned.children.push_back(cloned.compression_level);
+    }
 }
 
 void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
