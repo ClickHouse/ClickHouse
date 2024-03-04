@@ -23,6 +23,11 @@ SELECT * FROM alter_attach ORDER BY x;
 ALTER TABLE alter_attach ATTACH PARTITION 2;
 SELECT * FROM alter_attach ORDER BY x;
 
+ALTER TABLE alter_attach DETACH PARTITION ALL;
+SELECT * FROM alter_attach ORDER BY x;
+ALTER TABLE alter_attach ATTACH PARTITION ALL;
+SELECT * FROM alter_attach ORDER BY x;
+
 DROP TABLE IF EXISTS detach_all_no_partition;
 CREATE TABLE detach_all_no_partition (x UInt64, p UInt8) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO detach_all_no_partition VALUES (1, 1), (2, 1), (3, 1);
