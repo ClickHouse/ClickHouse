@@ -266,4 +266,9 @@ inline DataTypePtr createDecimalMaxPrecision(UInt64 scale)
     return std::make_shared<DataTypeDecimal<T>>(DecimalUtils::max_precision<T>, scale);
 }
 
+extern template class DataTypeDecimal<Decimal32>;
+extern template class DataTypeDecimal<Decimal64>;
+extern template class DataTypeDecimal<Decimal128>;
+extern template class DataTypeDecimal<Decimal256>;
+
 }

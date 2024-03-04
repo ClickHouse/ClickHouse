@@ -56,7 +56,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{{"time_series", &isArray<IDataType>, nullptr, "Array"}};
+        FunctionArgumentDescriptors args{{"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
         validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeFloat64>();

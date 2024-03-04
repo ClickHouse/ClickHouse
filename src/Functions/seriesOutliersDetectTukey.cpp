@@ -48,11 +48,11 @@ public:
                 getName(),
                 arguments.size());
 
-        FunctionArgumentDescriptors mandatory_args{{"time_series", &isArray<IDataType>, nullptr, "Array"}};
+        FunctionArgumentDescriptors mandatory_args{{"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"}};
         FunctionArgumentDescriptors optional_args{
-            {"min_percentile", &isNativeNumber<IDataType>, isColumnConst, "Number"},
-            {"max_percentile", &isNativeNumber<IDataType>, isColumnConst, "Number"},
-            {"k", &isNativeNumber<IDataType>, isColumnConst, "Number"}};
+            {"min_percentile", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), isColumnConst, "Number"},
+            {"max_percentile", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), isColumnConst, "Number"},
+            {"k", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), isColumnConst, "Number"}};
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
