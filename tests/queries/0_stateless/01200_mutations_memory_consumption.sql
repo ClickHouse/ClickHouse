@@ -1,5 +1,7 @@
 -- Tags: no-debug, no-parallel, long, no-s3-storage, no-random-merge-tree-settings
 
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+
 DROP TABLE IF EXISTS table_with_single_pk;
 
 CREATE TABLE table_with_single_pk

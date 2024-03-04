@@ -15,14 +15,14 @@ FIND_SORTMODE="$GREP_SORTMODE | $TRIM_LEADING_SPACES"
 
 function explain_sorting {
     echo "-- QUERY: "$1
-    $CLICKHOUSE_CLIENT -nq "$1" | eval $FIND_SORTING
+    $CLICKHOUSE_CLIENT --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -nq "$1" | eval $FIND_SORTING
 }
 
 function explain_sortmode {
     echo "-- QUERY: "$1
-    $CLICKHOUSE_CLIENT --allow_experimental_analyzer=0 -nq "$1" | eval $FIND_SORTMODE
+    $CLICKHOUSE_CLIENT --allow_experimental_analyzer=0 --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -nq "$1" | eval $FIND_SORTMODE
     echo "-- QUERY (analyzer): "$1
-    $CLICKHOUSE_CLIENT --allow_experimental_analyzer=1 -nq "$1" | eval $FIND_SORTMODE
+    $CLICKHOUSE_CLIENT --allow_experimental_analyzer=1 --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -nq "$1" | eval $FIND_SORTMODE
 }
 
 $CLICKHOUSE_CLIENT -q "drop table if exists optimize_sorting sync"
