@@ -45,10 +45,9 @@ if [ -f requirements.txt ]; then
     pip install -r requirements.txt &&
     # To have consistent pyc files
     find '$VENV/lib' -name '*.pyc' -delete
-    find '$VENV/lib' ! -type d -exec touch -t 201212121212 {} +
-    python -m compileall
     cp -rT '$VENV/lib/$PY_EXEC/site-packages/' '$PACKAGE'
     rm -r '$PACKAGE'/{pip,pip-*,setuptools,setuptools-*}
+    chmod 0777 -R '$PACKAGE'
 EOF
 fi
 # Create zip archive via python zipfile to have it cross-platform
