@@ -1,0 +1,10 @@
+This bug has been there forever. Present in 22.2
+- When using multiple threads the insert produces 3 parts causing undesired deduplication.
+- When using a single thread the insert produces 1 part without deduplication.
+1
+4
+This bug has been introduced in CH 24.2+. See https://github.com/ClickHouse/ClickHouse/pull/59448
+- When using remote function and multiple threads the insert produces 3 parts causing undesired deduplication.
+- When using remote function and a single thread the insert produces 1 part without deduplication.
+1
+4
