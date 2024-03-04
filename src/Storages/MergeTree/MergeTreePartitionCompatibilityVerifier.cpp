@@ -112,6 +112,7 @@ MergeTreePartition verifyCompatibilityAndCreatePartitionImpl(
         return partition;
     }
 
+    // Global source parts min max indexes calculated based on destination partition expression columns.
     const auto src_global_min_max_indexes = MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(source_parts, destination_storage);
 
     assert(!src_global_min_max_indexes.hyperrectangle.empty());

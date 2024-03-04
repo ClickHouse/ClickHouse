@@ -2151,7 +2151,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
             IMergeTreeDataPart::MinMaxIndex destination_min_max_index;
 
-            destination_min_max_index.load(src_data, metadata_manager);
+            destination_min_max_index.load(*this, metadata_manager);
 
             auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
                 src_part,
@@ -2302,7 +2302,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
             IMergeTreeDataPart::MinMaxIndex destination_min_max_index;
 
-            destination_min_max_index.load(src_data, metadata_manager);
+            destination_min_max_index.load(*dest_table_storage, metadata_manager);
 
             auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
                 src_part,

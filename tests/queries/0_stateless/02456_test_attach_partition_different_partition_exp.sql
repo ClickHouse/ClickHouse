@@ -289,6 +289,31 @@ SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
+-- Same as above, but slightly different
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
+
+CREATE TABLE source (b String, a Int) ENGINE = MergeTree PARTITION BY tuple(b, a) ORDER BY tuple();
+CREATE TABLE destination (a Int, b String) ENGINE = MergeTree PARTITION BY tuple(a) ORDER BY tuple();
+
+ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
+
+INSERT INTO TABLE source VALUES ('abc', 1);
+
+ALTER TABLE destination ATTACH PARTITION ID 'abc-1' FROM source;
+
+SELECT * FROM source;
+SELECT * FROM destination;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION ('abc', 1) from source;
+
+SELECT * FROM source;
+SELECT * FROM destination;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
 -- Should be allowed. Destination partition expression contains multiple expressions, but all of them are monotonically
 -- increasing in the source partition min max indexes.
 DROP TABLE IF EXISTS source;

@@ -2722,12 +2722,10 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             }
             else
             {
-                const auto src_part = part_desc->src_table_part;
-                const auto & src_data = src_part->storage;
-                auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
+                auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(part_desc->src_table_part.get());
                 IMergeTreeDataPart::MinMaxIndex destination_min_max_index;
 
-                destination_min_max_index.load(src_data, metadata_manager);
+                destination_min_max_index.load(*this, metadata_manager);
 
                 MergeTreePartition destination_partition;
                 destination_partition.create(metadata_snapshot, destination_min_max_index.getBlock(*this), 0, getContext());
@@ -8039,7 +8037,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
                 IMergeTreeDataPart::MinMaxIndex destination_min_max_index;
 
-                destination_min_max_index.load(src_data, metadata_manager);
+                destination_min_max_index.load(*this, metadata_manager);
 
                 auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
                     src_part,
@@ -8332,7 +8330,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
                 IMergeTreeDataPart::MinMaxIndex destination_min_max_index;
 
-                destination_min_max_index.load(src_data, metadata_manager);
+                destination_min_max_index.load(*dest_table_storage, metadata_manager);
 
                 auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
                     src_part,
