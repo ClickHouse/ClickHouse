@@ -16,6 +16,9 @@
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 
 namespace DB
@@ -291,8 +294,51 @@ private:
     std::chrono::milliseconds lock_acquire_timeout;
 };
 
+class ReadFromSystemColumns : public SourceStepWithFilter
+{
+public:
+    std::string getName() const override { return "ReadFromSystemColumns"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-Pipe StorageSystemColumns::read(
+    ReadFromSystemColumns(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        Block sample_block,
+        std::shared_ptr<StorageSystemColumns> storage_,
+        std::vector<UInt8> columns_mask_,
+        size_t max_block_size_)
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(sample_block)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
+        , storage(std::move(storage_))
+        , columns_mask(std::move(columns_mask_))
+        , max_block_size(max_block_size_)
+    {
+    }
+
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+
+private:
+    std::shared_ptr<StorageSystemColumns> storage;
+    std::vector<UInt8> columns_mask;
+    const size_t max_block_size;
+    const ActionsDAG::Node * predicate = nullptr;
+};
+
+void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
+}
+
+void StorageSystemColumns::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -306,9 +352,22 @@ Pipe StorageSystemColumns::read(
 
     auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
+
+    auto this_ptr = std::static_pointer_cast<StorageSystemColumns>(shared_from_this());
+
+    auto reading = std::make_unique<ReadFromSystemColumns>(
+        column_names, query_info, storage_snapshot,
+        std::move(context), std::move(header), std::move(this_ptr), std::move(columns_mask), max_block_size);
+
+    query_plan.addStep(std::move(reading));
+}
+
+void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
     Block block_to_filter;
     Storages storages;
     Pipes pipes;
+    auto header = getOutputStream().header;
 
     {
         /// Add `database` column.
@@ -338,12 +397,13 @@ Pipe StorageSystemColumns::read(
         block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block with `database` column.
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
 
         if (!block_to_filter.rows())
         {
-            pipes.emplace_back(std::make_shared<NullSource>(header));
-            return Pipe::unitePipes(std::move(pipes));
+            pipes.emplace_back(std::make_shared<NullSource>(std::move(header)));
+            pipeline.init(Pipe::unitePipes(std::move(pipes)));
+            return;
         }
 
         ColumnPtr & database_column = block_to_filter.getByName("database").column;
@@ -384,12 +444,13 @@ Pipe StorageSystemColumns::read(
     }
 
     /// Filter block with `database` and `table` columns.
-    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
 
     if (!block_to_filter.rows())
     {
-        pipes.emplace_back(std::make_shared<NullSource>(header));
-        return Pipe::unitePipes(std::move(pipes));
+        pipes.emplace_back(std::make_shared<NullSource>(std::move(header)));
+        pipeline.init(Pipe::unitePipes(std::move(pipes)));
+        return;
     }
 
     ColumnPtr filtered_database_column = block_to_filter.getByName("database").column;
@@ -400,7 +461,7 @@ Pipe StorageSystemColumns::read(
             std::move(filtered_database_column), std::move(filtered_table_column),
             std::move(storages), context));
 
-    return Pipe::unitePipes(std::move(pipes));
+    pipeline.init(Pipe::unitePipes(std::move(pipes)));
 }
 
 }
