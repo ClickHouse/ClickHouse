@@ -190,6 +190,9 @@ Chunk RabbitMQSource::generateImpl()
             const auto exchange_name = storage.getExchange();
             const auto & message = consumer->currentMessage();
 
+            LOG_TEST(log, "Pulled {} rows, message delivery tag: {} (previous delivery tag: {}, redelivered: {})",
+                     new_rows, message.delivery_tag, commit_info.delivery_tag, message.redelivered);
+
             if (exception_message.has_value())
             {
                 commit_info.failed_delivery_tags.push_back(message.delivery_tag);
