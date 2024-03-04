@@ -182,26 +182,6 @@ namespace
 
             DataTypePtr getType(bool use_string_type_for_ambiguous_paths) const
             {
-                /// Check if we have ambiguous paths.
-                /// For example:
-                /// 'a.b.c' : Int32 and 'a.b' : String
-                /// Also check if leaf type is Nothing, because the next situation is possible:
-                /// {"a" : {"b" : null}} -> 'a.b' : Nullable(Nothing)
-                /// {"a" : {"b" : {"c" : 42}}} -> 'a.b.c' : Int32
-                /// And after merge we will have ambiguous paths 'a.b.c' : Int32 and 'a.b' : Nullable(Nothing),
-                /// but it's a valid case and we should ignore path 'a.b'.
-                if (leaf_type && !isNothing(removeNullable(leaf_type)) && !nodes.empty())
-                {
-                    if (use_string_type_for_ambiguous_paths)
-                        return std::make_shared<DataTypeString>();
-                    throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
-                        "JSON objects have ambiguous paths: '{}' (with type {}) and '{}'. You can enable setting "
-                        "input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type "
-                        "for path '{}'",
-                        path, leaf_type->getName(), nodes.begin()->second.path, path);
-                }
-
                 if (nodes.empty())
                     return leaf_type;
 
@@ -215,7 +195,30 @@ namespace
                     node_types.push_back(node.getType(use_string_type_for_ambiguous_paths));
                 }
 
-                return std::make_shared<DataTypeTuple>(std::move(node_types), std::move(node_names));
+                auto tuple_type = std::make_shared<DataTypeTuple>(std::move(node_types), std::move(node_names));
+
+                /// Check if we have ambiguous paths.
+                /// For example:
+                /// 'a.b.c' : Int32 and 'a.b' : String
+                /// Also check if leaf type is Nothing, because the next situation is possible:
+                /// {"a" : {"b" : null}} -> 'a.b' : Nullable(Nothing)
+                /// {"a" : {"b" : {"c" : 42}}} -> 'a.b.c' : Int32
+                /// And after merge we will have ambiguous paths 'a.b.c' : Int32 and 'a.b' : Nullable(Nothing),
+                /// but it's a valid case and we should ignore path 'a.b'.
+                if (leaf_type && !isNothing(removeNullable(leaf_type)) && !nodes.empty())
+                {
+                    if (use_string_type_for_ambiguous_paths)
+                        return std::make_shared<DataTypeString>();
+
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "JSON objects have ambiguous data: in some objects path '{}' has type '{}' and in some - '{}'. You can enable setting "
+                        "input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type "
+                        "for path '{}'",
+                        path, leaf_type->getName(), tuple_type->getName(), path);
+                }
+
+                return tuple_type;
             }
         };
 

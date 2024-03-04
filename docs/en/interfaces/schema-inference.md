@@ -568,7 +568,7 @@ Result:
 
 ```text
 Code: 636. DB::Exception: The table structure cannot be extracted from a JSONEachRow format file. Error:
-Code: 117. DB::Exception: JSON objects have ambiguous paths: 'a' (with type Int64) and 'a.b'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'a'. (INCORRECT_DATA) (version 24.3.1.1).
+Code: 117. DB::Exception: JSON objects have ambiguous data: in some objects path 'a' has type 'Int64' and in some - 'Tuple(b String)'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'a'. (INCORRECT_DATA) (version 24.3.1.1).
 You can specify the structure manually. (CANNOT_EXTRACT_TABLE_STRUCTURE)
 ```
 
