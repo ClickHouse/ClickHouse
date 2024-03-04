@@ -22,8 +22,8 @@ seriesOutliersDetectTukey(series, min_percentile, max_percentile, K);
 **Arguments**
 
 - `series` - An array of numeric values.
-- `min_percentile` - The minimum percentile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [2,98]. The default is 25.
-- `max_percentile` - The maximum percentile to be used to calculate inter-quantile range (IQR). The value must be in range [2,98]. The default is 75.
+- `min_percentile` - The minimum percentile to be used to calculate inter-quantile range [(IQR)](https://en.wikipedia.org/wiki/Interquartile_range). The value must be in range [0.02,0.98]. The default is 0.25.
+- `max_percentile` - The maximum percentile to be used to calculate inter-quantile range (IQR). The value must be in range [0.02,0.98]. The default is 0.75.
 - `K` - Non-negative constant value to detect mild or stronger outliers. The default value is 1.5.
 
 At least four data points are required in `series` to detect outliers.
@@ -53,7 +53,7 @@ Result:
 Query:
 
 ``` sql
-SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 20, 80, 1.5) AS print_0;
+SELECT seriesOutliersDetectTukey([-3, 2, 15, 3, 5, 6, 4.50, 5, 12, 45, 12, 3.40, 3, 4, 5, 6], 0.2, 0.8, 1.5) AS print_0;
 ```
 
 Result:
