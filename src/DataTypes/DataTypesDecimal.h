@@ -3,6 +3,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/extended_types.h>
 #include <Common/typeid_cast.h>
+#include "base/Decimal.h"
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -100,6 +101,7 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
 }
 
 #define FOR_EACH_DECIMAL_TYPE(M) \
+    M(DataTypeDecimal<DateTime64>) \
     M(DataTypeDateTime64) \
     M(DataTypeDecimal32) \
     M(DataTypeDecimal64) \
@@ -107,9 +109,10 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
     M(DataTypeDecimal256)
 
 #define FOR_EACH_DECIMAL_TYPE_PASS(M, X) \
+    M(DataTypeDecimal<DateTime64>, X) \
     M(DataTypeDateTime64, X) \
-    M(DataTypeDecimal32,  X) \
-    M(DataTypeDecimal64,  X) \
+    M(DataTypeDecimal32, X) \
+    M(DataTypeDecimal64, X) \
     M(DataTypeDecimal128, X) \
     M(DataTypeDecimal256, X)
 
@@ -123,6 +126,7 @@ ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, U
     extern template bool convertDecimalsImpl<FROM_DATA_TYPE, TO_DATA_TYPE, bool>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename TO_DATA_TYPE::FieldType & result);
 #define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
 #undef DISPATCH
 
 
@@ -134,6 +138,7 @@ typename ToDataType::FieldType convertDecimals(const typename FromDataType::Fiel
     extern template typename TO_DATA_TYPE::FieldType convertDecimals<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to);
 #define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
 #undef DISPATCH
 
 
@@ -145,6 +150,7 @@ bool tryConvertDecimals(const typename FromDataType::FieldType & value, UInt32 s
     extern template bool tryConvertDecimals<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename TO_DATA_TYPE::FieldType & result);
 #define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
 #undef DISPATCH
 
 
