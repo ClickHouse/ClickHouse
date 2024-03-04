@@ -316,6 +316,21 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         }
     }
 
+    params.leadership_expiry_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings->leadership_expiry_ms.totalMilliseconds(), "leadership_expiry_ms", log);
+
+    if (params.leadership_expiry_ > 0)
+    {
+        if (params.leadership_expiry_ < params.election_timeout_lower_bound_)
+        {
+            LOG_WARNING(
+                log,
+                "leadership_expiry_ is smaller than election_timeout_lower_bound_ms. "
+                "Notice that too small leadership_expiry_ may make Raft group "
+                "sensitive to network status.");
+        }
+    }
+
     params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);
     params.snapshot_distance_ = getValueOrMaxInt32AndLogWarning(coordination_settings->snapshot_distance, "snapshot_distance", log);
 
