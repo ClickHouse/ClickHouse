@@ -1387,11 +1387,6 @@ struct HTTPContext : public IHTTPContext
         return context->getSettingsRef().http_max_field_value_size;
     }
 
-    uint64_t getMaxChunkSize() const override
-    {
-        return context->getSettingsRef().http_max_chunk_size;
-    }
-
     Poco::Timespan getReceiveTimeout() const override
     {
         return context->getSettingsRef().http_receive_timeout;

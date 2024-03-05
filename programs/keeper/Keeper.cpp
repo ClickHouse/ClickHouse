@@ -249,11 +249,6 @@ struct KeeperHTTPContext : public IHTTPContext
         return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
     }
 
-    uint64_t getMaxChunkSize() const override
-    {
-        return context->getConfigRef().getUInt64("keeper_server.http_max_chunk_size", 100_GiB);
-    }
-
     Poco::Timespan getReceiveTimeout() const override
     {
         return {context->getConfigRef().getInt64("keeper_server.http_receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0};

@@ -90,6 +90,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"output_format_parquet_use_custom_encoder", false, true, "Enable custom Parquet encoder."},
               {"cross_join_min_rows_to_compress", 0, 10000000, "A new setting."},
               {"cross_join_min_bytes_to_compress", 0, 1_GiB, "A new setting."},
+              {"http_max_chunk_size", 0, 0, "Internal limitation"},
               {"prefer_external_sort_block_bytes", 0, DEFAULT_BLOCK_SIZE * 256, "Prefer maximum block bytes for external sort, reduce the memory usage during merging."},
               {"input_format_force_null_for_omitted_fields", false, false, "Disable type-defaults for omitted fields when needed"},
               {"output_format_pretty_preserve_border_for_multiline_string", 0, 1, "Applies better rendering for multiline strings."},
