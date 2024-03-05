@@ -521,9 +521,18 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         String mutation_id = entry.file_name;
         if (txn)
             txn->addMutation(shared_from_this(), mutation_id);
+
+        bool alter_conversions_mutations_updated = updateAlterConversionsMutations(entry.commands, alter_conversions_mutations, /* remove= */ false);
         bool inserted = current_mutations_by_version.try_emplace(version, std::move(entry)).second;
         if (!inserted)
+        {
+            if (alter_conversions_mutations_updated)
+            {
+                --alter_conversions_mutations;
+                chassert(alter_conversions_mutations >= 0);
+            }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
+        }
 
         LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
     }
@@ -559,6 +568,8 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                     entry.latest_fail_reason.clear();
                     if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
                         mutation_backoff_policy.removePartFromFailed(failed_part->name);
+
+                    updateAlterConversionsMutations(it->second.commands, alter_conversions_mutations, /* remove= */ true);
                 }
             }
             else
@@ -837,8 +848,20 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
         auto it = current_mutations_by_version.find(mutation_version);
         if (it != current_mutations_by_version.end())
         {
+            bool mutation_finished = true;
+            if (std::optional<Int64> min_version = getMinPartDataVersion())
+                mutation_finished = *min_version > static_cast<Int64>(mutation_version);
+
             to_kill.emplace(std::move(it->second));
-            current_mutations_by_version.erase(it);
+
+            if (!mutation_finished)
+            {
+                const auto commands = it->second.commands;
+                current_mutations_by_version.erase(it);
+                updateAlterConversionsMutations(commands, alter_conversions_mutations, /* remove= */ true);
+            }
+            else
+                current_mutations_by_version.erase(it);
         }
     }
 
@@ -916,6 +939,7 @@ void StorageMergeTree::loadMutations()
                 auto inserted = current_mutations_by_version.try_emplace(block_number, std::move(entry)).second;
                 if (!inserted)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", block_number);
+                updateAlterConversionsMutations(entry.commands, alter_conversions_mutations, /* remove= */ false);
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
@@ -2409,6 +2433,10 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 
 MutationCommands StorageMergeTree::getAlterMutationCommandsForPart(const DataPartPtr & part) const
 {
+    chassert(alter_conversions_mutations >= 0);
+    if (alter_conversions_mutations == 0)
+        return {};
+
     std::lock_guard lock(currently_processing_in_background_mutex);
 
     UInt64 part_data_version = part->info.getDataVersion();
