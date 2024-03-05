@@ -217,6 +217,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
         }
 
         /// To avoid reference to binding
+
         const auto & snapshot_path_ref = snapshot_path;
 
         SCOPE_EXIT(

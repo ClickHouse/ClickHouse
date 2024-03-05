@@ -85,8 +85,13 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.2", {
-              {"allow_suspicious_variant_types", true, false, "Don't allow creating Variant type with suspicious variants by default"},
+    {"24.3", {{"allow_experimental_shared_merge_tree", false, true, "The setting is obsolete"},
+              {"use_page_cache_for_disks_without_file_cache", false, false, "Added userspace page cache"},
+              {"read_from_page_cache_if_exists_otherwise_bypass_cache", false, false, "Added userspace page cache"},
+              {"page_cache_inject_eviction", false, false, "Added userspace page cache"},
+              {"input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects", false, false, "Allow to use String type for ambiguous paths during named tuple inference from JSON objects"},
+              }},
+    {"24.2", {{"allow_suspicious_variant_types", true, false, "Don't allow creating Variant type with suspicious variants by default"},
               {"validate_experimental_and_suspicious_types_inside_nested_types", false, true, "Validate usage of experimental and suspicious types inside nested types"},
               {"output_format_values_escape_quote_with_quote", false, false, "If true escape ' with '', otherwise quoted with \\'"},
               {"output_format_pretty_single_large_number_tip_threshold", 0, 1'000'000, "Print a readable number tip on the right side of the table if the block consists of a single number which exceeds this value (except 0)"},
@@ -114,9 +119,6 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"default_normal_view_sql_security", "INVOKER", "INVOKER", "Allows to set default `SQL SECURITY` option while creating a normal view"},
               {"mysql_map_string_to_text_in_show_columns", false, true, "Reduce the configuration effort to connect ClickHouse with BI tools."},
               {"mysql_map_fixed_string_to_text_in_show_columns", false, true, "Reduce the configuration effort to connect ClickHouse with BI tools."},
-              {"use_page_cache_for_disks_without_file_cache", false, false, "Added userspace page cache"},
-              {"read_from_page_cache_if_exists_otherwise_bypass_cache", false, false, "Added userspace page cache"},
-              {"page_cache_inject_eviction", false, false, "Added userspace page cache"},
               }},
     {"24.1", {{"print_pretty_type_names", false, true, "Better user experience."},
               {"input_format_json_read_bools_as_strings", false, true, "Allow to read bools as strings in JSON formats by default"},
