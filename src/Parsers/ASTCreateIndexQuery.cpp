@@ -48,10 +48,11 @@ void ASTCreateIndexQuery::formatQueryImpl(const FormatSettings & settings, Forma
     {
         if (database)
         {
-            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
-            settings.ostr << ".";
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
-        settings.ostr << indent_str << backQuoteIfNeed(getTable());
+
+        table->formatImpl(settings, state, frame);
     }
 
     formatOnCluster(settings);

@@ -70,6 +70,11 @@ CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
 
 CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
 
+# Minimum version we use in integration tests to check compatibility with old releases
+# Keep in mind that we only support upgrading between releases that are at most 1 year different.
+# This means that this minimum need to be, at least, 1 year older than the current release
+CLICKHOUSE_CI_MIN_TESTED_VERSION = "22.8"
+
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -3483,6 +3488,11 @@ class ClickHouseInstance:
                 )
                 if check_callback(result):
                     return result
+                time.sleep(sleep_time)
+            except QueryRuntimeException as ex:
+                # Container is down, this is likely due to server crash.
+                if "No route to host" in str(ex):
+                    raise
                 time.sleep(sleep_time)
             except Exception as ex:
                 # logging.debug("Retry {} got exception {}".format(i + 1, ex))
