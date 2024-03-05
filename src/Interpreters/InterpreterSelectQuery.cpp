@@ -780,13 +780,30 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         result_header = getSampleBlockImpl();
     };
 
+
+    /// This is a hack to make sure we reanalyze if GlobalSubqueriesVisitor changed allow_experimental_parallel_reading_from_replicas
+    /// inside the query context (because it doesn't have write access to the main context)
+    UInt64 parallel_replicas_before_analysis
+        = context->hasQueryContext() ? context->getQueryContext()->getSettingsRef().allow_experimental_parallel_reading_from_replicas : 0;
+
     /// Conditionally support AST-based PREWHERE optimization.
     analyze(shouldMoveToPrewhere() && (!settings.query_plan_optimize_prewhere || !settings.query_plan_enable_optimizations));
 
+
     bool need_analyze_again = false;
     bool can_analyze_again = false;
+
     if (context->hasQueryContext())
     {
+        /// As this query can't be executed with parallel replicas, we must reanalyze it
+        if (context->getQueryContext()->getSettingsRef().allow_experimental_parallel_reading_from_replicas
+            != parallel_replicas_before_analysis)
+        {
+            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("max_parallel_replicas", UInt64{0});
+            need_analyze_again = true;
+        }
+
         /// Check number of calls of 'analyze' function.
         /// If it is too big, we will not analyze the query again not to have exponential blowup.
         std::atomic<size_t> & current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter;
