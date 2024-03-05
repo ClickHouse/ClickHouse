@@ -1080,6 +1080,8 @@ anyheavy
 anylast
 appendTrailingCharIfAbsent
 approximative
+approxtopk
+approxtopsum
 argMax
 argMin
 argmax
@@ -2491,6 +2493,7 @@ theilsu
 themself
 threadpool
 throwIf
+timeDiff
 timeSlot
 timeSlots
 timeZone
@@ -2542,7 +2545,6 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
-toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes

@@ -39,6 +39,14 @@ static struct InitFiu
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(use_delayed_remote_source) \
     REGULAR(cluster_discovery_faults) \
+    ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
+    ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
+    ONCE(smt_commit_write_zk_fail_after_op) \
+    ONCE(smt_commit_write_zk_fail_before_op) \
+    ONCE(smt_commit_merge_change_version_before_op) \
+    ONCE(smt_merge_mutate_intention_freeze_in_destructor) \
+    ONCE(meta_in_keeper_create_metadata_failure) \
+    REGULAR(cache_warmer_stall) \
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(vfs_gc_optimistic_lock_delay) \
     REGULAR(dummy_failpoint) \
