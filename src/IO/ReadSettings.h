@@ -61,6 +61,7 @@ enum class RemoteFSReadMethod
 };
 
 class MMappedFileCache;
+class PageCache;
 
 struct ReadSettings
 {
@@ -100,6 +101,12 @@ struct ReadSettings
     bool enable_filesystem_cache_log = false;
     bool force_read_through_cache_merges = false;
     size_t filesystem_cache_segments_batch_size = 20;
+
+    //asdqwe assign these two
+    bool use_page_cache_for_disks_without_file_cache = false;
+    bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
+    bool page_cache_inject_eviction = false;
+    std::shared_ptr<PageCache> page_cache;
 
     size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_query_cache = true;
