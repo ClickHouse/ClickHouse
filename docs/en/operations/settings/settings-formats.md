@@ -891,7 +891,7 @@ Default value: `,`.
 
 If it is set to true, allow strings in single quotes.
 
-Enabled by default.
+Disabled by default.
 
 ### format_csv_allow_double_quotes {#format_csv_allow_double_quotes}
 
