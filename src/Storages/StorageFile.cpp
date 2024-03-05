@@ -353,12 +353,12 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     else if (read_method == LocalFSReadMethod::io_uring && !use_table_fd)
     {
 #if USE_LIBURING
-        auto & reader = context->getIOURingReader();
-        if (!reader.isSupported())
+        static std::shared_ptr<IOUringReader> reader = std::make_shared<IOUringReader>(512);
+        if (!reader->isSupported())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
 
         res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-            reader,
+            *reader,
             Priority{},
             current_path,
             context->getSettingsRef().max_read_buffer_size);
