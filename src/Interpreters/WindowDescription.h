@@ -30,7 +30,7 @@ struct WindowFunctionDescription
 
 struct WindowFrame
 {
-    enum class FrameType { ROWS, GROUPS, RANGE };
+    enum class FrameType { ROWS, GROUPS, RANGE, SESSION };
     enum class BoundaryType { Unbounded, Current, Offset };
 
     // This flag signifies that the frame properties were not set explicitly by
@@ -40,7 +40,7 @@ struct WindowFrame
 
     FrameType type = FrameType::RANGE;
 
-    // UNBOUNDED FOLLOWING for the frame end is forbidden by the standard, but for
+    // UNBOUNDED FOLLOWING for the frame start is forbidden by the standard, but for
     // uniformity the begin_preceding still has to be set to true for UNBOUNDED
     // frame start.
     // Offset might be both preceding and following, controlled by begin_preceding,
@@ -55,6 +55,8 @@ struct WindowFrame
     Field end_offset = 0;
     bool end_preceding = false;
 
+    // Threshold for SESSION frame.
+    Field session_window_threshold = 0;
 
     // Throws BAD_ARGUMENTS exception if the frame definition is incorrect, e.g.
     // the frame start comes later than the frame end.

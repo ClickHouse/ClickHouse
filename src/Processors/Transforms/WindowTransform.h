@@ -121,6 +121,8 @@ public:
     void advanceFrameEnd();
     void advanceFrameEndRangeOffset();
 
+    void advanceFrameEndSession();
+
     void updateAggregationState();
     void writeOutCurrentRow();
 
