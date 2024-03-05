@@ -49,9 +49,7 @@ inline void copy8(UInt8 * dst, const UInt8 * src)
 inline void wildCopy8(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
 {
     /// Unrolling with clang is doing >10% performance degrade.
-#if defined(__clang__)
     #pragma nounroll
-#endif
     do
     {
         copy8(dst, src);
@@ -234,9 +232,7 @@ inline void copy16(UInt8 * dst, const UInt8 * src)
 inline void wildCopy16(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
 {
     /// Unrolling with clang is doing >10% performance degrade.
-#if defined(__clang__)
     #pragma nounroll
-#endif
     do
     {
         copy16(dst, src);
@@ -371,9 +367,7 @@ inline void copy32(UInt8 * dst, const UInt8 * src)
 inline void wildCopy32(UInt8 * dst, const UInt8 * src, const UInt8 * dst_end)
 {
     /// Unrolling with clang is doing >10% performance degrade.
-#if defined(__clang__)
     #pragma nounroll
-#endif
     do
     {
         copy32(dst, src);
@@ -487,9 +481,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
     UInt8 * const output_end = op + dest_size;
 
     /// Unrolling with clang is doing >10% performance degrade.
-#if defined(__clang__)
     #pragma nounroll
-#endif
     while (true)
     {
         size_t length;

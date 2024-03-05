@@ -68,14 +68,10 @@
 
 #include <boost/algorithm/string.hpp>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
 #include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+#pragma clang diagnostic pop
 
 namespace fs = std::filesystem;
 
@@ -143,42 +139,38 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromStorageS3Step(
-        Block sample_block,
         const Names & column_names_,
-        StorageSnapshotPtr storage_snapshot_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        Block sample_block,
         StorageS3 & storage_,
         ReadFromFormatInfo read_from_format_info_,
         bool need_only_count_,
-        ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , column_names(column_names_)
-        , storage_snapshot(std::move(storage_snapshot_))
         , storage(storage_)
         , read_from_format_info(std::move(read_from_format_info_))
         , need_only_count(need_only_count_)
-        , local_context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
     {
-        query_configuration = storage.updateConfigurationAndGetCopy(local_context);
+        query_configuration = storage.updateConfigurationAndGetCopy(context);
         virtual_columns = storage.getVirtuals();
     }
 
 private:
     Names column_names;
-    StorageSnapshotPtr storage_snapshot;
     StorageS3 & storage;
     ReadFromFormatInfo read_from_format_info;
     bool need_only_count;
     StorageS3::Configuration query_configuration;
     NamesAndTypesList virtual_columns;
-
-    ContextPtr local_context;
 
     size_t max_block_size;
     size_t num_streams;
@@ -552,7 +544,15 @@ StorageS3Source::KeyWithInfoPtr StorageS3Source::ReadTaskIterator::next(size_t) 
     if (current_index >= buffer.size())
         return std::make_shared<KeyWithInfo>(callback());
 
-    return buffer[current_index];
+    while (current_index < buffer.size())
+    {
+        if (const auto & key_info = buffer[current_index]; key_info && !key_info->key.empty())
+            return buffer[current_index];
+
+        current_index = index.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    return nullptr;
 }
 
 size_t StorageS3Source::ReadTaskIterator::estimatedKeysCount()
@@ -723,7 +723,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
     auto context = getContext();
     auto read_buffer_creator =
         [this, read_settings, object_size]
-        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
+        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromS3>(
             client,
@@ -734,20 +734,24 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
             read_settings,
             /* use_external_buffer */true,
             /* offset */0,
-            read_until_position,
-            /* restricted_seek */true,
+            /* read_until_position */0,
+            restricted_seek,
             object_size);
     };
+
+    auto modified_settings{read_settings};
+    /// User's S3 object may change, don't cache it.
+    modified_settings.use_page_cache_for_disks_without_file_cache = false;
+
+    /// FIXME: Changing this setting to default value breaks something around parquet reading
+    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
 
     auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
         StoredObjects{StoredObject{key, /* local_path */ "", object_size}},
+        "",
         read_settings,
         /* cache_log */nullptr, /* use_external_buffer */true);
-
-    auto modified_settings{read_settings};
-    /// FIXME: Changing this setting to default value breaks something around parquet reading
-    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
 
     auto & pool_reader = context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     auto async_reader = std::make_unique<AsynchronousBoundedReadBuffer>(
@@ -1153,22 +1157,23 @@ void StorageS3::read(
         && local_context->getSettingsRef().optimize_count_from_files;
 
     auto reading = std::make_unique<ReadFromStorageS3Step>(
-        read_from_format_info.source_header,
         column_names,
+        query_info,
         storage_snapshot,
+        local_context,
+        read_from_format_info.source_header,
         *this,
         std::move(read_from_format_info),
         need_only_count,
-        local_context,
         max_block_size,
         num_streams);
 
     query_plan.addStep(std::move(reading));
 }
 
-void ReadFromStorageS3Step::applyFilters()
+void ReadFromStorageS3Step::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1182,8 +1187,8 @@ void ReadFromStorageS3Step::createIterator(const ActionsDAG::Node * predicate)
         return;
 
     iterator_wrapper = createFileIterator(
-        query_configuration, storage.distributed_processing, local_context, predicate,
-        virtual_columns, nullptr, local_context->getFileProgressCallback());
+        query_configuration, storage.distributed_processing, context, predicate,
+        virtual_columns, nullptr, context->getFileProgressCallback());
 }
 
 void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -1200,7 +1205,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
         /// Disclosed glob iterator can underestimate the amount of keys in some cases. We will keep one stream for this particular case.
         num_streams = 1;
 
-    const size_t max_threads = local_context->getSettingsRef().max_threads;
+    const size_t max_threads = context->getSettingsRef().max_threads;
     const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
     LOG_DEBUG(getLogger("StorageS3"), "Reading in {} streams, {} threads per stream", num_streams, max_parsing_threads);
 
@@ -1212,7 +1217,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
             read_from_format_info,
             query_configuration.format,
             storage.getName(),
-            local_context,
+            context,
             storage.format_settings,
             max_block_size,
             query_configuration.request_settings,
@@ -1225,7 +1230,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
             max_parsing_threads,
             need_only_count);
 
-        source->setKeyCondition(filter_nodes.nodes, local_context);
+        source->setKeyCondition(filter_actions_dag, context);
         pipes.emplace_back(std::move(source));
     }
 
@@ -1531,7 +1536,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
                 no_sign_request = true;
                 engine_args_to_idx = {{"format", 2}};
             }
-            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
                 engine_args_to_idx = {{"format", 1}, {"compression_method", 2}};
             else
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
@@ -1552,7 +1557,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
             else
             {
                 auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
-                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+                if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
                 {
                     engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
                 }
@@ -1568,7 +1573,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
         else if (count == 5)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
-            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"compression", 4}};
             }

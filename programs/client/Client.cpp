@@ -51,10 +51,6 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
 
-#ifndef __clang__
-#pragma GCC optimize("-fno-var-tracking-assignments")
-#endif
-
 namespace fs = std::filesystem;
 using namespace std::literals;
 
@@ -330,6 +326,7 @@ try
     processConfig();
     adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()

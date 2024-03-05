@@ -16,7 +16,9 @@ ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_pre
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
+# shellcheck source=../stateless/attach_gdb.lib
 source /attach_gdb.lib
+# shellcheck source=../stateless/stress_tests.lib
 source /stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
@@ -88,6 +90,8 @@ rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 rm /etc/clickhouse-server/config.d/storage_conf_02963.xml
+rm /etc/clickhouse-server/config.d/backoff_failed_mutation.xml
+rm /etc/clickhouse-server/config.d/handlers.yaml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 rm /etc/clickhouse-server/users.d/s3_cache_new.xml
 rm /etc/clickhouse-server/users.d/replicated_ddl_entry.xml
@@ -134,6 +138,8 @@ rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 rm /etc/clickhouse-server/config.d/storage_conf_02963.xml
+rm /etc/clickhouse-server/config.d/backoff_failed_mutation.xml
+rm /etc/clickhouse-server/config.d/handlers.yaml
 rm /etc/clickhouse-server/config.d/block_number.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 rm /etc/clickhouse-server/users.d/s3_cache_new.xml
@@ -333,7 +339,7 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 (test like '%Changed settings%') DESC,
 (test like '%New settings%') DESC,
 rowNumberInAllBlocks()
-LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # But OOMs in stress test are allowed
