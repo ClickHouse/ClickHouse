@@ -74,12 +74,23 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
     /// FIXME: try to prettify this cast using `as<>()`
     if (auto * ast_with_output = dynamic_cast<ASTQueryWithOutput *>(&ast))
     {
-        ast_with_output->out_file.reset();
-        ast_with_output->format.reset();
-        ast_with_output->settings_ast.reset();
-        ast_with_output->compression.reset();
-        ast_with_output->compression_level.reset();
-        ast_with_output->children.clear();
+        auto remove_if_exists = [&](ASTPtr & p)
+        {
+            if (p)
+            {
+                if (auto it = std::find(ast_with_output->children.begin(), ast_with_output->children.end(), p);
+                    it != ast_with_output->children.end())
+                    ast_with_output->children.erase(it);
+                p.reset();
+            }
+        };
+
+        remove_if_exists(ast_with_output->out_file);
+        remove_if_exists(ast_with_output->format);
+        remove_if_exists(ast_with_output->settings_ast);
+        remove_if_exists(ast_with_output->compression);
+        remove_if_exists(ast_with_output->compression_level);
+
         return true;
     }
 
