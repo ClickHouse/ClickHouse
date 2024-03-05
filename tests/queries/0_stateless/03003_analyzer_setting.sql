@@ -2,8 +2,8 @@ CREATE TABLE test (dummy Int8) ENGINE = Distributed(test_cluster_two_shards, 'sy
 
 SET allow_experimental_analyzer = 0;
 
-SELECT * FROM (SELECT * FROM test SETTINGS allow_experimental_analyzer = 1); -- { serverError LOGICAL_ERROR}
+SELECT * FROM (SELECT * FROM test SETTINGS allow_experimental_analyzer = 1); -- { serverError INCORRECT_QUERY }
 
 SET allow_experimental_analyzer = 1;
 
-SELECT * FROM (SELECT * FROM test SETTINGS allow_experimental_analyzer = 0); -- { serverError LOGICAL_ERROR}
+SELECT * FROM (SELECT * FROM test SETTINGS allow_experimental_analyzer = 0); -- { serverError INCORRECT_QUERY }

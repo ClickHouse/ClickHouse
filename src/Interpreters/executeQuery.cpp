@@ -104,6 +104,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int INCORRECT_DATA;
     extern const int SYNTAX_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace FailPoints
@@ -669,7 +670,7 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
             if (auto * value = set_query->changes.tryGet("allow_experimental_analyzer"))
             {
                 if (top_level != value->safeGet<bool>())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
             }
         }
 
