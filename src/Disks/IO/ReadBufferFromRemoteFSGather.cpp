@@ -17,7 +17,7 @@ using namespace DB;
 
 namespace
 {
-    bool withCache(const ReadSettings & settings)
+    bool withFileCache(const ReadSettings & settings)
     {
         return settings.remote_fs_cache && settings.enable_filesystem_cache;
     }
