@@ -1,4 +1,4 @@
-00223_shard_distributed_aggregation_memory_efficien
+00223_shard_distributed_aggregation_memory_efficient
 00717_merge_and_distributed
 00725_memory_tracking
 01062_pm_all_join_with_block_continuation
@@ -13,12 +13,9 @@
 01952_optimize_distributed_group_by_sharding_key
 02174_cte_scalar_cache_mv
 02354_annoy
-02493_inconsistent_hex_and_binary_number
-02725_agg_projection_resprect_PK
 # Check after constants refactoring
 02901_parallel_replicas_rollup
 # Flaky. Please don't delete them without fixing them:
 01287_max_execution_speed
 02003_WithMergeableStateAfterAggregationAndLimit_LIMIT_BY_LIMIT_OFFSET
 02404_memory_bound_merging
-02479_race_condition_between_insert_and_droppin_mv

@@ -1,6 +1,7 @@
 #pragma once
 #include <Coordination/KeeperFeatureFlags.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
@@ -75,6 +76,11 @@ public:
 
     void waitLocalLogsPreprocessedOrShutdown();
 
+    uint64_t lastCommittedIndex() const;
+    void setLastCommitIndex(uint64_t commit_index);
+    /// returns true if the log is committed, false if timeout happened
+    bool waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms);
+
     const CoordinationSettingsPtr & getCoordinationSettings() const;
 
 private:
@@ -122,6 +128,13 @@ private:
     KeeperDispatcher * dispatcher{nullptr};
 
     std::atomic<UInt64> memory_soft_limit = 0;
+
+    std::atomic<UInt64> last_committed_log_idx = 0;
+
+    /// will be set by dispatcher when waiting for certain commits
+    std::optional<UInt64> wait_commit_upto_idx = 0;
+    std::mutex last_committed_log_idx_cv_mutex;
+    std::condition_variable last_committed_log_idx_cv;
 
     CoordinationSettingsPtr coordination_settings;
 };

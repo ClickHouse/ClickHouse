@@ -46,13 +46,17 @@ struct SelectQueryOptions
     /// Bypass setting constraints for some internal queries such as projection ASTs.
     bool ignore_setting_constraints = false;
 
+    /// Bypass access check for select query.
+    /// This allows to skip double access check in some specific cases (e.g. insert into table with materialized view)
+    bool ignore_access_check = false;
+
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
     /// instance might have multiple shards and scalars can only hold one value.
     std::optional<UInt32> shard_num;
     std::optional<UInt32> shard_count;
 
-    SelectQueryOptions(
+    SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t depth = 0,
         bool is_subquery_ = false,
@@ -126,6 +130,12 @@ struct SelectQueryOptions
     SelectQueryOptions & ignoreSettingConstraints(bool value = true)
     {
         ignore_setting_constraints = value;
+        return *this;
+    }
+
+    SelectQueryOptions & ignoreAccessCheck(bool value = true)
+    {
+        ignore_access_check = value;
         return *this;
     }
 
