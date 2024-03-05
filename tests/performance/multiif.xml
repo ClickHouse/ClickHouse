@@ -1,0 +1,8 @@
+<test>
+    <create_query>CREATE TABLE test_multiif_t(d Nullable(Int64)) ENGINE Memory</create_query>
+    <fill_query>INSERT INTO test_multiif_t SELECT * from numbers(300000000)</fill_query>
+
+    <query>select count(1) from test_multiif_t where multiIf(d > 2, d-2, d > 1, d-1, d >0, d, 0) > 1 SETTINGS max_threads=1</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_multiif_t</drop_query>
+</test>

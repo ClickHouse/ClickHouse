@@ -1,3 +1,5 @@
+add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
+
 if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
@@ -8,6 +10,7 @@ set (CMAKE_CXX_STANDARD 20)
 
 set (SRCS
     argsToConfig.cpp
+    cgroupsv2.cpp
     coverage.cpp
     demangle.cpp
     getAvailableMemoryAmount.cpp
@@ -15,6 +18,7 @@ set (SRCS
     getMemoryAmount.cpp
     getPageSize.cpp
     getThreadId.cpp
+    int8_to_string.cpp
     JSON.cpp
     mremap.cpp
     phdr_cache.cpp

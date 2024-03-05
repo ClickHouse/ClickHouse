@@ -1,0 +1,37 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_introspection_functions>1</allow_introspection_functions>
+            <log_queries>1</log_queries>
+            <metrics_perf_events_enabled>0</metrics_perf_events_enabled>
+            <!--
+                If a test takes too long by mistake, the entire test task can
+                time out and the author won't get a proper message. Put some cap
+                on query execution time to prevent this. Test query run time is
+                limited to about 2 seconds, but this limit applies to all queries,
+                including fill/create and maintenance such as downloading trace
+                logs, so it must be generous enough. As a second line of defense,
+                we might also add time check to perf.py script.
+            -->
+            <max_execution_time>300</max_execution_time>
+
+            <!-- One NUMA node w/o hyperthreading -->
+            <max_threads>12</max_threads>
+
+            <!-- disable JIT for perf tests -->
+            <compile_expressions>0</compile_expressions>
+            <compile_aggregate_expressions>0</compile_aggregate_expressions>
+            <compile_sort_description>0</compile_sort_description>
+
+            <!-- Don't fail some prewarm queries too early -->
+            <timeout_before_checking_execution_speed>60</timeout_before_checking_execution_speed>
+
+            <!-- Query profiler enabled only for prewarm queries explicitly (see perf.py)
+                 This is needed for flamegraphs.  -->
+            <query_profiler_real_time_period_ns>0</query_profiler_real_time_period_ns>
+            <query_profiler_cpu_time_period_ns>0</query_profiler_cpu_time_period_ns>
+            <!-- Disable memory profiler too, since due to max_untracked_memory some queries may add trace entry and some may not -->
+            <memory_profiler_step>0</memory_profiler_step>
+        </default>
+    </profiles>
+</clickhouse>

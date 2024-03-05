@@ -7,6 +7,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <Interpreters/ProcessList.h>
+
 #include <base/hex.h>
 
 
@@ -89,6 +91,8 @@ String BackupFileInfo::describe() const
     result += fmt::format("data_file_name: {};\n", data_file_name);
     result += fmt::format("data_file_index: {};\n", data_file_index);
     result += fmt::format("encrypted_by_disk: {};\n", encrypted_by_disk);
+    if (!reference_target.empty())
+        result += fmt::format("reference_target: {};\n", reference_target);
     return result;
 }
 
@@ -98,12 +102,20 @@ BackupFileInfo buildFileInfoForBackupEntry(
     const BackupEntryPtr & backup_entry,
     const BackupPtr & base_backup,
     const ReadSettings & read_settings,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     auto adjusted_path = removeLeadingSlash(file_name);
 
     BackupFileInfo info;
     info.file_name = adjusted_path;
+
+    /// If it's a "reference" just set the target to a concrete file
+    if (backup_entry->isReference())
+    {
+        info.reference_target = removeLeadingSlash(backup_entry->getReferenceTarget());
+        return info;
+    }
+
     info.size = backup_entry->getSize();
     info.encrypted_by_disk = backup_entry->isEncryptedByDisk();
 
@@ -117,7 +129,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     }
 
     if (!log)
-        log = &Poco::Logger::get("FileInfoFromBackupEntry");
+        log = getLogger("FileInfoFromBackupEntry");
 
     std::optional<SizeAndChecksum> base_backup_file_info = getInfoAboutFileFromBaseBackupIfExists(base_backup, adjusted_path);
 
@@ -193,7 +205,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     return info;
 }
 
-BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool)
+BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
@@ -204,7 +216,7 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
     std::exception_ptr exception;
 
     auto thread_group = CurrentThread::getGroup();
-    Poco::Logger * log = &Poco::Logger::get("FileInfosFromBackupEntries");
+    LoggerPtr log = getLogger("FileInfosFromBackupEntries");
 
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
@@ -215,7 +227,7 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
             ++num_active_jobs;
         }
 
-        auto job = [&mutex, &num_active_jobs, &event, &exception, &infos, &backup_entries, &read_settings, &base_backup, &thread_group, i, log]()
+        auto job = [&mutex, &num_active_jobs, &event, &exception, &infos, &backup_entries, &read_settings, &base_backup, &thread_group, &process_list_element, i, log]()
         {
             SCOPE_EXIT_SAFE({
                 std::lock_guard lock{mutex};
@@ -239,6 +251,9 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
                     if (exception)
                         return;
                 }
+
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
 
                 infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
             }

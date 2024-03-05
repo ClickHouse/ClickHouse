@@ -5,6 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>
+#include <Storages/RocksDB/EmbeddedRocksDBSink.h>
 
 
 namespace rocksdb
@@ -31,7 +32,7 @@ public:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
-        bool attach,
+        LoadingStrictnessLevel mode,
         ContextPtr context_,
         const String & primary_key_,
         Int32 ttl_ = 0,
@@ -57,13 +58,17 @@ public:
     void mutate(const MutationCommands &, ContextPtr) override;
     void drop() override;
 
+    bool optimize(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ASTPtr & partition,
+        bool final,
+        bool deduplicate,
+        const Names & deduplicate_by_columns,
+        bool cleanup,
+        ContextPtr context) override;
+
     bool supportsParallelInsert() const override { return true; }
-    bool supportsIndexForIn() const override { return true; }
-    bool mayBenefitFromIndexForIn(
-        const ASTPtr & node, ContextPtr /*query_context*/, const StorageMetadataPtr & /*metadata_snapshot*/) const override
-    {
-        return node->getColumnName() == primary_key;
-    }
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {rocksdb_dir}; }
@@ -85,9 +90,12 @@ public:
 
     bool supportsDelete() const override { return true; }
 
+    /// To turn on the optimization optimize_trivial_approximate_count_query=1 should be set for a query.
     bool supportsTrivialCountOptimization() const override { return true; }
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
+
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 private:
     const String primary_key;

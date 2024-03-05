@@ -2,6 +2,8 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Common/iota.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -10,7 +12,6 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashSet.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <numeric>
 
 
@@ -474,7 +475,7 @@ void ColumnObject::Subcolumn::finalize()
             {
                 auto values = part->index(*offsets, offsets->size());
                 values = castColumn({values, from_type, ""}, to_type);
-                part = values->createWithOffsets(offsets_data, to_type->getDefault(), part_size, /*shift=*/ 0);
+                part = values->createWithOffsets(offsets_data, *createColumnConstWithDefaultValue(result_column->getPtr()), part_size, /*shift=*/ 0);
             }
         }
 
@@ -714,6 +715,15 @@ void ColumnObject::insert(const Field & field)
     ++num_rows;
 }
 
+bool ColumnObject::tryInsert(const Field & field)
+{
+    if (field.getType() != Field::Types::Which::Object)
+        return false;
+
+    insert(field);
+    return true;
+}
+
 void ColumnObject::insertDefault()
 {
     for (auto & entry : subcolumns)
@@ -838,15 +848,7 @@ MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
 void ColumnObject::getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const
 {
     res.resize(num_rows);
-    std::iota(res.begin(), res.end(), 0);
-}
-
-void ColumnObject::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                 PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                 int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnObject>(assert_cast<const ColumnObject &>(rhs), rhs_row_num, row_indexes,
-                                        compare_results, direction, nan_direction_hint);
+    iota(res.data(), res.size(), size_t(0));
 }
 
 void ColumnObject::getExtremes(Field & min, Field & max) const
@@ -861,16 +863,6 @@ void ColumnObject::getExtremes(Field & min, Field & max) const
         get(0, min);
         get(0, max);
     }
-}
-
-MutableColumns ColumnObject::scatter(ColumnIndex num_columns, const Selector & selector) const
-{
-    return scatterImpl<ColumnObject>(num_columns, selector);
-}
-
-void ColumnObject::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
 }
 
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key) const

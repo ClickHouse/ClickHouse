@@ -75,10 +75,6 @@ public:
 
     size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &) override;
     bool supportsReadAt() override { return use_pread; }
-
-private:
-    /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
-    bool poll(size_t timeout_microseconds) const;
 };
 
 

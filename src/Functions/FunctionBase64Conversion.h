@@ -76,12 +76,10 @@ struct TryBase64Decode
     static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
     {
         size_t outlen = 0;
-        base64_decode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+        int rc = base64_decode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
 
-        // during decoding character array can be partially polluted
-        // if fail, revert back and clean
-        if (!outlen)
-            *dst = 0;
+        if (rc != 1)
+            outlen = 0;
 
         return outlen;
     }
@@ -147,7 +145,7 @@ private:
         for (size_t row = 0; row < src_row_count; ++row)
         {
             const size_t src_length = src_offsets[row] - src_offset_prev - 1;
-            const auto outlen = Func::perform({src, src_length}, dst_pos);
+            const size_t outlen = Func::perform({src, src_length}, dst_pos);
 
             /// Base64 library is using AVX-512 with some shuffle operations.
             /// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.

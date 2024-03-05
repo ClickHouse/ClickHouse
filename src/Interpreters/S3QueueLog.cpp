@@ -1,5 +1,7 @@
+#include <base/getFQDNOrHostName.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -12,7 +14,7 @@
 namespace DB
 {
 
-NamesAndTypesList S3QueueLogElement::getNamesAndTypes()
+ColumnsDescription S3QueueLogElement::getColumnsDescription()
 {
     auto status_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -20,10 +22,15 @@ NamesAndTypesList S3QueueLogElement::getNamesAndTypes()
             {"Processed", static_cast<Int8>(S3QueueLogElement::S3QueueStatus::Processed)},
             {"Failed", static_cast<Int8>(S3QueueLogElement::S3QueueStatus::Failed)},
         });
-    return {
+
+    return ColumnsDescription
+    {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"table_uuid", std::make_shared<DataTypeString>()},
+        {"database", std::make_shared<DataTypeString>()},
+        {"table", std::make_shared<DataTypeString>()},
+        {"uuid", std::make_shared<DataTypeString>()},
         {"file_name", std::make_shared<DataTypeString>()},
         {"rows_processed", std::make_shared<DataTypeUInt64>()},
         {"status", status_datatype},
@@ -37,9 +44,12 @@ NamesAndTypesList S3QueueLogElement::getNamesAndTypes()
 void S3QueueLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
-    columns[i++]->insert(table_uuid);
+    columns[i++]->insert(database);
+    columns[i++]->insert(table);
+    columns[i++]->insert(uuid);
     columns[i++]->insert(file_name);
     columns[i++]->insert(rows_processed);
     columns[i++]->insert(status);

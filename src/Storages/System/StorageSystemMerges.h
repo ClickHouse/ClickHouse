@@ -17,7 +17,7 @@ class StorageSystemMerges final : public IStorageSystemOneBlock<StorageSystemMer
 public:
     std::string getName() const override { return "SystemMerges"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

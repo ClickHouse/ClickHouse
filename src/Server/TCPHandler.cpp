@@ -1,5 +1,4 @@
 #include "Interpreters/AsynchronousInsertQueue.h"
-#include "Interpreters/Context_fwd.h"
 #include "Interpreters/SquashingTransform.h"
 #include "Parsers/ASTInsertQuery.h"
 #include <algorithm>
@@ -9,7 +8,6 @@
 #include <mutex>
 #include <vector>
 #include <string_view>
-#include <cstring>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -36,7 +34,6 @@
 #include <Server/TCPServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
@@ -59,11 +56,11 @@
 #   include <Poco/Net/SecureStreamSocketImpl.h>
 #endif
 
-#include "Core/Protocol.h"
-#include "Storages/MergeTree/RequestResponse.h"
+#include <Core/Protocol.h>
+#include <Storages/MergeTree/RequestResponse.h>
 #include "TCPHandler.h"
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -185,25 +182,47 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
 namespace DB
 {
 
-TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
+TCPHandler::TCPHandler(
+    IServer & server_,
+    TCPServer & tcp_server_,
+    const Poco::Net::StreamSocket & socket_,
+    bool parse_proxy_protocol_,
+    std::string server_display_name_,
+    std::string host_name_,
+    const ProfileEvents::Event & read_event_,
+    const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
-    , log(&Poco::Logger::get("TCPHandler"))
+    , log(getLogger("TCPHandler"))
+    , read_event(read_event_)
+    , write_event(write_event_)
     , server_display_name(std::move(server_display_name_))
+    , host_name(std::move(host_name_))
 {
 }
 
-TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_)
-: Poco::Net::TCPServerConnection(socket_)
+TCPHandler::TCPHandler(
+    IServer & server_,
+    TCPServer & tcp_server_,
+    const Poco::Net::StreamSocket & socket_,
+    TCPProtocolStackData & stack_data,
+    std::string server_display_name_,
+    std::string host_name_,
+    const ProfileEvents::Event & read_event_,
+    const ProfileEvents::Event & write_event_)
+    : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
-    , log(&Poco::Logger::get("TCPHandler"))
+    , log(getLogger("TCPHandler"))
     , forwarded_for(stack_data.forwarded_for)
     , certificate(stack_data.certificate)
+    , read_event(read_event_)
+    , write_event(write_event_)
     , default_database(stack_data.default_database)
     , server_display_name(std::move(server_display_name_))
+    , host_name(std::move(host_name_))
 {
     if (!forwarded_for.empty())
         LOG_TRACE(log, "Forwarded client address: {}", forwarded_for);
@@ -234,8 +253,8 @@ void TCPHandler::runImpl()
     socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
 
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket());
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket());
+    in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
+    out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
 
     /// Support for PROXY protocol
     if (parse_proxy_protocol && !receiveProxyHeader())
@@ -588,6 +607,21 @@ void TCPHandler::runImpl()
         }
         catch (const Exception & e)
         {
+            /// Authentication failure with interserver secret
+            /// - early exit without trying to send the exception to the client.
+            /// Because the server should not try to skip (parse, decompress) the remaining packets sent by the client,
+            /// as it will lead to additional work and unneeded exposure to unauthenticated connections.
+
+            /// Note that the exception AUTHENTICATION_FAILED can be here in two cases:
+            /// 1. The authentication in receiveHello is skipped with "interserver secret",
+            /// postponed to receiving the query, and then failed.
+            /// 2. Receiving exception from a query using a table function to authenticate with another server.
+            /// In this case, the user is already authenticated with this server,
+            /// is_interserver_mode is false, and we can send the exception to the client normally.
+
+            if (is_interserver_mode && e.code() == ErrorCodes::AUTHENTICATION_FAILED)
+                throw;
+
             state.io.onException();
             exception.reset(e.clone());
 
@@ -643,7 +677,7 @@ void TCPHandler::runImpl()
         catch (...)
         {
             state.io.onException();
-            exception = std::make_unique<DB::Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
+            exception = std::make_unique<DB::Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
         }
 
         try
@@ -675,6 +709,13 @@ void TCPHandler::runImpl()
             network_error = true;
             LOG_WARNING(log, "Client has gone away.");
         }
+
+        /// Interserver authentication is done only after we read the query.
+        /// This fact can be abused by producing exception before or while we read the query.
+        /// To avoid any potential exploits, we simply close connection on any exceptions
+        /// that happen before the first query is authenticated with the cluster secret.
+        if (is_interserver_mode && exception && !is_interserver_authenticated)
+            exception->rethrow();
 
         try
         {
@@ -901,7 +942,7 @@ void TCPHandler::processInsertQuery()
                 auto wait_status = result.future.wait_for(std::chrono::milliseconds(timeout_ms));
 
                 if (wait_status == std::future_status::deferred)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: got future in deferred state");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
 
                 if (wait_status == std::future_status::timeout)
                     throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout_ms);
@@ -1176,7 +1217,7 @@ void TCPHandler::sendExtremes(const Block & extremes)
 void TCPHandler::sendProfileEvents()
 {
     Block block;
-    ProfileEvents::getProfileEvents(server_display_name, state.profile_queue, block, last_sent_snapshots);
+    ProfileEvents::getProfileEvents(host_name, state.profile_queue, block, last_sent_snapshots);
     if (block.rows() != 0)
     {
         initProfileEventsBlockOutput(block);
@@ -1431,8 +1472,11 @@ void TCPHandler::receiveHello()
                     getClientAddress(client_info));
                 return;
             }
-            catch (...)
+            catch (const Exception & e)
             {
+                if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED)
+                    throw;
+
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
             }
         }
@@ -1717,7 +1761,18 @@ void TCPHandler::receiveQuery()
     {
         client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
 #if USE_SSL
-        String cluster_secret = server.context()->getCluster(cluster)->getSecret();
+
+        String cluster_secret;
+        try
+        {
+            cluster_secret = server.context()->getCluster(cluster)->getSecret();
+        }
+        catch (const Exception & e)
+        {
+            auto exception = Exception::createRuntime(ErrorCodes::AUTHENTICATION_FAILED, e.message());
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), exception);
+            throw exception; /// NOLINT
+        }
 
         if (salt.empty() || cluster_secret.empty())
         {
@@ -1769,6 +1824,8 @@ void TCPHandler::receiveQuery()
             /// address.
             session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
         }
+
+        is_interserver_authenticated = true;
 #else
         auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
             "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
@@ -1986,7 +2043,7 @@ void TCPHandler::initBlockOutput(const Block & block)
 
             if (state.compression == Protocol::Compression::Enable)
             {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs, query_settings.enable_deflate_qpl_codec);
+                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs, query_settings.enable_deflate_qpl_codec, query_settings.enable_zstd_qat_codec);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));

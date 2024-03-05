@@ -4,17 +4,18 @@
 #include "config.h"
 
 #include <chrono>
-#include <filesystem>
+#include <mutex>
 #include <string>
+#include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/LoggerWrapper.h>
-#include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string.hpp>
+#include <libnuraft/callback.hxx>
 #include <libnuraft/cluster_config.hxx>
 #include <libnuraft/log_val_type.hxx>
 #include <libnuraft/msg_type.hxx>
@@ -24,12 +25,15 @@
 #include <Poco/Util/Application.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
-#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
+
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <fmt/chrono.h>
+
 #include <libnuraft/req_msg.hxx>
+
 
 namespace DB
 {
@@ -91,7 +95,7 @@ std::string checkAndGetSuperdigest(const String & user_and_digest)
     return user_and_digest;
 }
 
-int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, Poco::Logger * log)
+int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log)
 {
     if (value > std::numeric_limits<int32_t>::max())
     {
@@ -118,22 +122,20 @@ KeeperServer::KeeperServer(
     KeeperSnapshotManagerS3 & snapshot_manager_s3,
     KeeperStateMachine::CommitCallback commit_callback)
     : server_id(configuration_and_settings_->server_id)
-    , coordination_settings(configuration_and_settings_->coordination_settings)
-    , log(&Poco::Logger::get("KeeperServer"))
+    , log(getLogger("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
     , keeper_context{std::move(keeper_context_)}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
     , enable_reconfiguration(config.getBool("keeper_server.enable_reconfiguration", false))
 {
-    if (coordination_settings->quorum_reads)
+    if (keeper_context->getCoordinationSettings()->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
     state_machine = nuraft::cs_new<KeeperStateMachine>(
         responses_queue_,
         snapshots_queue_,
-        coordination_settings,
         keeper_context,
-        config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
+        config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
         commit_callback,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
@@ -142,7 +144,6 @@ KeeperServer::KeeperServer(
         "keeper_server",
         "state",
         config,
-        coordination_settings,
         keeper_context);
 }
 
@@ -197,13 +198,19 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         nuraft::raft_server::commit_in_bg();
     }
 
-    void commitLogs(uint64_t index_to_commit, bool initial_commit_exec)
+    std::unique_lock<std::recursive_mutex> lockRaft()
     {
-        leader_commit_index_.store(index_to_commit);
-        quick_commit_index_ = index_to_commit;
-        lagging_sm_target_index_ = index_to_commit;
+        return std::unique_lock(lock_);
+    }
 
-        commit_in_bg_exec(0, initial_commit_exec);
+    bool isCommitInProgress() const
+    {
+        return sm_commit_exec_in_progress_;
+    }
+
+    void setServingRequest(bool value)
+    {
+        serving_req_ = value;
     }
 
     using nuraft::raft_server::raft_server;
@@ -219,7 +226,7 @@ void KeeperServer::loadLatestConfig()
 {
     auto latest_snapshot_config = state_machine->getClusterConfig();
     auto latest_log_store_config = state_manager->getLatestConfigFromLogStore();
-    auto async_replication = coordination_settings->async_replication;
+    auto async_replication = keeper_context->getCoordinationSettings()->async_replication;
 
     if (latest_snapshot_config && latest_log_store_config)
     {
@@ -286,6 +293,8 @@ void KeeperServer::forceRecovery()
 
 void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
+
     nuraft::raft_params params;
     params.parallel_log_appending_ = true;
     params.heart_beat_interval_
@@ -325,11 +334,25 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.auto_forwarding_req_timeout_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, "operation_timeout_ms", log);
     params.max_append_size_
-        = getValueOrMaxInt32AndLogWarning(coordination_settings->max_requests_batch_size, "max_requests_batch_size", log);
+        = getValueOrMaxInt32AndLogWarning(coordination_settings->max_requests_append_size, "max_requests_append_size", log);
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
     nuraft::asio_service::options asio_opts{};
+
+    /// If asio worker threads fail in any way, NuRaft will stop to make any progress
+    /// For that reason we need to suppress out of memory exceptions in such threads
+    /// TODO: use `get_active_workers` to detect when we have no active workers to abort
+    asio_opts.worker_start_ = [](uint32_t /*worker_id*/)
+    {
+        LockMemoryExceptionInThread::addUniqueLock(VariableContext::Global);
+    };
+
+    asio_opts.worker_stop_ = [](uint32_t /*worker_id*/)
+    {
+        LockMemoryExceptionInThread::removeUniqueLock();
+    };
+
     if (state_manager->isSecure())
     {
 #if USE_SSL
@@ -406,13 +429,17 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 {
     state_machine->init();
 
+    keeper_context->setLastCommitIndex(state_machine->last_commit_index());
+
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
+
     state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
 
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
     LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk);
     if (state_machine->last_commit_index() >= last_log_idx_on_disk)
-        keeper_context->local_logs_preprocessed = true;
+        keeper_context->setLocalLogsPreprocessed();
 
     loadLatestConfig();
 
@@ -425,7 +452,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
 void KeeperServer::shutdownRaftServer()
 {
-    size_t timeout = coordination_settings->shutdown_timeout.totalSeconds();
+    size_t timeout = keeper_context->getCoordinationSettings()->shutdown_timeout.totalSeconds();
 
     if (!raft_instance)
     {
@@ -505,6 +532,7 @@ void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForSessions & requests_for_sessions)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
+    entries.reserve(requests_for_sessions.size());
     for (const auto & request_for_session : requests_for_sessions)
         entries.push_back(getZooKeeperLogEntry(request_for_session));
 
@@ -534,6 +562,12 @@ bool KeeperServer::isFollower() const
 bool KeeperServer::isLeaderAlive() const
 {
     return raft_instance && raft_instance->is_leader_alive();
+}
+
+bool KeeperServer::isExceedingMemorySoftLimit() const
+{
+    Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
+    return mem_soft_limit > 0 && total_memory_tracker.get() >= mem_soft_limit;
 }
 
 /// TODO test whether taking failed peer in count
@@ -613,77 +647,90 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
         }
     }
 
-    if (!keeper_context->local_logs_preprocessed)
+    if (!keeper_context->localLogsPreprocessed())
     {
         const auto preprocess_logs = [&]
         {
+            auto lock = raft_instance->lockRaft();
+
+            if (keeper_context->localLogsPreprocessed())
+                return;
+
+            keeper_context->setLocalLogsPreprocessed();
             auto log_store = state_manager->load_log_store();
-            if (last_log_idx_on_disk > 0 && last_log_idx_on_disk > state_machine->last_commit_index())
-            {
-                auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, last_log_idx_on_disk + 1);
+            auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, log_store->next_slot());
 
-                size_t preprocessed = 0;
-                LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
-                auto idx = state_machine->last_commit_index() + 1;
-                for (const auto & entry : *log_entries)
-                {
-                    if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
-                        state_machine->pre_commit(idx, entry->get_buf());
-
-                    ++idx;
-                    ++preprocessed;
-
-                    if (preprocessed % 50000 == 0)
-                        LOG_TRACE(log, "Preprocessed {}/{} entries", preprocessed, log_entries->size());
-                }
-                LOG_INFO(log, "Preprocessing done");
-            }
-            else
+            if (log_entries->empty())
             {
                 LOG_INFO(log, "All local log entries preprocessed");
+                return;
             }
-            keeper_context->local_logs_preprocessed = true;
+
+            size_t preprocessed = 0;
+            LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
+            auto idx = state_machine->last_commit_index() + 1;
+            for (const auto & entry : *log_entries)
+            {
+                if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
+                    state_machine->pre_commit(idx, entry->get_buf());
+
+                ++idx;
+                ++preprocessed;
+
+                if (preprocessed % 50000 == 0)
+                    LOG_TRACE(log, "Preprocessed {}/{} entries", preprocessed, log_entries->size());
+            }
+            LOG_INFO(log, "Preprocessing done");
         };
 
         switch (type)
         {
-            case nuraft::cb_func::InitialBatchCommited:
+            case nuraft::cb_func::PreAppendLogLeader:
             {
-                preprocess_logs();
+                /// we cannot preprocess anything new as leader because we don't have up-to-date in-memory state
+                /// until we preprocess all stored logs
+                return nuraft::cb_func::ReturnCode::ReturnNull;
+            }
+            case nuraft::cb_func::ProcessReq:
+            {
+                auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
+
+                if (req.get_type() != nuraft::msg_type::append_entries_request)
+                    break;
+
+                if (req.log_entries().empty())
+                    break;
+
+                /// committing/preprocessing of local logs can take some time
+                /// and we don't want election to start during that time so we
+                /// set serving requests to avoid elections on timeout
+                raft_instance->setServingRequest(true);
+                SCOPE_EXIT(raft_instance->setServingRequest(false));
+                /// maybe we got snapshot installed
+                if (state_machine->last_commit_index() >= last_log_idx_on_disk && !raft_instance->isCommitInProgress())
+                    preprocess_logs();
+                /// we don't want to append new logs if we are committing local logs
+                else if (raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk)
+                    keeper_context->waitLocalLogsPreprocessedOrShutdown();
+
                 break;
             }
             case nuraft::cb_func::GotAppendEntryReqFromLeader:
             {
                 auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
 
-                if (req.get_commit_idx() == 0 || req.log_entries().empty())
+                if (req.log_entries().empty())
                     break;
 
-                auto last_committed_index = state_machine->last_commit_index();
-                // Actual log number.
-                auto index_to_commit = std::min({last_log_idx_on_disk, req.get_last_log_idx(), req.get_commit_idx()});
+                if (req.get_last_log_idx() < last_log_idx_on_disk)
+                    last_log_idx_on_disk = req.get_last_log_idx();
 
-                if (index_to_commit > last_committed_index)
-                {
-                    LOG_TRACE(log, "Trying to commit local log entries, committing upto {}", index_to_commit);
-                    raft_instance->commitLogs(index_to_commit, true);
-                    /// after we manually committed all the local logs we can, we assert that all of the local logs are either
-                    /// committed or preprocessed
-                    if (!keeper_context->local_logs_preprocessed)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Local logs are not preprocessed");
-                }
-                else if (last_log_idx_on_disk <= last_committed_index)
-                {
-                    keeper_context->local_logs_preprocessed = true;
-                }
-                else if
-                (
-                    index_to_commit == 0 ||
-                    (index_to_commit == last_committed_index && last_log_idx_on_disk > index_to_commit)  /// we need to rollback all the logs so we preprocess all of them
-                )
-                {
+                break;
+            }
+            case nuraft::cb_func::StateMachineExecution:
+            {
+                if (state_machine->last_commit_index() >= last_log_idx_on_disk)
                     preprocess_logs();
-                }
                 break;
             }
             default:
@@ -829,7 +876,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 /// Node first became leader, and after that some other node became leader.
                 /// BecameFresh for this node will not be called because it was already fresh
                 /// when it was leader.
-                if (leader_index < our_index + coordination_settings->fresh_log_gap)
+                if (leader_index < our_index + keeper_context->getCoordinationSettings()->fresh_log_gap)
                     set_initialized();
             }
             return nuraft::cb_func::ReturnCode::Ok;
@@ -846,6 +893,10 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             initial_batch_committed = true;
             return nuraft::cb_func::ReturnCode::Ok;
         }
+        case nuraft::cb_func::PreAppendLogLeader:
+        {
+            return nuraft::cb_func::ReturnCode::ReturnNull;
+        }
         case nuraft::cb_func::PreAppendLogFollower:
         {
             const auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
@@ -860,7 +911,7 @@ void KeeperServer::waitInit()
 {
     std::unique_lock lock(initialized_mutex);
 
-    int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
+    int64_t timeout = keeper_context->getCoordinationSettings()->startup_timeout.totalMilliseconds();
     if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
         LOG_WARNING(log, "Failed to wait for RAFT initialization in {}ms, will continue in background", timeout);
 }
@@ -932,6 +983,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
 
 ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config)
 {
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
     auto diff = state_manager->getRaftConfigurationDiff(config, coordination_settings);
 
     if (!diff.empty())
@@ -959,6 +1011,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
         std::this_thread::sleep_for(sleep_time * (i + 1));
     };
 
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
@@ -1014,6 +1067,7 @@ bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAc
     auto became_leader = [&] { LOG_INFO(log, "Became leader, aborting"); return false; };
     auto backoff = [&](size_t i) { std::this_thread::sleep_for(sleep_time * (i + 1)); };
 
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
     if (const auto* add = std::get_if<AddRaftServer>(&action))
     {
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
@@ -1058,6 +1112,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
         result.follower_count = getFollowerCount();
         result.synced_follower_count = getSyncedFollowerCount();
     }
+    result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
     result.total_nodes_count = getKeeperStateMachine()->getNodesCount();
     result.last_zxid = getKeeperStateMachine()->getLastProcessedZxid();
     return result;
@@ -1079,14 +1134,12 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
     auto log_store = state_manager->load_log_store();
     if (log_store)
     {
-        log_info.first_log_idx = log_store->start_index();
-        log_info.first_log_term = log_store->term_at(log_info.first_log_idx);
+        const auto & keeper_log_storage = static_cast<const KeeperLogStore &>(*log_store);
+        keeper_log_storage.getKeeperLogInfo(log_info);
     }
 
     if (raft_instance)
     {
-        log_info.last_log_idx = raft_instance->get_last_log_idx();
-        log_info.last_log_term = raft_instance->get_last_log_term();
         log_info.last_committed_log_idx = raft_instance->get_committed_log_idx();
         log_info.leader_committed_log_idx = raft_instance->get_leader_committed_log_idx();
         log_info.target_committed_log_idx = raft_instance->get_target_committed_log_idx();

@@ -196,7 +196,7 @@ These settings should be defined in the disk configuration section.
 
 - `max_elements` - a limit for a number of cache files. Default: `10000000`.
 
-- `load_metadata_threads` - number of threads being used to load cache metadata on starting time. Default: `1`.
+- `load_metadata_threads` - number of threads being used to load cache metadata on starting time. Default: `16`.
 
 File Cache **query/profile settings**:
 
@@ -206,7 +206,7 @@ Some of these settings will disable cache features per query/profile that are en
 
 - `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` - allows to use cache in query only if it already exists, otherwise query data will not be written to local cache storage. Default: `false`.
 
-- `enable_filesystem_cache_on_write_operations` - turn on `write-through` cache. This setting works only if setting `cache_on_write_operations` in cache configuration is turned on. Default: `false`.
+- `enable_filesystem_cache_on_write_operations` - turn on `write-through` cache. This setting works only if setting `cache_on_write_operations` in cache configuration is turned on. Default: `false`. Cloud default value: `true`.
 
 - `enable_filesystem_cache_log` - turn on logging to `system.filesystem_cache_log` table. Gives a detailed view of cache usage per query. It can be turn on for specific queries or enabled in a profile. Default: `false`.
 
@@ -274,6 +274,16 @@ Cache profile events:
 - `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`
 
 - `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`
+
+## Using in-memory cache (userspace page cache) {#userspace-page-cache}
+
+The File Cache described above stores cached data in local files. Alternatively, object-store-based disks can be configured to use "Userspace Page Cache", which is RAM-only. Userspace page cache is recommended only if file cache can't be used for some reason, e.g. if the machine doesn't have a local disk at all. Note that file cache effectively uses RAM for caching too, since the OS caches contents of local files.
+
+To enable userspace page cache for disks that don't use file cache, use setting `use_page_cache_for_disks_without_file_cache`.
+
+By default, on Linux, the userspace page cache will use all available memory, similar to the OS page cache. In tools like `top` and `ps`, the clickhouse server process will typically show resident set size near 100% of the machine's RAM - this is normal, and most of this memory is actually reclaimable by the OS on memory pressure (`MADV_FREE`). This behavior can be disabled with server setting `page_cache_use_madv_free = 0`, making the userspace page cache just use a fixed amount of memory `page_cache_size` with no special interaction with the OS. On Mac OS, `page_cache_use_madv_free` is always disabled as it doesn't have lazy `MADV_FREE`.
+
+Unfortunately, `page_cache_use_madv_free` makes it difficult to tell if the server is close to running out of memory, since the RSS metric becomes useless. Async metric `UnreclaimableRSS` shows the amount of physical memory used by the server, excluding the memory reclaimable by the OS: `select value from system.asynchronous_metrics where metric = 'UnreclaimableRSS'`. Use it for monitoring instead of RSS. This metric is only available if `page_cache_use_madv_free` is enabled.
 
 ## Storing Data on Web Server {#storing-data-on-webserver}
 

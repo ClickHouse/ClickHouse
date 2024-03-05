@@ -11,8 +11,7 @@
 #include <Common/setThreadName.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
-
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -33,12 +32,16 @@ PostgreSQLHandler::PostgreSQLHandler(
     TCPServer & tcp_server_,
     bool ssl_enabled_,
     Int32 connection_id_,
-    std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_)
+    std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
+    const ProfileEvents::Event & read_event_,
+    const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , ssl_enabled(ssl_enabled_)
     , connection_id(connection_id_)
+    , read_event(read_event_)
+    , write_event(write_event_)
     , authentication_manager(auth_methods_)
 {
     changeIO(socket());
@@ -46,8 +49,8 @@ PostgreSQLHandler::PostgreSQLHandler(
 
 void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 {
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket);
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket);
+    in = std::make_shared<ReadBufferFromPocoSocket>(socket, read_event);
+    out = std::make_shared<WriteBufferFromPocoSocket>(socket, write_event);
     message_transport = std::make_shared<PostgreSQLProtocol::Messaging::MessageTransport>(in.get(), out.get());
 }
 

@@ -22,6 +22,7 @@ namespace CurrentMetrics
 {
     extern const Metric QueryPipelineExecutorThreads;
     extern const Metric QueryPipelineExecutorThreadsActive;
+    extern const Metric QueryPipelineExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -137,8 +138,8 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         initializeExecution(1, true);
 
         // Acquire slot until we are done
-        single_thread_slot = slots->tryAcquire();
-        chassert(single_thread_slot && "Unable to allocate slot for the first thread, but we just allocated at least one slot");
+        single_thread_cpu_slot = cpu_slots->tryAcquire();
+        chassert(single_thread_cpu_slot && "Unable to allocate cpu slot for the first thread, but we just allocated at least one slot");
 
         if (yield_flag && *yield_flag)
             return true;
@@ -154,7 +155,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         if (node->exception)
             std::rethrow_exception(node->exception);
 
-    single_thread_slot.reset();
+    single_thread_cpu_slot.reset();
     finalizeExecution();
 
     return false;
@@ -299,8 +300,18 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
-            /// Upscale if possible.
-            spawnThreads();
+            try
+            {
+                /// Upscale if possible.
+                spawnThreads();
+            }
+            catch (...)
+            {
+                /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
+                /// We should cancel execution properly before rethrow.
+                cancel();
+                throw;
+            }
 
             /// We have executed single processor. Check if we need to yield execution.
             if (yield_flag && *yield_flag)
@@ -322,8 +333,8 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
     /// Allocate CPU slots from concurrency control
     size_t min_threads = concurrency_control ? 1uz : num_threads;
-    slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
-    use_threads = slots->grantedCount();
+    cpu_slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
+    use_threads = cpu_slots->grantedCount();
 
     Queue queue;
     graph->initializeExecution(queue);
@@ -332,12 +343,12 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     tasks.fill(queue);
 
     if (num_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, num_threads);
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
 }
 
 void PipelineExecutor::spawnThreads()
 {
-    while (auto slot = slots->tryAcquire())
+    while (auto slot = cpu_slots->tryAcquire())
     {
         size_t thread_num = threads.fetch_add(1);
 
@@ -394,7 +405,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
     }
     else
     {
-        auto slot = slots->tryAcquire();
+        auto slot = cpu_slots->tryAcquire();
         executeSingleThread(0);
     }
 

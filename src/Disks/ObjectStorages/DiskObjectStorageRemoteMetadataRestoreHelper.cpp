@@ -13,6 +13,7 @@ namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB
@@ -156,7 +157,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::migrateToRestorableSchema()
     {
         LOG_INFO(disk->log, "Start migration to restorable schema for disk {}", disk->name);
 
-        ThreadPool pool{CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive};
+        ThreadPool pool{CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled};
 
         for (const auto & root : data_roots)
             if (disk->exists(root))
@@ -355,7 +356,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
 {
     LOG_INFO(disk->log, "Starting restore files for disk {}", disk->name);
 
-    ThreadPool pool{CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive};
+    ThreadPool pool{CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled};
     auto restore_files = [this, &source_object_storage, &restore_information, &pool](const RelativePathsWithMetadata & objects)
     {
         std::vector<String> keys_names;

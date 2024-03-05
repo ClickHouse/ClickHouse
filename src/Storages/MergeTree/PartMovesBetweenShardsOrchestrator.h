@@ -176,7 +176,7 @@ private:
 
     String zookeeper_path;
     String logger_name;
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
     std::atomic<bool> need_stop{false};
 
     BackgroundSchedulePool::TaskHolder task;

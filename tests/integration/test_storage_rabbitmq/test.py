@@ -37,6 +37,19 @@ instance2 = cluster.add_instance(
     with_rabbitmq=True,
 )
 
+instance3 = cluster.add_instance(
+    "instance3",
+    user_configs=["configs/users.xml"],
+    main_configs=[
+        "configs/rabbitmq.xml",
+        "configs/macros.xml",
+        "configs/named_collection.xml",
+        "configs/mergetree.xml",
+    ],
+    with_rabbitmq=True,
+    stay_alive=True,
+)
+
 # Helpers
 
 
@@ -84,6 +97,7 @@ def rabbitmq_cluster():
         cluster.start()
         logging.debug("rabbitmq_id is {}".format(instance.cluster.rabbitmq_docker_id))
         instance.query("CREATE DATABASE test")
+        instance3.query("CREATE DATABASE test")
 
         yield cluster
 
@@ -102,18 +116,35 @@ def rabbitmq_setup_teardown():
 # Tests
 
 
-def test_rabbitmq_select(rabbitmq_cluster):
+@pytest.mark.parametrize(
+    "secure",
+    [
+        pytest.param(0),
+        pytest.param(1),
+    ],
+)
+def test_rabbitmq_select(rabbitmq_cluster, secure):
+    if secure and instance.is_built_with_thread_sanitizer():
+        pytest.skip(
+            "Data races: see https://github.com/ClickHouse/ClickHouse/issues/56866"
+        )
+
+    port = cluster.rabbitmq_port
+    if secure:
+        port = cluster.rabbitmq_secure_port
+
     instance.query(
         """
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = '{}:5672',
+            SETTINGS rabbitmq_host_port = '{}:{}',
                      rabbitmq_exchange_name = 'select',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'JSONEachRow',
-                     rabbitmq_row_delimiter = '\\n';
+                     rabbitmq_row_delimiter = '\\n',
+                     rabbitmq_secure = {};
         """.format(
-            rabbitmq_cluster.rabbitmq_host
+            rabbitmq_cluster.rabbitmq_host, port, secure
         )
     )
 
@@ -3139,7 +3170,7 @@ def test_block_based_formats_1(rabbitmq_cluster):
     )
 
     instance.query(
-        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;"
+        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0, output_format_pretty_color=1;"
     )
     insert_messages = []
 
@@ -3442,18 +3473,18 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
                      rabbitmq_row_delimiter = '\\n',
                      rabbitmq_handle_error_mode = 'stream';
 
-        
+
         CREATE TABLE test.errors (error Nullable(String), broken_message Nullable(String))
              ENGINE = MergeTree()
              ORDER BY tuple();
 
         CREATE MATERIALIZED VIEW test.errors_view TO test.errors AS
                 SELECT _error as error, _raw_message as broken_message FROM test.rabbit where not isNull(_error);
-                
+
         CREATE TABLE test.data (key UInt64, value UInt64)
              ENGINE = MergeTree()
              ORDER BY key;
-        
+
         CREATE MATERIALIZED VIEW test.view TO test.data AS
                 SELECT key, value FROM test.rabbit;
         """.format(
@@ -3521,3 +3552,99 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 
     expected = "".join(sorted(expected))
     assert broken_messages == expected
+
+
+def test_attach_broken_table(rabbitmq_cluster):
+    instance.query(
+        "ATTACH TABLE rabbit_queue UUID '2d1cdf1a-f060-4a61-a7c9-5b59e59992c6' (`payload` String) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'nonexisting:5671', rabbitmq_format = 'JSONEachRow', rabbitmq_username = 'test', rabbitmq_password = 'test'"
+    )
+
+    error = instance.query_and_get_error("SELECT * FROM rabbit_queue")
+    assert "CANNOT_CONNECT_RABBITMQ" in error
+    error = instance.query_and_get_error("INSERT INTO rabbit_queue VALUES ('test')")
+    assert "CANNOT_CONNECT_RABBITMQ" in error
+
+
+def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
+    table_name = "nack_failed_insert"
+    exchange = f"{table_name}_exchange"
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    channel.exchange_declare(exchange="deadl")
+
+    result = channel.queue_declare(queue="deadq")
+    queue_name = result.method.queue
+    channel.queue_bind(exchange="deadl", routing_key="", queue=queue_name)
+
+    instance3.query(
+        f"""
+        CREATE TABLE test.{table_name} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_exchange_name = '{exchange}',
+                     rabbitmq_format = 'JSONEachRow',
+                    rabbitmq_queue_settings_list='x-dead-letter-exchange=deadl';
+
+        DROP TABLE IF EXISTS test.view;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.{table_name};
+        """
+    )
+
+    num_rows = 25
+    for i in range(num_rows):
+        message = json.dumps({"key": i, "value": i}) + "\n"
+        channel.basic_publish(exchange=exchange, routing_key="", body=message)
+
+    instance3.wait_for_log_line(
+        "Failed to push to views. Error: Code: 252. DB::Exception: Too many parts"
+    )
+
+    instance3.replace_in_config(
+        "/etc/clickhouse-server/config.d/mergetree.xml",
+        "parts_to_throw_insert>0",
+        "parts_to_throw_insert>10",
+    )
+    instance3.restart_clickhouse()
+
+    count = [0]
+
+    def on_consume(channel, method, properties, body):
+        channel.basic_publish(exchange=exchange, routing_key="", body=body)
+        count[0] += 1
+        if count[0] == num_rows:
+            channel.stop_consuming()
+
+    channel.basic_consume(queue_name, on_consume)
+    channel.start_consuming()
+
+    attempt = 0
+    count = 0
+    while attempt < 100:
+        count = int(instance3.query("SELECT count() FROM test.view"))
+        if count == num_rows:
+            break
+        attempt += 1
+
+    assert count == num_rows
+
+    instance3.query(
+        f"""
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+        DROP TABLE test.{table_name};
+    """
+    )
+    connection.close()

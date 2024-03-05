@@ -50,12 +50,6 @@ namespace ErrorCodes
 
 namespace
 {
-    void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
-    {
-        session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
-        session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
-    }
-
     Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(const ProxyConfiguration & proxy_configuration)
     {
         Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
@@ -76,7 +70,7 @@ namespace
         static_assert(std::has_virtual_destructor_v<Session>, "The base class must have a virtual destructor");
 
     public:
-        HTTPSessionAdapter(const std::string & host, UInt16 port) : Session(host, port), log{&Poco::Logger::get("HTTPSessionAdapter")} { }
+        HTTPSessionAdapter(const std::string & host, UInt16 port) : Session(host, port), log{getLogger("HTTPSessionAdapter")} { }
         ~HTTPSessionAdapter() override = default;
 
     protected:
@@ -138,7 +132,7 @@ namespace
                 }
             }
         }
-        Poco::Logger * log;
+        LoggerPtr log;
     };
 
     bool isHTTPS(const Poco::URI & uri)
@@ -229,7 +223,7 @@ namespace
             bool wait_on_pool_size_limit)
             : Base(
                 static_cast<unsigned>(max_pool_size_),
-                &Poco::Logger::get("HTTPSessionPool"),
+                getLogger("HTTPSessionPool"),
                 wait_on_pool_size_limit ? BehaviourOnLimit::Wait : BehaviourOnLimit::AllocateNewBypassingPool)
             , host(host_)
             , port(port_)
@@ -357,6 +351,12 @@ namespace
             return session;
         }
     };
+}
+
+void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
+{
+    session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
+    session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
 }
 
 void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout)

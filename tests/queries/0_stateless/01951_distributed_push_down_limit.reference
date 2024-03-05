@@ -6,7 +6,7 @@ Expression
       Union
         Sorting
           Expression
-            ReadFromStorage
+            ReadFromSystemNumbers
         ReadFromRemote
 explain description=0 select * from remote('127.{1,2}', view(select * from numbers(1e6))) order by number limit 10 settings distributed_push_down_limit=1;
 Expression
@@ -15,5 +15,5 @@ Expression
       Union
         Sorting
           Expression
-            ReadFromStorage
+            ReadFromSystemNumbers
         ReadFromRemote
