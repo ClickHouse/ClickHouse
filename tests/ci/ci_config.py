@@ -264,6 +264,8 @@ class BuildConfig:
         def process(field_name: str, field: Union[bool, str]) -> str:
             if isinstance(field, bool):
                 field = str(field).lower()
+            elif not isinstance(field, str):
+                field = ""
             if export:
                 return f"export BUILD_{field_name.upper()}={repr(field)}"
             return f"BUILD_{field_name.upper()}={field}"
@@ -276,6 +278,7 @@ class BuildReportConfig:
     builds: List[str]
     job_config: JobConfig = field(
         default_factory=lambda: JobConfig(
+            run_command='build_report_check.py "$CHECK_NAME"',
             digest=DigestConfig(
                 include_paths=[
                     "./tests/ci/build_report_check.py",
@@ -399,6 +402,16 @@ bugfix_validate_check = DigestConfig(
     ],
 )
 # common test params
+docker_server_job_config = JobConfig(
+    required_on_release_branch=True,
+    run_command='docker_server.py --check-name "$CHECK_NAME" --release-type head --allow-build-reuse',
+    digest=DigestConfig(
+        include_paths=[
+            "tests/ci/docker_server.py",
+            "./docker/server",
+        ]
+    ),
+)
 compatibility_test_common_params = {
     "digest": compatibility_check_digest,
     "run_command": "compatibility_check.py",
@@ -560,7 +573,25 @@ class CIConfig:
             for check_name in config:  # type: ignore
                 yield check_name
 
-    def get_builds_for_report(self, report_name: str) -> List[str]:
+    def get_builds_for_report(
+        self, report_name: str, release: bool = False, backport: bool = False
+    ) -> List[str]:
+        # hack to modify build list for release and bp wf
+        assert not (release and backport), "Invalid input"
+        if backport and report_name == JobNames.BUILD_CHECK:
+            return [
+                Build.PACKAGE_RELEASE,
+                Build.PACKAGE_AARCH64,
+                Build.PACKAGE_ASAN,
+                Build.PACKAGE_TSAN,
+                Build.PACKAGE_DEBUG,
+            ]
+        if (release or backport) and report_name == JobNames.BUILD_CHECK_SPECIAL:
+            return [
+                Build.BINARY_DARWIN,
+                Build.BINARY_DARWIN_AARCH64,
+            ]
+
         return self.builds_report_config[report_name].builds
 
     @classmethod
@@ -827,9 +858,6 @@ CI_CONFIG = CIConfig(
                 Build.PACKAGE_TSAN,
                 Build.PACKAGE_MSAN,
                 Build.PACKAGE_DEBUG,
-                Build.PACKAGE_RELEASE_COVERAGE,
-                Build.BINARY_RELEASE,
-                Build.FUZZERS,
             ]
         ),
         JobNames.BUILD_CHECK_SPECIAL: BuildReportConfig(
@@ -845,33 +873,15 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_S390X,
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
+                Build.PACKAGE_RELEASE_COVERAGE,
+                Build.BINARY_RELEASE,
+                Build.FUZZERS,
             ]
         ),
     },
     other_jobs_configs={
-        JobNames.DOCKER_SERVER: TestConfig(
-            "",
-            job_config=JobConfig(
-                required_on_release_branch=True,
-                digest=DigestConfig(
-                    include_paths=[
-                        "tests/ci/docker_server.py",
-                        "./docker/server",
-                    ]
-                ),
-            ),
-        ),
-        JobNames.DOCKER_KEEPER: TestConfig(
-            "",
-            job_config=JobConfig(
-                digest=DigestConfig(
-                    include_paths=[
-                        "tests/ci/docker_server.py",
-                        "./docker/keeper",
-                    ]
-                ),
-            ),
-        ),
+        JobNames.DOCKER_SERVER: TestConfig("", job_config=docker_server_job_config),
+        JobNames.DOCKER_KEEPER: TestConfig("", job_config=docker_server_job_config),
         JobNames.DOCS_CHECK: TestConfig(
             "",
             job_config=JobConfig(
