@@ -153,6 +153,7 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (query.refresh_strategy)
     {
+        fixed_uuid = query.refresh_strategy->append;
         refresher = RefreshTask::create(
             *this,
             getContext(),
@@ -629,10 +630,14 @@ void StorageMaterializedView::onActionLockRemove(StorageActionBlockType action_t
         refresher->start();
 }
 
-DB::StorageID StorageMaterializedView::getTargetTableId() const
+StorageID StorageMaterializedView::getTargetTableId() const
 {
     std::lock_guard guard(target_table_id_mutex);
-    return target_table_id;
+    auto id = target_table_id;
+    /// TODO: Avoid putting uuid into target_table_id in the first place, instead of clearing it here.
+    if (!fixed_uuid)
+        id.uuid = UUIDHelpers::Nil;
+    return id;
 }
 
 void StorageMaterializedView::setTargetTableId(DB::StorageID id)
