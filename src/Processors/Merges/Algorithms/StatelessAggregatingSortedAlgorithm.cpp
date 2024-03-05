@@ -5,6 +5,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
+#include <Common/FieldVisitorSum.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
@@ -12,8 +13,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/BlockNumberColumn.h>
-#include <Common/FieldVisitors.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 
 
 namespace DB
@@ -21,70 +20,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int CORRUPTED_DATA;
-}
-
-namespace {
-/** Implements anyLast.
- *  Returns false if the result is zero.
- */
-class FieldVisitorAnyLast : public StaticVisitor<bool>
-{
-private:
-    const Field & rhs;
-public:
-    explicit FieldVisitorAnyLast(const Field & rhs_) : rhs(rhs_) {}
-
-    // We can add all ints as unsigned regardless of their actual signedness.
-    bool operator() (Int64 & x) const { return this->operator()(reinterpret_cast<UInt64 &>(x)); }
-    bool operator() (UInt64 & x) const
-    {
-        x = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), rhs);
-        return x != 0;
-    }
-
-    bool operator() (Float64 & x) const { x = rhs.get<Float64>(); return x != 0; }
-
-    bool operator() (Null &) const
-    {
-        /// Do not add anything
-        return false;
-    }
-
-    bool operator() (String &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot coalesce Strings"); }
-    bool operator() (Array &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot coalesce Arrays"); }
-    bool operator() (Tuple &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot coalesce Tuples"); }
-    bool operator() (Map &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot coalesce Maps"); }
-    bool operator() (Object &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot coalesce Objects"); }
-    bool operator() (UUID &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot coalesce UUIDs"); }
-    bool operator() (IPv4 &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot coalesce IPv4s"); }
-    bool operator() (IPv6 &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot coalesce IPv6s"); }
-    bool operator() (CustomType & x) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot coalesce custom type {}", x.getTypeName()); }
-
-    bool operator() (AggregateFunctionStateData &) const
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot coalesce AggregateFunctionStates");
-    }
-
-    bool operator() (bool &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot coalesce Bools"); }
-
-
-    template <typename T>
-    bool operator() (DecimalField<T> & x) const
-    {
-        x = rhs.get<DecimalField<T>>();
-        return x.getValue() != T(0);
-    }
-
-    template <typename T>
-    requires is_big_int_v<T>
-    bool operator() (T & x) const
-    {
-        x = applyVisitor(FieldVisitorConvertToNumber<T>(), rhs);
-        return x != T(0);
-    }
-};
+    extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 /// Stores numbers of key-columns and value-columns.
@@ -97,7 +34,7 @@ struct StatelessAggregatingSortedAlgorithm::MapDescription
 /// Stores aggregation function, state, and columns to be used as function arguments.
 struct StatelessAggregatingSortedAlgorithm::AggregateDescription
 {
-    /// An aggregate function 'sumWithOverflow' or 'sumMapWithOverflow' for summing.
+    /// An aggregate function, e.g. 'anyLast'
     AggregateFunctionPtr function;
     IAggregateFunction::AddFunc add_function = nullptr;
     std::vector<size_t> column_numbers;
@@ -216,7 +153,7 @@ static bool mergeMap(const StatelessAggregatingSortedAlgorithm::MapDescription &
         bool has_non_zero = false;
         size_t size = dst.size();
         for (size_t i = 0; i < size; ++i)
-            if (applyVisitor(FieldVisitorAnyLast(src[i]), dst[i]))
+            if (applyVisitor(FieldVisitorSum(src[i]), dst[i]))
                 has_non_zero = true;
         return has_non_zero;
     };
@@ -236,7 +173,7 @@ static bool mergeMap(const StatelessAggregatingSortedAlgorithm::MapDescription &
             else
             {
                 if (!accumulate(it->second, value))
-                merged.erase(it);
+                    merged.erase(it);
             }
         }
     };
@@ -267,7 +204,8 @@ static bool mergeMap(const StatelessAggregatingSortedAlgorithm::MapDescription &
 static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header,
     const SortDescription & description,
-    const Names & column_names_to_sum,
+    const Names & column_names_to_aggregate,
+    const String & simple_aggregate_function,
     const Names & partition_key_columns)
 {
     size_t num_columns = header.columns();
@@ -279,8 +217,8 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
 
     /** Fill in the column numbers, which must be summed.
         * This can only be numeric columns that are not part of the sort key.
-        * If a non-empty column_names_to_sum is specified, then we only take these columns.
-        * Some columns from column_names_to_sum may not be found. This is ignored.
+        * If a non-empty column_names_to_aggregate is specified, then we only take these columns.
+        * Some columns from column_names_to_aggregate may not be found. This is ignored.
         */
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -324,9 +262,9 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
                 continue;
             }
 
-            if (column_names_to_sum.empty()
-                || column_names_to_sum.end() !=
-                    std::find(column_names_to_sum.begin(), column_names_to_sum.end(), column.name))
+            if (column_names_to_aggregate.empty()
+                || column_names_to_aggregate.end() !=
+                   std::find(column_names_to_aggregate.begin(), column_names_to_aggregate.end(), column.name))
             {
                 // Create aggregator to sum this column
                 StatelessAggregatingSortedAlgorithm::AggregateDescription desc;
@@ -347,7 +285,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
                 }
                 else if (!is_agg_func)
                 {
-                    desc.init("anyLast", {column.type});
+                    desc.init(simple_aggregate_function.c_str(), {column.type});
                 }
 
                 def.columns_to_aggregate.emplace_back(std::move(desc));
@@ -360,6 +298,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
         }
     }
 
+    // TODO: get rid of this, brought from SummingMT
     /// select actual nested Maps from list of candidates
     for (const auto & map : discovered_maps)
     {
@@ -403,7 +342,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
                     !isStringOrFixedString(nested_type) &&
                     !typeid_cast<const DataTypeIPv6 *>(&nested_type) &&
                     !typeid_cast<const DataTypeUUID *>(&nested_type))
-                    break;
+                        break;
 
                 map_desc.key_col_nums.push_back(*column_num_it);
             }
@@ -427,9 +366,19 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
             continue;
         }
 
+        if (map_desc.key_col_nums.size() == 1)
+        {
+            // Create summation for all value columns in the map
+            desc.init("sumMapWithOverflow", argument_types);
+            def.columns_to_aggregate.emplace_back(std::move(desc));
+        }
+        else
+        {
+            // Fall back to legacy mergeMaps for composite keys
             for (auto col : map.second)
                 def.column_numbers_not_to_aggregate.push_back(col);
             def.maps_to_sum.emplace_back(std::move(map_desc));
+        }
     }
 
     return def;
@@ -634,7 +583,7 @@ void StatelessAggregatingSortedAlgorithm::StatelessAggregatingMergedData::finish
                     {
                         // Flag row as non-empty if at least one column number if non-zero
                         current_row_is_zero = current_row_is_zero
-                            && desc.merged_column->isDefaultAt(desc.merged_column->size() - 1);
+                                              && desc.merged_column->isDefaultAt(desc.merged_column->size() - 1);
                     }
                     else
                     {
@@ -693,7 +642,7 @@ void StatelessAggregatingSortedAlgorithm::StatelessAggregatingMergedData::addRow
     for (auto & desc : def.columns_to_aggregate)
     {
         if (!desc.created)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in CoalescingSortedAlgorithm, there are no description");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in StatelessAggregatingSortedAlgorithm, there are no description");
 
         if (desc.is_agg_func_type)
         {
@@ -745,12 +694,13 @@ StatelessAggregatingSortedAlgorithm::StatelessAggregatingSortedAlgorithm(
     const Block & header_,
     size_t num_inputs,
     SortDescription description_,
-    const Names & column_names_to_sum,
+    const Names & column_names_to_aggregate,
+    const String & simple_aggregate_function,
     const Names & partition_key_columns,
     size_t max_block_size_rows,
     size_t max_block_size_bytes)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
-    , columns_definition(defineColumns(header_, description, column_names_to_sum, partition_key_columns))
+    , columns_definition(defineColumns(header_, description, column_names_to_aggregate, simple_aggregate_function, partition_key_columns))
     , merged_data(getMergedDataColumns(header_, columns_definition), max_block_size_rows, max_block_size_bytes, columns_definition)
 {
 }
@@ -839,4 +789,5 @@ IMergingAlgorithm::Status StatelessAggregatingSortedAlgorithm::merge()
 StatelessAggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition() = default;
 StatelessAggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefinition &&) noexcept = default;
 StatelessAggregatingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
+
 }

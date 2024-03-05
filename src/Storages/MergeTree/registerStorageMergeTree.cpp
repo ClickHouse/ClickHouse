@@ -118,7 +118,7 @@ static ColumnsDescription getColumnsDescriptionFromZookeeper(const String & raw_
 
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
-    /** [Replicated][|Summing|VersionedCollapsing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
+    /** [Replicated][|Summing|VersionedCollapsing|Collapsing|Aggregating|StatelessAggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
         * The argument for the engine should be:
         *  - (for Replicated) The path to the table in ZooKeeper
         *  - (for Replicated) Replica name in ZooKeeper
@@ -231,7 +231,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             add_optional_param("list of columns to sum");
             break;
         case MergeTreeData::MergingParams::StatelessAggregating:
-            add_optional_param("list of columns to sum");
+            add_mandatory_param("name of simple aggregate function");
+            add_optional_param("list of columns to aggregate");
             break;
         case MergeTreeData::MergingParams::Replacing:
             add_optional_param("is_deleted column");
@@ -474,10 +475,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::StatelessAggregating)
     {
-        /// If the last element is not index_granularity or replica_name (a literal), then this is a list of summable columns.
+        /// If the last element is not index_granularity or replica_name (a literal), then this is a list of columns to aggregate.
+        if (arg_cnt - arg_num == 2 && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        {
+            merging_params.columns_to_aggregate = extractColumnNames(engine_args[arg_cnt - 1]);
+            --arg_cnt;
+        }
+
+        /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
-            merging_params.columns_to_sum = extractColumnNames(engine_args[arg_cnt - 1]);
+            merging_params.simple_aggregate_function = getIdentifierName(engine_args[arg_cnt - 1]);
             --arg_cnt;
         }
     }

@@ -13,8 +13,9 @@ public:
     StatelessAggregatingSortedTransform(
         const Block & header, size_t num_inputs,
         SortDescription description_,
-        /// List of columns to be coalesced. If empty, all numeric columns that are not in the description are taken.
-        const Names & column_names_to_sum,
+        /// List of columns to be aggregated. If empty, all numeric columns that are not in the description are taken.
+        const Names & column_names_to_aggregate,
+        const String & simple_aggregate_function,
         const Names & partition_key_columns,
         size_t max_block_size_rows,
         size_t max_block_size_bytes
@@ -24,7 +25,8 @@ public:
               header,
               num_inputs,
               std::move(description_),
-              column_names_to_sum,
+              column_names_to_aggregate,
+              simple_aggregate_function,
               partition_key_columns,
               max_block_size_rows,
               max_block_size_bytes)

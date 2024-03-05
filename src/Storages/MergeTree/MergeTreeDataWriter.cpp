@@ -354,7 +354,7 @@ Block MergeTreeDataWriter::mergeBlock(
                     partition_key_columns, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::StatelessAggregating:
                 return std::make_shared<StatelessAggregatingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.columns_to_sum,
+                    block, 1, sort_description, merging_params.columns_to_aggregate, merging_params.simple_aggregate_function,
                     partition_key_columns, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0);

@@ -9,7 +9,8 @@ namespace DB
 
 /** Merges several sorted inputs into one.
   * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
-  *  collapses them into one row, containing anyLast non-null element (if non-null element was present)
+  * collapses them into one row, summing all the numeric columns except the primary key.
+  * If in all numeric columns, except for the primary key, the result is zero, it deletes the row.
   */
 class StatelessAggregatingSortedAlgorithm final : public IMergingAlgorithmWithDelayedChunk
 {
@@ -17,8 +18,9 @@ public:
     StatelessAggregatingSortedAlgorithm(
         const Block & header, size_t num_inputs,
         SortDescription description_,
-        /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
-        const Names & column_names_to_sum,
+        /// List of columns to be aggregated. If empty, all numeric columns that are not in the description are taken.
+        const Names & column_names_to_aggregate,
+        const String & simple_aggregate_function,
         /// List of partition key columns. They have to be excluded.
         const Names & partition_key_columns,
         size_t max_block_size_rows,
@@ -56,7 +58,7 @@ public:
         bool allocates_memory_in_arena = false;
     };
 
-    /// Specialization for SummingSortedTransform. Inserts only data for non-aggregated columns.
+    /// Specialization for StatelessAggregatingSortedTransform. Inserts only data for non-aggregated columns.
     class StatelessAggregatingMergedData : public MergedData
     {
     private:

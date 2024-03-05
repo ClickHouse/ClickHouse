@@ -1032,7 +1032,8 @@ static void addMergingFinal(
 
             case MergeTreeData::MergingParams::StatelessAggregating:
                 return std::make_shared<StatelessAggregatingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_sum, partition_key_columns, max_block_size_rows, /*max_block_size_bytes=*/0);
+                            sort_description, merging_params.columns_to_aggregate, merging_params.simple_aggregate_function,
+                            partition_key_columns, max_block_size_rows, /*max_block_size_bytes=*/0);
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
