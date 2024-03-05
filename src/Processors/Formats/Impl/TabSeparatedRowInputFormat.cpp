@@ -121,7 +121,7 @@ String TabSeparatedFormatReader::readFieldIntoString()
         if constexpr (read_string)
             support_crlf ? readEscapedStringCRLF(field, *buf) : readEscapedString(field, *buf);
         else
-            support_crlf ? readTSVField<true>(field, *buf) : readTSVField<false>(field, *buf);
+            support_crlf ? readTSVFieldCRLF(field, *buf) : readTSVField(field, *buf);
     }
     return field;
 }

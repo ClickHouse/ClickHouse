@@ -1897,8 +1897,8 @@ bool tryReadQuotedField(String & s, ReadBuffer & buf);
 void readJSONField(String & s, ReadBuffer & buf);
 bool tryReadJSONField(String & s, ReadBuffer & buf);
 
-template<bool support_crlf>
 void readTSVField(String & s, ReadBuffer & buf);
+void readTSVFieldCRLF(String & s, ReadBuffer & buf);
 
 /** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
   * It is assumed that the cursor is located on the `\` symbol
