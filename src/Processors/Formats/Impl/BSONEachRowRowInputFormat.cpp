@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int UNKNOWN_TYPE;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -820,7 +821,13 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
-            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
+        {
+            const auto & type = header.getByPosition(i).type;
+            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column of type '{}' at index {}", type->getName(), i);
+            else
+                type->insertDefaultInto(*columns[i]);
+        }
 
     if (format_settings.defaults_for_omitted_fields)
         ext.read_columns = read_columns;

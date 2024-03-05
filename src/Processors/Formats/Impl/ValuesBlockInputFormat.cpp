@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/ObjectUtils.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -292,6 +293,15 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         {
             const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
+            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
+            {
+                buf->rollbackToCheckpoint();
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Cannot insert NULL value into a column of type '{}' at: {}",
+                    type->getName(),
+                    String(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
+            }
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
                 read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
             else
