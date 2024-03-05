@@ -21,7 +21,7 @@ namespace
     {
         return settings.remote_fs_cache && settings.enable_filesystem_cache;
     }
-  
+
     bool withPageCache(const ReadSettings & settings, bool with_file_cache)
     {
         return settings.page_cache && !with_file_cache && settings.use_page_cache_for_disks_without_file_cache;
