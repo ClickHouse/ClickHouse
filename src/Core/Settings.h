@@ -777,6 +777,10 @@ class IColumn;
     M(Bool, throw_on_error_from_cache_on_write_operations, false, "Ignore error from cache when caching on write operations (INSERT, merges)", 0) \
     M(UInt64, filesystem_cache_segments_batch_size, 20, "Limit on size of a single batch of file segments that a read buffer can request from cache. Too low value will lead to excessive requests to cache, too large may slow down eviction from cache", 0) \
     \
+    M(Bool, use_page_cache_for_disks_without_file_cache, false, "Use userspace page cache for remote disks that don't have filesystem cache enabled.", 0) \
+    M(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, "Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.", 0) \
+    M(Bool, page_cache_inject_eviction, false, "Userspace page cache will sometimes invalidate some pages at random. Intended for testing.", 0) \
+    \
     M(Bool, load_marks_asynchronously, false, "Load MergeTree marks asynchronously", 0) \
     M(Bool, enable_filesystem_read_prefetches_log, false, "Log to system.filesystem prefetch_log during query. Should be used only for testing or debugging, not recommended to be turned on by default", 0) \
     M(Bool, allow_prefetched_read_pool_for_remote_filesystem, true, "Prefer prefetched threadpool if all parts are on remote filesystem", 0) \
@@ -875,10 +879,9 @@ class IColumn;
     M(SQLSecurityType, default_normal_view_sql_security, SQLSecurityType::INVOKER, "Allows to set a default value for SQL SECURITY option when creating a normal view.", 0) \
     M(SQLSecurityType, default_materialized_view_sql_security, SQLSecurityType::DEFINER, "Allows to set a default value for SQL SECURITY option when creating a materialized view.", 0) \
     M(String, default_view_definer, "CURRENT_USER", "Allows to set a default value for DEFINER option when creating view.", 0) \
-    M(Bool, allow_experimental_shared_merge_tree, false, "Only available in ClickHouse Cloud", 0) \
-    M(UInt64, cache_warmer_threads, 4, "Only available in ClickHouse Cloud", 0) \
-    M(Int64, ignore_cold_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
-    M(Int64, prefer_warmed_unmerged_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
+    M(UInt64, cache_warmer_threads, 4, "Only available in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when cache_populated_by_fetch is enabled. Zero to disable.", 0) \
+    M(Int64, ignore_cold_parts_seconds, 0, "Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.", 0) \
+    M(Int64, prefer_warmed_unmerged_parts_seconds, 0, "Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see cache_populated_by_fetch), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for ReplicatedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.", 0) \
     M(Bool, iceberg_engine_ignore_schema_evolution, false, "Ignore schema evolution in Iceberg table engine and read all data using latest schema saved on table creation. Note that it can lead to incorrect result", 0) \
 
 // End of COMMON_SETTINGS
@@ -902,6 +905,7 @@ class IColumn;
     MAKE_OBSOLETE(M, Bool, allow_experimental_geo_types, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_cache, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_alter_materialized_view_structure, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_shared_merge_tree, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
@@ -1018,6 +1022,7 @@ class IColumn;
     M(Bool, input_format_json_read_objects_as_strings, true, "Allow to parse JSON objects as strings in JSON input formats", 0) \
     M(Bool, input_format_json_read_arrays_as_strings, true, "Allow to parse JSON arrays as strings in JSON input formats", 0) \
     M(Bool, input_format_json_try_infer_named_tuples_from_objects, true, "Try to infer named tuples from JSON objects in JSON input formats", 0) \
+    M(Bool, input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects, false, "Use String type instead of an exception in case of ambiguous paths in JSON objects during named tuples inference", 0) \
     M(Bool, input_format_json_infer_incomplete_types_as_strings, true, "Use type String for keys that contains only Nulls or empty objects/arrays during schema inference in JSON input formats", 0) \
     M(Bool, input_format_json_named_tuples_as_objects, true, "Deserialize named tuple columns as JSON objects", 0) \
     M(Bool, input_format_json_ignore_unknown_keys_in_named_tuple, true, "Ignore unknown keys in json object for named tuples", 0) \
@@ -1025,7 +1030,7 @@ class IColumn;
     M(Bool, input_format_try_infer_integers, true, "Try to infer integers instead of floats while schema inference in text formats", 0) \
     M(Bool, input_format_try_infer_dates, true, "Try to infer dates from string fields while schema inference in text formats", 0) \
     M(Bool, input_format_try_infer_datetimes, true, "Try to infer datetimes from string fields while schema inference in text formats", 0) \
-    M(Bool, input_format_try_infer_exponent_floats, false, "Try to infer floats in exponential notation while schema inference in text formats", 0) \
+    M(Bool, input_format_try_infer_exponent_floats, false, "Try to infer floats in exponential notation while schema inference in text formats (except JSON, where exponent numbers are always inferred)", 0) \
     M(Bool, output_format_markdown_escape_special_characters, false, "Escape special characters in Markdown", 0) \
     M(Bool, input_format_protobuf_flatten_google_wrappers, false, "Enable Google wrappers for regular non-nested columns, e.g. google.protobuf.StringValue 'str' for String column 'str'. For Nullable columns empty wrappers are recognized as defaults, and missing as nulls", 0) \
     M(Bool, output_format_protobuf_nullables_with_google_wrappers, false, "When serializing Nullable columns with Google wrappers, serialize default values as empty wrappers. If turned off, default and null values are not serialized", 0) \

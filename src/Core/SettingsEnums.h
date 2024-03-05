@@ -141,6 +141,7 @@ enum class DefaultTableEngine
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
+
 enum class CleanDeletedRows
 {
     Never = 0, /// Disable.
