@@ -14,6 +14,8 @@ bool ParserTransactionControl::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     if (ParserKeyword("BEGIN TRANSACTION").ignore(pos, expected))
         action = ASTTransactionControl::BEGIN;
+    else if (ParserKeyword("START TRANSACTION").ignore(pos, expected))
+        action = ASTTransactionControl::BEGIN;
     else if (ParserKeyword("COMMIT").ignore(pos, expected))
         action = ASTTransactionControl::COMMIT;
     else if (ParserKeyword("ROLLBACK").ignore(pos, expected))
