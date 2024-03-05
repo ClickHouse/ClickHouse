@@ -584,7 +584,7 @@ class CIConfig:
                 Build.PACKAGE_TSAN,
                 Build.PACKAGE_DEBUG,
             ]
-        if release and report_name == JobNames.BUILD_CHECK_SPECIAL:
+        if (release or backport) and report_name == JobNames.BUILD_CHECK_SPECIAL:
             return [
                 Build.BINARY_DARWIN,
                 Build.BINARY_DARWIN_AARCH64,
