@@ -352,17 +352,17 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription
 {
     VirtualColumnsDescription desc;
 
-    auto add_virtual = [&](const auto & name, const auto & type, const auto & comment)
+    auto add_virtual = [&](const auto & name, const auto & type)
     {
         if (storage_columns.has(name))
             return;
 
-        desc.addEphemeral(name, type, comment);
+        desc.addEphemeral(name, type, "");
     };
 
-    add_virtual("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    add_virtual("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()), "");
+    add_virtual("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+    add_virtual("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+    add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
 
     return desc;
 }

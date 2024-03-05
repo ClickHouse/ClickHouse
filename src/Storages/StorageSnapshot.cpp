@@ -1,5 +1,4 @@
 #include <Storages/StorageSnapshot.h>
-#include <Storages/MergeTreeVirtualColumns.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>

@@ -220,7 +220,7 @@ StorageLiveView::StorageLiveView(
 
     VirtualColumnsDescription virtuals;
     virtuals.addEphemeral("_version", std::make_shared<DataTypeUInt64>(), "");
-    setVirtuals(virtuals);
+    setVirtuals(std::move(virtuals));
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());

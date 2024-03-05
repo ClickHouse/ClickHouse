@@ -1153,13 +1153,13 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         size_t pos = read_sample_block.getPositionByName("_part_offset");
         chassert(pos < result.columns.size());
         chassert(result.columns[pos] == nullptr);
-        result.columns[pos] = fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+        result.columns[pos] = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
     }
 
     return result;
 }
 
-ColumnPtr MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
+ColumnPtr MergeTreeRangeReader::createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
 {
     size_t num_rows = result.numReadRows();
 

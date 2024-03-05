@@ -214,9 +214,9 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
-    void setVirtuals(const VirtualColumnsDescription & virtuals_)
+    void setVirtuals(VirtualColumnsDescription virtuals_)
     {
-        virtuals.set(std::make_unique<VirtualColumnsDescription>(virtuals_));
+        virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
     }
 
     /// Return list of virtual columns (like _part, _table, etc). In the vast
@@ -275,7 +275,7 @@ private:
     /// Multiversion storage metadata. Allows to read/write storage metadata without locks.
     MultiVersionStorageMetadataPtr metadata;
 
-    /// TODO:
+    /// Description of virtual columns. Optional, may be set in constructor.
     MultiVersionVirtualsDescriptionPtr virtuals;
 
 protected:

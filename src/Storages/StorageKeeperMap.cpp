@@ -333,7 +333,7 @@ StorageKeeperMap::StorageKeeperMap(
 
     VirtualColumnsDescription virtuals;
     virtuals.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "");
-    setVirtuals(virtuals);
+    setVirtuals(std::move(virtuals));
 
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"

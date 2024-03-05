@@ -18,7 +18,7 @@ public:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const Block & res_block_,
-        const VirtualColumnsDescription & virtuals_ = {});
+        VirtualColumnsDescription virtuals_ = {});
 
     std::string getName() const override { return "Values"; }
 

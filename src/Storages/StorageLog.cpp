@@ -35,7 +35,6 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Storages/MergeTreeVirtualColumns.h>
 
 #include <cassert>
 #include <chrono>

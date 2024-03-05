@@ -12,7 +12,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Storages/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <city.h>
 
 namespace DB

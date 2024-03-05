@@ -7,7 +7,6 @@ namespace DB
 
 struct VirtualColumnDescription : public ColumnDescription
 {
-public:
     using Self = VirtualColumnDescription;
     VirtualsKind kind;
 
@@ -16,6 +15,9 @@ public:
 
     bool isEphemeral() const { return kind == VirtualsKind::Ephemeral; }
     bool isPersistent() const { return kind == VirtualsKind::Persistent; }
+
+    /// This method is needed for boost::multi_index because field
+    /// of base class cannot be referenced in boost::multi_index::member.
     const String & getName() const { return name; }
 };
 

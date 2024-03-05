@@ -84,9 +84,6 @@ struct StorageSnapshot
 
     /// If we have a projection then we should use its metadata.
     StorageMetadataPtr getMetadataForQuery() const { return projection ? projection->metadata : metadata; }
-
-private:
-    void init();
 };
 
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;

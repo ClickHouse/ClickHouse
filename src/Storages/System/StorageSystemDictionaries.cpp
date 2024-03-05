@@ -56,7 +56,7 @@ StorageSystemDictionaries::StorageSystemDictionaries(const StorageID & storage_i
 {
     VirtualColumnsDescription virtuals;
     virtuals.addEphemeral("key", std::make_shared<DataTypeString>(), "");
-    setVirtuals(virtuals);
+    setVirtuals(std::move(virtuals));
 }
 
 ColumnsDescription StorageSystemDictionaries::getColumnsDescription()

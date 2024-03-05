@@ -1,4 +1,4 @@
-#include <Storages/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>

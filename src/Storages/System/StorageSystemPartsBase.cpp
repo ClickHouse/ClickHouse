@@ -262,7 +262,7 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Colu
 
     VirtualColumnsDescription virtuals;
     virtuals.addEphemeral("_state", std::make_shared<DataTypeString>(), "");
-    setVirtuals(virtuals);
+    setVirtuals(std::move(virtuals));
 }
 
 }
