@@ -467,7 +467,7 @@ Enabled by default.
 
 Allow to use String type for JSON keys that contain only `Null`/`{}`/`[]` in data sample during schema inference.
 In JSON formats any value can be read as String, and we can avoid errors like `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` during schema inference
-by using String type for keys with unknown types. 
+by using String type for keys with unknown types.
 
 Example:
 
@@ -1605,7 +1605,7 @@ possible values:
 -   `1` — Enabled. Pretty formats will use ANSI escape sequences except for `NoEscapes` formats.
 -   `auto` - Enabled if `stdout` is a terminal except for `NoEscapes` formats.
 
-Default value is `auto`. 
+Default value is `auto`.
 
 ### output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 
