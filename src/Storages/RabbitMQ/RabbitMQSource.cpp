@@ -199,8 +199,8 @@ Chunk RabbitMQSource::generateImpl()
             }
             else
             {
-                chassert(!commit_info.delivery_tag || commit_info.delivery_tag < message.delivery_tag);
-                commit_info.delivery_tag = message.delivery_tag;
+                chassert(!commit_info.delivery_tag || message.redelivered || commit_info.delivery_tag < message.delivery_tag);
+                commit_info.delivery_tag = std::max(commit_info.delivery_tag, message.delivery_tag);
             }
 
             for (size_t i = 0; i < new_rows; ++i)
