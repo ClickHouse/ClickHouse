@@ -7,17 +7,13 @@
 #include <boost/noncopyable.hpp>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <map>
 #include <unordered_map>
-#include <mutex>
-#include <chrono>
 #include <vector>
 #include <memory>
-#include <thread>
-#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <functional>
+#include <span>
 
 
 namespace Coordination
@@ -516,6 +512,7 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
     ZooKeeperMultiRequest() = default;
 
     ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls);
+    ZooKeeperMultiRequest(std::span<const Coordination::RequestPtr> generic_requests, const ACLs & default_acls);
 
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;

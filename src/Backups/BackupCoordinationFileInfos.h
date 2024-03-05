@@ -19,7 +19,7 @@ class BackupCoordinationFileInfos
 public:
     /// plain_backup sets that we're writing a plain backup, which means all duplicates are written as is, and empty files are written as is.
     /// (For normal backups only the first file amongst duplicates is actually stored, and empty files are not stored).
-    BackupCoordinationFileInfos(bool plain_backup_) : plain_backup(plain_backup_) {}
+    explicit BackupCoordinationFileInfos(bool plain_backup_) : plain_backup(plain_backup_) {}
 
     /// Adds file infos for the specified host.
     void addFileInfos(BackupFileInfos && file_infos, const String & host_id);

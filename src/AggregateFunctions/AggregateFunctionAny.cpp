@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/HelpersMinMaxAny.h>
+#include <AggregateFunctions/SingleValueData.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/defines.h>
@@ -11,219 +11,347 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace
 {
-struct AggregateFunctionAnyRespectNullsData
+
+template <typename Data>
+class AggregateFunctionAny final : public IAggregateFunctionDataHelper<Data, AggregateFunctionAny<Data>>
 {
-    enum Status : UInt8
-    {
-        NotSet = 1,
-        SetNull = 2,
-        SetOther = 3
-    };
-
-    Status status = Status::NotSet;
-    Field value;
-
-    bool isSet() const { return status != Status::NotSet; }
-    void setNull() { status = Status::SetNull; }
-    void setOther() { status = Status::SetOther; }
-};
-
-template <bool First>
-class AggregateFunctionAnyRespectNulls final
-    : public IAggregateFunctionDataHelper<AggregateFunctionAnyRespectNullsData, AggregateFunctionAnyRespectNulls<First>>
-{
-public:
-    using Data = AggregateFunctionAnyRespectNullsData;
-
+private:
     SerializationPtr serialization;
-    const bool returns_nullable_type = false;
 
-    explicit AggregateFunctionAnyRespectNulls(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionAnyRespectNulls<First>>({type}, {}, type)
-        , serialization(type->getDefaultSerialization())
-        , returns_nullable_type(type->isNullable())
+public:
+    explicit AggregateFunctionAny(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionAny<Data>>(argument_types_, {}, argument_types_[0])
+        , serialization(this->result_type->getDefaultSerialization())
     {
     }
 
-    String getName() const override
-    {
-        if constexpr (First)
-            return "any_respect_nulls";
-        else
-            return "anyLast_respect_nulls";
-    }
+    String getName() const override { return "any"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void addNull(AggregateDataPtr __restrict place) const
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        chassert(returns_nullable_type);
-        auto & d = this->data(place);
-        if (First && d.isSet())
-            return;
-        d.setNull();
-    }
-
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
-    {
-        if (columns[0]->isNullable())
-        {
-            if (columns[0]->isNullAt(row_num))
-                return addNull(place);
-        }
-        auto & d = this->data(place);
-        if (First && d.isSet())
-            return;
-        d.setOther();
-        columns[0]->get(row_num, d.value);
-    }
-
-    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
-    {
-        if (columns[0]->isNullable())
-            addNull(place);
-        else
-            add(place, columns, 0, arena);
+        if (!this->data(place).has())
+            this->data(place).set(*columns[0], row_num, arena);
     }
 
     void addBatchSinglePlace(
-        size_t row_begin, size_t row_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos)
-        const override
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** __restrict columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
     {
+        if (this->data(place).has() || row_begin >= row_end)
+            return;
+
         if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            size_t size = row_end - row_begin;
-            for (size_t i = 0; i < size; ++i)
+            const auto & if_map = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; i++)
             {
-                size_t pos = First ? row_begin + i : row_end - 1 - i;
-                if (flags[pos])
+                if (if_map.data()[i] != 0)
                 {
-                    add(place, columns, pos, arena);
-                    break;
+                    this->data(place).set(*columns[0], i, arena);
+                    return;
                 }
             }
         }
-        else if (row_begin < row_end)
+        else
         {
-            size_t pos = First ? row_begin : row_end - 1;
-            add(place, columns, pos, arena);
+            this->data(place).set(*columns[0], row_begin, arena);
         }
     }
 
     void addBatchSinglePlaceNotNull(
-        size_t, size_t, AggregateDataPtr __restrict, const IColumn **, const UInt8 *, Arena *, ssize_t) const override
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** __restrict columns,
+        const UInt8 * __restrict null_map,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
     {
-        /// This should not happen since it means somebody else has preprocessed the data (NULLs or IFs) and might
-        /// have discarded values that we need (NULLs)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionAnyRespectNulls::addBatchSinglePlaceNotNull called");
-    }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
-    {
-        auto & d = this->data(place);
-        if (First && d.isSet())
+        if (this->data(place).has() || row_begin >= row_end)
             return;
 
-        auto & other = this->data(rhs);
-        if (other.isSet())
+        if (if_argument_pos >= 0)
         {
-            d.status = other.status;
-            d.value = other.value;
+            const auto & if_map = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if (if_map.data()[i] != 0 && null_map[i] == 0)
+                {
+                    this->data(place).set(*columns[0], i, arena);
+                    return;
+                }
+            }
         }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if (null_map[i] == 0)
+                {
+                    this->data(place).set(*columns[0], i, arena);
+                    return;
+                }
+            }
+        }
+    }
+
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
+    {
+        if (!this->data(place).has())
+            this->data(place).set(*columns[0], 0, arena);
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        if (!this->data(place).has())
+            this->data(place).set(this->data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        auto & d = this->data(place);
-        UInt8 k = d.status;
-
-        writeBinaryLittleEndian<UInt8>(k, buf);
-        if (k == Data::Status::SetOther)
-            serialization->serializeBinary(d.value, buf, {});
+        this->data(place).write(buf, *serialization);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        auto & d = this->data(place);
-        UInt8 k = Data::Status::NotSet;
-        readBinaryLittleEndian<UInt8>(k, buf);
-        d.status = static_cast<Data::Status>(k);
-        if (d.status == Data::Status::NotSet)
-            return;
-        else if (d.status == Data::Status::SetNull)
-        {
-            if (!returns_nullable_type)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect type (NULL) in non-nullable {}State", getName());
-            return;
-        }
-        else if (d.status == Data::Status::SetOther)
-            serialization->deserializeBinary(d.value, buf, {});
-        else
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect type ({}) in {}State", static_cast<Int8>(k), getName());
+        this->data(place).read(buf, *serialization, arena);
     }
+
+    bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto & d = this->data(place);
-        if (d.status == Data::Status::SetOther)
-            to.insert(d.value);
-        else
-            to.insertDefault();
+        this->data(place).insertResultInto(to);
     }
 
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & original_function,
-        const DataTypes & /*arguments*/,
-        const Array & /*params*/,
-        const AggregateFunctionProperties & /*properties*/) const override
+#if USE_EMBEDDED_COMPILER
+    bool isCompilable() const override
     {
-        return original_function;
+        if constexpr (!Data::is_compilable)
+            return false;
+        else
+            return Data::isCompilable(*this->argument_types[0]);
     }
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileCreate(builder, aggregate_data_ptr);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileAny(builder, aggregate_data_ptr, arguments[0].value);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    void
+    compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileAnyMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            return Data::compileGetResult(builder, aggregate_data_ptr);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+#endif
 };
 
-
-template <bool First>
-IAggregateFunction * createAggregateFunctionSingleValueRespectNulls(
-    const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr
+createAggregateFunctionAny(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    assertNoParameters(name, parameters);
-    assertUnary(name, argument_types);
-
-    return new AggregateFunctionAnyRespectNulls<First>(argument_types[0]);
+    return AggregateFunctionPtr(
+        createAggregateFunctionSingleValue<AggregateFunctionAny, /* unary */ true>(name, argument_types, parameters, settings));
 }
 
-AggregateFunctionPtr createAggregateFunctionAny(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
-{
-    return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyData>(name, argument_types, parameters, settings));
-}
 
-AggregateFunctionPtr createAggregateFunctionAnyRespectNulls(
+template <typename Data>
+class AggregateFunctionAnyLast final : public IAggregateFunctionDataHelper<Data, AggregateFunctionAnyLast<Data>>
+{
+private:
+    SerializationPtr serialization;
+
+public:
+    explicit AggregateFunctionAnyLast(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionAnyLast<Data>>(argument_types_, {}, argument_types_[0])
+        , serialization(this->result_type->getDefaultSerialization())
+    {
+    }
+
+    String getName() const override { return "anyLast"; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        this->data(place).set(*columns[0], row_num, arena);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** __restrict columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (row_begin >= row_end)
+            return;
+
+        size_t batch_size = row_end - row_begin;
+        if (if_argument_pos >= 0)
+        {
+            const auto & if_map = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = 0; i < batch_size; i++)
+            {
+                size_t pos = (row_end - 1) - i;
+                if (if_map.data()[pos] != 0)
+                {
+                    this->data(place).set(*columns[0], pos, arena);
+                    return;
+                }
+            }
+        }
+        else
+        {
+            this->data(place).set(*columns[0], row_end - 1, arena);
+        }
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** __restrict columns,
+        const UInt8 * __restrict null_map,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (row_begin >= row_end)
+            return;
+
+        size_t batch_size = row_end - row_begin;
+        if (if_argument_pos >= 0)
+        {
+            const auto & if_map = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = 0; i < batch_size; i++)
+            {
+                size_t pos = (row_end - 1) - i;
+                if (if_map.data()[pos] != 0 && null_map[pos] == 0)
+                {
+                    this->data(place).set(*columns[0], pos, arena);
+                    return;
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < batch_size; i++)
+            {
+                size_t pos = (row_end - 1) - i;
+                if (null_map[pos] == 0)
+                {
+                    this->data(place).set(*columns[0], pos, arena);
+                    return;
+                }
+            }
+        }
+    }
+
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
+    {
+        this->data(place).set(*columns[0], 0, arena);
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        this->data(place).set(this->data(rhs), arena);
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        this->data(place).write(buf, *serialization);
+    }
+
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    {
+        this->data(place).read(buf, *serialization, arena);
+    }
+
+    bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        this->data(place).insertResultInto(to);
+    }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilable() const override
+    {
+        if constexpr (!Data::is_compilable)
+            return false;
+        else
+            return Data::isCompilable(*this->argument_types[0]);
+    }
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileCreate(builder, aggregate_data_ptr);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileAnyLast(builder, aggregate_data_ptr, arguments[0].value);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    void
+    compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileAnyLastMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            return Data::compileGetResult(builder, aggregate_data_ptr);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+#endif
+};
+
+AggregateFunctionPtr createAggregateFunctionAnyLast(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    return AggregateFunctionPtr(createAggregateFunctionSingleValueRespectNulls<true>(name, argument_types, parameters, settings));
-}
-
-AggregateFunctionPtr createAggregateFunctionAnyLast(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
-{
-    return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyLastData>(name, argument_types, parameters, settings));
-}
-
-AggregateFunctionPtr createAggregateFunctionAnyLastRespectNulls(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
-{
-    return AggregateFunctionPtr(createAggregateFunctionSingleValueRespectNulls<false>(name, argument_types, parameters, settings));
-}
-
-AggregateFunctionPtr createAggregateFunctionAnyHeavy(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
-{
-    return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyHeavyData>(name, argument_types, parameters, settings));
+    return AggregateFunctionPtr(
+        createAggregateFunctionSingleValue<AggregateFunctionAnyLast, /* unary */ true>(name, argument_types, parameters, settings));
 }
 
 }
@@ -231,27 +359,11 @@ AggregateFunctionPtr createAggregateFunctionAnyHeavy(const std::string & name, c
 void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
-    AggregateFunctionProperties default_properties_for_respect_nulls
-        = {.returns_default_when_only_null = false, .is_order_dependent = true, .is_window_function = true};
 
     factory.registerFunction("any", {createAggregateFunctionAny, default_properties});
     factory.registerAlias("any_value", "any", AggregateFunctionFactory::CaseInsensitive);
     factory.registerAlias("first_value", "any", AggregateFunctionFactory::CaseInsensitive);
-
-    factory.registerFunction("any_respect_nulls", {createAggregateFunctionAnyRespectNulls, default_properties_for_respect_nulls});
-    factory.registerAlias("any_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
-    factory.registerAlias("first_value_respect_nulls", "any_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
-
     factory.registerFunction("anyLast", {createAggregateFunctionAnyLast, default_properties});
     factory.registerAlias("last_value", "anyLast", AggregateFunctionFactory::CaseInsensitive);
-
-    factory.registerFunction("anyLast_respect_nulls", {createAggregateFunctionAnyLastRespectNulls, default_properties_for_respect_nulls});
-    factory.registerAlias("last_value_respect_nulls", "anyLast_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
-
-    factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, default_properties});
-
-    factory.registerNullsActionTransformation("any", "any_respect_nulls");
-    factory.registerNullsActionTransformation("anyLast", "anyLast_respect_nulls");
 }
-
 }

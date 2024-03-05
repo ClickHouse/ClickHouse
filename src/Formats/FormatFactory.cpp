@@ -31,12 +31,29 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+bool FormatFactory::exists(const String & name) const
+{
+    return dict.find(boost::to_lower_copy(name)) != dict.end();
+}
+
 const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
 {
-    auto it = dict.find(name);
+    auto it = dict.find(boost::to_lower_copy(name));
     if (dict.end() != it)
         return it->second;
     throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}", name);
+}
+
+FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name)
+{
+    String lower_case = boost::to_lower_copy(name);
+    auto it = dict.find(lower_case);
+    if (dict.end() != it)
+        return it->second;
+
+    auto & creators = dict[lower_case];
+    creators.name = name;
+    return creators;
 }
 
 FormatSettings getFormatSettings(const ContextPtr & context)
@@ -543,7 +560,7 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
     const ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
-    const auto & schema_reader_creator = dict.at(name).schema_reader_creator;
+    const auto & schema_reader_creator = getCreators(name).schema_reader_creator;
     if (!schema_reader_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} doesn't support schema inference.", name);
 
@@ -559,7 +576,7 @@ ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
     const ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
-    const auto & external_schema_reader_creator = dict.at(name).external_schema_reader_creator;
+    const auto & external_schema_reader_creator = getCreators(name).external_schema_reader_creator;
     if (!external_schema_reader_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} doesn't support schema inference.", name);
 
@@ -570,28 +587,28 @@ ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
 void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
 {
     chassert(input_creator);
-    auto & creators = dict[name];
+    auto & creators = getOrCreateCreators(name);
     if (creators.input_creator || creators.random_access_input_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
     creators.input_creator = std::move(input_creator);
     registerFileExtension(name, name);
-    KnownFormatNames::instance().add(name);
+    KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
 
 void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator)
 {
     chassert(input_creator);
-    auto & creators = dict[name];
+    auto & creators = getOrCreateCreators(name);
     if (creators.input_creator || creators.random_access_input_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
     creators.random_access_input_creator = std::move(input_creator);
     registerFileExtension(name, name);
-    KnownFormatNames::instance().add(name);
+    KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
 
 void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker)
 {
-    auto & target = dict[name].non_trivial_prefix_and_suffix_checker;
+    auto & target = getOrCreateCreators(name).non_trivial_prefix_and_suffix_checker;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Non trivial prefix and suffix checker {} is already registered", name);
     target = std::move(non_trivial_prefix_and_suffix_checker);
@@ -599,7 +616,7 @@ void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name
 
 void FormatFactory::registerAppendSupportChecker(const String & name, AppendSupportChecker append_support_checker)
 {
-    auto & target = dict[name].append_support_checker;
+    auto & target = getOrCreateCreators(name).append_support_checker;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Suffix checker {} is already registered", name);
     target = std::move(append_support_checker);
@@ -613,19 +630,19 @@ void FormatFactory::markFormatHasNoAppendSupport(const String & name)
 bool FormatFactory::checkIfFormatSupportAppend(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_)
 {
     auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
-    auto & append_support_checker = dict[name].append_support_checker;
+    const auto & append_support_checker = getCreators(name).append_support_checker;
     /// By default we consider that format supports append
     return !append_support_checker || append_support_checker(format_settings);
 }
 
 void FormatFactory::registerOutputFormat(const String & name, OutputCreator output_creator)
 {
-    auto & target = dict[name].output_creator;
+    auto & target = getOrCreateCreators(name).output_creator;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Output format {} is already registered", name);
     target = std::move(output_creator);
     registerFileExtension(name, name);
-    KnownFormatNames::instance().add(name);
+    KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
 
 void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
@@ -697,7 +714,7 @@ String FormatFactory::getFormatFromFileDescriptor(int fd)
 
 void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)
 {
-    auto & target = dict[name].file_segmentation_engine_creator;
+    auto & target = getOrCreateCreators(name).file_segmentation_engine_creator;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: File segmentation engine {} is already registered", name);
     auto creator = [file_segmentation_engine](const FormatSettings &)
@@ -709,7 +726,7 @@ void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegm
 
 void FormatFactory::registerFileSegmentationEngineCreator(const String & name, FileSegmentationEngineCreator file_segmentation_engine_creator)
 {
-    auto & target = dict[name].file_segmentation_engine_creator;
+    auto & target = getOrCreateCreators(name).file_segmentation_engine_creator;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: File segmentation engine creator {} is already registered", name);
     target = std::move(file_segmentation_engine_creator);
@@ -717,7 +734,7 @@ void FormatFactory::registerFileSegmentationEngineCreator(const String & name, F
 
 void FormatFactory::registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator)
 {
-    auto & target = dict[name].schema_reader_creator;
+    auto & target = getOrCreateCreators(name).schema_reader_creator;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Schema reader {} is already registered", name);
     target = std::move(schema_reader_creator);
@@ -725,7 +742,7 @@ void FormatFactory::registerSchemaReader(const String & name, SchemaReaderCreato
 
 void FormatFactory::registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator)
 {
-    auto & target = dict[name].external_schema_reader_creator;
+    auto & target = getOrCreateCreators(name).external_schema_reader_creator;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Schema reader {} is already registered", name);
     target = std::move(external_schema_reader_creator);
@@ -733,7 +750,7 @@ void FormatFactory::registerExternalSchemaReader(const String & name, ExternalSc
 
 void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & name)
 {
-    auto & target = dict[name].supports_parallel_formatting;
+    auto & target = getOrCreateCreators(name).supports_parallel_formatting;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Output format {} is already marked as supporting parallel formatting", name);
     target = true;
@@ -742,7 +759,7 @@ void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & na
 
 void FormatFactory::markFormatSupportsSubsetOfColumns(const String & name)
 {
-    auto & target = dict[name].subset_of_columns_support_checker;
+    auto & target = getOrCreateCreators(name).subset_of_columns_support_checker;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as supporting subset of columns", name);
     target = [](const FormatSettings &){ return true; };
@@ -750,7 +767,7 @@ void FormatFactory::markFormatSupportsSubsetOfColumns(const String & name)
 
 void FormatFactory::registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker)
 {
-    auto & target = dict[name].subset_of_columns_support_checker;
+    auto & target = getOrCreateCreators(name).subset_of_columns_support_checker;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as supporting subset of columns", name);
     target = std::move(subset_of_columns_support_checker);
@@ -758,7 +775,7 @@ void FormatFactory::registerSubsetOfColumnsSupportChecker(const String & name, S
 
 void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
 {
-    auto & target = dict[name].prefers_large_blocks;
+    auto & target = getOrCreateCreators(name).prefers_large_blocks;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as preferring large blocks", name);
     target = true;
@@ -774,7 +791,7 @@ bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, co
 void FormatFactory::registerAdditionalInfoForSchemaCacheGetter(
     const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter)
 {
-    auto & target = dict[name].additional_info_for_schema_cache_getter;
+    auto & target = getOrCreateCreators(name).additional_info_for_schema_cache_getter;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: additional info for schema cache getter {} is already registered", name);
     target = std::move(additional_info_for_schema_cache_getter);
@@ -792,13 +809,13 @@ String FormatFactory::getAdditionalInfoForSchemaCache(const String & name, const
 
 bool FormatFactory::isInputFormat(const String & name) const
 {
-    auto it = dict.find(name);
+    auto it = dict.find(boost::to_lower_copy(name));
     return it != dict.end() && (it->second.input_creator || it->second.random_access_input_creator);
 }
 
 bool FormatFactory::isOutputFormat(const String & name) const
 {
-    auto it = dict.find(name);
+    auto it = dict.find(boost::to_lower_copy(name));
     return it != dict.end() && it->second.output_creator;
 }
 
@@ -827,7 +844,8 @@ bool FormatFactory::checkIfOutputFormatPrefersLargeBlocks(const String & name) c
 
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const
 {
-    if (name == "Parquet" && context->getSettingsRef().input_format_parquet_preserve_order)
+    auto format_name = boost::to_lower_copy(name);
+    if (format_name == "parquet" && context->getSettingsRef().input_format_parquet_preserve_order)
         return false;
 
     return true;
@@ -835,7 +853,7 @@ bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, cons
 
 void FormatFactory::checkFormatName(const String & name) const
 {
-    auto it = dict.find(name);
+    auto it = dict.find(boost::to_lower_copy(name));
     if (it == dict.end())
         throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}", name);
 }

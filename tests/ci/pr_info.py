@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import re
 from typing import Dict, List, Set, Union
 from urllib.parse import quote
 
@@ -287,6 +288,11 @@ class PRInfo:
 
     def is_master(self) -> bool:
         return self.number == 0 and self.head_ref == "master"
+
+    def is_release(self) -> bool:
+        return self.number == 0 and bool(
+            re.match(r"^2[1-9]\.[1-9][0-9]*$", self.head_ref)
+        )
 
     def is_release_branch(self) -> bool:
         return self.number == 0

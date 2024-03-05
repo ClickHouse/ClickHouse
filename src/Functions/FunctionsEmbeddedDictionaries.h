@@ -141,7 +141,7 @@ private:
     const std::shared_ptr<typename DictGetter::Src> owned_dict;
 
 public:
-    FunctionTransformWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
+    explicit FunctionTransformWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
@@ -232,7 +232,7 @@ private:
     const std::shared_ptr<typename DictGetter::Src> owned_dict;
 
 public:
-    FunctionIsInWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
+    explicit FunctionIsInWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
@@ -365,7 +365,7 @@ private:
     const std::shared_ptr<typename DictGetter::Src> owned_dict;
 
 public:
-    FunctionHierarchyWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
+    explicit FunctionHierarchyWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
     : owned_dict(owned_dict_)
     {
         if (!owned_dict)
@@ -563,7 +563,7 @@ private:
     const MultiVersion<RegionsNames>::Version owned_dict;
 
 public:
-    FunctionRegionToName(const MultiVersion<RegionsNames>::Version & owned_dict_)
+    explicit FunctionRegionToName(const MultiVersion<RegionsNames>::Version & owned_dict_)
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)

@@ -927,7 +927,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 
     const auto write_info_to_archive = [&](const auto & file_name)
     {
-        auto out = archive_writer->writeFile(file_name);
+        auto out = archive_writer->writeFile(file_name, info.size);
         auto read_buffer = entry->getReadBuffer(writer->getReadSettings());
         if (info.base_size != 0)
             read_buffer->seek(info.base_size, SEEK_SET);

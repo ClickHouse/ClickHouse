@@ -6,15 +6,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 
-#ifdef __clang__
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Wnewline-eof"
-#endif
 #    include <ada/idna/punycode.h>
 #    include <ada/idna/unicode_transcoding.h>
-#ifdef __clang__
 #    pragma clang diagnostic pop
-#endif
 
 namespace DB
 {

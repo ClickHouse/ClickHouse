@@ -1,14 +1,9 @@
 #pragma once
+
 #include <base/extended_types.h>
 #include <base/Decimal_fwd.h>
+#include <base/defines.h>
 
-#if !defined(NO_SANITIZE_UNDEFINED)
-#if defined(__clang__)
-    #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
-#else
-    #define NO_SANITIZE_UNDEFINED
-#endif
-#endif
 
 namespace DB
 {

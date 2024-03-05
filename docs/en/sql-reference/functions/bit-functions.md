@@ -167,6 +167,10 @@ Result:
 └──────────────────────────────────────────┴───────────────────────────────┘
 ```
 
+## byteSlice(s, offset, length)
+
+See function [substring](string-functions.md#substring).
+
 ## bitTest
 
 Takes any integer and converts it into [binary form](https://en.wikipedia.org/wiki/Binary_number), returns the value of a bit at specified position. The countdown starts from 0 from the right to the left.

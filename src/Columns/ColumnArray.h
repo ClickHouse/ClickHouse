@@ -15,10 +15,10 @@ namespace DB
   * In memory, it is represented as one column of a nested type, whose size is equal to the sum of the sizes of all arrays,
   *  and as an array of offsets in it, which allows you to get each element.
   */
-class ColumnArray final : public COWHelper<IColumn, ColumnArray>
+class ColumnArray final : public COWHelper<IColumnHelper<ColumnArray>, ColumnArray>
 {
 private:
-    friend class COWHelper<IColumn, ColumnArray>;
+    friend class COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
 
     /** Create an array column with specified values and offsets. */
     ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column);
@@ -48,7 +48,7 @@ public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
-    using Base = COWHelper<IColumn, ColumnArray>;
+    using Base = COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
 
     static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     {
@@ -77,7 +77,8 @@ public:
     StringRef getDataAt(size_t n) const override;
     bool isDefaultAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    char * serializeValueIntoMemory(size_t, char * memory) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
@@ -95,11 +96,7 @@ public:
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     template <typename Type> ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override;
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator & collator) const override;
-    bool hasEqualValues() const override;
     void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
@@ -148,13 +145,6 @@ public:
     /// For example, `getDataInRange(0, size())` is the same as `getDataPtr()->clone()`.
     MutableColumnPtr getDataInRange(size_t start, size_t length) const;
 
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
-    {
-        return scatterImpl<ColumnArray>(num_columns, selector);
-    }
-
-    void gather(ColumnGathererStream & gatherer_stream) override;
-
     ColumnPtr compress() const override;
 
     void forEachSubcolumn(MutableColumnCallback callback) override
@@ -177,11 +167,6 @@ public:
             return data->structureEquals(*rhs_concrete->data);
         return false;
     }
-
-    double getRatioOfDefaultRows(double sample_ratio) const override;
-    UInt64 getNumberOfDefaultRows() const override;
-
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
 
     void finalize() override { data->finalize(); }
     bool isFinalized() const override { return data->isFinalized(); }

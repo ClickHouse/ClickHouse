@@ -4,15 +4,7 @@
 #include <limits>
 
 #include <base/extended_types.h>
-
-// Also defined in Core/Defines.h
-#if !defined(NO_SANITIZE_UNDEFINED)
-#if defined(__clang__)
-    #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
-#else
-    #define NO_SANITIZE_UNDEFINED
-#endif
-#endif
+#include <base/defines.h>
 
 
 /// On overflow, the function returns unspecified value.

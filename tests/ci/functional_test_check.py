@@ -231,10 +231,10 @@ def main():
     run_changed_tests = flaky_check or validate_bugfix_check
     pr_info = PRInfo(need_changed_files=run_changed_tests)
     tests_to_run = []
+    assert (
+        not validate_bugfix_check or args.report_to_file
+    ), "JobReport file path must be provided with --validate-bugfix"
     if run_changed_tests:
-        assert (
-            args.report_to_file
-        ), "JobReport file path must be provided with --validate-bugfix"
         tests_to_run = _get_statless_tests_to_run(pr_info)
 
     if "RUN_BY_HASH_NUM" in os.environ:

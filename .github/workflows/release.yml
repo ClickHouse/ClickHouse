@@ -54,10 +54,13 @@ jobs:
     - name: Check docker clickhouse/clickhouse-server building
       run: |
         cd "$GITHUB_WORKSPACE/tests/ci"
-        python3 docker_server.py --release-type auto --version "$GITHUB_TAG" \
-          --image-repo clickhouse/clickhouse-server --image-path docker/server
-        python3 docker_server.py --release-type auto --version "$GITHUB_TAG" \
-          --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
+        export CHECK_NAME="Docker server image"
+        python3 docker_server.py --release-type auto --version "$GITHUB_TAG" --check-name "$CHECK_NAME" --push
+    - name: Check docker clickhouse/clickhouse-keeper building
+      run: |
+        cd "$GITHUB_WORKSPACE/tests/ci"
+        export CHECK_NAME="Docker keeper image"
+        python3 docker_server.py --release-type auto --version "$GITHUB_TAG" --check-name "$CHECK_NAME" --push
     - name: Cleanup
       if: always()
       run: |

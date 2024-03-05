@@ -203,7 +203,7 @@ uint64_t CgroupsMemoryUsageObserver::File::readMemoryUsage() const
     ReadBufferFromFileDescriptor buf(fd);
     buf.rewind();
 
-    uint64_t mem_usage;
+    uint64_t mem_usage = 0;
 
     switch (version)
     {
@@ -214,6 +214,8 @@ uint64_t CgroupsMemoryUsageObserver::File::readMemoryUsage() const
             ///   rss 15
             ///   [...]
             std::string key;
+            bool found_rss = false;
+
             while (!buf.eof())
             {
                 readStringUntilWhitespace(key, buf);
@@ -221,14 +223,20 @@ uint64_t CgroupsMemoryUsageObserver::File::readMemoryUsage() const
                 {
                     std::string dummy;
                     readStringUntilNewlineInto(dummy, buf);
+                    buf.ignore();
                     continue;
                 }
+
                 assertChar(' ', buf);
                 readIntText(mem_usage, buf);
-                assertChar('\n', buf);
+                found_rss = true;
                 break;
             }
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot find 'rss' in '{}'", file_name);
+
+            if (!found_rss)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot find 'rss' in '{}'", file_name);
+
+            break;
         }
         case CgroupsVersion::V2:
         {

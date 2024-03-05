@@ -58,9 +58,10 @@ void moveChangelogBetweenDisks(
     const std::string & path_to,
     const KeeperContextPtr & keeper_context)
 {
+    auto path_from = description->path;
     moveFileBetweenDisks(
         disk_from,
-        description->path,
+        path_from,
         disk_to,
         path_to,
         [&]
