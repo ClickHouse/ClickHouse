@@ -101,8 +101,6 @@ public:
         UInt64 selected_marks_pk = 0;
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
-
-        void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
 
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;

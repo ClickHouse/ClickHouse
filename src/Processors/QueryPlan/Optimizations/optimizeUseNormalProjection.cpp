@@ -12,7 +12,14 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <algorithm>
 
-namespace DB::QueryPlanOptimizations
+namespace DB
+{
+    namespace ErrorCodes
+    {
+    extern const int TOO_MANY_ROWS;
+    }
+
+namespace QueryPlanOptimizations
 {
 
 /// Normal projection analysis result in case it can be applied.
@@ -141,17 +148,40 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     const auto & query_info = reading->getQueryInfo();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
-    auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
-    size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
+    std::shared_ptr<ReadFromMergeTree::AnalysisResult> ordinary_reading_result = nullptr;
+    uint64_t ordinary_reading_marks = 0;
+
+    try
+    {
+        ordinary_reading_result = reading->selectRangesToRead(parts, alter_conversions);
+        ordinary_reading_marks += ordinary_reading_result->selected_marks;
+    }
+    catch (Exception & e)
+    {
+        /// It's very possible we can exceed max_rows_to_read or max_rows_to_read_leaf
+        /// when scanning the ranges we need to read on the "ordinary" parts (no projections)
+        /// If we do hit these limits, remove the ordinary candidate as fast as possible
+        if (e.code() == ErrorCodes::TOO_MANY_ROWS)
+        {
+            LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"),
+            "Exceeded row limits whilst enumerating marks for ordinary parts: {}", e.what());
+        }
+        else
+        {
+            /// If we encounter anything other than hitting memory limits, we don't
+            /// have enough information to continue, so propagate the error up the stack
+            throw;
+        }
+    }
 
     /// Nothing to read. Ignore projections.
-    if (ordinary_reading_marks == 0)
+    if (ordinary_reading_result && ordinary_reading_marks == 0)
     {
-        reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
+        reading->setAnalyzedResult(std::move(ordinary_reading_result));
         return false;
     }
 
-    const auto & parts_with_ranges = ordinary_reading_select_result->parts_with_ranges;
+    const auto & parts_with_ranges = ordinary_reading_result->parts_with_ranges;
 
     std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
 
@@ -177,7 +207,15 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         if (!analyzed)
             continue;
 
-        if (candidate.sum_marks >= ordinary_reading_marks)
+        /// Ordinary query without projections exceeded limits - set the initial projection
+        /// as the best candidate, and continue evaluating which projection selects the least marks
+        if (!ordinary_reading_result)
+        {
+            best_candidate = &candidate;
+            continue;
+        }
+
+        if (ordinary_reading_result && ordinary_reading_marks > 0 && candidate.sum_marks >= ordinary_reading_marks)
             continue;
 
         if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
@@ -186,7 +224,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
     if (!best_candidate)
     {
-        reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
+        reading->setAnalyzedResult(std::move(ordinary_reading_result));
         return false;
     }
 
@@ -288,5 +326,5 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
     return true;
 }
-
+}
 }

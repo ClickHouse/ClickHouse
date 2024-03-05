@@ -67,6 +67,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_PARSE_TEXT;
     extern const int TOO_MANY_PARTITIONS;
+    extern const int TOO_MANY_ROWS;
     extern const int DUPLICATED_PART_UUIDS;
 }
 
@@ -584,6 +585,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     MergeTreeData::DataPartsVector && parts,
     std::vector<AlterConversionsPtr> && alter_conversions,
     StorageMetadataPtr metadata_snapshot,
+    const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
@@ -650,6 +652,25 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     {
         auto mark_cache = context->getIndexMarkCache();
         auto uncompressed_cache = context->getIndexUncompressedCache();
+
+        /// Do not check number of read rows if we have reading
+        /// in order of sorting key with limit.
+        /// In general case, when there exists WHERE clause
+        /// it's impossible to estimate number of rows precisely,
+        /// because we can stop reading at any time.
+        SizeLimits limits;
+        if (settings.read_overflow_mode == OverflowMode::THROW
+            && settings.max_rows_to_read
+            && !query_info.input_order_info)
+            limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
+
+        SizeLimits leaf_limits;
+        if (settings.read_overflow_mode_leaf == OverflowMode::THROW
+            && settings.max_rows_to_read_leaf
+            && !query_info.input_order_info)
+            leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
+
+        std::atomic<size_t> total_rows{0};
 
         auto process_part = [&](size_t part_index)
         {
@@ -722,7 +743,23 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
 
             if (!ranges.ranges.empty())
+            {
+                if (limits.max_rows || leaf_limits.max_rows)
+                {
+                    auto current_rows_estimate = ranges.getRowsCount();
+                    size_t prev_rows_estimate = total_rows.fetch_add(current_rows_estimate, std::memory_order_relaxed);
+                    size_t total_rows_estimate = current_rows_estimate + prev_rows_estimate;
+
+
+                    if (query_info.limit > 0 && total_rows_estimate > query_info.limit)
+                    {
+                        total_rows_estimate = query_info.limit;
+                    }
+                    limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
+                    leaf_limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
+                }
                 parts_with_ranges[part_index] = std::move(ranges);
+            }
         };
 
         size_t num_threads = std::min<size_t>(num_streams, parts.size());

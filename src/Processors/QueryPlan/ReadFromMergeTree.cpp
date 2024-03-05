@@ -129,7 +129,6 @@ namespace ErrorCodes
 {
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_MANY_ROWS;
     extern const int CANNOT_PARSE_TEXT;
     extern const int PARAMETER_OUT_OF_BOUND;
 }
@@ -222,41 +221,6 @@ static void updateSortDescriptionForOutputStream(
     }
 
     output_stream.sort_description = std::move(sort_description);
-}
-
-void ReadFromMergeTree::AnalysisResult::checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const
-{
-
-    /// Do not check number of read rows if we have reading
-    /// in order of sorting key with limit.
-    /// In general case, when there exists WHERE clause
-    /// it's impossible to estimate number of rows precisely,
-    /// because we can stop reading at any time.
-
-    SizeLimits limits;
-    if (settings.read_overflow_mode == OverflowMode::THROW
-        && settings.max_rows_to_read
-        && !query_info_.input_order_info)
-        limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
-
-    SizeLimits leaf_limits;
-    if (settings.read_overflow_mode_leaf == OverflowMode::THROW
-        && settings.max_rows_to_read_leaf
-        && !query_info_.input_order_info)
-        leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
-
-    if (limits.max_rows || leaf_limits.max_rows)
-    {
-        /// Fail fast if estimated number of rows to read exceeds the limit
-        size_t total_rows_estimate = selected_rows;
-        if (query_info_.limit > 0 && total_rows_estimate > query_info_.limit)
-        {
-            total_rows_estimate = query_info_.limit;
-        }
-        limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
-        leaf_limits.check(
-            total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
-    }
 }
 
 ReadFromMergeTree::ReadFromMergeTree(
@@ -1673,6 +1637,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
             std::move(parts),
             std::move(alter_conversions),
             metadata_snapshot,
+            query_info_,
             context_,
             indexes->key_condition,
             indexes->part_offset_condition,
@@ -1969,7 +1934,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// They are stored separately, and some could be released after PK analysis.
     storage_snapshot->data = std::make_unique<MergeTreeData::SnapshotData>();
 
-    result.checkLimits(context->getSettingsRef(), query_info);
     shared_virtual_fields.emplace("_sample_factor", result.sampling.used_sample_factor);
 
     LOG_DEBUG(

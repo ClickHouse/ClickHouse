@@ -193,6 +193,7 @@ public:
         MergeTreeData::DataPartsVector && parts,
         std::vector<AlterConversionsPtr> && alter_conversions,
         StorageMetadataPtr metadata_snapshot,
+        const SelectQueryInfo & query_info,
         const ContextPtr & context,
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
