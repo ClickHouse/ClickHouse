@@ -111,11 +111,6 @@ public:
         return global_planner_context;
     }
 
-    const SelectQueryOptions & getSelectQueryOptions() const
-    {
-        return select_query_options;
-    }
-
     /// Get or create table expression data for table expression node.
     TableExpressionData & getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node);
 
@@ -172,7 +167,11 @@ public:
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
 
-    bool isASTLevelOptimizationAllowed() const;
+    /// Returns false if any of following conditions met:
+    /// 1. Query is executed on a follower node.
+    /// 2. ignore_ast_optimizations is set.
+    bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
+
 private:
     /// Query context
     ContextMutablePtr query_context;
@@ -180,7 +179,7 @@ private:
     /// Global planner context
     GlobalPlannerContextPtr global_planner_context;
 
-    SelectQueryOptions select_query_options;
+    bool is_ast_level_optimization_allowed;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;
