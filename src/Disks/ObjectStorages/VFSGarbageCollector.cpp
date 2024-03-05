@@ -1,5 +1,6 @@
 #include "VFSGarbageCollector.h"
 #include <IO/S3Common.h>
+#include <IO/ReadHelpers.h>
 #include <fmt/chrono.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
