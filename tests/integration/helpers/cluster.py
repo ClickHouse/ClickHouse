@@ -3489,6 +3489,11 @@ class ClickHouseInstance:
                 if check_callback(result):
                     return result
                 time.sleep(sleep_time)
+            except QueryRuntimeException as ex:
+                # Container is down, this is likely due to server crash.
+                if "No route to host" in str(ex):
+                    raise
+                time.sleep(sleep_time)
             except Exception as ex:
                 # logging.debug("Retry {} got exception {}".format(i + 1, ex))
                 time.sleep(sleep_time)

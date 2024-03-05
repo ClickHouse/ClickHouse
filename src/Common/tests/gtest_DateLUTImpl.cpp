@@ -16,9 +16,7 @@
 
 
 /// For the expansion of gtest macros.
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wused-but-marked-unused"
-#endif
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
 
 // All timezones present at build time and embedded into ClickHouse binary.
 extern const char * auto_time_zones[];

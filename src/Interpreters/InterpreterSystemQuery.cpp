@@ -10,6 +10,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
+#include <Common/PageCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -459,6 +460,13 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_DISK_METADATA_CACHE:
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+        }
+        case Type::DROP_PAGE_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PAGE_CACHE);
+
+            getContext()->dropPageCache();
+            break;
         }
         case Type::DROP_SCHEMA_CACHE:
         {
@@ -1201,6 +1209,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
+        case Type::DROP_PAGE_CACHE:
         case Type::DROP_SCHEMA_CACHE:
         case Type::DROP_FORMAT_SCHEMA_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
@@ -1209,12 +1218,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::DROP_DISK_METADATA_CACHE:
-        case Type::DROP_DISTRIBUTED_CACHE:
-        case Type::STOP_VIRTUAL_PARTS_UPDATE:
-        case Type::START_VIRTUAL_PARTS_UPDATE:
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only available in ClickHouse Cloud, https://clickhouse.cloud/");
-        }
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
