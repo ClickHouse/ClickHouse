@@ -138,7 +138,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
 
                     String engine_name = storage->getName();
                     UUID storage_uuid = storage->getStorageID().uuid;
-                    if (database->getEngineName() == "Ordinary")
+                    if (storage_uuid == UUIDHelpers::Nil)
                     {
                         SipHash hash;
                         hash.update(database_name);
