@@ -264,6 +264,8 @@ class BuildConfig:
         def process(field_name: str, field: Union[bool, str]) -> str:
             if isinstance(field, bool):
                 field = str(field).lower()
+            elif not isinstance(field, str):
+                field = ""
             if export:
                 return f"export BUILD_{field_name.upper()}={repr(field)}"
             return f"BUILD_{field_name.upper()}={field}"
@@ -584,7 +586,7 @@ class CIConfig:
                 Build.PACKAGE_TSAN,
                 Build.PACKAGE_DEBUG,
             ]
-        if release and report_name == JobNames.BUILD_CHECK_SPECIAL:
+        if (release or backport) and report_name == JobNames.BUILD_CHECK_SPECIAL:
             return [
                 Build.BINARY_DARWIN,
                 Build.BINARY_DARWIN_AARCH64,
