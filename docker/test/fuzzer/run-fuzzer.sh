@@ -386,7 +386,8 @@ if [ -f core.zst ]; then
     CORE_LINK='<a href="core.zst">core.zst</a>'
 fi
 
-rg --text -F '<Fatal>' server.log > fatal.log ||:
+# Keep all the lines in the paragraphs containing <Fatal> that either contain <Fatal> or don't start with 20... (year)
+sed -n '/<Fatal>/,/^$/p' server.log | awk '/<Fatal>/ || !/^20/' > fatal.log ||:
 FATAL_LINK=''
 if [ -s fatal.log ]; then
     FATAL_LINK='<a href="fatal.log">fatal.log</a>'

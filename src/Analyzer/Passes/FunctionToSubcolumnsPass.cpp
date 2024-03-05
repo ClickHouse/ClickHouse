@@ -361,7 +361,7 @@ private:
         if (table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
             return;
 
-        auto column = first_argument_column_node.getColumn();
+        const auto & column = first_argument_column_node.getColumn();
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
 
         Identifier qualified_name({table_name, column.name});

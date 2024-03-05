@@ -723,7 +723,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
     auto context = getContext();
     auto read_buffer_creator =
         [this, read_settings, object_size]
-        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
+        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromS3>(
             client,
@@ -734,20 +734,24 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
             read_settings,
             /* use_external_buffer */true,
             /* offset */0,
-            read_until_position,
-            /* restricted_seek */true,
+            /* read_until_position */0,
+            restricted_seek,
             object_size);
     };
+
+    auto modified_settings{read_settings};
+    /// User's S3 object may change, don't cache it.
+    modified_settings.use_page_cache_for_disks_without_file_cache = false;
+
+    /// FIXME: Changing this setting to default value breaks something around parquet reading
+    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
 
     auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
         StoredObjects{StoredObject{key, /* local_path */ "", object_size}},
+        "",
         read_settings,
         /* cache_log */nullptr, /* use_external_buffer */true);
-
-    auto modified_settings{read_settings};
-    /// FIXME: Changing this setting to default value breaks something around parquet reading
-    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
 
     auto & pool_reader = context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     auto async_reader = std::make_unique<AsynchronousBoundedReadBuffer>(
@@ -1532,7 +1536,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
                 no_sign_request = true;
                 engine_args_to_idx = {{"format", 2}};
             }
-            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
                 engine_args_to_idx = {{"format", 1}, {"compression_method", 2}};
             else
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
@@ -1553,7 +1557,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
             else
             {
                 auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
-                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+                if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
                 {
                     engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
                 }
@@ -1569,7 +1573,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
         else if (count == 5)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
-            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"compression", 4}};
             }
