@@ -433,3 +433,206 @@ Result:
 │ [0,1,2,3,4,5,6,7] │
 └───────────────────┘
 ```
+
+## mortonEncode
+
+Calculates the Morton encoding (ZCurve) for a list of unsigned integers.
+
+The function has two modes of operation:
+- Simple
+- Expanded
+
+### Simple mode
+
+Accepts up to 8 unsigned integers as arguments and produces a UInt64 code.
+
+**Syntax**
+
+```sql
+mortonEncode(args)
+```
+
+**Parameters**
+
+- `args`: up to 8 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
+
+**Returned value**
+
+- A UInt64 code
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md)
+
+**Example**
+
+Query:
+
+```sql
+SELECT mortonEncode(1, 2, 3);
+```
+
+```response
+53
+```
+
+### Expanded mode
+
+Accepts a range mask ([tuple](../../sql-reference/data-types/tuple.md)) as a first argument and up to 8 [unsigned integers](../../sql-reference/data-types/int-uint.md) as other arguments.
+
+Each number in the mask configures the amount of range expansion:
+1 - no expansion
+2 - 2x expansion
+3 - 3x expansion
+...
+Up to 8x expansion.
+
+**Syntax**
+
+```sql
+mortonEncode(range_mask, args)
+```
+
+**Parameters**
+- `range_mask`: 1-8.
+- `args`: up to 8 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
+
+Note: when using columns for `args` the provided `range_mask` tuple should still be a constant. 
+
+**Returned value**
+
+- A UInt64 code
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md)
+
+
+**Example**
+
+Range expansion can be beneficial when you need a similar distribution for arguments with wildly different ranges (or cardinality)
+For example: 'IP Address' (0...FFFFFFFF) and 'Country code' (0...FF).
+
+Query:
+
+```sql
+SELECT mortonEncode((1,2), 1024, 16);
+```
+
+```response
+1572864
+```
+
+Note: tuple size must be equal to the number of the other arguments.
+
+**Example**
+
+Morton encoding for one argument is always the argument itself:
+
+Query:
+
+```sql
+SELECT mortonEncode(1);
+```
+
+```response
+1
+```
+
+**Example**
+
+It is also possible to expand one argument too:
+
+Query:
+
+```sql
+SELECT mortonEncode(tuple(2), 128);
+```
+
+```response
+32768
+```
+
+**implementation details**
+
+Please note that you can fit only so much bits of information into Morton code as [UInt64](../../sql-reference/data-types/int-uint.md) has. Two arguments will have a range of maximum 2^32 (64/2) each, three arguments a range of max 2^21 (64/3) each and so on. All overflow will be clamped to zero.
+
+## mortonDecode
+
+Decodes a Morton encoding (ZCurve) into the corresponding unsigned integer tuple.
+
+As with the `mortonEncode` function, this function has two modes of operation:
+- Simple
+- Expanded
+
+### Simple mode
+
+Accepts a resulting tuple size as the first argument and the code as the second argument.
+
+**Syntax**
+
+```sql
+mortonDecode(tuple_size, code)
+```
+
+**Parameters**
+- `tuple_size`: integer value no more than 8.
+- `code`: [UInt64](../../sql-reference/data-types/int-uint.md) code.
+
+**Returned value**
+
+- [tuple](../../sql-reference/data-types/tuple.md) of the specified size.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md)
+
+**Example**
+
+Query:
+
+```sql
+SELECT mortonDecode(3, 53);
+```
+
+```response
+["1","2","3"]
+```
+
+### Expanded mode
+
+Accepts a range mask (tuple) as a first argument and the code as the second argument.
+Each number in the mask configures the amount of range shrink
+1 - no shrink
+2 - 2x shrink
+3 - 3x shrink
+...
+Up to 8x shrink.
+
+Range expansion can be beneficial when you need a similar distribution for arguments with wildly different ranges (or cardinality)
+For example: 'IP Address' (0...FFFFFFFF) and 'Country code' (0...FF).
+As with the encode function, this is limited to 8 numbers at most.
+
+**Example**
+
+Query:
+
+```sql
+SELECT mortonDecode(1, 1);
+```
+
+```response
+["1"]
+```
+
+**Example**
+
+It is also possible to shrink one argument:
+
+Query:
+
+```sql
+SELECT mortonDecode(tuple(2), 32768);
+```
+
+```response
+["128"]
+```
+
+
+
+
