@@ -199,6 +199,16 @@ Type: Bool
 
 Default: 0
 
+
+## dns_cache_max_entries
+
+Internal DNS cache max entries.
+
+Type: UInt64
+
+Default: 10000
+
+
 ## dns_cache_update_period
 
 Internal DNS cache update period in seconds.
@@ -457,6 +467,38 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 Type: Double
 
 Default: 0.9
+
+## cgroups_memory_usage_observer_wait_time
+
+Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups. (see
+settings `cgroup_memory_watcher_hard_limit_ratio` and `cgroup_memory_watcher_soft_limit_ratio`).
+
+Type: UInt64
+
+Default: 15
+
+## cgroup_memory_watcher_hard_limit_ratio
+
+Specifies the "hard" threshold with regards to the memory consumption of the server process according to cgroups after which the server's
+maximum memory consumption is adjusted to the threshold value.
+
+See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watcher_soft_limit_ratio`
+
+Type: Double
+
+Default: 0.95
+
+## cgroup_memory_watcher_soft_limit_ratio
+
+Specifies the "soft" threshold with regards to the memory consumption of the server process according to cgroups after which arenas in
+jemalloc are purged.
+
+
+See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watcher_hard_limit_ratio`
+
+Type: Double
+
+Default: 0.95
 
 ## max_table_size_to_drop
 
@@ -2881,3 +2923,15 @@ If set to true, then alter operations will be surrounded by parentheses in forma
 Type: Bool
 
 Default: 0
+
+## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
+
+If true, ClickHouse doesn't write defaults for empty SQL security statement in CREATE VIEW queries. 
+
+:::note
+This setting is only necessary for the migration period and will become obsolete in 24.4
+:::
+
+Type: Bool
+
+Default: 1
