@@ -202,8 +202,11 @@ PageCache::MemoryStats PageCache::getResidentSetSize() const
     if (use_madv_free)
     {
         std::unordered_set<UInt64> cache_mmap_addrs;
-        for (const auto & m : mmaps)
-            cache_mmap_addrs.insert(reinterpret_cast<UInt64>(m.ptr));
+        {
+            std::unique_lock lock(global_mutex);
+            for (const auto & m : mmaps)
+                cache_mmap_addrs.insert(reinterpret_cast<UInt64>(m.ptr));
+        }
 
         ReadBufferFromFile in("/proc/self/smaps");
 
