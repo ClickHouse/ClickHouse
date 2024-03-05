@@ -81,7 +81,7 @@ remove_keeper_config "create_if_not_exists" "[01]"
 sudo cat /etc/clickhouse-server/config.d/azure_storage_conf.xml \
   | sed "s|<object_storage_type>azure|<object_storage_type>azure_blob_storage|" \
   > /etc/clickhouse-server/config.d/azure_storage_conf.xml.tmp
-sudo mv /etc/clickhouse-server/config.d/azure_storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+sudo mv /etc/clickhouse-server/config.d/azure_storage_conf.xml.tmp /etc/clickhouse-server/config.d/azure_storage_conf.xml
 
 #todo: remove these after 24.3 released.
 sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
