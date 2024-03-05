@@ -207,6 +207,8 @@ std::shared_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata
     auto res = std::make_shared<ASTExpressionList>();
     for (const MutationCommand & command : *this)
     {
+        if (!command.ast)
+            continue;
         if (command.type != MutationCommand::ALTER_WITHOUT_MUTATION || with_pure_metadata_commands)
             res->children.push_back(command.ast->clone());
     }
@@ -217,7 +219,9 @@ std::shared_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata
 void MutationCommands::writeText(WriteBuffer & out, bool with_pure_metadata_commands) const
 {
     WriteBufferFromOwnString commands_buf;
-    formatAST(*ast(with_pure_metadata_commands), commands_buf, /* hilite = */ false, /* one_line = */ true);
+    const auto commands_ast = ast(with_pure_metadata_commands);
+    if (commands_ast)
+        formatAST(*commands_ast, commands_buf, /* hilite = */ false, /* one_line = */ true);
     writeEscapedString(commands_buf.str(), out);
 }
 
@@ -243,7 +247,9 @@ void MutationCommands::readText(ReadBuffer & in)
 std::string MutationCommands::toString() const
 {
     WriteBufferFromOwnString commands_buf;
-    formatAST(*ast(), commands_buf, /* hilite = */ false, /* one_line = */ true);
+    const auto commands_ast = ast();
+    if (commands_ast)
+        formatAST(*commands_ast, commands_buf, /* hilite = */ false, /* one_line = */ true);
     return commands_buf.str();
 }
 
