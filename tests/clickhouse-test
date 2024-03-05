@@ -682,8 +682,6 @@ class SettingsRandomizer:
                 get_localzone(),
             ]
         ),
-        "use_page_cache_for_disks_without_file_cache": lambda: random.random() < 0.7,
-        "page_cache_inject_eviction": lambda: random.random() < 0.5,
     }
 
     @staticmethod
