@@ -515,9 +515,13 @@ BlockIO InterpreterInsertQuery::execute()
                                                                 : std::min<size_t>(settings.max_insert_threads, pipeline.getNumStreams());
 
                 /// Deduplication when passing insert_deduplication_token breaks if using more than one thread
-                const String & deduplication_token = settings.insert_deduplication_token;
-                if (!deduplication_token.empty())
+                if (!settings.insert_deduplication_token.toString().empty())
+                {
+                    LOG_DEBUG(
+                        getLogger("InsertQuery"),
+                        "Insert-select query using insert_deduplication_token, setting streams to 1 to avoid deduplication issues");
                     pre_streams_size = 1;
+                }
 
                 if (table->supportsParallelInsert())
                     sink_streams_size = pre_streams_size;
