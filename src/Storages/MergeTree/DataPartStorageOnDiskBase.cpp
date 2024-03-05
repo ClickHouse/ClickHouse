@@ -753,8 +753,12 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
-            request.emplace_back(fs::path(dir) / file);
+        {
+            if (isGinFile(file) && (!disk->isFile(fs::path(dir) / file)))
+                continue;
 
+            request.emplace_back(fs::path(dir) / file);
+        }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / "txn_version.txt", true);

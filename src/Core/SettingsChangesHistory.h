@@ -19,7 +19,7 @@ namespace ErrorCodes
 class ClickHouseVersion
 {
 public:
-    ClickHouseVersion(const String & version)
+    ClickHouseVersion(const String & version) /// NOLINT(google-explicit-constructor)
     {
         Strings split;
         boost::split(split, version, [](char c){ return c == '.'; });
@@ -37,7 +37,7 @@ public:
         }
     }
 
-    ClickHouseVersion(const char * version) : ClickHouseVersion(String(version)) {}
+    ClickHouseVersion(const char * version) : ClickHouseVersion(String(version)) {} /// NOLINT(google-explicit-constructor)
 
     String toString() const
     {
@@ -85,8 +85,16 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.2", {
+    {"24.3", {{"allow_experimental_shared_merge_tree", false, true, "The setting is obsolete"},
+              {"use_page_cache_for_disks_without_file_cache", false, false, "Added userspace page cache"},
+              {"read_from_page_cache_if_exists_otherwise_bypass_cache", false, false, "Added userspace page cache"},
+              {"page_cache_inject_eviction", false, false, "Added userspace page cache"},
+              {"input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects", false, false, "Allow to use String type for ambiguous paths during named tuple inference from JSON objects"},
+              }},
+    {"24.2", {{"allow_suspicious_variant_types", true, false, "Don't allow creating Variant type with suspicious variants by default"},
+              {"validate_experimental_and_suspicious_types_inside_nested_types", false, true, "Validate usage of experimental and suspicious types inside nested types"},
               {"output_format_values_escape_quote_with_quote", false, false, "If true escape ' with '', otherwise quoted with \\'"},
+              {"output_format_pretty_single_large_number_tip_threshold", 0, 1'000'000, "Print a readable number tip on the right side of the table if the block consists of a single number which exceeds this value (except 0)"},
               {"input_format_try_infer_exponent_floats", true, false, "Don't infer floats in exponential notation by default"},
               {"query_plan_optimize_prewhere", true, true, "Allow to push down filter to PREWHERE expression for supported storages"},
               {"async_insert_max_data_size", 1000000, 10485760, "The previous value appeared to be too small."},
@@ -104,6 +112,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"min_external_table_block_size_rows", DEFAULT_INSERT_BLOCK_SIZE, DEFAULT_INSERT_BLOCK_SIZE, "Squash blocks passed to external table to specified size in rows, if blocks are not big enough"},
               {"min_external_table_block_size_bytes", DEFAULT_INSERT_BLOCK_SIZE * 256, DEFAULT_INSERT_BLOCK_SIZE * 256, "Squash blocks passed to external table to specified size in bytes, if blocks are not big enough."},
               {"parallel_replicas_prefer_local_join", true, true, "If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN."},
+              {"optimize_time_filter_with_preimage", true, true, "Optimize Date and DateTime predicates by converting functions into equivalent comparisons without conversions (e.g. toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31')"},
               {"extract_key_value_pairs_max_pairs_per_row", 0, 0, "Max number of pairs that can be produced by the `extractKeyValuePairs` function. Used as a safeguard against consuming too much memory."},
               {"default_view_definer", "CURRENT_USER", "CURRENT_USER", "Allows to set default `DEFINER` option while creating a view"},
               {"default_materialized_view_sql_security", "DEFINER", "DEFINER", "Allows to set a default value for SQL SECURITY option when creating a materialized view"},
