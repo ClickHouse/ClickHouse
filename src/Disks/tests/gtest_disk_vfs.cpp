@@ -1,11 +1,8 @@
 #include <algorithm>
-
 #include <Disks/ObjectStorages/VFSLogItem.h>
-#include <Disks/ObjectStorages/VFSSnapshotStorage.h>
-#include <IO/ReadBufferFromString.h>
+#include <Disks/ObjectStorages/VFSSnapshotIO.h>
 #include <IO/WriteBufferFromString.h>
-
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
 
 using namespace DB;
 using namespace std::string_view_literals;
@@ -23,41 +20,19 @@ std::ostream & operator<<(std::ostream & stream, const DB::StoredObject & obj)
 }
 }
 
-
-class VFSSnapshotReadStreamFromString : public IVFSSnapshotReadStream
-{
-public:
-    using IVFSSnapshotReadStream::entry_type;
-
-    VFSSnapshotReadStreamFromString(String data) : read_buffer(data) { }
-
-private:
-    entry_type nextImpl() override
-    {
-        if (read_buffer->eof())
-            return {};
-        return VFSSnapshotEntryStringSerializer::deserialize(*read_buffer);
-    }
-
-    std::optional<ReadBufferFromString> read_buffer;
-};
-
-
 class VFSSnapshotWriteStreamFromString : public IVFSSnapshotWriteStream
 {
+    void impl(VFSSnapshotEntry && entry) override { entry.serialize(buf); }
+    void finalizeImpl() override { buf.finalize(); }
+    WriteBufferFromOwnString buf;
+
 public:
-    VFSSnapshotWriteStreamFromString() { write_buffer.emplace(); }
-
-    std::string & str() { return write_buffer->str(); }
-
-private:
-    void writeImpl(VFSSnapshotEntry && entry) override { VFSSnapshotEntryStringSerializer::serialize(std::move(entry), *write_buffer); }
-
-    void finalizeImpl() override { write_buffer->finalize(); }
-
-    std::optional<WriteBufferFromOwnString> write_buffer;
+    VFSSnapshotWriteStreamFromString() = default;
+    String & str() { return buf.str(); }
 };
 
+using ReadStream = VFSSnapshotReadStreamFromString;
+using WriteStream = VFSSnapshotWriteStreamFromString;
 
 TEST(DiskObjectStorageVFS, VFSLogItem)
 {
@@ -72,14 +47,14 @@ TEST(DiskObjectStorageVFS, VFSLogItem)
     EXPECT_EQ(item, (VFSLogItem{{{"link", 6}, {"unlink", 0}, {"delta", -2}}}));
 
     {
-        auto read_snapshot = VFSSnapshotReadStreamFromString("invalid");
-        auto write_snapshot = VFSSnapshotWriteStreamFromString();
+        auto read_snapshot = ReadStream("invalid");
+        auto write_snapshot = WriteStream();
         EXPECT_THROW(VFSLogItem{}.mergeWithSnapshot(read_snapshot, write_snapshot, log), Exception) << "Invalid input buffer";
     }
 
     {
-        auto read_snapshot = VFSSnapshotReadStreamFromString("");
-        auto write_snapshot = VFSSnapshotWriteStreamFromString();
+        auto read_snapshot = ReadStream("");
+        auto write_snapshot = WriteStream();
         auto res = VFSLogItem{item}.mergeWithSnapshot(read_snapshot, write_snapshot, log);
         EXPECT_EQ(res.obsolete, StoredObjects{StoredObject{"unlink"}});
         EXPECT_EQ(res.invalid, (VFSLogItemStorage{{"delta", -2}}));
@@ -87,8 +62,8 @@ TEST(DiskObjectStorageVFS, VFSLogItem)
 
     String serialized_snapshot;
     {
-        auto read_snapshot = VFSSnapshotReadStreamFromString("delta 2\n");
-        auto write_snapshot = VFSSnapshotWriteStreamFromString();
+        auto read_snapshot = ReadStream("delta 2\n");
+        auto write_snapshot = WriteStream();
         auto res = std::move(item).mergeWithSnapshot(read_snapshot, write_snapshot, log);
         EXPECT_EQ(res.obsolete, (StoredObjects{StoredObject{"delta"}, StoredObject{"unlink"}}));
         EXPECT_EQ(res.invalid, VFSLogItemStorage{});
@@ -96,8 +71,8 @@ TEST(DiskObjectStorageVFS, VFSLogItem)
     }
 
     {
-        auto read_snapshot = VFSSnapshotReadStreamFromString(serialized_snapshot);
-        auto write_snapshot = VFSSnapshotWriteStreamFromString();
+        auto read_snapshot = ReadStream(serialized_snapshot);
+        auto write_snapshot = WriteStream();
         auto res_4 = VFSLogItem{}.mergeWithSnapshot(read_snapshot, write_snapshot, log);
         EXPECT_EQ(res_4.obsolete, StoredObjects{});
         EXPECT_EQ(res_4.invalid, VFSLogItemStorage{});
@@ -108,16 +83,16 @@ TEST(DiskObjectStorageVFS, VFSLogItem)
 TEST(DiskObjectStorageVFS, VFSSnapshotSortingWriteStream)
 {
     {
-        auto snapshot = std::make_shared<VFSSnapshotWriteStreamFromString>();
-        VFSSnapshotSortingWriteStream sorting_snapshot(snapshot);
+        WriteStream base_stream{};
+        VFSSnapshotSortingWriteStream stream(base_stream);
 
-        sorting_snapshot.write(VFSSnapshotEntry{"/b", 1});
-        sorting_snapshot.write(VFSSnapshotEntry{"/c", 1});
-        sorting_snapshot.write(VFSSnapshotEntry{"/a", 1});
+        stream.write(VFSSnapshotEntry{"/b", 1});
+        stream.write(VFSSnapshotEntry{"/c", 1});
+        stream.write(VFSSnapshotEntry{"/a", 1});
 
-        sorting_snapshot.finalize();
+        stream.finalize();
 
-        auto read_snapshot = VFSSnapshotReadStreamFromString(snapshot->str());
+        ReadStream read_snapshot(base_stream.str());
 
         std::vector<std::string> remote_paths;
         while (auto entry = read_snapshot.next())
@@ -127,15 +102,14 @@ TEST(DiskObjectStorageVFS, VFSSnapshotSortingWriteStream)
         EXPECT_EQ(remote_paths.size(), 3);
     }
     {
-        auto snapshot = std::make_shared<VFSSnapshotWriteStreamFromString>();
-        VFSSnapshotSortingWriteStream sorting_snapshot(snapshot);
+        WriteStream base_stream{};
+        VFSSnapshotSortingWriteStream stream(base_stream);
 
-        sorting_snapshot.write(VFSSnapshotEntry{"/a", 1});
-        sorting_snapshot.write(VFSSnapshotEntry{"/a", 1});
+        stream.write(VFSSnapshotEntry{"/a", 1});
+        stream.write(VFSSnapshotEntry{"/a", 1});
+        stream.finalize();
 
-        sorting_snapshot.finalize();
-
-        auto read_snapshot = VFSSnapshotReadStreamFromString(snapshot->str());
+        ReadStream read_snapshot(base_stream.str());
         auto entry = read_snapshot.next();
 
         EXPECT_EQ(read_snapshot.next(), std::nullopt);

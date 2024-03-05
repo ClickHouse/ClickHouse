@@ -9,7 +9,10 @@ extern const int BAD_ARGUMENTS;
 }
 
 VFSNodes::VFSNodes(std::string_view disk_vfs_id)
-    : base(fmt::format("/vfs/{}", disk_vfs_id)), log_base(base + "/ops"), log_item(log_base + "/log-"), gc_lock(base + "/gc_lock")
+    : base(fmt::format("/vfs/{}", disk_vfs_id))
+    , log_base(base + "/ops")
+    , log_item(fmt::format("{}/{}", log_base, log_prefix))
+    , gc_lock(base + "/gc_lock")
 {
 }
 

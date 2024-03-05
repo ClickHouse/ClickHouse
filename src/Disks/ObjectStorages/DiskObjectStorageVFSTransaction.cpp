@@ -24,9 +24,10 @@ const int pers_seq = zkutil::CreateMode::PersistentSequential;
 void DiskObjectStorageVFSTransaction::commit()
 {
     DiskObjectStorageTransaction::commit();
+    SCOPE_EXIT(item.clear());
 
     if (const Strings nodes = item.serialize(); nodes.empty())
-        LOG_DEBUG(disk.log, "VFSTransaction: nothing to commit");
+        LOG_TRACE(disk.log, "VFSTransaction: nothing to commit");
     else if (nodes.size() == 1)
     {
         LOG_TRACE(disk.log, "VFSTransaction: executing {}", nodes[0]);
@@ -34,7 +35,7 @@ void DiskObjectStorageVFSTransaction::commit()
     }
     else
     {
-        LOG_TRACE(disk.log, "VFSTransaction: executing {}", fmt::join(nodes, "\n"));
+        LOG_TRACE(disk.log, "VFSTransaction: executing many {}", fmt::join(nodes, "\n"));
 
         Coordination::Requests req;
         req.reserve(nodes.size());
@@ -42,8 +43,6 @@ void DiskObjectStorageVFSTransaction::commit()
             req.emplace_back(zkutil::makeCreateRequest(disk.nodes.log_item, node, pers_seq));
         disk.zookeeper()->multi(req);
     }
-
-    item.clear();
 }
 
 void DiskObjectStorageVFSTransaction::replaceFile(const String & from_path, const String & to_path)

@@ -1,4 +1,5 @@
 #include "VFSSnapshotIO.h"
+#include "IO/ReadBufferFromFileBase.h"
 #include "IO/ReadHelpers.h"
 #include "IO/WriteHelpers.h"
 #include "IObjectStorage.h"
@@ -49,8 +50,7 @@ IVFSSnapshotReadStream::Entry IVFSSnapshotReadStream::next()
     return {};
 }
 
-VFSSnapshotReadStream::VFSSnapshotReadStream(IObjectStorage & storage, std::string_view name) :
-    buf(storage.readObject(StoredObject{name}))
+VFSSnapshotReadStream::VFSSnapshotReadStream(IObjectStorage & storage, StoredObject && obj) : buf(storage.readObject(obj))
 {
 }
 
@@ -64,6 +64,17 @@ VFSSnapshotReadStream::Entry VFSSnapshotReadStream::impl()
     return VFSSnapshotEntry::deserialize(buf);
 }
 
+VFSSnapshotReadStreamFromString::VFSSnapshotReadStreamFromString(std::string_view data) : buf(data)
+{
+}
+
+VFSSnapshotReadStreamFromString::Entry VFSSnapshotReadStreamFromString::impl()
+{
+    if (buf.eof())
+        return {};
+    return VFSSnapshotEntry::deserialize(buf);
+}
+
 void IVFSSnapshotWriteStream::write(VFSSnapshotEntry && entry)
 {
     if (finished)
@@ -72,8 +83,8 @@ void IVFSSnapshotWriteStream::write(VFSSnapshotEntry && entry)
 }
 
 // TODO myrrc research zstd dictionary builder or zstd for compression
-VFSSnapshotWriteStream::VFSSnapshotWriteStream(IObjectStorage & storage, std::string_view name, int level)
-    : buf(storage.writeObject(StoredObject{name}, WriteMode::Rewrite), level)
+VFSSnapshotWriteStream::VFSSnapshotWriteStream(IObjectStorage & storage, StoredObject && obj, int level)
+    : buf(storage.writeObject(obj, WriteMode::Rewrite), level)
 {
 }
 
@@ -87,28 +98,13 @@ void VFSSnapshotWriteStream::finalizeImpl()
     buf.finalize();
 }
 
-Strings VFSSnapshotObjectStorage::list() const
-{
-    constexpr int max_keys = 10;
-
-    RelativePathsWithMetadata objects;
-    storage.listObjects(prefix, objects, max_keys);
-    Strings snapshots;
-    snapshots.reserve(objects.size());
-
-    for (const auto & obj : objects)
-        snapshots.emplace_back(obj.relative_path.substr(prefix.length()));
-
-    return snapshots;
-}
-
 void IVFSSnapshotWriteStream::finalize()
 {
     finalizeImpl();
     finished = true;
 }
 
-VFSSnapshotSortingWriteStream::VFSSnapshotSortingWriteStream(VFSSnapshotWriteStream & stream_) : stream(stream_)
+VFSSnapshotSortingWriteStream::VFSSnapshotSortingWriteStream(IVFSSnapshotWriteStream & stream_) : stream(stream_)
 {
 }
 

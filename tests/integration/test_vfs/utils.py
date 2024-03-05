@@ -1,4 +1,4 @@
-def get_remote_pathes(node, table_name, only_remote_path=True):
+def get_remote_paths(node, table_name, only_remote_path=True):
     """
     Returns remote paths of blobs related to the table.
     """

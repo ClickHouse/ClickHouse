@@ -7,6 +7,7 @@ namespace DB
 {
 struct VFSNodes
 {
+    static constexpr std::string_view log_prefix = "log-";
     explicit VFSNodes(std::string_view disk_vfs_id);
 
     String base;

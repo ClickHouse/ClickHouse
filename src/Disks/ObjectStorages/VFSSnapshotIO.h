@@ -1,7 +1,9 @@
 #pragma once
 #include <IO/Lz4DeflatingWriteBuffer.h>
 #include <IO/Lz4InflatingReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
 #include <boost/container/flat_set.hpp>
+#include "StoredObject.h"
 
 namespace DB
 {
@@ -35,36 +37,41 @@ protected:
 
 class IVFSSnapshotWriteStream
 {
-public:
-    using entry_type = std::optional<VFSSnapshotEntry>;
+    bool finished{false};
 
+public:
+    virtual ~IVFSSnapshotWriteStream() = default;
     void write(VFSSnapshotEntry && entry);
     void finalize();
-    virtual ~IVFSSnapshotWriteStream() = default;
     constexpr bool isFinished() const { return finished; }
 
 protected:
     virtual void impl(VFSSnapshotEntry &&) = 0;
     virtual void finalizeImpl() = 0;
-
-private:
-    bool finished{false};
 };
 
 class VFSSnapshotReadStream final : public IVFSSnapshotReadStream
 {
-public:
-    VFSSnapshotReadStream(IObjectStorage & storage, std::string_view name);
-
-private:
     Entry impl() override;
     Lz4InflatingReadBuffer buf;
+
+public:
+    VFSSnapshotReadStream(IObjectStorage & storage, StoredObject && obj);
+};
+
+class VFSSnapshotReadStreamFromString : public IVFSSnapshotReadStream
+{
+    Entry impl() override;
+    ReadBufferFromString buf;
+
+public:
+    VFSSnapshotReadStreamFromString(std::string_view data); // NOLINT
 };
 
 class VFSSnapshotWriteStream : public IVFSSnapshotWriteStream
 {
 public:
-    VFSSnapshotWriteStream(IObjectStorage & storage, std::string_view name, int level);
+    VFSSnapshotWriteStream(IObjectStorage & storage, StoredObject && obj, int level);
 
 protected:
     void impl(VFSSnapshotEntry && entry) override;
@@ -74,15 +81,14 @@ protected:
 
 class VFSSnapshotSortingWriteStream : public IVFSSnapshotWriteStream
 {
-public:
-    explicit VFSSnapshotSortingWriteStream(VFSSnapshotWriteStream & stream_);
-
-private:
-    VFSSnapshotWriteStream & stream;
+    IVFSSnapshotWriteStream & stream;
 
     void impl(VFSSnapshotEntry && entry) override;
     void finalizeImpl() override;
 
     boost::container::flat_set<VFSSnapshotEntry> entries;
+
+public:
+    explicit VFSSnapshotSortingWriteStream(IVFSSnapshotWriteStream & stream_);
 };
 }

@@ -35,7 +35,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::createFileOperationObject(
     const String & operation_name, UInt64 revision, const ObjectAttributes & metadata) const
 {
     const String relative_path = "operations/r" + revisionToString(revision) + operation_log_suffix + "-" + operation_name;
-    StoredObject object(fs::path(disk->object_key_prefix) / relative_path);
+    StoredObject object((fs::path(disk->object_key_prefix) / relative_path).string());
     auto buf = disk->object_storage->writeObject(object, WriteMode::Rewrite, metadata);
     buf->write('0');
     buf->finalize();
@@ -68,7 +68,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::findLastRevision()
 
 int DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(IObjectStorage * object_storage, const String & source_path)
 {
-    StoredObject object(fs::path(source_path) / SCHEMA_VERSION_OBJECT);
+    StoredObject object((fs::path(source_path) / SCHEMA_VERSION_OBJECT).string());
     int version = 0;
     if (!object_storage->exists(object))
         return version;
@@ -81,7 +81,7 @@ int DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(IObjectStora
 
 void DiskObjectStorageRemoteMetadataRestoreHelper::saveSchemaVersion(const int & version) const
 {
-    StoredObject object{fs::path(disk->object_key_prefix) / SCHEMA_VERSION_OBJECT};
+    StoredObject object{(fs::path(disk->object_key_prefix) / SCHEMA_VERSION_OBJECT).string()};
 
     auto buf = disk->object_storage->writeObject(object, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     writeIntText(version, *buf);

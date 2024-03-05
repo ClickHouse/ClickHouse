@@ -612,8 +612,8 @@ The server successfully detected this situation and will download merged part fr
     \
     M(VFSGcRunsCompleted, "Number of successful VFS garbage collector runs.")\
     M(VFSGcRunsException, "Number of VFS garbage collector runs that raised an exception.")\
-    M(VFSGcRunsSkipped, "Number of VFS garbage collector runs skipped because of settings (e.g. small number of operations)")\
-    M(VFSGcTotalMicroseconds, "Total time took by VFS garbage gollector.")\
+    M(VFSGcRunsSkipped, "Number of VFS garbage collector skipped runs.")\
+    M(VFSGcTotalSeconds, "Total time taken by VFS garbage gollector.")\
     M(VFSGcCumulativeSnapshotBytesRead, "Total size of snapshots read from object storage by VFS garbage collector.")\
     M(VFSGcCumulativeLogItemsRead, "Total number of log items read from Keeper by VFS garbage collector.")\
     \
