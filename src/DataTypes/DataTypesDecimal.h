@@ -3,8 +3,8 @@
 #include <base/arithmeticOverflow.h>
 #include <base/extended_types.h>
 #include <Common/typeid_cast.h>
-#include "base/Decimal.h"
-#include "base/Decimal_fwd.h"
+#include <base/Decimal.h>
+#include <base/Decimal_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -17,7 +17,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int DECIMAL_OVERFLOW;
     extern const int LOGICAL_ERROR;
 }
 
