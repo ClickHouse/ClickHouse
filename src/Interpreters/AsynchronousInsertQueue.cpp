@@ -254,11 +254,17 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
 void AsynchronousInsertQueue::scheduleDataProcessingJob(
     const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num)
 {
+    /// Intuitively it seems reasonable to process first inserted blocks first.
+    /// We add new chunks in the end of entries list, so they are automatically ordered by creation time
+    chassert(!data->entries.empty());
+    const auto priority = Priority{data->entries.front()->create_time.time_since_epoch().count()};
+
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
     pool.scheduleOrThrowOnError(
         [this, key, global_context, shard_num, my_data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
-        { processData(key, std::move(*my_data), std::move(global_context), flush_time_history_per_queue_shard[shard_num]); });
+        { processData(key, std::move(*my_data), std::move(global_context), flush_time_history_per_queue_shard[shard_num]); },
+        priority);
 }
 
 void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context)
@@ -382,6 +388,7 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
         assert(data);
         auto size_in_bytes = data->size_in_bytes;
         data->size_in_bytes += entry_data_size;
+        /// We rely on the fact that entries are being added to the list in order of creation time in `scheduleDataProcessingJob()`
         data->entries.emplace_back(entry);
         insert_future = entry->getFuture();
 
