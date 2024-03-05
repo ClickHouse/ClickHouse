@@ -153,7 +153,7 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (query.refresh_strategy)
     {
-        fixed_uuid = query.refresh_strategy->append;
+        fixed_uuid = false;
         refresher = RefreshTask::create(
             *this,
             getContext(),
