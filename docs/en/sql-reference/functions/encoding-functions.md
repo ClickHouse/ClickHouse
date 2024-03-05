@@ -478,12 +478,12 @@ SELECT mortonEncode(1, 2, 3);
 
 Accepts a range mask ([tuple](../../sql-reference/data-types/tuple.md)) as a first argument and up to 8 [unsigned integers](../../sql-reference/data-types/int-uint.md) as other arguments.
 
-Each number in the mask configures the amount of range expansion:
-1 - no expansion
-2 - 2x expansion
-3 - 3x expansion
-...
-Up to 8x expansion.
+Each number in the mask configures the amount of range expansion:<br/>
+1 - no expansion<br/>
+2 - 2x expansion<br/>
+3 - 3x expansion<br/>
+...<br/>
+Up to 8x expansion.<br/>
 
 **Syntax**
 
@@ -596,12 +596,12 @@ SELECT mortonDecode(3, 53);
 ### Expanded mode
 
 Accepts a range mask (tuple) as a first argument and the code as the second argument.
-Each number in the mask configures the amount of range shrink
-1 - no shrink
-2 - 2x shrink
-3 - 3x shrink
-...
-Up to 8x shrink.
+Each number in the mask configures the amount of range shrink:<br/>
+1 - no shrink<br/>
+2 - 2x shrink<br/> 
+3 - 3x shrink<br/>
+...<br/>
+Up to 8x shrink.<br/>
 
 Range expansion can be beneficial when you need a similar distribution for arguments with wildly different ranges (or cardinality)
 For example: 'IP Address' (0...FFFFFFFF) and 'Country code' (0...FF).
