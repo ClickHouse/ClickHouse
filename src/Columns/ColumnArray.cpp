@@ -347,6 +347,89 @@ void ColumnArray::insertFrom(const IColumn & src_, size_t n)
     getOffsets().push_back(getOffsets().back() + size);
 }
 
+template <typename T>
+void ColumnArray::insertManyFromNumber(const ColumnArray & src, size_t position, size_t length)
+{
+    using ColVecType = ColumnVectorOrDecimal<T>;
+    size_t src_size = src.sizeAt(position);
+    size_t src_offset = src.offsetAt(position);
+
+    const typename ColVecType::Container & src_data = typeid_cast<const ColVecType &>(src.getData()).getData();
+    typename ColVecType::Container & data_ref = typeid_cast<ColVecType &>(getData()).getData();
+    size_t old_size = data_ref.size();
+    size_t new_size = old_size + src_size * length;
+    data_ref.resize(new_size);
+    for (size_t i = 0, offset = old_size; i < length; ++i, offset += src_size)
+        memcpy(&data_ref[offset], &src_data[src_offset], src_size * sizeof(T));
+}
+
+void ColumnArray::insertManyFromString(const ColumnArray & src, size_t position, size_t length)
+{
+    size_t src_size = src.sizeAt(position);
+    size_t src_offset = src.offsetAt(position);
+
+    const auto & src_string = typeid_cast<const ColumnString &>(src.getData());
+    const auto & src_chars = src_string.getChars();
+    const auto & src_string_offsets = src_string.getOffsets();
+    auto & dst_string = typeid_cast<ColumnString &>(getData());
+    auto & dst_chars = dst_string.getChars();
+    auto & dst_string_offsets = dst_string.getOffsets();
+
+    /// Each row may have multiple strings, copy them to dst_chars and update dst_offsets
+    size_t old_size = dst_string_offsets.size();
+    size_t new_size = old_size + src_size * length;
+    dst_string_offsets.resize(new_size);
+    size_t dst_string_offset = dst_chars.size();
+    for (size_t i = 0; i < length; ++i)
+    {
+        for (size_t j = 0; j < src_size; ++j)
+        {
+            size_t nested_offset = src_string_offsets[src_offset + j - 1];
+            size_t nested_length = src_string_offsets[src_offset + j] - nested_offset;
+
+            dst_string_offset += nested_length;
+            dst_string_offsets[old_size + i * src_size + j] = dst_string_offset;
+        }
+    }
+
+    size_t chars_to_copy = src_string_offsets[src_offset + src_size - 1] - src_string_offsets[src_offset - 1];
+    dst_chars.resize(dst_chars.size() + chars_to_copy * length);
+    for (size_t dst_offset = old_size; dst_offset < new_size; dst_offset += src_size)
+        memcpy(&dst_chars[dst_string_offsets[dst_offset - 1]], &src_chars[src_string_offsets[src_offset - 1]], chars_to_copy);
+}
+
+void ColumnArray::insertManyFromTuple(const ColumnArray & src, size_t position, size_t length)
+{
+
+}
+void ColumnArray::insertManyFromNullable(const ColumnArray & src, size_t position, size_t length)
+{
+
+}
+void ColumnArray::insertManyFromGeneric(const ColumnArray & src, size_t position, size_t length)
+{
+    size_t src_size = src.sizeAt(position);
+    size_t src_offset = src.offsetAt(position);
+    const auto & src_data = src.getData();
+    size_t new_size = data->size() + src_size * length;
+    data->reserve(new_size);
+    for (size_t i = 0; i < length; ++i)
+        data->insertRangeFrom(src_data, src_offset, src_size);
+}
+
+void ColumnArray::insertManyFrom(const IColumn & src_, size_t position, size_t length)
+{
+    /// First fill offsets
+    const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
+    size_t src_size = src.sizeAt(position);
+    auto & offsets_ref = getOffsets();
+    size_t old_rows = offsets_ref.size();
+    size_t new_rows = old_rows + length;
+    size_t old_size = offsets_ref.back();
+    offsets_ref.resize(new_rows);
+    for (size_t i = 0, offset = old_size + src_size; i < length; ++i, offset += src_size)
+        offsets_ref[old_rows + i] = offset;
+}
 
 void ColumnArray::insertDefault()
 {
