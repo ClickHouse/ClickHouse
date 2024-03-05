@@ -49,7 +49,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
     auto modified_settings = patchSettings(read_settings);
     auto global_context = Context::getGlobalContextInstance();
     auto read_buffer_creator =
-        [=] (const std::string & file_path, size_t /* read_until_position */)
+        [=] (bool /* restricted_seek */, const std::string & file_path)
         -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return createReadBufferFromFileBase(file_path, modified_settings, read_hint, file_size);
@@ -60,13 +60,13 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
         case RemoteFSReadMethod::read:
         {
             return std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator), objects, modified_settings,
+                std::move(read_buffer_creator), objects, "file:", modified_settings,
                 global_context->getFilesystemCacheLog(), /* use_external_buffer */false);
         }
         case RemoteFSReadMethod::threadpool:
         {
             auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator), objects, modified_settings,
+                std::move(read_buffer_creator), objects, "file:", modified_settings,
                 global_context->getFilesystemCacheLog(), /* use_external_buffer */true);
 
             auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
