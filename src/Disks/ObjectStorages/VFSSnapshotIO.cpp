@@ -12,6 +12,11 @@ extern const Event VFSGcCumulativeSnapshotBytesRead;
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 // weak ordering is used for sorting/finding entries via flat_set
 bool VFSSnapshotEntry::operator<(const VFSSnapshotEntry & entry) const
 {
