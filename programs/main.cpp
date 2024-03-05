@@ -24,36 +24,28 @@
 
 
 /// Universal executable for various clickhouse applications
-#if ENABLE_CLICKHOUSE_SERVER
 int mainEntryClickHouseServer(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_CLIENT
 int mainEntryClickHouseClient(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_LOCAL
 int mainEntryClickHouseLocal(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_BENCHMARK
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_COMPRESSOR
 int mainEntryClickHouseCompressor(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_FORMAT
 int mainEntryClickHouseFormat(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_COPIER
 int mainEntryClickHouseClusterCopier(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_OBFUSCATOR
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_GIT_IMPORT
 int mainEntryClickHouseGitImport(int argc, char ** argv);
-#endif
+int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
+int mainEntryClickHouseSU(int argc, char ** argv);
+int mainEntryClickHouseDisks(int argc, char ** argv);
+
+int mainEntryClickHouseHashBinary(int, char **)
+{
+    /// Intentionally without newline. So you can run:
+    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
+    std::cout << getHashOfLoadedBinaryHex();
+    return 0;
+}
+
 #if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeper(int argc, char ** argv);
 #endif
@@ -63,30 +55,13 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
 int mainEntryClickHouseKeeperClient(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
-int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_SU
-int mainEntryClickHouseSU(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_INSTALL
+
+// install
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
 int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_DISKS
-int mainEntryClickHouseDisks(int argc, char ** argv);
-#endif
-
-int mainEntryClickHouseHashBinary(int, char **)
-{
-    /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
-    std::cout << getHashOfLoadedBinaryHex();
-    return 0;
-}
 
 namespace
 {
@@ -98,36 +73,22 @@ using MainFunc = int (*)(int, char**);
 /// Add an item here to register new application
 std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
-#if ENABLE_CLICKHOUSE_LOCAL
     {"local", mainEntryClickHouseLocal},
-#endif
-#if ENABLE_CLICKHOUSE_CLIENT
     {"client", mainEntryClickHouseClient},
-#endif
-#if ENABLE_CLICKHOUSE_BENCHMARK
     {"benchmark", mainEntryClickHouseBenchmark},
-#endif
-#if ENABLE_CLICKHOUSE_SERVER
     {"server", mainEntryClickHouseServer},
-#endif
-#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
-#endif
-#if ENABLE_CLICKHOUSE_COMPRESSOR
     {"compressor", mainEntryClickHouseCompressor},
-#endif
-#if ENABLE_CLICKHOUSE_FORMAT
     {"format", mainEntryClickHouseFormat},
-#endif
-#if ENABLE_CLICKHOUSE_COPIER
     {"copier", mainEntryClickHouseClusterCopier},
-#endif
-#if ENABLE_CLICKHOUSE_OBFUSCATOR
     {"obfuscator", mainEntryClickHouseObfuscator},
-#endif
-#if ENABLE_CLICKHOUSE_GIT_IMPORT
     {"git-import", mainEntryClickHouseGitImport},
-#endif
+    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
+    {"su", mainEntryClickHouseSU},
+    {"hash-binary", mainEntryClickHouseHashBinary},
+    {"disks", mainEntryClickHouseDisks},
+
+    // keeper
 #if ENABLE_CLICKHOUSE_KEEPER
     {"keeper", mainEntryClickHouseKeeper},
 #endif
@@ -137,34 +98,20 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
     {"keeper-client", mainEntryClickHouseKeeperClient},
 #endif
-#if ENABLE_CLICKHOUSE_INSTALL
+
+    // install
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
-#endif
-#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
-    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
-#endif
-#if ENABLE_CLICKHOUSE_SU
-    {"su", mainEntryClickHouseSU},
-#endif
-    {"hash-binary", mainEntryClickHouseHashBinary},
-#if ENABLE_CLICKHOUSE_DISKS
-    {"disks", mainEntryClickHouseDisks},
-#endif
 };
 
 /// Add an item here to register a new short name
 std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 {
-#if ENABLE_CLICKHOUSE_LOCAL
     {"chl", "local"},
-#endif
-#if ENABLE_CLICKHOUSE_CLIENT
     {"chc", "client"},
-#endif
 };
 
 int printHelp(int, char **)

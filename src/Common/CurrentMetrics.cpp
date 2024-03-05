@@ -2,6 +2,8 @@
 
 
 /// Available metrics. Add something here as you wish.
+/// If the metric is generic (i.e. not server specific)
+/// it should be also added to src/Coordination/KeeperConstant.cpp
 #define APPLY_FOR_BUILTIN_METRICS(M) \
     M(Query, "Number of executing queries") \
     M(Merge, "Number of executing background merges") \
@@ -260,6 +262,19 @@
     M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
     M(RefreshableViews, "Number materialized views with periodic refreshing (REFRESH)") \
     M(RefreshingViews, "Number of materialized views currently executing a refresh") \
+    M(StorageBufferFlushThreads, "Number of threads for background flushes in StorageBuffer") \
+    M(StorageBufferFlushThreadsActive, "Number of threads for background flushes in StorageBuffer running a task") \
+    M(StorageBufferFlushThreadsScheduled, "Number of queued or active threads for background flushes in StorageBuffer") \
+    M(SharedMergeTreeThreads, "Number of threads in the thread pools in internals of SharedMergeTree") \
+    M(SharedMergeTreeThreadsActive, "Number of threads in the thread pools in internals of SharedMergeTree running a task") \
+    M(SharedMergeTreeThreadsScheduled, "Number of queued or active threads in the thread pools in internals of SharedMergeTree") \
+    M(SharedMergeTreeFetch, "Number of fetches in progress") \
+    M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
+    M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
+    M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
+    M(DistrCacheReadRequests, "Number of executed Read requests to Distributed Cache") \
+    M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
+    M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache")
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

@@ -1,0 +1,6 @@
+inserting into a remote table from local with concurrency equal to max_insert_threads
+9
+inserting into a remote table from remote with concurrency max_insert_threads
+9
+inserting into a remote table from remote (reading with parallel replicas) with concurrency max_insert_threads
+9

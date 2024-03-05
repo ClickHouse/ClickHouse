@@ -1656,11 +1656,42 @@ Result:
    └─────────────────────────┴─────────┘
 ```
 
+### output_format_pretty_single_large_number_tip_threshold {#output_format_pretty_single_large_number_tip_threshold}
+
+Print a readable number tip on the right side of the table if the block consists of a single number which exceeds
+this value (except 0).
+
+Possible values:
+
+- 0 — The readable number tip will not be printed.
+- Positive integer — The readable number tip will be printed if the single number exceeds this value.
+
+Default value: `1000000`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT 1000000000 as a;
+```
+
+Result:
+```text
+┌──────────a─┐
+│ 1000000000 │ -- 1.00 billion
+└────────────┘
+```
+
 ## Template format settings {#template-format-settings}
 
 ### format_template_resultset {#format_template_resultset}
 
 Path to file which contains format string for result set (for Template format).
+
+### format_template_resultset_format {#format_template_resultset_format}
+
+Format string for result set (for Template format)
 
 ### format_template_row {#format_template_row}
 
@@ -1669,6 +1700,10 @@ Path to file which contains format string for rows (for Template format).
 ### format_template_rows_between_delimiter {#format_template_rows_between_delimiter}
 
 Delimiter between rows (for Template format).
+
+### format_template_row_format {#format_template_row_format}
+
+Format string for rows (for Template format)
 
 ## CustomSeparated format settings {custom-separated-format-settings}
 
