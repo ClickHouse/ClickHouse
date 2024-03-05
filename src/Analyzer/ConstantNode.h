@@ -75,7 +75,7 @@ public:
         return constant_value->getType();
     }
 
-    /// Check if convertation to AST requires wrapping with _CAST function.
+    /// Check if conversion to AST requires wrapping with _CAST function.
     bool requiresCastCall() const;
 
     /// Check if constant is a result of _CAST function constant folding.
