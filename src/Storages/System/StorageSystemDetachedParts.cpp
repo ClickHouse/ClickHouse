@@ -287,7 +287,7 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
     setInMemoryMetadata(storage_metadata);
 }
 
-class ReadFromSystemDetachedParts : public ReadFromSystemPartsBase
+class ReadFromSystemDetachedParts : public SourceStepWithFilter
 {
 public:
     ReadFromSystemDetachedParts(
@@ -296,22 +296,41 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         Block sample_block,
-        std::shared_ptr<StorageSystemPartsBase> storage_,
+        std::shared_ptr<StorageSystemDetachedParts> storage_,
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_,
         size_t num_streams_)
-        : ReadFromSystemPartsBase(column_names_, query_info_, storage_snapshot_, context_, sample_block, std::move(storage_), std::move(columns_mask_), false)
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(sample_block)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
+        , storage(std::move(storage_))
+        , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
     {}
 
     std::string getName() const override { return "ReadFromSystemDetachedParts"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-private:
+protected:
+    std::shared_ptr<StorageSystemDetachedParts> storage;
+    std::vector<UInt8> columns_mask;
+
+    const ActionsDAG::Node * predicate = nullptr;
     const size_t max_block_size;
     const size_t num_streams;
 };
+
+void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
+}
 
 void StorageSystemDetachedParts::read(
     QueryPlan & query_plan,
@@ -328,7 +347,7 @@ void StorageSystemDetachedParts::read(
 
     auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
-    auto this_ptr = std::static_pointer_cast<StorageSystemPartsBase>(shared_from_this());
+    auto this_ptr = std::static_pointer_cast<StorageSystemDetachedParts>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromSystemDetachedParts>(
         column_names, query_info, storage_snapshot,

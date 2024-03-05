@@ -156,30 +156,4 @@ protected:
     processNextStorage(ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) = 0;
 };
 
-class ReadFromSystemPartsBase : public SourceStepWithFilter
-{
-public:
-    std::string getName() const override { return "ReadFromSystemPartsBase"; }
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-
-    ReadFromSystemPartsBase(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
-        Block sample_block,
-        std::shared_ptr<StorageSystemPartsBase> storage_,
-        std::vector<UInt8> columns_mask_,
-        bool has_state_column_);
-
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
-
-protected:
-    std::shared_ptr<StorageSystemPartsBase> storage;
-    std::vector<UInt8> columns_mask;
-    const bool has_state_column;
-    const ActionsDAG::Node * predicate = nullptr;
-};
-
-
 }
