@@ -249,6 +249,9 @@ void StorageSystemPartsBase::read(
 
     auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample, column_names);
 
+    if (has_state_column)
+        header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
+
     auto this_ptr = std::static_pointer_cast<StorageSystemPartsBase>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromSystemPartsBase>(
@@ -264,16 +267,11 @@ void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline
     auto header = getOutputStream().header;
 
     MutableColumns res_columns = header.cloneEmptyColumns();
-    if (has_state_column)
-        res_columns.push_back(ColumnString::create());
 
     while (StoragesInfo info = stream->next())
     {
         storage->processNextStorage(context, res_columns, columns_mask, info, has_state_column);
     }
-
-    if (has_state_column)
-        header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
