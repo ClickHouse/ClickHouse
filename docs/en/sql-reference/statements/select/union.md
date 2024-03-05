@@ -83,6 +83,3 @@ Queries that are parts of `UNION/UNION ALL/UNION DISTINCT` can be run simultaneo
 
 - [insert_null_as_default](../../../operations/settings/settings.md#insert_null_as_default) setting.
 - [union_default_mode](../../../operations/settings/settings.md#union-default-mode) setting.
-
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/union/) <!-- hide -->
