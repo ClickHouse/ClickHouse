@@ -51,7 +51,7 @@ public:
     void getRemotePathsRecursive(
         const String & local_path,
         std::vector<LocalPathWithObjectStoragePaths> & paths_map,
-        const std::function<bool(const String &)> & skip_predicate = {}) override;
+        const std::function<bool(const String &)> & skip_predicate) override;
 
     const std::string & getCacheName() const override { return object_storage->getCacheName(); }
 

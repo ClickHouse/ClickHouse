@@ -58,8 +58,8 @@ Pipe StorageSystemRemoteDataPaths::read(
         if (disk->isRemote())
         {
             std::vector<IDisk::LocalPathWithObjectStoragePaths> remote_paths_by_local_path;
-            disk->getRemotePathsRecursive("store", remote_paths_by_local_path);
-            disk->getRemotePathsRecursive("data", remote_paths_by_local_path);
+            disk->getRemotePathsRecursive("store", remote_paths_by_local_path, /* skip_predicate = */ {});
+            disk->getRemotePathsRecursive("data", remote_paths_by_local_path, /* skip_predicate = */ {});
             if (context->getSettingsRef().traverse_shadow_remote_data_paths)
                 disk->getRemotePathsRecursive(
                     "shadow",

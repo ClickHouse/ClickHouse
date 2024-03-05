@@ -26,9 +26,4 @@ ${CLICKHOUSE_CLIENT} --query "
     FROM system.remote_data_paths 
     WHERE disk_name = 's3_cache' AND local_path LIKE '%shadow/${BACKUP}%'
     SETTINGS traverse_shadow_remote_data_paths=1;"
-${CLICKHOUSE_CLIENT} --query "SYSTEM UNFREEZE WITH NAME '${BACKUP}';" &>/dev/null || true
-${CLICKHOUSE_CLIENT} --query "
-    SELECT count() == 0
-    FROM system.remote_data_paths 
-    WHERE disk_name = 's3_cache' AND local_path LIKE '%shadow/${BACKUP}%'
-    SETTINGS traverse_shadow_remote_data_paths=1;"
+${CLICKHOUSE_CLIENT} --query "SYSTEM UNFREEZE WITH NAME '${BACKUP}';" &>/dev/null
