@@ -17,7 +17,7 @@ namespace DistinctPartitionExpression
 {
 
 void updateNewPartFiles(
-    const MergeTreeData & merge_tree_data,
+    const MergeTreeData & destination_mt_storage,
     const MergeTreeData::MutableDataPartPtr & dst_part,
     const MergeTreePartition & new_partition,
     const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
@@ -32,7 +32,7 @@ void updateNewPartFiles(
 
     // Leverage already implemented MergeTreePartition::store to create & store partition.dat.
     // Checksum is re-calculated later.
-    auto partition_file = new_partition.store(merge_tree_data, storage, dst_part->checksums);
+    auto partition_file = new_partition.store(destination_mt_storage, storage, dst_part->checksums);
 
     for (const auto & column_name : MergeTreeData::getMinMaxColumnsNames(src_metadata_snapshot->partition_key))
     {
@@ -40,7 +40,7 @@ void updateNewPartFiles(
         storage.removeFile(file);
     }
 
-    auto min_max_files = dst_part->minmax_idx->store(merge_tree_data, storage, dst_part->checksums);
+    auto min_max_files = dst_part->minmax_idx->store(destination_mt_storage, storage, dst_part->checksums);
 
     IMergeTreeDataPart::MinMaxIndex::WrittenFiles written_files;
 
@@ -65,9 +65,9 @@ void updateNewPartFiles(
 
 namespace
 {
-bool doesStoragePolicyAllowSameDisk(MergeTreeData * merge_tree_data, const MergeTreeData::DataPartPtr & src_part)
+bool doesStoragePolicyAllowSameDisk(MergeTreeData * destination_mt_storage, const MergeTreeData::DataPartPtr & src_part)
 {
-    for (const DiskPtr & disk : merge_tree_data->getStoragePolicy()->getDisks())
+    for (const DiskPtr & disk : destination_mt_storage->getStoragePolicy()->getDisks())
         if (disk->getName() == src_part->getDataPartStorage().getDiskName())
             return true;
     return false;
@@ -104,27 +104,10 @@ DataPartStoragePtr flushPartStorageToDiskIfInMemory(
     return src_part->getDataPartStoragePtr();
 }
 
-std::shared_ptr<IDataPartStorage> hardlinkAllFiles(
-    MergeTreeData * merge_tree_data,
-    const DB::ReadSettings & read_settings,
-    const DB::WriteSettings & write_settings,
-    const DataPartStoragePtr & storage,
-    const String & path,
-    const DB::IDataPartStorage::ClonePartParams & params)
-{
-    return storage->freeze(
-        merge_tree_data->getRelativeDataPath(),
-        path,
-        read_settings,
-        write_settings,
-        /*save_metadata_callback=*/{},
-        params);
-}
-
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
-    MergeTreeData * merge_tree_data,
+    MergeTreeData * destination_mt_storage,
     const MergeTreeData::DataPartPtr & src_part,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageMetadataPtr & destination_metadata_snapshot,
     const MergeTreePartInfo & dst_part_info,
     const String & tmp_part_prefix,
     const ReadSettings & read_settings,
@@ -135,7 +118,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
 
     const auto tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    auto temporary_directory_lock = merge_tree_data->getTemporaryPartDirectoryHolder(tmp_dst_part_name);
+    auto temporary_directory_lock = destination_mt_storage->getTemporaryPartDirectoryHolder(tmp_dst_part_name);
 
     src_part->getDataPartStorage().reserve(src_part->getBytesOnDisk());
 
@@ -143,18 +126,24 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
     MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
 
     auto src_part_storage = flushPartStorageToDiskIfInMemory(
-        merge_tree_data, src_part, metadata_snapshot, tmp_part_prefix, tmp_dst_part_name, src_flushed_tmp_dir_lock, src_flushed_tmp_part);
+        destination_mt_storage, src_part, destination_metadata_snapshot, tmp_part_prefix, tmp_dst_part_name, src_flushed_tmp_dir_lock, src_flushed_tmp_part);
 
-    auto dst_part_storage = hardlinkAllFiles(merge_tree_data, read_settings, write_settings, src_part_storage, tmp_dst_part_name, params);
+    auto dst_part_storage = src_part_storage->freeze(
+        destination_mt_storage->getRelativeDataPath(),
+        tmp_dst_part_name,
+        read_settings,
+        write_settings,
+        /*save_metadata_callback=*/{},
+        params);
 
     if (params.metadata_version_to_write.has_value())
     {
         chassert(!params.keep_metadata_version);
         auto out_metadata = dst_part_storage->writeFile(
-            IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, merge_tree_data->getContext()->getWriteSettings());
-        writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
+            IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, destination_mt_storage->getContext()->getWriteSettings());
+        writeText(destination_metadata_snapshot->getMetadataVersion(), *out_metadata);
         out_metadata->finalize();
-        if (merge_tree_data->getSettings()->fsync_after_insert)
+        if (destination_mt_storage->getSettings()->fsync_after_insert)
             out_metadata->sync();
     }
 
@@ -167,7 +156,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
         false);
 
 
-    auto part = MergeTreeDataPartBuilder(*merge_tree_data, dst_part_name, dst_part_storage).withPartFormatFromDisk().build();
+    auto part = MergeTreeDataPartBuilder(*destination_mt_storage, dst_part_name, dst_part_storage).withPartFormatFromDisk().build();
 
     return std::make_pair(part, std::move(temporary_directory_lock));
 }
@@ -227,7 +216,7 @@ MergeTreeData::MutableDataPartPtr finalizePart(
 }
 
 std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> cloneAndHandleHardlinksAndProjections(
-    MergeTreeData * merge_tree_data,
+    MergeTreeData * destination_mt_storage,
     const DataPartPtr & src_part,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreePartInfo & dst_part_info,
@@ -236,15 +225,15 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> cloneAndHand
     const WriteSettings & write_settings,
     const IDataPartStorage::ClonePartParams & params)
 {
-    chassert(!merge_tree_data->isStaticStorage());
-    if (!doesStoragePolicyAllowSameDisk(merge_tree_data, src_part))
+    chassert(!destination_mt_storage->isStaticStorage());
+    if (!doesStoragePolicyAllowSameDisk(destination_mt_storage, src_part))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Could not clone and load part {} because disk does not belong to storage policy",
             quoteString(src_part->getDataPartStorage().getFullPath()));
 
     auto [destination_part, temporary_directory_lock] = cloneSourcePart(
-        merge_tree_data, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, read_settings, write_settings, params);
+        destination_mt_storage, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, read_settings, write_settings, params);
 
     if (!params.copy_instead_of_hardlink && params.hardlinked_files)
     {
@@ -257,7 +246,7 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> cloneAndHand
 }
 
 std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::clone(
-    MergeTreeData * merge_tree_data,
+    MergeTreeData * destination_mt_storage,
     const DataPartPtr & src_part,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreePartInfo & dst_part_info,
@@ -268,13 +257,13 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDat
     const WriteSettings & write_settings)
 {
     auto [destination_part, temporary_directory_lock] = cloneAndHandleHardlinksAndProjections(
-        merge_tree_data, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, read_settings, write_settings, params);
+        destination_mt_storage, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, read_settings, write_settings, params);
 
     return std::make_pair(finalizePart(destination_part, params, require_part_metadata), std::move(temporary_directory_lock));
 }
 
 std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::cloneWithDistinctPartitionExpression(
-    MergeTreeData * merge_tree_data,
+    MergeTreeData * destination_mt_storage,
     const DataPartPtr & src_part,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreePartInfo & dst_part_info,
@@ -287,10 +276,10 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> MergeTreeDat
     const IDataPartStorage::ClonePartParams & params)
 {
     auto [destination_part, temporary_directory_lock] = cloneAndHandleHardlinksAndProjections(
-        merge_tree_data, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, read_settings, write_settings, params);
+        destination_mt_storage, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, read_settings, write_settings, params);
 
     DistinctPartitionExpression::updateNewPartFiles(
-        *merge_tree_data, destination_part, new_partition, new_min_max_index, src_part->storage.getInMemoryMetadataPtr(), sync_new_files);
+        *destination_mt_storage, destination_part, new_partition, new_min_max_index, src_part->storage.getInMemoryMetadataPtr(), sync_new_files);
 
     return std::make_pair(finalizePart(destination_part, params, false), std::move(temporary_directory_lock));
 }
