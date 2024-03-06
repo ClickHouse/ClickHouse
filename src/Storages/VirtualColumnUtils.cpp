@@ -109,55 +109,6 @@ void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
     }
 }
 
-void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast)
-{
-    if (block.rows() == 0)
-        return;
-
-    if (!expression_ast)
-        prepareFilterBlockWithQuery(query, context, block, expression_ast);
-
-    if (!expression_ast)
-        return;
-
-    /// Let's analyze and calculate the prepared expression.
-    auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
-    ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
-    ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
-
-    makeSets(actions, context);
-
-    Block block_with_filter = block;
-    actions->execute(block_with_filter);
-
-    /// Filter the block.
-    String filter_column_name = expression_ast->getColumnName();
-    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullIfNeeded();
-    if (filter_column->getDataType() != TypeIndex::UInt8)
-        return;
-
-    ConstantFilterDescription constant_filter(*filter_column);
-
-    if (constant_filter.always_true)
-    {
-        return;
-    }
-
-    if (constant_filter.always_false)
-    {
-        block = block.cloneEmpty();
-        return;
-    }
-
-    FilterDescription filter(*filter_column);
-
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        ColumnPtr & column = block.safeGetByPosition(i).column;
-        column = column->filter(*filter.data, -1);
-    }
-}
-
 NameSet getVirtualNamesForFileLikeStorage()
 {
     return {"_path", "_file", "_size"};
