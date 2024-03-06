@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 
 import unittest
+from ci_config import JobNames, CI_CONFIG, Runners
 
 
 class TestCIConfig(unittest.TestCase):
-    def test_no_errors_in_ci_config(self):
-        raised = None
-        try:
-            from ci_config import (  # pylint: disable=import-outside-toplevel
-                CI_CONFIG as _,
-            )
-        except Exception as exc:
-            raised = exc
-        self.assertIsNone(raised, f"CI_CONFIG import raised error {raised}")
+    def test_runner_config(self):
+        """check runner is provided w/o exception"""
+        for job in JobNames:
+            runner = CI_CONFIG.get_runner_type(job)
+            self.assertIn(runner, Runners)

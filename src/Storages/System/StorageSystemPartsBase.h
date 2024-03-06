@@ -3,6 +3,7 @@
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 
 namespace DB
@@ -114,7 +115,7 @@ protected:
 class StoragesInfoStream : public StoragesInfoStreamBase
 {
 public:
-    StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context);
+    StoragesInfoStream(const ActionsDAG::Node * predicate, ContextPtr context);
 };
 
 /** Implements system table 'parts' which allows to get information about data parts for tables of MergeTree family.
@@ -122,7 +123,8 @@ public:
 class StorageSystemPartsBase : public IStorage
 {
 public:
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -139,13 +141,15 @@ private:
     static bool hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
 
 protected:
+    friend class ReadFromSystemPartsBase;
+
     const FormatSettings format_settings = {};
 
     StorageSystemPartsBase(const StorageID & table_id_, ColumnsDescription && columns);
 
-    virtual std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)
+    virtual std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(const ActionsDAG::Node * predicate, ContextPtr context)
     {
-        return std::make_unique<StoragesInfoStream>(query_info, context);
+        return std::make_unique<StoragesInfoStream>(predicate, context);
     }
 
     virtual void
