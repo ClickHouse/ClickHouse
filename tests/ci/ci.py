@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Union
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, JobNames, Labels
+from ci_config import CI_CONFIG, Build, CIStages, Labels, JobNames
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -1118,7 +1118,7 @@ def _configure_jobs(
 
     ## b. check what we need to run
     ci_cache = None
-    if not ci_cache_disabled:
+    if not ci_cache_disabled and CI:
         ci_cache = CiCache(s3, digests).update()
         ci_cache.print_status()
 
@@ -1280,6 +1280,29 @@ def _configure_jobs(
             job: params for job, params in jobs_params.items() if job in jobs_to_do
         },
     }
+
+
+def _generate_ci_stage_config(jobs_data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """
+    populates GH Actions' workflow with real jobs
+    "Builds_1": [{"job_name": NAME, "runner_type": RUNER_TYPE}]
+    "Tests_1": [{"job_name": NAME, "runner_type": RUNER_TYPE}]
+    ...
+    """
+    result = {}  # type: Dict[str, Any]
+    stages_to_do = []
+    for job in jobs_data["jobs_to_do"]:
+        stage_type = CI_CONFIG.get_job_ci_stage(job)
+        if stage_type == CIStages.NA:
+            continue
+        if stage_type not in result:
+            result[stage_type] = []
+            stages_to_do.append(stage_type)
+        result[stage_type].append(
+            {"job_name": job, "runner_type": CI_CONFIG.get_runner_type(job)}
+        )
+    result["stages_to_do"] = stages_to_do
+    return result
 
 
 def _create_gh_status(
@@ -1733,6 +1756,7 @@ def main() -> int:
         result["build"] = build_digest
         result["docs"] = docs_digest
         result["ci_flags"] = ci_flags
+        result["stages_data"] = _generate_ci_stage_config(jobs_data)
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
     ### CONFIGURE action: end
