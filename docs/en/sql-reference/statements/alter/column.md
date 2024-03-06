@@ -278,9 +278,9 @@ Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mut
 
 For columns with a new or updated `MATERIALIZED` value expression, all existing rows are rewritten.
 
-For columns with a new or updated `DEFAULT` value expression, the behavior changed in ClickHouse v24.2:
-- In ClickHouse < v24.2, all existing rows are changed to the new `DEFAULT` value expression.
-- In ClickHouse >= v24.2, only rows containing the previous default value are changed to the new `DEFAULT` value expression. Rows with non-default values are kept as is.
+For columns with a new or updated `DEFAULT` value expression, the behavior depends on the ClickHouse version:
+- In ClickHouse < v24.2, all existing rows are rewritten.
+- ClickHouse >= v24.2 distinguishes if a row value in a column with `DEFAULT` value expression was explicitly specified when it was inserted, or not, i.e. calculated from the `DEFAULT` value expression. If the value was explicitly specified, ClickHouse keeps it as is. If the value was was calculated, ClickHouse changes it to the new or updated `MATERIALIZED` value expression.
 
 Syntax:
 
