@@ -51,7 +51,6 @@ TEST(DiskObjectStorageVFS, VFSLogItem)
         auto write_snapshot = WriteStream();
         EXPECT_THROW(VFSLogItem{}.mergeWithSnapshot(read_snapshot, write_snapshot, log), Exception) << "Invalid input buffer";
     }
-
     {
         auto read_snapshot = ReadStream("");
         auto write_snapshot = WriteStream();
@@ -69,7 +68,6 @@ TEST(DiskObjectStorageVFS, VFSLogItem)
         EXPECT_EQ(res.invalid, VFSLogItemStorage{});
         serialized_snapshot = write_snapshot.str();
     }
-
     {
         auto read_snapshot = ReadStream(serialized_snapshot);
         auto write_snapshot = WriteStream();
