@@ -37,7 +37,7 @@ FROM (
             name AS table,
             1 AS non_unique,
             'PRIMARY' AS key_name,
-            row_number() over (order by null) AS seq_in_index,
+            row_number() over (order by column_name) AS seq_in_index,
             arrayJoin(splitByString(', ', primary_key)) AS column_name,
             'A' AS collation,
             0 AS cardinality,
@@ -75,7 +75,7 @@ FROM (
             database = '{0}'
             AND table = '{1}'))
 {2}
-ORDER BY index_type, expression, seq_in_index;)", database, table, where_expression);
+ORDER BY index_type, expression, column_name, seq_in_index;)", database, table, where_expression);
 
     /// Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to
     /// sort the output of SHOW INDEXES otherwise (SELECT * FROM (SHOW INDEXES ...) ORDER BY ...) is rejected) and 3. some
