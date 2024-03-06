@@ -1,7 +1,9 @@
 #include "VFSMetadataStorage.h"
 #include <Disks/IDisk.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
+#include <Common/logger_useful.h>
 #include "IMetadataStorage.h"
 #if USE_AZURE_BLOB_STORAGE
 #    include <azure/storage/common/storage_exception.hpp>
