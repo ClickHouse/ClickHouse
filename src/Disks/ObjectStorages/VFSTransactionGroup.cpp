@@ -8,7 +8,7 @@ VFSTransactionGroup::VFSTransactionGroup(DiskPtr disk_)
 {
     if (!disk)
         return;
-    if (disk->tryAddGroup(this))
+    if (disk->tryAdd(this))
         LOG_TRACE(disk->log, "TransactionGroup: set");
     else
     {
@@ -30,7 +30,7 @@ VFSTransactionGroup::~VFSTransactionGroup()
         req.emplace_back(zkutil::makeCreateRequest(disk->nodes.log_item, node, zkutil::CreateMode::PersistentSequential));
     disk->zookeeper()->multi(req);
 
-    disk->removeGroup();
+    disk->remove();
     LOG_TRACE(disk->log, "TransactionGroup: removed");
 }
 }

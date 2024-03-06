@@ -3,15 +3,15 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include "DiskObjectStorage.h"
 #include "VFSGarbageCollector.h"
+#include "VFSMetadataStorage.h"
 #include "VFSSettings.h"
+#include "VFSTransactionGroupStorage.h"
 
 namespace DB
 {
-struct VFSTransactionGroup;
-
 // A wrapper for object storage which counts references to objects using a transaction log in Keeper.
 // Operations don't remove data from object storage immediately -- a garbage collector is responsible for that.
-class DiskObjectStorageVFS final : public DiskObjectStorage
+class DiskObjectStorageVFS final : public DiskObjectStorage, public VFSMetadataStorage, VFSTransactionGroupStorage
 {
 public:
     DiskObjectStorageVFS(
@@ -33,29 +33,19 @@ public:
     DiskObjectStoragePtr createDiskObjectStorage() override;
     String getStructure() const override;
 
-    bool tryDownloadMetadata(std::string_view remote_from, const String & to);
-    void uploadMetadata(std::string_view remote_to, const String & from);
-
 private:
-    friend struct DiskObjectStorageVFSTransaction;
+    friend struct VFSTransaction;
     friend struct VFSTransactionGroup;
-    friend class VFSGarbageCollector;
     friend struct VFSMigration;
+    friend class VFSGarbageCollector;
 
     std::optional<VFSGarbageCollector> garbage_collector;
-
     const bool enable_gc; // We don't want a GC e.g. when running from clickhouse-disks
-    const ObjectStorageType object_storage_type;
     const VFSNodes nodes;
     MultiVersion<VFSSettings> settings;
-
-    bool tryAddGroup(VFSTransactionGroup * group) const;
-    VFSTransactionGroup * getGroup() const;
-    void removeGroup() const;
 
     ZooKeeperWithFaultInjection::Ptr zookeeper() const;
     DiskTransactionPtr createObjectStorageTransaction() final;
     DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk) final;
-    StoredObject getMetadataObject(std::string_view remote) const;
 };
 }

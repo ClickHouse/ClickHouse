@@ -1,6 +1,6 @@
 #include "VFSGarbageCollector.h"
-#include <IO/S3Common.h>
 #include <IO/ReadHelpers.h>
+#include <IO/S3Common.h>
 #include <fmt/chrono.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
@@ -188,14 +188,14 @@ void VFSGarbageCollector::updateSnapshotWithLogEntries(
 
     IObjectStorage & storage = *disk.getObjectStorage();
     VFSSnapshotReadStreamFromString empty{""};
-    VFSSnapshotReadStream old_stream{storage, std::move(old_snapshot_obj)};
+    VFSSnapshotReadStream old_stream{storage, old_snapshot_obj};
 
     const int level = settings->snapshot_lz4_compression_level;
     auto & old_snapshot = old_snapshot_missing ? empty : static_cast<IVFSSnapshotReadStream &>(old_stream);
     VFSSnapshotWriteStream new_snapshot{storage, std::move(new_snapshot_obj), level};
 
     auto [obsolete, invalid] = getBatch(start, end).mergeWithSnapshot(old_snapshot, new_snapshot, &*log);
-    obsolete.emplace_back(StoredObject{old_snapshot_name});
+    obsolete.emplace_back(old_snapshot_obj);
 
     new_snapshot.finalize();
     disk.object_storage->removeObjectsIfExist(obsolete);

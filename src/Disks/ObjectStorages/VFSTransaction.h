@@ -6,9 +6,9 @@ namespace DB
 {
 class DiskObjectStorageVFS;
 
-struct DiskObjectStorageVFSTransaction : DiskObjectStorageTransaction, private VFSLogItem
+struct VFSTransaction : DiskObjectStorageTransaction, private VFSLogItem
 {
-    DiskObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_); // NOLINT
+    VFSTransaction(DiskObjectStorageVFS & disk_); // NOLINT
     void commit() override;
 
     void replaceFile(const String & from_path, const String & to_path) override;
@@ -33,10 +33,7 @@ struct DiskObjectStorageVFSTransaction : DiskObjectStorageTransaction, private V
 
     void createHardLink(const String & src_path, const String & dst_path) override;
 
-    auto shared_from_this()
-    {
-        return std::static_pointer_cast<DiskObjectStorageVFSTransaction>(DiskObjectStorageTransaction::shared_from_this());
-    }
+    auto shared_from_this() { return std::static_pointer_cast<VFSTransaction>(DiskObjectStorageTransaction::shared_from_this()); }
 
 protected:
     DiskObjectStorageVFS & disk;
@@ -45,15 +42,12 @@ protected:
     void addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink);
 };
 
-struct MultipleDisksObjectStorageVFSTransaction final : DiskObjectStorageVFSTransaction
+struct MultipleDisksVFSTransaction final : VFSTransaction
 {
     IObjectStorage & destination_object_storage;
-    MultipleDisksObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_, IObjectStorage & destination_object_storage_);
+    MultipleDisksVFSTransaction(DiskObjectStorageVFS & disk_, IObjectStorage & destination_object_storage_);
 
-    auto shared_from_this()
-    {
-        return std::static_pointer_cast<MultipleDisksObjectStorageVFSTransaction>(DiskObjectStorageVFSTransaction::shared_from_this());
-    }
+    auto shared_from_this() { return std::static_pointer_cast<MultipleDisksVFSTransaction>(VFSTransaction::shared_from_this()); }
 
     void copyFile(
         const String & from_file_path,

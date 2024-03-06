@@ -56,7 +56,7 @@ class VFSSnapshotReadStream final : public IVFSSnapshotReadStream
     Lz4InflatingReadBuffer buf;
 
 public:
-    VFSSnapshotReadStream(IObjectStorage & storage, StoredObject && obj);
+    VFSSnapshotReadStream(IObjectStorage & storage, const StoredObject & obj);
 };
 
 class VFSSnapshotReadStreamFromString : public IVFSSnapshotReadStream
@@ -71,7 +71,7 @@ public:
 class VFSSnapshotWriteStream : public IVFSSnapshotWriteStream
 {
 public:
-    VFSSnapshotWriteStream(IObjectStorage & storage, StoredObject && obj, int level);
+    VFSSnapshotWriteStream(IObjectStorage & storage, const StoredObject & obj, int level);
 
 protected:
     void impl(VFSSnapshotEntry && entry) override;

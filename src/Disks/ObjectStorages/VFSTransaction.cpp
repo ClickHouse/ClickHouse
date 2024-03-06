@@ -1,7 +1,7 @@
-#include "DiskObjectStorageVFSTransaction.h"
+#include "VFSTransaction.h"
+#include <Disks/IO/WriteBufferWithFinalizeCallback.h>
 #include "DiskObjectStorageTransactionOperation.h"
 #include "DiskObjectStorageVFS.h"
-#include "Disks/IO/WriteBufferWithFinalizeCallback.h"
 #include "VFSLogItem.h"
 #include "VFSTransactionGroup.h"
 
@@ -12,16 +12,16 @@ constexpr VFSLogItem * leftIfNonNull(VFSLogItem * left, VFSLogItem * right)
     return left ? left : right;
 }
 
-DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_)
+VFSTransaction::VFSTransaction(DiskObjectStorageVFS & disk_)
     // nullptr as send_metadata is prohibited in VFS disk constructor
     : DiskObjectStorageTransaction(*disk_.object_storage, *disk_.metadata_storage, nullptr)
     , disk(disk_)
-    , item(*leftIfNonNull(disk.getGroup(), this))
+    , item(*leftIfNonNull(disk.get(), this))
 {
 }
 
 const int pers_seq = zkutil::CreateMode::PersistentSequential;
-void DiskObjectStorageVFSTransaction::commit()
+void VFSTransaction::commit()
 {
     DiskObjectStorageTransaction::commit();
     SCOPE_EXIT(item.clear());
@@ -45,7 +45,7 @@ void DiskObjectStorageVFSTransaction::commit()
     }
 }
 
-void DiskObjectStorageVFSTransaction::replaceFile(const String & from_path, const String & to_path)
+void VFSTransaction::replaceFile(const String & from_path, const String & to_path)
 {
     DiskObjectStorageTransaction::replaceFile(from_path, to_path);
     if (!metadata_storage.exists(to_path))
@@ -54,18 +54,18 @@ void DiskObjectStorageVFSTransaction::replaceFile(const String & from_path, cons
     addStoredObjectsOp({}, metadata_storage.getStorageObjects(to_path));
 }
 
-void DiskObjectStorageVFSTransaction::removeFileIfExists(const String & path)
+void VFSTransaction::removeFileIfExists(const String & path)
 {
     removeSharedFileIfExists(path, true);
 }
 
-void DiskObjectStorageVFSTransaction::removeSharedFile(const String & path, bool)
+void VFSTransaction::removeSharedFile(const String & path, bool)
 {
     DiskObjectStorageTransaction::removeSharedFile(path, /*keep_shared_data=*/true);
     addStoredObjectsOp({}, metadata_storage.getStorageObjects(path));
 }
 
-void DiskObjectStorageVFSTransaction::removeSharedFileIfExists(const String & path, bool)
+void VFSTransaction::removeSharedFileIfExists(const String & path, bool)
 {
     if (!metadata_storage.exists(path))
         return;
@@ -98,7 +98,7 @@ struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectSto
     }
 };
 
-void DiskObjectStorageVFSTransaction::removeSharedRecursive(const String & path, bool, const NameSet &)
+void VFSTransaction::removeSharedRecursive(const String & path, bool, const NameSet &)
 {
     operations_to_execute.emplace_back(
         std::make_unique<RemoveRecursiveObjectStorageVFSOperation>(*disk.object_storage, *disk.metadata_storage, path, item));
@@ -131,7 +131,7 @@ struct RemoveManyObjectStorageVFSOperation final : RemoveManyObjectStorageOperat
     void finalize() override { }
 };
 
-void DiskObjectStorageVFSTransaction::removeSharedFiles(const RemoveBatchRequest & files, bool, const NameSet &)
+void VFSTransaction::removeSharedFiles(const RemoveBatchRequest & files, bool, const NameSet &)
 {
     operations_to_execute.emplace_back(
         std::make_unique<RemoveManyObjectStorageVFSOperation>(*disk.object_storage, *disk.metadata_storage, files, item));
@@ -141,8 +141,8 @@ void DiskObjectStorageVFSTransaction::removeSharedFiles(const RemoveBatchRequest
 // account hardlinks, if it's not, no need to track it.
 // If we create a hardlink to an empty file or copy it, there will be no associated metadata
 
-std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeFile(
-    const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings, bool autocommit)
+std::unique_ptr<WriteBufferFromFileBase>
+VFSTransaction::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings, bool autocommit)
 {
     if (settings.vfs_is_metadata_file)
     {
@@ -168,8 +168,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
     return buffer;
 }
 
-void DiskObjectStorageVFSTransaction::writeFileUsingBlobWritingFunction(
-    const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
+void VFSTransaction::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
     // TODO myrrc right now this function isn't used in data parts exchange protocol but can we be sure
     // this won't change in the near future? Maybe add chassert(!path.ends_with(":vfs"))
@@ -180,7 +179,7 @@ void DiskObjectStorageVFSTransaction::writeFileUsingBlobWritingFunction(
     addStoredObjectsOp({std::move(blob)}, std::move(currently_existing_blobs));
 }
 
-void DiskObjectStorageVFSTransaction::createHardLink(const String & src_path, const String & dst_path)
+void VFSTransaction::createHardLink(const String & src_path, const String & dst_path)
 {
     DiskObjectStorageTransaction::createHardLink(src_path, dst_path);
     addStoredObjectsOp(metadata_storage.getStorageObjects(src_path), {});
@@ -213,7 +212,7 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
     }
 };
 
-void DiskObjectStorageVFSTransaction::copyFile(
+void VFSTransaction::copyFile(
     const String & from_file_path, const String & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageVFSOperation>(
@@ -227,7 +226,7 @@ void DiskObjectStorageVFSTransaction::copyFile(
         item));
 }
 
-void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink)
+void VFSTransaction::addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink)
 {
     if (link.empty() && unlink.empty()) [[unlikely]]
         return;
@@ -238,13 +237,12 @@ void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, 
         item.remove(obj);
 }
 
-MultipleDisksObjectStorageVFSTransaction::MultipleDisksObjectStorageVFSTransaction(
-    DiskObjectStorageVFS & disk_, IObjectStorage & destination_object_storage_)
-    : DiskObjectStorageVFSTransaction(disk_), destination_object_storage(destination_object_storage_)
+MultipleDisksVFSTransaction::MultipleDisksVFSTransaction(DiskObjectStorageVFS & disk_, IObjectStorage & destination_object_storage_)
+    : VFSTransaction(disk_), destination_object_storage(destination_object_storage_)
 {
 }
 
-void MultipleDisksObjectStorageVFSTransaction::copyFile(
+void MultipleDisksVFSTransaction::copyFile(
     const String & from_file_path, const String & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageVFSOperation>(

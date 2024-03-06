@@ -55,7 +55,7 @@ IVFSSnapshotReadStream::Entry IVFSSnapshotReadStream::next()
     return {};
 }
 
-VFSSnapshotReadStream::VFSSnapshotReadStream(IObjectStorage & storage, StoredObject && obj) : buf(storage.readObject(obj))
+VFSSnapshotReadStream::VFSSnapshotReadStream(IObjectStorage & storage, const StoredObject & obj) : buf(storage.readObject(obj))
 {
 }
 
@@ -88,7 +88,7 @@ void IVFSSnapshotWriteStream::write(VFSSnapshotEntry && entry)
 }
 
 // TODO myrrc research zstd dictionary builder or zstd for compression
-VFSSnapshotWriteStream::VFSSnapshotWriteStream(IObjectStorage & storage, StoredObject && obj, int level)
+VFSSnapshotWriteStream::VFSSnapshotWriteStream(IObjectStorage & storage, const StoredObject & obj, int level)
     : buf(storage.writeObject(obj, WriteMode::Rewrite), level)
 {
 }
