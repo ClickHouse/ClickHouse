@@ -163,26 +163,29 @@ public:
         return Kernel::getReturnType(nested_types[0], nested_types[1]);
     }
 
+#define SUPPORTED_TYPES(ACTION) \
+    ACTION(UInt8) \
+    ACTION(UInt16) \
+    ACTION(UInt32) \
+    ACTION(UInt64) \
+    ACTION(Int8) \
+    ACTION(Int16) \
+    ACTION(Int32) \
+    ACTION(Int64) \
+    ACTION(Float32) \
+    ACTION(Float64)
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /* input_rows_count */) const override
     {
         switch (result_type->getTypeId())
         {
-        #define SUPPORTED_TYPE(type) \
+        #define ON_TYPE(type) \
             case TypeIndex::type: \
                 return executeWithResultType<type>(arguments); \
                 break;
 
-            SUPPORTED_TYPE(UInt8)
-            SUPPORTED_TYPE(UInt16)
-            SUPPORTED_TYPE(UInt32)
-            SUPPORTED_TYPE(UInt64)
-            SUPPORTED_TYPE(Int8)
-            SUPPORTED_TYPE(Int16)
-            SUPPORTED_TYPE(Int32)
-            SUPPORTED_TYPE(Int64)
-            SUPPORTED_TYPE(Float32)
-            SUPPORTED_TYPE(Float64)
-        #undef SUPPORTED_TYPE
+            SUPPORTED_TYPES(ON_TYPE)
+        #undef ON_TYPE
 
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type {}", result_type->getName());
@@ -194,16 +197,16 @@ private:
     ColumnPtr executeWithResultType(const ColumnsWithTypeAndName & arguments) const
     {
         ColumnPtr res;
-        if (!((res = executeWithResultTypeAndLeft<ResultType, UInt8>(arguments))
-            || (res = executeWithResultTypeAndLeft<ResultType, UInt16>(arguments))
-            || (res = executeWithResultTypeAndLeft<ResultType, UInt32>(arguments))
-            || (res = executeWithResultTypeAndLeft<ResultType, UInt64>(arguments))
-            || (res = executeWithResultTypeAndLeft<ResultType, Int8>(arguments))
-            || (res = executeWithResultTypeAndLeft<ResultType, Int16>(arguments))
-            || (res = executeWithResultTypeAndLeft<ResultType, Int32>(arguments))
-            || (res = executeWithResultTypeAndLeft<ResultType, Int64>(arguments))
-            || (res = executeWithResultTypeAndLeft<ResultType, Float32>(arguments))
-            || (res = executeWithResultTypeAndLeft<ResultType, Float64>(arguments))))
+        if (!((res = executeWithResultTypeAndLeftType<ResultType, UInt8>(arguments))
+            || (res = executeWithResultTypeAndLeftType<ResultType, UInt16>(arguments))
+            || (res = executeWithResultTypeAndLeftType<ResultType, UInt32>(arguments))
+            || (res = executeWithResultTypeAndLeftType<ResultType, UInt64>(arguments))
+            || (res = executeWithResultTypeAndLeftType<ResultType, Int8>(arguments))
+            || (res = executeWithResultTypeAndLeftType<ResultType, Int16>(arguments))
+            || (res = executeWithResultTypeAndLeftType<ResultType, Int32>(arguments))
+            || (res = executeWithResultTypeAndLeftType<ResultType, Int64>(arguments))
+            || (res = executeWithResultTypeAndLeftType<ResultType, Float32>(arguments))
+            || (res = executeWithResultTypeAndLeftType<ResultType, Float64>(arguments))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
 
@@ -211,43 +214,43 @@ private:
     }
 
     template <typename ResultType, typename LeftType>
-    ColumnPtr executeWithResultTypeAndLeft(const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeWithResultTypeAndLeftType(const ColumnsWithTypeAndName & arguments) const
     {
         ColumnPtr res;
-        if (   (res = executeWithResultTypeAndLeftAndRight<ResultType, LeftType, UInt8>(arguments))
-            || (res = executeWithResultTypeAndLeftAndRight<ResultType, LeftType, UInt16>(arguments))
-            || (res = executeWithResultTypeAndLeftAndRight<ResultType, LeftType, UInt32>(arguments))
-            || (res = executeWithResultTypeAndLeftAndRight<ResultType, LeftType, UInt64>(arguments))
-            || (res = executeWithResultTypeAndLeftAndRight<ResultType, LeftType, Int8>(arguments))
-            || (res = executeWithResultTypeAndLeftAndRight<ResultType, LeftType, Int16>(arguments))
-            || (res = executeWithResultTypeAndLeftAndRight<ResultType, LeftType, Int32>(arguments))
-            || (res = executeWithResultTypeAndLeftAndRight<ResultType, LeftType, Int64>(arguments))
-            || (res = executeWithResultTypeAndLeftAndRight<ResultType, LeftType, Float32>(arguments))
-            || (res = executeWithResultTypeAndLeftAndRight<ResultType, LeftType, Float64>(arguments)))
+        if (   (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, UInt8>(arguments[0].column, arguments[1].column))
+            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, UInt16>(arguments[0].column, arguments[1].column))
+            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, UInt32>(arguments[0].column, arguments[1].column))
+            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, UInt64>(arguments[0].column, arguments[1].column))
+            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, Int8>(arguments[0].column, arguments[1].column))
+            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, Int16>(arguments[0].column, arguments[1].column))
+            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, Int32>(arguments[0].column, arguments[1].column))
+            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, Int64>(arguments[0].column, arguments[1].column))
+            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, Float32>(arguments[0].column, arguments[1].column))
+            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, Float64>(arguments[0].column, arguments[1].column)))
             return res;
 
        return nullptr;
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    ColumnPtr executeWithResultTypeAndLeftAndRight(const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y) const
     {
-        ColumnPtr col_left = arguments[0].column->convertToFullColumnIfConst();
-        ColumnPtr col_right = arguments[1].column->convertToFullColumnIfConst();
-        if (!col_left || !col_right)
+        col_x = col_x->convertToFullColumnIfConst();
+        col_y = col_y->convertToFullColumnIfConst();
+        if (!col_x || !col_y)
             return nullptr;
 
-        const ColumnArray * col_arr_left = checkAndGetColumn<ColumnArray>(col_left.get());
-        const ColumnArray * cokl_arr_right = checkAndGetColumn<ColumnArray>(col_right.get());
-        if (!col_arr_left || !cokl_arr_right)
+        const ColumnArray * array_x = checkAndGetColumn<ColumnArray>(col_x.get());
+        const ColumnArray * array_y = checkAndGetColumn<ColumnArray>(col_y.get());
+        if (!array_x || !array_y)
             return nullptr;
 
-        const ColumnVector<LeftType> * col_arr_nested_left = checkAndGetColumn<ColumnVector<LeftType>>(col_arr_left->getData());
-        const ColumnVector<RightType> * col_arr_nested_right = checkAndGetColumn<ColumnVector<RightType>>(cokl_arr_right->getData());
+        const ColumnVector<LeftType> * col_arr_nested_left = checkAndGetColumn<ColumnVector<LeftType>>(array_x->getData());
+        const ColumnVector<RightType> * col_arr_nested_right = checkAndGetColumn<ColumnVector<RightType>>(array_y->getData());
         if (!col_arr_nested_left || !col_arr_nested_right)
             return nullptr;
 
-        if (!col_arr_left->hasEqualOffsets(*cokl_arr_right))
+        if (!array_x->hasEqualOffsets(*array_y))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
 
         auto col_res = ColumnVector<ResultType>::create();
@@ -255,7 +258,7 @@ private:
         vector(
             col_arr_nested_left->getData(),
             col_arr_nested_right->getData(),
-            col_arr_left->getOffsets(),
+            array_x->getOffsets(),
             col_res->getData());
 
         return col_res;
