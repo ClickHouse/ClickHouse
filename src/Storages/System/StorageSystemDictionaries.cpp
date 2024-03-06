@@ -51,8 +51,8 @@ catch (const DB::Exception &)
 
 }
 
-StorageSystemDictionaries::StorageSystemDictionaries(const StorageID & storage_id_)
-    : IStorageSystemOneBlock(storage_id_, getColumnsDescription())
+StorageSystemDictionaries::StorageSystemDictionaries(const StorageID & storage_id_, ColumnsDescription columns_description_)
+    : IStorageSystemOneBlock(storage_id_, std::move(columns_description_))
 {
     VirtualColumnsDescription virtuals;
     virtuals.addEphemeral("key", std::make_shared<DataTypeString>(), "");
