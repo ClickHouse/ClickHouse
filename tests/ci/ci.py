@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Union
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, JobNames, Labels
+from ci_config import CI_CONFIG, Build, CIStages, Labels, JobNames
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -645,7 +645,7 @@ class CiCache:
         if not jobs_with_params:
             return {}
         poll_interval_sec = 300
-        TIMEOUT = 3600
+        TIMEOUT = 3590
         MAX_ROUNDS_TO_WAIT = 6
         MAX_JOB_NUM_TO_WAIT = 3
         await_finished: Dict[str, List[int]] = {}
@@ -953,10 +953,18 @@ def _mark_success_action(
     # FIXME: find generic design for propagating and handling job status (e.g. stop using statuses in GH api)
     #   now job ca be build job w/o status data, any other job that exit with 0 with or w/o status data
     if CI_CONFIG.is_build_job(job):
-        # there is no status for build jobs
-        # create dummy success to mark it as done
+        # there is no CommitStatus for build jobs
+        # create dummy status relying on JobReport
         # FIXME: consider creating commit status for build jobs too, to treat everything the same way
-        CommitStatusData(SUCCESS, "dummy description", "dummy_url").dump_status()
+        job_report = JobReport.load() if JobReport.exist() else None
+        if job_report and job_report.status == SUCCESS:
+            CommitStatusData(
+                SUCCESS,
+                "dummy description",
+                "dummy_url",
+                pr_num=pr_info.number,
+                sha=pr_info.sha,
+            ).dump_status()
 
     job_status = None
     if CommitStatusData.exist():
@@ -1110,7 +1118,7 @@ def _configure_jobs(
 
     ## b. check what we need to run
     ci_cache = None
-    if not ci_cache_disabled:
+    if not ci_cache_disabled and CI:
         ci_cache = CiCache(s3, digests).update()
         ci_cache.print_status()
 
@@ -1272,6 +1280,29 @@ def _configure_jobs(
             job: params for job, params in jobs_params.items() if job in jobs_to_do
         },
     }
+
+
+def _generate_ci_stage_config(jobs_data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """
+    populates GH Actions' workflow with real jobs
+    "Builds_1": [{"job_name": NAME, "runner_type": RUNER_TYPE}]
+    "Tests_1": [{"job_name": NAME, "runner_type": RUNER_TYPE}]
+    ...
+    """
+    result = {}  # type: Dict[str, Any]
+    stages_to_do = []
+    for job in jobs_data["jobs_to_do"]:
+        stage_type = CI_CONFIG.get_job_ci_stage(job)
+        if stage_type == CIStages.NA:
+            continue
+        if stage_type not in result:
+            result[stage_type] = []
+            stages_to_do.append(stage_type)
+        result[stage_type].append(
+            {"job_name": job, "runner_type": CI_CONFIG.get_runner_type(job)}
+        )
+    result["stages_to_do"] = stages_to_do
+    return result
 
 
 def _create_gh_status(
@@ -1682,7 +1713,7 @@ def main() -> int:
         if not args.skip_jobs:
             ci_cache = CiCache(s3, jobs_data["digests"])
 
-            if pr_info.is_release_branch():
+            if pr_info.is_master():
                 # wait for pending jobs to be finished, await_jobs is a long blocking call
                 # wait pending jobs (for now only on release/master branches)
                 ready_jobs_batches_dict = ci_cache.await_jobs(
@@ -1725,6 +1756,7 @@ def main() -> int:
         result["build"] = build_digest
         result["docs"] = docs_digest
         result["ci_flags"] = ci_flags
+        result["stages_data"] = _generate_ci_stage_config(jobs_data)
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
     ### CONFIGURE action: end
