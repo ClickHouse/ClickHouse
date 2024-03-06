@@ -38,7 +38,8 @@ static size_t getApproxSizeOfPart(const IMergeTreeDataPart & part, const Names &
     ColumnSize columns_size{};
     for (const auto & col_name : columns_to_read)
         columns_size.add(part.getColumnSize(col_name));
-    return columns_size.data_compressed;
+    /// For compact parts we don't know individual column sizes, let's use whole part size as approximation
+    return columns_size.data_compressed ? columns_size.data_compressed : part.getBytesOnDisk();
 }
 
 static size_t calculateMinMarksPerTask(
