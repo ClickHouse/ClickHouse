@@ -215,6 +215,9 @@ private:
     ColumnPtr filterGeneric(const Filter & filt, ssize_t result_size_hint) const;
 
     /// Specializations for insertManyFrom
+    void insertManyFromConst(const ColumnConst & src, size_t position, size_t length);
+    void insertManyFromImpl(const ColumnArray & src, size_t position, size_t length, bool update_offsets = true);
+
     template <typename T>
     void insertManyFromNumber(const ColumnArray & src, size_t position, size_t length);
     void insertManyFromString(const ColumnArray & src, size_t position, size_t length);

@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int ILLEGAL_COLUMN;
 }
 
 /** Obtaining array as Field can be slow for large arrays and consume vast amount of memory.
@@ -363,6 +364,19 @@ void ColumnArray::insertManyFromNumber(const ColumnArray & src, size_t position,
         memcpy(&data_ref[offset], &src_data[src_offset], src_size * sizeof(T));
 }
 
+void ColumnArray::insertManyFromConst(const ColumnConst & src, size_t position, size_t length)
+{
+    const ColumnArray * src_array = typeid_cast<const ColumnArray *>(&src.getDataColumn());
+    if (!src_array)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot insert from const column of type {} to column of type {}",
+            src.getDataColumn().getName(),
+            getName());
+
+    insertManyFromImpl(*src_array, 0, length, true);
+}
+
 void ColumnArray::insertManyFromString(const ColumnArray & src, size_t position, size_t length)
 {
     size_t src_size = src.sizeAt(position);
@@ -400,12 +414,53 @@ void ColumnArray::insertManyFromString(const ColumnArray & src, size_t position,
 
 void ColumnArray::insertManyFromTuple(const ColumnArray & src, size_t position, size_t length)
 {
+    ColumnTuple & tuple = assert_cast<ColumnTuple &>(getData());
+    const ColumnTuple & src_tuple = assert_cast<const ColumnTuple &>(src.getData());
 
+    /// Make temporary arrays for each components of Tuple. In the same way as for Nullable.
+    size_t tuple_size = tuple.tupleSize();
+    size_t src_tuple_size = src_tuple.tupleSize();
+    if (tuple_size == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty tuple");
+    if (tuple_size != src_tuple_size)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Nested tuple size mismatch: {} vs {}", tuple_size, src_tuple_size);
+
+    Columns temporary_arrays(tuple_size);
+    Columns src_temporary_arrays(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        temporary_arrays[i] = ColumnArray::create(tuple.getColumn(i).assumeMutable(), getOffsetsPtr()->assumeMutable());
+        src_temporary_arrays[i] = ColumnArray::create(src_tuple.getColumn(i).assumeMutable(), src.getOffsetsPtr()->assumeMutable());
+        assert_cast<ColumnArray &>(*temporary_arrays[i])
+            .insertManyFromImpl(assert_cast<const ColumnArray &>(*src_temporary_arrays[i]), position, length, false);
+    }
+
+    Columns tuple_columns(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        tuple_columns[i] = assert_cast<const ColumnArray &>(*temporary_arrays[i]).getDataPtr();
+
+    getDataPtr() = ColumnTuple::create(std::move(tuple_columns));
 }
+
 void ColumnArray::insertManyFromNullable(const ColumnArray & src, size_t position, size_t length)
 {
+    ColumnNullable & nullable = assert_cast<ColumnNullable &>(getData());
+    const ColumnNullable & src_nullable = assert_cast<const ColumnNullable &>(src.getData());
 
+    /// Process nested column without updating array offsets
+    auto array_of_nested = ColumnArray(nullable.getNestedColumnPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable());
+    auto src_array_of_nested = ColumnArray(src_nullable.getNestedColumnPtr()->assumeMutable(), src.getOffsetsPtr()->assumeMutable());
+    array_of_nested.insertManyFromImpl(src_array_of_nested, position, length, false);
+
+    /// Process null map column without updating array offsets
+    auto array_of_null_map = ColumnArray(nullable.getNullMapColumnPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable());
+    auto src_array_of_null_map = ColumnArray(src_nullable.getNullMapColumnPtr()->assumeMutable(), src.getOffsetsPtr()->assumeMutable());
+    array_of_null_map.insertManyFromImpl(src_array_of_null_map, position, length, false);
+
+    /// Update array data
+    getDataPtr() = ColumnNullable::create(array_of_nested.getDataPtr(), array_of_null_map.getDataPtr());
 }
+
 void ColumnArray::insertManyFromGeneric(const ColumnArray & src, size_t position, size_t length)
 {
     size_t src_size = src.sizeAt(position);
@@ -419,16 +474,73 @@ void ColumnArray::insertManyFromGeneric(const ColumnArray & src, size_t position
 
 void ColumnArray::insertManyFrom(const IColumn & src_, size_t position, size_t length)
 {
-    /// First fill offsets
-    const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
-    size_t src_size = src.sizeAt(position);
-    auto & offsets_ref = getOffsets();
-    size_t old_rows = offsets_ref.size();
-    size_t new_rows = old_rows + length;
-    size_t old_size = offsets_ref.back();
-    offsets_ref.resize(new_rows);
-    for (size_t i = 0, offset = old_size + src_size; i < length; ++i, offset += src_size)
-        offsets_ref[old_rows + i] = offset;
+    const ColumnConst * src_const = typeid_cast<const ColumnConst *>(&src_);
+    if (src_const)
+        return insertManyFromConst(*src_const, position, length);
+
+    const ColumnArray * src_array = typeid_cast<const ColumnArray *>(&src_);
+    if (!src_array)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert from column of type {} to column of type {}", src_.getName(), getName());
+
+    return insertManyFromImpl(*src_array, position, length, true);
+}
+
+void ColumnArray::insertManyFromImpl(const ColumnArray & src, size_t position, size_t length, bool update_offsets)
+{
+    /// First fill offsets if needed
+    if (update_offsets)
+    {
+        size_t src_size = src.sizeAt(position);
+        auto & offsets_ref = getOffsets();
+        size_t old_rows = offsets_ref.size();
+        size_t new_rows = old_rows + length;
+        size_t old_size = offsets_ref.back();
+        offsets_ref.resize(new_rows);
+        for (size_t i = 0, offset = old_size + src_size; i < length; ++i, offset += src_size)
+            offsets_ref[old_rows + i] = offset;
+    }
+
+    if (typeid_cast<const ColumnUInt8 *>(data.get()))
+        return insertManyFromNumber<UInt8>(src, position, length);
+    if (typeid_cast<const ColumnUInt16 *>(data.get()))
+        return insertManyFromNumber<UInt16>(src, position, length);
+    if (typeid_cast<const ColumnUInt32 *>(data.get()))
+        return insertManyFromNumber<UInt32>(src, position, length);
+    if (typeid_cast<const ColumnUInt64 *>(data.get()))
+        return insertManyFromNumber<UInt64>(src, position, length);
+    if (typeid_cast<const ColumnUInt128 *>(data.get()))
+        return insertManyFromNumber<UInt128>(src, position, length);
+    if (typeid_cast<const ColumnUInt256 *>(data.get()))
+        return insertManyFromNumber<UInt256>(src, position, length);
+    if (typeid_cast<const ColumnInt16 *>(data.get()))
+        return insertManyFromNumber<Int16>(src, position, length);
+    if (typeid_cast<const ColumnInt32 *>(data.get()))
+        return insertManyFromNumber<Int32>(src, position, length);
+    if (typeid_cast<const ColumnInt64 *>(data.get()))
+        return insertManyFromNumber<Int64>(src, position, length);
+    if (typeid_cast<const ColumnInt128 *>(data.get()))
+        return insertManyFromNumber<Int128>(src, position, length);
+    if (typeid_cast<const ColumnInt256 *>(data.get()))
+        return insertManyFromNumber<Int256>(src, position, length);
+    if (typeid_cast<const ColumnFloat32 *>(data.get()))
+        return insertManyFromNumber<Float32>(src, position, length);
+    if (typeid_cast<const ColumnFloat64 *>(data.get()))
+        return insertManyFromNumber<Float64>(src, position, length);
+    if (typeid_cast<const ColumnDecimal<Decimal32> *>(data.get()))
+        return insertManyFromNumber<Decimal32>(src, position, length);
+    if (typeid_cast<const ColumnDecimal<Decimal64> *>(data.get()))
+        return insertManyFromNumber<Decimal64>(src, position, length);
+    if (typeid_cast<const ColumnDecimal<Decimal128> *>(data.get()))
+        return insertManyFromNumber<Decimal128>(src, position, length);
+    if (typeid_cast<const ColumnDecimal<Decimal256> *>(data.get()))
+        return insertManyFromNumber<Decimal256>(src, position, length);
+    if (typeid_cast<const ColumnDecimal<DateTime64> *>(data.get()))
+        return insertManyFromNumber<DateTime64>(src, position, length);
+    if (typeid_cast<const ColumnNullable *>(data.get()))
+        return insertManyFromNullable(src, position, length);
+    if (typeid_cast<const ColumnTuple *>(data.get()))
+        return insertManyFromTuple(src, position, length);
+    return insertManyFromGeneric(src, position, length);
 }
 
 void ColumnArray::insertDefault()
