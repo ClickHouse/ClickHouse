@@ -216,11 +216,12 @@ def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
     return tags
 
 
-def buildx_args(urls: Dict[str, str], arch: str, direct_urls: List[str]) -> List[str]:
+def buildx_args(urls: Dict[str, str], arch: str, direct_urls: List[str], version: str) -> List[str]:
     args = [
         f"--platform=linux/{arch}",
         f"--label=build-url={GITHUB_RUN_URL}",
         f"--label=com.clickhouse.build.githash={git.sha}",
+        f"--label=com.clickhouse.build.version={version}",
     ]
     if direct_urls:
         args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
@@ -267,7 +268,7 @@ def build_and_push_image(
                 urls = [url for url in direct_urls[arch] if ".deb" in url]
             else:
                 urls = [url for url in direct_urls[arch] if ".tgz" in url]
-        cmd_args.extend(buildx_args(repo_urls, arch, direct_urls=urls))
+        cmd_args.extend(buildx_args(repo_urls, arch, direct_urls=urls, version=version.describe))
         if not push:
             cmd_args.append(f"--tag={image.repo}:{arch_tag}")
         cmd_args.extend(
