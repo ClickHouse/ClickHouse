@@ -480,7 +480,7 @@ sqllancer_test_common_params = {
 }
 sqllogic_test_params = {
     "digest": sqllogic_check_digest,
-    "run_command": "sqllogic_test.py",
+    "run_command": "sqlboogic_test.py",
     "timeout": 10800,
 }
 sql_test_params = {
