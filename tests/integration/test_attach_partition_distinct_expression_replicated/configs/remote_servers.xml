@@ -11,6 +11,10 @@
                     <host>replica2</host>
                     <port>9000</port>
                 </replica>
+                <replica>
+                    <host>replica3</host>
+                    <port>9000</port>
+                </replica>
             </shard>
         </test_cluster>
     </remote_servers>

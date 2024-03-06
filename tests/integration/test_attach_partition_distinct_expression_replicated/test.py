@@ -5,10 +5,20 @@ from helpers.test_tools import assert_eq_with_retry
 cluster = ClickHouseCluster(__file__)
 
 replica1 = cluster.add_instance(
-    "replica1", with_zookeeper=True, main_configs=["configs/remote_servers.xml"]
+    "replica1", with_zookeeper=True,
+    main_configs=["configs/remote_servers.xml"],
+    macros={"replica": "replica1", "shard": "s1"},
 )
 replica2 = cluster.add_instance(
-    "replica2", with_zookeeper=True, main_configs=["configs/remote_servers.xml"]
+    "replica2", with_zookeeper=True,
+    main_configs=["configs/remote_servers.xml"],
+    macros={"replica": "replica2", "shard": "s1"},
+)
+
+replica3 = cluster.add_instance(
+    "replica3", with_zookeeper=True,
+    main_configs=["configs/remote_servers.xml"],
+    macros={"replica": "replica3", "shard": "s1"},
 )
 
 
@@ -25,23 +35,22 @@ def start_cluster():
 
 def cleanup(nodes):
     for node in nodes:
-        node.query("DROP TABLE IF EXISTS source SYNC")
-        node.query("DROP TABLE IF EXISTS destination SYNC")
+        node.query("DROP TABLE IF EXISTS source ON CLUSTER test_cluster SYNC")
+        node.query("DROP TABLE IF EXISTS destination ON CLUSTER test_cluster SYNC")
 
 
 def create_table(node, table_name, replicated):
-    replica = node.name
     engine = (
-        f"ReplicatedMergeTree('/clickhouse/tables/1/{table_name}', '{replica}')"
+        f"ReplicatedMergeTree"
         if replicated
         else "MergeTree()"
     )
     partition_expression = (
         "toYYYYMMDD(timestamp)" if table_name == "source" else "toYYYYMM(timestamp)"
     )
-    node.query_with_retry(
+    node.query(
         """
-        CREATE TABLE {table_name}(timestamp DateTime)
+        CREATE TABLE {table_name} ON CLUSTER test_cluster (timestamp DateTime)
         ENGINE = {engine}
         ORDER BY tuple() PARTITION BY {partition_expression}
         SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, allow_experimental_alter_partition_with_different_key=1;
@@ -54,13 +63,13 @@ def create_table(node, table_name, replicated):
 
 
 def test_both_replicated(start_cluster):
-    for node in [replica1, replica2]:
-        create_table(node, "source", True)
-        create_table(node, "destination", True)
+    cleanup([replica1, replica2])
+
+    create_table(replica1, "source", True)
+    create_table(replica1, "destination", True)
 
     replica1.query("INSERT INTO source VALUES ('2010-03-02 02:01:01')")
     replica1.query("SYSTEM SYNC REPLICA source")
-    replica1.query("SYSTEM SYNC REPLICA destination")
     replica1.query(
         f"ALTER TABLE destination ATTACH PARTITION ID '20100302' FROM source"
     )
@@ -78,12 +87,12 @@ def test_both_replicated(start_cluster):
 
 
 def test_only_destination_replicated(start_cluster):
+    cleanup([replica1, replica2])
+
     create_table(replica1, "source", False)
     create_table(replica1, "destination", True)
-    create_table(replica2, "destination", True)
 
     replica1.query("INSERT INTO source VALUES ('2010-03-02 02:01:01')")
-    replica1.query("SYSTEM SYNC REPLICA destination")
     replica1.query(
         f"ALTER TABLE destination ATTACH PARTITION ID '20100302' FROM source"
     )
@@ -97,44 +106,30 @@ def test_only_destination_replicated(start_cluster):
         replica2.query(f"SELECT * FROM destination"),
     )
 
-    cleanup([replica1, replica2])
-
 
 def test_both_replicated_partitioned_to_unpartitioned(start_cluster):
-    def create_tables(nodes):
-        for node in nodes:
-            source_engine = (
-                f"ReplicatedMergeTree('/clickhouse/tables/1/source', '{node.name}')"
-            )
-            node.query(
-                """
-                CREATE TABLE source(timestamp DateTime)
-                ENGINE = {engine}
-                ORDER BY tuple() PARTITION BY toYYYYMMDD(timestamp)
-                SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1;
-                """.format(
-                    engine=source_engine,
-                )
-            )
+    cleanup([replica1, replica2])
 
-            destination_engine = f"ReplicatedMergeTree('/clickhouse/tables/1/destination', '{node.name}')"
-            node.query(
-                """
-                CREATE TABLE destination(timestamp DateTime)
-                ENGINE = {engine}
-                ORDER BY tuple() PARTITION BY tuple()
-                SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, allow_experimental_alter_partition_with_different_key=1;
-                """.format(
-                    engine=destination_engine,
-                )
-            )
-
-    create_tables([replica1, replica2])
+    replica1.query(
+        """
+        CREATE TABLE source ON CLUSTER test_cluster (timestamp DateTime)
+        ENGINE = ReplicatedMergeTree
+        ORDER BY tuple() PARTITION BY toYYYYMMDD(timestamp)
+        SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1;
+        """
+    )
+    replica1.query(
+        """
+        CREATE TABLE destination ON CLUSTER test_cluster (timestamp DateTime)
+        ENGINE = ReplicatedMergeTree
+        ORDER BY tuple() PARTITION BY tuple()
+        SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, allow_experimental_alter_partition_with_different_key=1;
+        """
+    )
 
     replica1.query("INSERT INTO source VALUES ('2010-03-02 02:01:01')")
     replica1.query("INSERT INTO source VALUES ('2010-03-03 02:01:01')")
     replica1.query("SYSTEM SYNC REPLICA source")
-    replica1.query("SYSTEM SYNC REPLICA destination")
 
     replica1.query(
         f"ALTER TABLE destination ATTACH PARTITION ID '20100302' FROM source"
@@ -154,39 +149,27 @@ def test_both_replicated_partitioned_to_unpartitioned(start_cluster):
         replica2.query(f"SELECT * FROM destination ORDER BY timestamp"),
     )
 
-    cleanup([replica1, replica2])
-
 
 def test_both_replicated_different_exp_same_id(start_cluster):
-    def create_tables(nodes):
-        for node in nodes:
-            source_engine = (
-                f"ReplicatedMergeTree('/clickhouse/tables/1/source', '{node.name}')"
-            )
-            node.query(
-                """
-                CREATE TABLE source(a UInt16,b UInt16,c UInt16,extra UInt64,Path String,Time DateTime,Value Float64,Timestamp Int64,sign Int8)
-                ENGINE = {engine}
-                ORDER BY tuple() PARTITION BY a % 3
-                SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1;
-                """.format(
-                    engine=source_engine,
-                )
-            )
+    cleanup([replica1, replica2])
 
-            destination_engine = f"ReplicatedMergeTree('/clickhouse/tables/1/destination', '{node.name}')"
-            node.query(
-                """
-                CREATE TABLE destination(a UInt16,b UInt16,c UInt16,extra UInt64,Path String,Time DateTime,Value Float64,Timestamp Int64,sign Int8)
-                ENGINE = {engine}
-                ORDER BY tuple() PARTITION BY a
-                SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, allow_experimental_alter_partition_with_different_key=1;
-                """.format(
-                    engine=destination_engine,
-                )
-            )
+    replica1.query(
+        """
+        CREATE TABLE source ON CLUSTER test_cluster (a UInt16,b UInt16,c UInt16,extra UInt64,Path String,Time DateTime,Value Float64,Timestamp Int64,sign Int8)
+        ENGINE = ReplicatedMergeTree
+        ORDER BY tuple() PARTITION BY a % 3
+        SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1;
+        """
+    )
 
-    create_tables([replica1, replica2])
+    replica1.query(
+        """
+        CREATE TABLE destination ON CLUSTER test_cluster (a UInt16,b UInt16,c UInt16,extra UInt64,Path String,Time DateTime,Value Float64,Timestamp Int64,sign Int8)
+        ENGINE = ReplicatedMergeTree
+        ORDER BY tuple() PARTITION BY a
+        SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, allow_experimental_alter_partition_with_different_key=1;
+        """
+    )
 
     replica1.query(
         "INSERT INTO source (a, b, c, extra, sign) VALUES (1, 5, 9, 1000, 1)"
@@ -195,7 +178,6 @@ def test_both_replicated_different_exp_same_id(start_cluster):
         "INSERT INTO source (a, b, c, extra, sign) VALUES (2, 6, 10, 1000, 1)"
     )
     replica1.query("SYSTEM SYNC REPLICA source")
-    replica1.query("SYSTEM SYNC REPLICA destination")
 
     replica1.query(f"ALTER TABLE destination ATTACH PARTITION 1 FROM source")
     replica1.query(f"ALTER TABLE destination ATTACH PARTITION 2 FROM source")
@@ -210,5 +192,3 @@ def test_both_replicated_different_exp_same_id(start_cluster):
         f"SELECT * FROM destination ORDER BY a",
         replica2.query(f"SELECT * FROM destination ORDER BY a"),
     )
-
-    cleanup([replica1, replica2])
