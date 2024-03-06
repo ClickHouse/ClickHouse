@@ -6,7 +6,6 @@
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <boost/range/adaptor/map.hpp>
-#include <cctz/time_zone.h>
 #include <chrono>
 #include <unordered_map>
 #include <string_view>
@@ -602,12 +601,7 @@ struct SettingFieldTimezone
     void readBinary(ReadBuffer & in);
 
 private:
-    void validateTimezone(const std::string & tz_str)
-    {
-        cctz::time_zone validated_tz;
-        if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
-    }
+    void validateTimezone(const std::string & tz_str);
 };
 
 /// Can keep a value of any type. Used for user-defined settings.
