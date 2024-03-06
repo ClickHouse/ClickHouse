@@ -1,0 +1,22 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3_plain_readonly>
+                <type>s3_plain</type>
+                <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <readonly>true</readonly>
+            </disk_s3_plain_readonly>
+        </disks>
+        <policies>
+            <s3_plain_readonly>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_plain_readonly</disk>
+                    </main>
+                </volumes>
+            </s3_plain_readonly>
+        </policies>
+    </storage_configuration>
+</clickhouse>

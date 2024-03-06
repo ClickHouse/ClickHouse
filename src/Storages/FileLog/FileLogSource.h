@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/ISource.h>
-#include <Storages/FileLog/ReadBufferFromFileLog.h>
+#include <Storages/FileLog/FileLogConsumer.h>
 #include <Storages/FileLog/StorageFileLog.h>
 
 namespace Poco
@@ -21,11 +21,12 @@ public:
         size_t max_block_size_,
         size_t poll_time_out_,
         size_t stream_number_,
-        size_t max_streams_number_);
+        size_t max_streams_number_,
+        StreamingHandleErrorMode handle_error_mode_);
 
     String getName() const override { return "FileLog"; }
 
-    bool noRecords() { return !buffer || buffer->noRecords(); }
+    bool noRecords() { return !consumer || consumer->noRecords(); }
 
     void onFinish();
 
@@ -45,8 +46,9 @@ private:
 
     size_t stream_number;
     size_t max_streams_number;
+    StreamingHandleErrorMode handle_error_mode;
 
-    std::unique_ptr<ReadBufferFromFileLog> buffer;
+    std::unique_ptr<FileLogConsumer> consumer;
 
     Block non_virtual_header;
     Block virtual_header;

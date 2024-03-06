@@ -13,7 +13,7 @@ def fill_node(node):
         """
         CREATE TABLE IF NOT EXISTS test(n UInt32)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/test', '{replica}')
-        ORDER BY n PARTITION BY n % 10;
+        ORDER BY n PARTITION BY n % 10 SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, max_cleanup_delay_period=1;
     """.format(
             replica=node.name
         )

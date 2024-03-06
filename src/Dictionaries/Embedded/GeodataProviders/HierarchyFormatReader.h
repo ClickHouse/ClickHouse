@@ -3,15 +3,19 @@
 #include <IO/ReadBuffer.h>
 #include "IHierarchiesProvider.h"
 
+namespace DB
+{
 
 // Reads regions hierarchy in geoexport format
 class RegionsHierarchyFormatReader : public IRegionsHierarchyReader
 {
 private:
-    DB::ReadBufferPtr input;
+    ReadBufferPtr input;
 
 public:
-    explicit RegionsHierarchyFormatReader(DB::ReadBufferPtr input_) : input(std::move(input_)) {}
+    explicit RegionsHierarchyFormatReader(ReadBufferPtr input_) : input(std::move(input_)) {}
 
     bool readNext(RegionEntry & entry) override;
 };
+
+}

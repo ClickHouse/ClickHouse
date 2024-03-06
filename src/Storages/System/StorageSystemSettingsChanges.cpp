@@ -7,9 +7,11 @@
 
 namespace DB
 {
-NamesAndTypesList StorageSystemSettingsChanges::getNamesAndTypes()
+ColumnsDescription StorageSystemSettingsChanges::getColumnsDescription()
 {
-    return {
+    /// TODO: Fill in all the comments
+    return ColumnsDescription
+    {
         {"version", std::make_shared<DataTypeString>()},
         {"changes",
          std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
@@ -22,7 +24,7 @@ NamesAndTypesList StorageSystemSettingsChanges::getNamesAndTypes()
     };
 }
 
-void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
     {

@@ -45,6 +45,8 @@ public:
     {
         return file_name;
     }
+
+    bool isRegularLocalFile(size_t * /* out_view_offset */) override { return true; }
 };
 
 /** Similar to AsynchronousReadBufferFromFile but also transparently shares open file descriptors.
@@ -79,6 +81,8 @@ public:
     {
         return file_name;
     }
+
+    bool isRegularLocalFile(size_t * /* out_view_offset */) override { return true; }
 };
 
 }

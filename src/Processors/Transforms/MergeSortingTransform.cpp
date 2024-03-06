@@ -1,5 +1,4 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
-#include <Processors/Transforms/MergeSortingPartialResultTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/ProfileEvents.h>
@@ -31,7 +30,7 @@ namespace DB
 class BufferingToFileTransform : public IAccumulatingTransform
 {
 public:
-    BufferingToFileTransform(const Block & header, TemporaryFileStream & tmp_stream_, Poco::Logger * log_)
+    BufferingToFileTransform(const Block & header, TemporaryFileStream & tmp_stream_, LoggerPtr log_)
         : IAccumulatingTransform(header, header)
         , tmp_stream(tmp_stream_)
         , log(log_)
@@ -74,7 +73,7 @@ public:
 private:
     TemporaryFileStream & tmp_stream;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 MergeSortingTransform::MergeSortingTransform(
@@ -137,8 +136,6 @@ void MergeSortingTransform::consume(Chunk chunk)
 
     /// If there were only const columns in sort description, then there is no need to sort.
     /// Return the chunk as is.
-    std::lock_guard lock(snapshot_mutex);
-
     if (description.empty())
     {
         generated_chunk = std::move(chunk);
@@ -216,8 +213,6 @@ void MergeSortingTransform::serialize()
 
 void MergeSortingTransform::generate()
 {
-    std::lock_guard lock(snapshot_mutex);
-
     if (!generated_prefix)
     {
         size_t num_tmp_files = tmp_data ? tmp_data->getStreams().size() : 0;
@@ -276,13 +271,6 @@ void MergeSortingTransform::remerge()
     chunks = std::move(new_chunks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
-}
-
-ProcessorPtr MergeSortingTransform::getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
-{
-    const auto & header = inputs.front().getHeader();
-    auto merge_sorting_processor = std::dynamic_pointer_cast<MergeSortingTransform>(current_processor);
-    return std::make_shared<MergeSortingPartialResultTransform>(header, std::move(merge_sorting_processor), partial_result_limit, partial_result_duration_ms);
 }
 
 }

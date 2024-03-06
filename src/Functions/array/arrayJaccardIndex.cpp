@@ -1,5 +1,4 @@
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -7,11 +6,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/getMostSubtype.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/types.h>
 
 namespace DB
 {

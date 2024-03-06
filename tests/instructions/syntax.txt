@@ -1,6 +1,0 @@
-# Quick syntax check (2 minutes on 16-core server)
-
-mkdir build && cd build
-CC=clang-8 CXX=clang++-8 cmake -D ENABLE_EMBEDDED_COMPILER=0 -D CMAKE_BUILD_TYPE=Debug ..
-ninja re2_st
-time jq --raw-output '.[] | .command' compile_commands.json | grep -P -- ' -o [^ ]+\.o' | grep -v -P -- '-c .+/contrib/' | grep -vP '\.s$' | sed -r -e 's/ -o [^ ]+\.o/ -fsyntax-only/' | sort -R | xargs -I{} -P$(nproc) sh -c '{}'

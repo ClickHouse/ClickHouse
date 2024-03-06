@@ -119,7 +119,7 @@ public:
 
         if (arguments.size() >= 3)
         {
-            if (!isUnsignedInteger(arguments[2]))
+            if (!isUInt(arguments[2]))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of function {}",

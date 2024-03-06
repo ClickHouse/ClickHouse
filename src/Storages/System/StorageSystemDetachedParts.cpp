@@ -11,7 +11,9 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/SharedThreadPools.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 #include <mutex>
 
@@ -285,7 +287,53 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipe StorageSystemDetachedParts::read(
+class ReadFromSystemDetachedParts : public SourceStepWithFilter
+{
+public:
+    ReadFromSystemDetachedParts(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        Block sample_block,
+        std::shared_ptr<StorageSystemDetachedParts> storage_,
+        std::vector<UInt8> columns_mask_,
+        size_t max_block_size_,
+        size_t num_streams_)
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(sample_block)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
+        , storage(std::move(storage_))
+        , columns_mask(std::move(columns_mask_))
+        , max_block_size(max_block_size_)
+        , num_streams(num_streams_)
+    {}
+
+    std::string getName() const override { return "ReadFromSystemDetachedParts"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+
+protected:
+    std::shared_ptr<StorageSystemDetachedParts> storage;
+    std::vector<UInt8> columns_mask;
+
+    const ActionsDAG::Node * predicate = nullptr;
+    const size_t max_block_size;
+    const size_t num_streams;
+};
+
+void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
+}
+
+void StorageSystemDetachedParts::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -299,17 +347,28 @@ Pipe StorageSystemDetachedParts::read(
 
     auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
-    auto state = std::make_shared<SourceState>(StoragesInfoStream(query_info, context));
+    auto this_ptr = std::static_pointer_cast<StorageSystemDetachedParts>(shared_from_this());
+
+    auto reading = std::make_unique<ReadFromSystemDetachedParts>(
+        column_names, query_info, storage_snapshot,
+        std::move(context), std::move(header), std::move(this_ptr), std::move(columns_mask), max_block_size, num_streams);
+
+    query_plan.addStep(std::move(reading));
+}
+
+void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
+    auto state = std::make_shared<SourceState>(StoragesInfoStream(predicate, context));
 
     Pipe pipe;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<DetachedPartsSource>(header.cloneEmpty(), state, columns_mask, max_block_size);
+        auto source = std::make_shared<DetachedPartsSource>(getOutputStream().header, state, columns_mask, max_block_size);
         pipe.addSource(std::move(source));
     }
 
-    return pipe;
+    pipeline.init(std::move(pipe));
 }
 
 }

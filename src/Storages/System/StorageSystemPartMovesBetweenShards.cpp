@@ -16,9 +16,11 @@ namespace DB
 {
 
 
-NamesAndTypesList StorageSystemPartMovesBetweenShards::getNamesAndTypes()
+ColumnsDescription StorageSystemPartMovesBetweenShards::getColumnsDescription()
 {
-    return {
+    /// TODO: Fill in all the comments
+    return ColumnsDescription
+    {
         /// Table properties.
         { "database",                std::make_shared<DataTypeString>() },
         { "table",                   std::make_shared<DataTypeString>() },
@@ -42,7 +44,7 @@ NamesAndTypesList StorageSystemPartMovesBetweenShards::getNamesAndTypes()
 }
 
 
-void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -93,7 +95,7 @@ void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns,
             { col_table_to_filter, std::make_shared<DataTypeString>(), "table" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
 
         if (!filtered_block.rows())
             return;

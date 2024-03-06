@@ -8,7 +8,7 @@ namespace DB
 /// Kind of a temporal interval.
 struct IntervalKind
 {
-    enum Kind
+    enum class Kind
     {
         Nanosecond,
         Microsecond,
@@ -22,9 +22,9 @@ struct IntervalKind
         Quarter,
         Year,
     };
-    Kind kind = Second;
+    Kind kind = Kind::Second;
 
-    IntervalKind(Kind kind_ = Second) : kind(kind_) {} /// NOLINT
+    IntervalKind(Kind kind_ = Kind::Second) : kind(kind_) {} /// NOLINT
     operator Kind() const { return kind; } /// NOLINT
 
     constexpr std::string_view toString() const { return magic_enum::enum_name(kind); }
@@ -71,6 +71,8 @@ struct IntervalKind
     /// Returns false if the conversion did not succeed.
     /// For example, `IntervalKind::tryParseString('second', result)` returns `result` equals `IntervalKind::Kind::Second`.
     static bool tryParseString(const std::string & kind, IntervalKind::Kind & result);
+
+    auto operator<=>(const IntervalKind & other) const { return kind <=> other.kind; }
 };
 
 /// NOLINTNEXTLINE

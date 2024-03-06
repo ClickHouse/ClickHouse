@@ -4,7 +4,6 @@
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <QueryPipeline/Pipe.h>
 #include <Core/UUID.h>
-#include <atomic>
 
 namespace DB
 {
@@ -39,7 +38,6 @@ protected:
     void onCancel() override;
 
 private:
-    std::atomic<bool> was_query_canceled = false;
     bool was_query_sent = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;

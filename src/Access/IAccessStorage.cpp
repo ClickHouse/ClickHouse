@@ -6,6 +6,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/callOnce.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/UUIDGenerator.h>
@@ -488,7 +489,7 @@ bool IAccessStorage::updateImpl(const UUID & id, const UpdateFunc &, bool throw_
 }
 
 
-UUID IAccessStorage::authenticate(
+AuthResult IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
@@ -499,7 +500,7 @@ UUID IAccessStorage::authenticate(
 }
 
 
-std::optional<UUID> IAccessStorage::authenticate(
+std::optional<AuthResult> IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
@@ -511,7 +512,7 @@ std::optional<UUID> IAccessStorage::authenticate(
 }
 
 
-std::optional<UUID> IAccessStorage::authenticateImpl(
+std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
@@ -523,6 +524,7 @@ std::optional<UUID> IAccessStorage::authenticateImpl(
     {
         if (auto user = tryRead<User>(*id))
         {
+            AuthResult auth_result { .user_id = *id };
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
@@ -531,10 +533,10 @@ std::optional<UUID> IAccessStorage::authenticateImpl(
                 ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
                 throwAuthenticationTypeNotAllowed(auth_type);
 
-            if (!areCredentialsValid(*user, credentials, external_authenticators))
+            if (!areCredentialsValid(*user, credentials, external_authenticators, auth_result.settings))
                 throwInvalidCredentials();
 
-            return id;
+            return auth_result;
         }
     }
 
@@ -548,7 +550,8 @@ std::optional<UUID> IAccessStorage::authenticateImpl(
 bool IAccessStorage::areCredentialsValid(
     const User & user,
     const Credentials & credentials,
-    const ExternalAuthenticators & external_authenticators) const
+    const ExternalAuthenticators & external_authenticators,
+    SettingsChanges & settings) const
 {
     if (!credentials.isReady())
         return false;
@@ -564,7 +567,7 @@ bool IAccessStorage::areCredentialsValid(
             return false;
     }
 
-    return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators);
+    return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators, settings);
 }
 
 
@@ -613,7 +616,7 @@ UUID IAccessStorage::generateRandomID()
 }
 
 
-void IAccessStorage::clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const Poco::Logger * log_)
+void IAccessStorage::clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const LoggerPtr log_)
 {
     std::unordered_map<UUID, size_t> positions_by_id;
     std::unordered_map<std::string_view, size_t> positions_by_type_and_name[static_cast<size_t>(AccessEntityType::MAX)];
@@ -669,12 +672,13 @@ void IAccessStorage::clearConflictsInEntitiesList(std::vector<std::pair<UUID, Ac
 }
 
 
-Poco::Logger * IAccessStorage::getLogger() const
+LoggerPtr IAccessStorage::getLogger() const
 {
-    Poco::Logger * ptr = log.load();
-    if (!ptr)
-        log.store(ptr = &Poco::Logger::get("Access(" + storage_name + ")"), std::memory_order_relaxed);
-    return ptr;
+    callOnce(log_initialized, [&] {
+        log = ::getLogger("Access(" + storage_name + ")");
+    });
+
+    return log;
 }
 
 

@@ -1,3 +1,6 @@
+#include <future>
+#include <memory>
+#include <mutex>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -6,27 +9,190 @@
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/MergeTree/ReplicatedTableStatus.h>
+#include <Interpreters/ProcessList.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/NullSource.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 
 
 namespace CurrentMetrics
 {
     extern const Metric SystemReplicasThreads;
     extern const Metric SystemReplicasThreadsActive;
+    extern const Metric SystemReplicasThreadsScheduled;
 }
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
+
+/// Allows to "deduplicate" getStatus() requests for the same table: if a request for a table is already in progress
+/// then the new request will return the same future as the previous one.
+class StatusRequestsPool
+{
+public:
+    struct RequestInfo
+    {
+        UInt64 request_id = 0;
+        std::shared_future<ReplicatedTableStatus> future;
+    };
+
+private:
+    ThreadPool thread_pool;
+
+    std::mutex mutex;
+    /// All requests from the queries that are currently being executed.
+    std::unordered_map<StoragePtr, RequestInfo> current_requests TSA_GUARDED_BY(mutex);
+    /// Requests that were added by currently executing queries but have not been scheduled yet.
+    std::deque<std::tuple<UInt64, StoragePtr, std::shared_ptr<std::promise<ReplicatedTableStatus>>, bool>> requests_to_schedule TSA_GUARDED_BY(mutex);
+    /// Used to assign unique incremental ids to requests.
+    UInt64 request_id TSA_GUARDED_BY(mutex) = 0;
+
+    LoggerPtr log;
+
+public:
+    explicit StatusRequestsPool(size_t max_threads)
+        : thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, CurrentMetrics::SystemReplicasThreadsScheduled, max_threads)
+        , log(getLogger("StatusRequestsPool"))
+    {}
+
+    ~StatusRequestsPool()
+    {
+        thread_pool.wait();
+        /// Cancel unscheduled requests
+        for (auto & request : requests_to_schedule)
+            std::get<2>(request)->set_exception(std::make_exception_ptr(
+                DB::Exception(ErrorCodes::QUERY_WAS_CANCELLED, "StatusRequestsPool is destroyed")));
+    }
+
+    /// Make a new request or "attach" to an existing one.
+    RequestInfo addRequest(StoragePtr storage, bool with_zk_fields)
+    {
+        std::shared_ptr<std::promise<ReplicatedTableStatus>> promise;
+        std::shared_future<ReplicatedTableStatus> future;
+        UInt64 this_request_id = 0;
+
+        {
+            std::lock_guard lock(mutex);
+            auto existing_request = current_requests.find(storage);
+            if (existing_request != current_requests.end())
+            {
+                LOG_TEST(log, "Attaching to existing request for table {}", storage->getStorageID().getNameForLogs());
+                return existing_request->second;
+            }
+
+            this_request_id = request_id;
+            ++request_id;
+
+            promise = std::make_shared<std::promise<ReplicatedTableStatus>>();
+            future = promise->get_future().share();
+
+            current_requests[storage] = { .request_id = this_request_id, .future = future };
+
+            LOG_TEST(log, "Making new request for table {}", storage->getStorageID().getNameForLogs());
+
+            requests_to_schedule.emplace_back(this_request_id, storage, promise, with_zk_fields);
+        }
+
+        return {this_request_id, future};
+    }
+
+    /// Schedule requests (if any) that are needed for the current query. This is determined by the maximum request id
+    /// returned by addRequest.
+    void scheduleRequests(UInt64 max_request_id, QueryStatusPtr query_status)
+    {
+        while (true)
+        {
+            if (query_status)
+                query_status->checkTimeLimit();
+
+            /// Try to pick up a request to schedule
+            std::tuple<UInt64, StoragePtr, std::shared_ptr<std::promise<ReplicatedTableStatus>>, bool> req;
+            {
+                std::lock_guard lock(mutex);
+                if (requests_to_schedule.empty())
+                    break;
+
+                req = requests_to_schedule.front();
+
+                /// Check if all requests for the current query have been scheduled
+                if (std::get<0>(req) > max_request_id)
+                    break;
+
+                requests_to_schedule.pop_front();
+            }
+
+            auto & [_, storage, promise, with_zk_fields] = req;
+
+            auto get_status_task = [this, storage, with_zk_fields, promise] () mutable
+            {
+                try
+                {
+                    ReplicatedTableStatus status;
+                    if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
+                    {
+                        replicated_table->getStatus(status, with_zk_fields);
+                    }
+                    promise->set_value(std::move(status));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Error getting status for table " + storage->getStorageID().getNameForLogs());
+                    promise->set_exception(std::current_exception());
+                }
+
+                completeRequest(storage);
+            };
+
+            try
+            {
+                thread_pool.scheduleOrThrowOnError(std::move(get_status_task));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Error scheduling get status task for table " + storage->getStorageID().getNameForLogs());
+                promise->set_exception(std::current_exception());
+                completeRequest(storage);
+            }
+        }
+    }
+
+private:
+    void completeRequest(StoragePtr storage)
+    {
+        std::lock_guard lock(mutex);
+        current_requests.erase(storage);
+    }
+};
+
+
+class StorageSystemReplicasImpl
+{
+public:
+    explicit StorageSystemReplicasImpl(size_t max_threads)
+        : requests_without_zk_fields(max_threads)
+        , requests_with_zk_fields(max_threads)
+    {}
+
+    StatusRequestsPool requests_without_zk_fields;
+    StatusRequestsPool requests_with_zk_fields;
+};
+
 
 StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
     : IStorage(table_id_)
+    , impl(std::make_unique<StorageSystemReplicasImpl>(128))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription({
@@ -69,8 +235,53 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
     setInMemoryMetadata(storage_metadata);
 }
 
+StorageSystemReplicas::~StorageSystemReplicas() = default;
 
-Pipe StorageSystemReplicas::read(
+class ReadFromSystemReplicas : public SourceStepWithFilter
+{
+public:
+    std::string getName() const override { return "ReadFromSystemReplicas"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    ReadFromSystemReplicas(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        Block sample_block,
+        std::map<String, std::map<String, StoragePtr>> replicated_tables_,
+        bool with_zk_fields_,
+        std::shared_ptr<StorageSystemReplicasImpl> impl_)
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(sample_block)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
+        , replicated_tables(std::move(replicated_tables_))
+        , with_zk_fields(with_zk_fields_)
+        , impl(std::move(impl_))
+    {
+    }
+
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+
+private:
+    std::map<String, std::map<String, StoragePtr>> replicated_tables;
+    const bool with_zk_fields;
+    std::shared_ptr<StorageSystemReplicasImpl> impl;
+    const ActionsDAG::Node * predicate = nullptr;
+};
+
+void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
+}
+
+void StorageSystemReplicas::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -124,6 +335,18 @@ Pipe StorageSystemReplicas::read(
         }
     }
 
+    auto header = storage_snapshot->metadata->getSampleBlock();
+    auto reading = std::make_unique<ReadFromSystemReplicas>(
+        column_names, query_info, storage_snapshot,
+        std::move(context), std::move(header), std::move(replicated_tables), with_zk_fields, impl); // /*std::move(this_ptr),*/ std::move(columns_mask), max_block_size);
+
+    query_plan.addStep(std::move(reading));
+}
+
+void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
+    auto header = getOutputStream().header;
+
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
     MutableColumnPtr col_engine_mut = ColumnString::create();
@@ -151,10 +374,14 @@ Pipe StorageSystemReplicas::read(
             { col_engine, std::make_shared<DataTypeString>(), "engine" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
 
         if (!filtered_block.rows())
-            return {};
+        {
+            auto source = std::make_shared<NullSource>(std::move(header));
+            pipeline.init(Pipe(std::move(source)));
+            return;
+        }
 
         col_database = filtered_block.getByName("database").column;
         col_table = filtered_block.getByName("table").column;
@@ -164,30 +391,37 @@ Pipe StorageSystemReplicas::read(
     MutableColumns res_columns = storage_snapshot->metadata->getSampleBlock().cloneEmptyColumns();
 
     size_t tables_size = col_database->size();
-    std::vector<ReplicatedTableStatus> statuses(tables_size);
 
-    size_t thread_pool_size = std::min(tables_size, static_cast<size_t>(getNumberOfPhysicalCPUCores()));
-    auto settings = context->getSettingsRef();
-    if (settings.max_threads != 0)
-        thread_pool_size = std::min(thread_pool_size, static_cast<size_t>(settings.max_threads));
+    /// Use separate queues for requests with and without ZooKeeper fields.
+    StatusRequestsPool & get_status_requests = with_zk_fields ? impl->requests_with_zk_fields : impl->requests_without_zk_fields;
 
-    ThreadPool thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, thread_pool_size);
+    QueryStatusPtr query_status = context ? context->getProcessListElement() : nullptr;
+
+    std::vector<std::shared_future<ReplicatedTableStatus>> futures;
+    futures.reserve(tables_size);
+    UInt64 max_request_id = 0;
+    for (size_t i = 0; i < tables_size; ++i)
+    {
+        if (query_status)
+            query_status->checkTimeLimit();
+
+        auto & storage = replicated_tables[(*col_database)[i].safeGet<const String &>()]
+            [(*col_table)[i].safeGet<const String &>()];
+
+        auto [request_id, future] = get_status_requests.addRequest(storage, with_zk_fields);
+        futures.emplace_back(future);
+        max_request_id = std::max(max_request_id, request_id);
+    }
+    /// Schedule requests up to the maximum request needed for the current query.
+    /// If there are more requests, they will be scheduled by the query that needs them.
+    get_status_requests.scheduleRequests(max_request_id, query_status);
 
     for (size_t i = 0; i < tables_size; ++i)
     {
-        thread_pool.scheduleOrThrowOnError([&, my_i = i]
-        {
-            dynamic_cast<StorageReplicatedMergeTree &>(
-            *replicated_tables
-                [(*col_database)[my_i].safeGet<const String &>()]
-                [(*col_table)[my_i].safeGet<const String &>()]).getStatus(statuses[my_i], with_zk_fields);
-        });
-    }
+        if (query_status)
+            query_status->checkTimeLimit();
 
-    thread_pool.wait();
-
-    for (const auto & status: statuses)
-    {
+        const auto & status = futures[i].get();
         size_t col_num = 3;
         res_columns[col_num++]->insert(status.is_leader);
         res_columns[col_num++]->insert(status.can_become_leader);
@@ -247,7 +481,7 @@ Pipe StorageSystemReplicas::read(
     UInt64 num_rows = fin_columns.at(0)->size();
     Chunk chunk(std::move(fin_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(storage_snapshot->metadata->getSampleBlock(), std::move(chunk)));
+    pipeline.init(Pipe(std::make_shared<SourceFromSingleChunk>(header, std::move(chunk))));
 }
 
 

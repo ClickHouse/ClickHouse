@@ -21,9 +21,11 @@ static DataTypePtr getStateEnumType()
         });
 }
 
-NamesAndTypesList StorageSystemTransactions::getNamesAndTypes()
+ColumnsDescription StorageSystemTransactions::getColumnsDescription()
 {
-    return {
+    /// TODO: Fill in all the comments.
+    return ColumnsDescription
+    {
         {"tid", getTransactionIDDataType()},
         {"tid_hash", std::make_shared<DataTypeUInt64>()},
         {"elapsed", std::make_shared<DataTypeFloat64>()},
@@ -32,7 +34,7 @@ NamesAndTypesList StorageSystemTransactions::getNamesAndTypes()
     };
 }
 
-void StorageSystemTransactions::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemTransactions::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto list = TransactionLog::instance().getTransactionsList();
     for (const auto & elem : list)

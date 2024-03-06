@@ -1,40 +1,41 @@
-#include <boost/range/algorithm_ext/erase.hpp>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/getColumnFromBlock.h>
-#include <Storages/StorageBuffer.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/AlterCommands.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-#include <Common/ProfileEvents.h>
-#include <Common/logger_useful.h>
-#include <base/getThreadId.h>
-#include <base/range.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/ReverseTransform.h>
-#include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Sinks/SinkToStorage.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/ReverseTransform.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/StorageBuffer.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <base/getThreadId.h>
+#include <base/range.h>
+#include <boost/range/algorithm_ext/erase.hpp>
+#include <Common/CurrentMetrics.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/typeid_cast.h>
 
 
 namespace ProfileEvents
@@ -56,6 +57,9 @@ namespace CurrentMetrics
 {
     extern const Metric StorageBufferRows;
     extern const Metric StorageBufferBytes;
+    extern const Metric StorageBufferFlushThreads;
+    extern const Metric StorageBufferFlushThreadsActive;
+    extern const Metric StorageBufferFlushThreadsScheduled;
 }
 
 
@@ -137,7 +141,7 @@ StorageBuffer::StorageBuffer(
     , flush_thresholds(flush_thresholds_)
     , destination_id(destination_id_)
     , allow_materialized(allow_materialized_)
-    , log(&Poco::Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
+    , log(getLogger("StorageBuffer (" + table_id_.getFullTableName() + ")"))
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
@@ -153,6 +157,12 @@ StorageBuffer::StorageBuffer(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
+    if (num_shards > 1)
+    {
+        flush_pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
+            num_shards, 0, num_shards);
+    }
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
 }
 
@@ -165,7 +175,8 @@ public:
         : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
         , column_names_and_types(storage_snapshot->getColumnsByNames(
             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
-        , buffer(buffer_) {}
+        , buffer(buffer_)
+        , metadata_version(storage_snapshot->metadata->metadata_version) {}
 
     String getName() const override { return "Buffer"; }
 
@@ -180,7 +191,7 @@ protected:
 
         std::unique_lock lock(buffer.lockForReading());
 
-        if (!buffer.data.rows())
+        if (!buffer.data.rows() || buffer.metadata_version != metadata_version)
             return res;
 
         Columns columns;
@@ -198,6 +209,7 @@ protected:
 private:
     NamesAndTypesList column_names_and_types;
     StorageBuffer::Buffer & buffer;
+    int32_t metadata_version;
     bool has_been_read = false;
 };
 
@@ -210,8 +222,6 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
-        /// TODO: Find a way to support projections for StorageBuffer
-        query_info.ignore_projections = true;
         const auto & destination_metadata = destination->getInMemoryMetadataPtr();
         return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
     }
@@ -335,12 +345,12 @@ void StorageBuffer::read(
             pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
-        if (query_info.getInputOrderInfo())
+        if (query_info.input_order_info)
         {
             /// Each buffer has one block, and it not guaranteed that rows in each block are sorted by order keys
             pipe_from_buffers.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<PartialSortingTransform>(header, query_info.getInputOrderInfo()->sort_description_for_merging, 0);
+                return std::make_shared<PartialSortingTransform>(header, query_info.input_order_info->sort_description_for_merging, 0);
             });
         }
     }
@@ -358,7 +368,7 @@ void StorageBuffer::read(
         /// TODO: Find a way to support projections for StorageBuffer
         auto interpreter = InterpreterSelectQuery(
                 query_info.query, local_context, std::move(pipe_from_buffers),
-                SelectQueryOptions(processed_stage).ignoreProjections());
+                SelectQueryOptions(processed_stage));
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(buffers_plan);
     }
@@ -433,7 +443,7 @@ void StorageBuffer::read(
 }
 
 
-static void appendBlock(Poco::Logger * log, const Block & from, Block & to)
+static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 {
     size_t rows = from.rows();
     size_t old_rows = to.rows();
@@ -615,7 +625,7 @@ public:
             least_busy_buffer = &storage.buffers[start_shard_num];
             least_busy_lock = least_busy_buffer->lockForWriting();
         }
-        insertIntoBuffer(block, *least_busy_buffer);
+        insertIntoBuffer(block, *least_busy_buffer, metadata_snapshot->metadata_version);
         least_busy_lock.unlock();
 
         storage.reschedule();
@@ -624,14 +634,15 @@ private:
     StorageBuffer & storage;
     StorageMetadataPtr metadata_snapshot;
 
-    void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer)
+    void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, int32_t metadata_version)
     {
         time_t current_time = time(nullptr);
 
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
 
-        if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()))
+        if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()) ||
+            buffer.metadata_version != metadata_version)
         {
             /** If, after inserting the buffer, the constraints are exceeded, then we will reset the buffer.
               * This also protects against unlimited consumption of RAM, since if it is impossible to write to the table,
@@ -639,6 +650,7 @@ private:
               */
 
             storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
+            buffer.metadata_version = metadata_version;
         }
 
         if (!buffer.first_write_time)
@@ -658,15 +670,6 @@ private:
 SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
 {
     return std::make_shared<BufferSink>(*this, metadata_snapshot);
-}
-
-
-bool StorageBuffer::mayBenefitFromIndexForIn(
-    const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
-{
-    if (auto destination = getDestinationTable())
-        return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
-    return false;
 }
 
 
@@ -809,7 +812,22 @@ bool StorageBuffer::checkThresholdsImpl(bool direct, size_t rows, size_t bytes, 
 void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
     for (auto & buf : buffers)
-        flushBuffer(buf, check_thresholds, false);
+    {
+        if (flush_pool)
+        {
+            scheduleFromThreadPool<void>([&] ()
+            {
+                flushBuffer(buf, check_thresholds, false);
+            }, *flush_pool, "BufferFlush");
+        }
+        else
+        {
+            flushBuffer(buf, check_thresholds, false);
+        }
+    }
+
+    if (flush_pool)
+        flush_pool->wait();
 }
 
 
@@ -1062,13 +1080,12 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     checkAlterIsPossible(params, local_context);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    /// Flush all buffers to storages, so that no non-empty blocks of the old
-    /// structure remain. Structure of empty blocks will be updated during first
-    /// insert.
+    /// Flush buffers to the storage because BufferSource skips buffers with old metadata_version.
     optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
+    new_metadata.metadata_version += 1;
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }

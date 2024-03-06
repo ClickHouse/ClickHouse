@@ -144,6 +144,7 @@ const char * errorMessage(Error code)
         case Error::ZCLOSING:                 return "ZooKeeper is closing";
         case Error::ZNOTHING:                 return "(not error) no server responses to process";
         case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
+        case Error::ZNOTREADONLY:             return "State-changing request is passed to read-only server";
     }
 
     UNREACHABLE();
@@ -156,7 +157,8 @@ bool isHardwareError(Error zk_return_code)
         || zk_return_code == Error::ZSESSIONMOVED
         || zk_return_code == Error::ZCONNECTIONLOSS
         || zk_return_code == Error::ZMARSHALLINGERROR
-        || zk_return_code == Error::ZOPERATIONTIMEOUT;
+        || zk_return_code == Error::ZOPERATIONTIMEOUT
+        || zk_return_code == Error::ZNOTREADONLY;
 }
 
 bool isUserError(Error zk_return_code)
@@ -196,4 +198,3 @@ void MultiResponse::removeRootPath(const String & root_path)
 }
 
 }
-

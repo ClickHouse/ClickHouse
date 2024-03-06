@@ -4,6 +4,7 @@
 #include <Common/HyperLogLogBiasEstimator.h>
 #include <Common/CompactArray.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/transformEndianness.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -330,7 +331,26 @@ public:
 
     void read(DB::ReadBuffer & in)
     {
-        in.readStrict(reinterpret_cast<char *>(this), sizeof(*this));
+        if constexpr (std::endian::native == std::endian::little)
+            in.readStrict(reinterpret_cast<char *>(this), sizeof(*this));
+        else
+        {
+            in.readStrict(reinterpret_cast<char *>(&rank_store), sizeof(RankStore));
+
+            constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
+            std::array<char, denom_size> denominator_copy;
+            in.readStrict(denominator_copy.begin(), denom_size);
+
+            for (size_t i = 0; i < denominator_copy.size(); i += (sizeof(UInt32) / sizeof(char)))
+            {
+                UInt32 * cur = reinterpret_cast<UInt32 *>(&denominator_copy[i]);
+                DB::transformEndianness<std::endian::native, std::endian::little>(*cur);
+            }
+            memcpy(reinterpret_cast<char *>(&denominator), denominator_copy.begin(), denom_size);
+
+            in.readStrict(reinterpret_cast<char *>(&zeros), sizeof(ZerosCounterType));
+            DB::transformEndianness<std::endian::native, std::endian::little>(zeros);
+        }
     }
 
     void readAndMerge(DB::ReadBuffer & in)
@@ -352,7 +372,27 @@ public:
 
     void write(DB::WriteBuffer & out) const
     {
-        out.write(reinterpret_cast<const char *>(this), sizeof(*this));
+       if constexpr (std::endian::native == std::endian::little)
+            out.write(reinterpret_cast<const char *>(this), sizeof(*this));
+       else
+       {
+            out.write(reinterpret_cast<const char *>(&rank_store), sizeof(RankStore));
+
+            constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
+            std::array<char, denom_size> denominator_copy;
+            memcpy(denominator_copy.begin(), reinterpret_cast<const char *>(&denominator), denom_size);
+
+            for (size_t i = 0; i < denominator_copy.size(); i += (sizeof(UInt32) / sizeof(char)))
+            {
+                UInt32 * cur = reinterpret_cast<UInt32 *>(&denominator_copy[i]);
+                DB::transformEndianness<std::endian::little, std::endian::native>(*cur);
+            }
+            out.write(denominator_copy.begin(), denom_size);
+
+            auto zeros_copy = zeros;
+            DB::transformEndianness<std::endian::little, std::endian::native>(zeros_copy);
+            out.write(reinterpret_cast<const char *>(&zeros_copy), sizeof(ZerosCounterType));
+       }
     }
 
     /// Read and write in text mode is suboptimal (but compatible with OLAPServer and Metrage).

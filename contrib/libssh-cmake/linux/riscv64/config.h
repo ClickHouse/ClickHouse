@@ -127,7 +127,9 @@
 /* #undef HAVE_OPENSSL_EVP_KDF_CTX_NEW_ID */
 
 /* Define to 1 if you have the `FIPS_mode' function. */
-/* #undef HAVE_OPENSSL_FIPS_MODE */
+#if USE_BORINGSSL
+#define HAVE_OPENSSL_FIPS_MODE 1
+#endif
 
 /* Define to 1 if you have the `EVP_DigestSign' function. */
 #define HAVE_OPENSSL_EVP_DIGESTSIGN 1

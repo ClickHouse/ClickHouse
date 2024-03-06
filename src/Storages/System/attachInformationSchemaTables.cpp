@@ -35,8 +35,9 @@ static constexpr std::string_view schemata = R"(
         `DEFAULT_CHARACTER_SET_SCHEMA` Nullable(String),
         `DEFAULT_CHARACTER_SET_NAME` Nullable(String),
         `SQL_PATH` Nullable(String)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         name                          AS catalog_name,
         name                          AS schema_name,
         'default'                     AS schema_owner,
@@ -61,6 +62,7 @@ static constexpr std::string_view tables = R"(
         `table_schema` String,
         `table_name` String,
         `table_type` String,
+        `table_rows` Nullable(UInt64),
         `data_length` Nullable(UInt64),
         `table_collation` Nullable(String),
         `table_comment` Nullable(String),
@@ -68,11 +70,13 @@ static constexpr std::string_view tables = R"(
         `TABLE_SCHEMA` String,
         `TABLE_NAME` String,
         `TABLE_TYPE` String,
+        `TABLE_ROWS` Nullable(UInt64),
         `DATA_LENGTH` Nullable(UInt64),
         `TABLE_COLLATION` Nullable(String),
         `TABLE_COMMENT` Nullable(String)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         database             AS table_catalog,
         database             AS table_schema,
         name                 AS table_name,
@@ -82,6 +86,7 @@ static constexpr std::string_view tables = R"(
                 has_own_data = 0,      'FOREIGN TABLE',
                 'BASE TABLE'
                 )            AS table_type,
+        total_rows AS table_rows,
         total_bytes AS data_length,
         'utf8mb4_0900_ai_ci' AS table_collation,
         comment              AS table_comment,
@@ -89,6 +94,7 @@ static constexpr std::string_view tables = R"(
         table_schema         AS TABLE_SCHEMA,
         table_name           AS TABLE_NAME,
         table_type           AS TABLE_TYPE,
+        table_rows           AS TABLE_ROWS,
         data_length          AS DATA_LENGTH,
         table_collation      AS TABLE_COLLATION,
         table_comment        AS TABLE_COMMENT
@@ -118,8 +124,9 @@ static constexpr std::string_view views = R"(
         `IS_TRIGGER_UPDATABLE` Enum8('NO' = 0, 'YES' = 1),
         `IS_TRIGGER_DELETABLE` Enum8('NO' = 0, 'YES' = 1),
         `IS_TRIGGER_INSERTABLE_INTO` Enum8('NO' = 0, 'YES' = 1)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         database AS table_catalog,
         database AS table_schema,
         name AS table_name,
@@ -170,6 +177,7 @@ static constexpr std::string_view columns = R"(
         `domain_catalog` Nullable(String),
         `domain_schema` Nullable(String),
         `domain_name` Nullable(String),
+        `extra` Nullable(String),
         `column_comment` String,
         `column_type` String,
         `TABLE_CATALOG` String,
@@ -195,10 +203,12 @@ static constexpr std::string_view columns = R"(
         `DOMAIN_CATALOG` Nullable(String),
         `DOMAIN_SCHEMA` Nullable(String),
         `DOMAIN_NAME` Nullable(String),
+        `EXTRA` Nullable(String),
         `COLUMN_COMMENT` String,
         `COLUMN_TYPE` String
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         database AS table_catalog,
         database AS table_schema,
         table AS table_name,
@@ -222,6 +232,11 @@ static constexpr std::string_view columns = R"(
         NULL AS domain_catalog,
         NULL AS domain_schema,
         NULL AS domain_name,
+        multiIf(default_kind = 'DEFAULT',      'DEFAULT_GENERATED',
+                default_kind = 'MATERIALIZED', 'STORED GENERATED',
+                default_kind = 'ALIAS',        'VIRTUAL GENERATED',
+                ''
+               ) AS extra,
         comment AS column_comment,
         type AS column_type,
         table_catalog AS TABLE_CATALOG,
@@ -247,6 +262,7 @@ static constexpr std::string_view columns = R"(
         domain_catalog AS DOMAIN_CATALOG,
         domain_schema AS DOMAIN_SCHEMA,
         domain_name AS DOMAIN_NAME,
+        extra AS EXTRA,
         column_comment AS COLUMN_COMMENT,
         column_type AS COLUMN_TYPE
     FROM system.columns
@@ -279,8 +295,9 @@ static constexpr std::string_view key_column_usage = R"(
          `REFERENCED_TABLE_SCHEMA` Nullable(String),
          `REFERENCED_TABLE_NAME` Nullable(String),
          `REFERENCED_COLUMN_NAME` Nullable(String)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         'def'                         AS constraint_catalog,
         database                      AS constraint_schema,
         'PRIMARY'                     AS constraint_name,
@@ -334,8 +351,9 @@ static constexpr std::string_view referential_constraints = R"(
          `DELETE_RULE` String,
          `TABLE_NAME` String,
          `REFERENCED_TABLE_NAME` String
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         ''                        AS constraint_catalog,
         NULL                      AS constraint_name,
         ''                        AS constraint_schema,
@@ -358,6 +376,87 @@ static constexpr std::string_view referential_constraints = R"(
         delete_rule               AS DELETE_RULE,
         table_name                AS TABLE_NAME,
         referenced_table_name     AS REFERENCED_TABLE_NAME
+    WHERE false; -- make sure this view is always empty
+)";
+
+static constexpr std::string_view statistics = R"(
+    ATTACH VIEW statistics
+        (
+        `table_catalog` String,
+        `table_schema` String,
+        `table_name` String,
+        `non_unique` Int32,
+        `index_schema` String,
+        `index_name` Nullable(String),
+        `seq_in_index` UInt32,
+        `column_name` Nullable(String),
+        `collation` Nullable(String),
+        `cardinality` Nullable(Int64),
+        `sub_part` Nullable(Int64),
+        `packed` Nullable(String),
+        `nullable` String,
+        `index_type` String,
+        `comment` String,
+        `index_comment` String,
+        `is_visible` String,
+        `expression` Nullable(String),
+        `TABLE_CATALOG` String,
+        `TABLE_SCHEMA` String,
+        `TABLE_NAME` String,
+        `NON_UNIQUE` Int32,
+        `INDEX_SCHEMA` String,
+        `INDEX_NAME` Nullable(String),
+        `SEQ_IN_INDEX` UInt32,
+        `COLUMN_NAME` Nullable(String),
+        `COLLATION` Nullable(String),
+        `CARDINALITY` Nullable(Int64),
+        `SUB_PART` Nullable(Int64),
+        `PACKED` Nullable(String),
+        `NULLABLE` String,
+        `INDEX_TYPE` String,
+        `COMMENT` String,
+        `INDEX_COMMENT` String,
+        `IS_VISIBLE` String,
+        `EXPRESSION` Nullable(String)
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
+        ''            AS table_catalog,
+        ''            AS table_schema,
+        ''            AS table_name,
+        0             AS non_unique,
+        ''            AS index_schema,
+        NULL          AS index_name,
+        0             AS seq_in_index,
+        NULL          AS column_name,
+        NULL          AS collation,
+        NULL          AS cardinality,
+        NULL          AS sub_part,
+        NULL          AS packed,
+        ''            AS nullable,
+        ''            AS index_type,
+        ''            AS comment,
+        ''            AS index_comment,
+        ''            AS is_visible,
+        NULL          AS expression,
+        table_catalog AS TABLE_CATALOG,
+        table_schema  AS TABLE_SCHEMA,
+        table_name    AS TABLE_NAME,
+        non_unique    AS NON_UNIQUE,
+        index_schema  AS INDEX_SCHEMA,
+        index_name    AS INDEX_NAME,
+        seq_in_index  AS SEQ_IN_INDEX,
+        column_name   AS COLUMN_NAME,
+        collation     AS COLLATION,
+        cardinality   AS CARDINALITY,
+        sub_part      AS SUB_PART,
+        packed        AS PACKED,
+        nullable      AS NULLABLE,
+        index_type    AS INDEX_TYPE,
+        comment       AS COMMENT,
+        index_comment AS INDEX_COMMENT,
+        is_visible    AS IS_VISIBLE,
+        expression    AS EXPRESSION
     WHERE false; -- make sure this view is always empty
 )";
 
@@ -387,13 +486,13 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         ast_create.setDatabase(database.getDatabaseName());
 
         StoragePtr view = createTableFromAST(ast_create, database.getDatabaseName(),
-                                             database.getTableDataPath(ast_create), context, true).second;
+                                             database.getTableDataPath(ast_create), context, LoadingStrictnessLevel::FORCE_RESTORE).second;
         database.createTable(context, ast_create.getTable(), view, ast);
         ASTPtr ast_upper = ast_create.clone();
         auto & ast_create_upper = ast_upper->as<ASTCreateQuery &>();
         ast_create_upper.setTable(Poco::toUpper(view_name));
         StoragePtr view_upper = createTableFromAST(ast_create_upper, database.getDatabaseName(),
-                                             database.getTableDataPath(ast_create_upper), context, true).second;
+                                             database.getTableDataPath(ast_create_upper), context, LoadingStrictnessLevel::FORCE_RESTORE).second;
 
         database.createTable(context, ast_create_upper.getTable(), view_upper, ast_upper);
 
@@ -412,6 +511,7 @@ void attachInformationSchema(ContextMutablePtr context, IDatabase & information_
     createInformationSchemaView(context, information_schema_database, "columns", columns);
     createInformationSchemaView(context, information_schema_database, "key_column_usage", key_column_usage);
     createInformationSchemaView(context, information_schema_database, "referential_constraints", referential_constraints);
+    createInformationSchemaView(context, information_schema_database, "statistics", statistics);
 }
 
 }

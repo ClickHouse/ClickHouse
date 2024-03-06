@@ -28,7 +28,6 @@ public:
     DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info);
 
     const char * getFamilyName() const override { return family_name; }
-    String getSQLCompatibleName() const override { return "DATETIME"; }
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return type_id; }
 

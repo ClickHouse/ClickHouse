@@ -6,6 +6,7 @@
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
+#include <Core/Joins.h>
 
 
 namespace DB
@@ -166,6 +167,8 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 table_join->kind = JoinKind::Full;
             else if (ParserKeyword("CROSS").ignore(pos))
                 table_join->kind = JoinKind::Cross;
+            else if (ParserKeyword("PASTE").ignore(pos))
+                table_join->kind = JoinKind::Paste;
             else
                 no_kind = true;
 
@@ -191,8 +194,8 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             }
 
             if (table_join->strictness != JoinStrictness::Unspecified
-                && table_join->kind == JoinKind::Cross)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "You must not specify ANY or ALL for CROSS JOIN.");
+                && (table_join->kind == JoinKind::Cross || table_join->kind == JoinKind::Paste))
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "You must not specify ANY or ALL for {} JOIN.", toString(table_join->kind));
 
             if ((table_join->strictness == JoinStrictness::Semi || table_join->strictness == JoinStrictness::Anti) &&
                 (table_join->kind != JoinKind::Left && table_join->kind != JoinKind::Right))
@@ -206,7 +209,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             return false;
 
         if (table_join->kind != JoinKind::Comma
-            && table_join->kind != JoinKind::Cross)
+            && table_join->kind != JoinKind::Cross && table_join->kind != JoinKind::Paste)
         {
             if (ParserKeyword("USING").ignore(pos, expected))
             {

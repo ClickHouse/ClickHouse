@@ -73,10 +73,10 @@ private:
         return promise.get_future();
     }
 
-    const Poco::Logger * log;
+    const LoggerPtr log;
 
 public:
-    IOUringReader(uint32_t entries_);
+    explicit IOUringReader(uint32_t entries_);
 
     inline bool isSupported() { return is_supported; }
     std::future<Result> submit(Request request) override;

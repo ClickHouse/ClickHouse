@@ -13,8 +13,6 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
-#include "TransformEndianness.hpp"
-
 #include <bit>
 #include <string>
 #include <type_traits>
@@ -24,8 +22,10 @@
 #include <base/unaligned.h>
 #include <base/hex.h>
 #include <Common/Exception.h>
+#include <Common/transformEndianness.h>
 
 #include <city.h>
+
 
 namespace DB::ErrorCodes
 {
@@ -209,7 +209,7 @@ public:
     {
         if (!is_reference_128)
             throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR, "Logical error: can't call get128Reference when is_reference_128 is not set");
+                DB::ErrorCodes::LOGICAL_ERROR, "Can't call get128Reference when is_reference_128 is not set");
         finalize();
         const auto lo = v0 ^ v1 ^ v2 ^ v3;
         v1 ^= 0xdd;

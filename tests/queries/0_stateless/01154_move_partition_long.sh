@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-s3-storage
-# FIXME: s3 storage should work OK, it
-# reproduces bug which exists not only in S3 version.
+# Tags: long, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

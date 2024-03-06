@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/copyData.h>
+#include <iostream>
 
 /** This example shows how we can proxy stdin to ShellCommand and obtain stdout in streaming fashion. */
 

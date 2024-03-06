@@ -177,10 +177,10 @@ public:
         auto watch_callback =
                 [my_stale = stale] (const Coordination::WatchResponse & rsp)
                 {
-                    auto logger = &Poco::Logger::get("ClusterCopier");
+                    auto logger = getLogger("ClusterCopier");
                     if (rsp.error == Coordination::Error::ZOK)
                     {
-                        switch (rsp.type)
+                        switch (rsp.type) /// NOLINT(bugprone-switch-missing-default-case)
                         {
                             case Coordination::CREATED:
                                 LOG_DEBUG(logger, "CleanStateClock change: CREATED, at {}", rsp.path);

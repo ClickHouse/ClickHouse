@@ -17,8 +17,6 @@
 
 	"rows": 1,
 
-	"rows_before_limit_at_least": 100,
-
 	"statistics":
 	{
 		"rows_read": 100,
@@ -44,7 +42,7 @@
 
 	"statistics":
 	{
-		"rows_read": 131011,
-		"bytes_read": 1048081
+		"rows_read": 100001,
+		"bytes_read": 800001
 	}
 }

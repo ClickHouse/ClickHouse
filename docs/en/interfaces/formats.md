@@ -7,6 +7,7 @@ title: Formats for Input and Output Data
 
 ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read a dictionary. A format supported for output can be used to arrange the
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
+All format names are case insensitive.
 
 The supported formats are:
 
@@ -33,7 +34,7 @@ The supported formats are:
 | [JSONAsString](#jsonasstring)                                                             | ✔    | ✗     |
 | [JSONStrings](#jsonstrings)                                                               | ✔    | ✔     |
 | [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔     |
-| [JSONColumnsWithMetadata](#jsoncolumnsmonoblock))                                         | ✔    | ✔     |
+| [JSONColumnsWithMetadata](#jsoncolumnsmonoblock)                                          | ✔    | ✔     |
 | [JSONCompact](#jsoncompact)                                                               | ✔    | ✔     |
 | [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔     |
 | [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔     |
@@ -74,6 +75,7 @@ The supported formats are:
 | [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔     |
 | [ORC](#data-format-orc)                                                                   | ✔    | ✔     |
 | [One](#data-format-one)                                                                   | ✔    | ✗     |
+| [Npy](#data-format-npy)                                                                   | ✔    | ✗     |
 | [RowBinary](#rowbinary)                                                                   | ✔    | ✔     |
 | [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔     |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔     |
@@ -87,6 +89,7 @@ The supported formats are:
 | [RawBLOB](#rawblob)                                                                       | ✔    | ✔     |
 | [MsgPack](#msgpack)                                                                       | ✔    | ✔     |
 | [MySQLDump](#mysqldump)                                                                   | ✔    | ✗     |
+| [DWARF](#dwarf)                                                                           | ✔    | ✗     |
 | [Markdown](#markdown)                                                                     | ✗    | ✔     |
 
 
@@ -251,7 +254,7 @@ This format is also available under the name `TSVRawWithNamesAndNames`.
 
 This format allows specifying a custom format string with placeholders for values with a specified escaping rule.
 
-It uses settings `format_template_resultset`, `format_template_row`, `format_template_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
+It uses settings `format_template_resultset`, `format_template_row` (`format_template_row_format`), `format_template_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
 
 Setting `format_template_row` specifies the path to the file containing format strings for rows with the following syntax:
 
@@ -277,9 +280,11 @@ the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quo
 
 `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
 
+In cases where it is challenging or not possible to deploy format output configuration for the template format to a directory on all nodes in a cluster, or if the format is trivial then `format_template_row_format` can be used to set the template string directly in the query, rather than a path to the file which contains it.
+
 The `format_template_rows_between_delimiter` setting specifies the delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
 
-Setting `format_template_resultset` specifies the path to the file, which contains a format string for resultset. Format string for resultset has the same syntax as a format string for row and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
+Setting `format_template_resultset` specifies the path to the file, which contains a format string for resultset. Setting `format_template_resultset_format` can be used to set the template string for the result set directly in the query itself. Format string for resultset has the same syntax as a format string for row and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
 
 - `data` is the rows with data in `format_template_row` format, separated by `format_template_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
 - `totals` is the row with total values in `format_template_row` format (when using WITH TOTALS)
@@ -476,6 +481,7 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 - [input_format_csv_allow_whitespace_or_tab_as_delimiter](/docs/en/operations/settings/settings-formats.md/# input_format_csv_allow_whitespace_or_tab_as_delimiter) - Allow to use whitespace or tab as field delimiter in CSV strings. Default value - `false`.
 - [input_format_csv_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_csv_allow_variable_number_of_columns) - allow variable number of columns in CSV format, ignore extra columns and use default values on missing columns. Default value - `false`.
 - [input_format_csv_use_default_on_bad_values](/docs/en/operations/settings/settings-formats.md/#input_format_csv_use_default_on_bad_values) - Allow to set default value to column when CSV field deserialization failed on bad value. Default value - `false`.
+- [input_format_csv_try_infer_numbers_from_strings](/docs/en/operations/settings/settings-formats.md/#input_format_csv_try_infer_numbers_from_strings) - Try to infer numbers from string fields while schema inference. Default value - `false`.
 
 ## CSVWithNames {#csvwithnames}
 
@@ -1259,10 +1265,12 @@ SELECT * FROM json_each_row_nested
 
 - [input_format_import_nested_json](/docs/en/operations/settings/settings-formats.md/#input_format_import_nested_json) - map nested JSON data to nested tables (it works for JSONEachRow format). Default value - `false`.
 - [input_format_json_read_bools_as_numbers](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_bools_as_numbers) - allow to parse bools as numbers in JSON input formats. Default value - `true`.
+- [input_format_json_read_bools_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_bools_as_strings) - allow to parse bools as strings in JSON input formats. Default value - `true`.
 - [input_format_json_read_numbers_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_numbers_as_strings) - allow to parse numbers as strings in JSON input formats. Default value - `true`.
 - [input_format_json_read_arrays_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_arrays_as_strings) - allow to parse JSON arrays as strings in JSON input formats. Default value - `true`.
 - [input_format_json_read_objects_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_objects_as_strings) - allow to parse JSON objects as strings in JSON input formats. Default value - `true`.
 - [input_format_json_named_tuples_as_objects](/docs/en/operations/settings/settings-formats.md/#input_format_json_named_tuples_as_objects) - parse named tuple columns as JSON objects. Default value - `true`.
+- [input_format_json_try_infer_numbers_from_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_try_infer_numbers_from_strings) - Try to infer numbers from string fields while schema inference. Default value - `false`.
 - [input_format_json_try_infer_named_tuples_from_objects](/docs/en/operations/settings/settings-formats.md/#input_format_json_try_infer_named_tuples_from_objects) - try to infer named tuple from JSON objects during schema inference. Default value - `true`.
 - [input_format_json_infer_incomplete_types_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_infer_incomplete_types_as_strings) - use type String for keys that contains only Nulls or empty objects/arrays during schema inference in JSON input formats. Default value - `true`.
 - [input_format_json_defaults_for_missing_elements_in_named_tuple](/docs/en/operations/settings/settings-formats.md/#input_format_json_defaults_for_missing_elements_in_named_tuple) - insert default values for missing elements in JSON object while parsing named tuple. Default value - `true`.
@@ -1923,6 +1931,14 @@ SELECT * FROM test.hits format Protobuf SETTINGS format_protobuf_use_autogenerat
 
 In this case autogenerated Protobuf schema will be saved in file `path/to/schema/schema.capnp`.
 
+### Drop Protobuf cache
+
+To reload Protobuf schema loaded from [format_schema_path](../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-format_schema_path) use [SYSTEM DROP ... FORMAT CACHE](../sql-reference/statements/system.md/#system-drop-schema-format) statement.
+
+```sql
+SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
+```
+
 ## ProtobufSingle {#protobufsingle}
 
 Same as [Protobuf](#protobuf) but for storing/parsing single Protobuf message without length delimiters.
@@ -2145,7 +2161,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/t
 - [input_format_parquet_local_file_min_bytes_for_seek](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_local_file_min_bytes_for_seek) - min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format. Default value - `8192`.
 - [output_format_parquet_fixed_string_as_fixed_byte_array](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_fixed_string_as_fixed_byte_array) - use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedString columns. Default value - `true`.
 - [output_format_parquet_version](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_version) - The version of Parquet format used in output format. Default value - `2.latest`.
-- [output_format_parquet_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_compression_method) - compression method used in output Parquet format. Default value - `snappy`.
+- [output_format_parquet_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_compression_method) - compression method used in output Parquet format. Default value - `lz4`.
 
 ## ParquetMetadata {data-format-parquet-metadata}
 
@@ -2343,6 +2359,8 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 ### Arrow format settings {#parquet-format-settings}
 
 - [output_format_arrow_low_cardinality_as_dictionary](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_low_cardinality_as_dictionary) - enable output ClickHouse LowCardinality type as Dictionary Arrow type. Default value - `false`.
+- [output_format_arrow_use_64_bit_indexes_for_dictionary](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_use_64_bit_indexes_for_dictionary) - use 64-bit integer type for Dictionary indexes. Default value - `false`.
+- [output_format_arrow_use_signed_indexes_for_dictionary](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_use_signed_indexes_for_dictionary) - use signed integer type for Dictionary indexes. Default value - `true`.
 - [output_format_arrow_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_string_as_string) - use Arrow String type instead of Binary for String columns. Default value - `false`.
 - [input_format_arrow_case_insensitive_column_matching](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_case_insensitive_column_matching) - ignore case when matching Arrow columns with ClickHouse columns. Default value - `false`.
 - [input_format_arrow_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_allow_missing_columns) - allow missing columns while reading Arrow data. Default value - `false`.
@@ -2442,6 +2460,51 @@ Result:
 ┌─_file────────┐
 │ data.parquet │
 └──────────────┘
+```
+
+## Npy {#data-format-npy}
+
+This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse: 
+| Npy type | ClickHouse type |
+|:--------:|:---------------:|
+| b1       |    UInt8        |
+| i1       |    Int8         |
+| i2       |    Int16        |
+| i4       |    Int32        |
+| i8       |    Int64        |
+| u1       |    UInt8        |
+| u2       |    UInt16       |
+| u4       |    UInt32       |
+| u8       |    UInt64       |
+| f2       |    Float32      |
+| f4       |    Float32      |
+| f8       |    Float64      |
+| S        |    String       |
+| U        |    String       |
+
+**Example of saving an array in .npy format using Python**
+
+
+```Python
+import numpy as np
+arr = np.array([[[1],[2],[3]],[[4],[5],[6]]])
+np.save('example_array.npy', arr)
+```
+
+**Example of reading a NumPy file in ClickHouse**
+
+Query:
+```sql
+SELECT *
+FROM file('example_array.npy', Npy)
+```
+
+Result:
+```
+┌─array─────────┐
+│ [[1],[2],[3]] │
+│ [[4],[5],[6]] │
+└───────────────┘
 ```
 
 ## LineAsString {#lineasstring}
@@ -2708,6 +2771,53 @@ FROM file(dump.sql, MySQLDump)
 │ 2 │
 │ 3 │
 └───┘
+```
+
+## DWARF {#dwarf}
+
+Parses DWARF debug symbols from an ELF file (executable, library, or object file). Similar to `dwarfdump`, but much faster (hundreds of MB/s) and with SQL. Produces one row for each Debug Information Entry (DIE) in the `.debug_info` section. Includes "null" entries that the DWARF encoding uses to terminate lists of children in the tree.
+
+Quick background: `.debug_info` consists of *units*, corresponding to compilation units. Each unit is a tree of *DIE*s, with a `compile_unit` DIE as its root. Each DIE has a *tag* and a list of *attributes*. Each attribute has a *name* and a *value* (and also a *form*, which specifies how the value is encoded). The DIEs represent things from the source code, and their *tag* tells what kind of thing it is. E.g. there are functions (tag = `subprogram`), classes/structs/enums (`class_type`/`structure_type`/`enumeration_type`), variables (`variable`), function arguments (`formal_parameter`). The tree structure mirrors the corresponding source code. E.g. a `class_type` DIE can contain `subprogram` DIEs representing methods of the class.
+
+Outputs the following columns:
+ - `offset` - position of the DIE in the `.debug_info` section
+ - `size` - number of bytes in the encoded DIE (including attributes)
+ - `tag` - type of the DIE; the conventional "DW_TAG_" prefix is omitted
+ - `unit_name` - name of the compilation unit containing this DIE
+ - `unit_offset` - position of the compilation unit containing this DIE in the `.debug_info` section
+ - `ancestor_tags` - array of tags of the ancestors of the current DIE in the tree, in order from innermost to outermost
+ - `ancestor_offsets` - offsets of ancestors, parallel to `ancestor_tags`
+ - a few common attributes duplicated from the attributes array for convenience:
+   - `name`
+   - `linkage_name` - mangled fully-qualified name; typically only functions have it (but not all functions)
+   - `decl_file` - name of the source code file where this entity was declared
+   - `decl_line` - line number in the source code where this entity was declared
+ - parallel arrays describing attributes:
+   - `attr_name` - name of the attribute; the conventional "DW_AT_" prefix is omitted
+   - `attr_form` - how the attribute is encoded and interpreted; the conventional DW_FORM_ prefix is omitted
+   - `attr_int` - integer value of the attribute; 0 if the attribute doesn't have a numeric value
+   - `attr_str` - string value of the attribute; empty if the attribute doesn't have a string value
+
+Example: find compilation units that have the most function definitions (including template instantiations and functions from included header files):
+```sql
+SELECT
+    unit_name,
+    count() AS c
+FROM file('programs/clickhouse', DWARF)
+WHERE tag = 'subprogram' AND NOT has(attr_name, 'declaration')
+GROUP BY unit_name
+ORDER BY c DESC
+LIMIT 3
+```
+```text
+┌─unit_name──────────────────────────────────────────────────┬─────c─┐
+│ ./src/Core/Settings.cpp                                    │ 28939 │
+│ ./src/AggregateFunctions/AggregateFunctionSumMap.cpp       │ 23327 │
+│ ./src/AggregateFunctions/AggregateFunctionUniqCombined.cpp │ 22649 │
+└────────────────────────────────────────────────────────────┴───────┘
+
+3 rows in set. Elapsed: 1.487 sec. Processed 139.76 million rows, 1.12 GB (93.97 million rows/s., 752.77 MB/s.)
+Peak memory usage: 271.92 MiB.
 ```
 
 ## Markdown {#markdown}

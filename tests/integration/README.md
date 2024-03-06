@@ -19,7 +19,6 @@ Don't use Docker from your system repository.
 ```
 sudo -H pip install \
     PyMySQL \
-    aerospike \
     avro \
     cassandra-driver \
     confluent-kafka \
@@ -46,7 +45,6 @@ sudo -H pip install \
     hypothesis \
     pyhdfs \
     pika \
-    meilisearch \
     nats-py
 ```
 

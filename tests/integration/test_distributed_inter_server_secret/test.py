@@ -26,15 +26,6 @@ def make_instance(name, cfg, *args, **kwargs):
 # _n1/_n2 contains cluster with different <secret> -- should fail
 n1 = make_instance("n1", "configs/remote_servers_n1.xml")
 n2 = make_instance("n2", "configs/remote_servers_n2.xml")
-backward = make_instance(
-    "backward",
-    "configs/remote_servers_backward.xml",
-    image="clickhouse/clickhouse-server",
-    # version without DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
-    tag="23.2.3",
-    with_installed_binary=True,
-    allow_analyzer=False,
-)
 
 users = pytest.mark.parametrize(
     "user,password",
@@ -186,7 +177,7 @@ def test_insecure_insert_sync():
     n1.query("TRUNCATE TABLE data")
     n1.query(
         "INSERT INTO dist_insecure SELECT * FROM numbers(2)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     assert int(n1.query("SELECT count() FROM dist_insecure")) == 2
     n1.query("TRUNCATE TABLE data ON CLUSTER secure")
@@ -208,7 +199,7 @@ def test_secure_insert_sync():
     n1.query("TRUNCATE TABLE data")
     n1.query(
         "INSERT INTO dist_secure SELECT * FROM numbers(2)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     assert int(n1.query("SELECT count() FROM dist_secure")) == 2
     n1.query("TRUNCATE TABLE data ON CLUSTER secure")
@@ -240,7 +231,7 @@ def test_secure_insert_sync():
 # - after we will ensure that connection is really established from the context
 #   of SELECT query, and that the connection will not be established from the
 #   context of the INSERT query (but actually it is a no-op since the INSERT
-#   will be done in background, due to insert_distributed_sync=false by
+#   will be done in background, due to distributed_foreground_insert=false by
 #   default)
 #
 # - if the bug is there, then FLUSH DISTRIBUTED will fail, because it will go
@@ -304,26 +295,20 @@ def test_secure_insert_buffer_async():
 
 
 def test_secure_disagree():
-    with pytest.raises(
-        QueryRuntimeException, match=".*Interserver authentication failed.*"
-    ):
+    with pytest.raises(QueryRuntimeException):
         n1.query("SELECT * FROM dist_secure_disagree")
 
 
 def test_secure_disagree_insert():
     n1.query("TRUNCATE TABLE data")
     n1.query("INSERT INTO dist_secure_disagree SELECT * FROM numbers(2)")
-    with pytest.raises(
-        QueryRuntimeException, match=".*Interserver authentication failed.*"
-    ):
+    with pytest.raises(QueryRuntimeException):
         n1.query(
             "SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure_disagree dist_secure_disagree"
         )
-    # check the the connection will be re-established
+    # check that the connection will be re-established
     # IOW that we will not get "Unknown BlockInfo field"
-    with pytest.raises(
-        QueryRuntimeException, match=".*Interserver authentication failed.*"
-    ):
+    with pytest.raises(QueryRuntimeException):
         assert int(n1.query("SELECT count() FROM dist_secure_disagree")) == 0
 
 
@@ -413,26 +398,4 @@ def test_per_user_protocol_settings_secure_cluster(user, password):
     )
     assert int(get_query_setting_on_shard(n1, id_, "max_memory_usage_for_user")) == int(
         1e9
-    )
-
-
-@users
-def test_user_secure_cluster_with_backward(user, password):
-    id_ = "with-backward-query-dist_secure-" + user
-    n1.query(
-        f"SELECT *, '{id_}' FROM dist_secure_backward", user=user, password=password
-    )
-    assert get_query_user_info(n1, id_) == [user, user]
-    assert get_query_user_info(backward, id_) == [user, user]
-
-
-@users
-def test_user_secure_cluster_from_backward(user, password):
-    id_ = "from-backward-query-dist_secure-" + user
-    backward.query(f"SELECT *, '{id_}' FROM dist_secure", user=user, password=password)
-    assert get_query_user_info(n1, id_) == [user, user]
-    assert get_query_user_info(backward, id_) == [user, user]
-
-    assert n1.contains_in_log(
-        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster."
     )

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupStatus.h>
+#include <Common/ProfileEvents.h>
 
 namespace DB
 {
@@ -15,6 +16,12 @@ struct BackupOperationInfo
 
     /// Operation name, a string like "Disk('backups', 'my_backup')"
     String name;
+
+    /// Base Backup Operation name, a string like "Disk('backups', 'my_base_backup')"
+    String base_backup_name;
+
+    /// Query ID of a query that started backup
+    String query_id;
 
     /// This operation is internal and should not be shown in system.backups
     bool internal = false;
@@ -46,6 +53,9 @@ struct BackupOperationInfo
     /// Set only if there was an error.
     std::exception_ptr exception;
     String error_message;
+
+    /// Profile events collected during the backup.
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters = nullptr;
 
     std::chrono::system_clock::time_point start_time;
     std::chrono::system_clock::time_point end_time;

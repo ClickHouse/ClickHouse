@@ -27,14 +27,14 @@ public:
             ContextPtr context_,
             const ColumnsDescription & columns_,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-            bool is_attach_);
+            LoadingStrictnessLevel mode);
 
     std::string getName() const override { return "RabbitMQ"; }
 
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
@@ -102,7 +102,7 @@ private:
     bool use_user_setup;
 
     bool hash_exchange;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;
@@ -158,10 +158,9 @@ private:
 
     size_t read_attempts = 0;
     mutable bool drop_table = false;
-    bool is_attach;
 
     RabbitMQConsumerPtr createConsumer();
-    bool initialized = false;
+    std::atomic<bool> initialized = false;
 
     /// Functions working in the background
     void streamingToViewsFunc();
