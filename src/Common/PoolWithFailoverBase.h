@@ -382,7 +382,7 @@ PoolWithFailoverBase<TNestedPool>::getOne(
             }
 
             std::string fail_message;
-            try_result = try_get_entry(*shuffled_pool.pool, fail_message);
+            try_result = try_get_entry(shuffled_pool.pool, fail_message);
             tries_num++;
 
             if (!fail_message.empty())

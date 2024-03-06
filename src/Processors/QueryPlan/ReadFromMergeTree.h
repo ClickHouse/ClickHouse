@@ -199,8 +199,6 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
-
 private:
     static AnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,

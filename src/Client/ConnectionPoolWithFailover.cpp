@@ -134,7 +134,7 @@ IConnectionPool::Entry ConnectionPoolWithFailover::getOne(const ConnectionTimeou
                                   const Settings & settings, const String & host_port,
                                   AsyncCallback async_callback)
 {
-    TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
+    TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     {
         return tryGetEntry(pool, timeouts, fail_message, settings, nullptr, async_callback);
     };

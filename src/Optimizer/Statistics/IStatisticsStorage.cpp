@@ -78,7 +78,7 @@ void IStatisticsStorage::prepareTables(ContextPtr global_context)
         /// Write additional (default) settings for MergeTree engine to make it make it possible to compare ASTs
         /// and recreate tables on settings changes.
         auto storage_settings = std::make_unique<MergeTreeSettings>(query_context->getMergeTreeSettings());
-        storage_settings->loadFromQuery(*create->storage, query_context);
+        storage_settings->loadFromQuery(*create->storage, query_context, false);
 
         return create;
     };

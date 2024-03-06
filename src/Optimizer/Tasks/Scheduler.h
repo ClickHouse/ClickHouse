@@ -2,6 +2,7 @@
 
 #include <Optimizer/Tasks/OptimizeTask.h>
 #include <Poco/Timestamp.h>
+#include <stack>
 
 namespace DB
 {
@@ -21,7 +22,7 @@ private:
     Poco::Timestamp start_time_ms;
     UInt64 max_run_time_ms;
 
-    /// How many time method 'run' executes.
+    /// How many times method 'run' executes.
     UInt64 run_count;
     std::stack<OptimizeTaskPtr> stack;
 };
