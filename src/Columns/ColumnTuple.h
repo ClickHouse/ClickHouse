@@ -60,6 +60,7 @@ public:
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
     void insertFrom(const IColumn & src_, size_t n) override;
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
     void insertDefault() override;
     void popBack(size_t n) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;

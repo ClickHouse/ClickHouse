@@ -364,7 +364,7 @@ void ColumnArray::insertManyFromNumber(const ColumnArray & src, size_t position,
         memcpy(&data_ref[offset], &src_data[src_offset], src_size * sizeof(T));
 }
 
-void ColumnArray::insertManyFromConst(const ColumnConst & src, size_t position, size_t length)
+void ColumnArray::insertManyFromConst(const ColumnConst & src, size_t  /*position*/, size_t length)
 {
     const ColumnArray * src_array = typeid_cast<const ColumnArray *>(&src.getDataColumn());
     if (!src_array)
