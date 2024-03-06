@@ -132,7 +132,7 @@ class OptimizeShardingKeyRewriteIn : public InDepthQueryTreeVisitorWithContext<O
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<OptimizeShardingKeyRewriteIn>;
-    
+
     OptimizeShardingKeyRewriteIn(OptimizeShardingKeyRewriteInVisitor::Data data_, ContextPtr context)
         : Base(std::move(context))
         , data(std::move(data_))
