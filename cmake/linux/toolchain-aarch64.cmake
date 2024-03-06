@@ -13,6 +13,6 @@ set (TOOLCHAIN_PATH "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-aarch
 
 set (CMAKE_SYSROOT "${TOOLCHAIN_PATH}/aarch64-linux-gnu/libc")
 
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffp-contract=off --gcc-toolchain=${TOOLCHAIN_PATH}")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffp-contract=off --gcc-toolchain=${TOOLCHAIN_PATH}")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
 set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
