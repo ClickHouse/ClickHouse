@@ -17,7 +17,6 @@ SELECT * FROM wrong_metadata order by a FORMAT JSONEachRow;
 {"b":"1","a":"2","c":"3"}
 {"b":"4","a":"5","c":"6"}
 {"b":"7","a":"8","c":"9"}
-DROP TABLE wrong_metadata;
 ALTER TABLE wrong_metadata_compact RENAME COLUMN a TO a1, RENAME COLUMN b to b1 SETTINGS replication_alter_partitions_sync = 0;
 SELECT * FROM wrong_metadata_compact ORDER BY a1 FORMAT JSONEachRow;
 {"a1":"1","b1":"2","c":"3"}
@@ -37,4 +36,3 @@ SELECT * FROM wrong_metadata_compact order by a FORMAT JSONEachRow;
 {"b":"1","a":"2","c":"3"}
 {"b":"4","a":"5","c":"6"}
 {"b":"7","a":"8","c":"9"}
-DROP TABLE wrong_metadata_compact;
