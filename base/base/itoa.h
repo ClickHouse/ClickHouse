@@ -349,16 +349,32 @@ namespace convert
 
 
 template <typename T>
-static inline char * writeUIntText(T x, char * p)
+static inline char * writeUIntText(T _x, char * p)
 {
-    static_assert(is_unsigned_v<T>);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wbit-int-extension"
+    int len = digits10(_x);
+    static_assert(std::is_same_v<T, UInt128> || std::is_same_v<T, UInt256>);
+    using T_ = std::conditional_t<std::is_same_v<T, UInt128>, unsigned __int128, unsigned _BitInt(256)>;
+#pragma clang diagnostic pop
 
-    int len = digits10(x);
-    auto * pp = p + len;
-    while (x >= 100)
+    T_ x;
+    T_ hundred(100ULL);
+    if constexpr (std::is_same_v<T, UInt128>)
     {
-        const auto i = x % 100;
-        x /= 100;
+        x = (T_(_x.items[T::_impl::little(1)]) << 64) + T_(_x.items[T::_impl::little(0)]);
+    }
+    else
+    {
+        x = (T_(_x.items[T::_impl::little(3)]) << 192) + (T_(_x.items[T::_impl::little(2)]) << 128) +
+                (T_(_x.items[T::_impl::little(1)]) << 64) + T_(_x.items[T::_impl::little(0)]);
+    }
+
+    auto * pp = p + len;
+    while (x >= hundred)
+    {
+        const auto i = x % hundred;
+        x /= hundred;
         pp -= 2;
         outTwoDigits(pp, i);
     }
