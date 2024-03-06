@@ -33,9 +33,11 @@
 #endif
 #endif
 
+/// NOLINTBEGIN(modernize-use-using)
 typedef __attribute__((__aligned__(1))) uint16_t uint16_unaligned_t;
 typedef __attribute__((__aligned__(1))) uint32_t uint32_unaligned_t;
 typedef __attribute__((__aligned__(1))) uint64_t uint64_unaligned_t;
+/// NOLINTEND(modernize-use-using)
 
 //---------------------------------------------------------------------
 // fast copy for different sizes
@@ -98,7 +100,7 @@ __attribute__((__no_sanitize__("undefined"))) inline void *memcpy_tiny(void * __
     unsigned char *dd = ((unsigned char*)dst) + size;
     const unsigned char *ss = ((const unsigned char*)src) + size;
 
-    switch (size)
+    switch (size) /// NOLINT(bugprone-switch-missing-default-case)
     {
     case 64:
         memcpy_sse2_64(dd - 64, ss - 64);
@@ -652,7 +654,7 @@ __attribute__((__no_sanitize__("undefined"))) inline void *memcpy_tiny(void * __
 //---------------------------------------------------------------------
 // main routine
 //---------------------------------------------------------------------
-void* memcpy_fast_sse(void * __restrict destination, const void * __restrict source, size_t size)
+void* memcpy_fast_sse(void * __restrict destination, const void * __restrict source, size_t size) /// NOLINT(misc-definitions-in-headers)
 {
     unsigned char *dst = (unsigned char*)destination;
     const unsigned char *src = (const unsigned char*)source;
