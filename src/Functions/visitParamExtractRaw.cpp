@@ -68,7 +68,7 @@ REGISTER_FUNCTION(VisitParamExtractRaw)
         = {{"json", "The JSON in which the field is searched for. String."},
            {"field_name", "The name of the field to search for. String literal."}},
         .returned_value
-        = "It returns the value of the field as a String including separators if the field exists, or an emtpy String otherwise.",
+        = "It returns the value of the field as a String including separators if the field exists, or an empty String otherwise.",
         .examples
         = {{.name = "simple",
             .query = R"(CREATE TABLE jsons
