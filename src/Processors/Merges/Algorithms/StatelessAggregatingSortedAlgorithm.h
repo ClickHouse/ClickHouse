@@ -9,8 +9,9 @@ namespace DB
 
 /** Merges several sorted inputs into one.
   * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
-  * collapses them into one row, summing all the numeric columns except the primary key.
-  * If in all numeric columns, except for the primary key, the result is zero, it deletes the row.
+  * collapses them into one row by applying specified aggregate function(s) to specified columns,
+  * or all columns except for primary key.
+  * If some columns aren't specified, an arbitrary value (one of values having the same PK) will be taken.
   */
 class StatelessAggregatingSortedAlgorithm final : public IMergingAlgorithmWithDelayedChunk
 {
@@ -20,7 +21,7 @@ public:
         SortDescription description_,
         /// List of columns to be aggregated. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_aggregate,
-        const String & simple_aggregate_function,
+        const Strings & simple_aggregate_functions,
         /// List of partition key columns. They have to be excluded.
         const Names & partition_key_columns,
         size_t max_block_size_rows,
@@ -35,7 +36,7 @@ public:
     struct MapDescription;
 
     /// This structure define columns into one of three types:
-    /// * columns which values not needed to be aggregated
+    /// * columns which values won't be be aggregated
     /// * aggregate functions and columns which needed to be summed
     /// * mapping for nested columns
     struct ColumnsDefinition
@@ -45,7 +46,7 @@ public:
         ~ColumnsDefinition(); /// Is needed because otherwise std::vector's destructor uses incomplete types.
 
         /// Columns with which values should not be aggregated.
-        ColumnNumbers column_numbers_not_to_aggregate;
+        ColumnNumbers columns_not_to_aggregate;
         /// Columns which should be aggregated.
         std::vector<AggregateDescription> columns_to_aggregate;
         /// Mapping for nested columns.
@@ -96,7 +97,7 @@ public:
     };
 
 private:
-    /// Order between members is important because merged_data has reference to columns_definition.
+    /// Order between members is important.
     ColumnsDefinition columns_definition;
     StatelessAggregatingMergedData merged_data;
 };

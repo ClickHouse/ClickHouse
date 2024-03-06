@@ -15,7 +15,7 @@ public:
         SortDescription description_,
         /// List of columns to be aggregated. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_aggregate,
-        const String & simple_aggregate_function,
+        const Strings & simple_aggregate_functions,
         const Names & partition_key_columns,
         size_t max_block_size_rows,
         size_t max_block_size_bytes
@@ -26,7 +26,7 @@ public:
               num_inputs,
               std::move(description_),
               column_names_to_aggregate,
-              simple_aggregate_function,
+              simple_aggregate_functions,
               partition_key_columns,
               max_block_size_rows,
               max_block_size_bytes)

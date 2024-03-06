@@ -1035,7 +1035,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
         case MergeTreeData::MergingParams::StatelessAggregating:
             merged_transform = std::make_shared<StatelessAggregatingSortedTransform>(
                 header, pipes.size(), sort_description, ctx->merging_params.columns_to_aggregate,
-                ctx->merging_params.simple_aggregate_function, partition_key_columns, merge_block_size_rows, merge_block_size_bytes);
+                ctx->merging_params.simple_aggregate_functions, partition_key_columns, merge_block_size_rows, merge_block_size_bytes);
             break;
 
         case MergeTreeData::MergingParams::Aggregating:

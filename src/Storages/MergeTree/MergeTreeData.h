@@ -365,7 +365,7 @@ public:
          */
         /// For StatelessAggregating mode. If empty - columns_to_aggregate is determined automatically.
         Names columns_to_aggregate;
-        String simple_aggregate_function;
+        Strings simple_aggregate_functions;
 
         /// For Replacing and VersionedCollapsing mode. Can be empty for Replacing.
         String version_column;

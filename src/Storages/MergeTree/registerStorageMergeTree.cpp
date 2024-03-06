@@ -226,7 +226,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             add_optional_param("list of columns to sum");
             break;
         case MergeTreeData::MergingParams::StatelessAggregating:
-            add_mandatory_param("name of simple aggregate function");
+            add_mandatory_param("name of one simple aggregate function or tuple of several names");
             add_optional_param("list of columns to aggregate");
             break;
         case MergeTreeData::MergingParams::Replacing:
@@ -481,7 +481,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
-            merging_params.simple_aggregate_function = getIdentifierName(engine_args[arg_cnt - 1]);
+            merging_params.simple_aggregate_functions = extractColumnNames(engine_args[arg_cnt - 1]);
             --arg_cnt;
         }
     }

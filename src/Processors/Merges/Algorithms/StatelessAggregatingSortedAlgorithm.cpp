@@ -205,12 +205,13 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header,
     const SortDescription & description,
     const Names & column_names_to_aggregate,
-    const String & simple_aggregate_function,
+    const Strings & simple_aggregate_functions,
     const Names & partition_key_columns)
 {
     size_t num_columns = header.columns();
     StatelessAggregatingSortedAlgorithm::ColumnsDefinition def;
     def.column_names = header.getNames();
+    size_t num_aggregate_functions = simple_aggregate_functions.size();
 
     /// name of nested structure -> the column numbers that refer to it.
     std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
@@ -227,7 +228,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
         const auto * simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName());
         if (column.name == BlockNumberColumn::name)
         {
-            def.column_numbers_not_to_aggregate.push_back(i);
+            def.columns_not_to_aggregate.push_back(i);
             continue;
         }
 
@@ -238,7 +239,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
             /// if nested table name ends with `Map` it is a possible candidate for special handling
             if (map_name == column.name || !endsWith(map_name, "Map"))
             {
-                def.column_numbers_not_to_aggregate.push_back(i);
+                def.columns_not_to_aggregate.push_back(i);
                 continue;
             }
 
@@ -251,14 +252,14 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
             /// There are special const columns for example after prewhere sections.
             if ((!column.type->isSummable() && !is_agg_func && !simple) || isColumnConst(*column.column))
             {
-                def.column_numbers_not_to_aggregate.push_back(i);
+                def.columns_not_to_aggregate.push_back(i);
                 continue;
             }
 
             /// Are they inside the primary key or partition key?
             if (isInPrimaryKey(description, column.name) || isInPartitionKey(column.name, partition_key_columns))
             {
-                def.column_numbers_not_to_aggregate.push_back(i);
+                def.columns_not_to_aggregate.push_back(i);
                 continue;
             }
 
@@ -284,16 +285,14 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
                         def.allocates_memory_in_arena = true;
                 }
                 else if (!is_agg_func)
-                {
-                    desc.init(simple_aggregate_function.c_str(), {column.type});
-                }
+                    desc.init(simple_aggregate_functions[std::min(num_aggregate_functions, i)].c_str(), {column.type});
 
                 def.columns_to_aggregate.emplace_back(std::move(desc));
             }
             else
             {
                 // Column is not going to be summed, use last value
-                def.column_numbers_not_to_aggregate.push_back(i);
+                def.columns_not_to_aggregate.push_back(i);
             }
         }
     }
@@ -306,7 +305,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
         if (map.second.size() < 2)
         {
             for (auto col : map.second)
-                def.column_numbers_not_to_aggregate.push_back(col);
+                def.columns_not_to_aggregate.push_back(col);
             continue;
         }
 
@@ -318,7 +317,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
         if (column_num_it != map.second.end())
         {
             for (auto col : map.second)
-                def.column_numbers_not_to_aggregate.push_back(col);
+                def.columns_not_to_aggregate.push_back(col);
             continue;
         }
 
@@ -362,7 +361,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
         if (column_num_it != map.second.end())
         {
             for (auto col : map.second)
-                def.column_numbers_not_to_aggregate.push_back(col);
+                def.columns_not_to_aggregate.push_back(col);
             continue;
         }
 
@@ -376,7 +375,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
         {
             // Fall back to legacy mergeMaps for composite keys
             for (auto col : map.second)
-                def.column_numbers_not_to_aggregate.push_back(col);
+                def.columns_not_to_aggregate.push_back(col);
             def.maps_to_sum.emplace_back(std::move(map_desc));
         }
     }
@@ -389,7 +388,7 @@ static MutableColumns getMergedDataColumns(
     const StatelessAggregatingSortedAlgorithm::ColumnsDefinition & def)
 {
     MutableColumns columns;
-    size_t num_columns = def.column_numbers_not_to_aggregate.size() + def.columns_to_aggregate.size();
+    size_t num_columns = def.columns_not_to_aggregate.size() + def.columns_to_aggregate.size();
     columns.reserve(num_columns);
 
     for (const auto & desc : def.columns_to_aggregate)
@@ -411,7 +410,7 @@ static MutableColumns getMergedDataColumns(
         }
     }
 
-    for (const auto & column_number : def.column_numbers_not_to_aggregate)
+    for (const auto & column_number : def.columns_not_to_aggregate)
         columns.emplace_back(header.safeGetByPosition(column_number).type->createColumn());
 
     return columns;
@@ -469,7 +468,7 @@ static void postprocessChunk(
             res_columns[desc.column_numbers[0]] = std::move(column);
     }
 
-    for (auto column_number : def.column_numbers_not_to_aggregate)
+    for (auto column_number : def.columns_not_to_aggregate)
     {
         auto column = std::move(columns[next_column]);
         ++next_column;
@@ -615,8 +614,8 @@ void StatelessAggregatingSortedAlgorithm::StatelessAggregatingMergedData::finish
         return;
     }
 
-    size_t next_column = columns.size() - def.column_numbers_not_to_aggregate.size();
-    for (auto column_number : def.column_numbers_not_to_aggregate)
+    size_t next_column = columns.size() - def.columns_not_to_aggregate.size();
+    for (auto column_number : def.columns_not_to_aggregate)
     {
         columns[next_column]->insert(current_row[column_number]);
         ++next_column;
@@ -695,12 +694,12 @@ StatelessAggregatingSortedAlgorithm::StatelessAggregatingSortedAlgorithm(
     size_t num_inputs,
     SortDescription description_,
     const Names & column_names_to_aggregate,
-    const String & simple_aggregate_function,
+    const Strings & simple_aggregate_functions,
     const Names & partition_key_columns,
     size_t max_block_size_rows,
     size_t max_block_size_bytes)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
-    , columns_definition(defineColumns(header_, description, column_names_to_aggregate, simple_aggregate_function, partition_key_columns))
+    , columns_definition(defineColumns(header_, description, column_names_to_aggregate, simple_aggregate_functions, partition_key_columns))
     , merged_data(getMergedDataColumns(header_, columns_definition), max_block_size_rows, max_block_size_bytes, columns_definition)
 {
 }

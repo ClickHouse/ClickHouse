@@ -44,8 +44,6 @@
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/ExpressionListParsers.h>
 
 #include <algorithm>
 #include <iterator>
@@ -1048,7 +1046,7 @@ static void addMergingFinal(
 
             case MergeTreeData::MergingParams::StatelessAggregating:
                 return std::make_shared<StatelessAggregatingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.columns_to_aggregate, merging_params.simple_aggregate_function,
+                            sort_description, merging_params.columns_to_aggregate, merging_params.simple_aggregate_functions,
                             partition_key_columns, max_block_size_rows, /*max_block_size_bytes=*/0);
 
             case MergeTreeData::MergingParams::Aggregating:
