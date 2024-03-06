@@ -99,7 +99,5 @@ for table in "${!tables[@]}"; do
         SELECT 'ECHO_ALIGNMENT_FIX' FORMAT Null;
 
         SELECT * FROM $table order by a FORMAT JSONEachRow;
-
-        DROP TABLE $table;
     "
 done |& grep -v -F -x -e '-- { echoOn }' -e "        SELECT 'ECHO_ALIGNMENT_FIX' FORMAT Null;"
