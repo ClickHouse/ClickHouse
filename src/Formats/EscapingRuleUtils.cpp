@@ -109,31 +109,31 @@ bool deserializeFieldByEscapingRule(
     {
         case FormatSettings::EscapingRule::Escaped:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeTextEscapedImpl(column, buf, format_settings, serialization);
             else
                 serialization->deserializeTextEscaped(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::Quoted:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeTextQuotedImpl(column, buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::CSV:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeTextCSVImpl(column, buf, format_settings, serialization);
             else
                 serialization->deserializeTextCSV(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::JSON:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeTextJSONImpl(column, buf, format_settings, serialization);
             else
                 serialization->deserializeTextJSON(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::Raw:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeTextRawImpl(column, buf, format_settings, serialization);
             else
                 serialization->deserializeTextRaw(column, buf, format_settings);
             break;
@@ -303,8 +303,8 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 /// Try to determine the type of value inside quotes
                 auto type = tryInferDataTypeForSingleField(data, format_settings);
 
-                /// If we couldn't infer any type or it's tuple in quotes or it's a number and csv.try_infer_numbers_from_strings = 0, we determine it as a string.
-                if (!type || isTuple(type) || (isNumber(type) && !format_settings.csv.try_infer_numbers_from_strings))
+                /// If we couldn't infer any type or it's a number or tuple in quotes, we determine it as a string.
+                if (!type || isNumber(removeNullable(type)) || isTuple(type))
                     return std::make_shared<DataTypeString>();
 
                 return type;
@@ -408,10 +408,9 @@ DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::E
 String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & settings)
 {
     return fmt::format(
-        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}",
+        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}",
         settings.schema_inference_hints,
         settings.max_rows_to_read_for_schema_inference,
-        settings.max_bytes_to_read_for_schema_inference,
         settings.schema_inference_make_columns_nullable);
 }
 
@@ -450,16 +449,11 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
             break;
         case FormatSettings::EscapingRule::JSON:
             result += fmt::format(
-                ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_bools_as_strings={}, read_objects_as_strings={}, read_numbers_as_strings={}, "
-                "read_arrays_as_strings={}, try_infer_objects_as_tuples={}, infer_incomplete_types_as_strings={}, try_infer_objects={}",
+                ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_objects_as_strings={}, read_numbers_as_strings={}, try_infer_objects={}",
                 settings.json.try_infer_numbers_from_strings,
                 settings.json.read_bools_as_numbers,
-                settings.json.read_bools_as_strings,
                 settings.json.read_objects_as_strings,
                 settings.json.read_numbers_as_strings,
-                settings.json.read_arrays_as_strings,
-                settings.json.try_infer_objects_as_tuples,
-                settings.json.infer_incomplete_types_as_strings,
                 settings.json.allow_object_type);
             break;
         default:

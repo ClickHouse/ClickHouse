@@ -3,8 +3,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/parseQuery.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -30,21 +28,14 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Planner/PlannerActionsVisitor.h>
-#include <Planner/CollectTableExpressionData.h>
-#include <Planner/CollectSets.h>
-
-#include <stack>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
@@ -109,10 +100,7 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
-
-    // In case of cross-replication we don't know what database is used for the table.
-    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-    auto result_ast = query_node_typed.toAST({ .qualify_indentifiers_with_database = false });
+    auto result_ast = query_node_typed.toAST();
 
     while (true)
     {
@@ -130,34 +118,6 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query node invalid conversion to select query");
 
     return result_ast;
-}
-
-static void removeCTEs(ASTPtr & ast)
-{
-    std::stack<IAST *> stack;
-    stack.push(ast.get());
-    while (!stack.empty())
-    {
-        auto * node = stack.top();
-        stack.pop();
-
-        if (auto * subquery = typeid_cast<ASTSubquery *>(node))
-            subquery->cte_name = {};
-
-        for (const auto & child : node->children)
-            stack.push(child.get());
-    }
-}
-
-ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
-{
-    auto ast = queryNodeToSelectQuery(query_node);
-    /// Remove CTEs information from distributed queries.
-    /// Now, if cte_name is set for subquery node, AST -> String serialization will only print cte name.
-    /// But CTE is defined only for top-level query part, so may not be sent.
-    /// Removing cte_name forces subquery to be always printed.
-    removeCTEs(ast);
-    return ast;
 }
 
 /** There are no limits on the maximum size of the result for the subquery.
@@ -209,7 +169,6 @@ StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQue
     limits.speed_limits.max_execution_rps = settings.max_execution_speed;
     limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
     limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
-    limits.speed_limits.max_estimated_execution_time = settings.max_estimated_execution_time;
 
     return limits;
 }
@@ -386,37 +345,30 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
     return function_node;
 }
 
-QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
-    const QueryTreeNodePtr & query_node,
-    const QueryTreeNodes & table_nodes,
+QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map)
 {
+    auto & query_node_typed = query_node->as<QueryNode &>();
+    auto table_expressions = extractTableExpressions(query_node_typed.getJoinTree());
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
 
-    for (const auto & table_expression : table_nodes)
+    for (auto & table_expression : table_expressions)
     {
         auto * table_node = table_expression->as<TableNode>();
         auto * table_function_node = table_expression->as<TableFunctionNode>();
+        if (!table_node && !table_function_node)
+            continue;
 
-        if (table_node || table_function_node)
-        {
-            const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+        const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+        auto storage_dummy = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
+            storage_snapshot->metadata->getColumns());
+        auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
 
-            StoragePtr storage_dummy = std::make_shared<StorageDummy>(
-                storage_snapshot->storage.getStorageID(),
-                ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
-                storage_snapshot);
+        if (result_replacement_map)
+            result_replacement_map->emplace(table_expression, dummy_table_node);
 
-            auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
-
-            if (result_replacement_map)
-                result_replacement_map->emplace(table_expression, dummy_table_node);
-
-            dummy_table_node->setAlias(table_expression->getAlias());
-            replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
-        }
+        replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
     }
 
     return query_node->cloneAndReplace(replacement_map);
@@ -446,8 +398,8 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 
     auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
 
-    query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
     query_node->resolveProjectionColumns(projection_columns);
+    query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
     query_node->getJoinTree() = table_expression;
     query_node->setIsSubquery(true);
 
@@ -457,67 +409,11 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
 {
     SelectQueryInfo select_query_info;
-    select_query_info.query = queryNodeToSelectQuery(query_tree);
+    select_query_info.original_query = queryNodeToSelectQuery(query_tree);
+    select_query_info.query = select_query_info.original_query;
     select_query_info.query_tree = query_tree;
     select_query_info.planner_context = planner_context;
     return select_query_info;
-}
-
-FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
-        PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter)
-{
-    const auto & query_context = planner_context->getQueryContext();
-
-    auto filter_query_tree = buildQueryTree(filter_expression, query_context);
-
-    QueryAnalysisPass query_analysis_pass(table_expression);
-    query_analysis_pass.run(filter_query_tree, query_context);
-
-    if (table_expression_required_names_without_filter.empty())
-    {
-        auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
-        const auto & table_expression_names = table_expression_data.getColumnNames();
-        table_expression_required_names_without_filter.insert(table_expression_names.begin(), table_expression_names.end());
-    }
-
-    collectSourceColumns(filter_query_tree, planner_context);
-    collectSets(filter_query_tree, *planner_context);
-
-    auto filter_actions_dag = std::make_shared<ActionsDAG>();
-
-    PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
-    if (expression_nodes.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Filter actions must return single output node. Actual {}",
-            expression_nodes.size());
-
-    auto & filter_actions_outputs = filter_actions_dag->getOutputs();
-    filter_actions_outputs = std::move(expression_nodes);
-
-    std::string filter_node_name = filter_actions_outputs[0]->result_name;
-    bool remove_filter_column = true;
-
-    for (const auto & filter_input_node : filter_actions_dag->getInputs())
-        if (table_expression_required_names_without_filter.contains(filter_input_node->result_name))
-            filter_actions_outputs.push_back(filter_input_node);
-
-    return {std::move(filter_actions_dag), std::move(filter_node_name), remove_filter_column};
-}
-
-ASTPtr parseAdditionalResultFilter(const Settings & settings)
-{
-    const String & additional_result_filter = settings.additional_result_filter;
-    if (additional_result_filter.empty())
-        return {};
-
-    ParserExpression parser;
-    auto additional_result_filter_ast = parseQuery(
-                parser, additional_result_filter.data(), additional_result_filter.data() + additional_result_filter.size(),
-                "additional result filter", settings.max_query_size, settings.max_parser_depth);
-    return additional_result_filter_ast;
 }
 
 }

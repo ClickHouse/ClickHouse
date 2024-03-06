@@ -8,14 +8,9 @@ import logging
 
 DICTS = ["configs/dictionaries/mysql_dict1.xml", "configs/dictionaries/mysql_dict2.xml"]
 CONFIG_FILES = ["configs/remote_servers.xml", "configs/named_collections.xml"]
-USER_CONFIGS = ["configs/users.xml"]
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
-    "instance",
-    main_configs=CONFIG_FILES,
-    user_configs=USER_CONFIGS,
-    with_mysql8=True,
-    dictionaries=DICTS,
+    "instance", main_configs=CONFIG_FILES, with_mysql=True, dictionaries=DICTS
 )
 
 create_table_mysql_template = """
@@ -47,7 +42,7 @@ def started_cluster():
 
         # Create database in ClickChouse using MySQL protocol (will be used for data insertion)
         instance.query(
-            "CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql80:3306', 'test', 'root', 'clickhouse')"
+            "CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql57:3306', 'test', 'root', 'clickhouse')"
         )
 
         yield cluster
@@ -86,7 +81,7 @@ def test_mysql_dictionaries_custom_query_full_load(started_cluster):
     PRIMARY KEY id
     LAYOUT(FLAT())
     SOURCE(MYSQL(
-        HOST 'mysql80'
+        HOST 'mysql57'
         PORT 3306
         USER 'root'
         PASSWORD 'clickhouse'
@@ -135,7 +130,7 @@ def test_mysql_dictionaries_custom_query_partial_load_simple_key(started_cluster
     PRIMARY KEY id
     LAYOUT(DIRECT())
     SOURCE(MYSQL(
-        HOST 'mysql80'
+        HOST 'mysql57'
         PORT 3306
         USER 'root'
         PASSWORD 'clickhouse'
@@ -186,7 +181,7 @@ def test_mysql_dictionaries_custom_query_partial_load_complex_key(started_cluste
     PRIMARY KEY id, id_key
     LAYOUT(COMPLEX_KEY_DIRECT())
     SOURCE(MYSQL(
-        HOST 'mysql80'
+        HOST 'mysql57'
         PORT 3306
         USER 'root'
         PASSWORD 'clickhouse'
@@ -372,13 +367,13 @@ def get_mysql_conn(started_cluster):
                 conn = pymysql.connect(
                     user="root",
                     password="clickhouse",
-                    host=started_cluster.mysql8_ip,
-                    port=started_cluster.mysql8_port,
+                    host=started_cluster.mysql_ip,
+                    port=started_cluster.mysql_port,
                 )
             else:
                 conn.ping(reconnect=True)
             logging.debug(
-                f"MySQL Connection establised: {started_cluster.mysql8_ip}:{started_cluster.mysql8_port}"
+                f"MySQL Connection establised: {started_cluster.mysql_ip}:{started_cluster.mysql_port}"
             )
             return conn
         except Exception as e:

@@ -31,7 +31,6 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        ContextPtr context_,
         const String & remote_table_schema_ = "",
         const String & on_conflict = "");
 
@@ -46,7 +45,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     struct Configuration
     {
@@ -65,13 +64,7 @@ public:
 
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
 
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table = true);
-
-    static ColumnsDescription getTableStructureFromData(
-        const postgres::PoolWithFailoverPtr & pool_,
-        const String & table,
-        const String & schema,
-        const ContextPtr & context_);
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, bool require_table = true);
 
 private:
     String remote_table_name;
@@ -79,7 +72,7 @@ private:
     String on_conflict;
     postgres::PoolWithFailoverPtr pool;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

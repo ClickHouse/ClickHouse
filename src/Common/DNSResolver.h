@@ -5,10 +5,8 @@
 #include <base/types.h>
 #include <Core/Names.h>
 #include <boost/noncopyable.hpp>
-#include <Common/LoggingFormatStringHelpers.h>
+#include <Common/logger_useful.h>
 
-
-namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -20,11 +18,7 @@ class DNSResolver : private boost::noncopyable
 {
 public:
     using IPAddresses = std::vector<Poco::Net::IPAddress>;
-    using CacheEntry = struct
-    {
-        IPAddresses addresses;
-        std::chrono::system_clock::time_point cached_at;
-    };
+    using IPAddressesPtr = std::shared_ptr<IPAddresses>;
 
     static DNSResolver & instance();
 
@@ -52,9 +46,6 @@ public:
     /// Disables caching
     void setDisableCacheFlag(bool is_disabled = true);
 
-    /// Set a limit of entries in cache
-    void setCacheMaxEntries(const UInt64 cache_max_entries);
-
     /// Drops all caches
     void dropCache();
 
@@ -65,25 +56,23 @@ public:
     /// Returns true if IP of any host has been changed or an element was dropped (too many failures)
     bool updateCache(UInt32 max_consecutive_failures);
 
-    /// Returns a copy of cache entries
-    std::vector<std::pair<std::string, CacheEntry>> cacheEntries() const;
-
     ~DNSResolver();
 
 private:
     template <typename UpdateF, typename ElemsT>
+
     bool updateCacheImpl(
         UpdateF && update_func,
         ElemsT && elems,
         UInt32 max_consecutive_failures,
-        FormatStringHelper<String> notfound_log_msg,
-        FormatStringHelper<String> dropped_log_msg);
+        const String & notfound_log_msg,
+        const String & dropped_log_msg);
 
     DNSResolver();
 
     struct Impl;
     std::unique_ptr<Impl> impl;
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// Updates cached value and returns true it has been changed.
     bool updateHost(const String & host);

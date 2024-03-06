@@ -13,8 +13,6 @@ CREATE USER u4_01292 IDENTIFIED WITH sha256_password
 CREATE USER u5_01292 IDENTIFIED WITH sha256_password
 CREATE USER u6_01292 IDENTIFIED WITH double_sha1_password
 CREATE USER u7_01292 IDENTIFIED WITH double_sha1_password
-CREATE USER u8_01292 IDENTIFIED WITH bcrypt_password
-CREATE USER u9_01292 IDENTIFIED WITH bcrypt_password
 CREATE USER u1_01292 IDENTIFIED WITH sha256_password
 CREATE USER u2_01292 IDENTIFIED WITH sha256_password
 CREATE USER u3_01292 IDENTIFIED WITH sha256_password
@@ -56,14 +54,14 @@ CREATE USER u1_01292 HOST LOCAL
 CREATE USER `u2_01292@%.myhost.com`
 -- settings
 CREATE USER u1_01292
-CREATE USER u2_01292 SETTINGS PROFILE `default`
+CREATE USER u2_01292 SETTINGS PROFILE default
 CREATE USER u3_01292 SETTINGS max_memory_usage = 5000000
 CREATE USER u4_01292 SETTINGS max_memory_usage MIN 5000000
 CREATE USER u5_01292 SETTINGS max_memory_usage MAX 5000000
 CREATE USER u6_01292 SETTINGS max_memory_usage CONST
 CREATE USER u7_01292 SETTINGS max_memory_usage WRITABLE
 CREATE USER u8_01292 SETTINGS max_memory_usage = 5000000 MIN 4000000 MAX 6000000 CONST
-CREATE USER u9_01292 SETTINGS PROFILE `default`, max_memory_usage = 5000000 WRITABLE
+CREATE USER u9_01292 SETTINGS PROFILE default, max_memory_usage = 5000000 WRITABLE
 CREATE USER u1_01292 SETTINGS readonly = 1
 CREATE USER u2_01292 SETTINGS readonly = 1
 CREATE USER u3_01292
@@ -82,7 +80,7 @@ CREATE USER u5_01292 DEFAULT ROLE ALL EXCEPT r1_01292
 CREATE USER u6_01292 DEFAULT ROLE NONE
 -- complex
 CREATE USER u1_01292 IDENTIFIED WITH plaintext_password HOST LOCAL SETTINGS readonly = 1
-CREATE USER u1_01292 HOST LIKE \'%.%.myhost.com\' DEFAULT ROLE NONE SETTINGS PROFILE `default`
+CREATE USER u1_01292 HOST LIKE \'%.%.myhost.com\' DEFAULT ROLE NONE SETTINGS PROFILE default
 -- if not exists
 CREATE USER u1_01292
 GRANT r1_01292 TO u1_01292
@@ -106,10 +104,10 @@ CREATE USER u2_01292 DEFAULT ROLE r1_01292, r2_01292 SETTINGS readonly = 1
 CREATE USER u3_01292 HOST LIKE \'%.%.myhost.com\' DEFAULT ROLE r1_01292, r2_01292
 CREATE USER u4_01292 HOST LIKE \'%.%.myhost.com\' DEFAULT ROLE r1_01292, r2_01292
 -- system.users
-u1_01292	local_directory	plaintext_password	{}	[]	['localhost']	[]	[]	1	[]	[]
-u2_01292	local_directory	no_password	{}	[]	[]	[]	['%.%.myhost.com']	0	[]	[]
-u3_01292	local_directory	sha256_password	{}	['192.169.1.1','192.168.0.0/16']	['localhost']	[]	[]	0	['r1_01292']	[]
-u4_01292	local_directory	double_sha1_password	{}	['::/0']	[]	[]	[]	1	[]	['r1_01292']
+u1_01292	local directory	plaintext_password	{}	[]	['localhost']	[]	[]	1	[]	[]
+u2_01292	local directory	no_password	{}	[]	[]	[]	['%.%.myhost.com']	0	[]	[]
+u3_01292	local directory	sha256_password	{}	['192.169.1.1','192.168.0.0/16']	['localhost']	[]	[]	0	['r1_01292']	[]
+u4_01292	local directory	double_sha1_password	{}	['::/0']	[]	[]	[]	1	[]	['r1_01292']
 -- system.settings_profile_elements
 \N	u1_01292	\N	0	readonly	1	\N	\N	\N	\N
 \N	u2_01292	\N	0	\N	\N	\N	\N	\N	default

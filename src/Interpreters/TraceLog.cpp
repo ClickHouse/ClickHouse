@@ -1,4 +1,3 @@
-#include <base/getFQDNOrHostName.h>
 #include <Interpreters/TraceLog.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -25,11 +24,10 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"ProfileEvent", static_cast<UInt8>(TraceType::ProfileEvent)},
 };
 
-ColumnsDescription TraceLogElement::getColumnsDescription()
+NamesAndTypesList TraceLogElement::getNamesAndTypes()
 {
-    return ColumnsDescription
+    return
     {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
@@ -40,7 +38,6 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"query_id", std::make_shared<DataTypeString>()},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"size", std::make_shared<DataTypeInt64>()},
-        {"ptr", std::make_shared<DataTypeUInt64>()},
         {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"increment", std::make_shared<DataTypeInt64>()},
     };
@@ -50,7 +47,6 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
@@ -61,7 +57,6 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(trace);
     columns[i++]->insert(size);
-    columns[i++]->insert(ptr);
 
     String event_name;
     if (event != ProfileEvents::end())

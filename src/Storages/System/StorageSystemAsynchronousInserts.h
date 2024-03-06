@@ -12,7 +12,7 @@ class StorageSystemAsynchronousInserts final : public IStorageSystemOneBlock<Sto
 {
 public:
     std::string getName() const override { return "SystemAsynchronousInserts"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

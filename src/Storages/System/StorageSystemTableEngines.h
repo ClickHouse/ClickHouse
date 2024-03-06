@@ -19,7 +19,7 @@ public:
         return "SystemTableEngines";
     }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 };
 
 }

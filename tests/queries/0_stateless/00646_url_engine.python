@@ -7,7 +7,6 @@ import tempfile
 import threading
 import os
 import traceback
-from urllib.parse import urljoin
 import urllib.request
 import subprocess
 from io import StringIO
@@ -164,7 +163,6 @@ def test_select(
     requests=[],
     answers=[],
     test_data="",
-    res_path="",
 ):
     with open(CSV_DATA, "w") as f:  # clear file
         f.write("")
@@ -185,7 +183,7 @@ def test_select(
         tbl = table_name
         if not tbl:
             tbl = "url('{addr}', 'CSV', '{schema}')".format(
-                addr=urljoin(HTTP_SERVER_URL_STR, res_path), schema=schema
+                addr=HTTP_SERVER_URL_STR, schema=schema
             )
         check_answers(requests[i].format(tbl=tbl), answers[i])
 
@@ -254,20 +252,6 @@ def main():
         "select double, count(*) from {tbl} group by double order by double": "7.7\t2\n9.9\t10",
     }
 
-    pathname = CSV_DATA
-    filename = os.path.basename(CSV_DATA)
-    select_virtual_requests = {
-        "select _path from {tbl}": "\n".join(pathname for _ in range(2)),
-        "select _file from {tbl}": "\n".join(filename for _ in range(2)),
-        "select _file, from {tbl} order by _path": "\n".join(
-            filename for _ in range(2)
-        ),
-        "select _path, _file from {tbl}": "\n".join(
-            f"{pathname}\t{filename}" for _ in range(2)
-        ),
-        "select _path, count(*) from {tbl} group by _path": f"{pathname}\t2",
-    }
-
     t, httpd = start_server()
     t.start()
     # test table with url engine
@@ -283,14 +267,6 @@ def main():
         answers=list(select_only_requests.values()),
         test_data=test_data,
     )
-    # test table function url for virtual column
-    test_select(
-        requests=list(select_virtual_requests.keys()),
-        answers=list(select_virtual_requests.values()),
-        test_data=test_data,
-        res_path=CSV_DATA,
-    )
-
     # test insert into table with url engine
     test_insert(
         table_name="test_table_insert",

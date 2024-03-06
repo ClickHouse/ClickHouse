@@ -4,7 +4,6 @@
 #include <Common/logger_useful.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
-#include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -18,20 +17,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/filesystemHelpers.h>
-
-namespace
-{
-
-using namespace DB;
-
-ContextPtr makeSQLiteWriteContext(ContextPtr context)
-{
-    auto write_context = Context::createCopy(context);
-    write_context->setSetting("output_format_values_escape_quote_with_quote", Field(true));
-    return write_context;
-}
-
-}
 
 
 namespace DB
@@ -56,34 +41,12 @@ StorageSQLite::StorageSQLite(
     , remote_table_name(remote_table_name_)
     , database_path(database_path_)
     , sqlite_db(sqlite_db_)
-    , log(getLogger("StorageSQLite (" + table_id_.table_name + ")"))
-    , write_context(makeSQLiteWriteContext(getContext()))
+    , log(&Poco::Logger::get("StorageSQLite (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
-
-    if (columns_.empty())
-    {
-        auto columns = getTableStructureFromData(sqlite_db, remote_table_name);
-        storage_metadata.setColumns(columns);
-    }
-    else
-        storage_metadata.setColumns(columns_);
-
+    storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
-}
-
-
-ColumnsDescription StorageSQLite::getTableStructureFromData(
-    const SQLitePtr & sqlite_db_,
-    const String & table)
-{
-    auto columns = fetchSQLiteTableStructure(sqlite_db_.get(), table);
-
-    if (!columns)
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Failed to fetch table structure for {}", table);
-
-    return ColumnsDescription{*columns};
 }
 
 
@@ -106,7 +69,6 @@ Pipe StorageSQLite::read(
         column_names,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes,
-        LiteralEscapingStyle::Regular,
         "",
         remote_table_name,
         context_);
@@ -159,7 +121,7 @@ public:
 
         sqlbuf << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.write_context);
+        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
         writer->write(block);
 
         sqlbuf << ";";
@@ -185,7 +147,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
+SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
@@ -208,13 +170,12 @@ void registerStorageSQLite(StorageFactory & factory)
         const auto database_path = checkAndGetLiteralArgument<String>(engine_args[0], "database_path");
         const auto table_name = checkAndGetLiteralArgument<String>(engine_args[1], "table_name");
 
-        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ args.mode <= LoadingStrictnessLevel::CREATE);
+        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */!args.attach);
 
         return std::make_shared<StorageSQLite>(args.table_id, sqlite_db, database_path,
                                      table_name, args.columns, args.constraints, args.getContext());
     },
     {
-        .supports_schema_inference = true,
         .source_access_type = AccessType::SQLITE,
     });
 }

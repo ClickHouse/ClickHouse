@@ -22,6 +22,8 @@ public:
 
     off_t seek(off_t off, int whence) override;
 
+    Range getRemainingReadRange() const override;
+
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
     /// file_offset_of_buffer_end can differ from impl's file_offset_of_buffer_end
@@ -31,8 +33,7 @@ public:
 
 private:
     std::optional<size_t> read_until_position;
-    /// atomic because can be used in log or exception messages while being updated.
-    std::atomic<size_t> file_offset_of_buffer_end = 0;
+    size_t file_offset_of_buffer_end = 0;
 };
 
 }

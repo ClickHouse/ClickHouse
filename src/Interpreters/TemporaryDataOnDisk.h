@@ -7,6 +7,7 @@
 #include <Disks/IVolume.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/FileCache.h>
 
 
 namespace CurrentMetrics
@@ -25,8 +26,6 @@ using TemporaryDataOnDiskPtr = std::unique_ptr<TemporaryDataOnDisk>;
 
 class TemporaryFileStream;
 using TemporaryFileStreamPtr = std::unique_ptr<TemporaryFileStream>;
-
-class FileCache;
 
 /*
  * Used to account amount of temporary data written to disk.
@@ -91,21 +90,14 @@ public:
     /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
     TemporaryFileStream & createStream(const Block & header, size_t max_file_size = 0);
 
-    /// Write raw data directly into buffer.
-    /// Differences from `createStream`:
-    ///   1) it doesn't account data in parent scope
-    ///   2) returned buffer owns resources (instead of TemporaryDataOnDisk itself)
-    /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
-    std::unique_ptr<WriteBufferFromFileBase> createRawStream(size_t max_file_size = 0);
-
     std::vector<TemporaryFileStream *> getStreams() const;
     bool empty() const;
 
     const StatAtomic & getStat() const { return stat; }
 
 private:
-    FileSegmentsHolderPtr createCacheFile(size_t max_file_size);
-    TemporaryFileOnDiskHolder createRegularFile(size_t max_file_size);
+    TemporaryFileStream & createStreamToCacheFile(const Block & header, size_t max_file_size);
+    TemporaryFileStream & createStreamToRegularFile(const Block & header, size_t max_file_size);
 
     mutable std::mutex mutex;
     std::vector<TemporaryFileStreamPtr> streams TSA_GUARDED_BY(mutex);
@@ -131,7 +123,7 @@ public:
     };
 
     TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_);
-    TemporaryFileStream(FileSegmentsHolderPtr segments_, const Block & header_, TemporaryDataOnDisk * parent_);
+    TemporaryFileStream(FileSegmentsHolder && segments_, const Block & header_, TemporaryDataOnDisk * parent_);
 
     size_t write(const Block & block);
     void flush();
@@ -142,7 +134,6 @@ public:
     Block read();
 
     String getPath() const;
-    size_t getSize() const;
 
     Block getHeader() const { return header; }
 
@@ -163,7 +154,7 @@ private:
 
     /// Data can be stored in file directly or in the cache
     TemporaryFileOnDiskHolder file;
-    FileSegmentsHolderPtr segment_holder;
+    FileSegmentsHolder segment_holder;
 
     Stat stat;
 

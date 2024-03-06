@@ -22,7 +22,7 @@ struct RabbitMQConfiguration
 class RabbitMQConnection
 {
 public:
-    RabbitMQConnection(const RabbitMQConfiguration & configuration_, LoggerPtr log_);
+    RabbitMQConnection(const RabbitMQConfiguration & configuration_, Poco::Logger * log_);
 
     bool isConnected();
 
@@ -51,7 +51,7 @@ private:
     void disconnectImpl(bool immediately = false);
 
     RabbitMQConfiguration configuration;
-    LoggerPtr log;
+    Poco::Logger * log;
 
     UVLoop loop;
     /// Preserve order of destruction here:

@@ -26,7 +26,7 @@ public:
         return !child->as<FunctionNode>();
     }
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_group_by_function_keys)
             return;
@@ -36,9 +36,6 @@ public:
             return;
 
         if (!query->hasGroupBy())
-            return;
-
-        if (query->isGroupByWithCube() || query->isGroupByWithRollup())
             return;
 
         auto & group_by = query->getGroupBy().getNodes();
@@ -92,7 +89,7 @@ private:
                     if (!found)
                     {
                         bool is_deterministic_function = parents_are_only_deterministic &&
-                            func->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
+                            function->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
                         for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
                             candidates.push_back({ *it, is_deterministic_function });
                     }
@@ -130,7 +127,7 @@ private:
     }
 };
 
-void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     OptimizeGroupByFunctionKeysVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

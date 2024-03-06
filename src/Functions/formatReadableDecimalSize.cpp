@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/formatReadable.h>
-#include <Common/formatReadable.h>
 
 
 namespace DB
@@ -22,13 +21,13 @@ namespace
 REGISTER_FUNCTION(FormatReadableDecimalSize)
 {
     factory.registerFunction<FunctionFormatReadable<Impl>>(
-    FunctionDocumentation{
-        .description=R"(
+    {
+        R"(
 Accepts the size (number of bytes). Returns a rounded size with a suffix (KB, MB, etc.) as a string.
 )",
-        .examples{
-            {"formatReadableDecimalSize", "SELECT formatReadableDecimalSize(1000)", ""}},
-        .categories{"OtherFunctions"}
+        Documentation::Examples{
+            {"formatReadableDecimalSize", "SELECT formatReadableDecimalSize(1000)"}},
+        Documentation::Categories{"OtherFunctions"}
     },
     FunctionFactory::CaseSensitive);
 }

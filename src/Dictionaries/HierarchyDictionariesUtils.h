@@ -26,12 +26,7 @@ public:
         UInt32 end_index;
     };
 
-    /// By default we use initial_bytes=4096 in PodArray.
-    /// It might lead to really high memory consumption when arrays are almost empty but there are a lot of them.
-    using Array = PODArray<UInt64, 8 * sizeof(UInt64), Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
-    using ParentToChildIndex = HashMap<UInt64, Array>;
-
-    explicit DictionaryHierarchicalParentToChildIndex(const ParentToChildIndex & parent_to_children_map_)
+    explicit DictionaryHierarchicalParentToChildIndex(const HashMap<UInt64, PaddedPODArray<UInt64>> & parent_to_children_map_)
     {
         size_t parent_to_children_map_size = parent_to_children_map_.size();
 

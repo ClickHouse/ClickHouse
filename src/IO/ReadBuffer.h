@@ -6,7 +6,6 @@
 #include <memory>
 
 #include <Common/Exception.h>
-#include <Common/Priority.h>
 #include <IO/BufferBase.h>
 #include <IO/AsynchronousReader.h>
 
@@ -18,9 +17,10 @@ namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
-static constexpr auto DEFAULT_PREFETCH_PRIORITY = Priority{0};
+static constexpr auto DEFAULT_PREFETCH_PRIORITY = 0;
 
 /** A simple abstract class for buffered data reading (char sequences) from somewhere.
   * Unlike std::istream, it provides access to the internal buffer,
@@ -54,12 +54,8 @@ public:
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
-    /** read next data and fill a buffer with it; set position to the beginning of the new data
-      * (but not necessarily to the beginning of working_buffer!);
-      * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong;
-      *
-      * if an exception was thrown, is the ReadBuffer left in a usable state? this varies across implementations;
-      * can the caller retry next() after an exception, or call other methods? not recommended
+    /** read next data and fill a buffer with it; set position to the beginning;
+      * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong
       */
     bool next()
     {
@@ -208,43 +204,26 @@ public:
 
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.
-      * `priority` is the `ThreadPool` priority, with which the prefetch task will be scheduled.
-      * Lower value means higher priority.
+      * `priority` is the Threadpool priority, with which the prefetch task will be schedules.
+      * Smaller is more priority.
       */
-    virtual void prefetch(Priority) {}
+    virtual void prefetch(int64_t /* priority */) {}
 
     /**
      * Set upper bound for read range [..., position).
-     * Useful for reading from remote filesystem, when it matters how much we read.
-     * Doesn't affect getFileSize().
-     * See also: SeekableReadBuffer::supportsRightBoundedReads().
-     *
-     * Behavior in weird cases is currently implementation-defined:
-     *  - setReadUntilPosition() below current position,
-     *  - setReadUntilPosition() above the end of the file,
-     *  - seek() to a position above the until position (even if you setReadUntilPosition() to a
-     *    higher value right after the seek!),
-     *
-     * Implementations are recommended to:
-     *  - Allow the read-until-position to go below current position, e.g.:
-     *      // Read block [300, 400)
-     *      setReadUntilPosition(400);
-     *      seek(300);
-     *      next();
-     *      // Read block [100, 200)
-     *      setReadUntilPosition(200); // oh oh, this is below the current position, but should be allowed
-     *      seek(100); // but now everything's fine again
-     *      next();
-     *      // (Swapping the order of seek and setReadUntilPosition doesn't help: then it breaks if the order of blocks is reversed.)
-     *  - Check if new read-until-position value is equal to the current value and do nothing in this case,
-     *    so that the caller doesn't have to.
-     *
-     * Typical implementations discard any current buffers and connections when the
-     * read-until-position changes even by a small (nonzero) amount.
+     * Required for reading from remote filesystem, when it matters how much we read.
      */
     virtual void setReadUntilPosition(size_t /* position */) {}
 
     virtual void setReadUntilEnd() {}
+
+    /// Read at most `size` bytes into data at specified offset `offset`. First ignore `ignore` bytes if `ignore` > 0.
+    /// Notice: this function only need to be implemented in synchronous read buffers to be wrapped in asynchronous read.
+    /// Such as ReadBufferFromRemoteFSGather and AsynchronousReadIndirectBufferFromRemoteFS.
+    virtual IAsynchronousReader::Result readInto(char * /*data*/, size_t /*size*/, size_t /*offset*/, size_t /*ignore*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "readInto not implemented");
+    }
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`

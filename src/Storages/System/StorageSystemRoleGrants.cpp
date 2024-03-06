@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
@@ -17,26 +16,16 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemRoleGrants::getColumnsDescription()
+NamesAndTypesList StorageSystemRoleGrants::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "User name."},
-        {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Role name."},
-        {"granted_role_name", std::make_shared<DataTypeString>(),
-            "Name of role granted to the `role_name` role. To grant one role to another one use `GRANT role1 TO role2`."},
-        {"granted_role_id", std::make_shared<DataTypeUUID>(), "The ID of the role."},
-        {"granted_role_is_default", std::make_shared<DataTypeUInt8>(),
-            "Flag that shows whether `granted_role` is a default role. Possible values: "
-            "• 1 — `granted_role` is a default role, "
-            "• 0 — `granted_role` is not a default role."
-        },
-        {"with_admin_option", std::make_shared<DataTypeUInt8>(),
-            "Flag that shows whether `granted_role` is a role with `ADMIN OPTION` privilege. Possible values: "
-            "• 1 — The role has `ADMIN OPTION` privilege."
-            "• 0 — The role without `ADMIN OPTION` privilege."
-        },
+    NamesAndTypesList names_and_types{
+        {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"granted_role_name", std::make_shared<DataTypeString>()},
+        {"granted_role_is_default", std::make_shared<DataTypeUInt8>()},
+        {"with_admin_option", std::make_shared<DataTypeUInt8>()},
     };
+    return names_and_types;
 }
 
 
@@ -56,14 +45,12 @@ void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, ContextPtr 
     auto & column_role_name = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
     auto & column_role_name_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     auto & column_granted_role_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_granted_role_id = assert_cast<ColumnUUID &>(*res_columns[column_index++]).getData();
     auto & column_is_default = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
     auto & column_admin_option = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
 
     auto add_row = [&](const String & grantee_name,
                        AccessEntityType grantee_type,
                        const String & granted_role_name,
-                       const UUID & granted_role_id,
                        bool is_default,
                        bool with_admin_option)
     {
@@ -85,7 +72,6 @@ void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, ContextPtr 
             assert(false);
 
         column_granted_role_name.insertData(granted_role_name.data(), granted_role_name.length());
-        column_granted_role_id.push_back(granted_role_id.toUnderType());
         column_is_default.push_back(is_default);
         column_admin_option.push_back(with_admin_option);
     };
@@ -104,7 +90,7 @@ void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, ContextPtr 
                     continue;
 
                 bool is_default = !default_roles || default_roles->match(role_id);
-                add_row(grantee_name, grantee_type, *role_name, role_id, is_default, element.admin_option);
+                add_row(grantee_name, grantee_type, *role_name, is_default, element.admin_option);
             }
         }
     };

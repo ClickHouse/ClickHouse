@@ -1,14 +1,11 @@
 #pragma once
 
 #include <Common/VariableContext.h>
-#include <Common/Stopwatch.h>
 #include <base/types.h>
 #include <base/strong_typedef.h>
-#include <Poco/Message.h>
 #include <atomic>
 #include <memory>
 #include <cstddef>
-
 
 /** Implements global counters for various events happening in the application
   *  - for high level profiling.
@@ -26,29 +23,6 @@ namespace ProfileEvents
 
     /// Counters - how many times each event happened
     extern Counters global_counters;
-
-    class Timer
-    {
-    public:
-        enum class Resolution : UInt64
-        {
-            Nanoseconds = 1,
-            Microseconds = 1000,
-            Milliseconds = 1000000,
-        };
-        Timer(Counters & counters_, Event timer_event_, Resolution resolution_);
-        Timer(Counters & counters_, Event timer_event_, Event counter_event, Resolution resolution_);
-        ~Timer() { end(); }
-        void cancel() { watch.reset(); }
-        void end();
-        UInt64 get();
-
-    private:
-        Counters & counters;
-        Event timer_event;
-        Stopwatch watch;
-        Resolution resolution;
-    };
 
     class Counters
     {
@@ -127,24 +101,6 @@ namespace ProfileEvents
         /// Set all counters to zero
         void resetCounters();
 
-        /// Add elapsed time to `timer_event` when returned object goes out of scope.
-        /// Use the template parameter to control timer resolution, the default
-        /// is `Timer::Resolution::Microseconds`.
-        template <Timer::Resolution resolution = Timer::Resolution::Microseconds>
-        Timer timer(Event timer_event)
-        {
-            return Timer(*this, timer_event, resolution);
-        }
-
-        /// Increment `counter_event` and add elapsed time to `timer_event` when returned object goes out of scope.
-        /// Use the template parameter to control timer resolution, the default
-        /// is `Timer::Resolution::Microseconds`.
-        template <Timer::Resolution resolution = Timer::Resolution::Microseconds>
-        Timer timer(Event timer_event, Event counter_event)
-        {
-            return Timer(*this, timer_event, counter_event, resolution);
-        }
-
         static const Event num_counters;
     };
 
@@ -154,9 +110,6 @@ namespace ProfileEvents
     /// The same as above but ignores value of setting 'trace_profile_events'
     /// and never sends profile event to trace log.
     void incrementNoTrace(Event event, Count amount = 1);
-
-    /// Increment a counter for log messages.
-    void incrementForLogMessage(Poco::Message::Priority priority);
 
     /// Get name of event by identifier. Returns statically allocated string.
     const char * getName(Event event);

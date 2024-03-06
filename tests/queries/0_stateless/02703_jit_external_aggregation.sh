@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Tags: long, no-asan, no-msan, no-tsan, no-ubsan, no-debug
+# Tags: long, no-asan, no-msan, no-tsan, no-ubsan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# This query should return empty result
-$CLICKHOUSE_CLIENT --compile_aggregate_expressions 1 --min_count_to_compile_aggregate_expression=0 --query "
+# This query should return empty result in every of five runs:
+
+for _ in {1..5}
+do
+    $CLICKHOUSE_CLIENT --compile_aggregate_expressions 0 --query "
 SELECT
     COUNT() AS c,
     group_key,
@@ -27,5 +30,6 @@ ORDER BY group_key ASC
 LIMIT 10
 SETTINGS max_bytes_before_external_group_by = 200000
 " && echo -n '.'
+done
 
 echo
