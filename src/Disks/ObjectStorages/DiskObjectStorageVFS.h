@@ -3,7 +3,6 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include "DiskObjectStorage.h"
 #include "VFSGarbageCollector.h"
-#include "VFSMetadataStorage.h"
 #include "VFSSettings.h"
 #include "VFSTransactionGroupStorage.h"
 
@@ -11,7 +10,7 @@ namespace DB
 {
 // A wrapper for object storage which counts references to objects using a transaction log in Keeper.
 // Operations don't remove data from object storage immediately -- a garbage collector is responsible for that.
-class DiskObjectStorageVFS final : public DiskObjectStorage, public VFSMetadataStorage, VFSTransactionGroupStorage
+class DiskObjectStorageVFS final : public DiskObjectStorage, VFSTransactionGroupStorage
 {
 public:
     DiskObjectStorageVFS(
@@ -33,6 +32,9 @@ public:
     DiskObjectStoragePtr createDiskObjectStorage() override;
     String getStructure() const override;
 
+    bool tryDownloadMetadata(std::string_view from_remote_file, const String & to_folder);
+    void uploadMetadata(std::string_view to_remote_file, const String & from_folder);
+
 private:
     friend struct VFSTransaction;
     friend struct VFSTransactionGroup;
@@ -45,7 +47,8 @@ private:
     MultiVersion<VFSSettings> settings;
 
     ZooKeeperWithFaultInjection::Ptr zookeeper() const;
-    DiskTransactionPtr createObjectStorageTransaction() final;
-    DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk) final;
+    DiskTransactionPtr createObjectStorageTransaction() override;
+    DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk) override;
+    StoredObject getMetadataObject(std::string_view remote) const;
 };
 }

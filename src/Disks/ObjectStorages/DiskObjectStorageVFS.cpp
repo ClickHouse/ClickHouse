@@ -1,8 +1,14 @@
 #include "DiskObjectStorageVFS.h"
+#include <IO/S3Common.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
 #include "VFSGarbageCollector.h"
 #include "VFSMigration.h"
 #include "VFSTransaction.h"
+#if USE_AZURE_BLOB_STORAGE
+#    include <azure/storage/common/storage_exception.hpp>
+#endif
 
 namespace DB
 {
@@ -20,7 +26,6 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     const String & config_prefix,
     bool enable_gc_)
     : DiskObjectStorage(name_, object_key_prefix_, std::move(metadata_storage_), std::move(object_storage_), config, config_prefix)
-    , VFSMetadataStorage(*this)
     , enable_gc(enable_gc_)
     , nodes(VFSNodes{name}) // TODO myrrc disk_vfs_id = disk_name implies disk name consistency across replicas
     , settings(MultiVersion<VFSSettings>{std::make_unique<VFSSettings>(config, config_prefix)})
@@ -112,6 +117,84 @@ ZooKeeperWithFaultInjectionPtr DiskObjectStorageVFS::zookeeper() const
         Context::getGlobalContextInstance()->getZooKeeper(),
         "DiskObjectStorageVFS",
         log);
+}
+
+bool DiskObjectStorageVFS::tryDownloadMetadata(std::string_view from_remote_file, const String & to_folder)
+{
+    auto buf = object_storage->readObject(getMetadataObject(from_remote_file));
+    auto tx = metadata_storage->createTransaction();
+    tx->createDirectoryRecursive(to_folder);
+
+    try
+    {
+        buf->eof();
+    }
+    // TODO myrrc this works only for s3 and azure
+#if USE_AWS_S3
+    catch (const S3Exception & e)
+    {
+        if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
+            return false;
+        throw;
+    }
+#endif
+#if USE_AZURE_BLOB_STORAGE
+    catch (const Azure::Storage::StorageException & e)
+    {
+        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+            return false;
+        throw;
+    }
+#endif
+    catch (...)
+    {
+        throw;
+    }
+
+    String str;
+    while (!buf->eof())
+    {
+        str.clear();
+        readNullTerminated(str, *buf);
+        const fs::path full_path = fs::path(to_folder) / str;
+        LOG_TRACE(log, "Metadata: downloading {} to {}", str, full_path);
+        str.clear();
+        readNullTerminated(str, *buf);
+        tx->writeStringToFile(full_path, str);
+    }
+    tx->commit();
+    return true;
+}
+
+void DiskObjectStorageVFS::uploadMetadata(std::string_view to_remote_file, const String & from_folder)
+{
+    const StoredObject to_object = getMetadataObject(to_remote_file);
+    LOG_DEBUG(log, "Metadata: uploading to {}", to_object);
+
+    Strings files;
+    for (const fs::directory_entry & entry : fs::recursive_directory_iterator(from_folder))
+        if (entry.is_regular_file())
+            files.emplace_back(entry.path());
+
+    auto buf = object_storage->writeObject(to_object, WriteMode::Rewrite);
+    for (auto & [path, metadata] : getSerializedMetadata(files))
+    {
+        const String relative_path = fs::path(path).lexically_relative(from_folder);
+        LOG_TRACE(log, "Metadata: uploading {}", relative_path);
+        writeNullTerminatedString(relative_path, *buf);
+        writeNullTerminatedString(metadata, *buf);
+    }
+    buf->finalize();
+}
+
+StoredObject DiskObjectStorageVFS::getMetadataObject(std::string_view remote) const
+{
+    // We must include disk name as two disks with different names might use same object storage bucket
+    // vfs/ prefix is required for AWS:
+    //  https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
+    // TODO myrrc replace name with vfs_disk_id
+    String key = fmt::format("vfs/{}/{}", name, remote);
+    return StoredObject{ObjectStorageKey::createAsRelative(object_key_prefix, std::move(key)).serialize()};
 }
 
 DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()
