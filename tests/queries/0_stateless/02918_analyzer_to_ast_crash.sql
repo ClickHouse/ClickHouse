@@ -1,5 +1,0 @@
-WITH
-    x AS (SELECT in((SELECT * FROM y))),
-    y AS (SELECT 1)
-SELECT * FROM x; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-

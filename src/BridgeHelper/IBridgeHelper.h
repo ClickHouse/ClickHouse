@@ -5,6 +5,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/ShellCommand.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -51,7 +52,7 @@ protected:
 
     virtual const Poco::Util::AbstractConfiguration & getConfig() const = 0;
 
-    virtual LoggerPtr getLog() const = 0;
+    virtual Poco::Logger * getLog() const = 0;
 
     virtual Poco::Timespan getHTTPTimeout() const = 0;
 

@@ -12,9 +12,9 @@ In most cases you do not need a partition key, and in most other cases you do no
 You should never use too granular of partitioning. Don't partition your data by client identifiers or names. Instead, make a client identifier or name the first column in the ORDER BY expression.
 :::
 
-Partitioning is available for the [MergeTree family tables](../../../engines/table-engines/mergetree-family/mergetree.md), including [replicated tables](../../../engines/table-engines/mergetree-family/replication.md) and [materialized views](../../../sql-reference/statements/create/view.md#materialized-view).
+Partitioning is available for the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family tables (including [replicated](../../../engines/table-engines/mergetree-family/replication.md) tables). [Materialized views](../../../engines/table-engines/special/materializedview.md#materializedview) based on MergeTree tables support partitioning, as well.
 
-A partition is a logical combination of records in a table by a specified criterion. You can set a partition by an arbitrary criterion, such as by month, by day, or by event type. Each partition is stored separately to simplify manipulations of this data. When accessing the data, ClickHouse uses the smallest subset of partitions possible. Partitions improve performance for queries containing a partitioning key because ClickHouse will filter for that partition before selecting the parts and granules within the partition.
+A partition is a logical combination of records in a table by a specified criterion. You can set a partition by an arbitrary criterion, such as by month, by day, or by event type. Each partition is stored separately to simplify manipulations of this data. When accessing the data, ClickHouse uses the smallest subset of partitions possible.
 
 The partition is specified in the `PARTITION BY expr` clause when [creating a table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table). The partition key can be any expression from the table columns. For example, to specify partitioning by month, use the expression `toYYYYMM(date_column)`:
 
@@ -77,11 +77,11 @@ The `name` column contains the names of the partition data parts. You can use th
 
 Let’s break down the name of the part: `201901_1_9_2_11`:
 
-- `201901` is the partition name.
-- `1` is the minimum number of the data block.
-- `9` is the maximum number of the data block.
-- `2` is the chunk level (the depth of the merge tree it is formed from).
-- `11` is the mutation version (if a part mutated)
+-   `201901` is the partition name.
+-   `1` is the minimum number of the data block.
+-   `9` is the maximum number of the data block.
+-   `2` is the chunk level (the depth of the merge tree it is formed from).
+-   `11` is the mutation version (if a part mutated)
 
 :::info
 The parts of old-type tables have the name: `20190117_20190123_2_2_0` (minimum date - maximum date - minimum block number - maximum block number - level).
@@ -165,9 +165,9 @@ Performance of such a query heavily depends on the table layout. Because of that
 
 The key factors for a good performance:
 
-- number of partitions involved in the query should be sufficiently large (more than `max_threads / 2`), otherwise query will under-utilize the machine
-- partitions shouldn't be too small, so batch processing won't degenerate into row-by-row processing
-- partitions should be comparable in size, so all threads will do roughly the same amount of work
+-   number of partitions involved in the query should be sufficiently large (more than `max_threads / 2`), otherwise query will underutilize the machine
+-   partitions shouldn't be too small, so batch processing won't degenerate into row-by-row processing
+-   partitions should be comparable in size, so all threads will do roughly the same amount of work
 
 :::info
 It's recommended to apply some hash function to columns in `partition by` clause in order to distribute data evenly between partitions.
@@ -175,6 +175,6 @@ It's recommended to apply some hash function to columns in `partition by` clause
 
 Relevant settings are:
 
-- `allow_aggregate_partitions_independently` - controls if the use of optimisation is enabled
-- `force_aggregate_partitions_independently` - forces its use when it's applicable from the correctness standpoint, but getting disabled by internal logic that estimates its expediency
-- `max_number_of_partitions_for_independent_aggregation` - hard limit on the maximal number of partitions table could have
+-   `allow_aggregate_partitions_independently` - controls if the use of optimisation is enabled
+-   `force_aggregate_partitions_independently` - forces its use when it's applicable from the correctness standpoint, but getting disabled by internal logic that estimates its expediency
+-   `max_number_of_partitions_for_independent_aggregation` - hard limit on the maximal number of partitions table could have

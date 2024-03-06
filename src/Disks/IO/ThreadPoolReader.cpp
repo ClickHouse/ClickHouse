@@ -8,7 +8,6 @@
 #include <Common/setThreadName.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadPool.h>
 #include <Poco/Environment.h>
 #include <base/errnoToString.h>
 #include <Poco/Event.h>
@@ -32,7 +31,7 @@
         #define SYS_preadv2 327
     #elif defined(__aarch64__)
         #define SYS_preadv2 286
-    #elif defined(__powerpc64__)
+    #elif defined(__ppc64__)
         #define SYS_preadv2 380
     #elif defined(__riscv)
         #define SYS_preadv2 286
@@ -52,7 +51,6 @@ namespace ProfileEvents
     extern const Event ThreadPoolReaderPageCacheMiss;
     extern const Event ThreadPoolReaderPageCacheMissBytes;
     extern const Event ThreadPoolReaderPageCacheMissElapsedMicroseconds;
-    extern const Event AsynchronousReaderIgnoredBytes;
 
     extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
@@ -65,7 +63,6 @@ namespace CurrentMetrics
     extern const Metric Read;
     extern const Metric ThreadPoolFSReaderThreads;
     extern const Metric ThreadPoolFSReaderThreadsActive;
-    extern const Metric ThreadPoolFSReaderThreadsScheduled;
 }
 
 
@@ -90,7 +87,7 @@ static bool hasBugInPreadV2()
 #endif
 
 ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
-    : pool(std::make_unique<ThreadPool>(CurrentMetrics::ThreadPoolFSReaderThreads, CurrentMetrics::ThreadPoolFSReaderThreadsActive, CurrentMetrics::ThreadPoolFSReaderThreadsScheduled, pool_size, pool_size, queue_size_))
+    : pool(CurrentMetrics::ThreadPoolFSReaderThreads, CurrentMetrics::ThreadPoolFSReaderThreadsActive, pool_size, pool_size, queue_size_)
 {
 }
 
@@ -116,7 +113,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
         /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
-        /// (NetlinkMetricsProvider has about 500K RPS).
+        /// (TaskStatsInfoGetter has about 500K RPS).
         Stopwatch watch(CLOCK_MONOTONIC);
 
         SCOPE_EXIT({
@@ -175,8 +172,9 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                 else
                 {
                     ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                    promise.set_exception(std::make_exception_ptr(
-                        ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
+                    promise.set_exception(std::make_exception_ptr(ErrnoException(
+                        fmt::format("Cannot read from file {}, {}", fd, errnoToString()),
+                        ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno)));
                     return future;
                 }
             }
@@ -193,7 +191,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHit);
             ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheHitBytes, bytes_read);
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
-            ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
 
             promise.set_value({bytes_read, request.ignore, nullptr});
             return future;
@@ -203,7 +200,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    auto schedule = threadPoolCallbackRunner<Result>(*pool, "ThreadPoolRead");
+    auto schedule = threadPoolCallbackRunner<Result>(pool, "ThreadPoolRead");
 
     return schedule([request, fd]() -> Result
     {
@@ -232,7 +229,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             if (-1 == res && errno != EINTR)
             {
                 ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd);
+                throwFromErrno(fmt::format("Cannot read from file {}", fd), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
             }
 
             bytes_read += res;
@@ -242,15 +239,9 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
         ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissBytes, bytes_read);
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
-        ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
 
         return Result{ .size = bytes_read, .offset = request.ignore };
     }, request.priority);
-}
-
-void ThreadPoolReader::wait()
-{
-    pool->wait();
 }
 
 }

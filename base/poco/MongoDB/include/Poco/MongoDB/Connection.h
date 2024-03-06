@@ -18,7 +18,6 @@
 #define MongoDB_Connection_INCLUDED
 
 
-#include "Poco/MongoDB/OpMsgMessage.h"
 #include "Poco/MongoDB/RequestMessage.h"
 #include "Poco/MongoDB/ResponseMessage.h"
 #include "Poco/Mutex.h"
@@ -40,7 +39,7 @@ namespace MongoDB
     /// for more information on the wire protocol.
     {
     public:
-        using Ptr = Poco::SharedPtr<Connection>;
+        typedef Poco::SharedPtr<Connection> Ptr;
 
         class MongoDB_API SocketFactory
         {
@@ -91,7 +90,7 @@ namespace MongoDB
 
         Poco::Net::SocketAddress address() const;
         /// Returns the address of the MongoDB server.
-
+        
         const std::string & uri() const;
         /// Returns the uri on which the connection was made.
 
@@ -146,21 +145,6 @@ namespace MongoDB
         /// Use this when a response is expected: only a "query" or "getmore"
         /// request will return a response.
 
-        void sendRequest(OpMsgMessage & request, OpMsgMessage & response);
-        /// Sends a request to the MongoDB server and receives the response
-        /// using newer wire protocol with OP_MSG.
-
-        void sendRequest(OpMsgMessage & request);
-        /// Sends an unacknowledged request to the MongoDB server using newer
-        /// wire protocol with OP_MSG.
-        /// No response is sent by the server.
-
-        void readResponse(OpMsgMessage & response);
-        /// Reads additional response data when previous message's flag moreToCome
-        /// indicates that server will send more data.
-        /// NOTE: See comments in OpMsgCursor code.
-
-
     protected:
         void connect();
 
@@ -180,7 +164,7 @@ namespace MongoDB
     }
     inline const std::string & Connection::uri() const
     {
-        return _uri;
+    	return _uri;
     }
 
 

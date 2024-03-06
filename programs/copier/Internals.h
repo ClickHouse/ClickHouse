@@ -25,6 +25,7 @@
 #include <Common/formatReadable.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentThread.h>
+#include <Common/escapeForFileName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadStatus.h>
 #include <Client/Connection.h>
@@ -102,7 +103,7 @@ struct TaskStateWithOwner
         return TaskStateWithOwner(state, owner).toString();
     }
 
-    String toString() const
+    String toString()
     {
         WriteBufferFromOwnString wb;
         wb << static_cast<UInt32>(state) << "\n" << escape << owner;

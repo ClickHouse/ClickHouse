@@ -30,7 +30,7 @@ public:
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 private:
-    Chunk read() override;
+    Chunk generate() override;
 
     void onCancel() override
     {
@@ -50,7 +50,7 @@ private:
     int record_batch_current = 0;
 
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk = 0;
+    size_t approx_bytes_read_for_chunk;
 
     const FormatSettings format_settings;
 
@@ -66,15 +66,9 @@ public:
 
     NamesAndTypesList readSchema() override;
 
-    std::optional<size_t> readNumberOrRows() override;
-
 private:
-    void initializeIfNeeded();
-
     bool stream;
     const FormatSettings format_settings;
-    std::shared_ptr<arrow::RecordBatchReader> stream_reader;
-    std::shared_ptr<arrow::ipc::RecordBatchFileReader> file_reader;
 };
 
 }
