@@ -1796,24 +1796,29 @@ def main() -> int:
                 print(build_result.as_json())
                 print("::endgroup::")
         else:
-            # this is a test job - check if GH commit status is present
-
-            # rerun helper check
-            # FIXME: remove rerun_helper check and rely on ci cache only
+            # this is a test job - check if GH commit status or cache record is present
             commit = get_commit(
                 Github(get_best_robot_token(), per_page=100), pr_info.sha
             )
-            rerun_helper = RerunHelper(commit, check_name_with_group)
-            if rerun_helper.is_already_finished_by_status():
-                status = rerun_helper.get_finished_status()
-                assert status
-                previous_status = status.state
-                print("::group::Commit Status")
-                print(status)
-                print("::endgroup::")
+
+            # rerun helper check
+            # FIXME: remove rerun_helper check and rely on ci cache only
+            if check_name not in (
+                # we might want to rerun reports' jobs - disable rerun check for them
+                JobNames.BUILD_CHECK,
+                JobNames.BUILD_CHECK_SPECIAL,
+            ):
+                rerun_helper = RerunHelper(commit, check_name_with_group)
+                if rerun_helper.is_already_finished_by_status():
+                    status = rerun_helper.get_finished_status()
+                    assert status
+                    previous_status = status.state
+                    print("::group::Commit Status")
+                    print(status)
+                    print("::endgroup::")
 
             # ci cache check
-            elif not indata["ci_flags"][Labels.NO_CI_CACHE]:
+            if not previous_status and not indata["ci_flags"][Labels.NO_CI_CACHE]:
                 ci_cache = CiCache(s3, indata["jobs_data"]["digests"]).update()
                 job_config = CI_CONFIG.get_job_config(check_name)
                 if ci_cache.is_successful(
