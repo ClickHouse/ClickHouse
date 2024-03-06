@@ -422,7 +422,7 @@ private:
         res_data.resize_exact(rows);
         if constexpr (nullable_result)
         {
-            if (res_null_map)
+            if (!res_null_map)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid result null_map while result type is nullable");
 
             res_null_map->resize_exact(rows);
