@@ -1189,6 +1189,9 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
         configuration.use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings.dictionary_use_async_executor;
 
+        if (settings.max_execution_time.totalSeconds() > 0)
+            configuration.load_timeout = std::chrono::seconds(settings.max_execution_time.totalSeconds());
+
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {
             if (shards > 1)

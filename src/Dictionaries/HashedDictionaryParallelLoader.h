@@ -31,6 +31,7 @@ template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded> clas
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 }
@@ -50,9 +51,10 @@ public:
         , shards(dictionary.configuration.shards)
         , pool(CurrentMetrics::HashedDictionaryThreads, CurrentMetrics::HashedDictionaryThreadsActive, CurrentMetrics::HashedDictionaryThreadsScheduled, shards)
         , shards_queues(shards)
+        , loading_timeout(dictionary.configuration.load_timeout)
     {
         UInt64 backlog = dictionary.configuration.shard_load_queue_backlog;
-        LOG_TRACE(dictionary.log, "Will load the {} dictionary using {} threads (with {} backlog)", dictionary_name, shards, backlog);
+        LOG_TRACE(dictionary.log, "Will load the {} dictionary using {} threads (with {} backlog and timeout {} sec)", dictionary_name, shards, backlog, loading_timeout.count());
 
         shards_slots.resize(shards);
         iota(shards_slots.data(), shards_slots.size(), UInt64(0));
@@ -107,6 +109,13 @@ public:
                     pool.wait(); /// We expect exception to be thrown from the failed worker thread
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Worker threads for dictionary {} are not active", dictionary_name);
                 }
+
+                if (loading_timeout.count() && std::chrono::milliseconds(total_loading_time.elapsedMilliseconds()) > loading_timeout)
+                {
+                    stop_all_workers = true;
+                    pool.wait();
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout {} sec for dictionary {} loading is expired", loading_timeout.count(), dictionary_name);
+                }
             }
         }
     }
@@ -145,6 +154,9 @@ private:
     ThreadPool pool;
     std::atomic_bool stop_all_workers{false};
     std::vector<std::optional<ConcurrentBoundedQueue<Block>>> shards_queues;
+    std::chrono::seconds loading_timeout;
+    Stopwatch total_loading_time;
+
     std::vector<UInt64> shards_slots;
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
 
