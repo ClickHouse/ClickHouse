@@ -771,7 +771,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
 
     if (read_type != ReadType::ParallelReplicas &&
         num_streams > 1 &&
-        read_split_ranges_into_intersecting_and_non_intersecting_injection_probability >= 0.0 &&
+        read_split_ranges_into_intersecting_and_non_intersecting_injection_probability > 0.0 &&
         fault(thread_local_rng) &&
         !isQueryWithFinal() &&
         data.merging_params.is_deleted_column.empty() &&

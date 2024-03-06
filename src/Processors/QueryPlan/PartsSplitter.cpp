@@ -792,7 +792,7 @@ ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> 
             const auto & type = primary_key.data_types.at(i);
 
             // PK may contain functions of the table columns, so we need the actual PK AST with all expressions it contains.
-            auto pk_ast = primary_key.expression_list_ast->children.at(i);
+            auto pk_ast = primary_key.expression_list_ast->children.at(i)->clone();
 
             // If PK is nullable, prepend a null mask column for > comparison.
             // Also transform the AST into assumeNotNull(pk) so that the result type is not-nullable.
