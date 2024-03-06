@@ -27,7 +27,7 @@ private:
     bool skipRun(size_t batch_size, Logpointer start) const;
     VFSLogItem getBatch(Logpointer start, Logpointer end) const;
     void updateSnapshotWithLogEntries(
-        Logpointer start, Logpointer end, std::string_view old_snapshot_name, std::string_view new_snapshot_name) const;
+        Logpointer start, Logpointer end, const StoredObject & old_snapshot, const StoredObject & new_snapshot) const;
     bool releaseLockAndRemoveEntries(OptimisticLock && lock, Logpointer start, Logpointer end) const;
 
     void createLockNodes(Coordination::ZooKeeperWithFaultInjection & zookeeper) const;

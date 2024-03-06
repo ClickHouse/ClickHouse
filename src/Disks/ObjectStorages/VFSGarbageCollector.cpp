@@ -63,7 +63,7 @@ void VFSGarbageCollector::createLockNodes(Coordination::ZooKeeperWithFaultInject
 
 static String generateSnapshotName()
 {
-    return fmt::format("{}", UUIDHelpers::generateV4());
+    return fmt::format("snapshots/{}", UUIDHelpers::generateV4());
 }
 
 void VFSGarbageCollector::run() const
@@ -118,18 +118,21 @@ void VFSGarbageCollector::run() const
     LOG_DEBUG(log, "Processing range [{};{}]", start, end);
     const String new_snapshot_name = generateSnapshotName();
     const String old_snapshot_name = std::exchange(lock.snapshot, new_snapshot_name);
-    updateSnapshotWithLogEntries(start, end, old_snapshot_name, new_snapshot_name);
+    const StoredObject new_snapshot = disk.getMetadataObject(new_snapshot_name);
+    const bool old_snapshot_missing = old_snapshot_name.empty();
+    const StoredObject old_snapshot = old_snapshot_missing ? StoredObject{} : disk.getMetadataObject(old_snapshot_name);
+
+    updateSnapshotWithLogEntries(start, end, old_snapshot, new_snapshot);
 
     LOG_DEBUG(log, "Removing log range [{};{}]", start, end);
     if (!releaseLockAndRemoveEntries(std::move(lock), start, end))
     {
         LOG_DEBUG(log, "Skip GC transaction because optimistic lock node was already updated");
-        return;
+        return disk.object_storage->removeObject(new_snapshot);
     }
 
-    // Remove old snapshot only after releasing the lock, otherwise on error next replica will try to
-    // operate on old snapshot and fail
-    disk.object_storage->removeObject(disk.getMetadataObject(old_snapshot_name));
+    if (!old_snapshot_missing)
+        disk.object_storage->removeObject(old_snapshot);
 
     LOG_DEBUG(log, "Removed lock for [{};{}]", start, end);
     successful_run = true;
@@ -182,26 +185,23 @@ bool VFSGarbageCollector::skipRun(size_t batch_size, Logpointer start) const
 }
 
 void VFSGarbageCollector::updateSnapshotWithLogEntries(
-    Logpointer start, Logpointer end, std::string_view old_snapshot_name, std::string_view new_snapshot_name) const
+    Logpointer start, Logpointer end, const StoredObject & old_snapshot, const StoredObject & new_snapshot) const
 {
-    const bool old_snapshot_missing = old_snapshot_name.empty();
+    const bool old_snapshot_missing = old_snapshot.remote_path.empty();
     if (old_snapshot_missing && start > 0)
         throw Exception(ErrorCodes::INVALID_STATE, "Snapshot is absent but start log pointer is {}", start);
 
-    const StoredObject old_snapshot_obj = disk.getMetadataObject(fmt::format("snapshots/{}", old_snapshot_name)),
-                       new_snapshot_obj = disk.getMetadataObject(fmt::format("snapshots/{}", new_snapshot_name));
-
     IObjectStorage & storage = *disk.getObjectStorage();
     VFSSnapshotReadStreamFromString empty{""};
-    VFSSnapshotReadStream old_stream{storage, old_snapshot_obj};
+    VFSSnapshotReadStream old_stream{storage, old_snapshot};
 
     const int level = settings->snapshot_lz4_compression_level;
-    auto & old_snapshot = old_snapshot_missing ? empty : static_cast<IVFSSnapshotReadStream &>(old_stream);
-    VFSSnapshotWriteStream new_snapshot{storage, new_snapshot_obj, level};
+    auto & old_ref = old_snapshot_missing ? empty : static_cast<IVFSSnapshotReadStream &>(old_stream);
+    VFSSnapshotWriteStream new_stream{storage, new_snapshot, level};
 
-    auto [obsolete, invalid] = getBatch(start, end).mergeWithSnapshot(old_snapshot, new_snapshot, &*log);
+    auto [obsolete, invalid] = getBatch(start, end).mergeWithSnapshot(old_ref, new_stream, &*log);
 
-    new_snapshot.finalize();
+    new_stream.finalize();
     disk.object_storage->removeObjectsIfExist(obsolete);
 
     if (!invalid.empty()) // TODO myrrc remove after testing
