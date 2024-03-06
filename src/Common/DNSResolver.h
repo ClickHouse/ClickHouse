@@ -34,6 +34,7 @@ public:
     Poco::Net::IPAddress resolveHost(const std::string & host);
 
     /// Accepts host names like 'example.com' or '127.0.0.1' or '::1' and resolves all its IPs
+    IPAddresses resolveHostAllInOriginOrder(const std::string & host);
     IPAddresses resolveHostAll(const std::string & host);
 
     /// Accepts host names like 'example.com:port' or '127.0.0.1:port' or '[::1]:port' and resolves its IP and port
