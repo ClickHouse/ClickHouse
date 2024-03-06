@@ -69,7 +69,7 @@ protected:
 
      void doCheckConsistency(bool require_part_metadata) const override;
 
- private:
+private:
      /// Loads marks index granularity into memory
      void loadIndexGranularity() override;
 
