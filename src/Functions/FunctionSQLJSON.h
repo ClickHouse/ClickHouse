@@ -26,6 +26,7 @@
 
 #include "config.h"
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -34,6 +35,52 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 extern const int BAD_ARGUMENTS;
 }
+
+/// A more efficient way to serialize json elements into destination column.
+/// Formatter takes the chars buffer in the ColumnString and put data into it directly.
+template<typename Element, typename Formatter>
+class JSONStringSerializer
+{
+public:
+    explicit JSONStringSerializer(ColumnString & col_str_)
+        : col_str(col_str_), chars(col_str_.getChars()), offsets(col_str_.getOffsets()), formatter(col_str_.getChars())
+    {
+        prev_offset = offsets.empty() ? 0 : offsets.back();
+    }
+    /// Put the data into column's buffer directly.
+    inline void addRawData(const char * ptr, size_t len)
+    {
+        chars.insert(ptr, ptr + len);
+    }
+
+    inline void addRawString(std::string_view str)
+    {
+        chars.insert(str.data(), str.data() + str.size());
+    }
+
+    /// serialize the json element into column's buffer directly
+    inline void addElement(const Element & element)
+    {
+        formatter.append(element.getElement());
+    }
+    inline void commit()
+    {
+        chars.push_back(0);
+        offsets.push_back(chars.size());
+    }
+    inline void rollback()
+    {
+        chars.resize(prev_offset);
+    }
+private:
+    ColumnString & col_str;
+    ColumnString::Chars & chars;
+    IColumn::Offsets & offsets;
+    Formatter formatter;
+    size_t prev_offset;
+
+};
+
 
 class FunctionSQLJSONHelpers
 {
@@ -74,25 +121,11 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (JSONPath) must be constant string");
             }
 
-            const ColumnPtr & arg_jsonpath = json_path_column.column;
-            const auto * arg_jsonpath_const = typeid_cast<const ColumnConst *>(arg_jsonpath.get());
-            const auto * arg_jsonpath_string = typeid_cast<const ColumnString *>(arg_jsonpath_const->getDataColumnPtr().get());
-
-            const ColumnPtr & arg_json = json_column.column;
-            const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
-            const auto * col_json_string
-                = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
-
-            /// Get data and offsets for 1 argument (JSONPath)
-            const ColumnString::Chars & chars_path = arg_jsonpath_string->getChars();
-            const ColumnString::Offsets & offsets_path = arg_jsonpath_string->getOffsets();
-
             /// Prepare to parse 1 argument (JSONPath)
-            const char * query_begin = reinterpret_cast<const char *>(&chars_path[0]);
-            const char * query_end = query_begin + offsets_path[0] - 1;
+            String query = typeid_cast<const ColumnConst &>(*json_path_column.column).getValue<String>();
 
-            /// Tokenize query
-            Tokens tokens(query_begin, query_end);
+            /// Tokenize the query
+            Tokens tokens(query.data(), query.data() + query.size());
             /// Max depth 0 indicates that depth is not limited
             IParser::Pos token_iterator(tokens, parse_depth);
 
@@ -106,10 +139,6 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse JSONPath");
             }
 
-            /// Get data and offsets for 2 argument (JSON)
-            const ColumnString::Chars & chars_json = col_json_string->getChars();
-            const ColumnString::Offsets & offsets_json = col_json_string->getOffsets();
-
             JSONParser json_parser;
             using Element = typename JSONParser::Element;
             Element document;
@@ -117,10 +146,9 @@ public:
 
             /// Parse JSON for every row
             Impl<JSONParser> impl;
-            for (const auto i : collections::range(0, input_rows_count))
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view json{
-                    reinterpret_cast<const char *>(&chars_json[offsets_json[i - 1]]), offsets_json[i] - offsets_json[i - 1] - 1};
+                std::string_view json = json_column.column->getDataAt(i).toView();
                 document_ok = json_parser.parse(json, document);
 
                 bool added_to_column = false;
