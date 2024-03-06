@@ -536,6 +536,8 @@ void ColumnArray::insertManyFromImpl(const ColumnArray & src, size_t position, s
         return insertManyFromNumber<Decimal256>(src, position, length);
     if (typeid_cast<const ColumnDecimal<DateTime64> *>(data.get()))
         return insertManyFromNumber<DateTime64>(src, position, length);
+    if (typeid_cast<const ColumnString *>(data.get()))
+        return insertManyFromString(src, position, length);
     if (typeid_cast<const ColumnNullable *>(data.get()))
         return insertManyFromNullable(src, position, length);
     if (typeid_cast<const ColumnTuple *>(data.get()))
