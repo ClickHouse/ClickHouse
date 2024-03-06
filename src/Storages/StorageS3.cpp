@@ -195,35 +195,36 @@ private:
 
     KeyWithInfo nextAssumeLocked()
     {
-        if (buffer_iter != buffer.end())
+        do
         {
-            auto answer = *buffer_iter;
-            ++buffer_iter;
-            return answer;
-        }
+            if (buffer_iter != buffer.end())
+            {
+                auto answer = *buffer_iter;
+                ++buffer_iter;
+                return answer;
+            }
 
-        if (is_finished)
-            return {};
+            if (is_finished)
+                return {};
 
-        try
-        {
-            fillInternalBufferAssumeLocked();
-        }
-        catch (...)
-        {
-            /// In case of exception thrown while listing new batch of files
-            /// iterator may be partially initialized and its further using may lead to UB.
-            /// Iterator is used by several processors from several threads and
-            /// it may take some time for threads to stop processors and they
-            /// may still use this iterator after exception is thrown.
-            /// To avoid this UB, reset the buffer and return defaults for further calls.
-            is_finished = true;
-            buffer.clear();
-            buffer_iter = buffer.begin();
-            throw;
-        }
-
-        return nextAssumeLocked();
+            try
+            {
+                fillInternalBufferAssumeLocked();
+            }
+            catch (...)
+            {
+                /// In case of exception thrown while listing new batch of files
+                /// iterator may be partially initialized and its further using may lead to UB.
+                /// Iterator is used by several processors from several threads and
+                /// it may take some time for threads to stop processors and they
+                /// may still use this iterator after exception is thrown.
+                /// To avoid this UB, reset the buffer and return defaults for further calls.
+                is_finished = true;
+                buffer.clear();
+                buffer_iter = buffer.begin();
+                throw;
+            }
+        } while (true);
     }
 
     void fillInternalBufferAssumeLocked()
