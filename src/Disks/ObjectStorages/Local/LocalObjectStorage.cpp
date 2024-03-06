@@ -1,5 +1,6 @@
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
@@ -23,14 +24,17 @@ namespace ErrorCodes
     extern const int CANNOT_UNLINK;
 }
 
-LocalObjectStorage::LocalObjectStorage(String key_prefix_)
-    : key_prefix(std::move(key_prefix_))
-    , log(getLogger("LocalObjectStorage"))
+LocalObjectStorage::LocalObjectStorage()
+    : log(&Poco::Logger::get("LocalObjectStorage"))
 {
+    data_source_description.type = DataSourceType::Local;
     if (auto block_device_id = tryGetBlockDeviceId("/"); block_device_id.has_value())
-        description = *block_device_id;
+        data_source_description.description = *block_device_id;
     else
-        description = "/";
+        data_source_description.description = "/";
+
+    data_source_description.is_cached = false;
+    data_source_description.is_encrypted = false;
 }
 
 bool LocalObjectStorage::exists(const StoredObject & object) const
@@ -47,7 +51,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
     auto modified_settings = patchSettings(read_settings);
     auto global_context = Context::getGlobalContextInstance();
     auto read_buffer_creator =
-        [=] (bool /* restricted_seek */, const std::string & file_path)
+        [=] (const std::string & file_path, size_t /* read_until_position */)
         -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return createReadBufferFromFileBase(file_path, modified_settings, read_hint, file_size);
@@ -58,13 +62,13 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
         case RemoteFSReadMethod::read:
         {
             return std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator), objects, "file:", modified_settings,
+                std::move(read_buffer_creator), objects, modified_settings,
                 global_context->getFilesystemCacheLog(), /* use_external_buffer */false);
         }
         case RemoteFSReadMethod::threadpool:
         {
             auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator), objects, "file:", modified_settings,
+                std::move(read_buffer_creator), objects, modified_settings,
                 global_context->getFilesystemCacheLog(), /* use_external_buffer */true);
 
             auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
@@ -136,7 +140,7 @@ void LocalObjectStorage::removeObject(const StoredObject & object)
         return;
 
     if (0 != unlink(object.remote_path.data()))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, object.remote_path, "Cannot unlink file {}", object.remote_path);
+        throwFromErrnoWithPath("Cannot unlink file " + object.remote_path, object.remote_path, ErrorCodes::CANNOT_UNLINK);
 }
 
 void LocalObjectStorage::removeObjects(const StoredObjects & objects)
@@ -163,14 +167,10 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & /* path
 }
 
 void LocalObjectStorage::copyObject( // NOLINT
-    const StoredObject & object_from,
-    const StoredObject & object_to,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    std::optional<ObjectAttributes> /* object_to_attributes */)
+    const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> /* object_to_attributes */)
 {
-    auto in = readObject(object_from, read_settings);
-    auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+    auto in = readObject(object_from);
+    auto out = writeObject(object_to, WriteMode::Rewrite);
     copyData(*in, *out);
     out->finalize();
 }
@@ -196,10 +196,10 @@ void LocalObjectStorage::applyNewSettings(
 {
 }
 
-ObjectStorageKey LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
+std::string LocalObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
     constexpr size_t key_name_total_size = 32;
-    return ObjectStorageKey::createAsRelative(key_prefix, getRandomASCIIString(key_name_total_size));
+    return getRandomASCIIString(key_name_total_size);
 }
 
 }

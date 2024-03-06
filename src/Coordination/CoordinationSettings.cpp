@@ -34,11 +34,6 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
             e.addMessage("in Coordination settings config");
         throw;
     }
-
-    /// for backwards compatibility we set max_requests_append_size to max_requests_batch_size
-    /// if max_requests_append_size was not changed
-    if (!max_requests_append_size.changed)
-        max_requests_append_size = max_requests_batch_size;
 }
 
 
@@ -46,7 +41,7 @@ const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD =
 #if USE_JEMALLOC
 "jmst,jmfp,jmep,jmdp,"
 #endif
-"conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,pfev";
+"conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl";
 
 KeeperConfigurationAndSettings::KeeperConfigurationAndSettings()
     : server_id(NOT_EXIST)
@@ -144,8 +139,6 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_int(coordination_settings->max_requests_batch_size);
     writeText("max_requests_batch_bytes_size=", buf);
     write_int(coordination_settings->max_requests_batch_bytes_size);
-    writeText("max_flush_batch_size=", buf);
-    write_int(coordination_settings->max_flush_batch_size);
     writeText("max_request_queue_size=", buf);
     write_int(coordination_settings->max_request_queue_size);
     writeText("max_requests_quick_batch_size=", buf);
@@ -164,9 +157,6 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
 
     writeText("raft_limits_reconnect_limit=", buf);
     write_int(static_cast<uint64_t>(coordination_settings->raft_limits_reconnect_limit));
-
-    writeText("async_replication=", buf);
-    write_bool(coordination_settings->async_replication);
 }
 
 KeeperConfigurationAndSettingsPtr

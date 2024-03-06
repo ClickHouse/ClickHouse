@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -19,7 +18,7 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
 {
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
     /// This is needed because the query can become extraordinary large after substitution of aliases.
-    if (!alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/ true)).second)
+    if (!alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash()).second)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_identifier : "");
         settings.writeIdentifier(alias);
@@ -41,13 +40,6 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
                 settings.ostr << ')';
         }
     }
-}
-
-void ASTWithAlias::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
-{
-    if (!alias.empty() && !ignore_aliases)
-        hash_state.update(alias);
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTWithAlias::appendColumnName(WriteBuffer & ostr) const

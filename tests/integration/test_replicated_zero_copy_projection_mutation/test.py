@@ -174,13 +174,20 @@ def test_hardlinks_preserved_when_projection_dropped(
             )
             ENGINE ReplicatedMergeTree('/clickhouse/tables/test_projection', '{instance}')
             ORDER BY a
-            SETTINGS cleanup_delay_period=1, max_cleanup_delay_period=3
         """
 
-        first_node_settings = ", storage_policy='s3', old_parts_lifetime=0"
+        first_node_settings = """
+            SETTINGS
+                storage_policy='s3',
+                old_parts_lifetime=0
+        """
 
         # big old_parts_lifetime value makes second node to hold outdated part for us, we make it as broken_on_start
-        second_node_settings = ", storage_policy='s3', old_parts_lifetime=10000"
+        second_node_settings = """
+            SETTINGS
+                storage_policy='s3',
+                old_parts_lifetime=10000
+        """
 
         first_cluster_node.query(create_query + first_node_settings)
         second_cluster_node.query(create_query + second_node_settings)

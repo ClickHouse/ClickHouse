@@ -58,7 +58,7 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     if (database)
         query->children.push_back(database);
 
-    chassert(table);
+    assert (table);
     query->children.push_back(table);
 
     query->cluster = cluster_str;

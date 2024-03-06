@@ -91,8 +91,7 @@ static inline void writeProbablyQuotedStringImpl(StringRef s, WriteBuffer & buf,
     if (isValidIdentifier(s.toView())
         /// This are valid identifiers but are problematic if present unquoted in SQL query.
         && !(s.size == strlen("distinct") && 0 == strncasecmp(s.data, "distinct", strlen("distinct")))
-        && !(s.size == strlen("all") && 0 == strncasecmp(s.data, "all", strlen("all")))
-        && !(s.size == strlen("table") && 0 == strncasecmp(s.data, "table", strlen("table"))))
+        && !(s.size == strlen("all") && 0 == strncasecmp(s.data, "all", strlen("all"))))
     {
         writeString(s, buf);
     }
@@ -123,8 +122,4 @@ void writePointerHex(const void * ptr, WriteBuffer & buf)
     buf.write(hex_str, 2 * sizeof(ptr));
 }
 
-String fourSpaceIndent(size_t indent)
-{
-    return std::string(indent * 4, ' ');
-}
 }

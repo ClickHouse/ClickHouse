@@ -39,7 +39,7 @@ namespace
             {
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Not found column {} {} in dictionary {}. There are only columns {}",
                                 column.name, column.type->getName(), backQuote(dictionary_name),
-                                dictionary_names_and_types.toNamesAndTypesDescription());
+                                StorageDictionary::generateNamesAndTypesDescription(dictionary_names_and_types));
             }
         }
     }
@@ -78,6 +78,20 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
     }
 
     return dictionary_names_and_types;
+}
+
+
+String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesList & list)
+{
+    WriteBufferFromOwnString ss;
+    bool first = true;
+    for (const auto & name_and_type : list)
+    {
+        if (!std::exchange(first, false))
+            ss << ", ";
+        ss << name_and_type.name << ' ' << name_and_type.type->getName();
+    }
+    return ss.str();
 }
 
 StorageDictionary::StorageDictionary(
@@ -170,7 +184,7 @@ std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
     return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
 }
 
-void StorageDictionary::shutdown(bool)
+void StorageDictionary::shutdown()
 {
     removeDictionaryConfigurationFromRepository();
 }
@@ -316,7 +330,7 @@ void registerStorageDictionary(StorageFactory & factory)
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
             bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
-            if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
+            if (!args.attach && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,
                 /// and throw an exception if the loading is failed.
@@ -335,7 +349,7 @@ void registerStorageDictionary(StorageFactory & factory)
             args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
             String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");
 
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            if (!args.attach)
             {
                 const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
                 const DictionaryStructure & dictionary_structure = dictionary->getStructure();

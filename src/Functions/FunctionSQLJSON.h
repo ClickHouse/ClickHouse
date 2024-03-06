@@ -36,40 +36,6 @@ extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 extern const int BAD_ARGUMENTS;
 }
 
-/// Have implemented the operator << for json elements. So we could use stringstream to serialize json elements.
-/// But stingstream have bad performance, not recommend to use it.
-template <typename Element>
-class DefaultJSONStringSerializer
-{
-public:
-    explicit DefaultJSONStringSerializer(ColumnString & col_str_) : col_str(col_str_) { }
-
-    inline void addRawData(const char * ptr, size_t len)
-    {
-        out << std::string_view(ptr, len);
-    }
-
-    inline void addRawString(std::string_view str)
-    {
-        out << str;
-    }
-
-    /// serialize the json element into stringstream
-    inline void addElement(const Element & element)
-    {
-        out << element.getElement();
-    }
-    inline void commit()
-    {
-        auto out_str = out.str();
-        col_str.insertData(out_str.data(), out_str.size());
-    }
-    inline void rollback() {}
-private:
-    ColumnString & col_str;
-    std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-};
-
 /// A more efficient way to serialize json elements into destination column.
 /// Formatter takes the chars buffer in the ColumnString and put data into it directly.
 template<typename Element, typename Formatter>
@@ -119,7 +85,7 @@ private:
 class FunctionSQLJSONHelpers
 {
 public:
-    template <typename Name, typename Impl, class JSONParser>
+    template <typename Name, template <typename> typename Impl, class JSONParser>
     class Executor
     {
     public:
@@ -179,8 +145,7 @@ public:
             bool document_ok = false;
 
             /// Parse JSON for every row
-            Impl impl;
-            GeneratorJSONPath<JSONParser> generator_json_path(res);
+            Impl<JSONParser> impl;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view json = json_column.column->getDataAt(i).toView();
@@ -189,9 +154,7 @@ public:
                 bool added_to_column = false;
                 if (document_ok)
                 {
-                    /// Instead of creating a new generator for each row, we can reuse the same one.
-                    generator_json_path.reinitialize();
-                    added_to_column = impl.insertResultToColumn(*to, document, generator_json_path, context);
+                    added_to_column = impl.insertResultToColumn(*to, document, res, context);
                 }
                 if (!added_to_column)
                 {
@@ -203,7 +166,7 @@ public:
     };
 };
 
-template <typename Name, template <typename, typename> typename Impl>
+template <typename Name, template <typename> typename Impl>
 class FunctionSQLJSON : public IFunction, WithConstContext
 {
 public:
@@ -220,8 +183,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::getReturnType(
-            Name::name, arguments, getContext());
+        return Impl<DummyJSONParser>::getReturnType(Name::name, arguments, getContext());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -234,14 +196,9 @@ public:
         unsigned parse_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
-            return FunctionSQLJSONHelpers::Executor<
-                Name,
-                Impl<SimdJSONParser, JSONStringSerializer<SimdJSONParser::Element, SimdJSONElementFormatter>>,
-                SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
+            return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
 #endif
-        return FunctionSQLJSONHelpers::
-            Executor<Name, Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>, DummyJSONParser>::run(
-                arguments, result_type, input_rows_count, parse_depth, getContext());
+        return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
     }
 };
 
@@ -260,7 +217,7 @@ struct NameJSONQuery
     static constexpr auto name{"JSON_QUERY"};
 };
 
-template <typename JSONParser, typename JSONStringSerializer>
+template <typename JSONParser>
 class JSONExistsImpl
 {
 public:
@@ -270,8 +227,9 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, const ContextPtr &)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr &)
     {
+        GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
@@ -298,7 +256,7 @@ public:
     }
 };
 
-template <typename JSONParser, typename JSONStringSerializer>
+template <typename JSONParser>
 class JSONValueImpl
 {
 public:
@@ -319,8 +277,9 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, const ContextPtr & context)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr & context)
     {
+        GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
 
@@ -348,7 +307,11 @@ public:
 
         if (status == VisitorStatus::Exhausted)
             return false;
-        ColumnString * col_str = nullptr;
+
+        std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        out << current_element.getElement();
+        auto output_str = out.str();
+        ColumnString * col_str;
         if (isColumnNullable(dest))
         {
             ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
@@ -359,15 +322,20 @@ public:
         {
             col_str = assert_cast<ColumnString *>(&dest);
         }
-        JSONStringSerializer json_serializer(*col_str);
+        ColumnString::Chars & data = col_str->getChars();
+        ColumnString::Offsets & offsets = col_str->getOffsets();
+
         if (current_element.isString())
         {
-            auto str = current_element.getString();
-            json_serializer.addRawString(str);
+            ReadBufferFromString buf(output_str);
+            readJSONStringInto(data, buf);
+            data.push_back(0);
+            offsets.push_back(data.size());
         }
         else
-            json_serializer.addElement(current_element);
-        json_serializer.commit();
+        {
+            col_str->insertData(output_str.data(), output_str.size());
+        }
         return true;
     }
 };
@@ -376,7 +344,7 @@ public:
  * Function to test jsonpath member access, will be removed in final PR
  * @tparam JSONParser parser
  */
-template <typename JSONParser, typename JSONStringSerializer>
+template <typename JSONParser>
 class JSONQueryImpl
 {
 public:
@@ -386,28 +354,25 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, const ContextPtr &)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr &)
     {
-        ColumnString & col_str = assert_cast<ColumnString &>(dest);
-
+        GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
+        std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        /// Create json array of results: [res1, res2, ...]
+        out << "[";
         bool success = false;
-        const char * array_begin = "[";
-        const char * array_end = "]";
-        const char * comma = ", ";
-        JSONStringSerializer json_serializer(col_str);
-        json_serializer.addRawData(array_begin, 1);
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
             if (status == VisitorStatus::Ok)
             {
                 if (success)
                 {
-                    json_serializer.addRawData(comma, 2);
+                    out << ", ";
                 }
                 success = true;
-                json_serializer.addElement(current_element);
+                out << current_element.getElement();
             }
             else if (status == VisitorStatus::Error)
             {
@@ -417,13 +382,14 @@ public:
             }
             current_element = root;
         }
+        out << "]";
         if (!success)
         {
-            json_serializer.rollback();
             return false;
         }
-        json_serializer.addRawData(array_end, 1);
-        json_serializer.commit();
+        ColumnString & col_str = assert_cast<ColumnString &>(dest);
+        auto output_str = out.str();
+        col_str.insertData(output_str.data(), output_str.size());
         return true;
     }
 };

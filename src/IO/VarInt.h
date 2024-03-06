@@ -92,7 +92,7 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
             if (istr.eof()) [[unlikely]]
                 throwReadAfterEOF();
 
-        UInt64 byte = static_cast<unsigned char>(*istr.position());
+        UInt64 byte = *istr.position();
         ++istr.position();
         x |= (byte & 0x7F) << (7 * i);
 
@@ -133,7 +133,7 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
         if (istr == end) [[unlikely]]
             throwReadAfterEOF();
 
-        UInt64 byte = static_cast<unsigned char>(*istr);
+        UInt64 byte = *istr;
         ++istr;
         x |= (byte & 0x7F) << (7 * i);
 
