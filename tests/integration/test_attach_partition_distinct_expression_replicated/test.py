@@ -5,18 +5,21 @@ from helpers.test_tools import assert_eq_with_retry
 cluster = ClickHouseCluster(__file__)
 
 replica1 = cluster.add_instance(
-    "replica1", with_zookeeper=True,
+    "replica1",
+    with_zookeeper=True,
     main_configs=["configs/remote_servers.xml"],
     macros={"replica": "replica1", "shard": "s1"},
 )
 replica2 = cluster.add_instance(
-    "replica2", with_zookeeper=True,
+    "replica2",
+    with_zookeeper=True,
     main_configs=["configs/remote_servers.xml"],
     macros={"replica": "replica2", "shard": "s1"},
 )
 
 replica3 = cluster.add_instance(
-    "replica3", with_zookeeper=True,
+    "replica3",
+    with_zookeeper=True,
     main_configs=["configs/remote_servers.xml"],
     macros={"replica": "replica3", "shard": "s1"},
 )
@@ -40,11 +43,7 @@ def cleanup(nodes):
 
 
 def create_table(node, table_name, replicated):
-    engine = (
-        f"ReplicatedMergeTree"
-        if replicated
-        else "MergeTree()"
-    )
+    engine = f"ReplicatedMergeTree" if replicated else "MergeTree()"
     partition_expression = (
         "toYYYYMMDD(timestamp)" if table_name == "source" else "toYYYYMM(timestamp)"
     )
