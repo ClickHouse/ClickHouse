@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from copy import deepcopy
 import logging
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from dataclasses import dataclass, field
@@ -8,6 +9,24 @@ from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
 
 from ci_utils import WithIter
 from integration_test_images import IMAGES
+
+
+class CIStages(metaclass=WithIter):
+    NA = "UNKNOWN"
+    BUILDS_1 = "Builds_1"
+    BUILDS_2 = "Builds_2"
+    TESTS_1 = "Tests_1"
+    TESTS_2 = "Tests_2"
+
+
+class Runners(metaclass=WithIter):
+    BUILDER = "builder"
+    STYLE_CHECKER = "style-checker"
+    STYLE_CHECKER_ARM = "style-checker-aarch64"
+    FUNC_TESTER = "func-tester"
+    FUNC_TESTER_ARM = "func-tester-aarch64"
+    STRESS_TESTER = "stress-tester"
+    FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
 class Labels(metaclass=WithIter):
@@ -21,6 +40,7 @@ class Labels(metaclass=WithIter):
     CI_SET_REDUCED = "ci_set_reduced"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_INTEGRATION = "ci_set_integration"
+    CI_SET_ANALYZER = "ci_set_analyzer"
 
     libFuzzer = "libFuzzer"
 
@@ -206,6 +226,45 @@ class JobConfig:
     random_bucket: str = ""
 
 
+builds_job_config = JobConfig(
+    required_on_release_branch=True,
+    digest=DigestConfig(
+        include_paths=[
+            "./src",
+            "./contrib/*-cmake",
+            "./contrib/consistent-hashing",
+            "./contrib/murmurhash",
+            "./contrib/libfarmhash",
+            "./contrib/pdqsort",
+            "./contrib/cityhash102",
+            "./contrib/sparse-checkout",
+            "./contrib/libmetrohash",
+            "./contrib/update-submodules.sh",
+            "./contrib/CMakeLists.txt",
+            "./CMakeLists.txt",
+            "./PreLoad.cmake",
+            "./cmake",
+            "./base",
+            "./programs",
+            "./packages",
+            "./docker/packager/packager",
+            "./rust",
+            # FIXME: This is a WA to rebuild the CH and recreate the Performance.tar.zst artifact
+            # when there are changes in performance test scripts.
+            # Due to the current design of the perf test we need to rebuild CH when the performance test changes,
+            # otherwise the changes will not be visible in the PerformanceTest job in CI
+            "./tests/performance",
+        ],
+        exclude_files=[".md"],
+        docker=["clickhouse/binary-builder"],
+        git_submodules=True,
+    ),
+    run_command="build_check.py $BUILD_NAME",
+)
+fuzzer_build_job_config = deepcopy(builds_job_config)
+fuzzer_build_job_config.run_by_label = Labels.libFuzzer
+
+
 @dataclass
 class BuildConfig:
     name: str
@@ -221,48 +280,14 @@ class BuildConfig:
     sparse_checkout: bool = False
     comment: str = ""
     static_binary_name: str = ""
-    job_config: JobConfig = field(
-        default_factory=lambda: JobConfig(
-            required_on_release_branch=True,
-            digest=DigestConfig(
-                include_paths=[
-                    "./src",
-                    "./contrib/*-cmake",
-                    "./contrib/consistent-hashing",
-                    "./contrib/murmurhash",
-                    "./contrib/libfarmhash",
-                    "./contrib/pdqsort",
-                    "./contrib/cityhash102",
-                    "./contrib/sparse-checkout",
-                    "./contrib/libmetrohash",
-                    "./contrib/update-submodules.sh",
-                    "./contrib/CMakeLists.txt",
-                    "./CMakeLists.txt",
-                    "./PreLoad.cmake",
-                    "./cmake",
-                    "./base",
-                    "./programs",
-                    "./packages",
-                    "./docker/packager/packager",
-                    "./rust",
-                    # FIXME: This is a WA to rebuild the CH and recreate the Performance.tar.zst artifact
-                    # when there are changes in performance test scripts.
-                    # Due to the current design of the perf test we need to rebuild CH when the performance test changes,
-                    # otherwise the changes will not be visible in the PerformanceTest job in CI
-                    "./tests/performance",
-                ],
-                exclude_files=[".md"],
-                docker=["clickhouse/binary-builder"],
-                git_submodules=True,
-            ),
-            run_command="build_check.py $BUILD_NAME",
-        )
-    )
+    job_config: JobConfig = field(default_factory=lambda: deepcopy(builds_job_config))
 
     def export_env(self, export: bool = False) -> str:
         def process(field_name: str, field: Union[bool, str]) -> str:
             if isinstance(field, bool):
                 field = str(field).lower()
+            elif not isinstance(field, str):
+                field = ""
             if export:
                 return f"export BUILD_{field_name.upper()}={repr(field)}"
             return f"BUILD_{field_name.upper()}={field}"
@@ -275,6 +300,7 @@ class BuildReportConfig:
     builds: List[str]
     job_config: JobConfig = field(
         default_factory=lambda: JobConfig(
+            run_command='build_report_check.py "$CHECK_NAME"',
             digest=DigestConfig(
                 include_paths=[
                     "./tests/ci/build_report_check.py",
@@ -398,6 +424,20 @@ bugfix_validate_check = DigestConfig(
     ],
 )
 # common test params
+docker_server_job_config = JobConfig(
+    required_on_release_branch=True,
+    run_command='docker_server.py --check-name "$CHECK_NAME" --release-type head --allow-build-reuse',
+    digest=DigestConfig(
+        include_paths=[
+            "tests/ci/docker_server.py",
+            "./docker/server",
+        ]
+    ),
+)
+compatibility_test_common_params = {
+    "digest": compatibility_check_digest,
+    "run_command": "compatibility_check.py",
+}
 statless_test_common_params = {
     "digest": stateless_check_digest,
     "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
@@ -448,6 +488,19 @@ sql_test_params = {
     "run_command": "sqltest.py",
     "timeout": 10800,
 }
+clickbench_test_params = {
+    "digest": DigestConfig(
+        include_paths=[
+            "tests/ci/clickbench.py",
+        ],
+        docker=["clickhouse/clickbench"],
+    ),
+    "run_command": 'clickbench.py "$CHECK_NAME"',
+}
+install_test_params = {
+    "digest": install_check_digest,
+    "run_command": 'install_check.py "$CHECK_NAME"',
+}
 
 
 @dataclass
@@ -469,6 +522,45 @@ class CIConfig:
                 return config
         return None
 
+    def get_job_ci_stage(self, job_name: str) -> str:
+        if job_name in [
+            JobNames.STYLE_CHECK,
+            JobNames.FAST_TEST,
+            JobNames.JEPSEN_KEEPER,
+            JobNames.BUILD_CHECK,
+            JobNames.BUILD_CHECK_SPECIAL,
+        ]:
+            # FIXME: we can't currently handle Jepsen in the Stage as it's job has concurrency directive
+            # BUILD_CHECK and BUILD_CHECK_SPECIAL runs not in stage because we need them even if Builds stage failed
+            return CIStages.NA
+        stage_type = None
+        if self.is_build_job(job_name):
+            stage_type = CIStages.BUILDS_1
+            if job_name in CI_CONFIG.get_builds_for_report(
+                JobNames.BUILD_CHECK_SPECIAL
+            ):
+                # special builds go to Build_2 stage to not delay Builds_1/Test_1
+                stage_type = CIStages.BUILDS_2
+        elif self.is_docs_job(job_name):
+            stage_type = CIStages.TESTS_1
+        elif job_name == JobNames.BUILD_CHECK_SPECIAL:
+            stage_type = CIStages.TESTS_2
+        elif self.is_test_job(job_name):
+            stage_type = CIStages.TESTS_1
+            if job_name in CI_CONFIG.test_configs:
+                required_build = CI_CONFIG.test_configs[job_name].required_build
+                assert required_build
+                if required_build in CI_CONFIG.get_builds_for_report(
+                    JobNames.BUILD_CHECK
+                ):
+                    stage_type = CIStages.TESTS_1
+                else:
+                    stage_type = CIStages.TESTS_2
+            else:
+                stage_type = CIStages.TESTS_1
+        assert stage_type, f"BUG [{job_name}]"
+        return stage_type
+
     def get_job_config(self, check_name: str) -> JobConfig:
         res = None
         for config in (
@@ -481,6 +573,63 @@ class CIConfig:
                 res = config[check_name].job_config  # type: ignore
                 break
         return res  # type: ignore
+
+    def get_runner_type(self, check_name: str) -> str:
+        result = None
+        if self.is_build_job(check_name) or check_name == JobNames.FAST_TEST:
+            result = Runners.BUILDER
+        elif any(
+            words in check_name.lower()
+            for words in [
+                "install packages",
+                "compatibility check",
+                "docker",
+                "build check",
+                "jepsen",
+                "style check",
+            ]
+        ):
+            result = Runners.STYLE_CHECKER
+        elif check_name == JobNames.DOCS_CHECK:
+            # docs job is demanding
+            result = Runners.FUNC_TESTER_ARM
+        elif any(
+            words in check_name.lower()
+            for words in [
+                "stateless",
+                "stateful",
+                "clickbench",
+                "sqllogic test",
+                "libfuzzer",
+                "bugfix validation",
+            ]
+        ):
+            result = Runners.FUNC_TESTER
+        elif any(
+            words in check_name.lower()
+            for words in ["stress", "upgrade", "integration", "performance comparison"]
+        ):
+            result = Runners.STRESS_TESTER
+        elif any(
+            words in check_name.lower()
+            for words in ["ast fuzzer", "unit tests", "sqlancer", "sqltest"]
+        ):
+            result = Runners.FUZZER_UNIT_TESTER
+
+        assert result, f"BUG, no runner for [{check_name}]"
+
+        if ("aarch" in check_name or "arm" in check_name) and "aarch" not in result:
+            if result == Runners.STRESS_TESTER:
+                # FIXME: no arm stress tester group atm
+                result = Runners.FUNC_TESTER_ARM
+            elif result == Runners.BUILDER:
+                # crosscompile - no arm required
+                pass
+            else:
+                # switch to aarch64 runnner
+                result += "-aarch64"
+
+        return result
 
     @staticmethod
     def normalize_string(input_string: str) -> str:
@@ -555,7 +704,25 @@ class CIConfig:
             for check_name in config:  # type: ignore
                 yield check_name
 
-    def get_builds_for_report(self, report_name: str) -> List[str]:
+    def get_builds_for_report(
+        self, report_name: str, release: bool = False, backport: bool = False
+    ) -> List[str]:
+        # hack to modify build list for release and bp wf
+        assert not (release and backport), "Invalid input"
+        if backport and report_name == JobNames.BUILD_CHECK:
+            return [
+                Build.PACKAGE_RELEASE,
+                Build.PACKAGE_AARCH64,
+                Build.PACKAGE_ASAN,
+                Build.PACKAGE_TSAN,
+                Build.PACKAGE_DEBUG,
+            ]
+        if (release or backport) and report_name == JobNames.BUILD_CHECK_SPECIAL:
+            return [
+                Build.BINARY_DARWIN,
+                Build.BINARY_DARWIN_AARCH64,
+            ]
+
         return self.builds_report_config[report_name].builds
 
     @classmethod
@@ -564,11 +731,7 @@ class CIConfig:
 
     @classmethod
     def is_test_job(cls, job: str) -> bool:
-        return (
-            not cls.is_build_job(job)
-            and not cls.is_build_job(job)
-            and job != JobNames.STYLE_CHECK
-        )
+        return not cls.is_build_job(job) and job != JobNames.STYLE_CHECK
 
     @classmethod
     def is_docs_job(cls, job: str) -> bool:
@@ -645,6 +808,16 @@ CI_CONFIG = CIConfig(
                 JobNames.STYLE_CHECK,
                 Build.PACKAGE_RELEASE,
                 JobNames.INTEGRATION_TEST,
+            ]
+        ),
+        Labels.CI_SET_ANALYZER: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_RELEASE,
+                Build.PACKAGE_ASAN,
+                JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE,
+                JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
             ]
         ),
         Labels.CI_SET_REDUCED: LabelConfig(
@@ -799,7 +972,7 @@ CI_CONFIG = CIConfig(
             name=Build.FUZZERS,
             compiler="clang-17",
             package_type="fuzzers",
-            job_config=JobConfig(run_by_label=Labels.libFuzzer),
+            job_config=fuzzer_build_job_config,
         ),
     },
     builds_report_config={
@@ -812,9 +985,6 @@ CI_CONFIG = CIConfig(
                 Build.PACKAGE_TSAN,
                 Build.PACKAGE_MSAN,
                 Build.PACKAGE_DEBUG,
-                Build.PACKAGE_RELEASE_COVERAGE,
-                Build.BINARY_RELEASE,
-                Build.FUZZERS,
             ]
         ),
         JobNames.BUILD_CHECK_SPECIAL: BuildReportConfig(
@@ -830,33 +1000,15 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_S390X,
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
+                Build.PACKAGE_RELEASE_COVERAGE,
+                Build.BINARY_RELEASE,
+                Build.FUZZERS,
             ]
         ),
     },
     other_jobs_configs={
-        JobNames.DOCKER_SERVER: TestConfig(
-            "",
-            job_config=JobConfig(
-                required_on_release_branch=True,
-                digest=DigestConfig(
-                    include_paths=[
-                        "tests/ci/docker_server.py",
-                        "./docker/server",
-                    ]
-                ),
-            ),
-        ),
-        JobNames.DOCKER_KEEPER: TestConfig(
-            "",
-            job_config=JobConfig(
-                digest=DigestConfig(
-                    include_paths=[
-                        "tests/ci/docker_server.py",
-                        "./docker/keeper",
-                    ]
-                ),
-            ),
-        ),
+        JobNames.DOCKER_SERVER: TestConfig("", job_config=docker_server_job_config),
+        JobNames.DOCKER_KEEPER: TestConfig("", job_config=docker_server_job_config),
         JobNames.DOCS_CHECK: TestConfig(
             "",
             job_config=JobConfig(
@@ -864,6 +1016,7 @@ CI_CONFIG = CIConfig(
                     include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
                     docker=["clickhouse/docs-builder"],
                 ),
+                run_command="docs_check.py",
             ),
         ),
         JobNames.FAST_TEST: TestConfig(
@@ -893,10 +1046,10 @@ CI_CONFIG = CIConfig(
     },
     test_configs={
         JobNames.INSTALL_TEST_AMD: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(digest=install_check_digest)
+            Build.PACKAGE_RELEASE, job_config=JobConfig(**install_test_params)  # type: ignore
         ),
         JobNames.INSTALL_TEST_ARM: TestConfig(
-            Build.PACKAGE_AARCH64, job_config=JobConfig(digest=install_check_digest)
+            Build.PACKAGE_AARCH64, job_config=JobConfig(**install_test_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
@@ -1038,13 +1191,13 @@ CI_CONFIG = CIConfig(
         JobNames.COMPATIBILITY_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
             job_config=JobConfig(
-                required_on_release_branch=True, digest=compatibility_check_digest
+                required_on_release_branch=True, **compatibility_test_common_params  # type: ignore
             ),
         ),
         JobNames.COMPATIBILITY_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64,
             job_config=JobConfig(
-                required_on_release_branch=True, digest=compatibility_check_digest
+                required_on_release_branch=True, **compatibility_test_common_params  # type: ignore
             ),
         ),
         JobNames.UNIT_TEST: TestConfig(
@@ -1114,9 +1267,20 @@ CI_CONFIG = CIConfig(
         JobNames.SQLTEST: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**sql_test_params)  # type: ignore
         ),
-        JobNames.CLCIKBENCH_TEST: TestConfig(Build.PACKAGE_RELEASE),
-        JobNames.CLCIKBENCH_TEST_ARM: TestConfig(Build.PACKAGE_AARCH64),
-        JobNames.LIBFUZZER_TEST: TestConfig(Build.FUZZERS, job_config=JobConfig(run_by_label=Labels.libFuzzer)),  # type: ignore
+        JobNames.CLCIKBENCH_TEST: TestConfig(
+            Build.PACKAGE_RELEASE, job_config=JobConfig(**clickbench_test_params)  # type: ignore
+        ),
+        JobNames.CLCIKBENCH_TEST_ARM: TestConfig(
+            Build.PACKAGE_AARCH64, job_config=JobConfig(**clickbench_test_params)  # type: ignore
+        ),
+        JobNames.LIBFUZZER_TEST: TestConfig(
+            Build.FUZZERS,
+            job_config=JobConfig(
+                run_by_label=Labels.libFuzzer,
+                timeout=10800,
+                run_command='libfuzzer_test_check.py "$CHECK_NAME" 10800',
+            ),
+        ),  # type: ignore
     },
 )
 CI_CONFIG.validate()

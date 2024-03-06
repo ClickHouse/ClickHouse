@@ -56,7 +56,7 @@ struct SelectQueryOptions
     std::optional<UInt32> shard_num;
     std::optional<UInt32> shard_count;
 
-    SelectQueryOptions(
+    SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t depth = 0,
         bool is_subquery_ = false,

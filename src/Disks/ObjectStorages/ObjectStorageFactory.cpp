@@ -96,10 +96,10 @@ S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::st
 }
 
 void checkS3Capabilities(
-    S3ObjectStorage & storage, const S3Capabilities s3_capabilities, const String & name, const String & key_with_trailing_slash)
+    S3ObjectStorage & storage, const S3Capabilities s3_capabilities, const String & name)
 {
     /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
-    if (s3_capabilities.support_batch_delete && !checkBatchRemove(storage, key_with_trailing_slash))
+    if (s3_capabilities.support_batch_delete && !checkBatchRemove(storage))
     {
         LOG_WARNING(
             getLogger("S3ObjectStorage"),
@@ -134,7 +134,7 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
 
         /// NOTE: should we still perform this check for clickhouse-disks?
         if (!skip_access_check)
-            checkS3Capabilities(*object_storage, s3_capabilities, name, uri.key);
+            checkS3Capabilities(*object_storage, s3_capabilities, name);
 
         return object_storage;
     });
@@ -170,7 +170,7 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
 
         /// NOTE: should we still perform this check for clickhouse-disks?
         if (!skip_access_check)
-            checkS3Capabilities(*object_storage, s3_capabilities, name, uri.key);
+            checkS3Capabilities(*object_storage, s3_capabilities, name);
 
         return object_storage;
     });
@@ -213,12 +213,12 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        String container_name = config.getString(config_prefix + ".container_name", "default-container");
+        AzureBlobStorageEndpoint endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
         return std::make_unique<AzureObjectStorage>(
             name,
             getAzureBlobContainerClient(config, config_prefix),
             getAzureBlobStorageSettings(config, config_prefix, context),
-            container_name);
+            endpoint.prefix.empty() ? endpoint.container_name : endpoint.container_name + "/" + endpoint.prefix);
 
     });
 }
