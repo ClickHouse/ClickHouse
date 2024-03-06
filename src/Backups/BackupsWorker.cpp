@@ -18,6 +18,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
@@ -864,7 +865,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
             /// process_list_element_holder is used to make an element in ProcessList live while RESTORE is working asynchronously.
             auto process_list_element = context_in_use->getProcessListElement();
 
-            scheduleFromThreadPool<void>(
+            thread_pool.scheduleOrThrowOnError(
                 [this,
                  restore_query,
                  restore_id,
@@ -876,6 +877,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
                  on_exception,
                  process_list_element_holder = process_list_element ? process_list_element->getProcessListEntry() : nullptr]
                 {
+                    CurrentThread::QueryScope query_scope(context_in_use);
                     try
                     {
                         doRestore(
@@ -891,9 +893,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
                     {
                         on_exception(restore_id, backup_name_for_logging, restore_settings, restore_coordination);
                     }
-                },
-                thread_pool,
-                "RestoreWorker");
+                });
         }
         else
         {
