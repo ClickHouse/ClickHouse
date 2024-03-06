@@ -11,9 +11,7 @@
 
 #ifdef OS_DARWIN
 // ucontext is not available without _XOPEN_SOURCE
-#   ifdef __clang__
-#       pragma clang diagnostic ignored "-Wreserved-id-macro"
-#   endif
+#   pragma clang diagnostic ignored "-Wreserved-id-macro"
 #   define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>
@@ -62,7 +60,14 @@ public:
 
     static std::string toString(void ** frame_pointers, size_t offset, size_t size);
     static void dropCache();
-    static void symbolize(const FramePointers & frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames);
+
+    /// @param fatal - if true, will process inline frames (slower)
+    static void forEachFrame(
+        const FramePointers & frame_pointers,
+        size_t offset,
+        size_t size,
+        std::function<void(const Frame &)> callback,
+        bool fatal);
 
     void toStringEveryLine(std::function<void(std::string_view)> callback) const;
     static void toStringEveryLine(const FramePointers & frame_pointers, std::function<void(std::string_view)> callback);

@@ -83,7 +83,6 @@ private:
 
     /// Used for filling header with no rows as well as block with data
     static void injectVirtualColumns(Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
-    static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
 
     /// Sets up range readers corresponding to data readers
     void initializeRangeReaders();
@@ -114,7 +113,7 @@ private:
     /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
     bool add_part_level = false;
 
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeSelectProcessor");
+    LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};
 };
 

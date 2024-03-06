@@ -15,7 +15,7 @@ protected:
 public:
     std::string getName() const override { return "SystemTableDataTypeFamilies"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 };
 
 }

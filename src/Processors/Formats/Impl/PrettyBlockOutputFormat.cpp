@@ -6,15 +6,17 @@
 #include <IO/Operators.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
+#include <Common/formatReadable.h>
 
 
 namespace DB
 {
 
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_)
-     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), mono_block(mono_block_)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, bool color_)
+     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), color(color_), mono_block(mono_block_)
 {
+    readable_number_tip = header_.getColumns().size() == 1 && WhichDataType(header_.getDataTypes()[0]->getTypeId()).isNumber();
 }
 
 
@@ -237,7 +239,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
         const auto & col = header.getByPosition(i);
 
-        if (format_settings.pretty.color)
+        if (color)
             writeCString("\033[1m", out);
 
         if (col.type->shouldAlignRightInPrettyFormats())
@@ -255,7 +257,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                 writeChar(' ', out);
         }
 
-        if (format_settings.pretty.color)
+        if (color)
             writeCString("\033[0m", out);
     }
     writeCString(" ", out);
@@ -305,6 +307,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         }
 
         writeCString(grid_symbols.bar, out);
+        writeReadableNumberTip(chunk);
         writeCString("\n", out);
     }
 
@@ -335,7 +338,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, 1 + format_settings.pretty.max_value_width));
 
         const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
-        if (format_settings.pretty.color)
+        if (color)
         {
             serialized_value += "\033[31;1m";
             serialized_value += ellipsis;
@@ -408,6 +411,24 @@ void PrettyBlockOutputFormat::writeSuffix()
         writeIntText(format_settings.pretty.max_rows, out);
         writeCString(".\n", out);
     }
+}
+
+void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
+{
+    auto columns = chunk.getColumns();
+    auto is_single_number = readable_number_tip && chunk.getNumRows() == 1 && chunk.getNumColumns() == 1;
+    if (!is_single_number)
+        return;
+    auto value = columns[0]->getFloat64(0);
+    auto threshold = format_settings.pretty.output_format_pretty_single_large_number_tip_threshold;
+    if (threshold == 0 || value <= threshold)
+        return;
+    if (color)
+        writeCString("\033[90m", out);
+    writeCString(" -- ", out);
+    formatReadableQuantity(value, out, 2);
+    if (color)
+        writeCString("\033[0m", out);
 }
 
 void registerOutputFormatPretty(FormatFactory & factory)

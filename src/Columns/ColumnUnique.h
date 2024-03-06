@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumnUnique.h>
-#include <Columns/IColumnImpl.h>
 #include <Columns/ReverseIndex.h>
 
 #include <Columns/ColumnVector.h>
@@ -56,6 +55,7 @@ public:
     void nestedRemoveNullable() override;
 
     size_t uniqueInsert(const Field & x) override;
+    bool tryUniqueInsert(const Field & x, size_t & index) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
     MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
@@ -79,7 +79,9 @@ public:
     Float32 getFloat32(size_t n) const override { return getNestedColumn()->getFloat32(n); }
     bool getBool(size_t n) const override { return getNestedColumn()->getBool(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override
     {
@@ -347,6 +349,26 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 }
 
 template <typename ColumnType>
+bool ColumnUnique<ColumnType>::tryUniqueInsert(const Field & x, size_t & index)
+{
+    if (x.isNull())
+    {
+        if (!is_nullable)
+            return false;
+        index = getNullValueIndex();
+        return true;
+    }
+
+    auto single_value_column = column_holder->cloneEmpty();
+    if (!single_value_column->tryInsert(x))
+        return false;
+
+    auto single_value_data = single_value_column->getDataAt(0);
+    index = uniqueInsertData(single_value_data.data, single_value_data.size);
+    return true;
+}
+
+template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
 {
     if (is_nullable && src.isNullAt(n))
@@ -373,7 +395,21 @@ size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t lengt
 }
 
 template <typename ColumnType>
-StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+void ColumnUnique<ColumnType>::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
+{
+    /// nullable is handled internally.
+    chassert(is_null == nullptr);
+    if (IColumn::empty())
+        return;
+
+    if (is_nullable)
+        column_holder->collectSerializedValueSizes(sizes, assert_cast<const ColumnUInt8 &>(*nested_null_mask).getData().data());
+    else
+        column_holder->collectSerializedValueSizes(sizes, nullptr);
+}
+
+template <typename ColumnType>
+StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     if (is_nullable)
     {
@@ -394,6 +430,22 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
 
 
     return column_holder->serializeValueIntoArena(n, arena, begin);
+}
+
+template <typename ColumnType>
+char * ColumnUnique<ColumnType>::serializeValueIntoMemory(size_t n, char * memory) const
+{
+    if (is_nullable)
+    {
+        UInt8 flag = (n == getNullValueIndex() ? 1 : 0);
+        unalignedStore<UInt8>(memory, flag);
+        ++memory;
+
+        if (n == getNullValueIndex())
+            return memory;
+    }
+
+    return column_holder->serializeValueIntoMemory(n, memory);
 }
 
 template <typename ColumnType>

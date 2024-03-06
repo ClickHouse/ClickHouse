@@ -320,7 +320,7 @@ void Connection::sendHello()
                         "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
     }
-#if USE_SSL
+#if USE_SSH
     /// Just inform server that we will authenticate using SSH keys.
     else if (!ssh_private_key.isEmpty())
     {
@@ -350,7 +350,7 @@ void Connection::sendAddendum()
 
 void Connection::performHandshakeForSSHAuth()
 {
-#if USE_SSL
+#if USE_SSH
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -675,7 +675,13 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs, settings->enable_deflate_qpl_codec);
+        CompressionCodecFactory::instance().validateCodec(
+            method,
+            level,
+            !settings->allow_suspicious_codecs,
+            settings->allow_experimental_codecs,
+            settings->enable_deflate_qpl_codec,
+            settings->enable_zstd_qat_codec);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else

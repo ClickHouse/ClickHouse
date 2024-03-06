@@ -34,7 +34,7 @@ protected:
             columns = parseColumnsListFromString(TableFunction::configuration.structure, context);
 
         StoragePtr storage = Storage::create(
-            TableFunction::configuration, context, StorageID(TableFunction::getDatabaseName(), table_name),
+            TableFunction::configuration, context, LoadingStrictnessLevel::CREATE, StorageID(TableFunction::getDatabaseName(), table_name),
             columns, ConstraintsDescription{}, String{}, std::nullopt);
 
         storage->startup();

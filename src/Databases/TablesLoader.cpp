@@ -29,7 +29,7 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     , async_loader(global_context->getAsyncLoader())
 {
     metadata.default_database = global_context->getCurrentDatabase();
-    log = &Poco::Logger::get("TablesLoader");
+    log = getLogger("TablesLoader");
 }
 
 LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)

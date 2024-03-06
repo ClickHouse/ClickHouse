@@ -4,6 +4,8 @@ sidebar_position: 170
 sidebar_label: Strings
 ---
 
+import VersionBadge from '@theme/badges/VersionBadge';
+
 # Functions for Working with Strings
 
 Functions for [searching](string-search-functions.md) in strings and for [replacing](string-replace-functions.md) in strings are described separately.
@@ -515,7 +517,7 @@ Alias: `concat_ws`
 **Arguments**
 
 - sep — separator. Const [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- exprN — expression to be concatenated. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+- exprN — expression to be concatenated. Arguments which are not of types [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
 **Returned values**
 
@@ -556,6 +558,7 @@ substring(s, offset[, length])
 Alias:
 - `substr`
 - `mid`
+- `byteSlice`
 
 **Arguments**
 
@@ -731,7 +734,7 @@ Alias: `FROM_BASE64`.
 
 Like `base64Decode` but returns an empty string in case of error.
 
-## endsWith
+## endsWith {#endswith}
 
 Returns whether string `str` ends with `suffix`.
 
@@ -765,7 +768,7 @@ Result:
 └──────────────────────────┴──────────────────────┘
 ```
 
-## startsWith
+## startsWith {#startswith}
 
 Returns whether string `str` starts with `prefix`.
 
@@ -782,6 +785,8 @@ SELECT startsWith('Spider-Man', 'Spi');
 ```
 
 ## startsWithUTF8
+
+<VersionBadge minVersion='23.8' />
 
 Returns whether string `str` starts with `prefix`, the difference between `startsWithUTF8` and `startsWith` is that `startsWithUTF8` match `str` and `suffix` by UTF-8 characters.
 
@@ -1604,6 +1609,78 @@ Result:
 ```
 
 Alias: levenshteinDistance
+
+## damerauLevenshteinDistance
+
+Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+damerauLevenshteinDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT damerauLevenshteinDistance('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─damerauLevenshteinDistance('clickhouse', 'mouse')─┐
+│                                                 6 │
+└───────────────────────────────────────────────────┘
+```
+
+## jaroSimilarity
+
+Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro_similarity) between two byte strings.
+
+**Syntax**
+
+```sql
+jaroSimilarity(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT jaroSimilarity('clickhouse', 'click');
+```
+
+Result:
+
+``` text
+┌─jaroSimilarity('clickhouse', 'click')─┐
+│                    0.8333333333333333 │
+└───────────────────────────────────────┘
+```
+
+## jaroWinklerSimilarity
+
+Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro%E2%80%93Winkler_similarity) between two byte strings.
+
+**Syntax**
+
+```sql
+jaroWinklerSimilarity(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT jaroWinklerSimilarity('clickhouse', 'click');
+```
+
+Result:
+
+``` text
+┌─jaroWinklerSimilarity('clickhouse', 'click')─┐
+│                           0.8999999999999999 │
+└──────────────────────────────────────────────┘
+```
 
 ## initcap
 

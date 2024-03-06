@@ -17,9 +17,9 @@
 namespace DB
 {
 
-NamesAndTypesList ProcessorProfileLogElement::getNamesAndTypes()
+ColumnsDescription ProcessorProfileLogElement::getColumnsDescription()
 {
-    return
+    return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},

@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
+#include <DataTypes/IDataType.h>
+
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -490,7 +492,8 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);
 
-    if (node.column && isColumnConst(*node.column))
+    if (node.column && isColumnConst(*node.column)
+        && !WhichDataType(node.result_type).isSet())
     {
         Field literal;
         node.column->get(0, literal);

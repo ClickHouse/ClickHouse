@@ -45,7 +45,7 @@ StorageXDBC::StorageXDBC(
     , bridge_helper(bridge_helper_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
-    , log(&Poco::Logger::get("Storage" + bridge_helper->getName()))
+    , log(getLogger("Storage" + bridge_helper->getName()))
 {
     uri = bridge_helper->getMainURI().toString();
 }
@@ -59,7 +59,7 @@ std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(
     const Names & /* column_names */,
     const StorageSnapshotPtr & /*storage_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
+    const ContextPtr & /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t max_block_size) const
 {
@@ -70,7 +70,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     const Names & column_names,
     const ColumnsDescription & columns_description,
     const SelectQueryInfo & query_info,
-    ContextPtr local_context,
+    const ContextPtr & local_context,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {

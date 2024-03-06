@@ -1,6 +1,7 @@
 #include <csignal>
 #include <csetjmp>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include <new>
 #include <iostream>
@@ -19,39 +20,32 @@
 #include <Common/IO.h>
 
 #include <base/phdr_cache.h>
+#include <base/coverage.h>
 
 
 /// Universal executable for various clickhouse applications
-#if ENABLE_CLICKHOUSE_SERVER
 int mainEntryClickHouseServer(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_CLIENT
 int mainEntryClickHouseClient(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_LOCAL
 int mainEntryClickHouseLocal(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_BENCHMARK
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_COMPRESSOR
 int mainEntryClickHouseCompressor(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_FORMAT
 int mainEntryClickHouseFormat(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_COPIER
 int mainEntryClickHouseClusterCopier(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_OBFUSCATOR
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_GIT_IMPORT
 int mainEntryClickHouseGitImport(int argc, char ** argv);
-#endif
+int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
+int mainEntryClickHouseSU(int argc, char ** argv);
+int mainEntryClickHouseDisks(int argc, char ** argv);
+
+int mainEntryClickHouseHashBinary(int, char **)
+{
+    /// Intentionally without newline. So you can run:
+    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
+    std::cout << getHashOfLoadedBinaryHex();
+    return 0;
+}
+
 #if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeper(int argc, char ** argv);
 #endif
@@ -61,30 +55,13 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
 int mainEntryClickHouseKeeperClient(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
-int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_SU
-int mainEntryClickHouseSU(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_INSTALL
+
+// install
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
 int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_DISKS
-int mainEntryClickHouseDisks(int argc, char ** argv);
-#endif
-
-int mainEntryClickHouseHashBinary(int, char **)
-{
-    /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
-    std::cout << getHashOfLoadedBinaryHex();
-    return 0;
-}
 
 namespace
 {
@@ -96,36 +73,22 @@ using MainFunc = int (*)(int, char**);
 /// Add an item here to register new application
 std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
-#if ENABLE_CLICKHOUSE_LOCAL
     {"local", mainEntryClickHouseLocal},
-#endif
-#if ENABLE_CLICKHOUSE_CLIENT
     {"client", mainEntryClickHouseClient},
-#endif
-#if ENABLE_CLICKHOUSE_BENCHMARK
     {"benchmark", mainEntryClickHouseBenchmark},
-#endif
-#if ENABLE_CLICKHOUSE_SERVER
     {"server", mainEntryClickHouseServer},
-#endif
-#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
-#endif
-#if ENABLE_CLICKHOUSE_COMPRESSOR
     {"compressor", mainEntryClickHouseCompressor},
-#endif
-#if ENABLE_CLICKHOUSE_FORMAT
     {"format", mainEntryClickHouseFormat},
-#endif
-#if ENABLE_CLICKHOUSE_COPIER
     {"copier", mainEntryClickHouseClusterCopier},
-#endif
-#if ENABLE_CLICKHOUSE_OBFUSCATOR
     {"obfuscator", mainEntryClickHouseObfuscator},
-#endif
-#if ENABLE_CLICKHOUSE_GIT_IMPORT
     {"git-import", mainEntryClickHouseGitImport},
-#endif
+    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
+    {"su", mainEntryClickHouseSU},
+    {"hash-binary", mainEntryClickHouseHashBinary},
+    {"disks", mainEntryClickHouseDisks},
+
+    // keeper
 #if ENABLE_CLICKHOUSE_KEEPER
     {"keeper", mainEntryClickHouseKeeper},
 #endif
@@ -135,34 +98,20 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
     {"keeper-client", mainEntryClickHouseKeeperClient},
 #endif
-#if ENABLE_CLICKHOUSE_INSTALL
+
+    // install
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
-#endif
-#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
-    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
-#endif
-#if ENABLE_CLICKHOUSE_SU
-    {"su", mainEntryClickHouseSU},
-#endif
-    {"hash-binary", mainEntryClickHouseHashBinary},
-#if ENABLE_CLICKHOUSE_DISKS
-    {"disks", mainEntryClickHouseDisks},
-#endif
 };
 
 /// Add an item here to register a new short name
 std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 {
-#if ENABLE_CLICKHOUSE_LOCAL
     {"chl", "local"},
-#endif
-#if ENABLE_CLICKHOUSE_CLIENT
     {"chc", "client"},
-#endif
 };
 
 int printHelp(int, char **)
@@ -392,6 +341,50 @@ void checkHarmfulEnvironmentVariables(char ** argv)
 }
 #endif
 
+
+#if defined(SANITIZE_COVERAGE)
+__attribute__((no_sanitize("coverage")))
+void dumpCoverage()
+{
+    /// A user can request to dump the coverage information into files at exit.
+    /// This is useful for non-server applications such as clickhouse-format or clickhouse-client,
+    /// that cannot introspect it with SQL functions at runtime.
+
+    /// The CLICKHOUSE_WRITE_COVERAGE environment variable defines a prefix for a filename 'prefix.pid'
+    /// containing the list of addresses of covered .
+
+    /// The format is even simpler than Clang's "sancov": an array of 64-bit addresses, native byte order, no header.
+
+    if (const char * coverage_filename_prefix = getenv("CLICKHOUSE_WRITE_COVERAGE")) // NOLINT(concurrency-mt-unsafe)
+    {
+        auto dump = [](const std::string & name, auto span)
+        {
+            /// Write only non-zeros.
+            std::vector<uintptr_t> data;
+            data.reserve(span.size());
+            for (auto addr : span)
+                if (addr)
+                    data.push_back(addr);
+
+            int fd = ::open(name.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0400);
+            if (-1 == fd)
+            {
+                writeError("Cannot open a file to write the coverage data\n");
+            }
+            else
+            {
+                if (!writeRetry(fd, reinterpret_cast<const char *>(data.data()), data.size() * sizeof(data[0])))
+                    writeError("Cannot write the coverage data to a file\n");
+                if (0 != ::close(fd))
+                    writeError("Cannot close the file with coverage data\n");
+            }
+        };
+
+        dump(fmt::format("{}.{}", coverage_filename_prefix, getpid()), getCumulativeCoverage());
+    }
+}
+#endif
+
 }
 
 bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
@@ -512,6 +505,12 @@ int main(int argc_, char ** argv_)
     if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'))
         main_func = mainEntryClickHouseLocal;
 
-    return main_func(static_cast<int>(argv.size()), argv.data());
+    int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
+
+#if defined(SANITIZE_COVERAGE)
+    dumpCoverage();
+#endif
+
+    return exit_code;
 }
 #endif

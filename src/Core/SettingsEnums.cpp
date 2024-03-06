@@ -1,5 +1,6 @@
 #include <Core/SettingsEnums.h>
 #include <magic_enum.hpp>
+#include <Access/Common/SQLSecurityDefs.h>
 
 
 namespace DB
@@ -207,9 +208,14 @@ IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
      {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
      {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
 
+IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
+    {{"DEFINER", SQLSecurityType::DEFINER},
+     {"INVOKER", SQLSecurityType::INVOKER},
+     {"NONE", SQLSecurityType::NONE}})
+
 IMPLEMENT_SETTING_ENUM(CBOStepExecutionMode, ErrorCodes::BAD_ARGUMENTS,
-   {{"one_stage", CBOStepExecutionMode::ONE_STAGE},
-    {"two_stage", CBOStepExecutionMode::TWO_STAGE},
-    {"determined_by_optimizer", CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER}})
+                       {{"one_stage", CBOStepExecutionMode::ONE_STAGE},
+                        {"two_stage", CBOStepExecutionMode::TWO_STAGE},
+                        {"determined_by_optimizer", CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER}})
 
 }

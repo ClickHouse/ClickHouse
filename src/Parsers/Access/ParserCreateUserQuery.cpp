@@ -15,6 +15,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserDatabaseOrNone.h>
+#include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -43,20 +44,6 @@ namespace
         });
     }
 
-    class ParserStringAndSubstitution : public IParserBase
-    {
-    private:
-        const char * getName() const override { return "ParserStringAndSubstitution"; }
-        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-        {
-            return ParserStringLiteral{}.parse(pos, node, expected) || ParserSubstitution{}.parse(pos, node, expected);
-        }
-
-    public:
-        explicit ParserStringAndSubstitution() = default;
-    };
-
-
     bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAuthenticationData> & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -81,7 +68,6 @@ namespace
             bool expect_common_names = false;
             bool expect_public_ssh_key = false;
             bool expect_http_auth_server = false;
-
 
             if (ParserKeyword{"WITH"}.ignore(pos, expected))
             {

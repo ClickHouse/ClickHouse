@@ -723,6 +723,7 @@ def test_materialized_view(started_cluster):
     pg_manager.execute(f"INSERT INTO test_table SELECT 3, 4")
     check_tables_are_synchronized(instance, "test_table")
     assert "1\t2\n3\t4" == instance.query("SELECT * FROM mv ORDER BY 1, 2").strip()
+    instance.query("DROP VIEW mv")
     pg_manager.drop_materialized_db()
 
 
@@ -1092,6 +1093,8 @@ def test_dependent_loading(started_cluster):
     instance.query(
         f"SELECT toDateTime64('{nested_time}', 6) < toDateTime64('{time}', 6)"
     )
+
+    instance.query(f"DROP TABLE {table} SYNC")
 
 
 if __name__ == "__main__":

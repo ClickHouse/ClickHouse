@@ -68,8 +68,8 @@ private:
     ExecutorTasks tasks;
 
     /// Concurrency control related
-    ConcurrencyControl::AllocationPtr slots;
-    ConcurrencyControl::SlotPtr single_thread_slot; // slot for single-thread mode to work using executeStep()
+    SlotAllocationPtr cpu_slots;
+    AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
     std::atomic_size_t threads = 0;
 
@@ -83,7 +83,7 @@ private:
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_reading = false;
 
-    Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
+    LoggerPtr log = getLogger("PipelineExecutor");
 
     /// Now it's used to check if query was killed.
     QueryStatusPtr process_list_element;

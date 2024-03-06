@@ -4,6 +4,7 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
+#include <Common/FailPoint.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryCache.h>
@@ -103,8 +104,13 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int INCORRECT_DATA;
+    extern const int SYNTAX_ERROR;
 }
 
+namespace FailPoints
+{
+    extern const char execute_query_calling_empty_set_result_func_on_exception[];
+}
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 {
@@ -120,7 +126,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
 {
     if (internal)
     {
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {} (stage: {})", toOneLineQuery(query), QueryProcessingStage::toString(stage));
+        LOG_DEBUG(getLogger("executeQuery"), "(internal) {} (stage: {})", toOneLineQuery(query), QueryProcessingStage::toString(stage));
     }
     else
     {
@@ -143,7 +149,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         if (auto txn = context->getCurrentTransaction())
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
+        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
@@ -154,7 +160,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
 
         if (client_info.client_trace_context.trace_id != UUID())
         {
-            LOG_TRACE(&Poco::Logger::get("executeQuery"),
+            LOG_TRACE(getLogger("executeQuery"),
                 "OpenTelemetry traceparent '{}'",
                 client_info.client_trace_context.composeTraceparentHeader());
         }
@@ -208,9 +214,9 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
             elem.stack_trace);
 
     if (log_error)
-        LOG_ERROR(&Poco::Logger::get("executeQuery"), message);
+        LOG_ERROR(getLogger("executeQuery"), message);
     else
-        LOG_INFO(&Poco::Logger::get("executeQuery"), message);
+        LOG_INFO(getLogger("executeQuery"), message);
 }
 
 static void
@@ -258,7 +264,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
     element.query_views.insert(access_info.views.begin(), access_info.views.end());
 
-    const auto & factories_info = context_ptr->getQueryFactoriesInfo();
+    const auto factories_info = context_ptr->getQueryFactoriesInfo();
     element.used_aggregate_functions = factories_info.aggregate_functions;
     element.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
     element.used_database_engines = factories_info.database_engines;
@@ -397,7 +403,7 @@ void logQueryFinish(
             double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
             double rows_per_second = static_cast<double>(elem.read_rows) / elapsed_seconds;
             LOG_DEBUG(
-                &Poco::Logger::get("executeQuery"),
+                getLogger("executeQuery"),
                 "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
                 elem.read_rows,
                 ReadableSize(elem.read_bytes),
@@ -599,6 +605,9 @@ void logExceptionBeforeStart(
     if (auto txn = context->getCurrentTransaction())
         elem.tid = txn->tid;
 
+    if (settings.log_query_settings)
+        elem.query_settings = std::make_shared<Settings>(context->getSettingsRef());
+
     if (settings.calculate_text_stack_trace)
         setExceptionStackTrace(elem);
     logException(context, elem);
@@ -661,17 +670,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// we still have enough span logs for the execution of external queries.
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
     if (query_span && query_span->trace_id != UUID{})
-        LOG_TRACE(&Poco::Logger::get("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
+        LOG_TRACE(getLogger("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
 
+    /// Used for logging query start time in system.query_log
     auto query_start_time = std::chrono::system_clock::now();
 
-    /// Used to set the watch in QueryStatus and the output formats. It is not based on query_start_time as that might be based on
-    /// the value passed by the client
+    /// Used for:
+    /// * Setting the watch in QueryStatus (controls timeouts and progress) and the output formats
+    /// * Logging query duration (system.query_log)
     Stopwatch start_watch{CLOCK_MONOTONIC};
 
     const auto & client_info = context->getClientInfo();
 
-    if (!internal)
+    if (!internal && client_info.initial_query_start_time == 0)
     {
         // If it's not an internal query and we don't see an initial_query_start_time yet, initialize it
         // to current time. Internal queries are those executed without an independent client context,
@@ -679,15 +690,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         // possible to have unset initial_query_start_time for non-internal and non-initial queries. For
         // example, the query is from an initiator that is running an old version of clickhouse.
         // On the other hand, if it's initialized then take it as the start of the query
-        if (client_info.initial_query_start_time == 0)
-        {
-            context->setInitialQueryStartTime(query_start_time);
-        }
-        else
-        {
-            query_start_time = std::chrono::time_point<std::chrono::system_clock>(
-                std::chrono::microseconds{client_info.initial_query_start_time_microseconds});
-        }
+        context->setInitialQueryStartTime(query_start_time);
     }
 
     assert(internal || CurrentThread::get().getQueryContext());
@@ -711,7 +714,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (settings.dialect == Dialect::kusto && !internal)
         {
             ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
-
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
@@ -725,6 +727,43 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+
+#ifndef NDEBUG
+            /// Verify that AST formatting is consistent:
+            /// If you format AST, parse it back, and format it again, you get the same string.
+
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
+
+            /// The query can become more verbose after formatting, so:
+            size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
+
+            ASTPtr ast2;
+            try
+            {
+                ast2 = parseQuery(parser,
+                    formatted1.data(),
+                    formatted1.data() + formatted1.size(),
+                    "", new_max_query_size, settings.max_parser_depth);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Inconsistent AST formatting: the query:\n{}\ncannot parse.",
+                        formatted1);
+                else
+                    throw;
+            }
+
+            chassert(ast2);
+
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true);
+
+            if (formatted1 != formatted2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
+                    formatted1, formatted2);
+#endif
         }
 
         const char * query_end = end;
@@ -926,7 +965,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         bool async_insert = false;
         auto * queue = context->getAsynchronousInsertQueue();
-        auto * logger = &Poco::Logger::get("executeQuery");
+        auto logger = getLogger("executeQuery");
 
         if (insert_query && async_insert_enabled)
         {
@@ -1011,7 +1050,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getUserName());
+                    QueryCache::Key key(ast, context->getUserID(), context->getCurrentRoles());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1124,14 +1163,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         {
                             QueryCache::Key key(
                                 ast, res.pipeline.getHeader(),
-                                context->getUserName(), settings.query_cache_share_between_users,
+                                context->getUserID(), context->getCurrentRoles(),
+                                settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
                                 settings.query_cache_compress_entries);
 
-                            const size_t num_query_runs = query_cache->recordQueryRun(key);
+                            const size_t num_query_runs = settings.query_cache_min_query_runs ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                             if (num_query_runs <= settings.query_cache_min_query_runs)
                             {
-                                LOG_TRACE(&Poco::Logger::get("QueryCache"),
+                                LOG_TRACE(getLogger("QueryCache"),
                                         "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
                                         num_query_runs, settings.query_cache_min_query_runs);
                             }
@@ -1373,7 +1413,7 @@ void executeQuery(
     BlockIO streams;
     OutputFormatPtr output_format;
 
-    auto update_format_for_exception_if_needed = [&]()
+    auto update_format_on_exception_if_needed = [&]()
     {
         if (!output_format)
         {
@@ -1386,14 +1426,26 @@ void executeQuery(
                     /// Force an update of the headers before we start writing
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
-                    set_result_details(result_details);
-                    set_result_details = nullptr;
+
+                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception, {
+                        // it will throw std::bad_function_call
+                        set_result_details = nullptr;
+                        set_result_details(result_details);
+                    });
+
+                    if (set_result_details)
+                    {
+                        /// reset set_result_details func to avoid calling in SCOPE_EXIT()
+                        auto set_result_details_copy = set_result_details;
+                        set_result_details = nullptr;
+                        set_result_details_copy(result_details);
+                    }
                 }
             }
             catch (const DB::Exception & e)
             {
                 /// Ignore this exception and report the original one
-                LOG_WARNING(&Poco::Logger::get("executeQuery"), getExceptionMessageAndPattern(e, true));
+                LOG_WARNING(getLogger("executeQuery"), getExceptionMessageAndPattern(e, true));
             }
         }
     };
@@ -1406,7 +1458,7 @@ void executeQuery(
     {
         if (handle_exception_in_output_format)
         {
-            update_format_for_exception_if_needed();
+            update_format_on_exception_if_needed();
             if (output_format)
                 handle_exception_in_output_format(*output_format);
         }
@@ -1441,11 +1493,12 @@ void executeQuery(
                     const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
                     compression_method = compression_method_node.value.safeGet<std::string>();
                 }
-
+                const auto & settings = context->getSettingsRef();
                 compressed_buffer = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
                     chooseCompressionMethod(out_file, compression_method),
-                    /* compression level = */ 3
+                    /* compression level = */ static_cast<int>(settings.output_format_compression_level),
+                    /* zstd_window_log = */ static_cast<int>(settings.output_format_compression_zstd_window_log)
                 );
             }
 
@@ -1506,13 +1559,17 @@ void executeQuery(
     }
     catch (...)
     {
+        /// first execute on exception callback, it includes updating query_log
+        /// otherwise closing record ('ExceptionWhileProcessing') can be not appended in query_log
+        /// due to possible exceptions in functions called below (passed as parameter here)
+        streams.onException();
+
         if (handle_exception_in_output_format)
         {
-            update_format_for_exception_if_needed();
+            update_format_on_exception_if_needed();
             if (output_format)
                 handle_exception_in_output_format(*output_format);
         }
-        streams.onException();
         throw;
     }
 

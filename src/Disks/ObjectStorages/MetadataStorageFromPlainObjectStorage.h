@@ -38,6 +38,8 @@ public:
 
     const std::string & getPath() const override;
 
+    MetadataStorageType getType() const override { return MetadataStorageType::Plain; }
+
     bool exists(const std::string & path) const override;
 
     bool isFile(const std::string & path) const override;
@@ -76,7 +78,7 @@ private:
 
     std::vector<MetadataOperationPtr> operations;
 public:
-    MetadataStorageFromPlainObjectStorageTransaction(const MetadataStorageFromPlainObjectStorage & metadata_storage_)
+    explicit MetadataStorageFromPlainObjectStorageTransaction(const MetadataStorageFromPlainObjectStorage & metadata_storage_)
         : metadata_storage(metadata_storage_)
     {}
 
@@ -99,12 +101,13 @@ public:
     void createDirectoryRecursive(const std::string & path) override;
 
     void unlinkFile(const std::string & path) override;
+    void removeDirectory(const std::string & path) override;
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
     void commit() override
     {
-        /// Nothing to commit.
+        /// TODO: rewrite with transactions
     }
 
     bool supportsChmod() const override { return false; }

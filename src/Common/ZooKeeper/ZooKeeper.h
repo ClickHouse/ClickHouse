@@ -152,7 +152,7 @@ private:
 
     struct ResponsesWithFutures
     {
-        ResponsesWithFutures(FutureResponses future_responses_) : future_responses(std::move(future_responses_))
+        ResponsesWithFutures(FutureResponses future_responses_) : future_responses(std::move(future_responses_)) /// NOLINT(google-explicit-constructor)
         {
             cached_responses.resize(future_responses.size());
         }
@@ -198,11 +198,6 @@ class ZooKeeper
     /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
-public:
-
-    using Ptr = std::shared_ptr<ZooKeeper>;
-    using ErrorsList = std::initializer_list<Coordination::Error>;
-
     explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /** Config of the form:
@@ -227,9 +222,26 @@ public:
             <identity>user:password</identity>
         </zookeeper>
     */
-    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+    ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+
+    /// See addCheckSessionOp
+    void initSession();
+
+public:
+        using Ptr = std::shared_ptr<ZooKeeper>;
+        using ErrorsList = std::initializer_list<Coordination::Error>;
 
     std::vector<ShuffleHost> shuffleHosts() const;
+
+    static Ptr create(const Poco::Util::AbstractConfiguration & config,
+                      const std::string & config_name,
+                      std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+
+    template <typename... Args>
+    static Ptr createWithoutKillingPreviousSessions(Args &&... args)
+    {
+        return std::shared_ptr<ZooKeeper>(new ZooKeeper(std::forward<Args>(args)...));
+    }
 
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.
@@ -427,13 +439,14 @@ public:
 
     /// Performs several operations in a transaction.
     /// Throws on every error.
-    Coordination::Responses multi(const Coordination::Requests & requests);
+    /// For check_session_valid see addCheckSessionOp
+    Coordination::Responses multi(const Coordination::Requests & requests, bool check_session_valid = false);
     /// Throws only if some operation has returned an "unexpected" error - an error that would cause
     /// the corresponding try- method to throw.
     /// On exception, `responses` may or may not be populated.
-    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
+    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
     /// Throws nothing (even session expired errors)
-    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
+    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
 
     std::string sync(const std::string & path);
 
@@ -537,6 +550,7 @@ public:
     FutureMulti asyncMulti(const Coordination::Requests & ops);
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
+    FutureMulti asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops);
 
     using FutureSync = std::future<Coordination::SyncResponse>;
     FutureSync asyncSync(const std::string & path);
@@ -587,6 +601,22 @@ public:
 
     const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
 
+    /// Checks that our session was not killed, and allows to avoid applying a request from an old lost session.
+    /// Imagine a "connection-loss-on-commit" situation like this:
+    /// - We have written some write requests to the socket and immediately disconnected (e.g. due to "Operation timeout")
+    /// - The requests were sent, but the destination [Zoo]Keeper host will receive it later (it doesn't know about our requests yet)
+    /// - We don't know the status of our requests
+    /// - We connect to another [Zoo]Keeper replica with a new session, and do some reads
+    ///   to find out the status of our requests. We see that they were not committed.
+    /// - The packets from our old session finally arrive to the destination [Zoo]Keeper host. The requests get processed.
+    /// - Changes are committed (although, we have already seen that they are not)
+    ///
+    /// We need a way to reject requests from old sessions somehow.
+    ///
+    /// So we update the version of /clickhouse/sessions/server_uuid node when starting a new session.
+    /// And there's an option to check this version when committing something.
+    void addCheckSessionOp(Coordination::Requests & requests) const;
+
 private:
     void init(ZooKeeperArgs args_);
 
@@ -602,7 +632,7 @@ private:
         Coordination::Stat * stat,
         Coordination::WatchCallbackPtr watch_callback,
         Coordination::ListRequestType list_request_type);
-    Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
+    Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid);
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
     Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
@@ -650,10 +680,12 @@ private:
 
     ZooKeeperArgs args;
 
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
 
     AtomicStopwatch session_uptime;
+
+    int32_t session_node_version;
 };
 
 
@@ -729,7 +761,7 @@ public:
             else
             {
                 ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-                LOG_DEBUG(&Poco::Logger::get("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
+                LOG_DEBUG(getLogger("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
             }
         }
         catch (...)
@@ -749,11 +781,11 @@ private:
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
 
-String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
+String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, LoggerPtr log = nullptr);
 
 String extractZooKeeperName(const String & path);
 
-String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
+String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log = nullptr);
 
 String getSequentialNodeName(const String & prefix, UInt64 number);
 

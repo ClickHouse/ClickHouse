@@ -58,7 +58,7 @@ public:
             NestedPools nested_pools_,
             time_t decrease_error_period_,
             size_t max_error_cap_,
-            Poco::Logger * log_)
+            LoggerPtr log_)
         : nested_pools(std::move(nested_pools_))
         , decrease_error_period(decrease_error_period_)
         , max_error_cap(max_error_cap_)
@@ -66,33 +66,27 @@ public:
         , log(log_)
     {
         for (size_t i = 0;i < nested_pools.size(); ++i)
-            shared_pool_states[i].config_priority = nested_pools[i]->getPriority();
+            shared_pool_states[i].config_priority = nested_pools[i]->getConfigPriority();
     }
 
     struct TryResult
     {
         TryResult() = default;
 
-        explicit TryResult(Entry entry_)
-            : entry(std::move(entry_))
-            , is_usable(true)
-            , is_up_to_date(true)
-        {
-        }
-
         void reset()
         {
             entry = Entry();
             is_usable = false;
             is_up_to_date = false;
-            staleness = 0.0;
+            delay = 0;
         }
 
-        Entry entry;
-        bool is_usable = false; /// If false, the entry is unusable for current request
-                                /// (but may be usable for other requests, so error counts are not incremented)
-        bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica.
-        double staleness = 0.0; /// Helps choosing the "least stale" option when all replicas are stale.
+        Entry entry; /// use isNull() to check if connection is established
+        bool is_usable = false; /// if connection is established, then can be false only with table check
+                                /// if table is not present on remote peer, -> it'll be false
+        bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica
+                                    /// Depends on max_replica_delay_for_distributed_queries setting
+        UInt32 delay = 0; /// Helps choosing the "least stale" option when all replicas are stale.
     };
 
     struct PoolState;
@@ -101,7 +95,7 @@ public:
 
     struct ShuffledPool
     {
-        NestedPool * pool{};
+        NestedPoolPtr pool{};
         const PoolState * state{}; // WARNING: valid only during initial ordering, dangling
         size_t index = 0;
         size_t error_count = 0;
@@ -110,7 +104,7 @@ public:
 
     /// This functor must be provided by a client. It must perform a single try that takes a connection
     /// from the provided pool and checks that it is good.
-    using TryGetEntryFunc = std::function<TryResult(NestedPool & pool, std::string & fail_message)>;
+    using TryGetEntryFunc = std::function<TryResult(const NestedPoolPtr & pool, std::string & fail_message)>;
 
     /// The client can provide this functor to affect load balancing - the index of a pool is passed to
     /// this functor. The pools with lower result value will be tried first.
@@ -124,7 +118,9 @@ public:
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
             const TryGetEntryFunc & try_get_entry,
-            const GetPriorityFunc & get_priority = GetPriorityFunc());
+            const GetPriorityFunc & get_priority);
+
+    size_t getPoolSize() const { return nested_pools.size(); }
 
     typename PoolWithFailoverBase<TNestedPool>::TryResult getOne(
         size_t max_tries,
@@ -144,7 +140,7 @@ protected:
 
     void updateErrorCounts(PoolStates & states, time_t & last_decrease_time) const;
 
-    std::vector<ShuffledPool> getShuffledPools(size_t max_ignored_errors, const GetPriorityFunc & get_priority);
+    std::vector<ShuffledPool> getShuffledPools(size_t max_ignored_errors, const GetPriorityFunc & get_priority, bool use_slowdown_count = false);
 
     inline void updateSharedErrorCounts(std::vector<ShuffledPool> & shuffled_pools);
 
@@ -154,7 +150,7 @@ protected:
         return std::make_tuple(shared_pool_states, nested_pools, last_error_decrease_time);
     }
 
-    NestedPools nested_pools;
+    const NestedPools nested_pools;
 
     const time_t decrease_error_period;
     const size_t max_error_cap;
@@ -164,14 +160,14 @@ protected:
     /// The time when error counts were last decreased.
     time_t last_error_decrease_time = 0;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 
 template <typename TNestedPool>
 std::vector<typename PoolWithFailoverBase<TNestedPool>::ShuffledPool>
 PoolWithFailoverBase<TNestedPool>::getShuffledPools(
-    size_t max_ignored_errors, const PoolWithFailoverBase::GetPriorityFunc & get_priority)
+    size_t max_ignored_errors, const PoolWithFailoverBase::GetPriorityFunc & get_priority, bool use_slowdown_count)
 {
     /// Update random numbers and error counts.
     PoolStates pool_states = updatePoolStates(max_ignored_errors);
@@ -186,13 +182,13 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     std::vector<ShuffledPool> shuffled_pools;
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
-        shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
+        shuffled_pools.emplace_back(ShuffledPool{.pool = nested_pools[i], .state = &pool_states[i], .index = i});
 
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
-        [](const ShuffledPool & lhs, const ShuffledPool & rhs)
+        [use_slowdown_count](const ShuffledPool & lhs, const ShuffledPool & rhs)
         {
-            return PoolState::compare(*lhs.state, *rhs.state);
+            return PoolState::compare(*lhs.state, *rhs.state, use_slowdown_count);
         });
 
     return shuffled_pools;
@@ -272,7 +268,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 continue;
 
             std::string fail_message;
-            result = try_get_entry(*shuffled_pool.pool, fail_message);
+            result = try_get_entry(shuffled_pool.pool, fail_message);
 
             if (!fail_message.empty())
                 fail_messages += fail_message + '\n';
@@ -314,8 +310,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             try_results.begin(), try_results.end(),
             [](const TryResult & left, const TryResult & right)
             {
-                return std::forward_as_tuple(!left.is_up_to_date, left.staleness)
-                    < std::forward_as_tuple(!right.is_up_to_date, right.staleness);
+                return std::forward_as_tuple(!left.is_up_to_date, left.delay)
+                    < std::forward_as_tuple(!right.is_up_to_date, right.delay);
             });
 
     if (fallback_to_stale_replicas)
@@ -443,10 +439,14 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
         random = rng();
     }
 
-    static bool compare(const PoolState & lhs, const PoolState & rhs)
+    static bool compare(const PoolState & lhs, const PoolState & rhs, bool use_slowdown_count)
     {
-        return std::forward_as_tuple(lhs.error_count, lhs.slowdown_count, lhs.config_priority, lhs.priority, lhs.random)
-             < std::forward_as_tuple(rhs.error_count, rhs.slowdown_count, rhs.config_priority, rhs.priority, rhs.random);
+        if (use_slowdown_count)
+            return std::forward_as_tuple(lhs.error_count, lhs.slowdown_count, lhs.config_priority, lhs.priority, lhs.random)
+                < std::forward_as_tuple(rhs.error_count, rhs.slowdown_count, rhs.config_priority, rhs.priority, rhs.random);
+        else
+            return std::forward_as_tuple(lhs.error_count, lhs.config_priority, lhs.priority, lhs.random)
+                < std::forward_as_tuple(rhs.error_count, rhs.config_priority, rhs.priority, rhs.random);
     }
 
 private:

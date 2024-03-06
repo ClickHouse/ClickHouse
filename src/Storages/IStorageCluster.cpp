@@ -32,12 +32,10 @@ namespace DB
 IStorageCluster::IStorageCluster(
     const String & cluster_name_,
     const StorageID & table_id_,
-    Poco::Logger * log_,
-    bool structure_argument_was_provided_)
+    LoggerPtr log_)
     : IStorage(table_id_)
     , log(log_)
     , cluster_name(cluster_name_)
-    , structure_argument_was_provided(structure_argument_was_provided_)
 {
 }
 
@@ -46,23 +44,30 @@ class ReadFromCluster : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromCluster"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromCluster(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
         std::shared_ptr<IStorageCluster> storage_,
         ASTPtr query_to_send_,
         QueryProcessingStage::Enum processed_stage_,
         ClusterPtr cluster_,
-        Poco::Logger * log_,
-        ContextPtr context_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        LoggerPtr log_)
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(sample_block)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
         , storage(std::move(storage_))
         , query_to_send(std::move(query_to_send_))
         , processed_stage(processed_stage_)
         , cluster(std::move(cluster_))
         , log(log_)
-        , context(std::move(context_))
     {
     }
 
@@ -71,8 +76,7 @@ private:
     ASTPtr query_to_send;
     QueryProcessingStage::Enum processed_stage;
     ClusterPtr cluster;
-    Poco::Logger * log;
-    ContextPtr context;
+    LoggerPtr log;
 
     std::optional<RemoteQueryExecutor::Extension> extension;
 
@@ -80,9 +84,9 @@ private:
     ContextPtr updateSettings(const Settings & settings);
 };
 
-void ReadFromCluster::applyFilters()
+void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -130,8 +134,7 @@ void IStorageCluster::read(
         query_to_send = interpreter.getQueryInfo().query->clone();
     }
 
-    if (!structure_argument_was_provided)
-        addColumnsStructureToQuery(query_to_send, storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(), context);
+    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
@@ -146,13 +149,16 @@ void IStorageCluster::read(
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromCluster>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        context,
         sample_block,
         std::move(this_ptr),
         std::move(query_to_send),
         processed_stage,
         cluster,
-        log,
-        context);
+        log);
 
     query_plan.addStep(std::move(reading));
 }
@@ -185,7 +191,11 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
                 extension);
 
             remote_query_executor->setLogger(log);
-            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false, false));
+            pipes.emplace_back(std::make_shared<RemoteSource>(
+                remote_query_executor,
+                add_agg_info,
+                current_settings.async_socket_for_remote,
+                current_settings.async_query_sending_for_remote));
         }
     }
 

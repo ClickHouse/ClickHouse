@@ -40,6 +40,7 @@ ASTPtr rewriteSelectQuery(
     ASTPtr table_function_ptr = nullptr);
 
 using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
+using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 
 class SelectStreamFactory
 {
@@ -59,6 +60,7 @@ public:
         /// (When there is a local replica with big delay).
         bool lazy = false;
         time_t local_delay = 0;
+        AdditionalShardFilterGenerator shard_filter_generator{};
     };
 
     using Shards = std::vector<Shard>;
@@ -78,7 +80,8 @@ public:
         std::vector<QueryPlanPtr> & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
-        bool parallel_replicas_enabled);
+        bool parallel_replicas_enabled,
+        AdditionalShardFilterGenerator shard_filter_generator);
 
     const Block header;
     const ColumnsDescriptionByShardNum objects_by_shard;

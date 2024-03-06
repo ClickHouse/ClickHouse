@@ -97,4 +97,5 @@
     </remote_servers>
 
     <_functional_tests_helper_database_replicated_replace_args_macros>1</_functional_tests_helper_database_replicated_replace_args_macros>
+    <max_database_replicated_create_table_thread_pool_size>50</max_database_replicated_create_table_thread_pool_size>
 </clickhouse>

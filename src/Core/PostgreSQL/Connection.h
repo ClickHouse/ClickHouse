@@ -6,6 +6,7 @@
 
 #include <pqxx/pqxx>
 #include <Core/Types.h>
+#include <Common/Logger.h>
 #include <boost/noncopyable.hpp>
 
 /** Methods to work with PostgreSQL connection object.
@@ -61,7 +62,7 @@ private:
     bool replication;
     size_t num_tries;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 using ConnectionPtr = std::unique_ptr<Connection>;

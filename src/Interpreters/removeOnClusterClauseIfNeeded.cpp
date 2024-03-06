@@ -52,7 +52,7 @@ ASTPtr removeOnClusterClauseIfNeeded(const ASTPtr & query, ContextPtr context, c
             && context->getSettings().ignore_on_cluster_for_replicated_access_entities_queries
             && context->getAccessControl().containsStorage(ReplicatedAccessStorage::STORAGE_TYPE)))
     {
-        LOG_DEBUG(&Poco::Logger::get("removeOnClusterClauseIfNeeded"), "ON CLUSTER clause was ignored for query {}", query->getID());
+        LOG_DEBUG(getLogger("removeOnClusterClauseIfNeeded"), "ON CLUSTER clause was ignored for query {}", query->getID());
         return query_on_cluster->getRewrittenASTWithoutOnCluster(params);
     }
 

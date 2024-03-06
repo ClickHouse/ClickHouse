@@ -70,7 +70,7 @@ namespace
         static_assert(std::has_virtual_destructor_v<Session>, "The base class must have a virtual destructor");
 
     public:
-        HTTPSessionAdapter(const std::string & host, UInt16 port) : Session(host, port), log{&Poco::Logger::get("HTTPSessionAdapter")} { }
+        HTTPSessionAdapter(const std::string & host, UInt16 port) : Session(host, port), log{getLogger("HTTPSessionAdapter")} { }
         ~HTTPSessionAdapter() override = default;
 
     protected:
@@ -132,7 +132,7 @@ namespace
                 }
             }
         }
-        Poco::Logger * log;
+        LoggerPtr log;
     };
 
     bool isHTTPS(const Poco::URI & uri)
@@ -223,7 +223,7 @@ namespace
             bool wait_on_pool_size_limit)
             : Base(
                 static_cast<unsigned>(max_pool_size_),
-                &Poco::Logger::get("HTTPSessionPool"),
+                getLogger("HTTPSessionPool"),
                 wait_on_pool_size_limit ? BehaviourOnLimit::Wait : BehaviourOnLimit::AllocateNewBypassingPool)
             , host(host_)
             , port(port_)

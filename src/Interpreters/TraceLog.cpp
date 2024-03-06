@@ -25,9 +25,9 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"ProfileEvent", static_cast<UInt8>(TraceType::ProfileEvent)},
 };
 
-NamesAndTypesList TraceLogElement::getNamesAndTypes()
+ColumnsDescription TraceLogElement::getColumnsDescription()
 {
-    return
+    return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},

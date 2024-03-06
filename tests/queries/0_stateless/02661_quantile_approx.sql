@@ -15,6 +15,19 @@ select quantilesGK(100, 100/1000, 200/1000, 250/1000, 314/1000, 777/1000)(number
 select quantilesGK(1000, 100/1000, 200/1000, 250/1000, 314/1000, 777/1000)(number + 1) from numbers(1000);
 select quantilesGK(10000, 100/1000, 200/1000, 250/1000, 314/1000, 777/1000)(number + 1) from numbers(1000);
 
+SELECT quantileGKMerge(100, 0.5)(x)
+FROM
+(
+    SELECT quantileGKState(100, 0.5)(number + 1) AS x
+    FROM numbers(49999)
+);
+
+SELECT quantilesGKMerge(100, 0.5, 0.9, 0.99)(x)
+FROM
+(
+    SELECT quantilesGKState(100, 0.5, 0.9, 0.99)(number + 1) AS x
+    FROM numbers(49999)
+);
 
 select medianGK()(number) from numbers(10) SETTINGS allow_experimental_analyzer = 0; -- { serverError BAD_ARGUMENTS }
 select medianGK()(number) from numbers(10) SETTINGS allow_experimental_analyzer = 1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

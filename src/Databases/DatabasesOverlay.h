@@ -60,7 +60,7 @@ public:
 
 protected:
     std::vector<DatabasePtr> databases;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

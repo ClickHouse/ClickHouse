@@ -1,14 +1,9 @@
 #pragma once
+
 #include <base/extended_types.h>
 #include <base/Decimal_fwd.h>
+#include <base/defines.h>
 
-#if !defined(NO_SANITIZE_UNDEFINED)
-#if defined(__clang__)
-    #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
-#else
-    #define NO_SANITIZE_UNDEFINED
-#endif
-#endif
 
 namespace DB
 {
@@ -99,7 +94,7 @@ public:
 };
 }
 
-constexpr DB::UInt64 max_uint_mask = std::numeric_limits<DB::UInt64>::max();
+constexpr UInt64 max_uint_mask = std::numeric_limits<UInt64>::max();
 
 namespace std
 {
@@ -114,8 +109,8 @@ namespace std
     {
         size_t operator()(const DB::Decimal128 & x) const
         {
-            return std::hash<DB::Int64>()(x.value >> 64)
-                ^ std::hash<DB::Int64>()(x.value & max_uint_mask);
+            return std::hash<Int64>()(x.value >> 64)
+                ^ std::hash<Int64>()(x.value & max_uint_mask);
         }
     };
 
@@ -134,8 +129,8 @@ namespace std
         size_t operator()(const DB::Decimal256 & x) const
         {
             // FIXME temp solution
-            return std::hash<DB::Int64>()(static_cast<DB::Int64>(x.value >> 64 & max_uint_mask))
-                ^ std::hash<DB::Int64>()(static_cast<DB::Int64>(x.value & max_uint_mask));
+            return std::hash<Int64>()(static_cast<Int64>(x.value >> 64 & max_uint_mask))
+                ^ std::hash<Int64>()(static_cast<Int64>(x.value & max_uint_mask));
         }
     };
 }
