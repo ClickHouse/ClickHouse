@@ -197,6 +197,8 @@ size_t PageCache::getPinnedSize() const
 
 PageCache::MemoryStats PageCache::getResidentSetSize() const
 {
+    std::unique_lock lock(global_mutex);
+
     MemoryStats stats;
 #ifdef OS_LINUX
     if (use_madv_free)
