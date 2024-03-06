@@ -448,21 +448,16 @@ static ColumnPtr andFilters(ColumnPtr c1, ColumnPtr c2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of filters don't match: {} and {}",
             c1->size(), c2->size());
 
-    // TODO: use proper vectorized implementation of AND?
     auto res = ColumnUInt8::create(c1->size());
     auto & res_data = res->getData();
     const auto & c1_data = typeid_cast<const ColumnUInt8&>(*c1).getData();
     const auto & c2_data = typeid_cast<const ColumnUInt8&>(*c2).getData();
     const size_t size = c1->size();
-    const size_t step = 16;
-    size_t i = 0;
-    /// NOTE: '&&' must be used instead of '&' for 'AND' operation because UInt8 columns might contain any non-zero
-    /// value for true and we cannot bitwise AND them to get the correct result.
-    for (; i + step < size; i += step)
-        for (size_t j = 0; j < step; ++j)
-            res_data[i+j] = (c1_data[i+j] && c2_data[i+j]);
-    for (; i < size; ++i)
-        res_data[i] = (c1_data[i] && c2_data[i]);
+    /// The double NOT operators (!!) convert the non-zeros to the bool value of true (0x01) and zeros to false (0x00).
+    /// After casting them to UInt8, '&' could replace '&&' for the 'AND' operation implementation and at the same
+    /// time enable the auto vectorization.
+    for (size_t i = 0; i < size; ++i)
+        res_data[i] = (static_cast<UInt8>(!!c1_data[i]) & static_cast<UInt8>(!!c2_data[i]));
     return res;
 }
 

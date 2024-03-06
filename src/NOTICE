@@ -13,18 +13,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-Common/ErrorCodes.cpp
-Common/UInt128.h
-Core/Block.h
-Core/Defines.h
-Core/Settings.h
-Databases/DatabasesCommon.cpp
-IO/WriteBufferValidUTF8.cpp
-Interpreters/InterpreterAlterQuery.cpp
 Interpreters/InterpreterCreateQuery.cpp
 Interpreters/InterpreterFactory.cpp
 Parsers/ASTAlterQuery.cpp
-Parsers/ASTAlterQuery.h
 Parsers/ASTCreateQuery.cpp
 Parsers/ASTCreateQuery.h
 Parsers/ParserAlterQuery.cpp

@@ -1,6 +1,8 @@
 #include <Columns/Collator.h>
 #include <Storages/System/StorageSystemCollations.h>
+#include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 
 namespace DB
 {
@@ -14,7 +16,7 @@ ColumnsDescription StorageSystemCollations::getColumnsDescription()
     };
 }
 
-void StorageSystemCollations::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemCollations::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (const auto & [locale, lang]: AvailableCollationLocales::instance().getAvailableCollations())
     {

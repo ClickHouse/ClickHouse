@@ -297,8 +297,6 @@ end script
 
 If you use antivirus software configure it to skip folders with ClickHouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
 
-[Original article](https://clickhouse.com/docs/en/operations/tips/)
-
 ## Related Content
 
 - [Getting started with ClickHouse? Here are 13 "Deadly Sins" and how to avoid them](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

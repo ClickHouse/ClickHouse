@@ -77,3 +77,20 @@ SELECT 1_000_000_000 as a FROM system.numbers LIMIT 2 FORMAT PrettySpaceNoEscape
 SELECT 1_000_000_000 as a FROM system.numbers LIMIT 2 FORMAT PrettySpaceMonoBlock;
 SELECT 1_000_000_000 as a FROM system.numbers LIMIT 2 FORMAT PrettySpaceNoEscapesMonoBlock;
 
+SET output_format_pretty_single_large_number_tip_threshold=1;
+SELECT '2024-02-29'::Date FORMAT Pretty;
+SELECT '2024-02-29'::Date FORMAT PrettyNoEscapes;
+SELECT '2024-02-29'::Date FORMAT PrettyMonoBlock;
+SELECT '2024-02-29'::Date FORMAT PrettyNoEscapesMonoBlock;
+SELECT '2024-02-29'::Date32 FORMAT Pretty;
+SELECT '2024-02-29'::Date32 FORMAT PrettyNoEscapes;
+SELECT '2024-02-29'::Date32 FORMAT PrettyMonoBlock;
+SELECT '2024-02-29'::Date32 FORMAT PrettyNoEscapesMonoBlock;
+SELECT '2024-02-29 00:00:00'::DateTime FORMAT Pretty;
+SELECT '2024-02-29 00:00:00'::DateTime FORMAT PrettyNoEscapes;
+SELECT '2024-02-29 00:00:00'::DateTime FORMAT PrettyMonoBlock;
+SELECT '2024-02-29 00:00:00'::DateTime FORMAT PrettyNoEscapesMonoBlock;
+SELECT '2024-02-29 00:00:00'::DateTime::DateTime64 FORMAT Pretty;
+SELECT '2024-02-29 00:00:00'::DateTime::DateTime64 FORMAT PrettyNoEscapes;
+SELECT '2024-02-29 00:00:00'::DateTime::DateTime64 FORMAT PrettyMonoBlock;
+SELECT '2024-02-29 00:00:00'::DateTime::DateTime64 FORMAT PrettyNoEscapesMonoBlock;

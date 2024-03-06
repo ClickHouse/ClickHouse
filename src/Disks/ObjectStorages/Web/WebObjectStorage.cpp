@@ -252,14 +252,13 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
 {
     auto read_buffer_creator =
          [this, read_settings]
-         (const std::string & path_, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
+         (bool /* restricted_seek */, const std::string & path_) -> std::unique_ptr<ReadBufferFromFileBase>
      {
          return std::make_unique<ReadBufferFromWebServer>(
              fs::path(url) / path_,
              getContext(),
              read_settings,
-             /* use_external_buffer */true,
-             read_until_position);
+             /* use_external_buffer */true);
      };
 
     auto global_context = Context::getGlobalContextInstance();
@@ -271,6 +270,7 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
             return std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator),
                 StoredObjects{object},
+                "url:" + url + "/",
                 read_settings,
                 global_context->getFilesystemCacheLog(),
                 /* use_external_buffer */false);
@@ -280,6 +280,7 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
             auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator),
                 StoredObjects{object},
+                "url:" + url + "/",
                 read_settings,
                 global_context->getFilesystemCacheLog(),
                 /* use_external_buffer */true);

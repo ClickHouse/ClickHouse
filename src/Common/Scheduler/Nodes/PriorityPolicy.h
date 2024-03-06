@@ -35,7 +35,7 @@ class PriorityPolicy : public ISchedulerNode
     };
 
 public:
-    PriorityPolicy(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    explicit PriorityPolicy(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : ISchedulerNode(event_queue_, config, config_prefix)
     {}
 

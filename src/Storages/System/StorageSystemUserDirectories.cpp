@@ -22,7 +22,7 @@ ColumnsDescription StorageSystemUserDirectories::getColumnsDescription()
 }
 
 
-void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & access_control = context->getAccessControl();
     auto storages = access_control.getStorages();

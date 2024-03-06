@@ -13,6 +13,7 @@ import sys
 import os
 import os.path
 import glob
+import platform
 import signal
 import re
 import copy
@@ -573,27 +574,6 @@ def get_localzone():
     return os.getenv("TZ", "/".join(os.readlink("/etc/localtime").split("/")[-2:]))
 
 
-def supports_io_uring():
-    return not subprocess.call(
-        [
-            args.binary,
-            "-q",
-            "select * from file('/dev/null', 'LineAsString')",
-            "--storage_file_read_method",
-            "io_uring",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-
-def get_local_filesystem_methods():
-    methods = ["read", "pread", "mmap", "pread_threadpool"]
-    if supports_io_uring():
-        methods.append("io_uring")
-    return methods
-
-
 class SettingsRandomizer:
     settings = {
         "max_insert_threads": lambda: 0
@@ -634,7 +614,10 @@ class SettingsRandomizer:
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "local_filesystem_read_method": lambda: random.choice(
-            get_local_filesystem_methods()
+            # Allow to use uring only when running on Linux
+            ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
+            if platform.system().lower() == "linux"
+            else ["read", "pread", "mmap", "pread_threadpool"]
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
@@ -699,6 +682,8 @@ class SettingsRandomizer:
                 get_localzone(),
             ]
         ),
+        "use_page_cache_for_disks_without_file_cache": lambda: random.random() < 0.7,
+        "page_cache_inject_eviction": lambda: random.random() < 0.5,
     }
 
     @staticmethod

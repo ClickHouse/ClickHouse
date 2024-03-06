@@ -13,7 +13,7 @@ ColumnsDescription StorageSystemAggregateFunctionCombinators::getColumnsDescript
     };
 }
 
-void StorageSystemAggregateFunctionCombinators::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemAggregateFunctionCombinators::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & combinators = AggregateFunctionCombinatorFactory::instance().getAllAggregateFunctionCombinators();
     for (const auto & pair : combinators)

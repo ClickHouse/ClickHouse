@@ -1,7 +1,5 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/IColumnImpl.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
@@ -120,9 +118,14 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return nested->serializeValueIntoArena(n, arena, begin);
+}
+
+char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
+{
+    return nested->serializeValueIntoMemory(n, memory);
 }
 
 const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
@@ -208,19 +211,6 @@ int ColumnMap::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direct
     return nested->compareAt(n, m, rhs_map.getNestedColumn(), nan_direction_hint);
 }
 
-void ColumnMap::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnMap>(assert_cast<const ColumnMap &>(rhs), rhs_row_num, row_indexes,
-                                        compare_results, direction, nan_direction_hint);
-}
-
-bool ColumnMap::hasEqualValues() const
-{
-    return hasEqualValuesImpl<ColumnMap>();
-}
-
 void ColumnMap::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
@@ -231,11 +221,6 @@ void ColumnMap::updatePermutation(IColumn::PermutationSortDirection direction, I
                                 size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
     nested->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
-}
-
-void ColumnMap::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
 }
 
 void ColumnMap::reserve(size_t n)
@@ -308,21 +293,6 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
         return nested->structureEquals(*rhs_map->nested);
     return false;
-}
-
-double ColumnMap::getRatioOfDefaultRows(double sample_ratio) const
-{
-    return getRatioOfDefaultRowsImpl<ColumnMap>(sample_ratio);
-}
-
-UInt64 ColumnMap::getNumberOfDefaultRows() const
-{
-    return getNumberOfDefaultRowsImpl<ColumnMap>();
-}
-
-void ColumnMap::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
-{
-    return getIndicesOfNonDefaultRowsImpl<ColumnMap>(indices, from, limit);
 }
 
 ColumnPtr ColumnMap::compress() const

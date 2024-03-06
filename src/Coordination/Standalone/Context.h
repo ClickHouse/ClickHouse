@@ -11,6 +11,7 @@
 #include <Disks/IO/getThreadPoolReader.h>
 
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Core/BackgroundSchedulePool.h>
 
 #include <IO/AsyncReadCounters.h>
@@ -160,6 +161,8 @@ public:
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
+
+    const ServerSettings & getServerSettings() const;
 };
 
 }

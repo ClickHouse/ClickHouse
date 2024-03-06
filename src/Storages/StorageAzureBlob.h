@@ -149,7 +149,7 @@ public:
     class IIterator : public WithContext
     {
     public:
-        IIterator(const ContextPtr & context_):WithContext(context_) {}
+        explicit IIterator(const ContextPtr & context_):WithContext(context_) {}
         virtual ~IIterator() = default;
         virtual RelativePathWithMetadata next() = 0;
 

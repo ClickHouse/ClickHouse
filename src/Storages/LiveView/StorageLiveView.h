@@ -21,6 +21,7 @@ limitations under the License. */
 namespace DB
 {
 
+using BlocksPtrs = std::shared_ptr<std::vector<BlocksPtr>>;
 
 struct BlocksMetadata
 {
@@ -172,11 +173,6 @@ private:
     /// Read new data blocks that store query result
     bool getNewBlocks(const std::lock_guard<std::mutex> & lock);
 
-    void periodicRefreshTaskFunc();
-
-    /// Must be called with mutex locked
-    void scheduleNextPeriodicRefresh(const std::lock_guard<std::mutex> & lock);
-
     SelectQueryDescription select_query_description;
 
     /// Query over the mergeable blocks to produce final result
@@ -185,9 +181,6 @@ private:
     ContextMutablePtr live_view_context;
 
     LoggerPtr log;
-
-    bool is_periodically_refreshed = false;
-    Seconds periodic_live_view_refresh;
 
     /// Mutex to protect access to sample block and inner_blocks_query
     mutable std::mutex sample_block_lock;
@@ -208,9 +201,6 @@ private:
     MergeableBlocksPtr mergeable_blocks;
 
     std::atomic<bool> shutdown_called = false;
-
-    /// Periodic refresh task used when [PERIODIC] REFRESH is specified in create statement
-    BackgroundSchedulePool::TaskHolder periodic_refresh_task;
 };
 
 }

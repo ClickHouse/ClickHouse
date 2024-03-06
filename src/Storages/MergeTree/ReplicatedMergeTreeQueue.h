@@ -499,7 +499,7 @@ class BaseMergePredicate
 {
 public:
     BaseMergePredicate() = default;
-    BaseMergePredicate(std::optional<PartitionIdsHint> && partition_ids_hint_) : partition_ids_hint(std::move(partition_ids_hint_)) {}
+    explicit BaseMergePredicate(std::optional<PartitionIdsHint> && partition_ids_hint_) : partition_ids_hint(std::move(partition_ids_hint_)) {}
 
     /// Depending on the existence of left part checks a merge predicate for two parts or for single part.
     bool operator()(const MergeTreeData::DataPartPtr & left,
@@ -550,7 +550,7 @@ protected:
 class LocalMergePredicate : public BaseMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>
 {
 public:
-    LocalMergePredicate(ReplicatedMergeTreeQueue & queue_);
+    explicit LocalMergePredicate(ReplicatedMergeTreeQueue & queue_);
 };
 
 class ReplicatedMergeTreeMergePredicate : public BaseMergePredicate<ActiveDataPartSet, ReplicatedMergeTreeQueue>

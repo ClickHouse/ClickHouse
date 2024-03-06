@@ -752,7 +752,7 @@
     <!-- Comma-separated list of prefixes for user-defined settings.
          The server will allow to set these settings, and retrieve them with the getSetting function.
          They are also logged in the query_log, similarly to other settings, but have no special effect.
-         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set be Tableau.
+         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set by Tableau.
     -->
     <custom_settings_prefixes>SQL_</custom_settings_prefixes>
 
@@ -1477,17 +1477,23 @@
     </query_masking_rules> -->
 
     <!-- Uncomment to use custom http handlers.
+
         rules are checked from top to bottom, first match runs the handler
             url - to match request URL, you can use 'regex:' prefix to use regex match(optional)
+            empty_query_string - check that there is no query string in the URL
             methods - to match request method, you can use commas to separate multiple method matches(optional)
             headers - to match request headers, match each child element(child element name is header name), you can use 'regex:' prefix to use regex match(optional)
+
         handler is request handler
-            type - supported types: static, dynamic_query_handler, predefined_query_handler
+            type - supported types: static, dynamic_query_handler, predefined_query_handler, redirect
             query - use with predefined_query_handler type, executes query when the handler is called
             query_param_name - use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params
             status - use with static type, response status code
             content_type - use with static type, response content-type
             response_content - use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client.
+            url - a location for redirect
+
+        Along with a list of rules, you can specify <defaults/> which means - enable all the default handlers.
 
     <http_handlers>
         <rule>

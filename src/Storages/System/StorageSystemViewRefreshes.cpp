@@ -49,7 +49,7 @@ ColumnsDescription StorageSystemViewRefreshes::getColumnsDescription()
 }
 
 void StorageSystemViewRefreshes::fillData(
-    MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+    MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto access = context->getAccess();
     auto valid_access = AccessType::SHOW_TABLES;

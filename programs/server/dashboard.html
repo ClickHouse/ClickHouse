@@ -9,7 +9,8 @@
     <style>
         :root {
             --color: black;
-            --background: linear-gradient(to bottom, #00CCFF, #00D0D0);
+            --background-color-1: #00CCFF;
+            --background: linear-gradient(to bottom, var(--background-color-1), #00D0D0);
             --chart-background: white;
             --shadow-color: rgba(0, 0, 0, 0.25);
             --moving-shadow-color: rgba(0, 0, 0, 0.5);
@@ -33,7 +34,8 @@
 
         [data-theme="dark"] {
             --color: white;
-            --background: #151C2C;
+            --background-color-1: #151C2C;
+            --background: var(--background-color-1);
             --chart-background: #1b2834;
             --shadow-color: rgba(0, 0, 0, 0);
             --moving-shadow-color: rgba(255, 255, 255, 0.25);
@@ -119,6 +121,18 @@
             display: flex;
             flex-flow: column nowrap;
             justify-content: center;
+
+            position: sticky;
+            top: -1rem;
+            margin-top: -1rem;
+            margin-left: -1rem;
+            margin-right: -1rem;
+            border-top: 1rem solid var(--background-color-1);
+            border-left: 1rem solid var(--background-color-1);
+            border-right: 1rem solid var(--background-color-1);
+            box-sizing: content-box;
+            z-index: 1000;
+            background: var(--background-color-1);
         }
 
         .inputs.unconnected {
@@ -523,47 +537,12 @@ let default_params = {
 let params = default_params;
 
 /// Palette generation for charts
-function generatePalette(baseColor, numColors) {
-    const baseHSL = hexToHsl(baseColor);
-    const hueStep = 360 / numColors;
-    const palette = [];
+function generatePalette(numColors) {
+    palette = [];
     for (let i = 0; i < numColors; i++) {
-        const hue = Math.round((baseHSL.h + i * hueStep) % 360);
-        const color = `hsl(${hue}, ${baseHSL.s}%, ${baseHSL.l}%)`;
-        palette.push(color);
+        palette.push(`oklch(${theme != 'dark' ? 0.75 : 0.5}, 0.15, ${360 * i / numColors})`);
     }
     return palette;
-}
-
-/// Helper function to convert hex color to HSL
-function hexToHsl(hex) {
-    hex = hex.replace(/^#/, '');
-    const bigint = parseInt(hex, 16);
-    const r = (bigint >> 16) & 255;
-    const g = (bigint >> 8) & 255;
-    const b = bigint & 255;
-    const r_norm = r / 255;
-    const g_norm = g / 255;
-    const b_norm = b / 255;
-    const max = Math.max(r_norm, g_norm, b_norm);
-    const min = Math.min(r_norm, g_norm, b_norm);
-    const l = (max + min) / 2;
-    let s = 0;
-    if (max !== min) {
-        s = l > 0.5 ? (max - min) / (2 - max - min) : (max - min) / (max + min);
-    }
-    let h = 0;
-    if (max !== min) {
-        if (max === r_norm) {
-            h = (g_norm - b_norm) / (max - min) + (g_norm < b_norm ? 6 : 0);
-        } else if (max === g_norm) {
-            h = (b_norm - r_norm) / (max - min) + 2;
-        } else {
-            h = (r_norm - g_norm) / (max - min) + 4;
-        }
-    }
-    h = Math.round(h * 60);
-    return { h, s: Math.round(s * 100), l: Math.round(l * 100) };
 }
 
 let theme = 'light';
@@ -1207,7 +1186,7 @@ async function draw(idx, chart, url_params, query) {
     // Treat every column as series
     const series_count = reply.meta.length;
     const fill = series_count == 2 ? fill_color : undefined;
-    const palette = generatePalette(line_color, series_count);
+    const palette = series_count == 2 ? [line_color] : generatePalette(series_count);
     let max_value = Number.NEGATIVE_INFINITY;
     for (let i = 1; i < series_count; i++) {
         let label = reply.meta[i].name;

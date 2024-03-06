@@ -18,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNKNOWN_FORMAT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -40,8 +39,7 @@ public:
         , arguments_column_names(std::move(arguments_column_names_))
         , context(std::move(context_))
     {
-        if (!FormatFactory::instance().getAllFormats().contains(format_name))
-            throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}", format_name);
+        FormatFactory::instance().checkFormatName(format_name);
     }
 
     String getName() const override { return name; }

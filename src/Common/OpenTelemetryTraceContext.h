@@ -181,7 +181,7 @@ using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 /// Once it's created or destructed, it automatically maitains the tracing context on the thread that it lives.
 struct SpanHolder : public Span
 {
-    SpanHolder(std::string_view, SpanKind _kind = INTERNAL);
+    explicit SpanHolder(std::string_view, SpanKind _kind = INTERNAL);
     ~SpanHolder();
 
     /// Finish a span explicitly if needed.

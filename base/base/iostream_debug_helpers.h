@@ -155,9 +155,7 @@ Out & dump(Out & out, const char * name, T && x) // NOLINT(cppcoreguidelines-mis
     return dumpValue(out, x) << "; ";
 }
 
-#ifdef __clang__
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
-#endif
 
 #define DUMPVAR(VAR) ::dump(std::cerr, #VAR, (VAR));
 #define DUMPHEAD std::cerr << __FILE__ << ':' << __LINE__ << " [ " << getThreadId() << " ] ";

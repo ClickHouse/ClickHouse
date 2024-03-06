@@ -15,7 +15,7 @@ namespace DB
 struct BackupLogElement
 {
     BackupLogElement() = default;
-    BackupLogElement(BackupOperationInfo info_);
+    explicit BackupLogElement(BackupOperationInfo info_);
     BackupLogElement(const BackupLogElement &) = default;
     BackupLogElement & operator=(const BackupLogElement &) = default;
     BackupLogElement(BackupLogElement &&) = default;

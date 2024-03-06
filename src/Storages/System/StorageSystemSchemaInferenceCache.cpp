@@ -72,7 +72,7 @@ static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cach
     }
 }
 
-void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     fillDataImpl(res_columns, StorageFile::getSchemaCache(context), "File");
 #if USE_AWS_S3

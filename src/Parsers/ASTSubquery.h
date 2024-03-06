@@ -28,7 +28,7 @@ public:
 
     ASTSubquery() = default;
 
-    ASTSubquery(ASTPtr child)
+    explicit ASTSubquery(ASTPtr child)
     {
         children.emplace_back(std::move(child));
     }

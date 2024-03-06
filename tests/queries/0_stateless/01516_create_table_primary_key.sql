@@ -1,7 +1,10 @@
 -- Tags: no-parallel
 
+SET send_logs_level = 'fatal';
+
 DROP DATABASE IF EXISTS test_01516;
 set allow_deprecated_database_ordinary=1;
+-- Creation of a database with Ordinary engine emits a warning.
 CREATE DATABASE test_01516 ENGINE=Ordinary;     -- Full ATTACH requires UUID with Atomic
 USE test_01516;
 

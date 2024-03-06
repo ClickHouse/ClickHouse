@@ -16,6 +16,7 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, bool color_)
      : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), color(color_), mono_block(mono_block_)
 {
+    readable_number_tip = header_.getColumns().size() == 1 && WhichDataType(header_.getDataTypes()[0]->getTypeId()).isNumber();
 }
 
 
@@ -415,7 +416,7 @@ void PrettyBlockOutputFormat::writeSuffix()
 void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
 {
     auto columns = chunk.getColumns();
-    auto is_single_number = chunk.getNumRows() == 1 && chunk.getNumColumns() == 1 && WhichDataType(columns[0]->getDataType()).isNumber();
+    auto is_single_number = readable_number_tip && chunk.getNumRows() == 1 && chunk.getNumColumns() == 1;
     if (!is_single_number)
         return;
     auto value = columns[0]->getFloat64(0);

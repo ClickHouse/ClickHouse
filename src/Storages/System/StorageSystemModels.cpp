@@ -23,7 +23,7 @@ ColumnsDescription StorageSystemModels::getColumnsDescription()
     };
 }
 
-void StorageSystemModels::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemModels::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(context);
     ExternalModelInfos infos = bridge_helper->listModels();

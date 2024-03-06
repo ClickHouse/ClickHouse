@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+SET send_logs_level = 'fatal';
 
 DROP DATABASE IF EXISTS test_01109;
 CREATE DATABASE test_01109 ENGINE=Atomic;
@@ -31,6 +32,7 @@ DROP DATABASE IF EXISTS test_01109_other_atomic;
 DROP DATABASE IF EXISTS test_01109_ordinary;
 CREATE DATABASE test_01109_other_atomic;
 set allow_deprecated_database_ordinary=1;
+-- Creation of a database with Ordinary engine emits a warning.
 CREATE DATABASE test_01109_ordinary ENGINE=Ordinary;
 
 CREATE TABLE test_01109_other_atomic.t3 ENGINE=MergeTree() ORDER BY tuple()
@@ -63,6 +65,3 @@ DROP DATABASE test_01109;
 DROP DATABASE test_01109_other_atomic;
 DROP DATABASE test_01109_ordinary;
 DROP DATABASE test_01109_rename_exists;
-
-
-

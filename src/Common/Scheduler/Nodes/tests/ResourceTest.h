@@ -75,7 +75,7 @@ struct ResourceTestBase
 
 struct ConstraintTest : public SemaphoreConstraint
 {
-    ConstraintTest(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    explicit ConstraintTest(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : SemaphoreConstraint(event_queue_, config, config_prefix)
     {}
 
@@ -282,7 +282,7 @@ struct ResourceTestManager : public ResourceTestBase
         return link_data[link];
     }
 
-    // Use at least two threads for each queue to avoid queue being deactivated:
+    // Use exactly two threads for each queue to avoid queue being deactivated (happens with 1 thread) and reordering (happens with >2 threads):
     // while the first request is executing, the second request is in queue - holding it active.
     // use onEnqueue() and onExecute() functions for this purpose.
     void onEnqueue(ResourceLink link)

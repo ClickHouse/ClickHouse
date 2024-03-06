@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel, no-cpu-aarch64, no-msan
+-- Tags: no-fasttest, no-parallel, no-msan
 
 SET compile_expressions = 1;
 SET min_count_to_compile_expression = 0;

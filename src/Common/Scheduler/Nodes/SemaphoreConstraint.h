@@ -18,7 +18,7 @@ class SemaphoreConstraint : public ISchedulerConstraint
     static constexpr Int64 default_max_requests = std::numeric_limits<Int64>::max();
     static constexpr Int64 default_max_cost = std::numeric_limits<Int64>::max();
 public:
-    SemaphoreConstraint(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    explicit SemaphoreConstraint(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : ISchedulerConstraint(event_queue_, config, config_prefix)
         , max_requests(config.getInt64(config_prefix + ".max_requests", default_max_requests))
         , max_cost(config.getInt64(config_prefix + ".max_cost", config.getInt64(config_prefix + ".max_bytes", default_max_cost)))

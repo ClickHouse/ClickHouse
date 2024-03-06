@@ -176,6 +176,7 @@ def main():
 
     run_command = (
         f"docker run --cap-add=SYS_PTRACE --volume={tests_binary}:/unit_tests_dbms "
+        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         f"--volume={test_output}:/test_output {docker_image}"
     )
 

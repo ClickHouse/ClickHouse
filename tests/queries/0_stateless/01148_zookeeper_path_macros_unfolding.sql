@@ -1,5 +1,7 @@
 -- Tags: zookeeper, no-replicated-database, no-parallel, no-ordinary-database
 
+SET send_logs_level = 'fatal';
+
 DROP TABLE IF EXISTS rmt;
 DROP TABLE IF EXISTS rmt1;
 DROP TABLE IF EXISTS rmt2;
@@ -32,6 +34,7 @@ SHOW CREATE TABLE test_01148_atomic.rmt3;
 
 DROP DATABASE IF EXISTS test_01148_ordinary;
 set allow_deprecated_database_ordinary=1;
+-- Creation of a database with Ordinary engine emits a warning.
 CREATE DATABASE test_01148_ordinary ENGINE=Ordinary;
 RENAME TABLE test_01148_atomic.rmt3 to test_01148_ordinary.rmt3; -- { serverError 48 }
 DROP DATABASE test_01148_ordinary;

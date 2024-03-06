@@ -1,12 +1,6 @@
 #pragma once
-#include <filesystem>
-#include <system_error>
 #include <Coordination/KeeperStorage.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <libnuraft/nuraft.hxx>
-#include <Coordination/KeeperContext.h>
-#include <Disks/IDisk.h>
 
 namespace DB
 {
@@ -15,6 +9,15 @@ using SnapshotMetadata = nuraft::snapshot;
 using SnapshotMetadataPtr = std::shared_ptr<SnapshotMetadata>;
 using ClusterConfig = nuraft::cluster_config;
 using ClusterConfigPtr = nuraft::ptr<ClusterConfig>;
+
+class WriteBuffer;
+class ReadBuffer;
+
+class KeeperContext;
+using KeeperContextPtr = std::shared_ptr<KeeperContext>;
+
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
 
 enum SnapshotVersion : uint8_t
 {
@@ -139,30 +142,9 @@ public:
     size_t totalSnapshots() const { return existing_snapshots.size(); }
 
     /// The most fresh snapshot log index we have
-    size_t getLatestSnapshotIndex() const
-    {
-        if (!existing_snapshots.empty())
-            return existing_snapshots.rbegin()->first;
-        return 0;
-    }
+    size_t getLatestSnapshotIndex() const;
 
-    SnapshotFileInfo getLatestSnapshotInfo() const
-    {
-        if (!existing_snapshots.empty())
-        {
-            const auto & [path, disk] = existing_snapshots.at(getLatestSnapshotIndex());
-
-            try
-            {
-                if (disk->exists(path))
-                    return {path, disk};
-            }
-            catch (...)
-            {
-            }
-        }
-        return {"", nullptr};
-    }
+    SnapshotFileInfo getLatestSnapshotInfo() const;
 
 private:
     void removeOutdatedSnapshotsIfNeeded();

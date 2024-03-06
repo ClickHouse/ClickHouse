@@ -79,7 +79,7 @@ ColumnsDescription StorageSystemPrivileges::getColumnsDescription()
 }
 
 
-void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     size_t column_index = 0;
     auto & column_access_type = assert_cast<ColumnInt16 &>(*res_columns[column_index++]).getData();

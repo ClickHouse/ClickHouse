@@ -16,7 +16,7 @@ class ReadBuffer;
 class JSONColumnsReaderBase
 {
 public:
-    JSONColumnsReaderBase(ReadBuffer & in_);
+    explicit JSONColumnsReaderBase(ReadBuffer & in_);
 
     virtual ~JSONColumnsReaderBase() = default;
 

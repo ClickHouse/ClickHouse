@@ -181,15 +181,15 @@ SELECT arrayEnumerateUniqRanked([1,2], 1, 2); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked([1,2], 1, 3, 4, 5); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked([1,2], 1, 3, [4], 5); -- { serverError 36 }
 SELECT arrayEnumerateDenseRanked([[[[[[[[[[42]]]]]]]]]]);
-SELECT arrayEnumerateUniqRanked('wat', [1,2]); -- { serverError 170 }
-SELECT arrayEnumerateUniqRanked(1, [1,2], 'boom'); -- { serverError 170 }
-SELECT arrayEnumerateDenseRanked(['\0'], -8363126); -- { serverError 170 }
-SELECT arrayEnumerateDenseRanked(-10, ['\0'], -8363126); -- { serverError 170 }
-SELECT arrayEnumerateDenseRanked(1, ['\0'], -8363126); -- { serverError 170 }
-SELECT arrayEnumerateDenseRanked(-101, ['\0']); -- { serverError 170 }
-SELECT arrayEnumerateDenseRanked(1.1, [10,20,10,30]); -- { serverError 170 }
-SELECT arrayEnumerateDenseRanked([10,20,10,30], 0.4); -- { serverError 170 }
-SELECT arrayEnumerateDenseRanked([10,20,10,30], 1.8); -- { serverError 170 }
+SELECT arrayEnumerateUniqRanked('wat', [1,2]); -- { serverError BAD_ARGUMENTS }
+SELECT arrayEnumerateUniqRanked(1, [1,2], 'boom'); -- { serverError BAD_ARGUMENTS }
+SELECT arrayEnumerateDenseRanked(['\0'], -8363126); -- { serverError BAD_ARGUMENTS }
+SELECT arrayEnumerateDenseRanked(-10, ['\0'], -8363126); -- { serverError BAD_ARGUMENTS }
+SELECT arrayEnumerateDenseRanked(1, ['\0'], -8363126); -- { serverError BAD_ARGUMENTS }
+SELECT arrayEnumerateDenseRanked(-101, ['\0']); -- { serverError BAD_ARGUMENTS }
+SELECT arrayEnumerateDenseRanked(1.1, [10,20,10,30]); -- { serverError BAD_ARGUMENTS }
+SELECT arrayEnumerateDenseRanked([10,20,10,30], 0.4); -- { serverError BAD_ARGUMENTS }
+SELECT arrayEnumerateDenseRanked([10,20,10,30], 1.8); -- { serverError BAD_ARGUMENTS }
 SELECT arrayEnumerateUniqRanked(1, [], 1000000000); -- { serverError 36 }
 
 

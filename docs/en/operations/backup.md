@@ -168,6 +168,28 @@ RESTORE TABLE test.table PARTITIONS '2', '3'
   FROM Disk('backups', 'filename.zip')
 ```
 
+### Backups as tar archives
+
+Backups can also be stored as tar archives. The functionality is the same as for zip, except that a password is not supported. 
+
+Write a backup as a tar:
+```
+BACKUP TABLE test.table TO Disk('backups', '1.tar')
+```
+
+Corresponding restore:
+```
+RESTORE TABLE test.table FROM Disk('backups', '1.tar')
+```
+
+To change the compression method, the correct file suffix should be appended to the backup name. I.E to compress the tar archive using gzip:
+```
+BACKUP TABLE test.table TO Disk('backups', '1.tar.gz')
+```
+
+The supported compression file suffixes are `tar.gz`, `.tgz` `tar.bz2`, `tar.lzma`, `.tar.zst`, `.tzst` and `.tar.xz`.
+
+
 ### Check the status of backups
 
 The backup command returns an `id` and `status`, and that `id` can be used to get the status of the backup.  This is very useful to check the progress of long ASYNC backups.  The example below shows a failure that happened when trying to overwrite an existing backup file:

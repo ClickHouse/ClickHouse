@@ -15,8 +15,6 @@
 
 namespace DB
 {
-namespace fs = std::filesystem;
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -65,13 +63,13 @@ void registerBackupEngineS3(BackupFactory & factory)
             secret_access_key = config.getString(config_prefix + ".secret_access_key", "");
 
             if (config.has(config_prefix + ".filename"))
-                s3_uri = fs::path(s3_uri) / config.getString(config_prefix + ".filename");
+                s3_uri = std::filesystem::path(s3_uri) / config.getString(config_prefix + ".filename");
 
             if (args.size() > 1)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
 
             if (args.size() == 1)
-                s3_uri = fs::path(s3_uri) / args[0].safeGet<String>();
+                s3_uri = std::filesystem::path(s3_uri) / args[0].safeGet<String>();
         }
         else
         {

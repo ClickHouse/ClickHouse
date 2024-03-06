@@ -24,7 +24,7 @@ ColumnsDescription StorageSystemSettingsChanges::getColumnsDescription()
     };
 }
 
-void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
     {

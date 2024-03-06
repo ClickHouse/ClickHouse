@@ -109,10 +109,13 @@ def test_parallel_replicas_custom_key_load_balancing(
         == "subqueries\t4\n"
     )
 
-    # check queries per node
-    assert (
-        node1.query(
-            f"SELECT h, count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
+    # With enabled hedged requests, we can't guarantee exact query distribution among nodes
+    # In case of a replica being slow in terms of responsiveness, hedged connection can change initial replicas choice
+    if use_hedged_requests == 0:
+        # check queries per node
+        assert (
+            node1.query(
+                f"SELECT h, count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
+            )
+            == "n1\t2\nn2\t1\nn3\t1\nn4\t1\n"
         )
-        == "n1\t2\nn2\t1\nn3\t1\nn4\t1\n"
-    )

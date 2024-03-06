@@ -127,7 +127,7 @@ protected:
 
     struct ExecutorHolder
     {
-        ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+        explicit ExecutorHolder(PipelineExecutor * e) : executor(e) {}
 
         void cancel();
 
