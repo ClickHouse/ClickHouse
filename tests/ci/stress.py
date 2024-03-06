@@ -53,7 +53,9 @@ def get_options(i: int, upgrade_check: bool) -> str:
         client_options.append("memory_tracker_fault_probability=0.001")
 
     if i % 5 == 1:
-        client_options.append("merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.05")
+        client_options.append(
+            "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.05"
+        )
 
     if i % 2 == 1 and not upgrade_check:
         client_options.append("group_by_use_nulls=1")
