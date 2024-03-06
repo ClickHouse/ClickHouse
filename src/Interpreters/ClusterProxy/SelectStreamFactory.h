@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Client/ConnectionPool.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Cluster.h>
@@ -8,7 +9,6 @@
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
-#include "Analyzer/IQueryTreeNode.h"
 
 namespace DB
 {

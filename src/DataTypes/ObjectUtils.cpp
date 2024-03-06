@@ -1,4 +1,8 @@
 #include <memory>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -21,16 +25,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <IO/Operators.h>
-#include "Analyzer/ConstantNode.h"
-#include "Analyzer/FunctionNode.h"
-#include "Analyzer/IQueryTreeNode.h"
-#include "Analyzer/Identifier.h"
-#include "Analyzer/IdentifierNode.h"
-#include "Analyzer/QueryNode.h"
-#include "Analyzer/Utils.h"
-#include <Functions/FunctionFactory.h>
-#include <Poco/Logger.h>
-#include "Common/logger_useful.h"
 
 
 namespace DB
@@ -991,22 +985,12 @@ MissingObjectList replaceMissedSubcolumnsByConstants(
     {
         auto constant = std::make_shared<ConstantNode>(type->getDefault(), type);
         constant->setAlias(table_expression->getAlias() + "." + name);
-        // auto materialize = std::make_shared<FunctionNode>("materialize");
-
-        // auto function = FunctionFactory::instance().get("materialize", context);
-        // materialize->getArguments().getNodes() = { constant };
-        // materialize->resolveAsFunction(function->build(materialize->getArgumentColumns()));
-        // materialize->setAlias(name);
 
         column_name_to_node[name] = buildCastFunction(constant, type, context);
         missed_list.push_back({ constant->getValueStringRepresentation() + "_" + constant->getResultType()->getName(), table_expression->getAlias() + "." + name });
-        LOG_DEBUG(&Poco::Logger::get("replaceMissedSubcolumnsByConstants"), "{} -> {}", missed_list.back().first, missed_list.back().second);
-        LOG_DEBUG(&Poco::Logger::get("replaceMissedSubcolumnsByConstants"), "Name {} Expression\n{}", name, column_name_to_node[name]->dumpTree());
     }
 
-    LOG_DEBUG(&Poco::Logger::get("replaceMissedSubcolumnsByConstants"), "Table expression\n{} ", table_expression->dumpTree());
     replaceColumns(query, table_expression, column_name_to_node);
-    LOG_DEBUG(&Poco::Logger::get("replaceMissedSubcolumnsByConstants"), "Result:\n{} ", query->dumpTree());
 
     return missed_list;
 }

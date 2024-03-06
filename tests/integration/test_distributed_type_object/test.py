@@ -85,10 +85,11 @@ def test_distributed_type_object(started_cluster):
 3\t\t\t\tfoo"""
     )
 
+    # The following query is not supported by analyzer now
     assert (
         TSV(
             node1.query(
-                "SELECT id, data.k1, data.k2.k3, data.k2.k4, data.k5 FROM dist_table ORDER BY id"
+                "SELECT id, data.k1, data.k2.k3, data.k2.k4, data.k5 FROM dist_table ORDER BY id SETTINGS allow_experimental_analyzer = 0"
             )
         )
         == expected

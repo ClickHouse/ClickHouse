@@ -3,8 +3,6 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/FieldVisitors.h>
-#include "Analyzer/IQueryTreeNode.h"
-#include "Interpreters/Context_fwd.h"
 #include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>

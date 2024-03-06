@@ -5,10 +5,9 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
-#include "Analyzer/IQueryTreeNode.h"
-#include "Interpreters/InterpreterSelectQueryAnalyzer.h"
-#include "Interpreters/SelectQueryOptions.h"
-#include "Planner/Utils.h"
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Planner/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>

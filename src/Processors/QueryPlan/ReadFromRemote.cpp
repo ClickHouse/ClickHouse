@@ -1,4 +1,3 @@
-#include <memory>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -15,7 +14,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
-#include "DataTypes/ObjectUtils.h"
 #include <Core/QueryProcessingStage.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -33,54 +31,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static void addRenamingActions(Pipe & pipe, const MissingObjectList & missed_list, const Block & output_header)
-{
-    if (missed_list.empty())
-        return;
-
-    const auto & output_columns = output_header.getColumnsWithTypeAndName();
-    std::vector<size_t> indexes;
-    for (size_t i = 0; i < output_columns.size(); ++i)
-    {
-        bool found = false;
-        for (auto const & elem : missed_list)
-        {
-            if (output_columns[i].name.contains(elem.second))
-            {
-                found = true;
-                break;
-            }
-        }
-        if (found)
-            indexes.push_back(i);
-    }
-
-    auto dag = std::make_shared<ActionsDAG>(pipe.getHeader().getColumnsWithTypeAndName());
-
-    for (size_t index : indexes)
-    {
-        dag->addOrReplaceInOutputs(dag->addAlias(*dag->getOutputs()[index], output_header.getByPosition(index).name));
-    }
-
-    // dag->addAliases(rename_to_apply);
-
-    auto convert_actions = std::make_shared<ExpressionActions>(dag);
-    pipe.addSimpleTransform([&](const Block & cur_header, Pipe::StreamType) -> ProcessorPtr
-    {
-        return std::make_shared<ExpressionTransform>(cur_header, convert_actions);
-    });
-
-    LOG_DEBUG(&Poco::Logger::get("addRenamingActions"), "EXPECTED:\n{}", output_header.dumpStructure());
-
-    LOG_DEBUG(&Poco::Logger::get("addRenamingActions"), "{}", pipe.getHeader().dumpStructure());
-}
-
-static void addConvertingActions(Pipe & pipe, const Block & header)
+static void addConvertingActions(Pipe & pipe, const Block & header, bool use_positions_to_match = false)
 {
     if (blocksHaveEqualStructure(pipe.getHeader(), header))
         return;
 
-    auto get_converting_dag = [](const Block & block_, const Block & header_)
+    auto match_mode = use_positions_to_match ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
+
+    auto get_converting_dag = [mode = match_mode](const Block & block_, const Block & header_)
     {
         /// Convert header structure to expected.
         /// Also we ignore constants from result and replace it with constants from header.
@@ -88,7 +46,7 @@ static void addConvertingActions(Pipe & pipe, const Block & header)
         return ActionsDAG::makeConvertingActions(
             block_.getColumnsWithTypeAndName(),
             header_.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name,
+            mode,
             true);
     };
 
@@ -260,8 +218,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     };
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
-    addRenamingActions(pipes.back(), shard.missing_object_list, output_stream->header);
-    addConvertingActions(pipes.back(), output_stream->header);
+    addConvertingActions(pipes.back(), output_stream->header, !shard.missing_object_list.empty());
 }
 
 void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard)
@@ -342,8 +299,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
             pipes.emplace_back(
                 createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
-            addRenamingActions(pipes.back(), shard.missing_object_list, output_stream->header);
-            addConvertingActions(pipes.back(), output_stream->header);
+            addConvertingActions(pipes.back(), output_stream->header, !shard.missing_object_list.empty());
         }
     }
     else
@@ -372,8 +328,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
         pipes.emplace_back(
             createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
-        addRenamingActions(pipes.back(), shard.missing_object_list, output_stream->header);
-        addConvertingActions(pipes.back(), output_stream->header);
+        addConvertingActions(pipes.back(), output_stream->header, !shard.missing_object_list.empty());
     }
 }
 
