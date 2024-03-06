@@ -1,14 +1,16 @@
 #include <csignal>
 #include <csetjmp>
 #include <unistd.h>
-#include <fcntl.h>
+
+#ifdef OS_LINUX
+#include <sys/mman.h>
+#endif
 
 #include <new>
 #include <iostream>
 #include <vector>
 #include <string>
 #include <tuple>
-#include <string_view>
 #include <utility> /// pair
 
 #include <fmt/format.h>
@@ -20,23 +22,62 @@
 #include <Common/IO.h>
 
 #include <base/phdr_cache.h>
-#include <base/coverage.h>
+#include <base/scope_guard.h>
 
 
 /// Universal executable for various clickhouse applications
+#if ENABLE_CLICKHOUSE_SERVER
 int mainEntryClickHouseServer(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_CLIENT
 int mainEntryClickHouseClient(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_LOCAL
 int mainEntryClickHouseLocal(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_BENCHMARK
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_COMPRESSOR
 int mainEntryClickHouseCompressor(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_FORMAT
 int mainEntryClickHouseFormat(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_COPIER
 int mainEntryClickHouseClusterCopier(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_OBFUSCATOR
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_GIT_IMPORT
 int mainEntryClickHouseGitImport(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER
+int mainEntryClickHouseKeeper(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
+int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_SU
 int mainEntryClickHouseSU(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_INSTALL
+int mainEntryClickHouseInstall(int argc, char ** argv);
+int mainEntryClickHouseStart(int argc, char ** argv);
+int mainEntryClickHouseStop(int argc, char ** argv);
+int mainEntryClickHouseStatus(int argc, char ** argv);
+int mainEntryClickHouseRestart(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_DISKS
 int mainEntryClickHouseDisks(int argc, char ** argv);
+#endif
 
 int mainEntryClickHouseHashBinary(int, char **)
 {
@@ -46,23 +87,6 @@ int mainEntryClickHouseHashBinary(int, char **)
     return 0;
 }
 
-#if ENABLE_CLICKHOUSE_KEEPER
-int mainEntryClickHouseKeeper(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
-int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
-int mainEntryClickHouseKeeperClient(int argc, char ** argv);
-#endif
-
-// install
-int mainEntryClickHouseInstall(int argc, char ** argv);
-int mainEntryClickHouseStart(int argc, char ** argv);
-int mainEntryClickHouseStop(int argc, char ** argv);
-int mainEntryClickHouseStatus(int argc, char ** argv);
-int mainEntryClickHouseRestart(int argc, char ** argv);
-
 namespace
 {
 
@@ -71,47 +95,61 @@ using MainFunc = int (*)(int, char**);
 #if !defined(FUZZING_MODE)
 
 /// Add an item here to register new application
-std::pair<std::string_view, MainFunc> clickhouse_applications[] =
+std::pair<const char *, MainFunc> clickhouse_applications[] =
 {
+#if ENABLE_CLICKHOUSE_LOCAL
     {"local", mainEntryClickHouseLocal},
+#endif
+#if ENABLE_CLICKHOUSE_CLIENT
     {"client", mainEntryClickHouseClient},
+#endif
+#if ENABLE_CLICKHOUSE_BENCHMARK
     {"benchmark", mainEntryClickHouseBenchmark},
+#endif
+#if ENABLE_CLICKHOUSE_SERVER
     {"server", mainEntryClickHouseServer},
+#endif
+#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
+#endif
+#if ENABLE_CLICKHOUSE_COMPRESSOR
     {"compressor", mainEntryClickHouseCompressor},
+#endif
+#if ENABLE_CLICKHOUSE_FORMAT
     {"format", mainEntryClickHouseFormat},
+#endif
+#if ENABLE_CLICKHOUSE_COPIER
     {"copier", mainEntryClickHouseClusterCopier},
+#endif
+#if ENABLE_CLICKHOUSE_OBFUSCATOR
     {"obfuscator", mainEntryClickHouseObfuscator},
+#endif
+#if ENABLE_CLICKHOUSE_GIT_IMPORT
     {"git-import", mainEntryClickHouseGitImport},
-    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
-    {"su", mainEntryClickHouseSU},
-    {"hash-binary", mainEntryClickHouseHashBinary},
-    {"disks", mainEntryClickHouseDisks},
-
-    // keeper
+#endif
 #if ENABLE_CLICKHOUSE_KEEPER
     {"keeper", mainEntryClickHouseKeeper},
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
     {"keeper-converter", mainEntryClickHouseKeeperConverter},
 #endif
-#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
-    {"keeper-client", mainEntryClickHouseKeeperClient},
-#endif
-
-    // install
+#if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
-};
-
-/// Add an item here to register a new short name
-std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
-{
-    {"chl", "local"},
-    {"chc", "client"},
+#endif
+#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
+    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
+#endif
+#if ENABLE_CLICKHOUSE_SU
+    {"su", mainEntryClickHouseSU},
+#endif
+    {"hash-binary", mainEntryClickHouseHashBinary},
+#if ENABLE_CLICKHOUSE_DISKS
+    {"disks", mainEntryClickHouseDisks},
+#endif
 };
 
 int printHelp(int, char **)
@@ -120,6 +158,26 @@ int printHelp(int, char **)
     for (auto & application : clickhouse_applications)
         std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
     return -1;
+}
+
+bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
+{
+    /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
+    if (argv.size() >= 2)
+    {
+        auto first_arg = argv.begin() + 1;
+
+        /// 'clickhouse --client ...' and 'clickhouse client ...' are Ok
+        if (*first_arg == "--" + app_suffix || *first_arg == app_suffix)
+        {
+            argv.erase(first_arg);
+            return true;
+        }
+    }
+
+    /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
+    std::string app_name = "clickhouse-" + app_suffix;
+    return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
 }
 #endif
 
@@ -287,7 +345,7 @@ struct Checker
 ;
 
 
-#if !defined(FUZZING_MODE) && !defined(USE_MUSL)
+#if !defined(USE_MUSL)
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -341,77 +399,8 @@ void checkHarmfulEnvironmentVariables(char ** argv)
 }
 #endif
 
-
-#if defined(SANITIZE_COVERAGE)
-__attribute__((no_sanitize("coverage")))
-void dumpCoverage()
-{
-    /// A user can request to dump the coverage information into files at exit.
-    /// This is useful for non-server applications such as clickhouse-format or clickhouse-client,
-    /// that cannot introspect it with SQL functions at runtime.
-
-    /// The CLICKHOUSE_WRITE_COVERAGE environment variable defines a prefix for a filename 'prefix.pid'
-    /// containing the list of addresses of covered .
-
-    /// The format is even simpler than Clang's "sancov": an array of 64-bit addresses, native byte order, no header.
-
-    if (const char * coverage_filename_prefix = getenv("CLICKHOUSE_WRITE_COVERAGE")) // NOLINT(concurrency-mt-unsafe)
-    {
-        auto dump = [](const std::string & name, auto span)
-        {
-            /// Write only non-zeros.
-            std::vector<uintptr_t> data;
-            data.reserve(span.size());
-            for (auto addr : span)
-                if (addr)
-                    data.push_back(addr);
-
-            int fd = ::open(name.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0400);
-            if (-1 == fd)
-            {
-                writeError("Cannot open a file to write the coverage data\n");
-            }
-            else
-            {
-                if (!writeRetry(fd, reinterpret_cast<const char *>(data.data()), data.size() * sizeof(data[0])))
-                    writeError("Cannot write the coverage data to a file\n");
-                if (0 != ::close(fd))
-                    writeError("Cannot close the file with coverage data\n");
-            }
-        };
-
-        dump(fmt::format("{}.{}", coverage_filename_prefix, getpid()), getCumulativeCoverage());
-    }
-}
-#endif
-
 }
 
-bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
-{
-    for (const auto & [alias, name] : clickhouse_short_names)
-        if (app_suffix == name
-            && !argv.empty() && (alias == argv[0] || endsWith(argv[0], "/" + std::string(alias))))
-            return true;
-
-    /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
-    if (argv.size() >= 2)
-    {
-        auto first_arg = argv.begin() + 1;
-
-        /// 'clickhouse --client ...' and 'clickhouse client ...' are Ok
-        if (*first_arg == app_suffix
-            || (std::string_view(*first_arg).starts_with("--") && std::string_view(*first_arg).substr(2) == app_suffix))
-        {
-            argv.erase(first_arg);
-            return true;
-        }
-    }
-
-    /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
-    std::string app_name = "clickhouse-" + std::string(app_suffix);
-    return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
-}
 
 /// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
 /// We don't use it. But it can be used by some libraries for implementation of "plugins".
@@ -471,11 +460,6 @@ int main(int argc_, char ** argv_)
     checkHarmfulEnvironmentVariables(argv_);
 #endif
 
-    /// This is used for testing. For example,
-    /// clickhouse-local should be able to run a simple query without throw/catch.
-    if (getenv("CLICKHOUSE_TERMINATE_ON_ANY_EXCEPTION")) // NOLINT(concurrency-mt-unsafe)
-        DB::terminate_on_any_exception = true;
-
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
     std::set_new_handler(nullptr);
@@ -494,23 +478,6 @@ int main(int argc_, char ** argv_)
         }
     }
 
-    /// Interpret binary without argument or with arguments starts with dash
-    /// ('-') as clickhouse-local for better usability:
-    ///
-    ///     clickhouse # dumps help
-    ///     clickhouse -q 'select 1' # use local
-    ///     clickhouse # spawn local
-    ///     clickhouse local # spawn local
-    ///
-    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'))
-        main_func = mainEntryClickHouseLocal;
-
-    int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
-
-#if defined(SANITIZE_COVERAGE)
-    dumpCoverage();
-#endif
-
-    return exit_code;
+    return main_func(static_cast<int>(argv.size()), argv.data());
 }
 #endif

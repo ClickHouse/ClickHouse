@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
 from typing import Dict, List, Optional
-import fileinput
 import json
 import logging
 import time
@@ -72,7 +71,6 @@ class ClickHouseHelper:
         if args:
             url = args[0]
         url = kwargs.get("url", url)
-        kwargs["timeout"] = kwargs.get("timeout", 100)
 
         for i in range(5):
             try:
@@ -93,7 +91,7 @@ class ClickHouseHelper:
             )
 
             if response.status_code >= 500:
-                # A retryable error
+                # A retriable error
                 time.sleep(1)
                 continue
 
@@ -168,8 +166,9 @@ class ClickHouseHelper:
         return result
 
 
-def _query_imds(path):
-    url = f"http://169.254.169.254/{path}"
+# Obtain the machine type from IMDS:
+def get_instance_type():
+    url = "http://169.254.169.254/latest/meta-data/instance-type"
     for i in range(5):
         try:
             response = requests.get(url, timeout=1)
@@ -182,16 +181,6 @@ def _query_imds(path):
             logging.warning(error)
             continue
     return ""
-
-
-# Obtain the machine type from IMDS:
-def get_instance_type():
-    return _query_imds("latest/meta-data/instance-type")
-
-
-# Obtain the instance id from IMDS:
-def get_instance_id():
-    return _query_imds("latest/meta-data/instance-id")
 
 
 def prepare_tests_results_for_clickhouse(
@@ -230,8 +219,6 @@ def prepare_tests_results_for_clickhouse(
         head_ref=head_ref,
         head_repo=head_repo,
         task_url=pr_info.task_url,
-        instance_type=get_instance_type(),
-        instance_id=get_instance_id(),
     )
 
     # Always publish a total record for all checks. For checks with individual
@@ -256,87 +243,25 @@ def prepare_tests_results_for_clickhouse(
     return result
 
 
-class CiLogsCredentials:
-    def __init__(self, config_path: Path):
-        self.config_path = config_path
-        try:
-            self._host = get_parameter_from_ssm("clickhouse_ci_logs_host")  # type: str
-            self._password = get_parameter_from_ssm(
-                "clickhouse_ci_logs_password"
-            )  # type: str
-        except:
-            logging.warning(
-                "Unable to retreive host and/or password from smm, all other "
-                "methods will noop"
-            )
-            self._host = ""
-            self._password = ""
+def mark_flaky_tests(
+    clickhouse_helper: ClickHouseHelper, check_name: str, test_results: TestResults
+) -> None:
+    try:
+        query = f"""SELECT DISTINCT test_name
+FROM checks
+WHERE
+    check_start_time BETWEEN now() - INTERVAL 3 DAY AND now()
+    AND check_name = '{check_name}'
+    AND (test_status = 'FAIL' OR test_status = 'FLAKY')
+    AND pull_request_number = 0
+"""
 
-    def create_ci_logs_credentials(self) -> None:
-        if not (self.host and self.password):
-            logging.info(
-                "Hostname or password for CI logs instance are unknown, "
-                "skipping creating of credentials file, removing existing"
-            )
-            self.config_path.unlink(missing_ok=True)
-            return
-        self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        self.config_path.write_text(
-            f"CLICKHOUSE_CI_LOGS_HOST={self.host}\n"
-            "CLICKHOUSE_CI_LOGS_USER=ci\n"
-            f"CLICKHOUSE_CI_LOGS_PASSWORD={self.password}\n",
-            encoding="utf-8",
-        )
+        tests_data = clickhouse_helper.select_json_each_row("default", query)
+        master_failed_tests = {row["test_name"] for row in tests_data}
+        logging.info("Found flaky tests: %s", ", ".join(master_failed_tests))
 
-    def get_docker_arguments(
-        self, pr_info: PRInfo, check_start_time: str, check_name: str
-    ) -> str:
-        self.create_ci_logs_credentials()
-        if not self.config_path.exists():
-            logging.info("Do not use external logs pushing")
-            return ""
-        extra_columns = (
-            f"CAST({pr_info.number} AS UInt32) AS pull_request_number, '{pr_info.sha}' AS commit_sha, "
-            f"toDateTime('{check_start_time}', 'UTC') AS check_start_time, toLowCardinality('{check_name}') AS check_name, "
-            f"toLowCardinality('{get_instance_type()}') AS instance_type, '{get_instance_id()}' AS instance_id"
-        )
-        return (
-            f'-e EXTRA_COLUMNS_EXPRESSION="{extra_columns}" '
-            f"-e CLICKHOUSE_CI_LOGS_CREDENTIALS=/tmp/export-logs-config.sh "
-            f"--volume={self.config_path.absolute()}:/tmp/export-logs-config.sh:ro "
-        )
-
-    def clean_ci_logs_from_credentials(self, log_path: Path) -> None:
-        if not (self.host or self.password):
-            logging.info(
-                "Hostname and password for CI logs instance are unknown, "
-                "skipping cleaning %s",
-                log_path,
-            )
-            return
-
-        def process_line(line: str) -> str:
-            if self.host and self.password:
-                return line.replace(self.host, "CLICKHOUSE_CI_LOGS_HOST").replace(
-                    self.password, "CLICKHOUSE_CI_LOGS_PASSWORD"
-                )
-            if self.host:
-                return line.replace(self.host, "CLICKHOUSE_CI_LOGS_HOST")
-            # the remaining is self.password
-            return line.replace(self.password, "CLICKHOUSE_CI_LOGS_PASSWORD")
-
-        # errors="surrogateescape" require python 3.10.
-        # With ubuntu 22.04 we are safe
-        with fileinput.input(
-            log_path, inplace=True, errors="surrogateescape"
-        ) as log_fd:
-            for line in log_fd:
-                print(process_line(line), end="")
-
-    @property
-    def host(self) -> str:
-        return self._host
-
-    @property
-    def password(self) -> str:
-        return self._password
+        for test_result in test_results:
+            if test_result.status == "FAIL" and test_result.name in master_failed_tests:
+                test_result.status = "FLAKY"
+    except Exception as ex:
+        logging.error("Exception happened during flaky tests fetch %s", ex)

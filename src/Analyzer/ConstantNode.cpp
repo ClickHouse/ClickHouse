@@ -1,6 +1,5 @@
 #include <Analyzer/ConstantNode.h>
 
-#include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 
@@ -128,10 +127,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         }
     }
 
-    // Add cast if constant was created as a result of constant folding.
-    // Constant folding may lead to type transformation and literal on shard
-    // may have a different type.
-    if (need_to_add_cast_function || source_expression != nullptr)
+    if (need_to_add_cast_function)
     {
         auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value->getType()->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));

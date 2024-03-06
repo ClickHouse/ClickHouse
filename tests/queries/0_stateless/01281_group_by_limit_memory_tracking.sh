@@ -23,7 +23,7 @@ set -o pipefail
 
 function execute_null()
 {
-    ${CLICKHOUSE_CLIENT} -u u01281 --format Null -n "$@"
+    ${CLICKHOUSE_CLIENT} --format Null -n "$@"
 }
 
 function execute_group_by()
@@ -46,10 +46,6 @@ function execute_group_by()
     execute_null "${opts[@]}" <<<'SELECT uniq(number) FROM numbers_mt(1e6) GROUP BY number % 5e5 LIMIT 10'
 }
 
-${CLICKHOUSE_CLIENT} -q 'DROP USER IF EXISTS u01281'
-${CLICKHOUSE_CLIENT} -q 'CREATE USER IF NOT EXISTS u01281 IDENTIFIED WITH no_password'
-${CLICKHOUSE_CLIENT} -q 'GRANT ALL ON *.* TO u01281'
-
 # This is needed to keep at least one running query for user for the time of test.
 execute_null <<<'SELECT sleep(3)' &
 execute_group_by
@@ -59,4 +55,3 @@ wait
 
 # Reset max_memory_usage_for_user, so it will not affect other tests
 ${CLICKHOUSE_CLIENT} --max_memory_usage_for_user=0 -q "SELECT 1 FORMAT Null"
-${CLICKHOUSE_CLIENT} -q 'DROP USER IF EXISTS u01281'

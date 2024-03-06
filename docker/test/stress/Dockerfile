@@ -8,6 +8,8 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             bash \
             tzdata \
+            fakeroot \
+            debhelper \
             parallel \
             expect \
             python3 \
@@ -18,12 +20,14 @@ RUN apt-get update -y \
             sudo \
             openssl \
             netcat-openbsd \
+            telnet \
             brotli \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && apt-get clean
 
 COPY run.sh /
 
+ENV DATASETS="hits visits"
+ENV S3_URL="https://clickhouse-datasets.s3.amazonaws.com"
 ENV EXPORT_S3_STORAGE_POLICIES=1
 
 CMD ["/bin/bash", "/run.sh"]

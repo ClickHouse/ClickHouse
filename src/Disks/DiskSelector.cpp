@@ -27,7 +27,7 @@ void DiskSelector::assertInitialized() const
 }
 
 
-void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
+void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -44,10 +44,7 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
         if (disk_name == default_disk_name)
             has_default_disk = true;
 
-        const auto disk_config_prefix = config_prefix + "." + disk_name;
-
-        if (disk_validator && !disk_validator(config, disk_config_prefix, disk_name))
-            continue;
+        auto disk_config_prefix = config_prefix + "." + disk_name;
 
         disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context, disks));
     }
@@ -56,7 +53,7 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
         disks.emplace(
             default_disk_name,
             std::make_shared<DiskLocal>(
-                default_disk_name, context->getPath(), 0, context, config, config_prefix));
+                default_disk_name, context->getPath(), 0, context, config.getUInt("local_disk_check_period_ms", 0)));
     }
 
     is_initialized = true;
@@ -124,7 +121,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         if (num_disks_removed_from_config > 0)
         {
             LOG_WARNING(
-                getLogger("DiskSelector"),
+                &Poco::Logger::get("DiskSelector"),
                 "{} disappeared from configuration, this change will be applied after restart of ClickHouse",
                 warning.str());
         }

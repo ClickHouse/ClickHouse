@@ -1,5 +1,4 @@
 #include <string_view>
-#include <unordered_map>
 #include <Access/SettingsConstraints.h>
 #include <Access/resolveSetting.h>
 #include <Access/AccessControl.h>
@@ -7,7 +6,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/SettingSource.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <boost/range/algorithm_ext/erase.hpp>
@@ -20,39 +18,6 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int SETTING_CONSTRAINT_VIOLATION;
     extern const int UNKNOWN_SETTING;
-}
-
-namespace
-{
-struct SettingSourceRestrictions
-{
-    constexpr SettingSourceRestrictions() { allowed_sources.set(); }
-
-    constexpr SettingSourceRestrictions(std::initializer_list<SettingSource> allowed_sources_)
-    {
-        for (auto allowed_source : allowed_sources_)
-            setSourceAllowed(allowed_source, true);
-    }
-
-    constexpr bool isSourceAllowed(SettingSource source) { return allowed_sources[source]; }
-    constexpr void setSourceAllowed(SettingSource source, bool allowed) { allowed_sources[source] = allowed; }
-
-    std::bitset<SettingSource::COUNT> allowed_sources;
-};
-
-const std::unordered_map<std::string_view, SettingSourceRestrictions> SETTINGS_SOURCE_RESTRICTIONS = {
-    {"max_sessions_for_user", {SettingSource::PROFILE}},
-};
-
-SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
-{
-    auto settingConstraintIter = SETTINGS_SOURCE_RESTRICTIONS.find(name);
-    if (settingConstraintIter != SETTINGS_SOURCE_RESTRICTIONS.end())
-        return settingConstraintIter->second;
-    else
-        return SettingSourceRestrictions(); // allows everything
-}
-
 }
 
 SettingsConstraints::SettingsConstraints(const AccessControl & access_control_) : access_control(&access_control_)
@@ -133,29 +98,29 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
 }
 
 
-void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const
+void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements) const
 {
     for (const auto & element : profile_elements)
     {
         if (SettingsProfileElements::isAllowBackupSetting(element.setting_name))
             continue;
 
-        if (element.value)
+        if (!element.value.isNull())
         {
-            SettingChange value(element.setting_name, *element.value);
-            check(current_settings, value, source);
+            SettingChange value(element.setting_name, element.value);
+            check(current_settings, value);
         }
 
-        if (element.min_value)
+        if (!element.min_value.isNull())
         {
-            SettingChange value(element.setting_name, *element.min_value);
-            check(current_settings, value, source);
+            SettingChange value(element.setting_name, element.min_value);
+            check(current_settings, value);
         }
 
-        if (element.max_value)
+        if (!element.max_value.isNull())
         {
-            SettingChange value(element.setting_name, *element.max_value);
-            check(current_settings, value, source);
+            SettingChange value(element.setting_name, element.max_value);
+            check(current_settings, value);
         }
 
         SettingConstraintWritability new_value = SettingConstraintWritability::WRITABLE;
@@ -177,24 +142,24 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
     }
 }
 
-void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change, SettingSource source) const
+void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change) const
 {
-    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION, source);
+    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION);
 }
 
-void SettingsConstraints::check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const
+void SettingsConstraints::check(const Settings & current_settings, const SettingsChanges & changes) const
 {
     for (const auto & change : changes)
-        check(current_settings, change, source);
+        check(current_settings, change);
 }
 
-void SettingsConstraints::check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
+void SettingsConstraints::check(const Settings & current_settings, SettingsChanges & changes) const
 {
     boost::range::remove_erase_if(
         changes,
         [&](SettingChange & change) -> bool
         {
-            return !checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION, source);
+            return !checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION);
         });
 }
 
@@ -209,13 +174,13 @@ void SettingsConstraints::check(const MergeTreeSettings & current_settings, cons
         check(current_settings, change);
 }
 
-void SettingsConstraints::clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
+void SettingsConstraints::clamp(const Settings & current_settings, SettingsChanges & changes) const
 {
     boost::range::remove_erase_if(
         changes,
         [&](SettingChange & change) -> bool
         {
-            return !checkImpl(current_settings, change, CLAMP_ON_VIOLATION, source);
+            return !checkImpl(current_settings, change, CLAMP_ON_VIOLATION);
         });
 }
 
@@ -250,10 +215,7 @@ bool getNewValueToCheck(const T & current_settings, SettingChange & change, Fiel
     return true;
 }
 
-bool SettingsConstraints::checkImpl(const Settings & current_settings,
-                                    SettingChange & change,
-                                    ReactionOnViolation reaction,
-                                    SettingSource source) const
+bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
     std::string_view setting_name = Settings::Traits::resolveName(change.name);
 
@@ -285,7 +247,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
     if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
 
-    return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);
+    return getChecker(current_settings, setting_name).check(change, new_value, reaction);
 }
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
@@ -293,18 +255,15 @@ bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, 
     Field new_value;
     if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
-    return getMergeTreeChecker(change.name).check(change, new_value, reaction, SettingSource::QUERY);
+    return getMergeTreeChecker(change.name).check(change, new_value, reaction);
 }
 
-bool SettingsConstraints::Checker::check(SettingChange & change,
-                                         const Field & new_value,
-                                         ReactionOnViolation reaction,
-                                         SettingSource source) const
+bool SettingsConstraints::Checker::check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const
 {
-    if (!explain.text.empty())
+    if (!explain.empty())
     {
         if (reaction == THROW_ON_VIOLATION)
-            throw Exception(explain, code);
+            throw Exception::createDeprecated(explain, code);
         else
             return false;
     }
@@ -340,12 +299,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
     if (!min_value.isNull() && !max_value.isNull() && less_or_cannot_compare(max_value, min_value))
     {
         if (reaction == THROW_ON_VIOLATION)
-            throw Exception(
-                ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
-                "The maximum ({}) value is less than the minimum ({}) value for setting {}",
-                max_value,
-                min_value,
-                setting_name);
+            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
         else
             return false;
     }
@@ -372,14 +326,6 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
             change.value = max_value;
     }
 
-    if (!getSettingSourceRestrictions(setting_name).isSourceAllowed(source))
-    {
-        if (reaction == THROW_ON_VIOLATION)
-            throw Exception(ErrorCodes::READONLY, "Setting {} is not allowed to be set by {}", setting_name, toString(source));
-        else
-            return false;
-    }
-
     return true;
 }
 
@@ -394,8 +340,7 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
 {
     auto resolved_name = resolveSettingNameWithCache(setting_name);
     if (!current_settings.allow_ddl && resolved_name == "allow_ddl")
-        return Checker(PreformattedMessage::create("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user"),
-                       ErrorCodes::QUERY_IS_PROHIBITED);
+        return Checker("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 
     /** The `readonly` value is understood as follows:
       * 0 - no read-only restrictions.
@@ -404,14 +349,13 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
       */
 
     if (current_settings.readonly > 1 && resolved_name == "readonly")
-        return Checker(PreformattedMessage::create("Cannot modify 'readonly' setting in readonly mode"), ErrorCodes::READONLY);
+        return Checker("Cannot modify 'readonly' setting in readonly mode", ErrorCodes::READONLY);
 
     auto it = constraints.find(resolved_name);
     if (current_settings.readonly == 1)
     {
         if (it == constraints.end() || it->second.writability != SettingConstraintWritability::CHANGEABLE_IN_READONLY)
-            return Checker(PreformattedMessage::create("Cannot modify '{}' setting in readonly mode", setting_name),
-                           ErrorCodes::READONLY);
+            return Checker("Cannot modify '" + String(setting_name) + "' setting in readonly mode", ErrorCodes::READONLY);
     }
     else // For both readonly=0 and readonly=2
     {

@@ -6,6 +6,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

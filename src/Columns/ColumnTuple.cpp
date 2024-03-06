@@ -1,17 +1,16 @@
 #include <Columns/ColumnTuple.h>
 
-#include <Columns/ColumnCompressed.h>
+#include <base/sort.h>
 #include <Columns/IColumnImpl.h>
+#include <Columns/ColumnCompressed.h>
 #include <Core/Field.h>
-#include <Common/WeakHash.h>
-#include <Common/assert_cast.h>
-#include <Common/iota.h>
-#include <Common/typeid_cast.h>
-#include <DataTypes/Serializations/SerializationInfoTuple.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <base/sort.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
 
 
 namespace DB
@@ -148,31 +147,6 @@ void ColumnTuple::insert(const Field & x)
         columns[i]->insert(tuple[i]);
 }
 
-bool ColumnTuple::tryInsert(const Field & x)
-{
-    if (x.getType() != Field::Types::Which::Tuple)
-        return false;
-
-    const auto & tuple = x.get<const Tuple &>();
-
-    const size_t tuple_size = columns.size();
-    if (tuple.size() != tuple_size)
-        return false;
-
-    for (size_t i = 0; i < tuple_size; ++i)
-    {
-        if (!columns[i]->tryInsert(tuple[i]))
-        {
-            for (size_t j = 0; j != i; ++j)
-                columns[i]->popBack(1);
-
-            return false;
-        }
-    }
-
-    return true;
-}
-
 void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
 {
     const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
@@ -208,14 +182,6 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
     }
 
     return res;
-}
-
-char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
-{
-    for (const auto & column : columns)
-        memory = column->serializeValueIntoMemory(n, memory);
-
-    return memory;
 }
 
 const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
@@ -359,9 +325,22 @@ int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_dire
     return compareAtImpl(n, m, rhs, nan_direction_hint);
 }
 
+void ColumnTuple::compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                                int direction, int nan_direction_hint) const
+{
+    return doCompareColumn<ColumnTuple>(assert_cast<const ColumnTuple &>(rhs), rhs_row_num, row_indexes,
+                                        compare_results, direction, nan_direction_hint);
+}
+
 int ColumnTuple::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const
 {
     return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
+}
+
+bool ColumnTuple::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnTuple>();
 }
 
 template <bool positive>
@@ -399,7 +378,8 @@ void ColumnTuple::getPermutationImpl(IColumn::PermutationSortDirection direction
 {
     size_t rows = size();
     res.resize(rows);
-    iota(res.data(), rows, IColumn::Permutation::value_type(0));
+    for (size_t i = 0; i < rows; ++i)
+        res[i] = i;
 
     if (limit >= rows)
         limit = 0;
@@ -452,18 +432,16 @@ void ColumnTuple::updatePermutationWithCollation(const Collator & collator, ICol
     updatePermutationImpl(direction, stability, limit, nan_direction_hint, res, equal_ranges, &collator);
 }
 
+void ColumnTuple::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
+}
+
 void ColumnTuple::reserve(size_t n)
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
         getColumn(i).reserve(n);
-}
-
-void ColumnTuple::shrinkToFit()
-{
-    const size_t tuple_size = columns.size();
-    for (size_t i = 0; i < tuple_size; ++i)
-        getColumn(i).shrinkToFit();
 }
 
 void ColumnTuple::ensureOwnership()
@@ -517,15 +495,15 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     max = max_tuple;
 }
 
-void ColumnTuple::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
 {
-    for (auto & column : columns)
+    for (const auto & column : columns)
         callback(column);
 }
 
-void ColumnTuple::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
-    for (auto & column : columns)
+    for (const auto & column : columns)
     {
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
@@ -574,12 +552,27 @@ ColumnPtr ColumnTuple::compress() const
     }
 
     return ColumnCompressed::create(size(), byte_size,
-        [my_compressed = std::move(compressed)]() mutable
+        [compressed = std::move(compressed)]() mutable
         {
-            for (auto & column : my_compressed)
+            for (auto & column : compressed)
                 column = column->decompress();
-            return ColumnTuple::create(my_compressed);
+            return ColumnTuple::create(compressed);
         });
+}
+
+double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
+{
+    return getRatioOfDefaultRowsImpl<ColumnTuple>(sample_ratio);
+}
+
+UInt64 ColumnTuple::getNumberOfDefaultRows() const
+{
+    return getNumberOfDefaultRowsImpl<ColumnTuple>();
+}
+
+void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
+{
+    return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
 }
 
 void ColumnTuple::finalize()

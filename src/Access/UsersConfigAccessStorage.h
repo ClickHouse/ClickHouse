@@ -20,7 +20,7 @@ class UsersConfigAccessStorage : public IAccessStorage
 {
 public:
 
-    static constexpr char STORAGE_TYPE[] = "users_xml";
+    static constexpr char STORAGE_TYPE[] = "users.xml";
 
     UsersConfigAccessStorage(const String & storage_name_, AccessControl & access_control_, bool allow_backup_);
     ~UsersConfigAccessStorage() override;

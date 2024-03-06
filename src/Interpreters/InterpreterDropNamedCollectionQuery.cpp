@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Access/ContextAccess.h>
@@ -23,17 +22,12 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
     }
 
-    NamedCollectionUtils::removeFromSQL(query, current_context);
-    return {};
-}
+    if (query.if_exists)
+        NamedCollectionUtils::removeIfExistsFromSQL(query.collection_name, current_context);
+    else
+        NamedCollectionUtils::removeFromSQL(query.collection_name, current_context);
 
-void registerInterpreterDropNamedCollectionQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterDropNamedCollectionQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterDropNamedCollectionQuery", create_fn);
+    return {};
 }
 
 }

@@ -18,9 +18,11 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
 
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query_info, ContextPtr context) const override;
+
+    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
 private:
     size_t bits_per_row;
