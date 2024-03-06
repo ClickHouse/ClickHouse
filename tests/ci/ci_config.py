@@ -11,7 +11,7 @@ from ci_utils import WithIter
 from integration_test_images import IMAGES
 
 
-class CIStages:
+class CIStages(metaclass=WithIter):
     NA = "UNKNOWN"
     BUILDS_1 = "Builds_1"
     BUILDS_2 = "Builds_2"
@@ -547,9 +547,17 @@ class CIConfig:
             stage_type = CIStages.TESTS_2
         elif self.is_test_job(job_name):
             stage_type = CIStages.TESTS_1
-            if job_name == JobNames.LIBFUZZER_TEST:
-                # since fuzzers build in Builds_2, test must be in Tests_2
-                stage_type = CIStages.TESTS_2
+            if job_name in CI_CONFIG.test_configs:
+                required_build = CI_CONFIG.test_configs[job_name].required_build
+                assert required_build
+                if required_build in CI_CONFIG.get_builds_for_report(
+                    JobNames.BUILD_CHECK
+                ):
+                    stage_type = CIStages.TESTS_1
+                else:
+                    stage_type = CIStages.TESTS_2
+            else:
+                stage_type = CIStages.TESTS_1
         assert stage_type, f"BUG [{job_name}]"
         return stage_type
 
