@@ -264,7 +264,7 @@ simpleJSONExtractRaw(json, field_name)
 
 **Returned value**
 
-It returns the value of the field as a [`String`](../../sql-reference/data-types/string.md#string), including separators if the field exists, or an emtpy `String` otherwise.
+It returns the value of the field as a [`String`](../../sql-reference/data-types/string.md#string), including separators if the field exists, or an empty `String` otherwise.
 
 **Example**
 

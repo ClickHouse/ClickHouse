@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2724
+personal_ws-1.1 en 2758 
 AArch
 ACLs
 ALTERs
@@ -842,7 +842,6 @@ SendExternalTables
 SendScalars
 ShareAlike
 SharedMergeTree
-Shortkeys
 Shortkeys
 SimHash
 Simhash
@@ -1703,7 +1702,6 @@ hyperscan
 hypot
 hyvor
 iTerm
-iTerm
 icosahedron
 icudata
 idempotency
@@ -2327,6 +2325,14 @@ shortcircuit
 shortkeys
 shoutout
 simdjson
+simpleJSON
+simpleJSONExtractBool
+simpleJSONExtractFloat
+simpleJSONExtractInt
+simpleJSONExtractRaw
+simpleJSONExtractString
+simpleJSONExtractUInt
+simpleJSONHas
 simpleLinearRegression
 simpleaggregatefunction
 simplelinearregression
