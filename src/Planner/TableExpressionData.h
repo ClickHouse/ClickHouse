@@ -17,9 +17,6 @@ using ColumnIdentifier = std::string;
 using ColumnIdentifiers = std::vector<ColumnIdentifier>;
 using ColumnIdentifierSet = std::unordered_set<ColumnIdentifier>;
 
-struct PrewhereInfo;
-using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
-
 /** Table expression data is created for each table expression that take part in query.
   * Table expression data has information about columns that participate in query, their name to identifier mapping,
   * and additional table expression properties.
@@ -66,7 +63,7 @@ public:
     void addColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
     {
         if (hasColumn(column.name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column with name {} already exists", column.name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column with name {} already exists");
 
         addColumnImpl(column, column_identifier);
     }
@@ -83,11 +80,9 @@ public:
     }
 
     /// Add alias column name
-    void addAliasColumnName(const std::string & column_name, const ColumnIdentifier & column_identifier)
+    void addAliasColumnName(const std::string & column_name)
     {
         alias_columns_names.insert(column_name);
-
-        column_name_to_column_identifier.emplace(column_name, column_identifier);
     }
 
     /// Get alias columns names
@@ -245,29 +240,9 @@ public:
         is_remote = is_remote_value;
     }
 
-    bool isMergeTree() const
-    {
-        return is_merge_tree;
-    }
-
-    void setIsMergeTree(bool is_merge_tree_value)
-    {
-        is_merge_tree = is_merge_tree_value;
-    }
-
     const ActionsDAGPtr & getPrewhereFilterActions() const
     {
         return prewhere_filter_actions;
-    }
-
-    void setRowLevelFilterActions(ActionsDAGPtr row_level_filter_actions_value)
-    {
-        row_level_filter_actions = std::move(row_level_filter_actions_value);
-    }
-
-    const ActionsDAGPtr & getRowLevelFilterActions() const
-    {
-        return row_level_filter_actions;
     }
 
     void setPrewhereFilterActions(ActionsDAGPtr prewhere_filter_actions_value)
@@ -283,16 +258,6 @@ public:
     void setFilterActions(ActionsDAGPtr filter_actions_value)
     {
         filter_actions = std::move(filter_actions_value);
-    }
-
-    const PrewhereInfoPtr & getPrewhereInfo() const
-    {
-        return prewhere_info;
-    }
-
-    void setPrewhereInfo(PrewhereInfoPtr prewhere_info_value)
-    {
-        prewhere_info = std::move(prewhere_info_value);
     }
 
 private:
@@ -323,19 +288,10 @@ private:
     ActionsDAGPtr filter_actions;
 
     /// Valid for table, table function
-    PrewhereInfoPtr prewhere_info;
-
-    /// Valid for table, table function
     ActionsDAGPtr prewhere_filter_actions;
-
-    /// Valid for table, table function
-    ActionsDAGPtr row_level_filter_actions;
 
     /// Is storage remote
     bool is_remote = false;
-
-    /// Is storage merge tree
-    bool is_merge_tree = false;
 };
 
 }

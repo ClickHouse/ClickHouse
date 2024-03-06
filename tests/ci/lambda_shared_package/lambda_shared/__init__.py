@@ -19,13 +19,6 @@ RUNNER_TYPE_LABELS = [
     "stress-tester",
     "style-checker",
     "style-checker-aarch64",
-    # private runners
-    "private-builder",
-    "private-clickpipes",
-    "private-func-tester",
-    "private-fuzzer-unit-tester",
-    "private-stress-tester",
-    "private-style-checker",
 ]
 
 

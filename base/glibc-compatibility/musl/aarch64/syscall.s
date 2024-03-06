@@ -2,7 +2,6 @@
 .hidden __syscall
 .type __syscall,%function
 __syscall:
-.cfi_startproc
 	uxtw x8,w0
 	mov x0,x1
 	mov x1,x2
@@ -13,4 +12,3 @@ __syscall:
 	mov x6,x7
 	svc 0
 	ret
-.cfi_endproc

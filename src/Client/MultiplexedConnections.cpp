@@ -5,13 +5,9 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
 #include <Interpreters/ClientInfo.h>
-#include <base/getThreadId.h>
-#include <base/hex.h>
 
 namespace DB
 {
-
-// NOLINTBEGIN(bugprone-undefined-memory-manipulation)
 
 namespace ErrorCodes
 {
@@ -125,10 +121,6 @@ void MultiplexedConnections::sendQuery(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query already sent.");
 
     Settings modified_settings = settings;
-
-    /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
-    modified_settings.dialect = Dialect::clickhouse;
-    modified_settings.dialect.changed = false;
 
     for (auto & replica : replica_states)
     {
@@ -268,7 +260,7 @@ Packet MultiplexedConnections::drain()
         switch (packet.type)
         {
             case Protocol::Server::TimezoneUpdate:
-            case Protocol::Server::MergeTreeAllRangesAnnouncement:
+            case Protocol::Server::MergeTreeAllRangesAnnounecement:
             case Protocol::Server::MergeTreeReadTaskRequest:
             case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
@@ -324,7 +316,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     ReplicaState & state = getReplicaForReading();
     current_connection = state.connection;
     if (current_connection == nullptr)
-        throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "No available replica");
+        throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "Logical error: no available replica");
 
     Packet packet;
     try
@@ -347,7 +339,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     switch (packet.type)
     {
         case Protocol::Server::TimezoneUpdate:
-        case Protocol::Server::MergeTreeAllRangesAnnouncement:
+        case Protocol::Server::MergeTreeAllRangesAnnounecement:
         case Protocol::Server::MergeTreeReadTaskRequest:
         case Protocol::Server::ReadTaskRequest:
         case Protocol::Server::PartUUIDs:
@@ -475,7 +467,5 @@ void MultiplexedConnections::setAsyncCallback(AsyncCallback async_callback)
             state.connection->setAsyncCallback(async_callback);
     }
 }
-
-// NOLINTEND(bugprone-undefined-memory-manipulation)
 
 }

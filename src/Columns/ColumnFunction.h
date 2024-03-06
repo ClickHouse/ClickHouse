@@ -5,7 +5,6 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -17,12 +16,12 @@ class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 /** A column containing a lambda expression.
-  * Contains an expression and captured columns, but not input arguments.
+  * Behaves like a constant-column. Contains an expression, but not input or output data.
   */
-class ColumnFunction final : public COWHelper<IColumnHelper<ColumnFunction>, ColumnFunction>
+class ColumnFunction final : public COWHelper<IColumn, ColumnFunction>
 {
 private:
-    friend class COWHelper<IColumnHelper<ColumnFunction>, ColumnFunction>;
+    friend class COWHelper<IColumn, ColumnFunction>;
 
     ColumnFunction(
         size_t size,
@@ -84,11 +83,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
-    bool tryInsert(const Field &) override
-    {
-        return false;
-    }
-
     void insertDefault() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
@@ -102,7 +96,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&, const UInt8 *) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot serialize from {}", getName());
     }
@@ -213,6 +207,8 @@ private:
     bool is_function_compiled;
 
     void appendArgument(const ColumnWithTypeAndName & column);
+
+    void addOffsetsForReplication(const IColumn::Offsets & offsets);
 };
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column);

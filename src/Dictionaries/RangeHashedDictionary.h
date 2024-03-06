@@ -29,9 +29,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
-#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
 
 
 namespace DB
@@ -58,7 +56,6 @@ struct RangeHashedDictionaryConfiguration
     bool convert_null_range_bound_to_open;
     RangeHashedDictionaryLookupStrategy lookup_strategy;
     bool require_nonempty;
-    bool use_async_executor = false;
 };
 
 template <DictionaryKeyType dictionary_key_type>
@@ -85,14 +82,14 @@ public:
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load();
+        size_t queries = query_count.load(std::memory_order_relaxed);
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
     }
 
     double getHitRate() const override { return 1.0; }
@@ -131,10 +128,10 @@ public:
 
     ColumnPtr getColumn(
         const std::string & attribute_name,
-        const DataTypePtr & attribute_type,
+        const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultOrFilter default_or_filter) const override;
+        const ColumnPtr & default_values_column) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -227,7 +224,9 @@ private:
     struct KeyAttribute final
     {
         RangeStorageTypeContainer<KeyAttributeContainerType> container;
+
         RangeStorageTypeContainer<InvalidIntervalsContainerType> invalid_intervals_container;
+
     };
 
     void createAttributes();
@@ -244,13 +243,6 @@ private:
         const Columns & key_columns,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
-
-    template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    size_t getItemsShortCircuitImpl(
-        const Attribute & attribute,
-        const Columns & key_columns,
-        ValueSetter && set_value,
-        IColumn::Filter & default_mask) const;
 
     ColumnPtr getColumnInternal(
         const std::string & attribute_name,
@@ -344,14 +336,11 @@ RangeHashedDictionary<dictionary_key_type>::RangeHashedDictionary(
 template <DictionaryKeyType dictionary_key_type>
 ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
     const std::string & attribute_name,
-    const DataTypePtr & attribute_type,
+    const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    DefaultOrFilter default_or_filter) const
+    const ColumnPtr & default_values_column) const
 {
-    bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
-
     if (dictionary_key_type == DictionaryKeyType::Complex)
     {
         auto key_types_copy = key_types;
@@ -361,7 +350,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
 
     ColumnPtr result;
 
-    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, attribute_type);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
     const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     const auto & attribute = attributes[attribute_index];
 
@@ -389,148 +378,70 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(dictionary_attribute.null_value, default_values_column);
+
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
-        if (is_short_circuit)
+        if constexpr (std::is_same_v<ValueType, Array>)
         {
-            IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
-            size_t keys_found = 0;
+            auto * out = column.get();
 
-            if constexpr (std::is_same_v<ValueType, Array>)
-            {
-                auto * out = column.get();
-
-                keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                    attribute,
-                    modified_key_columns,
-                    [&](size_t, const Array & value, bool)
-                    {
-                        out->insert(value);
-                    },
-                    default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
-            {
-                auto * out = column.get();
-
-                if (is_attribute_nullable)
-                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
-                        attribute,
-                        modified_key_columns,
-                        [&](size_t row, StringRef value, bool is_null)
-                        {
-                            (*vec_null_map_to)[row] = is_null;
-                            out->insertData(value.data, value.size);
-                        },
-                        default_mask);
-                else
-                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                        attribute,
-                        modified_key_columns,
-                        [&](size_t, StringRef value, bool)
-                        {
-                            out->insertData(value.data, value.size);
-                        },
-                        default_mask);
-            }
-            else
-            {
-                auto & out = column->getData();
-
-                if (is_attribute_nullable)
-                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
-                        attribute,
-                        modified_key_columns,
-                        [&](size_t row, const auto value, bool is_null)
-                        {
-                            (*vec_null_map_to)[row] = is_null;
-                            out[row] = value;
-                        },
-                        default_mask);
-                else
-                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                        attribute,
-                        modified_key_columns,
-                        [&](size_t row, const auto value, bool)
-                        {
-                            out[row] = value;
-                        },
-                        default_mask);
-
-                out.resize(keys_found);
-            }
+            getItemsImpl<ValueType, false>(
+                attribute,
+                modified_key_columns,
+                [&](size_t, const Array & value, bool)
+                {
+                    out->insert(value);
+                },
+                default_value_extractor);
+        }
+        else if constexpr (std::is_same_v<ValueType, StringRef>)
+        {
+            auto * out = column.get();
 
             if (is_attribute_nullable)
-                vec_null_map_to->resize(keys_found);
-        }
-        else
-        {
-            const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
-
-            DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(
-            dictionary_attribute.null_value, default_values_column);
-
-            if constexpr (std::is_same_v<ValueType, Array>)
-            {
-                auto * out = column.get();
-
+                getItemsImpl<ValueType, true>(
+                    attribute,
+                    modified_key_columns,
+                    [&](size_t row, StringRef value, bool is_null)
+                    {
+                        (*vec_null_map_to)[row] = is_null;
+                        out->insertData(value.data, value.size);
+                    },
+                    default_value_extractor);
+            else
                 getItemsImpl<ValueType, false>(
                     attribute,
                     modified_key_columns,
-                    [&](size_t, const Array & value, bool)
+                    [&](size_t, StringRef value, bool)
                     {
-                        out->insert(value);
+                        out->insertData(value.data, value.size);
                     },
                     default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
-            {
-                auto * out = column.get();
+        }
+        else
+        {
+            auto & out = column->getData();
 
-                if (is_attribute_nullable)
-                    getItemsImpl<ValueType, true>(
-                        attribute,
-                        modified_key_columns,
-                        [&](size_t row, StringRef value, bool is_null)
-                        {
-                            (*vec_null_map_to)[row] = is_null;
-                            out->insertData(value.data, value.size);
-                        },
-                        default_value_extractor);
-                else
-                    getItemsImpl<ValueType, false>(
-                        attribute,
-                        modified_key_columns,
-                        [&](size_t, StringRef value, bool)
-                        {
-                            out->insertData(value.data, value.size);
-                        },
-                        default_value_extractor);
-            }
+            if (is_attribute_nullable)
+                getItemsImpl<ValueType, true>(
+                    attribute,
+                    modified_key_columns,
+                    [&](size_t row, const auto value, bool is_null)
+                    {
+                        (*vec_null_map_to)[row] = is_null;
+                        out[row] = value;
+                    },
+                    default_value_extractor);
             else
-            {
-                auto & out = column->getData();
-
-                if (is_attribute_nullable)
-                    getItemsImpl<ValueType, true>(
-                        attribute,
-                        modified_key_columns,
-                        [&](size_t row, const auto value, bool is_null)
-                        {
-                            (*vec_null_map_to)[row] = is_null;
-                            out[row] = value;
-                        },
-                        default_value_extractor);
-                else
-                    getItemsImpl<ValueType, false>(
-                        attribute,
-                        modified_key_columns,
-                        [&](size_t row, const auto value, bool)
-                        {
-                            out[row] = value;
-                        },
-                        default_value_extractor);
-            }
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    modified_key_columns,
+                    [&](size_t row, const auto value, bool)
+                    {
+                        out[row] = value;
+                    },
+                    default_value_extractor);
         }
 
         result = std::move(column);
@@ -744,7 +655,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     if (!source_ptr->hasUpdateField())
     {
         QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        PullingPipelineExecutor executor(pipeline);
         Block block;
 
         while (executor.pull(block))
@@ -771,7 +682,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
-            "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
+            "{}: dictionary source is empty and 'require_nonempty' property is set.");
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -926,7 +837,11 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
                     if constexpr (is_nullable)
                     {
                         bool is_null = (*attribute.is_value_nullable)[value_index];
-                        set_value(key_index, value, is_null);
+
+                        if (!is_null)
+                            set_value(key_index, value, false);
+                        else
+                            set_value(key_index, default_value_extractor[key_index], true);
                     }
                     else
                     {
@@ -949,115 +864,6 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
-}
-
-template <DictionaryKeyType dictionary_key_type>
-template <typename AttributeType, bool is_nullable, typename ValueSetter>
-size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
-    const Attribute & attribute,
-    const Columns & key_columns,
-    ValueSetter && set_value,
-    IColumn::Filter & default_mask) const
-{
-    const auto & attribute_container = std::get<AttributeContainerType<AttributeType>>(attribute.container);
-
-    size_t keys_found = 0;
-
-    const ColumnPtr & range_column = key_columns.back();
-    auto key_columns_copy = key_columns;
-    key_columns_copy.pop_back();
-
-    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-    DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns_copy, arena_holder.getComplexKeyArena());
-    const size_t keys_size = keys_extractor.getKeysSize();
-    default_mask.resize(keys_size);
-
-    callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
-    {
-        using Types = std::decay_t<decltype(types)>;
-        using RangeColumnType = typename Types::LeftType;
-        using RangeStorageType = typename RangeColumnType::ValueType;
-        using RangeInterval = Interval<RangeStorageType>;
-
-        const auto * range_column_typed = typeid_cast<const RangeColumnType *>(range_column.get());
-        if (!range_column_typed)
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Dictionary {} range column type should be equal to {}",
-                getFullName(),
-                dict_struct.range_min->type->getName());
-
-        const auto & range_column_data = range_column_typed->getData();
-
-        const auto & key_attribute_container = std::get<KeyAttributeContainerType<RangeStorageType>>(key_attribute.container);
-
-        for (size_t key_index = 0; key_index < keys_size; ++key_index)
-        {
-            auto key = keys_extractor.extractCurrentKey();
-            const auto it = key_attribute_container.find(key);
-
-            if (it)
-            {
-                const auto date = range_column_data[key_index];
-                const auto & interval_tree = it->getMapped();
-
-                size_t value_index = 0;
-                std::optional<RangeInterval> range;
-
-                interval_tree.find(date, [&](auto & interval, auto & interval_value_index)
-                {
-                    if (range)
-                    {
-                        if (likely(configuration.lookup_strategy == RangeHashedDictionaryLookupStrategy::min) && interval < *range)
-                        {
-                            range = interval;
-                            value_index = interval_value_index;
-                        }
-                        else if (configuration.lookup_strategy == RangeHashedDictionaryLookupStrategy::max && interval > * range)
-                        {
-                            range = interval;
-                            value_index = interval_value_index;
-                        }
-                    }
-                    else
-                    {
-                        range = interval;
-                        value_index = interval_value_index;
-                    }
-
-                    return true;
-                });
-
-                if (range.has_value())
-                {
-                    default_mask[key_index] = 0;
-                    ++keys_found;
-
-                    AttributeType value = attribute_container[value_index];
-
-                    if constexpr (is_nullable)
-                    {
-                        bool is_null = (*attribute.is_value_nullable)[value_index];
-                        set_value(key_index, value, is_null);
-                    }
-                    else
-                    {
-                        set_value(key_index, value, false);
-                    }
-
-                    keys_extractor.rollbackCurrentKey();
-                    continue;
-                }
-            }
-
-            default_mask[key_index] = 1;
-
-            keys_extractor.rollbackCurrentKey();
-        }
-    });
-
-    query_count.fetch_add(keys_size, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
-    return keys_found;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -1113,17 +919,11 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        update_field_loaded_block.reset();
-        Block block;
 
+        PullingPipelineExecutor executor(pipeline);
+        Block block;
         while (executor.pull(block))
         {
-            if (!block.rows())
-                continue;
-
-            convertToFullIfSparse(block);
-
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
                 update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
