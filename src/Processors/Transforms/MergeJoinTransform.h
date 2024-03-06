@@ -220,6 +220,17 @@ private:
     bool recieved_all_blocks = false;
 };
 
+/// Join method.
+enum class NullOrder
+{
+    SMALLEST, /// null is treated as smallest
+    BIGGEST ///  null is treated as biggest
+};
+
+inline constexpr bool isSmall(int null_direction)        { return null_direction == 1; }
+
+inline constexpr int nullDirection(NullOrder order) {return order == NullOrder::SMALLEST ? 1 : -1;}
+
 /*
  * This class is used to join chunks from two sorted streams.
  * It is used in MergeJoinTransform.
@@ -227,7 +238,8 @@ private:
 class MergeJoinAlgorithm final : public IMergingAlgorithm
 {
 public:
-    explicit MergeJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_);
+    explicit MergeJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_,
+                                int null_direction_hint = 1);
 
     const char * getName() const override { return "MergeJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -258,6 +270,7 @@ private:
     JoinPtr table_join;
 
     size_t max_block_size;
+    int null_direction_hint;
 
     struct Statistic
     {
@@ -282,6 +295,7 @@ public:
         const Blocks & input_headers,
         const Block & output_header,
         size_t max_block_size,
+        int null_direction_hint,
         UInt64 limit_hint = 0);
 
     String getName() const override { return "MergeJoinTransform"; }
