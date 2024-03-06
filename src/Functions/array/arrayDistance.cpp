@@ -18,11 +18,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 struct L1Distance
@@ -465,22 +465,9 @@ private:
         const auto & data_y = typeid_cast<const ColumnVector<RightType> &>(array_y.getData()).getData();
 
         const auto & offsets_x = array_x.getOffsets();
-        const auto & offsets_y = array_y.getOffsets();
 
-        /// Check that arrays in both columns are the sames size
-        for (size_t row = 0; row < offsets_x.size(); ++row)
-        {
-            if (offsets_x[row] != offsets_y[row]) [[unlikely]]
-            {
-                ColumnArray::Offset prev_offset = row > 0 ? offsets_x[row] : 0;
-                throw Exception(
-                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                    "Arguments of function {} have different array sizes: {} and {}",
-                    getName(),
-                    offsets_x[row] - prev_offset,
-                    offsets_y[row] - prev_offset);
-            }
-        }
+        if (!array_x.hasEqualOffsets(array_y))
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments for function {} must have equal sizes", getName());
 
         const typename Kernel::ConstParams kernel_params = initConstParams(arguments);
 
@@ -534,7 +521,6 @@ private:
         const auto & offsets_x = array_x.getOffsets();
         const auto & offsets_y = array_y.getOffsets();
 
-        /// Check that arrays in both columns are the sames size
         ColumnArray::Offset prev_offset = 0;
         for (size_t row : collections::range(0, offsets_y.size()))
         {

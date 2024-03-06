@@ -18,9 +18,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 
@@ -254,15 +254,17 @@ private:
         const auto & data_x = typeid_cast<const ColumnVector<LeftType> &>(array_x.getData()).getData();
         const auto & data_y = typeid_cast<const ColumnVector<RightType> &>(array_y.getData()).getData();
 
+        const auto & offsets_x = array_x.getOffsets();
+
         if (!array_x.hasEqualOffsets(array_y))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments for function {} must have equal sizes", getName());
 
         auto col_res = ColumnVector<ResultType>::create();
 
         vector(
             data_x,
             data_y,
-            array_x.getOffsets(),
+            offsets_x,
             col_res->getData());
 
         return col_res;
