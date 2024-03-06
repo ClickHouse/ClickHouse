@@ -425,7 +425,7 @@ void ColumnArray::insertManyFromTuple(const ColumnArray & src, size_t position, 
     if (tuple_size != src_tuple_size)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Nested tuple size mismatch: {} vs {}", tuple_size, src_tuple_size);
 
-    Columns temporary_arrays(tuple_size);
+    MutableColumns temporary_arrays(tuple_size);
     Columns src_temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
     {
