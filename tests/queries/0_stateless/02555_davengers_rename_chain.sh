@@ -58,17 +58,22 @@ for table in "${!tables[@]}"; do
 
         INSERT INTO $table VALUES (1, 2, 3);
         SYSTEM STOP MERGES $table;
+
+        -- { echoOn }
+        SELECT 'ECHO_ALIGNMENT_FIX' FORMAT Null;
+
         ALTER TABLE $table RENAME COLUMN a TO a1, RENAME COLUMN b to b1 SETTINGS replication_alter_partitions_sync = 0;
     "
 
     wait_column "$table" "\`a1\` UInt64" || exit 2
 
     $CLICKHOUSE_CLIENT -n --query="
+        -- { echoOn }
+        SELECT 'ECHO_ALIGNMENT_FIX' FORMAT Null;
+
         SELECT * FROM $table ORDER BY a1 FORMAT JSONEachRow;
-        SELECT '~~~~~~~';
         INSERT INTO $table VALUES (4, 5, 6);
         SELECT * FROM $table ORDER BY a1 FORMAT JSONEachRow;
-        SELECT '~~~~~~~';
 
         ALTER TABLE $table RENAME COLUMN a1 TO b, RENAME COLUMN b1 to a SETTINGS replication_alter_partitions_sync = 0;
     "
@@ -76,14 +81,15 @@ for table in "${!tables[@]}"; do
     wait_mutation_loaded "$table" "b1 TO a" || exit 2
 
     $CLICKHOUSE_CLIENT -n --query="
+        -- { echoOn }
+        SELECT 'ECHO_ALIGNMENT_FIX' FORMAT Null;
+
         INSERT INTO $table VALUES (7, 8, 9);
         SELECT * FROM $table ORDER by a1 FORMAT JSONEachRow;
-        SELECT '~~~~~~~';
         SYSTEM START MERGES $table;
         SYSTEM SYNC REPLICA $table;
         SELECT * FROM $table order by a FORMAT JSONEachRow;
-        SELECT '~~~~~~~';
 
         DROP TABLE $table;
     "
-done
+done |& grep -v -F -x -e '-- { echoOn }' -e "        SELECT 'ECHO_ALIGNMENT_FIX' FORMAT Null;"
