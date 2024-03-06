@@ -477,6 +477,7 @@ private:
         /// Do the actual computation
         ColumnArray::Offset prev = 0;
         size_t row = 0;
+
         for (auto off : offsets_x)
         {
             /// Process chunks in vectorized manner
@@ -522,7 +523,7 @@ private:
         const auto & offsets_y = array_y.getOffsets();
 
         ColumnArray::Offset prev_offset = 0;
-        for (size_t row : collections::range(0, offsets_y.size()))
+        for (size_t row = 0; row < offsets_y.size(); ++row)
         {
             if (offsets_x[0] != offsets_y[row] - prev_offset) [[unlikely]]
             {

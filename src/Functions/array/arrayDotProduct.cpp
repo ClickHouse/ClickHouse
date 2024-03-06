@@ -245,6 +245,15 @@ private:
     template <typename ResultType, typename LeftType, typename RightType>
     ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y) const
     {
+        if (typeid_cast<const ColumnConst *>(col_x.get()))
+        {
+            return executeWithLeftArgConst<ResultType, LeftType, RightType>(col_x, col_y);
+        }
+        else if (typeid_cast<const ColumnConst *>(col_y.get()))
+        {
+            return executeWithLeftArgConst<ResultType, RightType, LeftType>(col_y, col_x);
+        }
+
         col_x = col_x->convertToFullColumnIfConst();
         col_y = col_y->convertToFullColumnIfConst();
 
@@ -260,30 +269,83 @@ private:
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments for function {} must have equal sizes", getName());
 
         auto col_res = ColumnVector<ResultType>::create();
+        auto & result = col_res->getData();
 
-        vector(
-            data_x,
-            data_y,
-            offsets_x,
-            col_res->getData());
-
-        return col_res;
-    }
-
-    template <typename ResultType, typename LeftType, typename RightType>
-    static void vector(
-        const PaddedPODArray<LeftType> & left,
-        const PaddedPODArray<RightType> & right,
-        const ColumnArray::Offsets & offsets,
-        PaddedPODArray<ResultType> & result)
-    {
-        size_t size = offsets.size();
+        size_t size = offsets_x.size();
         result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
         for (size_t row = 0; row < size; ++row)
         {
-            size_t array_size = offsets[row] - current_offset;
+            size_t array_size = offsets_x[row] - current_offset;
+
+            size_t i = 0;
+
+            /// Process chunks in vectorized manner
+            static constexpr size_t VEC_SIZE = 4;
+            typename Kernel::template State<ResultType> states[VEC_SIZE];
+            for (; i + VEC_SIZE < array_size; i += VEC_SIZE)
+            {
+                for (size_t j = 0; j < VEC_SIZE; ++j)
+                    Kernel::template accumulate<ResultType>(states[j], static_cast<ResultType>(data_x[current_offset + i + j]), static_cast<ResultType>(data_y[current_offset + i + j]));
+            }
+
+            typename Kernel::template State<ResultType> state;
+            for (const auto & other_state : states)
+                Kernel::template combine<ResultType>(state, other_state);
+
+            /// Process the tail
+            for (; i < array_size; ++i)
+                Kernel::template accumulate<ResultType>(state, static_cast<ResultType>(data_x[current_offset + i]), static_cast<ResultType>(data_y[current_offset + i]));
+
+            result[row] = Kernel::template finalize<ResultType>(state);
+
+            current_offset = offsets_x[row];
+        }
+
+        return col_res;
+    }
+
+    template <typename ResultType, typename LeftType, typename RightType>
+    ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y) const
+    {
+        col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
+        col_y = col_y->convertToFullColumnIfConst();
+
+        const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
+        const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
+
+        const auto & data_x = typeid_cast<const ColumnVector<LeftType> &>(array_x.getData()).getData();
+        const auto & data_y = typeid_cast<const ColumnVector<RightType> &>(array_y.getData()).getData();
+
+        const auto & offsets_x = array_x.getOffsets();
+        const auto & offsets_y = array_y.getOffsets();
+
+        ColumnArray::Offset prev_offset = 0;
+        for (size_t row = 0; row < offsets_y.size(); ++row)
+        {
+            if (offsets_x[0] != offsets_y[row] - prev_offset) [[unlikely]]
+            {
+                throw Exception(
+                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    "Arguments of function {} have different array sizes: {} and {}",
+                    getName(),
+                    offsets_x[0],
+                    offsets_y[row] - prev_offset);
+            }
+            prev_offset = offsets_y[row];
+        }
+
+        auto col_res = ColumnVector<ResultType>::create();
+        auto & result = col_res->getData();
+
+        size_t size = offsets_y.size();
+        result.resize(size);
+
+        ColumnArray::Offset current_offset = 0;
+        for (size_t row = 0; row < size; ++row)
+        {
+            size_t array_size = offsets_x[0];
 
             typename Kernel::template State<ResultType> state;
             size_t i = 0;
@@ -292,13 +354,14 @@ private:
             /// To avoid combinatorial explosion of SIMD kernels, focus on
             /// - the two most common input/output types (Float32 x Float32) --> Float32 and (Float64 x Float64) --> Float64 instead of 10 x
             ///   10 input types x 8 output types,
+            /// - const/non-const inputs instead of non-const/non-const inputs
             /// - the most powerful SIMD instruction set (AVX-512F).
 #if USE_MULTITARGET_CODE
             if constexpr ((std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>)
                             && std::is_same_v<ResultType, LeftType> && std::is_same_v<LeftType, RightType>)
             {
                 if (isArchSupported(TargetArch::AVX512F))
-                    Kernel::template accumulateCombine<ResultType>(&left[current_offset], &right[current_offset], array_size, i, state);
+                    Kernel::template accumulateCombine<ResultType>(&data_x[0], &data_y[current_offset], array_size, i, state);
             }
 #else
             /// Process chunks in vectorized manner
@@ -307,7 +370,7 @@ private:
             for (; i + VEC_SIZE < array_size; i += VEC_SIZE)
             {
                 for (size_t j = 0; j < VEC_SIZE; ++j)
-                    Kernel::template accumulate<ResultType>(states[j], static_cast<ResultType>(left[i + j]), static_cast<ResultType>(right[i + j]));
+                    Kernel::template accumulate<ResultType>(states[j], static_cast<ResultType>(data_x[i + j]), static_cast<ResultType>(data_y[current_offset + i + j]));
             }
 
             for (const auto & other_state : states)
@@ -316,13 +379,14 @@ private:
 
             /// Process the tail
             for (; i < array_size; ++i)
-                Kernel::template accumulate<ResultType>(state, static_cast<ResultType>(left[i]), static_cast<ResultType>(right[i]));
+                Kernel::template accumulate<ResultType>(state, static_cast<ResultType>(data_x[i]), static_cast<ResultType>(data_y[current_offset + i]));
 
-            /// ResultType res = Kernel::template finalize<ResultType>(state);
             result[row] = Kernel::template finalize<ResultType>(state);
 
-            current_offset = offsets[row];
+            current_offset = offsets_y[row];
         }
+
+        return col_res;
     }
 };
 

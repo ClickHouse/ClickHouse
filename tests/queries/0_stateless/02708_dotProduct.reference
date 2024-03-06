@@ -32,3 +32,10 @@
 32
 32
 32
+-- Tests that trigger special paths
+0	61
+1	186
+0	62
+1	187
+0	62
+1	187
