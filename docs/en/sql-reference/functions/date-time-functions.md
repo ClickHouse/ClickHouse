@@ -2319,10 +2319,43 @@ Result:
 
 ## today {#today}
 
-Accepts zero arguments and returns the current date at one of the moments of query analysis.
-The same as ‘toDate(now())’.
+Returns the current date at moment of query analysis. It is the same as ‘toDate(now())’ and has aliases: `curdate`, `current_date`.
 
-Aliases: `curdate`, `current_date`.
+**Syntax**
+
+```sql
+today()
+```
+
+**Arguments**
+
+- None
+
+**Returned value**
+
+- Current date
+
+Type: [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FORMAT Pretty
+```
+
+**Result**:
+
+Running the query above on the 3rd of March 2024 would have returned the following response:
+
+```response
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃      today ┃    curdate ┃ current_date ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ 2024-03-03 │ 2024-03-03 │   2024-03-03 │
+└────────────┴────────────┴──────────────┘
+```
 
 ## yesterday {#yesterday}
 
@@ -3065,6 +3098,40 @@ Result:
 ┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3),'Asia/Shanghai')─┐
 │                                                 2023-03-16 18:00:00.000 │
 └─────────────────────────────────────────────────────────────────────────┘
+```
+## timeDiff
+
+Returns the difference between two dates or dates with time values. The difference is calculated in units of seconds. It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
+
+**Syntax**
+
+```sql
+timeDiff(first_datetime, second_datetime)
+```
+
+*Arguments**
+
+- `first_datetime` — A DateTime/DateTime64 type const value or an expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
+- `second_datetime` — A DateTime/DateTime64 type const value or an expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
+
+**Returned value**
+
+The difference between two dates or dates with time values in seconds.
+
+**Example**
+
+Query:
+
+```sql
+timeDiff(toDateTime64('1927-01-01 00:00:00', 3), toDate32('1927-01-02'));
+```
+
+**Result**:
+
+```response
+┌─timeDiff(toDateTime64('1927-01-01 00:00:00', 3), toDate32('1927-01-02'))─┐
+│                                                                    86400 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Related content
