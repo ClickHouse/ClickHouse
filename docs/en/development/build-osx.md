@@ -3,7 +3,7 @@ slug: /en/development/build-osx
 sidebar_position: 65
 sidebar_label: Build on macOS
 title: How to Build ClickHouse on macOS
-description: How to build ClickHouse on macOS for macOS
+description: How to build ClickHouse on macOS
 ---
 
 :::info You don't have to build ClickHouse yourself!
@@ -37,7 +37,7 @@ sudo xcode-select --install
 
 ``` bash
 brew update
-brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils nasm
+brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils
 ```
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
