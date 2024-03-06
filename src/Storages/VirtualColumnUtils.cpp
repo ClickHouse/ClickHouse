@@ -469,17 +469,17 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allo
 
 static bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
 {
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
-
-    if (!node->function_base->isDeterministicInScopeOfQuery())
-        return false;
-
     for (const auto * child : node->children)
     {
         if (!isDeterministicInScopeOfQuery(child))
             return false;
     }
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+
+    if (!node->function_base->isDeterministicInScopeOfQuery())
+        return false;
 
     return true;
 }
