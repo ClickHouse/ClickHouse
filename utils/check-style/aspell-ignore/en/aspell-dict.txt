@@ -260,6 +260,7 @@ ExactEdgeLengthRads
 ExecutablePool
 ExtType
 ExternalDistributed
+FFFFFFFF
 FFFD
 FIPS
 FOSDEM
@@ -546,6 +547,8 @@ MinIO
 MinMax
 MindsDB
 Mongodb
+mortonDecode
+mortonEncode
 MsgPack
 MultiPolygon
 Multiline
@@ -2741,6 +2744,7 @@ xz
 yaml
 yandex
 youtube
+ZCurve
 zLib
 zLinux
 zabbix
