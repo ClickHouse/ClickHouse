@@ -83,6 +83,9 @@ public:
 
     bool alwaysFalse() const;
 
+    /// Checks that the index can_be_false condition is always unknown, which cannot be used to find exact ranges.
+    bool canBeFalseAlwaysUnknown() const;
+
     bool hasMonotonicFunctionsChain() const;
 
     /// Impose an additional condition: the value in the column `column` must be in the range `range`.
@@ -217,6 +220,8 @@ public:
     const RPN & getRPN() const { return rpn; }
     const ColumnIndices & getKeyColumns() const { return key_columns; }
 
+    bool isRelaxed() const { return relaxed; }
+
 private:
     BoolMask checkInRange(
         size_t used_key_size,
@@ -343,6 +348,9 @@ private:
 
     // If true, do not use always_monotonic information to transform constants
     bool strict;
+
+    // If true, this key condition cannot be used in trivial count optimization
+    bool relaxed = false;
 };
 
 String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);

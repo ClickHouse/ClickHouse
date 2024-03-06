@@ -11,9 +11,11 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE single_col_partition_key(x UInt32) EN
 
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO single_col_partition_key VALUES (1), (2), (3), (4), (11), (12), (20)"
 
-${CLICKHOUSE_CLIENT} --query="SELECT count() FROM single_col_partition_key WHERE x < 3 FORMAT XML" | grep -F rows_read | sed 's/^[ \t]*//g'
-${CLICKHOUSE_CLIENT} --query="SELECT count() FROM single_col_partition_key WHERE x >= 11 FORMAT XML" | grep -F rows_read | sed 's/^[ \t]*//g'
-${CLICKHOUSE_CLIENT} --query="SELECT count() FROM single_col_partition_key WHERE x = 20 FORMAT XML" | grep -F rows_read | sed 's/^[ \t]*//g'
+DISABLE_COUNT_OPTIMIZATION="SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0"
+
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM single_col_partition_key WHERE x < 3 FORMAT XML $DISABLE_COUNT_OPTIMIZATION" | grep -F rows_read | sed 's/^[ \t]*//g'
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM single_col_partition_key WHERE x >= 11 FORMAT XML $DISABLE_COUNT_OPTIMIZATION" | grep -F rows_read | sed 's/^[ \t]*//g'
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM single_col_partition_key WHERE x = 20 FORMAT XML $DISABLE_COUNT_OPTIMIZATION" | grep -F rows_read | sed 's/^[ \t]*//g'
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE single_col_partition_key"
 
@@ -31,14 +33,14 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO composite_partition_key VALUES \
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO composite_partition_key VALUES \
     (301, 20, 3), (302, 21, 3), (303, 22, 3)"
 
-${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE a > 400 FORMAT XML SETTINGS optimize_trivial_count_query = 0" | grep -F rows_read | sed 's/^[ \t]*//g'
-${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE b = 11 FORMAT XML SETTINGS optimize_trivial_count_query = 0" | grep -F rows_read | sed 's/^[ \t]*//g'
-${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE c = 4 FORMAT XML SETTINGS optimize_trivial_count_query = 0" | grep -F rows_read | sed 's/^[ \t]*//g'
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE a > 400 FORMAT XML $DISABLE_COUNT_OPTIMIZATION" | grep -F rows_read | sed 's/^[ \t]*//g'
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE b = 11 FORMAT XML $DISABLE_COUNT_OPTIMIZATION" | grep -F rows_read | sed 's/^[ \t]*//g'
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE c = 4 FORMAT XML $DISABLE_COUNT_OPTIMIZATION" | grep -F rows_read | sed 's/^[ \t]*//g'
 
-${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE a < 200 AND c = 2 FORMAT XML SETTINGS optimize_trivial_count_query = 0" | grep -F rows_read | sed 's/^[ \t]*//g'
-${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE a = 301 AND b < 20 FORMAT XML SETTINGS optimize_trivial_count_query = 0" | grep -F rows_read | sed 's/^[ \t]*//g'
-${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE b >= 12 AND c = 2 FORMAT XML SETTINGS optimize_trivial_count_query = 0" | grep -F rows_read | sed 's/^[ \t]*//g'
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE a < 200 AND c = 2 FORMAT XML $DISABLE_COUNT_OPTIMIZATION" | grep -F rows_read | sed 's/^[ \t]*//g'
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE a = 301 AND b < 20 FORMAT XML $DISABLE_COUNT_OPTIMIZATION" | grep -F rows_read | sed 's/^[ \t]*//g'
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE b >= 12 AND c = 2 FORMAT XML $DISABLE_COUNT_OPTIMIZATION" | grep -F rows_read | sed 's/^[ \t]*//g'
 
-${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE a = 301 AND b = 21 AND c = 3 FORMAT XML SETTINGS optimize_trivial_count_query = 0" | grep -F rows_read | sed 's/^[ \t]*//g'
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM composite_partition_key WHERE a = 301 AND b = 21 AND c = 3 FORMAT XML $DISABLE_COUNT_OPTIMIZATION" | grep -F rows_read | sed 's/^[ \t]*//g'
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE composite_partition_key"
