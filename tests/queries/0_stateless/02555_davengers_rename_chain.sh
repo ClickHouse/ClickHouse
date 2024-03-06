@@ -3,6 +3,8 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+# shellcheck source=./mergetree_mutations.lib
+. "$CUR_DIR"/mergetree_mutations.lib
 
 function wait_column()
 {
@@ -88,6 +90,14 @@ for table in "${!tables[@]}"; do
         SELECT * FROM $table ORDER by a1 FORMAT JSONEachRow;
         SYSTEM START MERGES $table;
         SYSTEM SYNC REPLICA $table;
+    "
+
+    wait_for_all_mutations "$table"
+
+    $CLICKHOUSE_CLIENT -n --query="
+        -- { echoOn }
+        SELECT 'ECHO_ALIGNMENT_FIX' FORMAT Null;
+
         SELECT * FROM $table order by a FORMAT JSONEachRow;
 
         DROP TABLE $table;
