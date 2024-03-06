@@ -117,7 +117,7 @@ void VFSGarbageCollector::run() const
 
     LOG_DEBUG(log, "Processing range [{};{}]", start, end);
     const String new_snapshot_name = generateSnapshotName();
-    const String & old_snapshot_name = std::exchange(lock.snapshot, new_snapshot_name);
+    const String old_snapshot_name = std::exchange(lock.snapshot, new_snapshot_name);
     updateSnapshotWithLogEntries(start, end, old_snapshot_name, new_snapshot_name);
 
     LOG_DEBUG(log, "Removing log range [{};{}]", start, end);
@@ -126,6 +126,11 @@ void VFSGarbageCollector::run() const
         LOG_DEBUG(log, "Skip GC transaction because optimistic lock node was already updated");
         return;
     }
+
+    // Remove old snapshot only after releasing the lock, otherwise on error next replica will try to
+    // operate on old snapshot and fail
+    disk.object_storage->removeObject(disk.getMetadataObject(old_snapshot_name));
+
     LOG_DEBUG(log, "Removed lock for [{};{}]", start, end);
     successful_run = true;
 }
@@ -183,8 +188,8 @@ void VFSGarbageCollector::updateSnapshotWithLogEntries(
     if (old_snapshot_missing && start > 0)
         throw Exception(ErrorCodes::INVALID_STATE, "Snapshot is absent but start log pointer is {}", start);
 
-    StoredObject old_snapshot_obj = disk.getMetadataObject(fmt::format("snapshots/{}", old_snapshot_name));
-    StoredObject new_snapshot_obj = disk.getMetadataObject(fmt::format("snapshots/{}", new_snapshot_name));
+    const StoredObject old_snapshot_obj = disk.getMetadataObject(fmt::format("snapshots/{}", old_snapshot_name)),
+                       new_snapshot_obj = disk.getMetadataObject(fmt::format("snapshots/{}", new_snapshot_name));
 
     IObjectStorage & storage = *disk.getObjectStorage();
     VFSSnapshotReadStreamFromString empty{""};
@@ -192,10 +197,9 @@ void VFSGarbageCollector::updateSnapshotWithLogEntries(
 
     const int level = settings->snapshot_lz4_compression_level;
     auto & old_snapshot = old_snapshot_missing ? empty : static_cast<IVFSSnapshotReadStream &>(old_stream);
-    VFSSnapshotWriteStream new_snapshot{storage, std::move(new_snapshot_obj), level};
+    VFSSnapshotWriteStream new_snapshot{storage, new_snapshot_obj, level};
 
     auto [obsolete, invalid] = getBatch(start, end).mergeWithSnapshot(old_snapshot, new_snapshot, &*log);
-    obsolete.emplace_back(old_snapshot_obj);
 
     new_snapshot.finalize();
     disk.object_storage->removeObjectsIfExist(obsolete);
