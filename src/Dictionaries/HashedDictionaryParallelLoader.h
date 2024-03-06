@@ -62,7 +62,11 @@ public:
             shards_queues[shard].emplace(backlog);
             pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
             {
+                WorkerStatistic statistic;
                 SCOPE_EXIT_SAFE(
+                    LOG_TRACE(dictionary.log, "Finished worker for dictionary {} shard {}, processed {} blocks, {} rows, total time {}ms",
+                        dictionary_name, shard, statistic.total_blocks, statistic.total_rows, statistic.total_elapsed_ms);
+
                     if (thread_group)
                         CurrentThread::detachFromGroupIfNotDetached();
                 );
@@ -74,7 +78,9 @@ public:
                     CurrentThread::attachToGroupIfDetached(thread_group);
                 setThreadName("HashedDictLoad");
 
-                threadWorker(shard);
+                LOG_TRACE(dictionary.log, "Starting worker for dictionary {}, shard {}", dictionary_name, shard);
+
+                threadWorker(shard, statistic);
             });
         }
     }
@@ -128,7 +134,14 @@ private:
     std::vector<UInt64> shards_slots;
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
 
-    void threadWorker(size_t shard)
+    struct WorkerStatistic
+    {
+        UInt64 total_elapsed_ms = 0;
+        UInt64 total_blocks = 0;
+        UInt64 total_rows = 0;
+    };
+
+    void threadWorker(size_t shard, WorkerStatistic & statistic)
     {
         Block block;
         DictionaryKeysArenaHolder<dictionary_key_type> arena_holder_;
@@ -139,8 +152,13 @@ private:
             Stopwatch watch;
             dictionary.blockToAttributes(block, arena_holder_, shard);
             UInt64 elapsed_ms = watch.elapsedMilliseconds();
+
+            statistic.total_elapsed_ms += elapsed_ms;
+            statistic.total_blocks += 1;
+            statistic.total_rows += block.rows();
+
             if (elapsed_ms > 1'000)
-                LOG_TRACE(dictionary.log, "Block processing for shard #{} is slow {}ms (rows {}).", shard, elapsed_ms, block.rows());
+                LOG_TRACE(dictionary.log, "Block processing for shard #{} is slow {}ms (rows {})", shard, elapsed_ms, block.rows());
         }
 
         if (!shard_queue.isFinished())
