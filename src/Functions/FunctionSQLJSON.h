@@ -36,51 +36,6 @@ extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 extern const int BAD_ARGUMENTS;
 }
 
-/// A more efficient way to serialize json elements into destination column.
-/// Formatter takes the chars buffer in the ColumnString and put data into it directly.
-template<typename Element, typename Formatter>
-class JSONStringSerializer
-{
-public:
-    explicit JSONStringSerializer(ColumnString & col_str_)
-        : col_str(col_str_), chars(col_str_.getChars()), offsets(col_str_.getOffsets()), formatter(col_str_.getChars())
-    {
-        prev_offset = offsets.empty() ? 0 : offsets.back();
-    }
-    /// Put the data into column's buffer directly.
-    inline void addRawData(const char * ptr, size_t len)
-    {
-        chars.insert(ptr, ptr + len);
-    }
-
-    inline void addRawString(std::string_view str)
-    {
-        chars.insert(str.data(), str.data() + str.size());
-    }
-
-    /// serialize the json element into column's buffer directly
-    inline void addElement(const Element & element)
-    {
-        formatter.append(element.getElement());
-    }
-    inline void commit()
-    {
-        chars.push_back(0);
-        offsets.push_back(chars.size());
-    }
-    inline void rollback()
-    {
-        chars.resize(prev_offset);
-    }
-private:
-    ColumnString & col_str;
-    ColumnString::Chars & chars;
-    IColumn::Offsets & offsets;
-    Formatter formatter;
-    size_t prev_offset;
-
-};
-
 
 class FunctionSQLJSONHelpers
 {
