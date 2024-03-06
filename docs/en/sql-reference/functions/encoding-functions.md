@@ -469,6 +469,7 @@ Query:
 ```sql
 SELECT mortonEncode(1, 2, 3);
 ```
+Result:
 
 ```response
 53
