@@ -37,7 +37,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment_,
         std::optional<FormatSettings> format_settings_,
-        bool attach)
+        LoadingStrictnessLevel mode)
     {
         auto object_storage = base_configuration->createObjectStorage(context);
         DataLakeMetadataPtr metadata;
@@ -51,7 +51,7 @@ public:
         }
         catch (...)
         {
-            if (!attach)
+            if (mode <= LoadingStrictnessLevel::CREATE)
                 throw;
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }

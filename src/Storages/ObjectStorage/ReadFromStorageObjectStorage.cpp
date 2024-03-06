@@ -10,6 +10,8 @@ ReadFromStorageObejctStorage::ReadFromStorageObejctStorage(
     ConfigurationPtr configuration_,
     const String & name_,
     const NamesAndTypesList & virtual_columns_,
+    const SelectQueryInfo & query_info_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const std::optional<DB::FormatSettings> & format_settings_,
     const StorageObjectStorageSettings & query_settings_,
     bool distributed_processing_,
@@ -22,8 +24,7 @@ ReadFromStorageObejctStorage::ReadFromStorageObejctStorage(
     CurrentMetrics::Metric metric_threads_count_,
     CurrentMetrics::Metric metric_threads_active_,
     CurrentMetrics::Metric metric_threads_scheduled_)
-    : SourceStepWithFilter(DataStream{.header = info_.source_header})
-    , WithContext(context_)
+    : SourceStepWithFilter(DataStream{.header = info_.source_header}, info_.requested_columns.getNames(), query_info_, storage_snapshot_, context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , info(std::move(info_))
@@ -54,12 +55,13 @@ void ReadFromStorageObejctStorage::createIterator(const ActionsDAG::Node * predi
     }
 }
 
-void ReadFromStorageObejctStorage::applyFilters()
+void ReadFromStorageObejctStorage::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
+
     createIterator(predicate);
 }
 
@@ -79,6 +81,7 @@ void ReadFromStorageObejctStorage::initializePipeline(QueryPipelineBuilder & pip
             context, max_block_size, iterator_wrapper, need_only_count, schema_cache,
             std::move(threadpool), metric_threads_count, metric_threads_active, metric_threads_scheduled);
 
+        source->setKeyCondition(filter_actions_dag, context);
         pipes.emplace_back(std::move(source));
     }
 

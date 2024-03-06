@@ -401,9 +401,6 @@ ZooKeeper::ZooKeeper(
         keeper_feature_flags.logFlags(log);
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
-
-        /// Avoid stale reads after connecting
-        sync("/", [](const SyncResponse &){});
     }
     catch (...)
     {
@@ -1456,6 +1453,13 @@ void ZooKeeper::reconfig(
 
 void ZooKeeper::multi(
     const Requests & requests,
+    MultiCallback callback)
+{
+    multi(std::span(requests), std::move(callback));
+}
+
+void ZooKeeper::multi(
+    std::span<const RequestPtr> requests,
     MultiCallback callback)
 {
     ZooKeeperMultiRequest request(requests, default_acls);

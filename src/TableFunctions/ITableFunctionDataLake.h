@@ -40,7 +40,7 @@ protected:
 
         StoragePtr storage = Storage::create(
             configuration, context, "", StorageID(TableFunction::getDatabaseName(), table_name),
-            columns, ConstraintsDescription{}, String{}, std::nullopt, false);
+            columns, ConstraintsDescription{}, String{}, std::nullopt, LoadingStrictnessLevel::CREATE);
 
         storage->startup();
         return storage;

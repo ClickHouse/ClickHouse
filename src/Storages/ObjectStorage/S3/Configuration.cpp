@@ -167,7 +167,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             no_sign_request = true;
             engine_args_to_idx = {{"format", 2}};
         }
-        else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+        else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
         {
             if (with_structure)
                 engine_args_to_idx = {{"format", 1}, {"structure", 2}};
@@ -199,14 +199,14 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             else
                 engine_args_to_idx = {{"format", 2}, {"compression_method", 3}};
         }
-        else if (with_structure && (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg)))
+        else if (with_structure && (second_arg == "auto" || FormatFactory::instance().exists(second_arg)))
         {
             engine_args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
         }
         else
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "session_token/format");
-            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
             }
@@ -237,7 +237,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             else
             {
                 auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
-                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+                if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
                 {
                     engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}};
                 }
@@ -250,7 +250,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         else
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "session_token/format");
-            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"compression_method", 4}};
             }
@@ -268,7 +268,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
             /// - s3(source, access_key_id, secret_access_key, session_token, format, structure)
             /// We can distinguish them by looking at the 4-th argument: check if it's a format name or not
             auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
-            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}};
             }
@@ -371,7 +371,7 @@ void StorageS3Configuration::addStructureToArgs(ASTs & args, const String & stru
             {
                 args.push_back(structure_literal);
             }
-            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
             {
                 args[count - 1] = structure_literal;
             }
@@ -393,7 +393,7 @@ void StorageS3Configuration::addStructureToArgs(ASTs & args, const String & stru
             {
                 args[count - 1] = structure_literal;
             }
-            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
             {
                 args[count - 2] = structure_literal;
             }

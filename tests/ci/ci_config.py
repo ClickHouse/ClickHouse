@@ -21,6 +21,7 @@ class Labels(metaclass=WithIter):
     CI_SET_REDUCED = "ci_set_reduced"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_INTEGRATION = "ci_set_integration"
+    CI_SET_ANALYZER = "ci_set_analyzer"
 
     libFuzzer = "libFuzzer"
 
@@ -65,9 +66,13 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_TSAN = "Stateless tests (tsan)"
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
     STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
-    STATELESS_TEST_ANALYZER_RELEASE = "Stateless tests (release, analyzer)"
-    STATELESS_TEST_DB_REPL_RELEASE = "Stateless tests (release, DatabaseReplicated)"
-    STATELESS_TEST_S3_RELEASE = "Stateless tests (release, s3 storage)"
+    STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE = (
+        "Stateless tests (release, analyzer, s3, DatabaseReplicated)"
+    )
+    # merged into STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE:
+    # STATELESS_TEST_ANALYZER_RELEASE = "Stateless tests (release, analyzer)"
+    # STATELESS_TEST_DB_REPL_RELEASE = "Stateless tests (release, DatabaseReplicated)"
+    # STATELESS_TEST_S3_RELEASE = "Stateless tests (release, s3 storage)"
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
     STATELESS_TEST_FLAKY_ASAN = "Stateless tests flaky check (asan)"
@@ -198,6 +203,8 @@ class JobConfig:
     pr_only: bool = False
     # job is for release/master branches only
     release_only: bool = False
+    # to randomly pick and run one job among jobs in the same @random_bucket. Applied in PR branches only.
+    random_bucket: str = ""
 
 
 @dataclass
@@ -257,6 +264,8 @@ class BuildConfig:
         def process(field_name: str, field: Union[bool, str]) -> str:
             if isinstance(field, bool):
                 field = str(field).lower()
+            elif not isinstance(field, str):
+                field = ""
             if export:
                 return f"export BUILD_{field_name.upper()}={repr(field)}"
             return f"BUILD_{field_name.upper()}={field}"
@@ -269,6 +278,7 @@ class BuildReportConfig:
     builds: List[str]
     job_config: JobConfig = field(
         default_factory=lambda: JobConfig(
+            run_command='build_report_check.py "$CHECK_NAME"',
             digest=DigestConfig(
                 include_paths=[
                     "./tests/ci/build_report_check.py",
@@ -392,6 +402,20 @@ bugfix_validate_check = DigestConfig(
     ],
 )
 # common test params
+docker_server_job_config = JobConfig(
+    required_on_release_branch=True,
+    run_command='docker_server.py --check-name "$CHECK_NAME" --release-type head --allow-build-reuse',
+    digest=DigestConfig(
+        include_paths=[
+            "tests/ci/docker_server.py",
+            "./docker/server",
+        ]
+    ),
+)
+compatibility_test_common_params = {
+    "digest": compatibility_check_digest,
+    "run_command": "compatibility_check.py",
+}
 statless_test_common_params = {
     "digest": stateless_check_digest,
     "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
@@ -549,7 +573,25 @@ class CIConfig:
             for check_name in config:  # type: ignore
                 yield check_name
 
-    def get_builds_for_report(self, report_name: str) -> List[str]:
+    def get_builds_for_report(
+        self, report_name: str, release: bool = False, backport: bool = False
+    ) -> List[str]:
+        # hack to modify build list for release and bp wf
+        assert not (release and backport), "Invalid input"
+        if backport and report_name == JobNames.BUILD_CHECK:
+            return [
+                Build.PACKAGE_RELEASE,
+                Build.PACKAGE_AARCH64,
+                Build.PACKAGE_ASAN,
+                Build.PACKAGE_TSAN,
+                Build.PACKAGE_DEBUG,
+            ]
+        if release and report_name == JobNames.BUILD_CHECK_SPECIAL:
+            return [
+                Build.BINARY_DARWIN,
+                Build.BINARY_DARWIN_AARCH64,
+            ]
+
         return self.builds_report_config[report_name].builds
 
     @classmethod
@@ -637,16 +679,18 @@ CI_CONFIG = CIConfig(
         Labels.CI_SET_INTEGRATION: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
-                Build.PACKAGE_ASAN,
                 Build.PACKAGE_RELEASE,
-                Build.PACKAGE_TSAN,
-                Build.PACKAGE_AARCH64,
-                JobNames.INTEGRATION_TEST_ASAN,
-                JobNames.INTEGRATION_TEST_ARM,
                 JobNames.INTEGRATION_TEST,
+            ]
+        ),
+        Labels.CI_SET_ANALYZER: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_RELEASE,
+                Build.PACKAGE_ASAN,
+                JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE,
                 JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
-                JobNames.INTEGRATION_TEST_TSAN,
-                JobNames.INTEGRATION_TEST_FLAKY,
             ]
         ),
         Labels.CI_SET_REDUCED: LabelConfig(
@@ -814,9 +858,6 @@ CI_CONFIG = CIConfig(
                 Build.PACKAGE_TSAN,
                 Build.PACKAGE_MSAN,
                 Build.PACKAGE_DEBUG,
-                Build.PACKAGE_RELEASE_COVERAGE,
-                Build.BINARY_RELEASE,
-                Build.FUZZERS,
             ]
         ),
         JobNames.BUILD_CHECK_SPECIAL: BuildReportConfig(
@@ -832,33 +873,15 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_S390X,
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
+                Build.PACKAGE_RELEASE_COVERAGE,
+                Build.BINARY_RELEASE,
+                Build.FUZZERS,
             ]
         ),
     },
     other_jobs_configs={
-        JobNames.DOCKER_SERVER: TestConfig(
-            "",
-            job_config=JobConfig(
-                required_on_release_branch=True,
-                digest=DigestConfig(
-                    include_paths=[
-                        "tests/ci/docker_server.py",
-                        "./docker/server",
-                    ]
-                ),
-            ),
-        ),
-        JobNames.DOCKER_KEEPER: TestConfig(
-            "",
-            job_config=JobConfig(
-                digest=DigestConfig(
-                    include_paths=[
-                        "tests/ci/docker_server.py",
-                        "./docker/keeper",
-                    ]
-                ),
-            ),
-        ),
+        JobNames.DOCKER_SERVER: TestConfig("", job_config=docker_server_job_config),
+        JobNames.DOCKER_KEEPER: TestConfig("", job_config=docker_server_job_config),
         JobNames.DOCS_CHECK: TestConfig(
             "",
             job_config=JobConfig(
@@ -932,16 +955,16 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_DEBUG, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_ASAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_UBSAN: TestConfig(
-            Build.PACKAGE_UBSAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_UBSAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_PARALLEL_REPL_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+            Build.PACKAGE_TSAN, job_config=JobConfig(random_bucket="parrepl_with_sanitizer", **stateful_test_common_params)  # type: ignore
         ),
         # End stateful tests for parallel replicas
         JobNames.STATELESS_TEST_ASAN: TestConfig(
@@ -974,16 +997,9 @@ CI_CONFIG = CIConfig(
         JobNames.STATELESS_TEST_AARCH64: TestConfig(
             Build.PACKAGE_AARCH64, job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
-        JobNames.STATELESS_TEST_ANALYZER_RELEASE: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**statless_test_common_params)  # type: ignore
-        ),
-        JobNames.STATELESS_TEST_DB_REPL_RELEASE: TestConfig(
+        JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE: TestConfig(
             Build.PACKAGE_RELEASE,
             job_config=JobConfig(num_batches=4, **statless_test_common_params),  # type: ignore
-        ),
-        JobNames.STATELESS_TEST_S3_RELEASE: TestConfig(
-            Build.PACKAGE_RELEASE,
-            job_config=JobConfig(num_batches=2, **statless_test_common_params),  # type: ignore
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG,
@@ -993,36 +1009,36 @@ CI_CONFIG = CIConfig(
             Build.PACKAGE_TSAN,
             job_config=JobConfig(num_batches=5, **statless_test_common_params),  # type: ignore
         ),
-        JobNames.STRESS_TEST_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
+        JobNames.STRESS_TEST_DEBUG: TestConfig(
+            Build.PACKAGE_DEBUG, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_TSAN: TestConfig(
             Build.PACKAGE_TSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
         ),
+        JobNames.STRESS_TEST_ASAN: TestConfig(
+            Build.PACKAGE_ASAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
+        ),
         JobNames.STRESS_TEST_UBSAN: TestConfig(
-            Build.PACKAGE_UBSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
+            Build.PACKAGE_UBSAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
         ),
         JobNames.STRESS_TEST_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(**stress_test_common_params)  # type: ignore
-        ),
-        JobNames.STRESS_TEST_DEBUG: TestConfig(
-            Build.PACKAGE_DEBUG, job_config=JobConfig(**stress_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(random_bucket="stress_with_sanitizer", **stress_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_ASAN: TestConfig(
-            Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_TSAN: TestConfig(
-            Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_TSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_MSAN: TestConfig(
-            Build.PACKAGE_MSAN, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
+            Build.PACKAGE_MSAN, job_config=JobConfig(pr_only=True, random_bucket="upgrade_with_sanitizer", **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.UPGRADE_TEST_DEBUG: TestConfig(
             Build.PACKAGE_DEBUG, job_config=JobConfig(pr_only=True, **upgrade_test_common_params)  # type: ignore
         ),
         JobNames.INTEGRATION_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN,
-            job_config=JobConfig(num_batches=4, **integration_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=4, **integration_test_common_params, release_only=True),  # type: ignore
         ),
         JobNames.INTEGRATION_TEST_ASAN_ANALYZER: TestConfig(
             Build.PACKAGE_ASAN,
@@ -1037,12 +1053,9 @@ CI_CONFIG = CIConfig(
             # add [run_by_label="test arm"] to not run in regular pr workflow by default
             job_config=JobConfig(num_batches=6, **integration_test_common_params, run_by_label="test arm"),  # type: ignore
         ),
-        # FIXME: currently no wf has this job. Try to enable
-        # "Integration tests (msan)": TestConfig(Build.PACKAGE_MSAN, job_config=JobConfig(num_batches=6, **integration_test_common_params) # type: ignore
-        # ),
         JobNames.INTEGRATION_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
-            job_config=JobConfig(num_batches=4, **integration_test_common_params),  # type: ignore
+            job_config=JobConfig(num_batches=4, **integration_test_common_params, release_only=True),  # type: ignore
         ),
         JobNames.INTEGRATION_TEST_FLAKY: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(pr_only=True, **integration_test_common_params)  # type: ignore
@@ -1050,13 +1063,13 @@ CI_CONFIG = CIConfig(
         JobNames.COMPATIBILITY_TEST: TestConfig(
             Build.PACKAGE_RELEASE,
             job_config=JobConfig(
-                required_on_release_branch=True, digest=compatibility_check_digest
+                required_on_release_branch=True, **compatibility_test_common_params  # type: ignore
             ),
         ),
         JobNames.COMPATIBILITY_TEST_ARM: TestConfig(
             Build.PACKAGE_AARCH64,
             job_config=JobConfig(
-                required_on_release_branch=True, digest=compatibility_check_digest
+                required_on_release_branch=True, **compatibility_test_common_params  # type: ignore
             ),
         ),
         JobNames.UNIT_TEST: TestConfig(
@@ -1137,6 +1150,7 @@ CI_CONFIG.validate()
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
     "PR Check",
+    "A Sync",  # Cloud sync
     JobNames.BUILD_CHECK,
     JobNames.BUILD_CHECK_SPECIAL,
     JobNames.DOCS_CHECK,
@@ -1150,7 +1164,7 @@ REQUIRED_CHECKS = [
     JobNames.UNIT_TEST_TSAN,
     JobNames.UNIT_TEST_UBSAN,
     JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
-    JobNames.STATELESS_TEST_ANALYZER_RELEASE,
+    JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE,
 ]
 
 

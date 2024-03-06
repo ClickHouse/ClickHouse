@@ -170,6 +170,8 @@ void StorageObjectStorage<StorageSettings>::read(
         configuration,
         getName(),
         virtual_columns,
+        query_info,
+        storage_snapshot,
         format_settings,
         StorageSettings::create(local_context->getSettingsRef()),
         distributed_processing,

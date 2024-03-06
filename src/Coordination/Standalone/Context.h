@@ -11,6 +11,7 @@
 #include <Disks/IO/getThreadPoolReader.h>
 
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Core/BackgroundSchedulePool.h>
 
 #include <IO/AsyncReadCounters.h>
@@ -165,6 +166,8 @@ public:
     const StorageS3Settings & getStorageS3Settings() const;
 
     const String & getUserName() const { static std::string user; return user; }
+
+    const ServerSettings & getServerSettings() const;
 };
 
 }

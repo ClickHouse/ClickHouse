@@ -292,11 +292,14 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(const S
 {
     auto read_settings = getContext()->getReadSettings().adjustBufferSize(object_size);
     read_settings.enable_filesystem_cache = false;
+    /// FIXME: Changing this setting to default value breaks something around parquet reading
     read_settings.remote_read_min_bytes_for_seek = read_settings.remote_fs_buffer_size;
 
     const bool object_too_small = object_size <= 2 * getContext()->getSettings().max_download_buffer_size;
     const bool use_prefetch = object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     read_settings.remote_fs_method = use_prefetch ? RemoteFSReadMethod::threadpool : RemoteFSReadMethod::read;
+    /// User's S3 object may change, don't cache it.
+    read_settings.use_page_cache_for_disks_without_file_cache = false;
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.

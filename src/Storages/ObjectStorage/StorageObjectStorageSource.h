@@ -43,6 +43,11 @@ public:
 
     String getName() const override { return name; }
 
+    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override
+    {
+        setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.source_header);
+    }
+
     Chunk generate() override;
 
     static std::shared_ptr<IIterator> createFileIterator(

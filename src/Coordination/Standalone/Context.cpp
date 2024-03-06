@@ -398,4 +398,9 @@ const StorageS3Settings & Context::getStorageS3Settings() const
     return *shared->storage_s3_settings;
 }
 
+const ServerSettings & Context::getServerSettings() const
+{
+    return shared->server_settings;
+}
+
 }

@@ -25,7 +25,7 @@ void registerStorageIceberg(StorageFactory & factory)
 
             return StorageIceberg::create(
                 configuration, args.getContext(), "Iceberg", args.table_id, args.columns,
-                args.constraints, args.comment, std::nullopt, args.attach);
+                args.constraints, args.comment, std::nullopt, args.mode);
         },
         {
             .supports_settings = false,
@@ -48,7 +48,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
 
             return StorageDeltaLake::create(
                 configuration, args.getContext(), "DeltaLake", args.table_id, args.columns,
-                args.constraints, args.comment, std::nullopt, args.attach);
+                args.constraints, args.comment, std::nullopt, args.mode);
         },
         {
             .supports_settings = false,
@@ -69,7 +69,7 @@ void registerStorageHudi(StorageFactory & factory)
 
             return StorageHudi::create(
                 configuration, args.getContext(), "Hudi", args.table_id, args.columns,
-                args.constraints, args.comment, std::nullopt, args.attach);
+                args.constraints, args.comment, std::nullopt, args.mode);
         },
         {
             .supports_settings = false,

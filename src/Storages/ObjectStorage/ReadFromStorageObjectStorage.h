@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class ReadFromStorageObejctStorage : public SourceStepWithFilter, WithContext
+class ReadFromStorageObejctStorage : public SourceStepWithFilter
 {
 public:
     using ConfigurationPtr = StorageObjectStorageConfigurationPtr;
@@ -16,6 +16,8 @@ public:
         ConfigurationPtr configuration_,
         const String & name_,
         const NamesAndTypesList & virtual_columns_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
         const std::optional<DB::FormatSettings> & format_settings_,
         const StorageObjectStorageSettings & query_settings_,
         bool distributed_processing_,
@@ -31,7 +33,7 @@ public:
 
     std::string getName() const override { return name; }
 
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

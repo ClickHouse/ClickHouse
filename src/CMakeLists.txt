@@ -510,6 +510,10 @@ if (TARGET ch_contrib::s2)
     dbms_target_link_libraries (PUBLIC ch_contrib::s2)
 endif()
 
+if (TARGET ch_contrib::vectorscan)
+    dbms_target_link_libraries (PRIVATE ch_contrib::vectorscan)
+endif()
+
 if (TARGET ch_contrib::brotli)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::brotli)
 endif()
