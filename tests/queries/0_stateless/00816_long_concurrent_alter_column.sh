@@ -59,7 +59,7 @@ timeout $TIMEOUT bash -c thread4 2> /dev/null &
 
 wait
 
-echo "DROP TABLE concurrent_alter_column SYNC" | ${CLICKHOUSE_CLIENT}   # SYNC has effect only for Atomic database
+echo "DROP TABLE concurrent_alter_column NO DELAY" | ${CLICKHOUSE_CLIENT}   # NO DELAY has effect only for Atomic database
 
 # Wait for alters and check for deadlocks (in case of deadlock this loop will not finish)
 while true; do

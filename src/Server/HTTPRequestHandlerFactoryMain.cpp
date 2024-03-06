@@ -7,7 +7,7 @@ namespace DB
 {
 
 HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(const std::string & name_)
-    : log(getLogger(name_)), name(name_)
+    : log(&Poco::Logger::get(name_)), name(name_)
 {
 }
 
@@ -29,7 +29,7 @@ std::unique_ptr<HTTPRequestHandler> HTTPRequestHandlerFactoryMain::createRequest
         || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
         || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
     {
-        return std::unique_ptr<HTTPRequestHandler>(new NotFoundHandler(hints.getHints(request.getURI())));
+        return std::unique_ptr<HTTPRequestHandler>(new NotFoundHandler);
     }
 
     return nullptr;

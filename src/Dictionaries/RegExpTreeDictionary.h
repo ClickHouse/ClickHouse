@@ -10,6 +10,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
+#include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
@@ -21,8 +22,6 @@
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
-
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -40,7 +39,6 @@ public:
     {
         bool require_nonempty;
         DictionaryLifetime lifetime;
-        bool use_async_executor = false;
     };
 
     const std::string name = "RegExpTree";
@@ -50,22 +48,20 @@ public:
         const DictionaryStructure & structure_,
         DictionarySourcePtr source_ptr_,
         Configuration configuration_,
-        bool use_vectorscan_,
-        bool flag_case_insensitive_,
-        bool flag_dotall_);
+        bool use_vectorscan_);
 
     std::string getTypeName() const override { return name; }
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getFoundRate() const override
     {
-        const auto queries = query_count.load();
+        const auto queries = query_count.load(std::memory_order_relaxed);
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
     }
 
     double getHitRate() const override { return 1.0; }
@@ -88,8 +84,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<RegExpTreeDictionary>(
-            getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan, flag_case_insensitive, flag_dotall);
+        return std::make_shared<RegExpTreeDictionary>(getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan);
     }
 
     ColumnUInt8::Ptr hasKeys(const Columns &, const DataTypes &) const override
@@ -97,71 +92,27 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary {} does not support method `hasKeys`", name);
     }
 
-    Pipe read(const Names & columns, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(const Names &, size_t, size_t) const override
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary {} does not support method `read`", name);
+    }
 
     ColumnPtr getColumn(
-        const std::string & attribute_name,
-        const DataTypePtr & attribute_type,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        DefaultOrFilter default_or_filter) const override
-    {
-        bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-        assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
-
-        if (is_short_circuit)
-        {
-            IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
-            return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
-        }
-        else
-        {
-            const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
-            const Columns & columns= Columns({default_values_column});
-            return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
-        }
-    }
-
-    Columns getColumns(
-        const Strings & attribute_names,
-        const DataTypes & attribute_types,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        DefaultsOrFilter defaults_or_filter) const override
-    {
-        return getColumnsImpl(attribute_names, attribute_types, key_columns, key_types, defaults_or_filter, std::nullopt);
-    }
-
-    ColumnPtr getColumnAllValues(
         const std::string & attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column,
-        size_t limit) const override
-    {
-        return getColumnsAllValues(
-            Strings({attribute_name}), DataTypes({result_type}), key_columns, key_types, Columns({default_values_column}), limit)[0];
-    }
+        const ColumnPtr & default_values_column) const override
+        {
+            return getColumns(Strings({attribute_name}), DataTypes({result_type}), key_columns, key_types, Columns({default_values_column}))[0];
+        }
 
-    Columns getColumnsAllValues(
+    Columns getColumns(
         const Strings & attribute_names,
         const DataTypes & result_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const Columns & default_values_columns,
-        size_t limit) const override
-    {
-        return getColumnsImpl(attribute_names, result_types, key_columns, key_types, default_values_columns, limit);
-    }
-
-    Columns getColumnsImpl(
-        const Strings & attribute_names,
-        const DataTypes & result_types,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        DefaultsOrFilter defaults_or_filter,
-        std::optional<size_t> collect_values_limit) const;
+        const Columns & default_values_columns) const override;
 
 private:
     const DictionaryStructure structure;
@@ -184,40 +135,25 @@ private:
     void initTopologyOrder(UInt64 node_idx, std::set<UInt64> & visited, UInt64 & topology_id);
     void initGraph();
 
-    using RefDefaultMap = std::reference_wrapper<const std::unordered_map<String, ColumnPtr>>;
-    using DefaultMapOrFilter = std::variant<RefDefaultMap, RefFilter>;
     std::unordered_map<String, ColumnPtr> match(
         const ColumnString::Chars & keys_data,
         const ColumnString::Offsets & keys_offsets,
         const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-        DefaultMapOrFilter default_or_filter,
-        std::optional<size_t> collect_values_limit) const;
-
-    class AttributeCollector;
+        const std::unordered_map<String, ColumnPtr> & defaults) const;
 
     bool setAttributes(
         UInt64 id,
-        AttributeCollector & attributes_to_set,
+        std::unordered_map<String, Field> & attributes_to_set,
         const String & data,
         std::unordered_set<UInt64> & visited_nodes,
         const std::unordered_map<String, const DictionaryAttribute &> & attributes,
         const std::unordered_map<String, ColumnPtr> & defaults,
         size_t key_index) const;
 
-    bool setAttributesShortCircuit(
-        UInt64 id,
-        AttributeCollector & attributes_to_set,
-        const String & data,
-        std::unordered_set<UInt64> & visited_nodes,
-        const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-        std::unordered_set<String> * const defaults) const;
-
     struct RegexTreeNode;
     using RegexTreeNodePtr = std::shared_ptr<RegexTreeNode>;
 
     bool use_vectorscan;
-    bool flag_case_insensitive;
-    bool flag_dotall;
 
     std::vector<std::string> simple_regexps;
     std::vector<UInt64>      regexp_ids;
@@ -228,10 +164,10 @@ private:
     #if USE_VECTORSCAN
     MultiRegexps::DeferredConstructedRegexpsPtr hyperscan_regex;
     MultiRegexps::ScratchPtr origin_scratch;
-    MultiRegexps::DataBasePtr origin_db;
+    hs_database_t* origin_db;
     #endif
 
-    LoggerPtr logger;
+    Poco::Logger * logger;
 };
 
 }

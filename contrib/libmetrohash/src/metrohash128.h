@@ -25,21 +25,21 @@ public:
     static const uint32_t bits = 128;
 
     // Constructor initializes the same as Initialize()
-    explicit MetroHash128(const uint64_t seed=0);
-
+    MetroHash128(const uint64_t seed=0);
+    
     // Initializes internal state for new hash with optional seed
     void Initialize(const uint64_t seed=0);
-
+    
     // Update the hash state with a string of bytes. If the length
     // is sufficiently long, the implementation switches to a bulk
     // hashing algorithm directly on the argument buffer for speed.
     void Update(const uint8_t * buffer, const uint64_t length);
-
+    
     // Constructs the final hash and writes it to the argument buffer.
     // After a hash is finalized, this instance must be Initialized()-ed
     // again or the behavior of Update() and Finalize() is undefined.
     void Finalize(uint8_t * const hash);
-
+    
     // A non-incremental function implementation. This can be significantly
     // faster than the incremental implementation for some usage patterns.
     static void Hash(const uint8_t * buffer, const uint64_t length, uint8_t * const hash, const uint64_t seed=0);
@@ -57,7 +57,7 @@ private:
     static const uint64_t k1 = 0x8648DBDB;
     static const uint64_t k2 = 0x7BDEC03B;
     static const uint64_t k3 = 0x2F5870A5;
-
+    
     struct { uint64_t v[4]; } state;
     struct { uint8_t b[32]; } input;
     uint64_t bytes;

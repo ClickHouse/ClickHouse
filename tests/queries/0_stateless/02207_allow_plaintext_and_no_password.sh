@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-parallel, no-fasttest
+# Tag no-tsan: requires jemalloc to track small allocations
+# Tag no-asan: requires jemalloc to track small allocations
+# Tag no-ubsan: requires jemalloc to track small allocations
+# Tag no-msan: requires jemalloc to track small allocations
+
+
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

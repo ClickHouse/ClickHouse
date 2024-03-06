@@ -15,7 +15,6 @@ node2 = cluster.add_instance(
     "node2",
     macros={"cluster": "test1"},
     main_configs=["configs/merge_tree.xml"],
-    user_configs=["configs/users.xml"],
     with_zookeeper=True,
 )
 
@@ -23,14 +22,12 @@ node3 = cluster.add_instance(
     "node3",
     macros={"cluster": "test2"},
     main_configs=["configs/merge_tree_max_parts.xml"],
-    user_configs=["configs/users.xml"],
     with_zookeeper=True,
 )
 node4 = cluster.add_instance(
     "node4",
     macros={"cluster": "test2"},
     main_configs=["configs/merge_tree_max_parts.xml"],
-    user_configs=["configs/users.xml"],
     with_zookeeper=True,
 )
 
@@ -38,7 +35,6 @@ node5 = cluster.add_instance(
     "node5",
     macros={"cluster": "test3"},
     main_configs=["configs/merge_tree_max_parts.xml"],
-    user_configs=["configs/users.xml"],
 )
 
 all_nodes = [node1, node2, node3, node4, node5]

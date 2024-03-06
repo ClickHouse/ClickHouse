@@ -96,6 +96,20 @@ namespace Crypto
         ByteVec decryptionExponent() const;
         /// Returns the RSA decryption exponent.
 
+        void save(const std::string & publicKeyFile, const std::string & privateKeyFile = "", const std::string & privateKeyPassphrase = "")
+            const;
+        /// Exports the public and private keys to the given files.
+        ///
+        /// If an empty filename is specified, the corresponding key
+        /// is not exported.
+
+        void
+        save(std::ostream * pPublicKeyStream, std::ostream * pPrivateKeyStream = 0, const std::string & privateKeyPassphrase = "") const;
+        /// Exports the public and private key to the given streams.
+        ///
+        /// If a null pointer is passed for a stream, the corresponding
+        /// key is not exported.
+
     private:
         RSAKeyImpl();
 

@@ -6,10 +6,9 @@ slug: /en/operations/system-tables/metric_log
 Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
 
 Columns:
-- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
-- `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
-- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
-- `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
+-   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
+-   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds resolution.
 
 **Example**
 
@@ -20,7 +19,6 @@ SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
 ``` text
 Row 1:
 ──────
-hostname:                                                        clickhouse.eu-central1.internal
 event_date:                                                      2020-09-05
 event_time:                                                      2020-09-05 16:22:33
 event_time_microseconds:                                         2020-09-05 16:22:33.196807
@@ -47,8 +45,8 @@ CurrentMetric_DistributedFilesToInsert:                          0
 
 **See also**
 
-- [metric_log setting](../../operations/server-configuration-parameters/settings.md#metric_log) — Enabling and disabling the setting.
-- [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
-- [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
-- [system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
-- [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [metric_log setting](../../operations/server-configuration-parameters/settings.md#metric_log) — Enabling and disabling the setting.
+-   [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
+-   [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
+-   [system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
+-   [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

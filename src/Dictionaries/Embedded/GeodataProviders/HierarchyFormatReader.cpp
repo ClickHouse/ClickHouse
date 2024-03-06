@@ -3,8 +3,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-namespace DB
-{
 
 bool RegionsHierarchyFormatReader::readNext(RegionEntry & entry)
 {
@@ -17,11 +15,11 @@ bool RegionsHierarchyFormatReader::readNext(RegionEntry & entry)
         Int32 read_parent_id = 0;
         Int8 read_type = 0;
 
-        readIntText(read_region_id, *input);
-        assertChar('\t', *input);
-        readIntText(read_parent_id, *input);
-        assertChar('\t', *input);
-        readIntText(read_type, *input);
+        DB::readIntText(read_region_id, *input);
+        DB::assertChar('\t', *input);
+        DB::readIntText(read_parent_id, *input);
+        DB::assertChar('\t', *input);
+        DB::readIntText(read_type, *input);
 
         /** Then there can be a newline (old version)
             *  or tab, the region's population, line feed (new version).
@@ -31,11 +29,11 @@ bool RegionsHierarchyFormatReader::readNext(RegionEntry & entry)
         {
             ++input->position();
             UInt64 population_big = 0;
-            readIntText(population_big, *input);
+            DB::readIntText(population_big, *input);
             population = population_big > std::numeric_limits<RegionPopulation>::max() ? std::numeric_limits<RegionPopulation>::max()
                                                                                        : static_cast<RegionPopulation>(population_big);
         }
-        assertChar('\n', *input);
+        DB::assertChar('\n', *input);
 
         if (read_region_id <= 0 || read_type < 0)
             continue;
@@ -56,6 +54,4 @@ bool RegionsHierarchyFormatReader::readNext(RegionEntry & entry)
     }
 
     return false;
-}
-
 }

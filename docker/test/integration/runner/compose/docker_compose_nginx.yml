@@ -5,7 +5,7 @@ services:
     # Files will be put into /usr/share/nginx/files.
 
     nginx:
-        image: clickhouse/nginx-dav:${DOCKER_NGINX_DAV_TAG:-latest}
+        image: kssenii/nginx-test:1.1
         restart: always
         ports:
             - 80:80
