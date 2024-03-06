@@ -515,6 +515,8 @@ Query:
 SELECT mortonEncode((1,2), 1024, 16);
 ```
 
+Result:
+
 ```response
 1572864
 ```
@@ -531,6 +533,8 @@ Query:
 SELECT mortonEncode(1);
 ```
 
+Result:
+
 ```response
 1
 ```
@@ -545,8 +549,47 @@ Query:
 SELECT mortonEncode(tuple(2), 128);
 ```
 
+Result:
+
 ```response
 32768
+```
+
+**Example**
+
+You can also use column names in the function.
+
+Query:
+
+First create the table and insert some data.
+
+```sql
+create table morton_numbers(
+    n1 UInt32,
+    n2 UInt32,
+    n3 UInt16,
+    n4 UInt16,
+    n5 UInt8,
+    n6 UInt8,
+    n7 UInt8,
+    n8 UInt8
+)
+Engine=MergeTree()
+ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+insert into morton_numbers (*) values(1,2,3,4,5,6,7,8);
+```
+Use column names instead of constants as function arguments to `mortonEncode`
+
+Query:
+
+```sql
+SELECT mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8) FROM morton_numbers;
+```
+
+Result:
+
+```response
+2155374165
 ```
 
 **implementation details**
@@ -589,6 +632,8 @@ Query:
 SELECT mortonDecode(3, 53);
 ```
 
+Result:
+
 ```response
 ["1","2","3"]
 ```
@@ -615,6 +660,8 @@ Query:
 SELECT mortonDecode(1, 1);
 ```
 
+Result:
+
 ```response
 ["1"]
 ```
@@ -629,8 +676,46 @@ Query:
 SELECT mortonDecode(tuple(2), 32768);
 ```
 
+Result:
+
 ```response
 ["128"]
+```
+
+**Example**
+
+You can also use column names in the function.
+
+First create the table and insert some data.
+
+Query:
+```sql
+create table morton_numbers(
+    n1 UInt32,
+    n2 UInt32,
+    n3 UInt16,
+    n4 UInt16,
+    n5 UInt8,
+    n6 UInt8,
+    n7 UInt8,
+    n8 UInt8
+)
+Engine=MergeTree()
+ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+insert into morton_numbers (*) values(1,2,3,4,5,6,7,8);
+```
+Use column names instead of constants as function arguments to `mortonDecode`
+
+Query:
+
+```sql
+select untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) from morton_numbers;
+```
+
+Result:
+
+```response
+1	2	3	4	5	6	7	8
 ```
 
 
