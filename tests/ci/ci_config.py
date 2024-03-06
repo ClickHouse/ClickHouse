@@ -473,21 +473,24 @@ perf_test_common_params = {
     "digest": perf_check_digest,
     "run_command": "performance_comparison_check.py",
 }
-sqllancer_test_common_params = {
-    "digest": sqllancer_check_digest,
-    "run_command": "sqlancer_check.py",
-    "run_always": True,
-}
-sqllogic_test_params = {
-    "digest": sqllogic_check_digest,
-    "run_command": "sqllogic_test.py",
-    "timeout": 10800,
-}
-sql_test_params = {
-    "digest": sqltest_check_digest,
-    "run_command": "sqltest.py",
-    "timeout": 10800,
-}
+sqllancer_test_common_params = JobConfig(
+    digest=sqllancer_check_digest,
+    run_command="sqlancer_check.py",
+    release_only=True,
+    run_always=True,
+)
+sqllogic_test_params = JobConfig(
+    digest=sqllogic_check_digest,
+    run_command="sqllogic_test.py",
+    timeout=10800,
+    release_only=True,
+)
+sql_test_params = JobConfig(
+    digest=sqltest_check_digest,
+    run_command="sqltest.py",
+    timeout=10800,
+    release_only=True,
+)
 clickbench_test_params = {
     "digest": DigestConfig(
         include_paths=[
@@ -1256,17 +1259,15 @@ CI_CONFIG = CIConfig(
             job_config=JobConfig(num_batches=4, run_by_label="pr-performance", **perf_test_common_params),  # type: ignore
         ),
         JobNames.SQLANCER: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**sqllancer_test_common_params)  # type: ignore
+            Build.PACKAGE_RELEASE, job_config=sqllancer_test_common_params
         ),
         JobNames.SQLANCER_DEBUG: TestConfig(
-            Build.PACKAGE_DEBUG, job_config=JobConfig(**sqllancer_test_common_params)  # type: ignore
+            Build.PACKAGE_DEBUG, job_config=sqllancer_test_common_params
         ),
         JobNames.SQL_LOGIC_TEST: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**sqllogic_test_params)  # type: ignore
+            Build.PACKAGE_RELEASE, job_config=sqllogic_test_params
         ),
-        JobNames.SQLTEST: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**sql_test_params)  # type: ignore
-        ),
+        JobNames.SQLTEST: TestConfig(Build.PACKAGE_RELEASE, job_config=sql_test_params),
         JobNames.CLCIKBENCH_TEST: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**clickbench_test_params)  # type: ignore
         ),
