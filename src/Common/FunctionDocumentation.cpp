@@ -36,6 +36,7 @@ std::string FunctionDocumentation::categoriesAsString() const
 
     auto it = categories.begin();
     std::string res = *it;
+    ++it;
     for (; it != categories.end(); ++it)
         res += ", " + *it;
     return res;
