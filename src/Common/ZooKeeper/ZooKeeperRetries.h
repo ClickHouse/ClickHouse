@@ -147,6 +147,11 @@ public:
         user_error = UserError{};
     }
 
+    void setKeeperError(const zkutil::KeeperException & exception)
+    {
+        setKeeperError(std::make_exception_ptr(exception), exception.code, exception.message());
+    }
+
     void stopRetries() { stop_retries = true; }
 
     bool isLastRetry() const { return total_failures >= retries_info.max_retries; }
@@ -180,6 +185,12 @@ private:
 
     bool canTry()
     {
+        if (unconditional_retry)
+        {
+            unconditional_retry = false;
+            return true;
+        }
+
         if (iteration_succeeded)
         {
             if (logger && total_failures > 0)
@@ -275,6 +286,10 @@ private:
 
     UInt64 current_iteration = 0;
     UInt64 current_backoff_ms = 0;
+
+public:
+    /// This is used in SharedMergeTree
+    bool unconditional_retry = false;
 };
 
 }

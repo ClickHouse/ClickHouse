@@ -1,7 +1,5 @@
 #include "Storages/StorageS3Cluster.h"
 
-#include "config.h"
-
 #if USE_AWS_S3
 
 #include <DataTypes/DataTypeString.h>

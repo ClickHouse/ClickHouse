@@ -9,7 +9,7 @@ namespace DB
 class Context;
 
 
-class StorageSystemDictionaries final : public IStorageSystemOneBlock<StorageSystemDictionaries>
+class StorageSystemDictionaries final : public IStorageSystemOneBlock
 {
 public:
     explicit StorageSystemDictionaries(const StorageID & storage_id_);
@@ -21,7 +21,7 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 };
 
 }
