@@ -32,7 +32,7 @@ ColumnsDescription StorageSystemUserProcesses::getColumnsDescription()
     return description;
 }
 
-void StorageSystemUserProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemUserProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto user_info = context->getProcessList().getUserInfo(true);
 

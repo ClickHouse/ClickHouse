@@ -79,7 +79,7 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
     return graphite_configs;
 }
 
-void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     Configs graphite_configs = getConfigs(context);
 

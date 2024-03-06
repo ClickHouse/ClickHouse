@@ -148,7 +148,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
             }
         }
         if (disable_parallel_replicas)
-            new_settings.allow_experimental_parallel_reading_from_replicas = false;
+            new_settings.allow_experimental_parallel_reading_from_replicas = 0;
     }
 
     if (settings.max_execution_time_leaf.value > 0)

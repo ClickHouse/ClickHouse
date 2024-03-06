@@ -28,6 +28,7 @@ ColumnsDescription BackupLogElement::getColumnsDescription()
         {"id", std::make_shared<DataTypeString>(), "Identifier of the backup or restore operation."},
         {"name", std::make_shared<DataTypeString>(), "Name of the backup storage (the contents of the FROM or TO clause)."},
         {"base_backup_name", std::make_shared<DataTypeString>(), "The name of base backup in case incremental one."},
+        {"query_id", std::make_shared<DataTypeString>(), "The ID of a query associated with a backup operation."},
         {"status", std::make_shared<DataTypeEnum8>(getBackupStatusEnumValues()), "Operation status."},
         {"error", std::make_shared<DataTypeString>(), "Error message of the failed operation (empty string for successful operations)."},
         {"start_time", std::make_shared<DataTypeDateTime>(), "Start time of the operation."},
@@ -51,6 +52,7 @@ void BackupLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(info.id);
     columns[i++]->insert(info.name);
     columns[i++]->insert(info.base_backup_name);
+    columns[i++]->insert(info.query_id);
     columns[i++]->insert(static_cast<Int8>(info.status));
     columns[i++]->insert(info.error_message);
     columns[i++]->insert(static_cast<UInt32>(std::chrono::system_clock::to_time_t(info.start_time)));

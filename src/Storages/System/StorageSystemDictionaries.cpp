@@ -99,7 +99,7 @@ NamesAndTypesList StorageSystemDictionaries::getVirtuals() const
     };
 }
 
-void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & /*query_info*/) const
+void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_dictionaries = access->isGranted(AccessType::SHOW_DICTIONARIES);

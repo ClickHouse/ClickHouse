@@ -336,23 +336,23 @@ std::string LocalServer::getInitialCreateTableQuery()
     auto table_structure = config().getString("table-structure", "auto");
 
     String table_file;
-    String format_from_file_name;
+    std::optional<String> format_from_file_name;
     if (!config().has("table-file") || config().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
-        format_from_file_name = FormatFactory::instance().getFormatFromFileDescriptor(STDIN_FILENO);
+        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDIN_FILENO);
     }
     else
     {
         /// Use regular file
         auto file_name = config().getString("table-file");
         table_file = quoteString(file_name);
-        format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
+        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(file_name);
     }
 
     auto data_format = backQuoteIfNeed(
-        config().getString("table-data-format", config().getString("format", format_from_file_name.empty() ? "TSV" : format_from_file_name)));
+        config().getString("table-data-format", config().getString("format", format_from_file_name ? *format_from_file_name : "TSV")));
 
 
     if (table_structure == "auto")
@@ -506,6 +506,7 @@ try
     processConfig();
     adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     applyCmdSettings(global_context);
 
@@ -840,7 +841,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 
         /// If structure argument is omitted then initial query is not generated
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
-        ("file,f", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
+        ("file,F", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
 
         ("input-format", po::value<std::string>(), "input format of the initial table data")
         ("output-format", po::value<std::string>(), "default output format")

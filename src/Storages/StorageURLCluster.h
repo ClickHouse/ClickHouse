@@ -19,16 +19,15 @@ class StorageURLCluster : public IStorageCluster
 {
 public:
     StorageURLCluster(
-        ContextPtr context_,
+        const ContextPtr & context,
         const String & cluster_name_,
         const String & uri_,
         const String & format_,
-        const String & compression_method_,
+        const String & compression_method,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const StorageURL::Configuration & configuration_,
-        bool structure_argument_was_provided_);
+        const StorageURL::Configuration & configuration_);
 
     std::string getName() const override { return "URLCluster"; }
 
@@ -41,11 +40,10 @@ public:
     bool supportsTrivialCountOptimization() const override { return true; }
 
 private:
-    void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) override;
+    void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
 
     String uri;
     String format_name;
-    String compression_method;
     NamesAndTypesList virtual_columns;
 };
 

@@ -37,11 +37,11 @@ ColumnsDescription StorageSystemS3Queue::getColumnsDescription()
 }
 
 StorageSystemS3Queue::StorageSystemS3Queue(const StorageID & table_id_)
-    : IStorageSystemOneBlock(table_id_)
+    : IStorageSystemOneBlock(table_id_, getColumnsDescription())
 {
 }
 
-void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (const auto & [zookeeper_path, metadata] : S3QueueMetadataFactory::instance().getAll())
     {

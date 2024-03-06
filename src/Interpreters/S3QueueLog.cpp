@@ -28,7 +28,9 @@ ColumnsDescription S3QueueLogElement::getColumnsDescription()
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname"},
         {"event_date", std::make_shared<DataTypeDate>(), "Event date of writing this log row"},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Event time of writing this log row"},
-        {"table_uuid", std::make_shared<DataTypeString>(), "Table uuid of S3Queue table"},
+        {"database", std::make_shared<DataTypeString>(), "The name of a database where current S3Queue table lives."},
+        {"table", std::make_shared<DataTypeString>(), "The name of S3Queue table."},
+        {"uuid", std::make_shared<DataTypeString>(), "The UUID of S3Queue table"},
         {"file_name", std::make_shared<DataTypeString>(), "File name of the processing file"},
         {"rows_processed", std::make_shared<DataTypeUInt64>(), "Number of processed rows"},
         {"status", status_datatype, "Status of the processing file"},
@@ -45,7 +47,9 @@ void S3QueueLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
-    columns[i++]->insert(table_uuid);
+    columns[i++]->insert(database);
+    columns[i++]->insert(table);
+    columns[i++]->insert(uuid);
     columns[i++]->insert(file_name);
     columns[i++]->insert(rows_processed);
     columns[i++]->insert(status);
