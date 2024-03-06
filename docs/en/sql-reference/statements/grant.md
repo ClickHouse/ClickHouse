@@ -202,6 +202,13 @@ Hierarchy of privileges:
     - `S3`
 - [dictGet](#grant-dictget)
 - [displaySecretsInShowAndSelect](#grant-display-secrets)
+- [NAMED COLLECTION ADMIN](#grant-named-collection-admin)
+    - `CREATE NAMED COLLECTION`
+    - `DROP NAMED COLLECTION`
+    - `ALTER NAMED COLLECTION`
+    - `SHOW NAMED COLLECTIONS`
+    - `SHOW NAMED COLLECTIONS SECRETS`
+    - `NAMED COLLECTION`
 
 Examples of how this hierarchy is treated:
 
@@ -497,6 +504,23 @@ Allows a user to view secrets in `SHOW` and `SELECT` queries if both
 and
 [`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
 are turned on.
+
+### NAMED COLLECTION ADMIN
+
+Allows a certain operation on a specified named colleciton.
+
+- `NAMED COLLECTION ADMIN`. Level: `NAMED_COLLECTION`. Aliases: `NAMED COLLECTION CONTROL`
+    - `CREATE NAMED COLLECTION`. Level: `NAMED_COLLECTION`
+    - `DROP NAMED COLLECTION`. Level: `NAMED_COLLECTION`
+    - `ALTER NAMED COLLECTION`. Level: `NAMED_COLLECTION`
+    - `SHOW NAMED COLLECTIONS`. Level: `NAMED_COLLECTION`. Aliases: `SHOW NAMED COLLECTIONS`
+    - `SHOW NAMED COLLECTIONS SECRETS`. Level: `NAMED_COLLECTION`. Aliases: `SHOW NAMED COLLECTIONS SECRETS`
+    - `NAMED COLLECTION`. Level: `NAMED_COLLECTION`. Aliases: `NAMED COLLECTION USAGE, USE NAMED COLLECTION`
+
+**Examples**
+
+Assuming a named collecion is called abc, we grant privilege CREATE NAMED COLLECTION to user john.
+- `GRANT CREATE NAMED COLLECTION ON abc TO john`
 
 ### ALL
 
