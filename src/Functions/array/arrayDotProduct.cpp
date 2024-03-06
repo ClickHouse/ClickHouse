@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
 }
@@ -196,40 +195,51 @@ private:
     template <typename ResultType>
     ColumnPtr executeWithResultType(const ColumnsWithTypeAndName & arguments) const
     {
-        ColumnPtr res;
-        if (!((res = executeWithResultTypeAndLeftType<ResultType, UInt8>(arguments))
-            || (res = executeWithResultTypeAndLeftType<ResultType, UInt16>(arguments))
-            || (res = executeWithResultTypeAndLeftType<ResultType, UInt32>(arguments))
-            || (res = executeWithResultTypeAndLeftType<ResultType, UInt64>(arguments))
-            || (res = executeWithResultTypeAndLeftType<ResultType, Int8>(arguments))
-            || (res = executeWithResultTypeAndLeftType<ResultType, Int16>(arguments))
-            || (res = executeWithResultTypeAndLeftType<ResultType, Int32>(arguments))
-            || (res = executeWithResultTypeAndLeftType<ResultType, Int64>(arguments))
-            || (res = executeWithResultTypeAndLeftType<ResultType, Float32>(arguments))
-            || (res = executeWithResultTypeAndLeftType<ResultType, Float64>(arguments))))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
+        DataTypePtr type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
 
-        return res;
+        switch (type_x->getTypeId())
+        {
+#define ON_TYPE(type) \
+            case TypeIndex::type: \
+                return executeWithResultTypeAndLeftType<ResultType, type>(arguments); \
+                break;
+
+            SUPPORTED_TYPES(ON_TYPE)
+#undef ON_TYPE
+
+            default:
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Arguments of function {} has nested type {}. "
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    getName(),
+                    type_x->getName());
+        }
     }
 
     template <typename ResultType, typename LeftType>
     ColumnPtr executeWithResultTypeAndLeftType(const ColumnsWithTypeAndName & arguments) const
     {
-        ColumnPtr res;
-        if (   (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, UInt8>(arguments[0].column, arguments[1].column))
-            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, UInt16>(arguments[0].column, arguments[1].column))
-            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, UInt32>(arguments[0].column, arguments[1].column))
-            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, UInt64>(arguments[0].column, arguments[1].column))
-            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, Int8>(arguments[0].column, arguments[1].column))
-            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, Int16>(arguments[0].column, arguments[1].column))
-            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, Int32>(arguments[0].column, arguments[1].column))
-            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, Int64>(arguments[0].column, arguments[1].column))
-            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, Float32>(arguments[0].column, arguments[1].column))
-            || (res = executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, Float64>(arguments[0].column, arguments[1].column)))
-            return res;
+        DataTypePtr type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
-       return nullptr;
+        switch (type_y->getTypeId())
+        {
+        #define ON_TYPE(type) \
+            case TypeIndex::type: \
+                return executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, type>(arguments[0].column, arguments[1].column); \
+                break;
+
+            SUPPORTED_TYPES(ON_TYPE)
+        #undef ON_TYPE
+
+            default:
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Arguments of function {} has nested type {}. "
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    getName(),
+                    type_y->getName());
+        }
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
@@ -237,28 +247,22 @@ private:
     {
         col_x = col_x->convertToFullColumnIfConst();
         col_y = col_y->convertToFullColumnIfConst();
-        if (!col_x || !col_y)
-            return nullptr;
 
-        const ColumnArray * array_x = checkAndGetColumn<ColumnArray>(col_x.get());
-        const ColumnArray * array_y = checkAndGetColumn<ColumnArray>(col_y.get());
-        if (!array_x || !array_y)
-            return nullptr;
+        const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
+        const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
 
-        const ColumnVector<LeftType> * col_arr_nested_left = checkAndGetColumn<ColumnVector<LeftType>>(array_x->getData());
-        const ColumnVector<RightType> * col_arr_nested_right = checkAndGetColumn<ColumnVector<RightType>>(array_y->getData());
-        if (!col_arr_nested_left || !col_arr_nested_right)
-            return nullptr;
+        const auto & data_x = typeid_cast<const ColumnVector<LeftType> &>(array_x.getData()).getData();
+        const auto & data_y = typeid_cast<const ColumnVector<RightType> &>(array_y.getData()).getData();
 
-        if (!array_x->hasEqualOffsets(*array_y))
+        if (!array_x.hasEqualOffsets(array_y))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
 
         auto col_res = ColumnVector<ResultType>::create();
 
         vector(
-            col_arr_nested_left->getData(),
-            col_arr_nested_right->getData(),
-            array_x->getOffsets(),
+            data_x,
+            data_y,
+            array_x.getOffsets(),
             col_res->getData());
 
         return col_res;
