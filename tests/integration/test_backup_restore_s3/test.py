@@ -124,7 +124,9 @@ def check_backup_and_restore(
 def check_system_tables(backup_query_id=None):
     disks = [
         tuple(disk.split("\t"))
-        for disk in node.query("SELECT name, type, object_storage_type, metadata_type FROM system.disks").split("\n")
+        for disk in node.query(
+            "SELECT name, type, object_storage_type, metadata_type FROM system.disks"
+        ).split("\n")
         if disk
     ]
     expected_disks = (
