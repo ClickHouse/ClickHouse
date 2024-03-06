@@ -103,6 +103,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int INCORRECT_DATA;
+    extern const int SYNTAX_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace FailPoints
@@ -650,6 +652,36 @@ static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
     }
 }
 
+void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+{
+    if (ast->as<ASTSetQuery>())
+        return;
+
+    bool top_level = context_value;
+
+    std::vector<ASTPtr> nodes_to_process{ ast };
+    while (!nodes_to_process.empty())
+    {
+        auto node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (auto * set_query = node->as<ASTSetQuery>())
+        {
+            if (auto * value = set_query->changes.tryGet("allow_experimental_analyzer"))
+            {
+                if (top_level != value->safeGet<bool>())
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
+            }
+        }
+
+        for (auto child : node->children)
+        {
+            if (child)
+                nodes_to_process.push_back(std::move(child));
+        }
+    }
+}
+
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
@@ -726,16 +758,32 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
 
-#if 0
+#ifndef NDEBUG
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
             String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
 
-            ASTPtr ast2 = parseQuery(parser,
-                formatted1.data(),
-                formatted1.data() + formatted1.size(),
-                "", max_query_size, settings.max_parser_depth);
+            /// The query can become more verbose after formatting, so:
+            size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
+
+            ASTPtr ast2;
+            try
+            {
+                ast2 = parseQuery(parser,
+                    formatted1.data(),
+                    formatted1.data() + formatted1.size(),
+                    "", new_max_query_size, settings.max_parser_depth);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Inconsistent AST formatting: the query:\n{}\ncannot parse.",
+                        formatted1);
+                else
+                    throw;
+            }
 
             chassert(ast2);
 
@@ -844,6 +892,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
+        validateAnalyzerSettings(ast, context->getSettingsRef().allow_experimental_analyzer);
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
@@ -1150,7 +1199,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
                                 settings.query_cache_compress_entries);
 
-                            const size_t num_query_runs = query_cache->recordQueryRun(key);
+                            const size_t num_query_runs = settings.query_cache_min_query_runs ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                             if (num_query_runs <= settings.query_cache_min_query_runs)
                             {
                                 LOG_TRACE(getLogger("QueryCache"),
