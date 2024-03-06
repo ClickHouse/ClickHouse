@@ -6,10 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Data preparation step
 USER_FILES_PATH=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
-FILE_NAME_UNIX="${CLICKHOUSE_TEST_UNIQUE_NAME}_data_without_crlf.tsv"
-FILE_NAME_CRLF="${CLICKHOUSE_TEST_UNIQUE_NAME}_data_with_crlf.tsv"
-DATA_FILE_UNIX_ENDINGS=${USER_FILES_PATH:?}/FILE_NAME_UNIX
-DATA_FILE_DOS_ENDINGS=${USER_FILES_PATH:?}/FILE_NAME_CRLF
+DATA_FILE_UNIX_ENDINGS=${USER_FILES_PATH:?}/${CLICKHOUSE_TEST_UNIQUE_NAME}_data_without_crlf.tsv"
+DATA_FILE_DOS_ENDINGS=${USER_FILES_PATH:?}/${CLICKHOUSE_TEST_UNIQUE_NAME}_data_with_crlf.tsv"
 
 touch $DATA_FILE_UNIX_ENDINGS
 touch $DATA_FILE_DOS_ENDINGS    
