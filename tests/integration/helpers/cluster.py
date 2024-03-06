@@ -3216,7 +3216,7 @@ services:
             - timeout:1
             - inet6
             - rotate
-        {networks}
+        {123}
             {app_net}
                 {ipv4_address}
                 {ipv6_address}

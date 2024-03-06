@@ -7161,11 +7161,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             try
             {
                 auto reservation_space = src_part_storage->reserve(src_part->getBytesOnDisk());
-                if (!reservation_space) {
+                if (!reservation_space)
                     throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space on disk.");
-                }
-                dst_part_storage
-                    = src_part_storage->clonePart(this->getRelativeDataPath(), tmp_dst_part_name, disk, read_settings, write_settings, {}, {});
+                dst_part_storage = src_part_storage->clonePart(
+                    this->getRelativeDataPath(), tmp_dst_part_name, disk, read_settings, write_settings, {}, {});
                 copy_successful = true;
                 break;
             }
