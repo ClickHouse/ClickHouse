@@ -1333,12 +1333,11 @@ void IMergeTreeDataPart::loadColumns(bool require)
         .choose_kind = false,
     };
 
-    SerializationInfoByName infos(loaded_columns, settings);
-    exists =  metadata_manager->exists(SERIALIZATION_FILE_NAME);
-    if (exists)
+    SerializationInfoByName infos;
+    if (metadata_manager->exists(SERIALIZATION_FILE_NAME))
     {
         auto in = metadata_manager->read(SERIALIZATION_FILE_NAME);
-        infos.readJSON(*in);
+        infos = SerializationInfoByName::readJSON(loaded_columns, settings, *in);
     }
 
     setColumns(loaded_columns, infos);
