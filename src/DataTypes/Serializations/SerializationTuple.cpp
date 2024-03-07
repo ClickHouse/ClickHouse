@@ -132,14 +132,23 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeChar('(', ostr);
+    if (!settings.csv.hive_style)
+        writeChar('(', ostr);
     for (size_t i = 0; i < elems.size(); ++i)
     {
         if (i != 0)
-            writeChar(',', ostr);
-        elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
+            writeChar(settings.csv.hive_style ? settings.csv.delimiter + 1 : ',', ostr);
+	if (settings.csv.hive_style)
+        {
+           auto child_settings = settings;
+           child_settings.csv.delimiter = settings.csv.delimiter + 1;
+           elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr, child_settings);
+        }
+        else
+            elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
     }
-    writeChar(')', ostr);
+    if (!settings.csv.hive_style)
+        writeChar(')', ostr);
 }
 
 template <typename ReturnType>
@@ -529,7 +538,7 @@ void SerializationTuple::serializeTextCSV(const IColumn & column, size_t row_num
 {
     WriteBufferFromOwnString wb;
     serializeText(column, row_num, wb, settings);
-    writeCSV(wb.str(), ostr);
+    writeCSV(wb.str(), ostr, !settings.csv.hive_style);
 }
 
 void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

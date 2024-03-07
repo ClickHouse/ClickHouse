@@ -202,7 +202,7 @@ void SerializationAggregateFunction::serializeTextXML(const IColumn & column, si
 
 void SerializationAggregateFunction::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeCSV(serializeToString(function, column, row_num, version), ostr, settings.csv.allow_string_quote);
+    writeCSV(serializeToString(function, column, row_num, version), ostr, !settings.csv.hive_style);
 }
 
 

@@ -250,7 +250,7 @@ void SerializationFixedString::serializeTextXML(const IColumn & column, size_t r
 void SerializationFixedString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    writeCSVString(pos, pos + n, ostr, settings.csv.allow_string_quote);
+    writeCSVString(pos, pos + n, ostr, !settings.csv.hive_style);
 }
 
 

@@ -458,7 +458,7 @@ void SerializationString::serializeTextXML(const IColumn & column, size_t row_nu
 
 void SerializationString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeCSVString<>(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr, ostr, settings.csv.allow_string_quote);
+    writeCSVString<>(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr, ostr, !settings.csv.hive_style);
 }
 
 

@@ -408,14 +408,16 @@ static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffe
 
     const IColumn & nested_column = column_array.getData();
 
-    writeChar('[', ostr);
+    if (!settings.csv.hive_style)
+        writeChar('[', ostr);
     for (size_t i = offset; i < next_offset; ++i)
     {
         if (i != offset)
-            writeChar(',', ostr);
+            writeChar(settings.csv.delimiter + (settings.csv.hive_style ? 1 : 0), ostr);
         write_nested(nested_column, i);
     }
-    writeChar(']', ostr);
+    if (!settings.csv.hive_style)
+        writeChar(']', ostr);
 }
 
 
@@ -520,8 +522,16 @@ void SerializationArray::serializeText(const IColumn & column, size_t row_num, W
     serializeTextImpl(column, row_num, ostr,
         [&](const IColumn & nested_column, size_t i)
         {
-            nested->serializeTextQuoted(nested_column, i, ostr, settings);
-        });
+	    if (settings.csv.hive_style)\
+	    {
+	        auto child_settings = settings;
+	        child_settings.csv.delimiter = settings.csv.delimiter + 1;
+	        nested->serializeTextCSV(nested_column, i, ostr, child_settings);
+	    }
+	    else
+                nested->serializeTextQuoted(nested_column, i, ostr, settings);
+        },
+	settings);
 }
 
 
@@ -664,7 +674,7 @@ void SerializationArray::serializeTextCSV(const IColumn & column, size_t row_num
     /// There is no good way to serialize an array in CSV. Therefore, we serialize it into a string, and then write the resulting string in CSV.
     WriteBufferFromOwnString wb;
     serializeText(column, row_num, wb, settings);
-    writeCSV(wb.str(), ostr, settings.csv.allow_string_quote);
+    writeCSV(wb.str(), ostr, !settings.csv.hive_style);
 }
 
 

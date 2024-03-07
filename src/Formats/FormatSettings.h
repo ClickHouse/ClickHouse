@@ -169,7 +169,7 @@ struct FormatSettings
         bool allow_variable_number_of_columns = false;
         bool use_default_on_bad_values = false;
         bool try_infer_numbers_from_strings = true;
-	bool allow_string_quote = true;
+	bool hive_style = false;
     } csv{};
 
     struct HiveText
