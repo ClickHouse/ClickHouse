@@ -356,13 +356,17 @@ def test_force_filesystem_cache_on_merges(cluster):
             else:
                 return int(value)
 
-        r_cache_count = to_int(node.query(
-            "SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'"
-        ))
+        r_cache_count = to_int(
+            node.query(
+                "SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'"
+            )
+        )
 
-        w_cache_count = to_int(node.query(
-            "SELECT value FROM system.events WHERE name = 'CachedWriteBufferCacheWriteBytes'"
-        ))
+        w_cache_count = to_int(
+            node.query(
+                "SELECT value FROM system.events WHERE name = 'CachedWriteBufferCacheWriteBytes'"
+            )
+        )
 
         node.query(
             """
