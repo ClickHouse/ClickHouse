@@ -220,6 +220,7 @@ void StorageMergeTree::read(
         Block header;
         if (local_context->getSettingsRef().allow_experimental_analyzer)
         {
+            chassert(query_info.query_tree);
             QueryTreeNodePtr modified_query_tree = query_info.query_tree->clone();
             rewriteJoinToGlobalJoin(modified_query_tree, local_context);
             modified_query_tree = buildQueryTreeForShard(query_info.planner_context, modified_query_tree);
