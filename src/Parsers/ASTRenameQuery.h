@@ -60,6 +60,7 @@ public:
     ASTPtr clone() const override
     {
         auto res = std::make_shared<ASTRenameQuery>(*this);
+        res->cloneChildren();
         cloneOutputOptions(*res);
         return res;
     }
