@@ -9,18 +9,12 @@ from pathlib import Path
 from typing import List
 
 from build_download_helper import download_fuzzers
-from clickhouse_helper import (
-    CiLogsCredentials,
-)
-from docker_images_helper import DockerImage, pull_image, get_docker_image
-
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from clickhouse_helper import CiLogsCredentials
+from docker_images_helper import DockerImage, get_docker_image, pull_image
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from pr_info import PRInfo
-
 from stopwatch import Stopwatch
-
 from tee_popen import TeePopen
-
 
 NO_CHANGES_MSG = "Nothing to run"
 
@@ -130,7 +124,8 @@ def main():
             os.chmod(fuzzers_path / file, 0o777)
         elif file.endswith("_seed_corpus.zip"):
             corpus_path = fuzzers_path / (file.removesuffix("_seed_corpus.zip") + ".in")
-            zipfile.ZipFile(fuzzers_path / file, "r").extractall(corpus_path)
+            with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
+                zfd.extractall(corpus_path)
 
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)

@@ -3,6 +3,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/NamePrompter.h>
 #include <Common/ProfileEvents.h>
+#include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -706,7 +707,10 @@ struct IdentifierResolveScope
         {
             subquery_depth = parent_scope->subquery_depth;
             context = parent_scope->context;
+            projection_mask_map = parent_scope->projection_mask_map;
         }
+        else
+            projection_mask_map = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>();
 
         if (auto * union_node = scope_node->as<UnionNode>())
         {
@@ -718,6 +722,11 @@ struct IdentifierResolveScope
             group_by_use_nulls = context->getSettingsRef().group_by_use_nulls &&
                 (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
         }
+
+        if (context)
+            join_use_nulls = context->getSettingsRef().join_use_nulls;
+        else if (parent_scope)
+            join_use_nulls = parent_scope->join_use_nulls;
     }
 
     QueryTreeNodePtr scope_node;
@@ -772,6 +781,8 @@ struct IdentifierResolveScope
 
     /// Apply nullability to aggregation keys
     bool group_by_use_nulls = false;
+    /// Join retutns NULLs instead of default values
+    bool join_use_nulls = false;
 
     /// JOINs count
     size_t joins_count = 0;
@@ -783,6 +794,9 @@ struct IdentifierResolveScope
       * Valid only during analysis construction for single expression.
       */
     QueryTreeNodePtr expression_join_tree_node;
+
+    /// Node hash to mask id map
+    std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const
     {
@@ -3286,7 +3300,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     QueryTreeNodePtr resolved_identifier;
 
     JoinKind join_kind = from_join_node.getKind();
-    bool join_use_nulls = scope.context->getSettingsRef().join_use_nulls;
 
     /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
     /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
@@ -3451,7 +3464,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     if (join_node_in_resolve_process || !resolved_identifier)
         return resolved_identifier;
 
-    if (join_use_nulls)
+    if (scope.join_use_nulls)
     {
         resolved_identifier = resolved_identifier->clone();
         convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side);
@@ -4439,7 +4452,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     else
         matched_expression_nodes_with_names = resolveUnqualifiedMatcher(matcher_node, scope);
 
-    if (scope.context->getSettingsRef().join_use_nulls)
+    if (scope.join_use_nulls)
     {
         /** If we are resolving matcher came from the result of JOIN and `join_use_nulls` is set,
           * we need to convert joined column type to Nullable.
@@ -5124,22 +5137,31 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// Resolve function arguments
-
     bool allow_table_expressions = is_special_function_in;
     auto arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
         scope,
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/);
 
-    if (function_node_ptr->toAST()->hasSecretParts())
+    /// Mask arguments if needed
+    if (!scope.context->getSettingsRef().format_display_secrets_in_show_and_select)
     {
-        for (auto & argument : arguments_projection_names)
+        if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.count)
         {
-            SipHash hash;
-            hash.update(argument);
-            argument = getHexUIntLowercase(hash.get128());
+            auto & argument_nodes = function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
+
+            for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
+            {
+                if (auto * constant = argument_nodes[n]->as<ConstantNode>())
+                {
+                    auto mask = scope.projection_mask_map->insert({constant->getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
+                    constant->setMaskId(mask);
+                    arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(mask) + "]";
+                }
+            }
         }
     }
+
     auto & function_node = *function_node_ptr;
 
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
@@ -7559,7 +7581,21 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.getPrewhere())
+    {
+        /** Expression in PREWHERE with JOIN should not be modified by join_use_nulls.
+          * Example: SELECT * FROM t1 JOIN t2 USING (id) PREWHERE a = 1
+          * Column `a` should be resolved from table and should not change its type to Nullable.
+          */
+        bool join_use_nulls = scope.join_use_nulls;
+        bool use_identifier_lookup_to_result_cache = scope.use_identifier_lookup_to_result_cache;
+        scope.join_use_nulls = false;
+        scope.use_identifier_lookup_to_result_cache = false;
+
         resolveExpressionNode(query_node_typed.getPrewhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        scope.join_use_nulls = join_use_nulls;
+        scope.use_identifier_lookup_to_result_cache = use_identifier_lookup_to_result_cache;
+    }
 
     if (query_node_typed.getWhere())
         resolveExpressionNode(query_node_typed.getWhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);

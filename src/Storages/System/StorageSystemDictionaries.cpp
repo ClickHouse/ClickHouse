@@ -16,7 +16,6 @@
 #include <Core/Names.h>
 
 #include <base/map.h>
-#include <mutex>
 
 namespace DB
 {
@@ -50,6 +49,14 @@ catch (const DB::Exception &)
     return {};
 }
 
+}
+
+StorageSystemDictionaries::StorageSystemDictionaries(const StorageID & storage_id_, ColumnsDescription columns_description_)
+    : IStorageSystemOneBlock(storage_id_, std::move(columns_description_))
+{
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral("key", std::make_shared<DataTypeString>(), "");
+    setVirtuals(std::move(virtuals));
 }
 
 ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
@@ -89,13 +96,6 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
         {"loading_duration", std::make_shared<DataTypeFloat32>(), "Duration of a dictionary loading."},
         {"last_exception", std::make_shared<DataTypeString>(), "Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created."},
         {"comment", std::make_shared<DataTypeString>(), "Text of the comment to dictionary."}
-    };
-}
-
-NamesAndTypesList StorageSystemDictionaries::getVirtuals() const
-{
-    return {
-        {"key", std::make_shared<DataTypeString>()}
     };
 }
 
