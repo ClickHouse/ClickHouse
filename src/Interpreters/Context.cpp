@@ -1816,7 +1816,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         }
 
         uint64_t use_structure_from_insertion_table_in_table_functions = getSettingsRef().use_structure_from_insertion_table_in_table_functions;
-        if (use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
+        if (select_query_hint && use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
             const auto & insert_columns = DatabaseCatalog::instance()
                                               .getTable(getInsertionTable(), shared_from_this())
@@ -3270,7 +3270,7 @@ bool checkZooKeeperConfigIsLocal(const Poco::Util::AbstractConfiguration & confi
         if (startsWith(key, "node"))
         {
             String host = config.getString(config_name + "." + key + ".host");
-            if (isLocalAddress(DNSResolver::instance().resolveHost(host)))
+            if (isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(host).front()))
                 return true;
         }
     }
