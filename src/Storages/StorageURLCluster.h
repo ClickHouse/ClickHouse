@@ -31,8 +31,6 @@ public:
 
     std::string getName() const override { return "URLCluster"; }
 
-    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
-
     RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
 
     bool supportsTrivialCountOptimization() const override { return true; }
@@ -42,7 +40,6 @@ private:
 
     String uri;
     String format_name;
-    NamesAndTypesList virtual_columns;
 };
 
 

@@ -28,8 +28,6 @@ public:
 
     std::string getName() const override { return "S3Cluster"; }
 
-    NamesAndTypesList getVirtuals() const override;
-
     RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
 
     bool supportsTrivialCountOptimization() const override { return true; }
@@ -43,7 +41,6 @@ private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
 
     StorageS3::Configuration s3_configuration;
-    NamesAndTypesList virtual_columns;
 };
 
 

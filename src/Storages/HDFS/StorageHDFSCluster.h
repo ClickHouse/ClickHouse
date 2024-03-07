@@ -32,8 +32,6 @@ public:
 
     std::string getName() const override { return "HDFSCluster"; }
 
-    NamesAndTypesList getVirtuals() const override;
-
     RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
 
     bool supportsTrivialCountOptimization() const override { return true; }
@@ -43,7 +41,6 @@ private:
 
     String uri;
     String format_name;
-    NamesAndTypesList virtual_columns;
 };
 
 

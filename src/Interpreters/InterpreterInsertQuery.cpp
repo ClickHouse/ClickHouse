@@ -136,7 +136,7 @@ Block InterpreterInsertQuery::getSampleBlock(
         if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
             return window_view->getInputHeader();
         else if (no_destination)
-            return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtuals());
+            return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtualsList());
         else
             return metadata_snapshot->getSampleBlockNonMaterialized();
     }
@@ -513,6 +513,16 @@ BlockIO InterpreterInsertQuery::execute()
                 const bool resize_to_max_insert_threads = !table->isView() && views.empty();
                 pre_streams_size = resize_to_max_insert_threads ? settings.max_insert_threads
                                                                 : std::min<size_t>(settings.max_insert_threads, pipeline.getNumStreams());
+
+                /// Deduplication when passing insert_deduplication_token breaks if using more than one thread
+                if (!settings.insert_deduplication_token.toString().empty())
+                {
+                    LOG_DEBUG(
+                        getLogger("InsertQuery"),
+                        "Insert-select query using insert_deduplication_token, setting streams to 1 to avoid deduplication issues");
+                    pre_streams_size = 1;
+                }
+
                 if (table->supportsParallelInsert())
                     sink_streams_size = pre_streams_size;
             }
