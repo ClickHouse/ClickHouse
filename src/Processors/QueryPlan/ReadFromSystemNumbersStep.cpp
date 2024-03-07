@@ -25,9 +25,11 @@ namespace
 class NumbersSource : public ISource
 {
 public:
-    NumbersSource(UInt64 block_size_, UInt64 offset_, UInt64 step_)
+    NumbersSource(UInt64 block_size_, UInt64 offset_, std::optional<UInt64> limit_, UInt64 step_)
         : ISource(createHeader()), block_size(block_size_), next(offset_), step(step_)
     {
+        if (limit_.has_value())
+            end = limit_.value() + offset_;
     }
 
     String getName() const override { return "Numbers"; }
@@ -37,25 +39,34 @@ public:
 protected:
     Chunk generate() override
     {
-        auto column = ColumnUInt64::create(block_size);
+        UInt64 real_block_size = block_size;
+        if (end.has_value())
+        {
+            if (end.value() <= next)
+                return {};
+            real_block_size = std::min(block_size, end.value() - next);
+        }
+        auto column = ColumnUInt64::create(real_block_size);
         ColumnUInt64::Container & vec = column->getData();
 
         size_t curr = next; /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 * pos = vec.data(); /// This also accelerates the code.
-        UInt64 * end = &vec[block_size];
-        while (pos < end)
+
+        UInt64 * end_ = &vec[real_block_size];
+        while (pos < end_)
             *pos++ = curr++;
 
         next += step;
 
         progress(column->size(), column->byteSize());
 
-        return {Columns{std::move(column)}, block_size};
+        return {Columns{std::move(column)}, real_block_size};
     }
 
 private:
     UInt64 block_size;
     UInt64 next;
+    std::optional<UInt64> end; /// not included
     UInt64 step;
 };
 
@@ -474,7 +485,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source
-            = std::make_shared<NumbersSource>(max_block_size, numbers_storage.offset + i * max_block_size, num_streams * max_block_size);
+            = std::make_shared<NumbersSource>(max_block_size, numbers_storage.offset + i * max_block_size, numbers_storage.limit, num_streams * max_block_size);
 
         if (numbers_storage.limit && i == 0)
         {
