@@ -15,14 +15,12 @@ RUN apt-get update --yes \
             unixodbc-dev \
             odbcinst \
             sudo \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && apt-get clean
 
 RUN pip3 install \
     numpy \
     pyodbc \
-    deepdiff \
-    sqlglot
+    deepdiff
 
 ARG odbc_repo="https://github.com/ClickHouse/clickhouse-odbc.git"
 
@@ -37,7 +35,7 @@ RUN git clone --recursive ${odbc_repo} \
     && odbcinst -i -s -l -f /clickhouse-odbc/packaging/odbc.ini.sample
 
 ENV TZ=Europe/Amsterdam
-ENV MAX_RUN_TIME=9000
+ENV MAX_RUN_TIME=900
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ARG sqllogic_test_repo="https://github.com/gregrahn/sqllogictest.git"

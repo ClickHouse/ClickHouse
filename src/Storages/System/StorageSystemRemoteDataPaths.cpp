@@ -6,7 +6,6 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
 #include <Disks/IDisk.h>
 
@@ -64,9 +63,9 @@ Pipe StorageSystemRemoteDataPaths::read(
             FileCachePtr cache;
 
             if (disk->supportsCache())
-                cache = FileCacheFactory::instance().getByName(disk->getCacheName())->cache;
+                cache = FileCacheFactory::instance().getByName(disk->getCacheName()).cache;
 
-            for (const auto & [local_path, storage_objects] : remote_paths_by_local_path)
+            for (const auto & [local_path, common_prefox_for_objects, storage_objects] : remote_paths_by_local_path)
             {
                 for (const auto & object : storage_objects)
                 {
@@ -79,8 +78,7 @@ Pipe StorageSystemRemoteDataPaths::read(
                     col_local_path->insert(local_path);
                     col_remote_path->insert(object.remote_path);
                     col_size->insert(object.bytes_size);
-
-                    col_namespace->insertDefault();
+                    col_namespace->insert(common_prefox_for_objects);
 
                     if (cache)
                     {

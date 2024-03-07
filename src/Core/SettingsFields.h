@@ -6,6 +6,7 @@
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <boost/range/adaptor/map.hpp>
+#include <cctz/time_zone.h>
 #include <chrono>
 #include <unordered_map>
 #include <string_view>
@@ -428,7 +429,7 @@ constexpr auto getEnumValues()
         if (it != map.end()) \
             return it->second; \
         throw Exception(ERROR_CODE_FOR_UNEXPECTED_NAME, \
-            "Unexpected value of " #NEW_NAME ":{}", std::to_string(std::underlying_type_t<EnumType>(value))); \
+            "Unexpected value of " #NEW_NAME ":{}", std::to_string(std::underlying_type<EnumType>::type(value))); \
     } \
     \
     typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(std::string_view str) \
@@ -458,25 +459,22 @@ template <typename Enum, typename Traits>
 struct SettingFieldMultiEnum
 {
     using EnumType = Enum;
-    using ValueType = std::vector<Enum>;
+    using ValueType = MultiEnum<Enum>;
+    using StorageType = typename ValueType::StorageType;
 
     ValueType value;
     bool changed = false;
 
     explicit SettingFieldMultiEnum(ValueType v = ValueType{}) : value{v} {}
     explicit SettingFieldMultiEnum(EnumType e) : value{e} {}
+    explicit SettingFieldMultiEnum(StorageType s) : value(s) {}
     explicit SettingFieldMultiEnum(const Field & f) : value(parseValueFromString(f.safeGet<const String &>())) {}
 
     operator ValueType() const { return value; } /// NOLINT
+    explicit operator StorageType() const { return value.getValue(); }
     explicit operator Field() const { return toString(); }
-    operator MultiEnum<EnumType>() const /// NOLINT
-    {
-        MultiEnum<EnumType> res;
-        for (const auto & v : value)
-            res.set(v);
-        return res;
-    }
 
+    SettingFieldMultiEnum & operator= (StorageType x) { changed = true; value.setValue(x); return *this; }
     SettingFieldMultiEnum & operator= (ValueType x) { changed = true; value = x; return *this; }
     SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<const String &>()); return *this; }
 
@@ -484,10 +482,14 @@ struct SettingFieldMultiEnum
     {
         static const String separator = ",";
         String result;
-        for (const auto & v : value)
+        for (StorageType i = 0; i < Traits::getEnumSize(); ++i)
         {
-            result += Traits::toString(v);
-            result += separator;
+            const auto v = static_cast<Enum>(i);
+            if (value.isSet(v))
+            {
+                result += Traits::toString(v);
+                result += separator;
+            }
         }
 
         if (!result.empty())
@@ -506,7 +508,6 @@ private:
         static const String separators=", ";
 
         ValueType result;
-        std::unordered_set<EnumType> values_set;
 
         //to avoid allocating memory on substr()
         const std::string_view str_view{str};
@@ -518,12 +519,7 @@ private:
             if (value_end == std::string::npos)
                 value_end = str_view.size();
 
-            auto value = Traits::fromString(str_view.substr(value_start, value_end - value_start));
-            /// Deduplicate values
-            auto [_, inserted] = values_set.emplace(value);
-            if (inserted)
-                result.push_back(value);
-
+            result.set(Traits::fromString(str_view.substr(value_start, value_end - value_start)));
             value_start = str_view.find_first_not_of(separators, value_end);
         }
 
@@ -558,8 +554,7 @@ void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
         static EnumType fromString(std::string_view str); \
     }; \
     \
-    using SettingField##NEW_NAME = SettingFieldMultiEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>; \
-    using NEW_NAME##List = typename SettingField##NEW_NAME::ValueType;
+    using SettingField##NEW_NAME = SettingFieldMultiEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
 
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTING_MULTI_ENUM(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
@@ -607,7 +602,12 @@ struct SettingFieldTimezone
     void readBinary(ReadBuffer & in);
 
 private:
-    void validateTimezone(const std::string & tz_str);
+    void validateTimezone(const std::string & tz_str)
+    {
+        cctz::time_zone validated_tz;
+        if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
+    }
 };
 
 /// Can keep a value of any type. Used for user-defined settings.

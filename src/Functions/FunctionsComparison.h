@@ -643,12 +643,13 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(decimalCheckComparisonOverflow(context)); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
 
-    explicit FunctionComparison(bool check_decimal_overflow_)
-        : check_decimal_overflow(check_decimal_overflow_) {}
+    explicit FunctionComparison(ContextPtr context_)
+        : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
 
 private:
+    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
@@ -811,7 +812,7 @@ private:
                 c0_const_size = c0_const_fixed_string->getN();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnConst contains not String nor FixedString column");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
         }
 
         if (c1_const)
@@ -830,7 +831,7 @@ private:
                 c1_const_size = c1_const_fixed_string->getN();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnConst contains not String nor FixedString column");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
         }
 
         using StringImpl = StringComparisonImpl<Op<int, int>>;
@@ -1114,7 +1115,7 @@ private:
         /// This is a paranoid check to protect from a broken query analysis.
         if (c0->isNullable() != c1->isNullable())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Columns are assumed to be of identical types, but they are different in Nullable");
+                "Logical error: columns are assumed to be of identical types, but they are different in Nullable");
 
         if (c0_const && c1_const)
         {
@@ -1189,7 +1190,7 @@ public:
 
         if (left_tuple && right_tuple)
         {
-            auto func = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionComparison<Op, Name>>(check_decimal_overflow));
+            auto func = FunctionToOverloadResolverAdaptor(FunctionComparison<Op, Name>::create(context));
 
             bool has_nullable = false;
             bool has_null = false;
@@ -1278,15 +1279,8 @@ public:
         bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
             && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
 
-        /// Interval data types can be compared only when having equal units.
-        bool left_is_interval = which_left.isInterval();
-        bool right_is_interval = which_right.isInterval();
-
-        bool types_equal = left_type->equals(*right_type);
-
         ColumnPtr res;
-        if (left_is_num && right_is_num && !date_and_datetime
-            && (!left_is_interval || !right_is_interval || types_equal))
+        if (left_is_num && right_is_num && !date_and_datetime)
         {
             if (!((res = executeNumLeftType<UInt8>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<UInt16>(col_left_untyped, col_right_untyped))
@@ -1378,7 +1372,7 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Date related common types can only be UInt32/UInt64/Int32/Decimal");
             return res;
         }
-        else if (types_equal)
+        else if (left_type->equals(*right_type))
         {
             return executeGenericIdenticalTypes(col_left_untyped, col_right_untyped);
         }

@@ -22,10 +22,9 @@ public:
     const std::vector<BloomFilterPtr> & getFilters() const { return bloom_filters; }
 
 private:
-    const size_t bits_per_row;
-    const size_t hash_functions;
-
     size_t total_rows = 0;
+    size_t bits_per_row;
+    size_t hash_functions;
     std::vector<BloomFilterPtr> bloom_filters;
 
     void fillingBloomFilter(BloomFilterPtr & bf, const HashSet<UInt64> & hashes) const;

@@ -96,8 +96,7 @@ FROM
         ORDER BY number ASC
     )
     ORDER BY number DESC
-) AS t2
-ORDER BY t1.number, t2.number"
+) AS t2"
 run_query "$query"
 
 echo "-- CROSS JOIN with subqueries, ORDER BY in main query -> all ORDER BY clauses will be removed in subqueries"
@@ -139,8 +138,7 @@ FROM
     )
     ORDER BY number DESC
 )
-GROUP BY number
-ORDER BY number"
+GROUP BY number"
 run_query "$query"
 
 echo "-- GROUP BY with aggregation function which depends on order -> keep ORDER BY in first subquery, and eliminate in second subquery"
@@ -156,9 +154,7 @@ FROM
     )
     ORDER BY number DESC
 )
-GROUP BY number
-ORDER BY number
-SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test"
+GROUP BY number"
 run_query "$query"
 
 echo "-- query with aggregation function but w/o GROUP BY -> remove sorting"
@@ -201,8 +197,7 @@ FROM
     )
     GROUP BY number
 )
-ORDER BY a ASC
-SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test"
+ORDER BY a ASC"
 run_query "$query"
 
 echo "-- Check that optimization works for subqueries as well, - main query have neither ORDER BY nor GROUP BY"
@@ -223,9 +218,7 @@ FROM
     )
     GROUP BY number
 )
-WHERE a > 0
-ORDER BY a
-SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test"
+WHERE a > 0"
 run_query "$query"
 
 echo "-- GROUP BY in most inner query makes execution parallelized, and removing inner sorting steps will keep it that way. But need to correctly update data streams sorting properties after removing sorting steps"

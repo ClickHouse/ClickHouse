@@ -140,16 +140,6 @@ def test_load_balancing_nearest_hostname():
     assert unique_nodes == set(["n1"])
 
 
-def test_load_balancing_hostname_levenshtein_distance():
-    unique_nodes = set()
-    for _ in range(0, queries):
-        unique_nodes.add(
-            get_node(n1, settings={"load_balancing": "hostname_levenshtein_distance"})
-        )
-    assert len(unique_nodes) == 1, unique_nodes
-    assert unique_nodes == set(["n1"])
-
-
 def test_load_balancing_in_order():
     unique_nodes = set()
     for _ in range(0, queries):

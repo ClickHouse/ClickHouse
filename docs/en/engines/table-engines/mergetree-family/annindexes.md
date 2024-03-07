@@ -2,7 +2,7 @@
 
 Nearest neighborhood search is the problem of finding the M closest points for a given point in an N-dimensional vector space. The most
 straightforward approach to solve this problem is a brute force search where the distance between all points in the vector space and the
-reference point is computed. This method guarantees perfect accuracy, but it is usually too slow for practical applications. Thus, nearest
+reference point is computed. This method guarantees perfect accuracy but it is usually too slow for practical applications. Thus, nearest
 neighborhood search problems are often solved with [approximative algorithms](https://github.com/erikbern/ann-benchmarks). Approximative
 nearest neighborhood search techniques, in conjunction with [embedding
 methods](https://cloud.google.com/architecture/overview-extracting-and-serving-feature-embeddings-for-machine-learning) allow to search huge
@@ -24,7 +24,7 @@ LIMIT N
 
 `vectors` contains N-dimensional values of type [Array](../../../sql-reference/data-types/array.md) or
 [Tuple](../../../sql-reference/data-types/tuple.md), for example embeddings. Function `Distance` computes the distance between two vectors.
-Often, the Euclidean (L2) distance is chosen as distance function but [other
+Often, the the Euclidean (L2) distance is chosen as distance function but [other
 distance functions](/docs/en/sql-reference/functions/distance-functions.md) are also possible. `Point` is the reference point, e.g. `(0.17,
 0.33, ...)`, and `N` limits the number of search results.
 
@@ -109,7 +109,7 @@ clickhouse-client --param_vec='hello' --query="SELECT * FROM table_with_ann_inde
 
 **Restrictions**: Queries that contain both a `WHERE Distance(vectors, Point) < MaxDistance` and an `ORDER BY Distance(vectors, Point)`
 clause cannot use ANN indexes. Also, the approximate algorithms used to determine the nearest neighbors require a limit, hence queries
-without `LIMIT` clause cannot utilize ANN indexes. Also, ANN indexes are only used if the query has a `LIMIT` value smaller than setting
+without `LIMIT` clause cannot utilize ANN indexes. Also ANN indexes are only used if the query has a `LIMIT` value smaller than setting
 `max_limit_for_ann_queries` (default: 1 million rows). This is a safeguard to prevent large memory allocations by external libraries for
 approximate neighbor search.
 
@@ -120,9 +120,9 @@ then each indexed block will contain 16384 rows. However, data structures and al
 provided by external libraries) are inherently row-oriented. They store a compact representation of a set of rows and also return rows for
 ANN queries. This causes some rather unintuitive differences in the way ANN indexes behave compared to normal skip indexes.
 
-When a user defines an ANN index on a column, ClickHouse internally creates an ANN "sub-index" for each index block. The sub-index is "local"
+When a user defines a ANN index on a column, ClickHouse internally creates a ANN "sub-index" for each index block. The sub-index is "local"
 in the sense that it only knows about the rows of its containing index block. In the previous example and assuming that a column has 65536
-rows, we obtain four index blocks (spanning eight granules) and an ANN sub-index for each index block. A sub-index is theoretically able to
+rows, we obtain four index blocks (spanning eight granules) and a ANN sub-index for each index block. A sub-index is theoretically able to
 return the rows with the N closest points within its index block directly. However, since ClickHouse loads data from disk to memory at the
 granularity of granules, sub-indexes extrapolate matching rows to granule granularity. This is different from regular skip indexes which
 skip data at the granularity of index blocks.
@@ -203,15 +203,10 @@ Parameter `NumTrees` is the number of trees which the algorithm creates (default
 more accurate search results but slower index creation / query times (approximately linearly) as well as larger index sizes.
 
 :::note
-Indexes over columns of type `Array` will generally work faster than indexes on `Tuple` columns. All arrays must have same length. To avoid
-errors, you can use a [CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT
-constraint_name_1 CHECK length(vectors) = 256`. Also, empty `Arrays` and unspecified `Array` values in INSERT statements (i.e. default
-values) are not supported.
+Indexes over columns of type `Array` will generally work faster than indexes on `Tuple` columns. All arrays **must** have same length. Use
+[CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints) to avoid errors. For example, `CONSTRAINT constraint_name_1
+CHECK length(vectors) = 256`.
 :::
-
-The creation of Annoy indexes (whenever a new part is build, e.g. at the end of a merge) is a relatively slow process. You can increase
-setting `max_threads_for_annoy_index_creation` (default: 4) which controls how many threads are used to create an Annoy index. Please be
-careful with this setting, it is possible that multiple indexes are created in parallel in which case there can be overparallelization.
 
 Setting `annoy_index_search_k_nodes` (default: `NumTrees * LIMIT`) determines how many tree nodes are inspected during SELECTs. Larger
 values mean more accurate results at the cost of longer query runtime:
@@ -228,10 +223,9 @@ SETTINGS annoy_index_search_k_nodes=100;
 The Annoy index currently does not work with per-table, non-default `index_granularity` settings (see
 [here](https://github.com/ClickHouse/ClickHouse/pull/51325#issuecomment-1605920475)). If necessary, the value must be changed in config.xml.
 :::
-
 ## USearch {#usearch}
 
-This type of ANN index is based on the [USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
+This type of ANN index is based on the [the USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
 algorithm](https://arxiv.org/abs/1603.09320), i.e., builds a hierarchical graph where each point represents a vector and the edges represent
 similarity. Such hierarchical structures can be very efficient on large collections. They may often fetch 0.05% or less data from the
 overall dataset, while still providing 99% recall. This is especially useful when working with high-dimensional vectors,
@@ -258,7 +252,7 @@ CREATE TABLE table_with_usearch_index
 (
   id Int64,
   vectors Array(Float32),
-  INDEX [ann_index_name] vectors TYPE usearch([Distance[, ScalarKind]]) [GRANULARITY N]
+  INDEX [ann_index_name] vectors TYPE usearch([Distance]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -271,7 +265,7 @@ CREATE TABLE table_with_usearch_index
 (
   id Int64,
   vectors Tuple(Float32[, Float32[, ...]]),
-  INDEX [ann_index_name] vectors TYPE usearch([Distance[, ScalarKind]]) [GRANULARITY N]
+  INDEX [ann_index_name] vectors TYPE usearch([Distance]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -282,9 +276,6 @@ USearch currently supports two distance functions:
   ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
 - `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
   ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
-
-USearch allows storing the vectors in reduced precision formats. Supported scalar kinds are `f64`, `f32`, `f16` or `i8`. If no scalar kind
-was specified during index creation, `f16` is used as default.
 
 For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
 distance function was specified during index creation, `L2Distance` is used as default.

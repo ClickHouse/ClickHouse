@@ -11,7 +11,6 @@
 #    include <DataTypes/DataTypesNumber.h>
 #    include <Databases/DatabaseOrdinary.h>
 #    include <Databases/IDatabase.h>
-#    include <Databases/MySQL/MySQLBinlogClient.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Databases/MySQL/MaterializedMySQLSettings.h>
 #    include <Parsers/ASTCreateQuery.h>
@@ -46,7 +45,6 @@ public:
         const String & mysql_database_name_,
         mysqlxx::Pool && pool_,
         MySQLClient && client_,
-        const MySQLReplication::BinlogClientPtr & binlog_client_,
         MaterializedMySQLSettings * settings_);
 
     void stopSynchronization();
@@ -56,18 +54,25 @@ public:
     void assertMySQLAvailable();
 
 private:
-    LoggerPtr log;
+    Poco::Logger * log;
 
     String database_name;
     String mysql_database_name;
 
     mutable mysqlxx::Pool pool;
     mutable MySQLClient client;
-    BinlogClientPtr binlog_client;
-    BinlogPtr binlog;
     MaterializedMySQLSettings * settings;
     String query_prefix;
     NameSet materialized_tables_list;
+
+    // USE MySQL ERROR CODE:
+    // https://dev.mysql.com/doc/mysql-errors/5.7/en/server-error-reference.html
+    const int ER_ACCESS_DENIED_ERROR = 1045; /// NOLINT
+    const int ER_DBACCESS_DENIED_ERROR = 1044; /// NOLINT
+    const int ER_BAD_DB_ERROR = 1049; /// NOLINT
+
+    // https://dev.mysql.com/doc/mysql-errors/8.0/en/client-error-reference.html
+    const int CR_SERVER_LOST = 2013; /// NOLINT
 
     struct Buffers
     {
@@ -94,15 +99,11 @@ private:
         BufferAndSortingColumnsPtr getTableDataBuffer(const String & table, ContextPtr context);
     };
 
-    Position getPosition() const { return binlog ? binlog->getPosition() : client.getPosition(); }
     void synchronization();
 
     bool isCancelled() { return sync_quit.load(std::memory_order_relaxed); }
 
     bool prepareSynchronized(MaterializeMetadata & metadata);
-
-    bool isTableIgnored(const String & table_name) const;
-    bool ignoreEvent(const BinlogEventPtr & event) const;
 
     void flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata);
 
