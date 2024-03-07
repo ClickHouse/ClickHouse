@@ -14,6 +14,8 @@ public:
     ASTPtr subquery;
     ASTPtr aliases;
 
+    bool has_materialized_keyword = false; /// WITH t AS MATERIALIZED (subquery)
+
     /** Get the text that identifies this element. */
     String getID(char) const override { return "WithElement"; }
 
