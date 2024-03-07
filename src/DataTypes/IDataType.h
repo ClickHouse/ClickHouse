@@ -86,8 +86,6 @@ public:
 
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
-    /// Storage type (e.g. Int64 for Interval)
-    virtual TypeIndex getColumnType() const { return getTypeId(); }
 
     bool hasSubcolumn(std::string_view subcolumn_name) const;
 
@@ -110,10 +108,6 @@ public:
     static void forEachSubcolumn(
         const SubcolumnCallback & callback,
         const SubstreamData & data);
-
-    /// Call callback for each nested type recursively.
-    using ChildCallback = std::function<void(const IDataType &)>;
-    virtual void forEachChild(const ChildCallback &) const {}
 
     Names getSubcolumnNames() const;
 

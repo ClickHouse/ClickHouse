@@ -211,17 +211,16 @@ std::shared_ptr<TSystemLog> createSystemLog(
             if (!settings.empty())
                 log_settings.engine += (storage_policy.empty() ? " " : ", ") + settings;
         }
+
+        /// Add comment to AST. So it will be saved when the table will be renamed.
+        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
     ParserStorageWithComment storage_parser;
-    auto storage_ast = parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
-            "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    auto & storage_with_comment = storage_ast->as<StorageWithComment &>();
 
-    /// Add comment to AST. So it will be saved when the table will be renamed.
-    if (!storage_with_comment.comment || storage_with_comment.comment->as<ASTLiteral &>().value.safeGet<String>().empty())
-        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
+    parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
+            "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     log_settings.queue_settings.flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
                                                                                TSystemLog::getDefaultFlushIntervalMilliseconds());

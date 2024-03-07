@@ -89,7 +89,7 @@ ColumnsDescription StorageSystemQuotaUsage::getColumnsDescriptionImpl(bool add_c
 }
 
 
-void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();

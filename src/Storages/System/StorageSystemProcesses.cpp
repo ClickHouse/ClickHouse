@@ -81,7 +81,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
     return description;
 }
 
-void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     ProcessList::Info info = context->getProcessList().getInfo(true, true, true);
 

@@ -43,7 +43,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Paths to the table data in the file systems."},
         {"metadata_path", std::make_shared<DataTypeString>(), "Path to the table metadata in the file system."},
         {"metadata_modification_time", std::make_shared<DataTypeDateTime>(), "Time of latest modification of the table metadata."},
-        {"metadata_version", std::make_shared<DataTypeInt32>(), "Metadata version for ReplicatedMergeTree table, 0 for non ReplicatedMergeTree table."},
         {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Database dependencies."},
         {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Table dependencies (materialized views the current table)."},
         {"create_table_query", std::make_shared<DataTypeString>(), "The query that was used to create the table."},
@@ -288,11 +287,6 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
-                        // metadata_version
-                        // Temporary tables does not support replication
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-
                         // dependencies_database
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
@@ -317,7 +311,7 @@ protected:
                         while (src_index < columns_mask.size())
                         {
                             // total_rows
-                            if (src_index == 19 && columns_mask[src_index])
+                            if (src_index == 18 && columns_mask[src_index])
                             {
                                 if (auto total_rows = table.second->totalRows(settings))
                                     res_columns[res_index++]->insert(*total_rows);
@@ -325,7 +319,7 @@ protected:
                                     res_columns[res_index++]->insertDefault();
                             }
                             // total_bytes
-                            else if (src_index == 20 && columns_mask[src_index])
+                            else if (src_index == 19 && columns_mask[src_index])
                             {
                                 if (auto total_bytes = table.second->totalBytes(settings))
                                     res_columns[res_index++]->insert(*total_bytes);
@@ -424,18 +418,6 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(table_name)));
 
-                StorageMetadataPtr metadata_snapshot;
-                if (table)
-                    metadata_snapshot = table->getInMemoryMetadataPtr();
-
-                if (columns_mask[src_index++])
-                {
-                    if (metadata_snapshot && table->supportsReplication())
-                        res_columns[res_index++]->insert(metadata_snapshot->metadata_version);
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
                 {
                     Array views_table_name_array;
                     Array views_database_name_array;
@@ -499,6 +481,10 @@ protected:
                 }
                 else
                     src_index += 3;
+
+                StorageMetadataPtr metadata_snapshot;
+                if (table)
+                    metadata_snapshot = table->getInMemoryMetadataPtr();
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
@@ -696,27 +682,21 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromSystemTables(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
         Block sample_block,
+        ContextPtr context_,
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
-        : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
-            column_names_,
-            query_info_,
-            storage_snapshot_,
-            context_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        , context(std::move(context_))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
     {
     }
 
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void applyFilters() override;
 
 private:
+    ContextPtr context;
     std::vector<UInt8> columns_mask;
     size_t max_block_size;
 
@@ -728,7 +708,7 @@ void StorageSystemTables::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
+    SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
@@ -740,14 +720,17 @@ void StorageSystemTables::read(
     auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
     auto reading = std::make_unique<ReadFromSystemTables>(
-        column_names, query_info, storage_snapshot, context, std::move(res_block), std::move(columns_mask), max_block_size);
+        std::move(res_block),
+        context,
+        std::move(columns_mask),
+        max_block_size);
 
     query_plan.addStep(std::move(reading));
 }
 
-void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
+void ReadFromSystemTables::applyFilters()
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);

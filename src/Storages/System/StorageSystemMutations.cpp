@@ -46,7 +46,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
 }
 
 
-void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
+void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -100,7 +100,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             { col_table, std::make_shared<DataTypeString>(), "table" },
         };
 
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
 
         if (!filtered_block.rows())
             return;

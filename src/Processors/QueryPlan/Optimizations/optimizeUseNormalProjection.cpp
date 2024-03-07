@@ -163,6 +163,10 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         auto & candidate = candidates.emplace_back();
         candidate.projection = projection;
 
+        ActionDAGNodes added_filter_nodes;
+        if (query.filter_node)
+            added_filter_nodes.nodes.push_back(query.filter_node);
+
         bool analyzed = analyzeProjectionCandidate(
             candidate,
             *reading,
@@ -172,7 +176,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
             query_info,
             context,
             max_added_blocks,
-            query.filter_node ? query.dag : nullptr);
+            added_filter_nodes);
 
         if (!analyzed)
             continue;

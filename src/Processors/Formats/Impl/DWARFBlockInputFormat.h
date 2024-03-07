@@ -124,7 +124,7 @@ private:
 class DWARFSchemaReader : public ISchemaReader
 {
 public:
-    explicit DWARFSchemaReader(ReadBuffer & in_);
+    DWARFSchemaReader(ReadBuffer & in_);
 
     NamesAndTypesList readSchema() override;
 };

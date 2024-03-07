@@ -13,7 +13,7 @@
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/copyS3File.h>
 #include <Interpreters/Context.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Disks/ObjectStorages/S3/diskSettings.h>
@@ -171,7 +171,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 
     auto read_buffer_creator =
         [this, settings_ptr, disk_read_settings]
-        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
+        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromS3>(
             client.get(),
@@ -182,8 +182,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
             disk_read_settings,
             /* use_external_buffer */true,
             /* offset */0,
-            /* read_until_position */0,
-            restricted_seek);
+            read_until_position,
+            /* restricted_seek */true);
     };
 
     switch (read_settings.remote_fs_method)
@@ -193,17 +193,16 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
             return std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator),
                 objects,
-                "s3:" + uri.bucket + "/",
                 disk_read_settings,
                 global_context->getFilesystemCacheLog(),
                 /* use_external_buffer */false);
+
         }
         case RemoteFSReadMethod::threadpool:
         {
             auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator),
                 objects,
-                "s3:" + uri.bucket + "/",
                 disk_read_settings,
                 global_context->getFilesystemCacheLog(),
                 /* use_external_buffer */true);

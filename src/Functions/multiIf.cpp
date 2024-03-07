@@ -40,23 +40,15 @@ class FunctionMultiIf final : public FunctionIfBase
 {
 public:
     static constexpr auto name = "multiIf";
-    static FunctionPtr create(ContextPtr context_)
-    {
-        const auto & settings = context_->getSettingsRef();
-        return std::make_shared<FunctionMultiIf>(settings.allow_execute_multiif_columnar, settings.allow_experimental_variant_type, settings.use_variant_as_common_type);
-    }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionMultiIf>(context_); }
 
-    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool allow_experimental_variant_type_, bool use_variant_as_common_type_)
-        : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
-        , allow_experimental_variant_type(allow_experimental_variant_type_)
-        , use_variant_as_common_type(use_variant_as_common_type_)
-    {}
+    explicit FunctionMultiIf(ContextPtr context_) : context(context_) { }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
     {
-        settings.arguments_with_disabled_lazy_execution.insert(0);
+        settings.enable_lazy_execution_for_first_argument = false;
         settings.enable_lazy_execution_for_common_descendants_of_arguments = (number_of_arguments != 3);
         settings.force_enable_lazy_execution = false;
         return true;
@@ -126,7 +118,7 @@ public:
             types_of_branches.emplace_back(arg);
         });
 
-        if (allow_experimental_variant_type && use_variant_as_common_type)
+        if (context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
             return getLeastSupertypeOrVariant(types_of_branches);
 
         return getLeastSupertype(types_of_branches);
@@ -248,9 +240,10 @@ public:
             }
         }
 
+        const auto & settings = context->getSettingsRef();
         const WhichDataType which(removeNullable(result_type));
         bool execute_multiif_columnar
-            = allow_execute_multiif_columnar && !contains_short && (which.isInt() || which.isUInt() || which.isFloat());
+            = settings.allow_execute_multiif_columnar && !contains_short && (which.isInt() || which.isUInt() || which.isFloat());
 
         size_t rows = input_rows_count;
         if (!execute_multiif_columnar)
@@ -514,9 +507,7 @@ private:
             executeColumnIfNeeded(arguments[i], true);
     }
 
-    const bool allow_execute_multiif_columnar;
-    const bool allow_experimental_variant_type;
-    const bool use_variant_as_common_type;
+    ContextPtr context;
 };
 
 }
@@ -528,11 +519,6 @@ REGISTER_FUNCTION(MultiIf)
     /// These are obsolete function names.
     factory.registerFunction<FunctionMultiIf>("caseWithoutExpr");
     factory.registerFunction<FunctionMultiIf>("caseWithoutExpression");
-}
-
-FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool allow_experimental_variant_type, bool use_variant_as_common_type)
-{
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, allow_experimental_variant_type, use_variant_as_common_type));
 }
 
 }

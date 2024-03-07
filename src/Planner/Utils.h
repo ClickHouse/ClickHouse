@@ -34,9 +34,6 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
 
-/// Convert query node to ASTSelectQuery for distributed processing
-ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
-
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);
 
@@ -70,9 +67,7 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 
 /// Replace table expressions from query JOIN TREE with dummy tables
 using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
-QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
-    const QueryTreeNodePtr & query_node,
-    const QueryTreeNodes & table_nodes,
+QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr & query_node,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
 

@@ -254,7 +254,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
-        if (isGinFile(file_name))
+        if (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"))
             continue;
 
         auto checksum_it = checksums_data.files.find(file_name);

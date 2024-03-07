@@ -82,7 +82,7 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
             if (!inserted)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Loading data for {} more than once", file_path);
 
-            LOG_TRACE(getLogger("DiskWeb"), "Adding file: {}, size: {}", file_path, size);
+            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding file: {}, size: {}", file_path, size);
             loaded_files.emplace_back(file_path);
         }
 
@@ -252,13 +252,14 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
 {
     auto read_buffer_creator =
          [this, read_settings]
-         (bool /* restricted_seek */, const std::string & path_) -> std::unique_ptr<ReadBufferFromFileBase>
+         (const std::string & path_, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
      {
          return std::make_unique<ReadBufferFromWebServer>(
              fs::path(url) / path_,
              getContext(),
              read_settings,
-             /* use_external_buffer */true);
+             /* use_external_buffer */true,
+             read_until_position);
      };
 
     auto global_context = Context::getGlobalContextInstance();
@@ -270,7 +271,6 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
             return std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator),
                 StoredObjects{object},
-                "url:" + url + "/",
                 read_settings,
                 global_context->getFilesystemCacheLog(),
                 /* use_external_buffer */false);
@@ -280,7 +280,6 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
             auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator),
                 StoredObjects{object},
-                "url:" + url + "/",
                 read_settings,
                 global_context->getFilesystemCacheLog(),
                 /* use_external_buffer */true);

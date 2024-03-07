@@ -68,7 +68,7 @@ RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 
 Clears ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
 
-For more convenient (automatic) cache management, see disable_internal_dns_cache, dns_cache_max_entries, dns_cache_update_period parameters.
+For more convenient (automatic) cache management, see disable_internal_dns_cache, dns_cache_update_period parameters.
 
 ## DROP MARK CACHE
 

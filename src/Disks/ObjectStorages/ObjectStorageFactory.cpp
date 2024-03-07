@@ -102,7 +102,7 @@ void checkS3Capabilities(
     if (s3_capabilities.support_batch_delete && !checkBatchRemove(storage, key_with_trailing_slash))
     {
         LOG_WARNING(
-            getLogger("S3ObjectStorage"),
+            &Poco::Logger::get("S3ObjectStorage"),
             "Storage for disk {} does not support batch delete operations, "
             "so `s3_capabilities.support_batch_delete` was automatically turned off during the access check. "
             "To remove this message set `s3_capabilities.support_batch_delete` for the disk to `false`.",
@@ -213,12 +213,10 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        AzureBlobStorageEndpoint endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
         return std::make_unique<AzureObjectStorage>(
             name,
             getAzureBlobContainerClient(config, config_prefix),
-            getAzureBlobStorageSettings(config, config_prefix, context),
-            endpoint.prefix.empty() ? endpoint.container_name : endpoint.container_name + "/" + endpoint.prefix);
+            getAzureBlobStorageSettings(config, config_prefix, context));
 
     });
 }

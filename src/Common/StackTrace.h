@@ -11,7 +11,9 @@
 
 #ifdef OS_DARWIN
 // ucontext is not available without _XOPEN_SOURCE
-#   pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   ifdef __clang__
+#       pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   endif
 #   define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>

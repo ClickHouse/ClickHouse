@@ -34,7 +34,7 @@ ColumnsDescription StorageSystemTransactions::getColumnsDescription()
     };
 }
 
-void StorageSystemTransactions::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemTransactions::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     auto list = TransactionLog::instance().getTransactionsList();
     for (const auto & elem : list)

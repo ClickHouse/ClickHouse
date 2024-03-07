@@ -10,7 +10,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
 #include <Storages/StorageS3Settings.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <memory>

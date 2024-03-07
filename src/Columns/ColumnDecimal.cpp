@@ -43,6 +43,46 @@ int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) c
 }
 
 template <is_decimal T>
+void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                                     PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                                     int direction, int nan_direction_hint) const
+{
+    return this->template doCompareColumn<ColumnDecimal<T>>(static_cast<const Self &>(rhs), rhs_row_num, row_indexes,
+                                                         compare_results, direction, nan_direction_hint);
+}
+
+template <is_decimal T>
+bool ColumnDecimal<T>::hasEqualValues() const
+{
+    return this->template hasEqualValuesImpl<ColumnDecimal<T>>();
+}
+
+template <is_decimal T>
+StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
+{
+    constexpr size_t null_bit_size = sizeof(UInt8);
+    StringRef res;
+    char * pos;
+    if (null_bit)
+    {
+        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(T);
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+        memcpy(pos, null_bit, null_bit_size);
+        if (*null_bit) return res;
+        pos += null_bit_size;
+    }
+    else
+    {
+        res.size = sizeof(T);
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+    }
+    memcpy(pos, &data[n], sizeof(T));
+    return res;
+}
+
+template <is_decimal T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.push_back(unalignedLoad<T>(pos));
@@ -295,16 +335,6 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
 }
 
 template <is_decimal T>
-bool ColumnDecimal<T>::tryInsert(const Field & x)
-{
-    DecimalField<T> value;
-    if (!x.tryGet<DecimalField<T>>(value))
-        return false;
-    data.push_back(value);
-    return true;
-}
-
-template <is_decimal T>
 void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
     T tmp;
@@ -339,7 +369,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
     Container & res_data = res->getData();
 
     if (result_size_hint)
-        res_data.reserve_exact(result_size_hint > 0 ? result_size_hint : size);
+        res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
@@ -415,7 +445,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
         return res;
 
     typename Self::Container & res_data = res->getData();
-    res_data.reserve_exact(offsets.back());
+    res_data.reserve(offsets.back());
 
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
@@ -428,6 +458,12 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
     }
 
     return res;
+}
+
+template <is_decimal T>
+void ColumnDecimal<T>::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
 }
 
 template <is_decimal T>

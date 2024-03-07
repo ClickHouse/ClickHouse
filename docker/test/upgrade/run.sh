@@ -79,19 +79,11 @@ remove_keeper_config "async_replication" "1"
 # create_if_not_exists feature flag doesn't exist on some older versions
 remove_keeper_config "create_if_not_exists" "[01]"
 
-# latest_logs_cache_size_threshold setting doesn't exist on some older versions
-remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
-
-# commit_logs_cache_size_threshold setting doesn't exist on some older versions
-remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
-
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 rm /etc/clickhouse-server/config.d/storage_conf_02963.xml
-rm /etc/clickhouse-server/config.d/backoff_failed_mutation.xml
-rm /etc/clickhouse-server/config.d/handlers.yaml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 rm /etc/clickhouse-server/users.d/s3_cache_new.xml
 rm /etc/clickhouse-server/users.d/replicated_ddl_entry.xml
@@ -119,12 +111,6 @@ remove_keeper_config "async_replication" "1"
 # create_if_not_exists feature flag doesn't exist on some older versions
 remove_keeper_config "create_if_not_exists" "[01]"
 
-# latest_logs_cache_size_threshold setting doesn't exist on some older versions
-remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
-
-# commit_logs_cache_size_threshold setting doesn't exist on some older versions
-remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
-
 # But we still need default disk because some tables loaded only into it
 sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
   | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
@@ -138,8 +124,6 @@ rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 rm /etc/clickhouse-server/config.d/storage_conf_02963.xml
-rm /etc/clickhouse-server/config.d/backoff_failed_mutation.xml
-rm /etc/clickhouse-server/config.d/handlers.yaml
 rm /etc/clickhouse-server/config.d/block_number.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 rm /etc/clickhouse-server/users.d/s3_cache_new.xml

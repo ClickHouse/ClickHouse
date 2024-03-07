@@ -61,11 +61,12 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         if (configuration.format == "auto")
         {
             String file_path = named_collection->getOrDefault<String>("filename", Poco::URI(named_collection->get<String>("url")).getPath());
-            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(file_path).value_or("auto");
+            configuration.format = FormatFactory::instance().getFormatFromFileName(file_path, true);
         }
     }
     else
     {
+
         size_t count = StorageURL::evalArgsAndCollectHeaders(args, configuration.headers_from_ast, context);
 
         if (count == 0 || count > 7)
@@ -100,7 +101,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
                 no_sign_request = true;
                 args_to_idx = {{"format", 2}};
             }
-            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}};
             else
                 args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
@@ -119,14 +120,14 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
                 no_sign_request = true;
                 args_to_idx = {{"format", 2}, {"structure", 3}};
             }
-            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
             {
                 args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
             }
             else
             {
                 auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
-                if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
                 {
                     args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
                 }
@@ -153,7 +154,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
             else
             {
                 auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
-                if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
                 {
                     args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}};
                 }
@@ -170,7 +171,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         else if (count == 6)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
-            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
             {
                 args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}};
             }
@@ -215,7 +216,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         configuration.auth_settings.no_sign_request = no_sign_request;
 
         if (configuration.format == "auto")
-            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(url).getPath()).value_or("auto");
+            configuration.format = FormatFactory::instance().getFormatFromFileName(Poco::URI(url).getPath(), true);
     }
 
     configuration.keys = {configuration.url.key};
@@ -237,24 +238,15 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
     parseArgumentsImpl(args, context);
 }
 
-void TableFunctionS3::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context)
+void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (tryGetNamedCollectionWithOverrides(args, context))
     {
-        /// In case of named collection, just add key-value pairs "format='...', structure='...'"
-        /// at the end of arguments to override existed format and structure with "auto" values.
-        if (collection->getOrDefault<String>("format", "auto") == "auto")
-        {
-            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format)};
-            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
-            args.push_back(format_equal_func);
-        }
-        if (collection->getOrDefault<String>("structure", "auto") == "auto")
-        {
-            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure)};
-            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
-            args.push_back(structure_equal_func);
-        }
+        /// In case of named collection, just add key-value pair "structure='...'"
+        /// at the end of arguments to override existed structure.
+        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure)};
+        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
+        args.push_back(equal_func);
     }
     else
     {
@@ -264,25 +256,23 @@ void TableFunctionS3::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, con
         if (count == 0 || count > getMaxNumberOfArguments())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), count);
 
-        auto format_literal = std::make_shared<ASTLiteral>(format);
         auto structure_literal = std::make_shared<ASTLiteral>(structure);
 
-        /// s3(s3_url) -> s3(s3_url, format, structure)
+        /// s3(s3_url)
         if (count == 1)
         {
-            args.push_back(format_literal);
+            /// Add format=auto before structure argument.
+            args.push_back(std::make_shared<ASTLiteral>("auto"));
             args.push_back(structure_literal);
         }
-        /// s3(s3_url, format) -> s3(s3_url, format, structure) or
-        /// s3(s3_url, NOSIGN) -> s3(s3_url, NOSIGN, format, structure)
+        /// s3(s3_url, format) or s3(s3_url, NOSIGN)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or not.
         else if (count == 2)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
+            /// If there is NOSIGN, add format=auto before structure.
             if (boost::iequals(second_arg, "NOSIGN"))
-                args.push_back(format_literal);
-            else if (second_arg == "auto")
-                args.back() = format_literal;
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
             args.push_back(structure_literal);
         }
         /// s3(source, format, structure) or
@@ -292,25 +282,18 @@ void TableFunctionS3::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, con
         else if (count == 3)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
-            /// s3(source, NOSIGN, format) -> s3(source, NOSIGN, format, structure)
             if (boost::iequals(second_arg, "NOSIGN"))
             {
-                if (checkAndGetLiteralArgument<String>(args[2], "format") == "auto")
-                    args.back() = format_literal;
                 args.push_back(structure_literal);
             }
-            /// s3(source, format, structure)
-            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
             {
-                if (second_arg == "auto")
-                    args[1] = format_literal;
-                if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
-                    args[2] = structure_literal;
+                args[count - 1] = structure_literal;
             }
-            /// s3(source, access_key_id, access_key_id) -> s3(source, access_key_id, access_key_id, format, structure)
             else
             {
-                args.push_back(format_literal);
+                /// Add format=auto before structure argument.
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
                 args.push_back(structure_literal);
             }
         }
@@ -321,27 +304,16 @@ void TableFunctionS3::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, con
         else if (count == 4)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
-            /// s3(source, NOSIGN, format, structure)
             if (boost::iequals(second_arg, "NOSIGN"))
             {
-                if (checkAndGetLiteralArgument<String>(args[2], "format") == "auto")
-                    args[2] = format_literal;
-                if (checkAndGetLiteralArgument<String>(args[3], "structure") == "auto")
-                    args[3] = structure_literal;
+                args[count - 1] = structure_literal;
             }
-            /// s3(source, format, structure, compression_method)
-            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
             {
-                if (second_arg == "auto")
-                    args[1] = format_literal;
-                if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
-                    args[2] = structure_literal;
+                args[count - 2] = structure_literal;
             }
-            /// s3(source, access_key_id, access_key_id, format) -> s3(source, access_key_id, access_key_id, format, structure)
             else
             {
-                if (checkAndGetLiteralArgument<String>(args[3], "format") == "auto")
-                    args[3] = format_literal;
                 args.push_back(structure_literal);
             }
         }
@@ -351,30 +323,19 @@ void TableFunctionS3::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, con
         else if (count == 5)
         {
             auto sedond_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
-            /// s3(source, NOSIGN, format, structure, compression_method)
             if (boost::iequals(sedond_arg, "NOSIGN"))
             {
-                if (checkAndGetLiteralArgument<String>(args[2], "format") == "auto")
-                    args[2] = format_literal;
-                if (checkAndGetLiteralArgument<String>(args[3], "structure") == "auto")
-                    args[3] = structure_literal;
+                args[count - 2] = structure_literal;
             }
-            /// s3(source, access_key_id, access_key_id, format, structure)
             else
             {
-                if (checkAndGetLiteralArgument<String>(args[3], "format") == "auto")
-                    args[3] = format_literal;
-                if (checkAndGetLiteralArgument<String>(args[4], "structure") == "auto")
-                    args[4] = structure_literal;
+                args[count - 1] = structure_literal;
             }
         }
         /// s3(source, access_key_id, secret_access_key, format, structure, compression)
         else if (count == 6)
         {
-            if (checkAndGetLiteralArgument<String>(args[3], "format") == "auto")
-                args[3] = format_literal;
-            if (checkAndGetLiteralArgument<String>(args[4], "structure") == "auto")
-                args[4] = structure_literal;
+            args[count - 2] = structure_literal;
         }
     }
 }
@@ -385,9 +346,6 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context, 
     {
         context->checkAccess(getSourceAccessType());
         configuration.update(context);
-        if (configuration.format == "auto")
-            return StorageS3::getTableStructureAndFormatFromData(configuration, std::nullopt, context).first;
-
         return StorageS3::getTableStructureFromData(configuration, std::nullopt, context);
     }
 

@@ -14,9 +14,6 @@
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sources/NullSource.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
@@ -185,6 +182,13 @@ public:
         , requests_with_zk_fields(max_threads)
     {}
 
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context);
+
+private:
     StatusRequestsPool requests_without_zk_fields;
     StatusRequestsPool requests_with_zk_fields;
 };
@@ -237,51 +241,8 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 
 StorageSystemReplicas::~StorageSystemReplicas() = default;
 
-class ReadFromSystemReplicas : public SourceStepWithFilter
-{
-public:
-    std::string getName() const override { return "ReadFromSystemReplicas"; }
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    ReadFromSystemReplicas(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
-        Block sample_block,
-        std::map<String, std::map<String, StoragePtr>> replicated_tables_,
-        bool with_zk_fields_,
-        std::shared_ptr<StorageSystemReplicasImpl> impl_)
-        : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
-            column_names_,
-            query_info_,
-            storage_snapshot_,
-            context_)
-        , replicated_tables(std::move(replicated_tables_))
-        , with_zk_fields(with_zk_fields_)
-        , impl(std::move(impl_))
-    {
-    }
-
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
-
-private:
-    std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    const bool with_zk_fields;
-    std::shared_ptr<StorageSystemReplicasImpl> impl;
-    const ActionsDAG::Node * predicate = nullptr;
-};
-
-void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
-{
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
-    if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
-}
-
-void StorageSystemReplicas::read(
-    QueryPlan & query_plan,
+Pipe StorageSystemReplicas::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -289,6 +250,15 @@ void StorageSystemReplicas::read(
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const size_t /*num_streams*/)
+{
+    return impl->read(column_names, storage_snapshot, query_info, context);
+}
+
+Pipe StorageSystemReplicasImpl::read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context)
 {
     storage_snapshot->check(column_names);
 
@@ -335,18 +305,6 @@ void StorageSystemReplicas::read(
         }
     }
 
-    auto header = storage_snapshot->metadata->getSampleBlock();
-    auto reading = std::make_unique<ReadFromSystemReplicas>(
-        column_names, query_info, storage_snapshot,
-        std::move(context), std::move(header), std::move(replicated_tables), with_zk_fields, impl); // /*std::move(this_ptr),*/ std::move(columns_mask), max_block_size);
-
-    query_plan.addStep(std::move(reading));
-}
-
-void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
-{
-    auto header = getOutputStream().header;
-
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
     MutableColumnPtr col_engine_mut = ColumnString::create();
@@ -374,14 +332,10 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
             { col_engine, std::make_shared<DataTypeString>(), "engine" },
         };
 
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
 
         if (!filtered_block.rows())
-        {
-            auto source = std::make_shared<NullSource>(std::move(header));
-            pipeline.init(Pipe(std::move(source)));
-            return;
-        }
+            return {};
 
         col_database = filtered_block.getByName("database").column;
         col_table = filtered_block.getByName("table").column;
@@ -393,7 +347,7 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
     size_t tables_size = col_database->size();
 
     /// Use separate queues for requests with and without ZooKeeper fields.
-    StatusRequestsPool & get_status_requests = with_zk_fields ? impl->requests_with_zk_fields : impl->requests_without_zk_fields;
+    StatusRequestsPool & get_status_requests = with_zk_fields ? requests_with_zk_fields : requests_without_zk_fields;
 
     QueryStatusPtr query_status = context ? context->getProcessListElement() : nullptr;
 
@@ -481,7 +435,7 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
     UInt64 num_rows = fin_columns.at(0)->size();
     Chunk chunk(std::move(fin_columns), num_rows);
 
-    pipeline.init(Pipe(std::make_shared<SourceFromSingleChunk>(header, std::move(chunk))));
+    return Pipe(std::make_shared<SourceFromSingleChunk>(storage_snapshot->metadata->getSampleBlock(), std::move(chunk)));
 }
 
 

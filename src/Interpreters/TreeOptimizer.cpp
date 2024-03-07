@@ -77,10 +77,11 @@ const std::unordered_set<String> possibly_injective_function_names
   */
 void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
 {
-    /// Since ASTLiteral is different from ASTIdentifier, so we can use a special constant String Literal for this,
-    /// and do not need to worry about it conflict with the name of the column in the table.
+    /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
+    /// Also start unused_column integer must not intersect with ([1, source_columns.size()])
+    /// might be in positional GROUP BY.
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>("__unused_group_by_column"));
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<Int64>(-1)));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
@@ -755,8 +756,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         rewriteSumFunctionWithSumAndCount(query, tables_with_columns);
 
     /// Rewrite date filters to avoid the calls of converters such as toYear, toYYYYMM, etc.
-    if (settings.optimize_time_filter_with_preimage)
-        optimizeDateFilters(select_query, tables_with_columns, context);
+    optimizeDateFilters(select_query, tables_with_columns, context);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);

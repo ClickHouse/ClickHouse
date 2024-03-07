@@ -114,9 +114,8 @@ public:
     /// Unlike `filter`, returns columns in the order in which they go in `names`.
     NamesAndTypesList addTypes(const Names & names) const;
 
-    /// Check if `name` is one of the column names
+    /// Check that column contains in list
     bool contains(const String & name) const;
-    bool containsCaseInsensitive(const String & name) const;
 
     /// Try to get column by name, returns empty optional if column not found
     std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;
