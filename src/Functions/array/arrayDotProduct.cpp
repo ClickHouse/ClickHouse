@@ -322,18 +322,18 @@ private:
         const auto & offsets_y = array_y.getOffsets();
 
         ColumnArray::Offset prev_offset = 0;
-        for (size_t row = 0; row < offsets_y.size(); ++row)
+        for (auto offset_y : offsets_y)
         {
-            if (offsets_x[0] != offsets_y[row] - prev_offset) [[unlikely]]
+            if (offsets_x[0] != offset_y - prev_offset) [[unlikely]]
             {
                 throw Exception(
                     ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "Arguments of function {} have different array sizes: {} and {}",
                     getName(),
                     offsets_x[0],
-                    offsets_y[row] - prev_offset);
+                    offset_y - prev_offset);
             }
-            prev_offset = offsets_y[row];
+            prev_offset = offset_y;
         }
 
         auto col_res = ColumnVector<ResultType>::create();
