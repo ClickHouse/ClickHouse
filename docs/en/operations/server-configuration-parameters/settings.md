@@ -379,6 +379,18 @@ Type: UInt64
 
 Default: 0
 
+## max_waiting_queries
+
+Limit on total number of concurrently waiting queries. Execution of a waiting query is blocked while required tables are loading asynchronously (see `async_load_databases`). Note that waiting queries are not counted when `max_concurrent_queries`, `max_concurrent_insert_queries`, `max_concurrent_select_queries`, `max_concurrent_queries_for_user` and `max_concurrent_queries_for_all_users` limits are checked. This correction is done to avoid hitting these limits just after server startup. Zero means unlimited.
+
+:::note
+This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
+
+Type: UInt64
+
+Default: 0
+
 ## max_connections
 
 Max server connections.
@@ -1725,7 +1737,7 @@ Default value: `0.5`.
 
 Asynchronous loading of databases and tables.
 
-If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up.
+If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up. Also consider setting a limit `max_waiting_queries` for the total number of waiting queries.
 
 If `false`, all databases are loaded when the server starts.
 
@@ -2926,7 +2938,7 @@ Default: 0
 
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
-If true, ClickHouse doesn't write defaults for empty SQL security statement in CREATE VIEW queries. 
+If true, ClickHouse doesn't write defaults for empty SQL security statement in CREATE VIEW queries.
 
 :::note
 This setting is only necessary for the migration period and will become obsolete in 24.4
