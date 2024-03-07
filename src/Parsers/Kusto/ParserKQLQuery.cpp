@@ -416,8 +416,9 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     ParserToken s_dash(TokenType::Minus);
                     if (s_dash.ignore(pos, expected))
                     {
-                        String tmp_op(op_pos_begin->begin, pos->end);
-                        kql_operator = tmp_op;
+                        if (!isValidKQLPos(pos))
+                            return false;
+                        kql_operator = String(op_pos_begin->begin, pos->end);
                     }
                     else
                         --pos;
