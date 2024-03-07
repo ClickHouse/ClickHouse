@@ -19,6 +19,7 @@ set (SRCS
     getPageSize.cpp
     getThreadId.cpp
     int8_to_string.cpp
+    itoa.cpp
     JSON.cpp
     mremap.cpp
     phdr_cache.cpp
