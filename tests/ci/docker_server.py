@@ -216,7 +216,9 @@ def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
     return tags
 
 
-def buildx_args(urls: Dict[str, str], arch: str, direct_urls: List[str], version: str) -> List[str]:
+def buildx_args(
+    urls: Dict[str, str], arch: str, direct_urls: List[str], version: str
+) -> List[str]:
     args = [
         f"--platform=linux/{arch}",
         f"--label=build-url={GITHUB_RUN_URL}",
@@ -268,7 +270,9 @@ def build_and_push_image(
                 urls = [url for url in direct_urls[arch] if ".deb" in url]
             else:
                 urls = [url for url in direct_urls[arch] if ".tgz" in url]
-        cmd_args.extend(buildx_args(repo_urls, arch, direct_urls=urls, version=version.describe))
+        cmd_args.extend(
+            buildx_args(repo_urls, arch, direct_urls=urls, version=version.describe)
+        )
         if not push:
             cmd_args.append(f"--tag={image.repo}:{arch_tag}")
         cmd_args.extend(
