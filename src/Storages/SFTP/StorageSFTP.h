@@ -128,8 +128,12 @@ namespace DB
         class DisclosedGlobIterator
         {
         public:
-            DisclosedGlobIterator(const std::shared_ptr<SFTPWrapper> &client_, const String &path, const ASTPtr &query,
-                                  const NamesAndTypesList &virtual_columns, const ContextPtr &context);
+            DisclosedGlobIterator(
+                const std::shared_ptr<SFTPWrapper> &client_,
+                const String &path,
+                const ActionsDAG::Node * predicate,
+                const NamesAndTypesList &virtual_columns,
+                const ContextPtr &context);
             StorageSFTP::PathWithInfo next();
         private:
             class Impl;
@@ -140,8 +144,12 @@ namespace DB
         class URISIterator
         {
         public:
-            URISIterator(const std::shared_ptr<SFTPWrapper> &client_, const std::vector<String> &uris_with_paths_,
-                         const ASTPtr &query, const NamesAndTypesList &virtual_columns, const ContextPtr &context);
+            URISIterator(
+                const std::shared_ptr<SFTPWrapper> &client_,
+                const std::vector<String> &uris_with_paths_,
+                const ActionsDAG::Node * predicate,
+                const NamesAndTypesList &virtual_columns,
+                const ContextPtr &context);
             StorageSFTP::PathWithInfo next();
         private:
             class Impl;
