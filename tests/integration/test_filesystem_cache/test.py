@@ -350,6 +350,20 @@ def test_custom_cached_disk(cluster):
 
 def test_force_filesystem_cache_on_merges(cluster):
     def test(node, forced_read_through_cache_on_merge):
+        def to_int(value):
+            if value == "":
+                return 0
+            else:
+                return int(value)
+
+        r_cache_count = to_int(node.query(
+            "SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'"
+        ))
+
+        w_cache_count = to_int(node.query(
+            "SELECT value FROM system.events WHERE name = 'CachedWriteBufferCacheWriteBytes'"
+        ))
+
         node.query(
             """
             DROP TABLE IF EXISTS test SYNC;
@@ -376,36 +390,33 @@ def test_force_filesystem_cache_on_merges(cluster):
         assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
         assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
 
-        write_count = int(
+        w_cache_count_2 = int(
             node.query(
                 "SELECT value FROM system.events WHERE name = 'CachedWriteBufferCacheWriteBytes'"
             )
         )
-        assert write_count > 100000
-        assert "" == node.query(
-            "SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'"
+        assert w_cache_count_2 > w_cache_count
+
+        r_cache_count_2 = to_int(
+            node.query(
+                "SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'"
+            )
         )
+        assert r_cache_count_2 == r_cache_count
 
         node.query("SYSTEM DROP FILESYSTEM CACHE")
         node.query("OPTIMIZE TABLE test FINAL")
 
-        new_write_count = int(
+        r_cache_count_3 = to_int(
             node.query(
-                "SELECT value FROM system.events WHERE name = 'CachedWriteBufferCacheWriteBytes'"
-            )
-        )
-        assert new_write_count >= write_count
-
-        if forced_read_through_cache_on_merge:
-            assert 100000 < int(
-                node.query(
-                    "SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'"
-                )
-            )
-        else:
-            assert "" == node.query(
                 "SELECT value FROM system.events WHERE name = 'CachedReadBufferCacheWriteBytes'"
             )
+        )
+
+        if forced_read_through_cache_on_merge:
+            assert r_cache_count_3 > r_cache_count
+        else:
+            assert r_cache_count_3 == r_cache_count
 
     node = cluster.instances["node_force_read_through_cache_on_merge"]
     test(node, True)
