@@ -321,6 +321,7 @@ endif ()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
+
 # Our built-in unwinder only supports DWARF version up to 4.
 set (DEBUG_INFO_FLAGS "-g")
 
