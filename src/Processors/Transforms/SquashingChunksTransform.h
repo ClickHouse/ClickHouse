@@ -23,7 +23,7 @@ protected:
     void onFinish() override;
 
 private:
-    SquashingTransform squashing;
+    NewSquashingTransform squashing;
     Chunk cur_chunk;
     Chunk finish_chunk;
 };
@@ -32,7 +32,7 @@ private:
 class SimpleSquashingChunksTransform : public ISimpleTransform
 {
 public:
-    explicit SimpleSquashingChunksTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
+    explicit SimpleSquashingChunksTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, bool skip_empty_chunks_ = true);
 
     String getName() const override { return "SimpleSquashingTransform"; }
 
@@ -42,7 +42,35 @@ protected:
     IProcessor::Status prepare() override;
 
 private:
-    SquashingTransform squashing;
+    NewSquashingTransform squashing;
+
+    bool finished = false;
+};
+
+
+class ProcessorSquashingTransform : public IProcessor
+{
+public:
+    explicit ProcessorSquashingTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, size_t num_ports);
+
+    String getName() const override { return "ProcessorSquashingTransform"; }
+
+protected:
+    InputPorts & getInputPorts() { return inputs; }
+    OutputPorts & getOutputPorts() { return outputs; }
+
+    Status prepare() override;
+    Status prepareConsume();
+    Status prepareGenerate();
+
+    // void work() override;
+    void transform(Chunk & chunk);
+
+private:
+    NewSquashingTransform squashing;
+    Chunk chunk;
+    bool has_data = false;
+    std::vector<char> was_output_processed;
 
     /// When consumption is finished we need to release the final chunk regardless of its size.
     bool finished = false;
