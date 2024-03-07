@@ -833,7 +833,12 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (materialize_ttl_recalculate_only)
+
+            bool suitable_for_ttl_optimization = source.getMergeTreeData()->getSettings()->ttl_only_drop_parts
+                && metadata_snapshot->isRowsTTLTheOnlyTTL();
+            bool only_ttl_expression_columns = materialize_ttl_recalculate_only || suitable_for_ttl_optimization;
+
+            if (only_ttl_expression_columns)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
@@ -847,8 +852,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
             else if (metadata_snapshot->hasRowsTTL()
-                || metadata_snapshot->hasAnyRowsWhereTTL()
-                || metadata_snapshot->hasAnyGroupByTTL())
+                     || metadata_snapshot->hasAnyRowsWhereTTL()
+                     || metadata_snapshot->hasAnyGroupByTTL())
             {
                 for (const auto & column : all_columns)
                     dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
