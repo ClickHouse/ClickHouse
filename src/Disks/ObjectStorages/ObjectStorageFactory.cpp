@@ -238,7 +238,7 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 #if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
-    factory.registerObjectStorageType("azure_blob_storage", [](
+    auto creator = [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -251,7 +251,9 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
             getAzureBlobContainerClient(config, config_prefix),
             getAzureBlobStorageSettings(config, config_prefix, context),
             endpoint.prefix.empty() ? endpoint.container_name : endpoint.container_name + "/" + endpoint.prefix);
-    });
+    };
+    factory.registerObjectStorageType("azure_blob_storage", creator);
+    factory.registerObjectStorageType("azure", creator);
 }
 #endif
 
@@ -285,7 +287,7 @@ void registerWebObjectStorage(ObjectStorageFactory & factory)
 
 void registerLocalObjectStorage(ObjectStorageFactory & factory)
 {
-    factory.registerObjectStorageType("local_blob_storage", [](
+    auto creator = [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -298,7 +300,10 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
         return createObjectStorage<LocalObjectStorage>(ObjectStorageType::Local, config, config_prefix, object_key_prefix);
-    });
+    };
+
+    factory.registerObjectStorageType("local_blob_storage", creator);
+    factory.registerObjectStorageType("local", creator);
 }
 #endif
 
