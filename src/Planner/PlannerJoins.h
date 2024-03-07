@@ -9,9 +9,6 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
@@ -74,7 +71,6 @@ public:
     /// Add condition for table side
     void addCondition(JoinTableSide table_side, const ActionsDAG::Node * condition_node)
     {
-        LOG_ERROR(getLogger("JoinClause"), "xxx add condition. {}. {}", table_side, condition_node->result_name);
         auto & filter_condition_nodes = table_side == JoinTableSide::Left ? left_filter_condition_nodes : right_filter_condition_nodes;
         filter_condition_nodes.push_back(condition_node);
     }

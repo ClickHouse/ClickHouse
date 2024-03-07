@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cstddef>
 #include <list>
 #include <mutex>
 #include <optional>
@@ -123,7 +122,7 @@ struct RowRefList : RowRef
     };
 
     RowRefList() {} /// NOLINT
-    RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_), rows(1) {}
+    RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
 
     ForwardIterator begin() const { return ForwardIterator(this); }
 
@@ -136,14 +135,10 @@ struct RowRefList : RowRef
             *next = Batch(nullptr);
         }
         next = next->insert(std::move(row_ref), pool);
-        rows += 1;
     }
-
-    size_t toalRows() const { return rows; }
 
 private:
     Batch * next = nullptr;
-    size_t rows = 0;
 };
 
 /**

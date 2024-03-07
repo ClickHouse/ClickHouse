@@ -1,4 +1,3 @@
-#include <unordered_map>
 #include <Planner/PlannerJoinTree.h>
 
 #include <Common/scope_guard_safe.h>

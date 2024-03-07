@@ -4,6 +4,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -11,8 +13,6 @@
 #include <Interpreters/IKeyValueEntity.h>
 
 #include <Common/Exception.h>
-#include "ActionsDAG.h"
-#include "ExpressionActions.h"
 #include <Parsers/IAST_fwd.h>
 
 #include <cstddef>
@@ -302,9 +302,8 @@ public:
     std::vector<JoinOnClause> & getClauses() { return clauses; }
     const std::vector<JoinOnClause> & getClauses() const { return clauses; }
 
-    const ExpressionActionsPtr & getFullJoinExpression() const { return full_join_expression;}
-    ExpressionActionsPtr & getFullJoinExpression() { return full_join_expression;}
-
+    const ExpressionActionsPtr & getFullJoinExpression() const { return full_join_expression; }
+    ExpressionActionsPtr & getFullJoinExpression() { return full_join_expression; }
 
     Names getAllNames(JoinTableSide side) const;
 

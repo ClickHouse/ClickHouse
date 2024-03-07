@@ -3,6 +3,7 @@
 
 #include <Core/Block.h>
 
+#include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -12,12 +13,12 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 
+#include <Processors/Formats/IOutputFormat.h>
+
 #include <iterator>
 #include <base/sort.h>
 #include <boost/algorithm/string.hpp>
 
-#include <Interpreters/Context.h>
-#include <Processors/Formats/IOutputFormat.h>
 
 
 namespace DB
@@ -435,12 +436,12 @@ std::string Block::dumpIndex() const
 
 std::string Block::dumpContent() const
 {
-WriteBufferFromOwnString buf;
-   auto output_format = Context::getGlobalContextInstance()->getOutputFormat("PrettyCompact", buf, *this);
-   output_format->write(materializeBlock(*this));
-   output_format->flush();
-   buf.finalize();
-   return buf.str();
+    WriteBufferFromOwnString buf;
+    auto output_format = Context::getGlobalContextInstance()->getOutputFormat("PrettyCompact", buf, *this);
+    output_format->write(materializeBlock(*this));
+    output_format->flush();
+    buf.finalize();
+    return buf.str();
 }
 
 Block Block::cloneEmpty() const
