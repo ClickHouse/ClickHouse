@@ -72,7 +72,7 @@ namespace
 {
 
 template <typename T>
-static constexpr T pow10(size_t x)
+ALWAYS_INLINE inline constexpr T pow10(size_t x)
 {
     return x ? 10 * pow10<T>(x - 1) : 1;
 }
@@ -143,7 +143,7 @@ struct QuotientAndRemainder
 };
 
 template <size_t N>
-QuotientAndRemainder<N> static inline split(UnsignedOfSize<N> value)
+QuotientAndRemainder<N> inline split(UnsignedOfSize<N> value)
 {
     constexpr DivisionBy10PowN<N> division;
 
@@ -154,7 +154,7 @@ QuotientAndRemainder<N> static inline split(UnsignedOfSize<N> value)
 }
 
 
-static inline char * outDigit(char * p, uint8_t value)
+ALWAYS_INLINE inline char * outDigit(char * p, uint8_t value)
 {
     *p = '0' + value;
     ++p;
@@ -176,7 +176,7 @@ static const char digits[201] = "00010203040506070809"
                                 "80818283848586878889"
                                 "90919293949596979899";
 
-static inline char * outTwoDigits(char * p, uint8_t value)
+ALWAYS_INLINE inline char * outTwoDigits(char * p, uint8_t value)
 {
     memcpy(p, &digits[value * 2], 2);
     p += 2;
@@ -187,9 +187,9 @@ static inline char * outTwoDigits(char * p, uint8_t value)
 namespace convert
 {
 template <typename UInt, size_t N = sizeof(UInt)>
-static char * head(char * p, UInt u);
+char * head(char * p, UInt u);
 template <typename UInt, size_t N = sizeof(UInt)>
-static char * tail(char * p, UInt u);
+char * tail(char * p, UInt u);
 
 //===----------------------------------------------------------===//
 //     head: find most significant digit, skip leading zeros
@@ -198,7 +198,7 @@ static char * tail(char * p, UInt u);
 // "x" contains quotient and remainder after division by 10^N
 // quotient is less than 10^N
 template <size_t N>
-static inline char * head(char * p, QuotientAndRemainder<N> x)
+ALWAYS_INLINE inline char * head(char * p, QuotientAndRemainder<N> x)
 {
     p = head(p, UnsignedOfSize<N / 2>(x.quotient));
     p = tail(p, x.remainder);
@@ -207,14 +207,14 @@ static inline char * head(char * p, QuotientAndRemainder<N> x)
 
 // "u" is less than 10^2*N
 template <typename UInt, size_t N>
-static inline char * head(char * p, UInt u)
+ALWAYS_INLINE inline char * head(char * p, UInt u)
 {
     return u < pow10<UnsignedOfSize<N>>(N) ? head(p, UnsignedOfSize<N / 2>(u)) : head<N>(p, split<N>(u));
 }
 
 // recursion base case, selected when "u" is one byte
 template <>
-inline char * head<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
+ALWAYS_INLINE inline char * head<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
 {
     return u < 10 ? outDigit(p, u) : outTwoDigits(p, u);
 }
@@ -225,7 +225,7 @@ inline char * head<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
 
 // recursive step, "u" is less than 10^2*N
 template <typename UInt, size_t N>
-static inline char * tail(char * p, UInt u)
+ALWAYS_INLINE inline char * tail(char * p, UInt u)
 {
     QuotientAndRemainder<N> x = split<N>(u);
     p = tail(p, UnsignedOfSize<N / 2>(x.quotient));
@@ -235,7 +235,7 @@ static inline char * tail(char * p, UInt u)
 
 // recursion base case, selected when "u" is one byte
 template <>
-inline char * tail<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
+ALWAYS_INLINE inline char * tail<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
 {
     return outTwoDigits(p, u);
 }
@@ -244,9 +244,8 @@ inline char * tail<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
 // large values are >= 10^2*N
 // where x contains quotient and remainder after division by 10^N
 //===----------------------------------------------------------===//
-
 template <size_t N>
-static inline char * large(char * p, QuotientAndRemainder<N> x)
+ALWAYS_INLINE inline char * large(char * p, QuotientAndRemainder<N> x)
 {
     QuotientAndRemainder<N> y = split<N>(x.quotient);
     p = head(p, UnsignedOfSize<N / 2>(y.quotient));
@@ -259,9 +258,8 @@ static inline char * large(char * p, QuotientAndRemainder<N> x)
 // handle values of "u" that might be >= 10^2*N
 // where N is the size of "u" in bytes
 //===----------------------------------------------------------===//
-
 template <typename UInt, size_t N = sizeof(UInt)>
-static inline char * uitoa(char * p, UInt u)
+ALWAYS_INLINE inline char * uitoa(char * p, UInt u)
 {
     if (u < pow10<UnsignedOfSize<N>>(N))
         return head(p, UnsignedOfSize<N / 2>(u));
@@ -272,7 +270,7 @@ static inline char * uitoa(char * p, UInt u)
 
 // selected when "u" is one byte
 template <>
-inline char * uitoa<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
+ALWAYS_INLINE inline char * uitoa<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
 {
     if (u < 10)
         return outDigit(p, u);
@@ -292,14 +290,14 @@ inline char * uitoa<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
 
 // itoa: handle unsigned integral operands (selected by SFINAE)
 template <typename U, std::enable_if_t<!std::is_signed_v<U> && std::is_integral_v<U>> * = nullptr>
-static inline char * itoa(U u, char * p)
+ALWAYS_INLINE inline char * itoa(U u, char * p)
 {
     return convert::uitoa(p, u);
 }
 
 // itoa: handle signed integral operands (selected by SFINAE)
 template <typename I, size_t N = sizeof(I), std::enable_if_t<std::is_signed_v<I> && std::is_integral_v<I>> * = nullptr>
-static inline char * itoa(I i, char * p)
+ALWAYS_INLINE inline char * itoa(I i, char * p)
 {
     // Need "mask" to be filled with a copy of the sign bit.
     // If "i" is a negative value, then the result of "operator >>"
@@ -335,63 +333,128 @@ static inline char * itoa(I i, char * p)
 }
 
 
-template <typename T>
-static NO_INLINE char * writeUIntText(T _x, char * p)
+const uint64_t max_multiple_of_hundred_that_fits_in_64_bits = 1'00'00'00'00'00'00'00'00'00ull;
+constexpr int max_multiple_of_hundred_blocks = 9;
+static_assert(max_multiple_of_hundred_that_fits_in_64_bits % 100 == 0);
+
+ALWAYS_INLINE inline char * writeUIntText(UInt128 _x, char * p)
 {
-    static_assert(std::is_same_v<T, UInt128> || std::is_same_v<T, UInt256>);
-    using T_ = std::conditional_t<
-        std::is_same_v<T, UInt128>,
-        unsigned __int128,
+    /// If we the highest 8 byte item is empty, we can print only the lowest item as i64
+    if (_x.items[UInt128::_impl::little(1)] == 0)
+        return convert::itoa(_x.items[UInt128::_impl::little(0)], p);
+
+    /// Doing operations using __int128 is faster, as we already rely on this feature
+    using T = unsigned __int128;
+    T x = (T(_x.items[UInt128::_impl::little(1)]) << 64) + T(_x.items[UInt128::_impl::little(0)]);
+
+    /// We are going to accumulate blocks of 2 digits to print until the number is small enough to be printed as u64
+    /// To do this we could do: x / 100, x % 100
+    /// But this is too many iterations with long integers, so instead we can divide by a much longer integer
+    /// max_multiple_of_hundred_that_fits_in_64_bits and then get the blocks out of this (as u64)
+    static const T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
+    static const T largest_uint64 = std::numeric_limits<uint64_t>::max();
+    uint8_t two_values[20] = {0}; // 39 Max characters / 2
+
+    int current_block = 0;
+    while (x > largest_uint64)
+    {
+        uint64_t remainder = uint64_t(x % large_divisor);
+        x /= large_divisor;
+
+        int pos = current_block;
+        while (remainder)
+        {
+            two_values[pos] = uint8_t(remainder % 100);
+            pos++;
+            remainder /= 100;
+        }
+        current_block += max_multiple_of_hundred_blocks;
+    }
+
+    char * highest_part_print = convert::itoa(uint64_t(x), p);
+    for (int i = 0; i < current_block; i++)
+    {
+        outTwoDigits(highest_part_print, two_values[current_block - 1 - i]);
+        highest_part_print += 2;
+    }
+
+    return highest_part_print;
+}
+
+ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
+{
+    /// If possible, treat it as a smaller integer as they are much faster to print
+    if (_x.items[UInt256::_impl::little(3)] == 0 && _x.items[UInt256::_impl::little(2)] == 0)
+        return writeUIntText(UInt128{_x.items[UInt256::_impl::little(0)], _x.items[UInt256::_impl::little(1)]}, p);
+
+    /// If available (x86) we transform from our custom class to _BitInt(256) which has better support in the compiler
+    /// and produces better code
+    using T =
 #if defined(__x86_64__)
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Wbit-int-extension"
         unsigned _BitInt(256)
 #    pragma clang diagnostic pop
 #else
-        T
+        UInt256
 #endif
-        >;
+        ;
 
-    T_ x;
-    T_ hundred(100ULL);
-    if constexpr (std::is_same_v<T, UInt128>)
-    {
-        x = (T_(_x.items[T::_impl::little(1)]) << 64) + T_(_x.items[T::_impl::little(0)]);
-    }
-    else
-    {
 #if defined(__x86_64__)
-        x = (T_(_x.items[T::_impl::little(3)]) << 192) + (T_(_x.items[T::_impl::little(2)]) << 128)
-            + (T_(_x.items[T::_impl::little(1)]) << 64) + T_(_x.items[T::_impl::little(0)]);
+    T x = (T(_x.items[UInt256::_impl::little(3)]) << 192) + (T(_x.items[UInt256::_impl::little(2)]) << 128)
+        + (T(_x.items[UInt256::_impl::little(1)]) << 64) + T(_x.items[UInt256::_impl::little(0)]);
 #else
-        x = _x;
+    T x = _x;
 #endif
+
+    /// Similar to writeUIntText(UInt128) only that in this case we will stop as soon as we reach the largest u128
+    /// and switch to that function
+    uint8_t two_values[39] = {0}; // 78 Max characters / 2
+    int current_pos = 0;
+
+    static const T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
+    static const T largest_uint128 = T(std::numeric_limits<uint64_t>::max()) << 64 | T(std::numeric_limits<uint64_t>::max());
+
+    while (x > largest_uint128)
+    {
+        uint64_t remainder = uint64_t(x % large_divisor);
+        x /= large_divisor;
+
+        int pos = current_pos;
+        while (remainder)
+        {
+            two_values[pos] = uint8_t(remainder % 100);
+            pos++;
+            remainder /= 100;
+        }
+        current_pos += max_multiple_of_hundred_blocks;
     }
 
-    int len = digits10(x);
-    auto * pp = p + len;
-    while (x >= hundred)
+#if defined(__x86_64__)
+    UInt128 pending{uint64_t(x), uint64_t(x >> 64)};
+#else
+    UInt128 pending{x.items[UInt256::_impl::little(0)], x.items[UInt256::_impl::little(1)]};
+#endif
+
+    char * highest_part_print = writeUIntText(pending, p);
+    for (int i = 0; i < current_pos; i++)
     {
-        const auto i = x % hundred;
-        x /= hundred;
-        pp -= 2;
-        outTwoDigits(pp, i);
+        outTwoDigits(highest_part_print, two_values[current_pos - 1 - i]);
+        highest_part_print += 2;
     }
-    if (x < 10)
-        *p = '0' + x;
-    else
-        outTwoDigits(p, x);
-    return p + len;
+
+    return highest_part_print;
 }
 
-static ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
+
+ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
 {
     *pos = '-';
     return pos + 1;
 }
 
 template <typename T>
-static ALWAYS_INLINE inline char * writeSIntText(T x, char * pos)
+ALWAYS_INLINE inline char * writeSIntText(T x, char * pos)
 {
     static_assert(std::is_same_v<T, Int128> || std::is_same_v<T, Int256>);
 
