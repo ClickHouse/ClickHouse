@@ -3,6 +3,10 @@
         "name": "clickhouse/binary-builder",
         "dependent": []
     },
+    "docker/packager/cctools": {
+        "name": "clickhouse/cctools",
+        "dependent": []
+    },
     "docker/test/compatibility/centos": {
         "name": "clickhouse/test-old-centos",
         "dependent": []
