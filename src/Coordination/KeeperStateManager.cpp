@@ -30,7 +30,7 @@ bool isLocalhost(const std::string & hostname)
 {
     try
     {
-        return isLocalAddress(DNSResolver::instance().resolveHost(hostname));
+        return isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(hostname).front());
     }
     catch (...)
     {
