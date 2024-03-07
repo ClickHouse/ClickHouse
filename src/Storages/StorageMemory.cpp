@@ -104,9 +104,8 @@ public:
 
         Settings settings = context->getSettings();
         if ((settings.min_bytes_to_keep && settings.min_bytes_to_keep > settings.max_bytes_to_keep)
-            || (settings.min_rows_to_keep && settings.min_rows_to_keep > settings.max_rows_to_keep)) {
+            || (settings.min_rows_to_keep && settings.min_rows_to_keep > settings.max_rows_to_keep))
             throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Min. bytes / rows must be set with a max.");
-        }
 
         std::lock_guard lock(storage.mutex);
 
