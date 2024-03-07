@@ -507,7 +507,7 @@ are turned on.
 
 ### NAMED COLLECTION ADMIN
 
-Allows a certain operation on a specified named colleciton.
+Allows a certain operation on a specified named colleciton. Before version 23.7 it was called NAMED COLLECTION CONTROL, and after 23.7 NAMED COLLECTION ADMIN as added and NAMED COLLECTION CONTROL is preserved as an alias.
 
 - `NAMED COLLECTION ADMIN`. Level: `NAMED_COLLECTION`. Aliases: `NAMED COLLECTION CONTROL`
     - `CREATE NAMED COLLECTION`. Level: `NAMED_COLLECTION`
@@ -517,9 +517,11 @@ Allows a certain operation on a specified named colleciton.
     - `SHOW NAMED COLLECTIONS SECRETS`. Level: `NAMED_COLLECTION`. Aliases: `SHOW NAMED COLLECTIONS SECRETS`
     - `NAMED COLLECTION`. Level: `NAMED_COLLECTION`. Aliases: `NAMED COLLECTION USAGE, USE NAMED COLLECTION`
 
+Unlike all other grants (CREATE, DROP, ALTER, SHOW) grant NAMED COLLECTION was added only in 23.7, while all others were added earlier - in 22.12.
+
 **Examples**
 
-Assuming a named collecion is called abc, we grant privilege CREATE NAMED COLLECTION to user john.
+Assuming a named collection is called abc, we grant privilege CREATE NAMED COLLECTION to user john.
 - `GRANT CREATE NAMED COLLECTION ON abc TO john`
 
 ### ALL
