@@ -27,23 +27,27 @@ struct WriteBufferFromAzureBlobStorage::PartData
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
-    size_t max_single_part_upload_size_,
-    size_t max_unexpected_write_error_retries_,
     size_t buf_size_,
     const WriteSettings & write_settings_,
-    size_t max_inflight_parts_for_one_file_,
+    std::shared_ptr<const AzureObjectStorageSettings> settings_,
     ThreadPoolCallbackRunner<void> schedule_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
-    , max_single_part_upload_size(max_single_part_upload_size_)
-    , max_unexpected_write_error_retries(max_unexpected_write_error_retries_)
+    , buffer_allocation_policy(ChooseBufferPolicy({settings_->strict_upload_part_size,
+                                                   settings_->min_upload_part_size,
+                                                   settings_->max_upload_part_size,
+                                                   settings_->upload_part_size_multiply_factor,
+                                                   settings_->upload_part_size_multiply_parts_count_threshold,
+                                                   settings_->max_single_part_upload_size}))
+    , max_single_part_upload_size(settings_->max_single_part_upload_size)
+    , max_unexpected_write_error_retries(settings_->max_unexpected_write_error_retries)
     , blob_path(blob_path_)
     , write_settings(write_settings_)
     , blob_container_client(blob_container_client_)
     , task_tracker(
           std::make_unique<TaskTracker>(
               std::move(schedule_),
-              max_inflight_parts_for_one_file_,
+              settings_->max_inflight_parts_for_one_file,
               limitedLog))
 {
     allocateBuffer();
@@ -119,7 +123,8 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
 
 void WriteBufferFromAzureBlobStorage::allocateBuffer()
 {
-    memory = Memory(max_single_part_upload_size);
+    buffer_allocation_policy->nextBuffer();
+    memory = Memory(buffer_allocation_policy->getBufferSize());
     WriteBuffer::set(memory.data(), memory.size());
 }
 
@@ -129,10 +134,10 @@ void WriteBufferFromAzureBlobStorage::reallocateBuffer()
     if (available() > 0)
         return;
 
-    if (memory.size() == max_single_part_upload_size)
+    if (memory.size() == buffer_allocation_policy->getBufferSize())
         return;
 
-    memory.resize(max_single_part_upload_size);
+    memory.resize(buffer_allocation_policy->getBufferSize());
 
     WriteBuffer::set(memory.data(), memory.size());
 

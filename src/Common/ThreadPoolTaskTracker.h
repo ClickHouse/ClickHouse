@@ -11,8 +11,6 @@
 namespace DB
 {
 
-/// That class is used only in WriteBufferFromS3 for now.
-/// Therefore it declared as a part of  WriteBufferFromS3.
 /// TaskTracker takes a Callback which is run by scheduler in some external shared ThreadPool.
 /// TaskTracker brings the methods waitIfAny, waitAll/safeWaitAll
 /// to help with coordination of the running tasks.

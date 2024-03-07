@@ -13,6 +13,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 #include <Common/ThreadPoolTaskTracker.h>
+#include <Common/BufferAllocationPolicy.h>
 
 #include <memory>
 #include <vector>
@@ -48,18 +49,6 @@ public:
     void preFinalize() override;
     std::string getFileName() const override { return key; }
     void sync() override { next(); }
-
-    class IBufferAllocationPolicy
-    {
-    public:
-        virtual size_t getBufferNumber() const = 0;
-        virtual size_t getBufferSize() const = 0;
-        virtual void nextBuffer() = 0;
-        virtual ~IBufferAllocationPolicy() = 0;
-    };
-    using IBufferAllocationPolicyPtr = std::unique_ptr<IBufferAllocationPolicy>;
-
-    static IBufferAllocationPolicyPtr ChooseBufferPolicy(const S3Settings::RequestSettings::PartUploadSettings & settings_);
 
 private:
     /// Receives response from the server after sending all data.

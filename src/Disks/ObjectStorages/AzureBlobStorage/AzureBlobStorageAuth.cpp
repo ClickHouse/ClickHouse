@@ -160,18 +160,23 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
 
 std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
-    return std::make_unique<AzureObjectStorageSettings>(
-        config.getUInt64(config_prefix + ".max_single_part_upload_size", 100 * 1024 * 1024),
-        config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-        config.getInt(config_prefix + ".max_single_read_retries", 3),
-        config.getInt(config_prefix + ".max_single_download_retries", 3),
-        config.getInt(config_prefix + ".list_object_keys_size", 1000),
-        config.getUInt64(config_prefix + ".max_upload_part_size", 5ULL * 1024 * 1024 * 1024),
-        config.getUInt64(config_prefix + ".max_single_part_copy_size", context->getSettings().azure_max_single_part_copy_size),
-        config.getBool(config_prefix + ".use_native_copy", false),
-        config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", context->getSettings().azure_max_unexpected_write_error_retries),
-        config.getUInt64(config_prefix + ".max_inflight_parts_for_one_file", context->getSettings().azure_max_inflight_parts_for_one_file)
-    );
+    std::unique_ptr<AzureObjectStorageSettings> settings = std::make_unique<AzureObjectStorageSettings>();
+    settings->max_single_part_upload_size = config.getUInt64(config_prefix + ".max_single_part_upload_size", 100 * 1024 * 1024);
+    settings->min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024);
+    settings->max_single_read_retries = config.getInt(config_prefix + ".max_single_read_retries", 3);
+    settings->max_single_download_retries = config.getInt(config_prefix + ".max_single_download_retries", 3);
+    settings->list_object_keys_size = config.getInt(config_prefix + ".list_object_keys_size", 1000);
+    settings->min_upload_part_size = config.getUInt64(config_prefix + ".min_upload_part_size", context->getSettings().azure_min_upload_part_size);
+    settings->max_upload_part_size = config.getUInt64(config_prefix + ".max_upload_part_size", context->getSettings().azure_max_upload_part_size);
+    settings->max_single_part_copy_size = config.getUInt64(config_prefix + ".max_single_part_copy_size", context->getSettings().azure_max_single_part_copy_size);
+    settings->use_native_copy = config.getBool(config_prefix + ".use_native_copy", false);
+    settings->max_unexpected_write_error_retries = config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", context->getSettings().azure_max_unexpected_write_error_retries);
+    settings->max_inflight_parts_for_one_file = config.getUInt64(config_prefix + ".max_inflight_parts_for_one_file", context->getSettings().azure_max_inflight_parts_for_one_file);
+    settings->strict_upload_part_size = config.getUInt64(config_prefix + ".strict_upload_part_size", context->getSettings().azure_strict_upload_part_size);
+    settings->upload_part_size_multiply_factor = config.getUInt64(config_prefix + ".upload_part_size_multiply_factor", context->getSettings().azure_upload_part_size_multiply_factor);
+    settings->upload_part_size_multiply_parts_count_threshold = config.getUInt64(config_prefix + ".upload_part_size_multiply_parts_count_threshold", context->getSettings().azure_upload_part_size_multiply_parts_count_threshold);
+
+    return settings;
 }
 
 }

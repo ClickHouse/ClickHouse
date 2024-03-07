@@ -12,7 +12,8 @@
 #include <azure/storage/blobs.hpp>
 #include <azure/core/io/body_stream.hpp>
 #include <Common/ThreadPoolTaskTracker.h>
-
+#include <Common/BufferAllocationPolicy.h>
+#include <Storages/StorageAzureBlob.h>
 
 namespace Poco
 {
@@ -32,11 +33,9 @@ public:
     WriteBufferFromAzureBlobStorage(
         AzureClientPtr blob_container_client_,
         const String & blob_path_,
-        size_t max_single_part_upload_size_,
-        size_t max_unexpected_write_error_retries_,
         size_t buf_size_,
         const WriteSettings & write_settings_,
-        size_t max_inflight_parts_for_one_file_,
+        std::shared_ptr<const AzureObjectStorageSettings> settings_,
         ThreadPoolCallbackRunner<void> schedule_ = {});
 
     ~WriteBufferFromAzureBlobStorage() override;
@@ -62,6 +61,8 @@ private:
 
     LoggerPtr log;
     LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+
+    IBufferAllocationPolicyPtr buffer_allocation_policy;
 
     const size_t max_single_part_upload_size;
     const size_t max_unexpected_write_error_retries;

@@ -93,7 +93,12 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , buffer_allocation_policy(ChooseBufferPolicy(upload_settings))
+    , buffer_allocation_policy(ChooseBufferPolicy({upload_settings.strict_upload_part_size,
+                                                   upload_settings.min_upload_part_size,
+                                                   upload_settings.max_upload_part_size,
+                                                   upload_settings.upload_part_size_multiply_factor,
+                                                   upload_settings.upload_part_size_multiply_parts_count_threshold,
+                                                   upload_settings.max_single_part_upload_size}))
     , task_tracker(
           std::make_unique<TaskTracker>(
               std::move(schedule_),

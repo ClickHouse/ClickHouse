@@ -265,11 +265,9 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
-        settings.get()->max_single_part_upload_size,
-        settings.get()->max_unexpected_write_error_retries,
         buf_size,
         patchSettings(write_settings),
-        settings.get()->max_inflight_parts_for_one_file);
+        settings.get());
 }
 
 /// Remove file. Throws exception if file doesn't exists or it's a directory.

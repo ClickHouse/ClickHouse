@@ -24,21 +24,29 @@ struct AzureObjectStorageSettings
         int max_single_read_retries_,
         int max_single_download_retries_,
         int list_object_keys_size_,
+        size_t min_upload_part_size_,
         size_t max_upload_part_size_,
         size_t max_single_part_copy_size_,
         bool use_native_copy_,
         size_t max_unexpected_write_error_retries_,
-        size_t max_inflight_parts_for_one_file_)
+        size_t max_inflight_parts_for_one_file_,
+        size_t strict_upload_part_size_,
+        size_t upload_part_size_multiply_factor_,
+        size_t upload_part_size_multiply_parts_count_threshold_)
         : max_single_part_upload_size(max_single_part_upload_size_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , max_single_read_retries(max_single_read_retries_)
         , max_single_download_retries(max_single_download_retries_)
         , list_object_keys_size(list_object_keys_size_)
+        , min_upload_part_size(min_upload_part_size_)
         , max_upload_part_size(max_upload_part_size_)
         , max_single_part_copy_size(max_single_part_copy_size_)
         , use_native_copy(use_native_copy_)
-        , max_unexpected_write_error_retries (max_unexpected_write_error_retries_)
-        , max_inflight_parts_for_one_file (max_inflight_parts_for_one_file_)
+        , max_unexpected_write_error_retries(max_unexpected_write_error_retries_)
+        , max_inflight_parts_for_one_file(max_inflight_parts_for_one_file_)
+        , strict_upload_part_size(strict_upload_part_size_)
+        , upload_part_size_multiply_factor(upload_part_size_multiply_factor_)
+        , upload_part_size_multiply_parts_count_threshold(upload_part_size_multiply_parts_count_threshold_)
     {
     }
 
@@ -55,6 +63,9 @@ struct AzureObjectStorageSettings
     bool use_native_copy = false;
     size_t max_unexpected_write_error_retries = 4;
     size_t max_inflight_parts_for_one_file = 20;
+    size_t strict_upload_part_size = 0;
+    size_t upload_part_size_multiply_factor = 2;
+    size_t upload_part_size_multiply_parts_count_threshold = 500;
 };
 
 using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
