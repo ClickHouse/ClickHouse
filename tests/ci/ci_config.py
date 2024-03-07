@@ -11,7 +11,7 @@ from ci_utils import WithIter
 from integration_test_images import IMAGES
 
 
-class CIStages:
+class CIStages(metaclass=WithIter):
     NA = "UNKNOWN"
     BUILDS_1 = "Builds_1"
     BUILDS_2 = "Builds_2"
@@ -473,21 +473,24 @@ perf_test_common_params = {
     "digest": perf_check_digest,
     "run_command": "performance_comparison_check.py",
 }
-sqllancer_test_common_params = {
-    "digest": sqllancer_check_digest,
-    "run_command": "sqlancer_check.py",
-    "run_always": True,
-}
-sqllogic_test_params = {
-    "digest": sqllogic_check_digest,
-    "run_command": "sqllogic_test.py",
-    "timeout": 10800,
-}
-sql_test_params = {
-    "digest": sqltest_check_digest,
-    "run_command": "sqltest.py",
-    "timeout": 10800,
-}
+sqllancer_test_common_params = JobConfig(
+    digest=sqllancer_check_digest,
+    run_command="sqlancer_check.py",
+    release_only=True,
+    run_always=True,
+)
+sqllogic_test_params = JobConfig(
+    digest=sqllogic_check_digest,
+    run_command="sqllogic_test.py",
+    timeout=10800,
+    release_only=True,
+)
+sql_test_params = JobConfig(
+    digest=sqltest_check_digest,
+    run_command="sqltest.py",
+    timeout=10800,
+    release_only=True,
+)
 clickbench_test_params = {
     "digest": DigestConfig(
         include_paths=[
@@ -547,9 +550,17 @@ class CIConfig:
             stage_type = CIStages.TESTS_2
         elif self.is_test_job(job_name):
             stage_type = CIStages.TESTS_1
-            if job_name == JobNames.LIBFUZZER_TEST:
-                # since fuzzers build in Builds_2, test must be in Tests_2
-                stage_type = CIStages.TESTS_2
+            if job_name in CI_CONFIG.test_configs:
+                required_build = CI_CONFIG.test_configs[job_name].required_build
+                assert required_build
+                if required_build in CI_CONFIG.get_builds_for_report(
+                    JobNames.BUILD_CHECK
+                ):
+                    stage_type = CIStages.TESTS_1
+                else:
+                    stage_type = CIStages.TESTS_2
+            else:
+                stage_type = CIStages.TESTS_1
         assert stage_type, f"BUG [{job_name}]"
         return stage_type
 
@@ -693,8 +704,7 @@ class CIConfig:
             self.builds_report_config,
             self.test_configs,
         ):
-            for check_name in config:  # type: ignore
-                yield check_name
+            yield from config  # type: ignore
 
     def get_builds_for_report(
         self, report_name: str, release: bool = False, backport: bool = False
@@ -817,17 +827,15 @@ CI_CONFIG = CIConfig(
                 job
                 for job in JobNames
                 if not any(
-                    [
-                        nogo in job
-                        for nogo in (
-                            "asan",
-                            "tsan",
-                            "msan",
-                            "ubsan",
-                            # skip build report jobs as not all builds will be done
-                            "build check",
-                        )
-                    ]
+                    nogo in job
+                    for nogo in (
+                        "asan",
+                        "tsan",
+                        "msan",
+                        "ubsan",
+                        # skip build report jobs as not all builds will be done
+                        "build check",
+                    )
                 )
             ]
         ),
@@ -1248,17 +1256,15 @@ CI_CONFIG = CIConfig(
             job_config=JobConfig(num_batches=4, run_by_label="pr-performance", **perf_test_common_params),  # type: ignore
         ),
         JobNames.SQLANCER: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**sqllancer_test_common_params)  # type: ignore
+            Build.PACKAGE_RELEASE, job_config=sqllancer_test_common_params
         ),
         JobNames.SQLANCER_DEBUG: TestConfig(
-            Build.PACKAGE_DEBUG, job_config=JobConfig(**sqllancer_test_common_params)  # type: ignore
+            Build.PACKAGE_DEBUG, job_config=sqllancer_test_common_params
         ),
         JobNames.SQL_LOGIC_TEST: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**sqllogic_test_params)  # type: ignore
+            Build.PACKAGE_RELEASE, job_config=sqllogic_test_params
         ),
-        JobNames.SQLTEST: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**sql_test_params)  # type: ignore
-        ),
+        JobNames.SQLTEST: TestConfig(Build.PACKAGE_RELEASE, job_config=sql_test_params),
         JobNames.CLCIKBENCH_TEST: TestConfig(
             Build.PACKAGE_RELEASE, job_config=JobConfig(**clickbench_test_params)  # type: ignore
         ),
