@@ -143,7 +143,6 @@ private:
     // Update Kafka configuration with values from CH user configuration.
     void updateConfiguration(cppkafka::Configuration & kafka_config);
 
-    String getConfigPrefix() const;
     void threadFunc(size_t idx);
 
     size_t getPollMaxBatchSize() const;

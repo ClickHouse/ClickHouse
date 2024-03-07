@@ -52,7 +52,7 @@ struct GetColumnsOptions
         All = AllPhysical | Aliases | Ephemeral,
     };
 
-    GetColumnsOptions(Kind kind_) : kind(kind_) {}
+    GetColumnsOptions(Kind kind_) : kind(kind_) {} /// NOLINT(google-explicit-constructor)
 
     GetColumnsOptions & withSubcolumns(bool value = true)
     {
@@ -116,7 +116,7 @@ public:
 
     explicit ColumnsDescription(NamesAndTypesList ordinary);
 
-    explicit ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
+    ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
 
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
 

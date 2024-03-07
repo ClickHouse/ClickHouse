@@ -21,7 +21,7 @@ namespace DB
 class BackupCoordinationLocal : public IBackupCoordination
 {
 public:
-    BackupCoordinationLocal(bool plain_backup_);
+    explicit BackupCoordinationLocal(bool plain_backup_);
     ~BackupCoordinationLocal() override;
 
     void setStage(const String & new_stage, const String & message) override;

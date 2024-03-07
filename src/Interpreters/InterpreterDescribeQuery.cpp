@@ -155,7 +155,8 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
         auto table = table_function_ptr->execute(table_expression.table_function, getContext(), table_function_ptr->getName());
         if (table)
         {
-            for (const auto & column : *table->getVirtualsDescription())
+            auto virtuals = table->getVirtualsPtr();
+            for (const auto & column : *virtuals)
             {
                 if (!column_descriptions.has(column.name))
                     virtual_columns.push_back(column);
@@ -178,7 +179,8 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
 
     if (settings.describe_include_virtual_columns)
     {
-        for (const auto & column : *table->getVirtualsDescription())
+        auto virtuals = table->getVirtualsPtr();
+        for (const auto & column : *virtuals)
         {
             if (!column_descriptions.has(column.name))
                 virtual_columns.push_back(column);

@@ -128,7 +128,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     , nested_table_id(nested_storage_->getStorageID())
 {
     setInMemoryMetadata(nested_storage_->getInMemoryMetadata());
-    setVirtuals(*nested_storage_->getVirtualsDescription());
+    setVirtuals(*nested_storage_->getVirtualsPtr());
 }
 
 VirtualColumnsDescription StorageMaterializedPostgreSQL::createVirtuals()

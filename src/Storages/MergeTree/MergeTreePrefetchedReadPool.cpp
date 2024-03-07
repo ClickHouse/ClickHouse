@@ -9,7 +9,7 @@
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <base/getThreadId.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>

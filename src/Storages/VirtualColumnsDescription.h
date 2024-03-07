@@ -7,7 +7,6 @@ namespace DB
 
 struct VirtualColumnDescription : public ColumnDescription
 {
-public:
     using Self = VirtualColumnDescription;
     VirtualsKind kind;
 
@@ -16,6 +15,9 @@ public:
 
     bool isEphemeral() const { return kind == VirtualsKind::Ephemeral; }
     bool isPersistent() const { return kind == VirtualsKind::Persistent; }
+
+    /// This method is needed for boost::multi_index because field
+    /// of base class cannot be referenced in boost::multi_index::member.
     const String & getName() const { return name; }
 };
 
@@ -49,17 +51,15 @@ public:
     NameAndTypePair get(const String & name) const { return get(name, VirtualsKind::All); }
     std::optional<NameAndTypePair> tryGet(const String & name) const { return tryGet(name, VirtualsKind::All); }
 
-    std::optional<VirtualColumnDescription> tryGetDescription(const String & name, VirtualsKind kind) const;
-    VirtualColumnDescription getDescription(const String & name, VirtualsKind kind) const;
+    const VirtualColumnDescription * tryGetDescription(const String & name, VirtualsKind kind) const;
+    const VirtualColumnDescription & getDescription(const String & name, VirtualsKind kind) const;
 
-    std::optional<VirtualColumnDescription> tryGetDescription(const String & name) const { return tryGetDescription(name, VirtualsKind::All); }
-    VirtualColumnDescription getDescription(const String & name) const { return getDescription(name, VirtualsKind::All); }
-
-    NamesAndTypesList get(VirtualsKind kind) const;
-    NamesAndTypesList getNamesAndTypesList() const;
+    const VirtualColumnDescription * tryGetDescription(const String & name) const { return tryGetDescription(name, VirtualsKind::All); }
+    const VirtualColumnDescription & getDescription(const String & name) const { return getDescription(name, VirtualsKind::All); }
 
     Block getSampleBlock() const;
-    Block getSampleBlock(const Names & names) const;
+    NamesAndTypesList getNamesAndTypesList() const;
+    NamesAndTypesList getNamesAndTypesList(VirtualsKind kind) const;
 
 private:
     Container container;

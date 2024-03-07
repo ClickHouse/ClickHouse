@@ -23,7 +23,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeIndexInverted.h>
-#include <Storages/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -168,7 +168,7 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
-                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtuals().contains(column.name))
+                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
                     /// It's okay if the column was dropped. It may also absent in dropped_columns

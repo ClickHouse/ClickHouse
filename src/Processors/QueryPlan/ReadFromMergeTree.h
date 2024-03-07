@@ -133,7 +133,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
-    const Names & getRealColumnNames() const { return all_column_names; }
+    const Names & getAllColumnNames() const { return all_column_names; }
 
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }

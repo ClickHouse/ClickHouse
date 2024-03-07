@@ -34,15 +34,6 @@ void VirtualColumnsDescription::addPersistent(String name, DataTypePtr type, AST
     add({std::move(name), std::move(type), std::move(codec), std::move(comment), VirtualsKind::Persistent});
 }
 
-NamesAndTypesList VirtualColumnsDescription::get(VirtualsKind kind) const
-{
-    NamesAndTypesList result;
-    for (const auto & column : container)
-        if (static_cast<UInt8>(column.kind) & static_cast<UInt8>(kind))
-            result.emplace_back(column.name, column.type);
-    return result;
-}
-
 std::optional<NameAndTypePair> VirtualColumnsDescription::tryGet(const String & name, VirtualsKind kind) const
 {
     auto it = container.get<1>().find(name);
@@ -59,20 +50,28 @@ NameAndTypePair VirtualColumnsDescription::get(const String & name, VirtualsKind
     return *column;
 }
 
-std::optional<VirtualColumnDescription> VirtualColumnsDescription::tryGetDescription(const String & name, VirtualsKind kind) const
+const VirtualColumnDescription * VirtualColumnsDescription::tryGetDescription(const String & name, VirtualsKind kind) const
 {
     auto it = container.get<1>().find(name);
     if (it != container.get<1>().end() && (static_cast<UInt8>(it->kind) & static_cast<UInt8>(kind)))
-        return *it;
-    return {};
+        return &(*it);
+    return nullptr;
 }
 
-VirtualColumnDescription VirtualColumnsDescription::getDescription(const String & name, VirtualsKind kind) const
+const VirtualColumnDescription & VirtualColumnsDescription::getDescription(const String & name, VirtualsKind kind) const
 {
-    auto column = tryGetDescription(name, kind);
+    const auto * column = tryGetDescription(name, kind);
     if (!column)
         throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no virtual column {}", name);
     return *column;
+}
+
+Block VirtualColumnsDescription::getSampleBlock() const
+{
+    Block result;
+    for (const auto & desc : container)
+        result.insert({desc.type->createColumn(), desc.type, desc.name});
+    return result;
 }
 
 NamesAndTypesList VirtualColumnsDescription::getNamesAndTypesList() const
@@ -83,11 +82,12 @@ NamesAndTypesList VirtualColumnsDescription::getNamesAndTypesList() const
     return result;
 }
 
-Block VirtualColumnsDescription::getSampleBlock() const
+NamesAndTypesList VirtualColumnsDescription::getNamesAndTypesList(VirtualsKind kind) const
 {
-    Block result;
-    for (const auto & desc : container)
-        result.insert({desc.type->createColumn(), desc.type, desc.name});
+    NamesAndTypesList result;
+    for (const auto & column : container)
+        if (static_cast<UInt8>(column.kind) & static_cast<UInt8>(kind))
+            result.emplace_back(column.name, column.type);
     return result;
 }
 

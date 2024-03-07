@@ -156,6 +156,12 @@ std::string ZooKeeperAuthRequest::toStringImpl() const
 
 void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
 {
+    /// See https://github.com/ClickHouse/clickhouse-private/issues/3029
+    if (path.starts_with("/clickhouse/tables/") && path.find("/parts/") != std::string::npos)
+    {
+        LOG_TRACE(getLogger(__PRETTY_FUNCTION__), "Creating part at path {}", path);
+    }
+
     Coordination::write(path, out);
     Coordination::write(data, out);
     Coordination::write(acls, out);
@@ -480,6 +486,10 @@ OpNum ZooKeeperMultiRequest::getOpNum() const
 }
 
 ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls)
+    : ZooKeeperMultiRequest(std::span{generic_requests}, default_acls)
+{}
+
+ZooKeeperMultiRequest::ZooKeeperMultiRequest(std::span<const Coordination::RequestPtr> generic_requests, const ACLs & default_acls)
 {
     /// Convert nested Requests to ZooKeeperRequests.
     /// Note that deep copy is required to avoid modifying path in presence of chroot prefix.

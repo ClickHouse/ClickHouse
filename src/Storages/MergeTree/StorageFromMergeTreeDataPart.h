@@ -34,7 +34,7 @@ public:
         , partition_id(part_->info.partition_id)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
-        setVirtuals(*storage.getVirtualsDescription());
+        setVirtuals(*storage.getVirtualsPtr());
     }
 
     /// Used in queries with projection.

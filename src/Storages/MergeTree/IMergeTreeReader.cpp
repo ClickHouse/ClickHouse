@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
-#include <Storages/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <Common/escapeForFileName.h>
@@ -68,6 +68,8 @@ const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() 
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 {
+    chassert(columns.size() == requested_columns.size());
+
     const auto * loaded_part_info = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
     if (!loaded_part_info)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");

@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Common/Exception.h>
 
 namespace DB

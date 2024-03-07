@@ -12,7 +12,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 
 namespace DB

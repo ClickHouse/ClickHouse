@@ -117,7 +117,7 @@ private:
     /// Actual columns description in part.
     const ColumnsDescription & part_columns;
 
-    /// TODO:
+    /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
 };
 

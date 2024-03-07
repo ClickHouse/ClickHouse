@@ -43,6 +43,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <algorithm>
 #include <iterator>
@@ -1405,6 +1406,20 @@ static void buildIndexes(
         }
     }
 
+    // move minmax indices to first positions, so they will be applied first as cheapest ones
+    std::stable_sort(begin(skip_indexes.useful_indices), end(skip_indexes.useful_indices), [](const auto & l, const auto & r)
+    {
+        const bool l_min_max = (typeid_cast<const MergeTreeIndexMinMax *>(l.index.get()));
+        const bool r_min_max = (typeid_cast<const MergeTreeIndexMinMax *>(r.index.get()));
+        if (l_min_max == r_min_max)
+            return false;
+
+        if (l_min_max)
+            return true; // left is min max but right is not
+
+        return false; // right is min max but left is not
+    });
+
     indexes->skip_indexes = std::move(skip_indexes);
 }
 
@@ -1418,8 +1433,13 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         if (query_info.planner_context)
         {
             const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
+            const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
             for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
             {
+                /// ALIAS columns cannot be used in the filter expression without being calculated in ActionsDAG,
+                /// so they should not be added to the input nodes.
+                if (alias_column_expressions.contains(column_name))
+                    continue;
                 const auto & column = table_expression_data.getColumnOrThrow(column_name);
                 node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
             }

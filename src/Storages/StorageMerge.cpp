@@ -63,10 +63,12 @@
 #include <Core/NamesAndTypes.h>
 #include <Functions/FunctionFactory.h>
 
+namespace DB
+{
+
 namespace
 {
 
-using namespace DB;
 bool columnIsPhysical(ColumnDefaultKind kind)
 {
     return kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Materialized;
@@ -82,10 +84,23 @@ bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs)
     return false;
 }
 
+/// Adds to the select query section `WITH value AS column_name`
+///
+/// For example:
+/// - `WITH 9000 as _port`.
+void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
+{
+    auto & select = ast->as<ASTSelectQuery &>();
+    if (!select.with())
+        select.setExpression(ASTSelectQuery::Expression::WITH, std::make_shared<ASTExpressionList>());
+
+    auto literal = std::make_shared<ASTLiteral>(value);
+    literal->alias = column_name;
+    literal->prefer_alias_to_column_name = true;
+    select.with()->children.push_back(literal);
 }
 
-namespace DB
-{
+}
 
 namespace ErrorCodes
 {
@@ -325,7 +340,7 @@ StorageSnapshotPtr StorageMerge::getStorageSnapshot(const StorageMetadataPtr & m
     auto virtuals = common_virtuals;
     if (auto first_table = getFirstTable([](auto && table) { return table; }))
     {
-        auto table_virtuals = first_table->getVirtualsDescription();
+        auto table_virtuals = first_table->getVirtualsPtr();
         for (const auto & column : *table_virtuals)
         {
             if (virtuals.has(column.name))
@@ -960,8 +975,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
 
         if (!is_storage_merge_engine)
         {
-            VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", current_storage_id.table_name);
-            VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_database", current_storage_id.database_name);
+            rewriteEntityInAst(modified_query_info.query, "_table", current_storage_id.table_name);
+            rewriteEntityInAst(modified_query_info.query, "_database", current_storage_id.database_name);
         }
     }
 
