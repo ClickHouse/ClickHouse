@@ -345,7 +345,7 @@ quit
         echo "failure" > status.txt
         { rg -ao "Found error:.*" fuzzer.log \
             || rg -ao "Exception:.*" fuzzer.log \
-            || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
+            || echo "Fuzzer fucked up with error code: ($fuzzer_exit_code). Its process died somehow when the server stayed alive. The server log probably won't tell you much so try to find information in other files." ; } \
             | tail -1 > description.txt
     fi
 
