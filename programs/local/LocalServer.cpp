@@ -327,6 +327,14 @@ static bool checkIfStdinIsRegularFile()
     return fstat(STDIN_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
 }
 
+
+static bool checkIfStdoutIsRegularFile()
+{
+    struct stat file_stat;
+    return fstat(STDOUT_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
+}
+
+
 std::string LocalServer::getInitialCreateTableQuery()
 {
     if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || queries.empty()))
@@ -638,7 +646,14 @@ void LocalServer::processConfig()
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
-    format = config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV"));
+    if (!config().has("output-format") && !config().has("format") && checkIfStdoutIsRegularFile())
+    {
+        std::optional<String> format_from_file_name;
+        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDOUT_FILENO);
+        format = format_from_file_name ? *format_from_file_name : "TSV";
+    }
+    else
+        format = config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV"));
     insert_format = "Values";
 
     /// Setting value from cmd arg overrides one from config
