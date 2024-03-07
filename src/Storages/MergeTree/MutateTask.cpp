@@ -327,7 +327,7 @@ getColumnsForNewDataPart(
 
     }
 
-    auto persistent_virtuals = source_part->storage.getVirtualsDescription()->get(VirtualsKind::Persistent);
+    auto persistent_virtuals = source_part->storage.getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
 
     for (const auto & [name, type] : persistent_virtuals)
     {

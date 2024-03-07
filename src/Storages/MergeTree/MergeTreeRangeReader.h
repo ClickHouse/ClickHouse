@@ -115,6 +115,9 @@ public:
     bool isCurrentRangeFinished() const;
     bool isInitialized() const { return is_initialized; }
 
+    /// Names of virtual columns that are filled in RangeReader.
+    static const NameSet virtuals_to_fill;
+
 private:
     /// Accumulates sequential read() requests to perform a large read instead of multiple small reads
     class DelayedStream

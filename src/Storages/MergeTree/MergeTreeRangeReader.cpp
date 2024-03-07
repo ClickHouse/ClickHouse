@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
@@ -872,6 +872,8 @@ size_t MergeTreeRangeReader::currentMark() const
     return stream.currentMark();
 }
 
+const NameSet MergeTreeRangeReader::virtuals_to_fill = {"_part_offset", BlockOffsetColumn::name};
+
 size_t MergeTreeRangeReader::Stream::numPendingRows() const
 {
     size_t rows_between_marks = index_granularity->getRowsCountInRange(current_mark, last_mark);
@@ -1144,6 +1146,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (!result.rows_per_granule.empty())
         result.adjustLastGranule();
 
+    /// Column _block_offset is the same as _part_offset if it's not persisted in part.
     bool has_part_offset = read_sample_block.has("_part_offset");
     bool has_block_offset = read_sample_block.has(BlockOffsetColumn::name);
 

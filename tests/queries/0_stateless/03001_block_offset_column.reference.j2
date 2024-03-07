@@ -1,3 +1,4 @@
+{% for enable_vertical_merge_algorithm in [0, 1] -%}
 *** BEFORE MUTATION BEFORE MERGE ***
 1	1	1	0	all_1_1_0
 2	2	2	0	all_2_2_0
@@ -39,3 +40,4 @@
 7	7	4	0	all_1_4_2_3
 8	8	4	1	all_1_4_2_3
 9	9	4	2	all_1_4_2_3
+{% endfor -%}

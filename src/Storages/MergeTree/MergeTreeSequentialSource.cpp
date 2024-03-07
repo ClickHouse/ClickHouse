@@ -195,6 +195,7 @@ static void fillBlockNumberColumns(
     Columns & res_columns,
     const NamesAndTypesList & columns_list,
     UInt64 block_number,
+    UInt64 block_offset,
     UInt64 num_rows)
 {
     chassert(res_columns.size() == columns_list.size());
@@ -240,7 +241,7 @@ try
 
         if (rows_read)
         {
-            fillBlockNumberColumns(columns, sample, data_part->info.min_block, rows_read);
+            fillBlockNumberColumns(columns, sample, data_part->info.min_block, current_row, rows_read);
             reader->fillVirtualColumns(columns, rows_read);
 
             current_row += rows_read;
