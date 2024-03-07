@@ -69,7 +69,7 @@ Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 
 ## 数组大小 {#array-size}
 
-可以使用`size0`子列找到数组的大小，而无需读取整个列。对于多维数组，您可以使用`sizeN-1`，其中`N`是所需的维度。
+可以使用 `size0` 子列找到数组的大小，而无需读取整个列。对于多维数组，您可以使用 `sizeN-1`，其中 `N` 是所需的维度。
 
 **例子**
 
