@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/defines.h"
+#include <base/defines.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Core/UUID.h>
