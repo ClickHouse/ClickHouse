@@ -43,29 +43,34 @@ namespace ErrorCodes
 static constexpr size_t max_array_size_as_field = 1000000;
 
 
-ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column)
+ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column, bool check_offsets)
     : data(std::move(nested_column)), offsets(std::move(offsets_column))
 {
-    const ColumnOffsets * offsets_concrete = typeid_cast<const ColumnOffsets *>(offsets.get());
-
-    if (!offsets_concrete)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "offsets_column must be a ColumnUInt64");
-
-    if (!offsets_concrete->empty() && data && !data->empty())
+    if (check_offsets)
     {
-        Offset last_offset = offsets_concrete->getData().back();
+        const ColumnOffsets * offsets_concrete = typeid_cast<const ColumnOffsets *>(offsets.get());
 
-        /// This will also prevent possible overflow in offset.
-        if (data->size() != last_offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "offsets_column has data inconsistent with nested_column. Data size: {}, last offset: {}",
-                data->size(), last_offset);
+        if (!offsets_concrete)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "offsets_column must be a ColumnUInt64");
+
+        if (!offsets_concrete->empty() && data && !data->empty())
+        {
+            Offset last_offset = offsets_concrete->getData().back();
+
+            /// This will also prevent possible overflow in offset.
+            if (data->size() != last_offset)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "offsets_column has data inconsistent with nested_column. Data size: {}, last offset: {}",
+                    data->size(),
+                    last_offset);
+        }
+
+        /** NOTE
+         * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
+         * But in most cases, arrays with constant value are unexpected and code will work wrong. Use with caution.
+         */
     }
-
-    /** NOTE
-      * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
-      * But in most cases, arrays with constant value are unexpected and code will work wrong. Use with caution.
-      */
 }
 
 ColumnArray::ColumnArray(MutableColumnPtr && nested_column)
@@ -425,20 +430,14 @@ void ColumnArray::insertManyFromTuple(const ColumnArray & src, size_t position, 
     if (tuple_size != src_tuple_size)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Nested tuple size mismatch: {} vs {}", tuple_size, src_tuple_size);
 
-    MutableColumns temporary_arrays(tuple_size);
-    Columns src_temporary_arrays(tuple_size);
-    for (size_t i = 0; i < tuple_size; ++i)
-    {
-        temporary_arrays[i] = ColumnArray::create(tuple.getColumn(i).assumeMutable(), getOffsetsPtr()->assumeMutable());
-        src_temporary_arrays[i] = ColumnArray::create(src_tuple.getColumn(i).assumeMutable(), src.getOffsetsPtr()->assumeMutable());
-        assert_cast<ColumnArray &>(*temporary_arrays[i])
-            .insertManyFromImpl(assert_cast<const ColumnArray &>(*src_temporary_arrays[i]), position, length, false);
-    }
-
     Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        tuple_columns[i] = assert_cast<const ColumnArray &>(*temporary_arrays[i]).getDataPtr();
-
+    {
+        auto array_of_element = ColumnArray(tuple.getColumn(i).assumeMutable(), getOffsetsPtr()->assumeMutable(), false);
+        auto src_array_of_element = ColumnArray(src_tuple.getColumn(i).assumeMutable(), src.getOffsetsPtr()->assumeMutable());
+        array_of_element.insertManyFromImpl(src_array_of_element, position, length, false);
+        tuple_columns[i] = array_of_element.getDataPtr();
+    }
     getDataPtr() = ColumnTuple::create(std::move(tuple_columns));
 }
 
@@ -448,12 +447,12 @@ void ColumnArray::insertManyFromNullable(const ColumnArray & src, size_t positio
     const ColumnNullable & src_nullable = assert_cast<const ColumnNullable &>(src.getData());
 
     /// Process nested column without updating array offsets
-    auto array_of_nested = ColumnArray(nullable.getNestedColumnPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable());
+    auto array_of_nested = ColumnArray(nullable.getNestedColumnPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable(), false);
     auto src_array_of_nested = ColumnArray(src_nullable.getNestedColumnPtr()->assumeMutable(), src.getOffsetsPtr()->assumeMutable());
     array_of_nested.insertManyFromImpl(src_array_of_nested, position, length, false);
 
     /// Process null map column without updating array offsets
-    auto array_of_null_map = ColumnArray(nullable.getNullMapColumnPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable());
+    auto array_of_null_map = ColumnArray(nullable.getNullMapColumnPtr()->assumeMutable(), getOffsetsPtr()->assumeMutable(), false);
     auto src_array_of_null_map = ColumnArray(src_nullable.getNullMapColumnPtr()->assumeMutable(), src.getOffsetsPtr()->assumeMutable());
     array_of_null_map.insertManyFromImpl(src_array_of_null_map, position, length, false);
 
