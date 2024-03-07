@@ -16,8 +16,6 @@ public:
 
     String getName() const override { return "BalancingChunksTransform"; }
 
-
-    
     InputPorts & getInputPorts() { return inputs; }
     OutputPorts & getOutputPorts() { return outputs; }
 

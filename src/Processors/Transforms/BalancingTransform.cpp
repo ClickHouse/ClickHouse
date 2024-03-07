@@ -7,7 +7,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int LOGICAL_ERROR;
 }
 
 BalancingChunksTransform::BalancingChunksTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, size_t max_memory_usage_, size_t num_ports)

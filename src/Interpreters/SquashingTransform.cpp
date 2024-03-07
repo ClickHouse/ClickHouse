@@ -128,7 +128,6 @@ bool SquashingTransform::isEnoughSize(size_t rows, size_t bytes) const
 }
 
 
-
 NewSquashingTransform::NewSquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
@@ -160,10 +159,8 @@ Block NewSquashingTransform::addImpl(ReferenceType input_chunk)
 
     const auto *info = getInfoFromChunk(input_chunk);
     for (auto & one : info->chunks)
-    {
         append(std::move(one), info->data_type);
-    }
-    
+
     {
         Block to_return;
         std::swap(to_return, accumulated_block);
@@ -294,5 +291,4 @@ bool BalanceTransform::isEnoughSize(size_t rows, size_t bytes) const
         || (min_block_size_rows && rows >= min_block_size_rows)
         || (min_block_size_bytes && bytes >= min_block_size_bytes);
 }
-
 }
