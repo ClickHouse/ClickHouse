@@ -1,5 +1,6 @@
 #include <any>
 #include <limits>
+#include <memory>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -1494,6 +1495,7 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
 
 template<typename AddedColumns>
 ColumnPtr buildAdditionFilter(
+    size_t left_start_row,
     const std::vector<std::pair<const Block *, size_t>> & selected_rows,
     const std::vector<size_t> & row_replicate_offset,
     AddedColumns & added_columns)
@@ -1544,7 +1546,7 @@ ColumnPtr buildAdditionFilter(
             size_t rows = left_offset - prev_left_offset;
             if (rows)
             {
-                new_col->insertManyFrom(*src_col->column, i - 1, rows);
+                new_col->insertManyFrom(*src_col->column, left_start_row + i - 1, rows);
             }
             prev_left_offset = left_offset;
         }
@@ -1601,6 +1603,7 @@ void appendFoundRowAll(
     }
 }
 
+/// First to collect all matched rows by join keys, then filter out rows which is not true in additional filter expression.
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename KeyGetter, typename Map, bool need_filter, bool multiple_disjuncts, typename AddedColumns>
 NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
     std::vector<KeyGetter> && key_getter_vector,
@@ -1610,120 +1613,165 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
 {
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
 
-    size_t rows = added_columns.rows_to_add;
+    size_t left_block_rows = added_columns.rows_to_add;
     if constexpr (need_filter)
-        added_columns.filter = IColumn::Filter(rows, 0);
+        added_columns.filter = IColumn::Filter(left_block_rows, 0);
 
-    Arena pool;
+    std::unique_ptr<Arena> pool;
 
     if constexpr (join_features.need_replication)
-        added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
+        added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(left_block_rows);
 
     std::vector<size_t> row_replicate_offset;
-    row_replicate_offset.reserve(rows);
-    row_replicate_offset.push_back(0);
+    row_replicate_offset.reserve(left_block_rows);
     
     using FindResult = typename KeyGetter::FindResult;
-    IColumn::Offset current_offset = 0;
     size_t max_joined_block_rows = added_columns.max_joined_block_rows;
-    size_t i = 0;
+    size_t left_row_iter = 0;
     std::vector<std::pair<const Block*, size_t>> selected_rows;
-    selected_rows.reserve(rows);
+    selected_rows.reserve(left_block_rows);
     std::vector<FindResult> find_results;
-    /// First, collect matched row refs.
-    for (; i < rows; ++i)
-    {
-        if constexpr (join_features.need_replication)
-        {
-            if (unlikely(current_offset >= max_joined_block_rows))
-            {
-                break;
-            }
-        }
-        KnownRowsHolder<multiple_disjuncts> known_rows;
-        for (size_t onexpr_idx = 0; onexpr_idx < added_columns.join_on_keys.size(); ++onexpr_idx)
-        {
-            const auto & join_keys = added_columns.join_on_keys[onexpr_idx];
-            if (join_keys.null_map && (*join_keys.null_map)[i])
-                continue;
-            
-            bool row_acceptable = !join_keys.isRowFiltered(i);
-            auto find_result = row_acceptable ? key_getter_vector[onexpr_idx].findKey(*(mapv[onexpr_idx]), i, pool) : FindResult();
+    find_results.reserve(left_block_rows);
+    bool exceeded_max_block_rows = false;
+    IColumn::Offset total_added_rows = 0;
+    IColumn::Offset current_added_rows = 0;
 
-            if (find_result.isFound())
+    auto collect_keys_matched_rows_refs = [&]()
+    {
+        pool = std::make_unique<Arena>();
+        find_results.clear();
+        row_replicate_offset.clear();
+        row_replicate_offset.push_back(0);
+        current_added_rows = 0;
+        selected_rows.clear();
+        for (; left_row_iter < left_block_rows; ++left_row_iter)
+        {
+            if constexpr (join_features.need_replication)
             {
-                auto & mapped = find_result.getMapped();
-                find_results.push_back(find_result);
-                if constexpr (join_features.is_all_join)
+                if (unlikely(total_added_rows + current_added_rows >= max_joined_block_rows))
                 {
-                    appendFoundRowAll<multiple_disjuncts, join_features.need_flags>(mapped, selected_rows, current_offset, known_rows, &used_flags);
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported join type. kind:{}, strictness:{}", KIND, STRICTNESS);
+                    break;
                 }
             }
-        }
-        row_replicate_offset.push_back(current_offset);
-    }
-
-    /// Second. filtout rows which is not true in additional filter expression.
-    size_t prev_offset = 0;
-    const PaddedPODArray<UInt8> * filter_flags = nullptr;
-    auto filter = buildAdditionFilter(selected_rows, row_replicate_offset, added_columns);
-    if (filter->isNullable())
-    {
-        auto nested_col = typeid_cast<const ColumnNullable &>(*filter).getNestedColumnPtr();
-        filter_flags = &(dynamic_cast<const ColumnUInt8 &>(*nested_col).getData());
-    }
-    else
-    {
-        filter_flags = &(dynamic_cast<const ColumnUInt8 &>(*filter).getData());
-    }
-
-    current_offset = 0;
-    auto row_it = selected_rows.begin();
-    for (size_t j = 1; j < row_replicate_offset.size(); ++j)
-    {
-        bool any_matched = false;
-        for (size_t k = prev_offset; k < row_replicate_offset[j]; ++k)
-        {
-            if ((*filter_flags)[k])
+            KnownRowsHolder<multiple_disjuncts> known_rows;
+            for (size_t join_clause_idx = 0; join_clause_idx < added_columns.join_on_keys.size(); ++join_clause_idx)
             {
-                any_matched = true;
-                added_columns.appendFromBlock(*row_it->first, row_it->second, join_features.add_missing);
-                current_offset += 1;
+                const auto & join_keys = added_columns.join_on_keys[join_clause_idx];
+                if (join_keys.null_map && (*join_keys.null_map)[left_row_iter])
+                    continue;
+
+                bool row_acceptable = !join_keys.isRowFiltered(left_row_iter);
+                auto find_result = row_acceptable
+                    ? key_getter_vector[join_clause_idx].findKey(*(mapv[join_clause_idx]), left_row_iter, *pool)
+                    : FindResult();
+
+                if (find_result.isFound())
+                {
+                    auto & mapped = find_result.getMapped();
+                    find_results.push_back(find_result);
+                    if constexpr (join_features.is_all_join)
+                    {
+                        appendFoundRowAll<multiple_disjuncts, join_features.need_flags>(
+                            mapped, selected_rows, current_added_rows, known_rows, &used_flags);
+                    }
+                    else
+                    {
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported join type. kind:{}, strictness:{}", KIND, STRICTNESS);
+                    }
+                }
             }
-            ++row_it;
+            row_replicate_offset.push_back(current_added_rows);
         }
-        if (!any_matched)
+    };
+
+    auto copy_final_matched_rows = [&](size_t left_start_row, ColumnPtr filter_col)
+    {
+        const PaddedPODArray<UInt8> * filter_flags = nullptr;
+        if (filter_col->isNullable())
         {
-            if constexpr (join_features.is_anti_join && join_features.left)
-                setUsed<need_filter>(added_columns.filter, j - 1);
-            addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
+            auto nested_col = typeid_cast<const ColumnNullable &>(*filter_col).getNestedColumnPtr();
+            filter_flags = &(dynamic_cast<const ColumnUInt8 &>(*nested_col).getData());
         }
         else
         {
-            if constexpr (join_features.is_all_join)
-            {
-                used_flags.template setUsed<join_features.need_flags, multiple_disjuncts>(find_results[j - 1]);
-                setUsed<need_filter>(added_columns.filter, j - 1);
-            }
+            filter_flags = &(dynamic_cast<const ColumnUInt8 &>(*filter_col).getData());
         }
+
+        size_t prev_replicated_row = 0;
+        auto selected_right_row_it = selected_rows.begin();
+        for (size_t i = 1, n = row_replicate_offset.size(); i < n; ++i)
+        {
+            bool any_matched = false;
+            for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
+            {
+                if ((*filter_flags)[replicated_row])
+                {
+                    any_matched = true;
+                    added_columns.appendFromBlock(*selected_right_row_it->first, selected_right_row_it->second, join_features.add_missing);
+                    total_added_rows += 1;
+                }
+                ++selected_right_row_it;
+            }
+            if (!any_matched)
+            {
+                if constexpr (join_features.is_anti_join && join_features.left)
+                    setUsed<need_filter>(added_columns.filter, i - 1);
+                addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, total_added_rows);
+            }
+            else
+            {
+                if constexpr (join_features.is_all_join)
+                {
+                    used_flags.template setUsed<join_features.need_flags, multiple_disjuncts>(find_results[i - 1]);
+                    setUsed<need_filter>(added_columns.filter, left_start_row + i - 1);
+                }
+            }
+
+            if constexpr (join_features.need_replication)
+            {
+                (*added_columns.offsets_to_replicate)[left_start_row + i - 1] = total_added_rows;
+            }
+            prev_replicated_row = row_replicate_offset[i];
+        }
+
+    };
+
+    while (left_row_iter < left_block_rows && !exceeded_max_block_rows)
+    {
+        auto left_start_row = left_row_iter;
+        collect_keys_matched_rows_refs();
+        if (selected_rows.size() != current_added_rows || row_replicate_offset.size() != left_row_iter - left_start_row + 1)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Sizes are mismatched. selected_rows.size:{}, current_added_rows:{}, row_replicate_offset.size:{}, left_row_iter: {}, "
+                "left_start_row: {}",
+                selected_rows.size(),
+                current_added_rows,
+                row_replicate_offset.size(),
+                left_row_iter,
+                left_start_row);
+        }
+        auto filter_col = buildAdditionFilter(left_start_row, selected_rows, row_replicate_offset, added_columns);
+        copy_final_matched_rows(left_start_row, filter_col);
 
         if constexpr (join_features.need_replication)
         {
-            (*added_columns.offsets_to_replicate)[j-1] = current_offset;
+            // Add a check for current_added_rows to avoid run the filter expression on too small size batch.
+            if (total_added_rows >= max_joined_block_rows || current_added_rows < 1024)
+            {
+                exceeded_max_block_rows = true;
+            }
         }
-        prev_offset = row_replicate_offset[j];
     }
+
     if constexpr (join_features.need_replication)
     {
-        added_columns.offsets_to_replicate->resize_assume_reserved(i);
-        added_columns.filter.resize_assume_reserved(i);
+        added_columns.offsets_to_replicate->resize_assume_reserved(left_row_iter);
+        added_columns.filter.resize_assume_reserved(left_row_iter);
     }
     added_columns.applyLazyDefaults();
-    return i;
+    return left_row_iter;
 }
 
 /// Joins right table columns which indexes are present in right_indexes using specified map.
