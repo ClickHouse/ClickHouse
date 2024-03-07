@@ -936,6 +936,8 @@ void TCPHandler::processInsertQuery()
         auto result = processAsyncInsertQuery(*insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
         {
+            /// Reset pipeline because it may hold write lock for some storages.
+            state.io.pipeline.reset();
             if (settings.wait_for_async_insert)
             {
                 size_t timeout_ms = settings.wait_for_async_insert_timeout.totalMilliseconds();
@@ -968,7 +970,7 @@ void TCPHandler::processInsertQuery()
     else
     {
         PushingPipelineExecutor executor(state.io.pipeline);
-        run_executor(executor, processed_block);
+        run_executor(executor, std::move(processed_block));
     }
 
     sendInsertProfileEvents();
