@@ -556,3 +556,30 @@ TEST_F(ConnectionPoolTest, HardLimit)
     ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[pool->getMetrics().preserved]);
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[pool->getMetrics().reset]);
 }
+
+TEST_F(ConnectionPoolTest, NoReceiveCall)
+{
+    auto pool = getPool();
+
+    {
+        auto connection = pool->getConnection(timeouts);
+
+        {
+            auto data = String("Hello");
+            Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1"); // HTTP/1.1 is required for keep alive
+            request.setContentLength(data.size());
+            std::ostream & ostream = connection->sendRequest(request);
+            ostream << data;
+        }
+
+        connection->flushRequest();
+    }
+
+    ASSERT_EQ(0, CurrentMetrics::get(pool->getMetrics().active_count));
+    ASSERT_EQ(0, CurrentMetrics::get(pool->getMetrics().stored_count));
+
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[pool->getMetrics().created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[pool->getMetrics().preserved]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[pool->getMetrics().reset]);
+}

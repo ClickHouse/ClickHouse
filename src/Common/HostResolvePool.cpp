@@ -13,7 +13,7 @@ namespace ProfileEvents
 {
     extern const Event AddressesDiscovered;
     extern const Event AddressesExpired;
-    extern const Event AddressesFailScored;
+    extern const Event AddressesMarkedAsFailed;
 }
 
 namespace CurrentMetrics
@@ -34,7 +34,7 @@ HostResolverMetrics HostResolver::getMetrics()
     return HostResolverMetrics{
         .discovered = ProfileEvents::AddressesDiscovered,
         .expired = ProfileEvents::AddressesExpired,
-        .failed = ProfileEvents::AddressesFailScored,
+        .failed = ProfileEvents::AddressesMarkedAsFailed,
         .active_count = CurrentMetrics::AddressesActive,
     };
 }
@@ -120,7 +120,6 @@ void HostResolver::updateWeights()
     }
 
     chassert((getTotalWeight() > 0 && !records.empty()) || records.empty());
-    random_weight_picker = std::uniform_int_distribution<size_t>(0, getTotalWeight() - 1);
 }
 
 HostResolver::Entry HostResolver::resolve()
@@ -170,6 +169,7 @@ void HostResolver::setFail(const Poco::Net::IPAddress & address)
 Poco::Net::IPAddress HostResolver::selectBest()
 {
     chassert(!records.empty());
+    auto random_weight_picker = std::uniform_int_distribution<size_t>(0, getTotalWeight() - 1);
     size_t weight = random_weight_picker(thread_local_rng);
     auto it = std::partition_point(records.begin(), records.end(), [&](const Record & rec) { return rec.weight_prefix_sum <= weight; });
     chassert(it != records.end());
@@ -178,8 +178,13 @@ Poco::Net::IPAddress HostResolver::selectBest()
 
 HostResolver::Records::iterator HostResolver::find(const Poco::Net::IPAddress & addr) TSA_REQUIRES(mutex)
 {
-    return std::lower_bound(
+    auto it = std::lower_bound(
         records.begin(), records.end(), addr, [](const Record & rec, const Poco::Net::IPAddress & value) { return rec.address < value; });
+
+    if (it != records.end() && it->address != addr)
+        return records.end();
+
+    return it;
 }
 
 bool HostResolver::isUpdateNeeded()

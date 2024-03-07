@@ -336,7 +336,7 @@ private:
             request_stream_completed = false;
 
             response_stream = nullptr;
-            response_stream_completed = true;
+            response_stream_completed = false;
 
             return result;
         }

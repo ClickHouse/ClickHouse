@@ -191,8 +191,6 @@ protected:
     Poco::Timestamp last_resolve_time TSA_GUARDED_BY(mutex);
     Records records TSA_GUARDED_BY(mutex);
 
-    std::uniform_int_distribution<size_t> random_weight_picker TSA_GUARDED_BY(mutex);
-
     Poco::Logger * log = &Poco::Logger::get("ConnectionPool");
 };
 

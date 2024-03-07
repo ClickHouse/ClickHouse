@@ -212,8 +212,9 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
 
-        /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription());
+        /// Add server address to exception. Exception will preserve stack trace.
+        e.addMessage("({})", getDescription());
+        throw;
     }
     catch (Poco::Net::NetException & e)
     {
@@ -222,7 +223,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
 
-        /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
+        /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription());
     }
     catch (Poco::TimeoutException & e)
@@ -232,7 +233,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
 
-        /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
+        /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
         throw NetException(

@@ -721,9 +721,9 @@ The server successfully detected this situation and will download merged part fr
     M(HTTPConnectionsErrors, "Number of cases when creation of a http connection failed") \
     M(HTTPConnectionsElapsedMicroseconds, "Total time spend on creating http connections") \
     \
-    M(AddressesDiscovered, "Total count of new addresses in dns resolve results for connection pools") \
-    M(AddressesExpired, "Total count of expired addresses which is no longer presented in dns resolve results for for connection pools") \
-    M(AddressesFailScored, "Total count of new addresses in dns resolve results for for connection pools") \
+    M(AddressesDiscovered, "Total count of new addresses in dns resolve results for http connections") \
+    M(AddressesExpired, "Total count of expired addresses which is no longer presented in dns resolve results for http connections") \
+    M(AddressesMarkedAsFailed, "Total count of addresses which has been marked as faulty due to connection errors for http connections") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
