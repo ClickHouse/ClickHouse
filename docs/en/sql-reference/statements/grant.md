@@ -507,7 +507,7 @@ are turned on.
 
 ### NAMED COLLECTION ADMIN
 
-Allows a certain operation on a specified named colleciton. Before version 23.7 it was called NAMED COLLECTION CONTROL, and after 23.7 NAMED COLLECTION ADMIN as added and NAMED COLLECTION CONTROL is preserved as an alias.
+Allows a certain operation on a specified named collection. Before version 23.7 it was called NAMED COLLECTION CONTROL, and after 23.7 NAMED COLLECTION ADMIN as added and NAMED COLLECTION CONTROL is preserved as an alias.
 
 - `NAMED COLLECTION ADMIN`. Level: `NAMED_COLLECTION`. Aliases: `NAMED COLLECTION CONTROL`
     - `CREATE NAMED COLLECTION`. Level: `NAMED_COLLECTION`
