@@ -22,8 +22,7 @@ slug: /zh/sql-reference/data-types/nullable
 
 ## null子列 {#finding-null}
 
-It is possible to find `NULL` values in a column by using `null` subcolumn without reading the whole column. It returns `1` if the corresponding value is `NULL` and `0` otherwise.
-通过使用`null`子列可以在列中查找`NULL`值，而无需读取整个列。如果对应的值为`NULL`，则返回`1`，否则返回`0`。
+通过使用 `null` 子列可以在列中查找 `NULL` 值，而无需读取整个列。如果对应的值为 `NULL`，则返回 `1`，否则返回 `0`。
 
 **示例**
 
