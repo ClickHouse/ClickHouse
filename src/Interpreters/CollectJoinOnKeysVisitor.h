@@ -8,7 +8,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
-
 namespace DB
 {
 

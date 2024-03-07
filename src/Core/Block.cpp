@@ -17,7 +17,6 @@
 #include <boost/algorithm/string.hpp>
 
 
-
 namespace DB
 {
 
@@ -866,4 +865,5 @@ Block concatenateBlocks(const std::vector<Block> & blocks)
     out.setColumns(std::move(columns));
     return out;
 }
+
 }

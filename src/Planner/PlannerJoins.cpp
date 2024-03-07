@@ -10,6 +10,7 @@
 
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
@@ -313,10 +314,21 @@ void buildJoinClause(
         }
         else
         {
-            /// expression involves both tables.
-            /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
-            const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
-            join_clause.addMixedCondition(node);
+            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().enable_mixed_join_condition;
+            if (support_mixed_join_condition)
+            {
+                /// expression involves both tables.
+                /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
+                const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
+                join_clause.addMixedCondition(node);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                    "JOIN {} join expression contains column from left and right table",
+                    join_node.formatASTForErrorMessage());
+            }
         }
 
     }
@@ -326,7 +338,7 @@ void buildJoinClause(
             left_table_expressions,
             right_table_expressions,
             join_node);
-
+        // expression_sides.empty() = true, the expression is constant
         if (expression_sides.empty() || expression_sides.size() == 1)
         {
             auto expression_side = expression_sides.empty() ? JoinTableSide::Right : *expression_sides.begin();
@@ -336,9 +348,20 @@ void buildJoinClause(
         }
         else
         {
-            /// expression involves both tables.
-            const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
-            join_clause.addMixedCondition(node);
+            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().enable_mixed_join_condition;
+            if (support_mixed_join_condition)
+            {
+                /// expression involves both tables.
+                const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
+                join_clause.addMixedCondition(node);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                    "JOIN {} join expression contains column from left and right table",
+                    join_node.formatASTForErrorMessage());
+            }
         }
     }
 }
@@ -592,6 +615,20 @@ JoinClausesAndActions buildJoinClausesAndActions(
             auto full_join_expressions_actions = ActionsDAG::buildFilterActionsDAG(mixed_filter_condition_nodes, {}, true);
             result.full_join_expressions_actions = full_join_expressions_actions;
         }
+        auto outputs = result.full_join_expressions_actions->getOutputs();
+        if (outputs.size() != 1)
+        {
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Only one output is expected. but got:\n{}", result.full_join_expressions_actions->dumpDAG());
+        }
+        auto output_type = removeNullable(outputs[0]->result_type);
+        WhichDataType which_type(output_type);
+        if (!which_type.isUInt8())
+        {
+            DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
+            auto true_col = ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true");
+            const auto * true_node = &result.full_join_expressions_actions->addColumn(true_col);
+            result.full_join_expressions_actions = ActionsDAG::buildFilterActionsDAG({outputs[0], true_node});
+        }
     }
 
     return result;
@@ -805,10 +842,11 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     const Block & right_table_expression_header,
     const PlannerContextPtr & planner_context)
 {
-    if (table_join->getFullJoinExpression() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
+    if (table_join->getFullJoinExpression() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
+        && !(table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH) && table_join->oneDisjunct()))
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "JOIN with mixed conditions supports only hash join algorithm");
+            "JOIN with mixed conditions supports only hash join or grace hash join with one disjunct.");
     }
 
     trySetStorageInTableJoin(right_table_expression, table_join);
