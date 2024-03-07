@@ -5,17 +5,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 #include <Processors/ISource.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
 
 namespace DB
@@ -179,51 +175,7 @@ private:
     DatabaseTablesIteratorPtr tables_it;
 };
 
-class ReadFromSystemDataSkippingIndices : public SourceStepWithFilter
-{
-public:
-    std::string getName() const override { return "ReadFromSystemDataSkippingIndices"; }
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-
-    ReadFromSystemDataSkippingIndices(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
-        Block sample_block,
-        std::shared_ptr<StorageSystemDataSkippingIndices> storage_,
-        std::vector<UInt8> columns_mask_,
-        size_t max_block_size_)
-        : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
-            column_names_,
-            query_info_,
-            storage_snapshot_,
-            context_)
-        , storage(std::move(storage_))
-        , columns_mask(std::move(columns_mask_))
-        , max_block_size(max_block_size_)
-    {
-    }
-
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
-
-private:
-    std::shared_ptr<StorageSystemDataSkippingIndices> storage;
-    std::vector<UInt8> columns_mask;
-    const size_t max_block_size;
-    const ActionsDAG::Node * predicate = nullptr;
-};
-
-void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter_nodes)
-{
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
-    if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
-}
-
-void StorageSystemDataSkippingIndices::read(
-    QueryPlan & query_plan,
+Pipe StorageSystemDataSkippingIndices::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -233,21 +185,22 @@ void StorageSystemDataSkippingIndices::read(
     size_t /* num_streams */)
 {
     storage_snapshot->check(column_names);
+
+    NameSet names_set(column_names.begin(), column_names.end());
+
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    Block header;
 
-    auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
+    std::vector<UInt8> columns_mask(sample_block.columns());
+    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
+    {
+        if (names_set.contains(sample_block.getByPosition(i).name))
+        {
+            columns_mask[i] = 1;
+            header.insert(sample_block.getByPosition(i));
+        }
+    }
 
-    auto this_ptr = std::static_pointer_cast<StorageSystemDataSkippingIndices>(shared_from_this());
-
-    auto reading = std::make_unique<ReadFromSystemDataSkippingIndices>(
-        column_names, query_info, storage_snapshot,
-        std::move(context), std::move(header), std::move(this_ptr), std::move(columns_mask), max_block_size);
-
-    query_plan.addStep(std::move(reading));
-}
-
-void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
-{
     MutableColumnPtr column = ColumnString::create();
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
@@ -265,11 +218,11 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 
     /// Condition on "database" in a query acts like an index.
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
-    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
+    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
 
     ColumnPtr & filtered_databases = block.getByPosition(0).column;
-    pipeline.init(Pipe(std::make_shared<DataSkippingIndicesSource>(
-        std::move(columns_mask), getOutputStream().header, max_block_size, std::move(filtered_databases), context)));
+    return Pipe(std::make_shared<DataSkippingIndicesSource>(
+        std::move(columns_mask), std::move(header), max_block_size, std::move(filtered_databases), context));
 }
 
 }

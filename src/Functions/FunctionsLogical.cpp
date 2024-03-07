@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/logical.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -531,7 +530,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
         {
             has_nullable_arguments = arg_type->isNullable();
             if (has_nullable_arguments && !Impl::specialImplementationForNulls())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of argument for function \"{}\": "
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Unexpected type of argument for function \"{}\": "
                     " argument {} is of type {}", getName(), i + 1, arg_type->getName());
         }
 
@@ -775,23 +774,6 @@ ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(const ColumnsWithTypeAnd
             getName());
 
     return res;
-}
-
-FunctionOverloadResolverPtr createInternalFunctionOrOverloadResolver()
-{
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
-}
-FunctionOverloadResolverPtr createInternalFunctionAndOverloadResolver()
-{
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-}
-FunctionOverloadResolverPtr createInternalFunctionXorOverloadResolver()
-{
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionXor>());
-}
-FunctionOverloadResolverPtr createInternalFunctionNotOverloadResolver()
-{
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionNot>());
 }
 
 }

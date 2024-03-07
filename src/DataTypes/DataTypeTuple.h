@@ -32,7 +32,6 @@ public:
 
     TypeIndex getTypeId() const override { return TypeIndex::Tuple; }
     std::string doGetName() const override;
-    std::string doGetPrettyName(size_t indent) const override;
     const char * getFamilyName() const override { return "Tuple"; }
 
     bool canBeInsideNullable() const override { return false; }
@@ -70,8 +69,6 @@ public:
     String getNameByPosition(size_t i) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }
-
-    void forEachChild(const ChildCallback & callback) const override;
 };
 
 }

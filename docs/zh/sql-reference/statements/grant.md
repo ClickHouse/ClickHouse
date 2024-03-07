@@ -55,7 +55,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 
 同样 `john` 有权执行 `GRANT OPTION`，因此他能给其它账号进行和自己账号权限范围相同的授权。
 
-可以使用`*` 号代替表或库名进行授权操作。例如， `GRANT SELECT ONdb.* TO john` 操作运行 `john`对 `db`库的所有表执行 `SELECT`查询。同样，你可以忽略库名。在这种情形下，权限将指向当前的数据库。例如， `GRANT SELECT ON* to john` 对当前数据库的所有表指定授权， `GRANT SELECT ON mytable to john`对当前数据库的 `mytable`表进行授权。
+可以使用`*` 号代替表或库名进行授权操作。例如， `GRANT SELECT ONdb.* TO john` 操作运行 `john`对 `db`库的所有表执行 `SELECT`查询。同样，你可以忽略库名。在这种情形下，权限将指向当前的数据库。例如， `GRANT SELECT ON* to john` 对当前数据库的所有表指定授权， `GARNT SELECT ON mytable to john`对当前数据库的 `mytable`表进行授权。
 
 访问 `systen`数据库总是被允许的（因为这个数据库用来处理sql操作）
 可以一次给多个账号进行多种授权操作。 `GRANT SELECT,INSERT ON *.* TO john,robin` 允许 `john`和`robin` 账号对任意数据库的任意表执行 `INSERT`和 `SELECT`操作。
@@ -280,6 +280,9 @@ GRANT INSERT(x,y) ON db.table TO john
         -   `ALTER MOVE PARTITION`. 级别: `TABLE`. 别名: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
         -   `ALTER FETCH PARTITION`. 级别: `TABLE`. 别名: `FETCH PARTITION`
         -   `ALTER FREEZE PARTITION`. 级别: `TABLE`. 别名: `FREEZE PARTITION`
+    -   `ALTER VIEW` 级别: `GROUP`
+        -   `ALTER VIEW REFRESH`. 级别: `VIEW`. 别名: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
+        -   `ALTER VIEW MODIFY QUERY`. 级别: `VIEW`. 别名: `ALTER TABLE MODIFY QUERY`
 
 如何对待该层级的示例：
 -   `ALTER` 权限包含所有其它 `ALTER *` 的权限

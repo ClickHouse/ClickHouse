@@ -4,7 +4,6 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <IO/PeekableReadBuffer.h>
 
 
 namespace DB
@@ -34,7 +33,6 @@ private:
     void syncAfterError() override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
 
-    bool supportsCountRows() const override { return true; }
 
     std::unique_ptr<PeekableReadBuffer> buf;
 };
@@ -61,8 +59,6 @@ public:
     std::vector<String> readTypes() override { return readHeaderRow(); }
     std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
 
-    void skipRow() override;
-
     template <bool read_string>
     String readFieldIntoString();
 
@@ -79,11 +75,6 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override;
 
-    bool checkForSuffix() override;
-    bool checkForEndOfRow() override;
-
-    bool allowVariableNumberOfColumns() const override { return format_settings.tsv.allow_variable_number_of_columns; }
-
 private:
     template <bool is_header>
     std::vector<String> readRowImpl();
@@ -99,10 +90,8 @@ public:
     TabSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings);
 
 private:
-    bool allowVariableNumberOfColumns() const override { return format_settings.tsv.allow_variable_number_of_columns; }
-
-    std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
-    std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
+    DataTypes readRowAndGetDataTypesImpl() override;
+    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
 
     PeekableReadBuffer buf;
     TabSeparatedFormatReader reader;

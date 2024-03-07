@@ -8,7 +8,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/AggregationCommon.h>
-#include <Interpreters/Context_fwd.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/ColumnsHashing.h>
 

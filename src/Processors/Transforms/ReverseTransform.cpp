@@ -6,11 +6,11 @@ namespace DB
 
 void ReverseTransform::transform(Chunk & chunk)
 {
-    size_t num_rows = chunk.getNumRows();
-    IColumn::Permutation permutation(num_rows);
+    IColumn::Permutation permutation;
 
+    size_t num_rows = chunk.getNumRows();
     for (size_t i = 0; i < num_rows; ++i)
-        permutation[i] = num_rows - 1 - i;
+        permutation.emplace_back(num_rows - 1 - i);
 
     auto columns = chunk.detachColumns();
 

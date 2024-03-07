@@ -39,9 +39,6 @@ public:
     int getFD() const;
 
     size_t getFileSize() override;
-
-    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &) override;
-    bool supportsReadAt() override { return true; }
 };
 
 }

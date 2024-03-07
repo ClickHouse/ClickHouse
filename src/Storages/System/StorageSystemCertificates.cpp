@@ -1,13 +1,12 @@
 #include "config.h"
-#include <Common/re2.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemCertificates.h>
+#include <re2/re2.h>
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
-#include <base/scope_guard.h>
-#include <Poco/File.h>
+#include "Poco/File.h"
 #if USE_SSL
     #include <openssl/x509v3.h>
     #include "Poco/Net/SSLManager.h"
@@ -17,10 +16,9 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemCertificates::getColumnsDescription()
+NamesAndTypesList StorageSystemCertificates::getNamesAndTypes()
 {
-    /// TODO: Fill in all the comments.
-    return ColumnsDescription
+    return
     {
         {"version",         std::make_shared<DataTypeNumber<Int32>>()},
         {"serial_number",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
@@ -169,7 +167,7 @@ static void enumCertificates(const std::string & dir, bool def, MutableColumns &
 
 #endif
 
-void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_columns, ContextPtr/* context*/, const SelectQueryInfo &) const
 {
 #if USE_SSL
     const auto & ca_paths = Poco::Net::SSLManager::instance().defaultServerContext()->getCAPaths();

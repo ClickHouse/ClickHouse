@@ -6,7 +6,7 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
@@ -37,9 +37,9 @@ void backupUserDefinedSQLObjects(
             escapeForFileName(object_name) + ".sql", std::make_shared<BackupEntryFromMemory>(queryToString(create_object_query)));
 
     auto context = backup_entries_collector.getContext();
-    const auto & storage = context->getUserDefinedSQLObjectsStorage();
+    const auto & loader = context->getUserDefinedSQLObjectsLoader();
 
-    if (!storage.isReplicated())
+    if (!loader.isReplicated())
     {
         fs::path data_path_in_backup_fs{data_path_in_backup};
         for (const auto & [file_name, entry] : backup_entries)
@@ -47,7 +47,7 @@ void backupUserDefinedSQLObjects(
         return;
     }
 
-    String replication_id = storage.getReplicationID();
+    String replication_id = loader.getReplicationID();
 
     auto backup_coordination = backup_entries_collector.getBackupCoordination();
     backup_coordination->addReplicatedSQLObjectsDir(replication_id, object_type, data_path_in_backup);
@@ -56,18 +56,18 @@ void backupUserDefinedSQLObjects(
     // They will only be returned for one of the hosts below, for the rest an empty list.
     // See also BackupCoordinationReplicatedSQLObjects class.
     backup_entries_collector.addPostTask(
-        [my_backup_entries = std::move(backup_entries),
-         my_replication_id = std::move(replication_id),
+        [backup_entries = std::move(backup_entries),
+         replication_id = std::move(replication_id),
          object_type,
          &backup_entries_collector,
          backup_coordination]
         {
-            auto dirs = backup_coordination->getReplicatedSQLObjectsDirs(my_replication_id, object_type);
+            auto dirs = backup_coordination->getReplicatedSQLObjectsDirs(replication_id, object_type);
 
             for (const auto & dir : dirs)
             {
                 fs::path dir_fs{dir};
-                for (const auto & [file_name, entry] : my_backup_entries)
+                for (const auto & [file_name, entry] : backup_entries)
                 {
                     backup_entries_collector.addBackupEntry(dir_fs / file_name, entry);
                 }
@@ -80,9 +80,9 @@ std::vector<std::pair<String, ASTPtr>>
 restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_path_in_backup, UserDefinedSQLObjectType object_type)
 {
     auto context = restorer.getContext();
-    const auto & storage = context->getUserDefinedSQLObjectsStorage();
+    const auto & loader = context->getUserDefinedSQLObjectsLoader();
 
-    if (storage.isReplicated() && !restorer.getRestoreCoordination()->acquireReplicatedSQLObjects(storage.getReplicationID(), object_type))
+    if (loader.isReplicated() && !restorer.getRestoreCoordination()->acquireReplicatedSQLObjects(loader.getReplicationID(), object_type))
         return {}; /// Other replica is already restoring user-defined SQL objects.
 
     auto backup = restorer.getBackup();

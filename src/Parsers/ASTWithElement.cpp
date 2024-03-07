@@ -18,9 +18,7 @@ void ASTWithElement::formatImpl(const FormatSettings & settings, FormatState & s
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    settings.ostr << (settings.hilite ? hilite_alias : "");
     settings.writeIdentifier(name);
-    settings.ostr << (settings.hilite ? hilite_none : "");
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << (settings.hilite ? hilite_none : "");
     settings.ostr << settings.nl_or_ws << indent_str;
     dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(settings, state, frame);

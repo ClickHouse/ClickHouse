@@ -9,40 +9,15 @@
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/config_version.h>
-#include "Coordination/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <boost/algorithm/string.hpp>
 
 #include <unistd.h>
-#include <bit>
 
 #if USE_JEMALLOC
 #include <Common/Jemalloc.h>
 #include <jemalloc/jemalloc.h>
-#endif
-
-namespace
-{
-
-String formatZxid(int64_t zxid)
-{
-    /// ZooKeeper print zxid in hex and
-    String hex = getHexUIntLowercase(zxid);
-    /// without leading zeros
-    trimLeft(hex, '0');
-    return "0x" + hex;
-}
-
-}
-
-#if USE_NURAFT
-namespace ProfileEvents
-{
-    extern const std::vector<Event> keeper_profile_events;
-}
 #endif
 
 namespace DB
@@ -64,7 +39,7 @@ int32_t IFourLetterCommand::code()
 
 String IFourLetterCommand::toName(int32_t code)
 {
-    int reverted_code = std::byteswap(code);
+    int reverted_code = __builtin_bswap32(code);
     return String(reinterpret_cast<char *>(&reverted_code), 4);
 }
 
@@ -72,7 +47,7 @@ int32_t IFourLetterCommand::toCode(const String & name)
 {
     int32_t res = *reinterpret_cast<const int32_t *>(name.data());
     /// keep consistent with Coordination::read method by changing big endian to little endian.
-    return std::byteswap(res);
+    return __builtin_bswap32(res);
 }
 
 IFourLetterCommand::~IFourLetterCommand() = default;
@@ -181,12 +156,6 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr clean_resources_command = std::make_shared<CleanResourcesCommand>(keeper_dispatcher);
         factory.registerCommand(clean_resources_command);
 
-        FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
-        factory.registerCommand(feature_flags_command);
-
-        FourLetterCommandPtr yield_leadership_command = std::make_shared<YieldLeadershipCommand>(keeper_dispatcher);
-        factory.registerCommand(yield_leadership_command);
-
 #if USE_JEMALLOC
         FourLetterCommandPtr jemalloc_dump_stats = std::make_shared<JemallocDumpStats>(keeper_dispatcher);
         factory.registerCommand(jemalloc_dump_stats);
@@ -200,8 +169,6 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr jemalloc_disable_profile = std::make_shared<JemallocDisableProfile>(keeper_dispatcher);
         factory.registerCommand(jemalloc_disable_profile);
 #endif
-        FourLetterCommandPtr profile_events_command = std::make_shared<ProfileEventsCommand>(keeper_dispatcher);
-        factory.registerCommand(profile_events_command);
 
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -243,7 +210,7 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             }
             else
             {
-                auto log = getLogger("FourLetterCommandFactory");
+                auto * log = &Poco::Logger::get("FourLetterCommandFactory");
                 LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
             }
         }
@@ -309,11 +276,7 @@ String MonitorCommand::run()
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
-    auto max_file_descriptor_count = getMaxFileDescriptorCount();
-    if (max_file_descriptor_count.has_value())
-        print(ret, "max_file_descriptor_count", *max_file_descriptor_count);
-    else
-        print(ret, "max_file_descriptor_count", -1);
+    print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
 #endif
 
     if (keeper_info.is_leader)
@@ -346,7 +309,6 @@ String ConfCommand::run()
 
     StringBuffer buf;
     keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
-    keeper_dispatcher.getKeeperContext()->dumpConfiguration(buf);
     return buf.str();
 }
 
@@ -397,7 +359,7 @@ String ServerStatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(keeper_info.last_zxid));
+    write("Zxid", toString(keeper_info.last_zxid));
     write("Mode", keeper_info.getRole());
     write("Node count", toString(keeper_info.total_nodes_count));
 
@@ -430,7 +392,7 @@ String StatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(keeper_info.last_zxid));
+    write("Zxid", toString(keeper_info.last_zxid));
     write("Mode", keeper_info.getRole());
     write("Node count", toString(keeper_info.total_nodes_count));
 
@@ -501,7 +463,7 @@ String EnviCommand::run()
 
     StringBuffer buf;
     buf << "Environment:\n";
-    buf << "clickhouse.keeper.version=" << VERSION_DESCRIBE << '-' << VERSION_GITHASH << '\n';
+    buf << "clickhouse.keeper.version=" << (String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH) << '\n';
 
     buf << "host.name=" << Environment::nodeName() << '\n';
     buf << "os.name=" << Environment::osDisplayName() << '\n';
@@ -541,7 +503,7 @@ String RecoveryCommand::run()
 
 String ApiVersionCommand::run()
 {
-    return toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
+    return toString(static_cast<uint8_t>(Coordination::current_keeper_api_version));
 }
 
 String CreateSnapshotCommand::run()
@@ -570,12 +532,6 @@ String LogInfoCommand::run()
     append("leader_committed_log_idx", log_info.leader_committed_log_idx);
     append("target_committed_log_idx", log_info.target_committed_log_idx);
     append("last_snapshot_idx", log_info.last_snapshot_idx);
-
-    append("latest_logs_cache_entries", log_info.latest_logs_cache_entries);
-    append("latest_logs_cache_size", log_info.latest_logs_cache_size);
-
-    append("commit_logs_cache_entries", log_info.commit_logs_cache_entries);
-    append("commit_logs_cache_size", log_info.commit_logs_cache_size);
     return ret.str();
 }
 
@@ -594,36 +550,6 @@ String CleanResourcesCommand::run()
 {
     keeper_dispatcher.cleanResources();
     return "ok";
-}
-
-String FeatureFlagsCommand::run()
-{
-    const auto & feature_flags = keeper_dispatcher.getKeeperContext()->getFeatureFlags();
-
-    StringBuffer ret;
-
-    auto append = [&ret] (const String & key, uint8_t value) -> void
-    {
-        writeText(key, ret);
-        writeText('\t', ret);
-        writeText(std::to_string(value), ret);
-        writeText('\n', ret);
-    };
-
-    for (const auto & [feature_flag, name] : magic_enum::enum_entries<KeeperFeatureFlag>())
-    {
-        std::string feature_flag_string(name);
-        boost::to_lower(feature_flag_string);
-        append(feature_flag_string, feature_flags.isEnabled(feature_flag));
-    }
-
-    return ret.str();
-}
-
-String YieldLeadershipCommand::run()
-{
-    keeper_dispatcher.yieldLeadership();
-    return "Sent yield leadership request to leader.";
 }
 
 #if USE_JEMALLOC
@@ -658,32 +584,5 @@ String JemallocDisableProfile::run()
     return "ok";
 }
 #endif
-
-String ProfileEventsCommand::run()
-{
-    StringBuffer ret;
-
-#if USE_NURAFT
-    auto append = [&ret] (const String & metric, uint64_t value, const String & docs) -> void
-    {
-        writeText(metric, ret);
-        writeText('\t', ret);
-        writeText(std::to_string(value), ret);
-        writeText('\t', ret);
-        writeText(docs, ret);
-        writeText('\n', ret);
-    };
-
-    for (auto i : ProfileEvents::keeper_profile_events)
-    {
-        const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
-        std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
-        std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
-        append(metric_name, counter, metric_doc);
-    }
-#endif
-
-    return ret.str();
-}
 
 }

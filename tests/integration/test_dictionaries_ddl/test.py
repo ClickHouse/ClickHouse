@@ -13,20 +13,13 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    with_mysql8=True,
+    with_mysql=True,
     dictionaries=["configs/dictionaries/simple_dictionary.xml"],
-    main_configs=[
-        "configs/ssl_conf.xml",
-        "configs/client.xml",
-        "configs/named_coll.xml",
-        "configs/server.crt",
-        "configs/server.key",
-    ],
     user_configs=["configs/user_admin.xml", "configs/user_default.xml"],
 )
 node2 = cluster.add_instance(
     "node2",
-    with_mysql8=True,
+    with_mysql=True,
     dictionaries=["configs/dictionaries/simple_dictionary.xml"],
     main_configs=[
         "configs/dictionaries/lazy_load.xml",
@@ -117,7 +110,7 @@ def started_cluster():
 )
 def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
     mysql_conn = create_mysql_conn(
-        "root", "clickhouse", started_cluster.mysql8_ip, started_cluster.mysql8_port
+        "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
     )
     execute_mysql_query(mysql_conn, "DROP DATABASE IF EXISTS create_and_select")
     execute_mysql_query(mysql_conn, "CREATE DATABASE create_and_select")
@@ -152,7 +145,7 @@ def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
         DB 'create_and_select'
         TABLE '{}'
         REPLICA(PRIORITY 1 HOST '127.0.0.1' PORT 3333)
-        REPLICA(PRIORITY 2 HOST 'mysql80' PORT 3306)
+        REPLICA(PRIORITY 2 HOST 'mysql57' PORT 3306)
     ))
     {}
     LIFETIME(MIN 1 MAX 3)
@@ -367,7 +360,7 @@ def test_file_dictionary_restrictions(started_cluster):
 
 def test_dictionary_with_where(started_cluster):
     mysql_conn = create_mysql_conn(
-        "root", "clickhouse", started_cluster.mysql8_ip, started_cluster.mysql8_port
+        "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
     )
     execute_mysql_query(
         mysql_conn, "CREATE DATABASE IF NOT EXISTS dictionary_with_where"
@@ -393,7 +386,7 @@ def test_dictionary_with_where(started_cluster):
         PASSWORD 'clickhouse'
         DB 'dictionary_with_where'
         TABLE 'special_table'
-        REPLICA(PRIORITY 1 HOST 'mysql80' PORT 3306)
+        REPLICA(PRIORITY 1 HOST 'mysql57' PORT 3306)
         WHERE 'value1 = \\'qweqwe\\' OR value1 = \\'\\\\u3232\\''
     ))
     LAYOUT(FLAT())
@@ -470,144 +463,3 @@ def test_clickhouse_remote(started_cluster):
     node3.query(
         "select dictGetUInt8('test.clickhouse_remote', 'SomeValue1', toUInt64(17))"
     ) == "17\n"
-
-
-# https://github.com/ClickHouse/ClickHouse/issues/38450
-#  suggests placing 'secure' in named_collections
-def test_secure(started_cluster):
-    node1.query("DROP TABLE IF EXISTS test.foo_dict")
-    node1.query("CREATE TABLE test.foo_dict(`id` UInt64, `value` String) ENGINE = Log")
-    node1.query("INSERT INTO test.foo_dict values (1, 'value1')")
-
-    # No named collection, secure is set in DDL
-    node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
-    node1.query(
-        """
-        CREATE DICTIONARY test.clickhouse_secure(
-            id UInt64,
-            value String
-        )
-        PRIMARY KEY id
-        LAYOUT(FLAT())
-        SOURCE(CLICKHOUSE(
-            HOST 'localhost'
-            PORT 9440 USER 'default'
-            TABLE 'foo_dict' DB 'test'
-            SECURE 1
-            ))
-        LIFETIME(MIN 1 MAX 10)
-            """
-    )
-    value = node1.query(
-        "SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))"
-    )
-    assert value == "value1\n"
-
-    # Secure set in named collection
-    node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
-    node1.query(
-        """
-        CREATE DICTIONARY test.clickhouse_secure(
-            id UInt64,
-            value String
-        )
-        PRIMARY KEY id
-        LAYOUT(FLAT())
-        SOURCE(CLICKHOUSE(
-            NAME 'nc_secure_1'
-            TABLE 'foo_dict' DB 'test'
-            ))
-        LIFETIME(MIN 1 MAX 10)
-            """
-    )
-    value = node1.query(
-        "SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))"
-    )
-    assert value == "value1\n"
-
-    # Secure is not set
-    node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
-    node1.query(
-        """
-        CREATE DICTIONARY test.clickhouse_secure(
-            id UInt64,
-            value String
-        )
-        PRIMARY KEY id
-        LAYOUT(FLAT())
-        SOURCE(CLICKHOUSE(
-            NAME 'nc_no_secure'
-            TABLE 'foo_dict' DB 'test'
-            ))
-        LIFETIME(MIN 1 MAX 10)
-            """
-    )
-    with pytest.raises(QueryRuntimeException) as excinfo:
-        node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))")
-    assert "Unexpected packet from server localhost:9440" in str(excinfo.value)
-
-    # Secure is set to 0 in named collection
-    node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
-    node1.query(
-        """
-        CREATE DICTIONARY test.clickhouse_secure(
-            id UInt64,
-            value String
-        )
-        PRIMARY KEY id
-        LAYOUT(FLAT())
-        SOURCE(CLICKHOUSE(
-            NAME 'nc_secure_0'
-            TABLE 'foo_dict' DB 'test'
-            ))
-        LIFETIME(MIN 1 MAX 10)
-            """
-    )
-    with pytest.raises(QueryRuntimeException) as excinfo:
-        node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))")
-    assert "Unexpected packet from server localhost:9440" in str(excinfo.value)
-
-    # Secure is set to 0 in named collection and in 1 in DDL
-    node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
-    node1.query(
-        """
-        CREATE DICTIONARY test.clickhouse_secure(
-            id UInt64,
-            value String
-        )
-        PRIMARY KEY id
-        LAYOUT(FLAT())
-        SOURCE(CLICKHOUSE(
-            NAME 'nc_secure_0'
-            TABLE 'foo_dict' DB 'test'
-            SECURE 1
-            ))
-        LIFETIME(MIN 1 MAX 10)
-            """
-    )
-    value = node1.query(
-        "SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))"
-    )
-    assert value == "value1\n"
-
-    node1.query("DROP DICTIONARY test.clickhouse_secure")
-    node1.query("DROP TABLE test.foo_dict")
-
-
-def test_named_collection(started_cluster):
-    node1.query(
-        """
-        CREATE DICTIONARY test.clickhouse_named_collection(
-            id UInt64,
-            SomeValue1 UInt8
-        )
-        PRIMARY KEY id
-        LAYOUT(FLAT())
-        SOURCE(CLICKHOUSE(NAME click1))
-        LIFETIME(MIN 1 MAX 10)
-        """
-    )
-
-    node1.query(
-        "select dictGetUInt8('test.clickhouse_named_collection', 'SomeValue1', toUInt64(23))"
-    ) == "0\n"

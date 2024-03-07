@@ -1,14 +1,10 @@
-#include <Common/FunctionDocumentation.h>
+#include <Common/Documentation.h>
 #include "config.h"
 
 #if USE_SSL
 
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsAES.h>
-
-
-namespace DB
-{
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/FunctionsAES.h>
 
 namespace
 {
@@ -22,10 +18,13 @@ struct TryDecryptImpl
 
 }
 
+namespace DB
+{
+
 REGISTER_FUNCTION(TryDecrypt)
 {
-    factory.registerFunction<FunctionDecrypt<TryDecryptImpl>>(FunctionDocumentation{
-        .description="Similar to `decrypt`, but returns NULL if decryption fails because of using the wrong key."});
+    factory.registerFunction<FunctionDecrypt<TryDecryptImpl>>(Documentation(
+        "Similar to `decrypt`, but returns NULL if decryption fails because of using the wrong key."));
 }
 
 }

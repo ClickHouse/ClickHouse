@@ -1,20 +1,11 @@
 ---
 slug: /en/engines/table-engines/integrations/materialized-postgresql
-sidebar_position: 130
+sidebar_position: 12
 sidebar_label: MaterializedPostgreSQL
+title: MaterializedPostgreSQL
 ---
 
-# [experimental] MaterializedPostgreSQL
-
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts replication process, i.e. executes background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
-
-:::note
-This table engine is experimental. To use it, set `allow_experimental_materialized_postgresql_table` to 1 in your configuration files or by using the `SET` command:
-```sql
-SET allow_experimental_materialized_postgresql_table=1
-```
-:::
-
 
 If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
 
@@ -22,17 +13,17 @@ If more than one table is required, it is highly recommended to use the [Materia
 
 ``` sql
 CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_table', 'postgres_user', 'postgres_password')
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
 PRIMARY KEY key;
 ```
 
 **Engine Parameters**
 
-- `host:port` — PostgreSQL server address.
-- `database` — Remote database name.
-- `table` — Remote table name.
-- `user` — PostgreSQL user.
-- `password` — User password.
+-   `host:port` — PostgreSQL server address.
+-   `database` — Remote database name.
+-   `table` — Remote table name.
+-   `user` — PostgreSQL user.
+-   `password` — User password.
 
 ## Requirements {#requirements}
 
@@ -42,13 +33,11 @@ PRIMARY KEY key;
 
 3. Only database [Atomic](https://en.wikipedia.org/wiki/Atomicity_(database_systems)) is allowed.
 
-4. The `MaterializedPostgreSQL` table engine only works for PostgreSQL versions >= 11 as the implementation requires the [pg_replication_slot_advance](https://pgpedia.info/p/pg_replication_slot_advance.html) PostgreSQL function.
-
 ## Virtual columns {#virtual-columns}
 
-- `_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
+-   `_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
 
-- `_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
+-   `_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
     - `1` — Row is not deleted,
     - `-1` — Row is deleted.
 
