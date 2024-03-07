@@ -17,6 +17,7 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <Columns/FilterDescription.h>
+#include "Interpreters/MaterializedTableFromCTE.h"
 
 namespace Poco
 {

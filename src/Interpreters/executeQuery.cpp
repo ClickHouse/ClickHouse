@@ -14,6 +14,7 @@
 #include <IO/copyData.h>
 
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
@@ -65,6 +66,17 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include "Interpreters/GlobalMaterializeCTEVisitor.h"
+#include "Processors/Executors/PushingPipelineExecutor.h"
+#include "Processors/QueryPlan/BuildQueryPipelineSettings.h"
+#include "Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h"
+#include "QueryPipeline/QueryPlanResourceHolder.h"
+#include <Dictionaries/IDictionary.h>
+#include <Functions/FunctionsExternalDictionaries.h>
+#include <Interpreters/IKeyValueEntity.h>
+#include <Storages/StorageDictionary.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Sources/KeyValueSource.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -886,6 +898,31 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         logQuery(query_for_logging, context, internal, stage);
+
+        if (context->getSettingsRef().enable_materialized_cte)
+        {
+            /// Materialize all CTE with MATERIALIZE keyword add to query context as temporary tables
+            /// We need to do it here before analyzing the query
+            /// We also need to fill the external tables here, otherwise the following query may work incorrectly if
+            /// id is the primary key and we need it for primary key analysis:
+            /// WITH target AS (SELECT number FROM numbers(10)) SELECT * FROM t WHERE id IN target
+            FutureTablesFromCTE future_materialized_cte_tables;
+            GlobalMaterializeCTEVisitor::Data data(context, future_materialized_cte_tables);
+            GlobalMaterializeCTEVisitor(data).visit(ast);
+            /// TODO: fill the external tables from `future_materialized_cte_tables` here
+            /// It's easy to do it sequentially, but we need to do it in parallel. That is the purpose of `MaterializeCTEStep` and `MaterializeCTETransform`
+            for (auto & [_, future_table] : future_materialized_cte_tables)
+            {
+                auto & source = future_table.source;
+                auto & external_table = future_table.external_table;
+                auto builder = source->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+                auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+                pipeline.complete(external_table->write({}, external_table->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
+
+                CompletedPipelineExecutor executor(pipeline);
+                executor.execute();
+            }
+        }
 
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)
