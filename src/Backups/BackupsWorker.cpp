@@ -487,7 +487,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
             /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
             auto process_list_element = context_in_use->getProcessListElement();
 
-            scheduleFromThreadPool<void>(
+            thread_pool.scheduleOrThrowOnError(
                 [this,
                  backup_query,
                  backup_id,
@@ -500,6 +500,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
                  on_exception,
                  process_list_element_holder = process_list_element ? process_list_element->getProcessListEntry() : nullptr]
                 {
+                    CurrentThread::QueryScope query_scope(context_in_use);
                     BackupMutablePtr backup_async;
                     try
                     {
@@ -518,8 +519,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
                     {
                         on_exception(backup_async, backup_id, backup_name_for_logging, backup_settings, backup_coordination);
                     }
-                },
-                thread_pool, "BackupWorker");
+                });
         }
         else
         {
