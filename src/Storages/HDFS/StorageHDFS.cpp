@@ -241,8 +241,7 @@ StorageHDFS::StorageHDFS(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 namespace
@@ -915,21 +914,28 @@ class ReadFromHDFS : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromHDFS"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromHDFS(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
         ReadFromFormatInfo info_,
         bool need_only_count_,
         std::shared_ptr<StorageHDFS> storage_,
-        ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(sample_block)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
         , info(std::move(info_))
         , need_only_count(need_only_count_)
         , storage(std::move(storage_))
-        , context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
     {
@@ -940,7 +946,6 @@ private:
     const bool need_only_count;
     std::shared_ptr<StorageHDFS> storage;
 
-    ContextPtr context;
     size_t max_block_size;
     size_t num_streams;
 
@@ -949,9 +954,9 @@ private:
     void createIterator(const ActionsDAG::Node * predicate);
 };
 
-void ReadFromHDFS::applyFilters()
+void ReadFromHDFS::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -969,18 +974,21 @@ void StorageHDFS::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context_), virtual_columns);
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context_));
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context_->getSettingsRef().optimize_count_from_files;
 
     auto this_ptr = std::static_pointer_cast<StorageHDFS>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromHDFS>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        context_,
         read_from_format_info.source_header,
         std::move(read_from_format_info),
         need_only_count,
         std::move(this_ptr),
-        context_,
         max_block_size,
         num_streams);
 
@@ -1002,7 +1010,7 @@ void ReadFromHDFS::createIterator(const ActionsDAG::Node * predicate)
     else if (storage->is_path_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(storage->uris[0], predicate, storage->virtual_columns, context);
+        auto glob_iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(storage->uris[0], predicate, storage->getVirtualsList(), context);
         iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>([glob_iterator]()
         {
             return glob_iterator->next();
@@ -1010,7 +1018,7 @@ void ReadFromHDFS::createIterator(const ActionsDAG::Node * predicate)
     }
     else
     {
-        auto uris_iterator = std::make_shared<HDFSSource::URISIterator>(storage->uris, predicate, storage->virtual_columns, context);
+        auto uris_iterator = std::make_shared<HDFSSource::URISIterator>(storage->uris, predicate, storage->getVirtualsList(), context);
         iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>([uris_iterator]()
         {
             return uris_iterator->next();
@@ -1168,16 +1176,6 @@ void registerStorageHDFS(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessType::HDFS,
     });
-}
-
-NamesAndTypesList StorageHDFS::getVirtuals() const
-{
-    return virtual_columns;
-}
-
-Names StorageHDFS::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 SchemaCache & StorageHDFS::getSchemaCache(const ContextPtr & ctx)

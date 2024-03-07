@@ -60,8 +60,6 @@ ASTPtr ASTAlterCommand::clone() const
         res->settings_resets = res->children.emplace_back(settings_resets->clone()).get();
     if (select)
         res->select = res->children.emplace_back(select->clone()).get();
-    if (values)
-        res->values = res->children.emplace_back(values->clone()).get();
     if (rename_to)
         res->rename_to = res->children.emplace_back(rename_to->clone()).get();
 
@@ -456,19 +454,15 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY QUERY " << settings.nl_or_ws
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY QUERY" << settings.nl_or_ws
                       << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_REFRESH)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY REFRESH " << settings.nl_or_ws
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY" << settings.nl_or_ws
                       << (settings.hilite ? hilite_none : "");
         refresh->formatImpl(settings, state, frame);
-    }
-    else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "REFRESH " << (settings.hilite ? hilite_none : "");
     }
     else if (type == ASTAlterCommand::RENAME_COLUMN)
     {
@@ -478,6 +472,11 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
         rename_to->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MODIFY_SQL_SECURITY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY " << (settings.hilite ? hilite_none : "");
+        sql_security->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::APPLY_DELETED_MASK)
     {
@@ -517,7 +516,6 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)
     f(reinterpret_cast<void **>(&settings_changes));
     f(reinterpret_cast<void **>(&settings_resets));
     f(reinterpret_cast<void **>(&select));
-    f(reinterpret_cast<void **>(&values));
     f(reinterpret_cast<void **>(&rename_to));
 }
 
@@ -621,9 +619,6 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
         case AlterObjectType::DATABASE:
             settings.ostr << "ALTER DATABASE ";
             break;
-        case AlterObjectType::LIVE_VIEW:
-            settings.ostr << "ALTER LIVE VIEW ";
-            break;
         default:
             break;
     }
@@ -632,16 +627,19 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     if (table)
     {
+        settings.ostr << indent_str;
         if (database)
         {
-            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
-            settings.ostr << ".";
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
-        settings.ostr << indent_str << backQuoteIfNeed(getTable());
+
+        table->formatImpl(settings, state, frame);
     }
     else if (alter_object == AlterObjectType::DATABASE && database)
     {
-        settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
+        settings.ostr << indent_str;
+        database->formatImpl(settings, state, frame);
     }
 
     formatOnCluster(settings);

@@ -164,7 +164,7 @@ public:
     int getBcryptWorkfactor() const;
 
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
-    /// For example, if there two users A, B and a row policy is defined only for A, then
+    /// For example, if there are two users A, B and a row policy is defined only for A, then
     /// if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
     void setEnabledUsersWithoutRowPoliciesCanReadRows(bool enable) { users_without_row_policies_can_read_rows = enable; }
     bool isEnabledUsersWithoutRowPoliciesCanReadRows() const { return users_without_row_policies_can_read_rows; }

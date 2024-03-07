@@ -1,12 +1,12 @@
 #pragma once
 
+#include <unordered_map>
 #include <IO/WriteSettings.h>
 #include <Core/Block.h>
 #include <base/types.h>
 #include <base/defines.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
@@ -48,6 +48,8 @@ class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
 
+struct MergeTreeReadTaskInfo;
+using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
 enum class DataPartRemovalState
 {
@@ -69,6 +71,7 @@ public:
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
     using ValueSizeMap = std::map<std::string, double>;
+    using VirtualFields = std::unordered_map<String, Field>;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
@@ -95,6 +98,7 @@ public:
         const NamesAndTypesList & columns_,
         const StorageSnapshotPtr & storage_snapshot,
         const MarkRanges & mark_ranges,
+        const VirtualFields & virtual_fields,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const AlterConversionsPtr & alter_conversions,
@@ -259,12 +263,6 @@ public:
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
 
-    /// If it is a projection part, it can be broken sometimes.
-    mutable std::atomic<bool> is_broken {false};
-    mutable std::string exception;
-    mutable int exception_code = 0;
-    mutable std::mutex broken_reason_mutex;
-
     /// Indicates that the part was marked Outdated by PartCheckThread because the part was not committed to ZooKeeper
     mutable bool is_unexpected_local_part = false;
 
@@ -425,16 +423,9 @@ public:
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
-    void markProjectionPartAsBroken(const String & projection_name, const String & message, int code) const;
-
     bool hasProjection(const String & projection_name) const { return projection_parts.contains(projection_name); }
 
-    bool hasBrokenProjection(const String & projection_name) const;
-
-    /// Return true, if all projections were loaded successfully and none was marked as broken.
-    void loadProjections(bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded = false);
-
-    void setBrokenReason(const String & message, int code) const;
+    void loadProjections(bool require_columns_checksums, bool check_consistency, bool if_not_loaded = false);
 
     /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
@@ -507,7 +498,7 @@ public:
     bool supportLightweightDeleteMutate() const;
 
     /// True if here is lightweight deleted mask file in part.
-    bool hasLightweightDelete() const { return columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
+    bool hasLightweightDelete() const;
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 
@@ -594,7 +585,7 @@ protected:
     const IMergeTreeDataPart * parent_part;
     String parent_part_name;
 
-    mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
+    std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
     mutable PartMetadataManagerPtr metadata_manager;
 

@@ -20,6 +20,7 @@
 #include <Common/TargetSpecific.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
+#include <Common/findExtreme.h>
 #include <Common/iota.h>
 
 #include <bit>
@@ -49,31 +50,6 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-}
-
-template <typename T>
-StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
-{
-    constexpr size_t null_bit_size = sizeof(UInt8);
-    StringRef res;
-    char * pos;
-    if (null_bit)
-    {
-        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-        memcpy(pos, null_bit, null_bit_size);
-        if (*null_bit) return res;
-        pos += null_bit_size;
-    }
-    else
-    {
-        res.size = sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-    }
-    unalignedStore<T>(pos, data[n]);
-    return res;
 }
 
 template <typename T>
@@ -247,6 +223,26 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
         limit = 0;
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
+
+    if constexpr (has_find_extreme_implementation<T> && !std::is_floating_point_v<T>)
+    {
+        /// Disabled for:floating point
+        /// * floating point: We don't deal with nan_direction_hint
+        /// * stability::Stable: We might return any value, not the first
+        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable))
+        {
+            std::optional<size_t> index;
+            if (direction == IColumn::PermutationSortDirection::Ascending)
+                index = findExtremeMinIndex(data.data(), 0, data.size());
+            else
+                index = findExtremeMaxIndex(data.data(), 0, data.size());
+            if (index)
+            {
+                res.data()[0] = *index;
+                return;
+            }
+        }
+    }
 
     if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
     {
@@ -645,7 +641,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     Container & res_data = res->getData();
 
     if (result_size_hint)
-        res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
+        res_data.reserve_exact(result_size_hint > 0 ? result_size_hint : size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
@@ -860,12 +856,6 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     }
 
     return res;
-}
-
-template <typename T>
-void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
 }
 
 template <typename T>
