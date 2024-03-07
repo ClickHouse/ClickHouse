@@ -29,6 +29,7 @@ static void setupLogging(const std::string & log_level)
     Poco::Logger::root().setLevel(log_level);
 }
 
+
 static std::vector<std::string> extactFromConfigAccordingToGlobs(DB::ConfigurationPtr configuration, const std::string & pattern, bool try_get)
 {
     auto pattern_prefix = pattern.substr(0, pattern.find_first_of("*?{"));
