@@ -7,6 +7,7 @@
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
 
@@ -526,36 +527,17 @@ void SerializationTuple::serializeTextXML(const IColumn & column, size_t row_num
 
 void SerializationTuple::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    for (size_t i = 0; i < elems.size(); ++i)
-    {
-        if (i != 0)
-            writeChar(settings.csv.tuple_delimiter, ostr);
-        elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr, settings);
-    }
+    WriteBufferFromOwnString wb;
+    serializeText(column, row_num, wb, settings);
+    writeCSV(wb.str(), ostr);
 }
 
 void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    addElementSafe<void>(elems.size(), column, [&]
-    {
-        const size_t size = elems.size();
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (i != 0)
-            {
-                skipWhitespaceIfAny(istr);
-                assertChar(settings.csv.tuple_delimiter, istr);
-                skipWhitespaceIfAny(istr);
-            }
-
-            auto & element_column = extractElementColumn(column, i);
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i]);
-            else
-                elems[i]->deserializeTextCSV(element_column, istr, settings);
-        }
-        return true;
-    });
+    String s;
+    readCSV(s, istr, settings.csv);
+    ReadBufferFromString rb(s);
+    deserializeText(column, rb, settings, true);
 }
 
 bool SerializationTuple::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
