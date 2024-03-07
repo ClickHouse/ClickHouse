@@ -5,6 +5,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {

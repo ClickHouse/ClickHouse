@@ -5,6 +5,7 @@
 #include <IO/WithFileSize.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/PeekableReadBuffer.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {

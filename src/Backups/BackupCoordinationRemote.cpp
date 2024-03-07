@@ -1,6 +1,7 @@
 #include <Backups/BackupCoordinationRemote.h>
 
 #include <base/hex.h>
+#include <boost/algorithm/string/split.hpp>
 
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
