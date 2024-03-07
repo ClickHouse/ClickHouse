@@ -115,7 +115,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     /// At the same time, I want clickhouse-local to always work, regardless.
     /// TODO: get rid of glibc, or replace getaddrinfo to c-ares.
 
-    compression = config.getBool("compression", host != "localhost" && !isLocalAddress(DNSResolver::instance().resolveHost(host)))
+    compression = config.getBool("compression", host != "localhost" && !isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(host).front()))
                   ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 
     timeouts = ConnectionTimeouts()
