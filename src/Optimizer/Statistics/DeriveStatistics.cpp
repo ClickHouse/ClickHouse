@@ -127,9 +127,11 @@ Stats DeriveStatistics::visit(ReadFromMergeTree & step)
 
     /// 3. calculate for pushed down filters
     const auto & predicate = step.getFilterActionsDAG();
-    if (!predicate->getNodes().empty()) /// TODO the first node is root?
+    if (predicate && !predicate->getNodes().empty())
     {
-        const auto & predicate_node_name = predicate->getNodes().cbegin()->result_name;
+        const auto & predicate_node_name = predicate->getOutputs()[0]->result_name;
+        /// The output only contains the filter_node
+        /// TODO add other input columns
         statistics = PredicateStatsCalculator::calculateStatistics(predicate, predicate_node_name, statistics);
         append_column_stats();
     }
