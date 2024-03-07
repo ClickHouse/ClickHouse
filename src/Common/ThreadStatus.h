@@ -66,7 +66,7 @@ class ThreadGroup
 public:
     ThreadGroup();
     using FatalErrorCallback = std::function<void()>;
-    explicit ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
+    ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -236,7 +236,7 @@ private:
     using Deleter = std::function<void()>;
     Deleter deleter;
 
-    LoggerPtr log = nullptr;
+    Poco::Logger * log = nullptr;
 
     bool check_current_thread_on_destruction;
 

@@ -16,14 +16,13 @@ namespace ProfileEvents
     extern const Event ReadBackoff;
 }
 
-namespace DB
-{
-
 namespace ErrorCodes
 {
-extern const int CANNOT_SCHEDULE_TASK;
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
+
+namespace DB
+{
 
 size_t getApproxSizeOfPart(const IMergeTreeDataPart & part, const Names & columns_to_read)
 {
@@ -218,9 +217,6 @@ void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info
 
 void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
 {
-    if (threads > 1000000ull)
-        throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Too many threads ({}) requested", threads);
-
     threads_tasks.resize(threads);
     if (parts_ranges.empty())
         return;

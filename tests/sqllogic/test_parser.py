@@ -2,26 +2,23 @@
 # -*- coding: utf-8 -*-
 
 import logging
-from enum import Enum
-from functools import reduce
-from hashlib import md5
+import os
+
 from itertools import chain
-
-# isort: off
-# pylint:disable=import-error; for style check
+from enum import Enum
+from hashlib import md5
+from functools import reduce
 import sqlglot
-from sqlglot.expressions import ColumnDef, PrimaryKeyColumnConstraint
-
-# pylint:enable=import-error; for style check
-# isort: on
+from sqlglot.expressions import PrimaryKeyColumnConstraint, ColumnDef
 
 from exceptions import (
-    DataResultDiffer,
     Error,
-    ErrorWithParent,
     ProgramError,
+    ErrorWithParent,
+    DataResultDiffer,
     QueryExecutionError,
 )
+
 
 logger = logging.getLogger("parser")
 logger.setLevel(logging.DEBUG)
@@ -251,7 +248,6 @@ class FileBlockBase:
             )
             block.with_result(result)
             return block
-        raise ValueError(f"Unknown block_type {block_type}")
 
     def dump_to(self, output):
         if output is None:
@@ -262,6 +258,9 @@ class FileBlockBase:
 
 
 class FileBlockComments(FileBlockBase):
+    def __init__(self, parser, start, end):
+        super().__init__(parser, start, end)
+
     def get_block_type(self):
         return BlockType.comments
 
@@ -470,18 +469,20 @@ class QueryResult:
             (
                 str(x)
                 for x in [
-                    f"rows: {self.rows}" if self.rows else "",
-                    f"values_count: {self.values_count}" if self.values_count else "",
-                    f"data_hash: {self.data_hash}" if self.data_hash else "",
-                    f"exception: {self.exception}" if self.exception else "",
-                    f"hash_threshold: {self.hash_threshold}"
+                    "rows: {}".format(self.rows) if self.rows else "",
+                    "values_count: {}".format(self.values_count)
+                    if self.values_count
+                    else "",
+                    "data_hash: {}".format(self.data_hash) if self.data_hash else "",
+                    "exception: {}".format(self.exception) if self.exception else "",
+                    "hash_threshold: {}".format(self.hash_threshold)
                     if self.hash_threshold
                     else "",
                 ]
                 if x
             )
         )
-        return f"QueryResult({params})"
+        return "QueryResult({})".format(params)
 
     def __iter__(self):
         if self.rows is not None:
@@ -490,10 +491,12 @@ class QueryResult:
             if self.values_count <= self.hash_threshold:
                 return iter(self.rows)
         if self.data_hash is not None:
-            return iter([[f"{self.values_count} values hashing to {self.data_hash}"]])
+            return iter(
+                [["{} values hashing to {}".format(self.values_count, self.data_hash)]]
+            )
         if self.exception is not None:
-            return iter([[f"exception: {self.exception}"]])
-        raise ProgramError("Query result is empty", details=str(self))
+            return iter([["exception: {}".format(self.exception)]])
+        raise ProgramError("Query result is empty", details="{}".format(self.__str__()))
 
     @staticmethod
     def __value_count(rows):
@@ -525,7 +528,7 @@ class QueryResult:
         for row in rows:
             res_row = []
             for c, t in zip(row, types):
-                logger.debug("Builging row. c:%s t:%s", c, t)
+                logger.debug(f"Builging row. c:{c} t:{t}")
                 if c is None:
                     res_row.append("NULL")
                     continue
@@ -538,7 +541,7 @@ class QueryResult:
                 elif t == "I":
                     try:
                         res_row.append(str(int(c)))
-                    except ValueError:
+                    except ValueError as ex:
                         # raise QueryExecutionError(
                         #     f"Got non-integer result '{c}' for I type."
                         # )
@@ -546,7 +549,7 @@ class QueryResult:
                     except OverflowError as ex:
                         raise QueryExecutionError(
                             f"Got overflowed result '{c}' for I type."
-                        ) from ex
+                        )
 
                 elif t == "R":
                     res_row.append(f"{c:.3f}")
@@ -564,7 +567,6 @@ class QueryResult:
             values = list(chain(*rows))
             values.sort()
             return [values] if values else []
-        return []
 
     @staticmethod
     def __calculate_hash(rows):
@@ -593,9 +595,9 @@ class QueryResult:
         # do not print details to the test file
         # but print original exception
         if isinstance(e, ErrorWithParent):
-            message = f"{e}, original is: {e.get_parent()}"
+            message = "{}, original is: {}".format(e, e.get_parent())
         else:
-            message = str(e)
+            message = "{}".format(e)
 
         return QueryResult(exception=message)
 
@@ -614,8 +616,9 @@ class QueryResult:
                         "canonic and actual results have different exceptions",
                         details=f"canonic: {canonic.exception}, actual: {actual.exception}",
                     )
-                # exceptions are the same
-                return
+                else:
+                    # exceptions are the same
+                    return
             elif canonic.exception is not None:
                 raise DataResultDiffer(
                     "canonic result has exception and actual result doesn't",
@@ -636,8 +639,9 @@ class QueryResult:
             if canonic.values_count != actual.values_count:
                 raise DataResultDiffer(
                     "canonic and actual results have different value count",
-                    details=f"canonic values count {canonic.values_count}, "
-                    f"actual {actual.values_count}",
+                    details="canonic values count {}, actual {}".format(
+                        canonic.values_count, actual.values_count
+                    ),
                 )
             if canonic.data_hash != actual.data_hash:
                 raise DataResultDiffer(
@@ -649,8 +653,9 @@ class QueryResult:
             if canonic.values_count != actual.values_count:
                 raise DataResultDiffer(
                     "canonic and actual results have different value count",
-                    details=f"canonic values count {canonic.values_count}, "
-                    f"actual {actual.values_count}",
+                    details="canonic values count {}, actual {}".format(
+                        canonic.values_count, actual.values_count
+                    ),
                 )
             if canonic.rows != actual.rows:
                 raise DataResultDiffer(
@@ -660,5 +665,5 @@ class QueryResult:
 
         raise ProgramError(
             "Unable to compare results",
-            details=f"actual {actual}, canonic {canonic}",
+            details="actual {}, canonic {}".format(actual, canonic),
         )

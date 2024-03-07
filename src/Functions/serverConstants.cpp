@@ -51,12 +51,12 @@ namespace
     };
 
 
-    class FunctionTCPPort : public FunctionConstantBase<FunctionTCPPort, UInt16, DataTypeUInt16>
+    class FunctionTcpPort : public FunctionConstantBase<FunctionTcpPort, UInt16, DataTypeUInt16>
     {
     public:
         static constexpr auto name = "tcpPort";
-        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTCPPort>(context); }
-        explicit FunctionTCPPort(ContextPtr context) : FunctionConstantBase(context->getTCPPort(), context->isDistributed()) {}
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTcpPort>(context); }
+        explicit FunctionTcpPort(ContextPtr context) : FunctionConstantBase(context->getTCPPort(), context->isDistributed()) {}
     };
 
 
@@ -153,9 +153,9 @@ REGISTER_FUNCTION(ServerUUID)
     factory.registerFunction<FunctionServerUUID>();
 }
 
-REGISTER_FUNCTION(TCPPort)
+REGISTER_FUNCTION(TcpPort)
 {
-    factory.registerFunction<FunctionTCPPort>();
+    factory.registerFunction<FunctionTcpPort>();
 }
 
 REGISTER_FUNCTION(Timezone)

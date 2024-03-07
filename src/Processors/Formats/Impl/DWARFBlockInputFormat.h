@@ -30,7 +30,7 @@ public:
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
-    Chunk read() override;
+    Chunk generate() override;
 
     void onCancel() override
     {
@@ -124,7 +124,7 @@ private:
 class DWARFSchemaReader : public ISchemaReader
 {
 public:
-    explicit DWARFSchemaReader(ReadBuffer & in_);
+    DWARFSchemaReader(ReadBuffer & in_);
 
     NamesAndTypesList readSchema() override;
 };

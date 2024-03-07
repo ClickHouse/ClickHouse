@@ -3,7 +3,6 @@
 #include <memory>
 
 #include <Common/Exception.h>
-#include "Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h"
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -19,7 +18,6 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
-#include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/UniqToCountPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
@@ -46,7 +44,6 @@
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
-#include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
 
 
@@ -62,7 +59,7 @@ namespace ErrorCodes
 namespace
 {
 
-#if defined(ABORT_ON_LOGICAL_ERROR)
+#ifndef NDEBUG
 
 /** This visitor checks if Query Tree structure is valid after each pass
   * in debug build.
@@ -165,6 +162,9 @@ private:
 
 /** ClickHouse query tree pass manager.
   *
+  * TODO: Support setting optimize_substitute_columns.
+  * TODO: Support GROUP BY injective function elimination.
+  * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
@@ -184,16 +184,10 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
     for (size_t i = 0; i < passes_size; ++i)
     {
         passes[i]->run(query_tree_node, current_context);
-#if defined(ABORT_ON_LOGICAL_ERROR)
+#ifndef NDEBUG
         ValidationChecker(passes[i]->getName()).visit(query_tree_node);
 #endif
     }
-}
-
-void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr query_tree_node)
-{
-    // Run only QueryAnalysisPass and GroupingFunctionsResolvePass passes.
-    run(query_tree_node, 2);
 }
 
 void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node, size_t up_to_pass_index)
@@ -209,7 +203,7 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node, size_t up_to_pa
     for (size_t i = 0; i < up_to_pass_index; ++i)
     {
         passes[i]->run(query_tree_node, current_context);
-#if defined(ABORT_ON_LOGICAL_ERROR)
+#ifndef NDEBUG
         ValidationChecker(passes[i]->getName()).visit(query_tree_node);
 #endif
     }
@@ -249,14 +243,11 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
 void addQueryTreePasses(QueryTreePassManager & manager)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>());
-    manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
-
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
 
-    manager.addPass(std::make_unique<RewriteSumFunctionWithSumAndCountPass>());
     manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<UniqToCountPass>());
     manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
@@ -264,13 +255,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 
-    /// should before AggregateFunctionsArithmericOperationsPass
-    manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>());
-
     manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
     manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
     manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
-    manager.addPass(std::make_unique<OptimizeGroupByInjectiveFunctionsPass>());
 
     manager.addPass(std::make_unique<MultiIfToIfPass>());
     manager.addPass(std::make_unique<IfConstantConditionPass>());
@@ -291,6 +278,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
 
+    manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());

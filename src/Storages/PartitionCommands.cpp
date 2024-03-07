@@ -23,7 +23,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     {
         PartitionCommand res;
         res.type = DROP_PARTITION;
-        res.partition = command_ast->partition->clone();
+        res.partition = command_ast->partition;
         res.detach = command_ast->detach;
         res.part = command_ast->part;
         return res;
@@ -32,22 +32,15 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     {
         PartitionCommand res;
         res.type = DROP_DETACHED_PARTITION;
-        res.partition = command_ast->partition->clone();
+        res.partition = command_ast->partition;
         res.part = command_ast->part;
-        return res;
-    }
-    else if (command_ast->type == ASTAlterCommand::FORGET_PARTITION)
-    {
-        PartitionCommand res;
-        res.type = FORGET_PARTITION;
-        res.partition = command_ast->partition->clone();
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::ATTACH_PARTITION)
     {
         PartitionCommand res;
         res.type = ATTACH_PARTITION;
-        res.partition = command_ast->partition->clone();
+        res.partition = command_ast->partition;
         res.part = command_ast->part;
         return res;
     }
@@ -55,7 +48,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     {
         PartitionCommand res;
         res.type = MOVE_PARTITION;
-        res.partition = command_ast->partition->clone();
+        res.partition = command_ast->partition;
         res.part = command_ast->part;
         switch (command_ast->move_destination_type)
         {
@@ -84,7 +77,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     {
         PartitionCommand res;
         res.type = REPLACE_PARTITION;
-        res.partition = command_ast->partition->clone();
+        res.partition = command_ast->partition;
         res.replace = command_ast->replace;
         res.from_database = command_ast->from_database;
         res.from_table = command_ast->from_table;
@@ -94,7 +87,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     {
         PartitionCommand res;
         res.type = FETCH_PARTITION;
-        res.partition = command_ast->partition->clone();
+        res.partition = command_ast->partition;
         res.from_zookeeper_path = command_ast->from;
         res.part = command_ast->part;
         return res;
@@ -103,7 +96,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     {
         PartitionCommand res;
         res.type = FREEZE_PARTITION;
-        res.partition = command_ast->partition->clone();
+        res.partition = command_ast->partition;
         res.with_name = command_ast->with_name;
         return res;
     }
@@ -118,7 +111,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     {
         PartitionCommand res;
         res.type = PartitionCommand::UNFREEZE_PARTITION;
-        res.partition = command_ast->partition->clone();
+        res.partition = command_ast->partition;
         res.with_name = command_ast->with_name;
         return res;
     }
@@ -154,8 +147,6 @@ std::string PartitionCommand::typeToString() const
             return "DROP DETACHED PART";
         else
             return "DROP DETACHED PARTITION";
-    case PartitionCommand::Type::FORGET_PARTITION:
-        return "FORGET PARTITION";
     case PartitionCommand::Type::FETCH_PARTITION:
         if (part)
             return "FETCH PART";

@@ -61,7 +61,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
 
 {
     args = std::move(args_);
-    log = getLogger("ZooKeeper");
+    log = &Poco::Logger::get("ZooKeeper");
 
     if (args.implementation == "zookeeper")
     {
@@ -1267,11 +1267,6 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemoveNoThrow(const
 
 std::future<Coordination::MultiResponse> ZooKeeper::asyncTryMultiNoThrow(const Coordination::Requests & ops)
 {
-    return asyncTryMultiNoThrow(std::span(ops));
-}
-
-std::future<Coordination::MultiResponse> ZooKeeper::asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops)
-{
     auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
     auto future = promise->get_future();
 
@@ -1513,7 +1508,7 @@ Coordination::RequestPtr makeExistsRequest(const std::string & path)
     return request;
 }
 
-std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, LoggerPtr log)
+std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log)
 {
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -1549,7 +1544,7 @@ String extractZooKeeperName(const String & path)
     return default_zookeeper_name;
 }
 
-String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log)
+String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log)
 {
     if (path.empty())
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should not be empty");

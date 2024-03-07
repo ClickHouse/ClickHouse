@@ -359,7 +359,7 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_functio
             return std::make_unique<ExtractAll>();
 
         case KQLFunctionValue::extract_json:
-            return std::make_unique<ExtractJSON>();
+            return std::make_unique<ExtractJson>();
 
         case KQLFunctionValue::has_any_index:
             return std::make_unique<HasAnyIndex>();
@@ -389,7 +389,7 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String & kql_functio
             return std::make_unique<ParseCSV>();
 
         case KQLFunctionValue::parse_json:
-            return std::make_unique<ParseJSON>();
+            return std::make_unique<ParseJson>();
 
         case KQLFunctionValue::parse_url:
             return std::make_unique<ParseURL>();

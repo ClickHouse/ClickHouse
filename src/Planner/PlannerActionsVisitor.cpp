@@ -8,13 +8,16 @@
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/WindowNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/ConstantValue.h>
 
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeSet.h>
 
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -29,7 +32,6 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/TableExpressionData.h>
 #include <Planner/Utils.h>
-
 
 namespace DB
 {
@@ -451,7 +453,6 @@ private:
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
     const PlannerContextPtr planner_context;
     ActionNodeNameHelper action_node_name_helper;
-    bool use_column_identifier_as_action_node_name;
 };
 
 PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(ActionsDAGPtr actions_dag,
@@ -459,7 +460,6 @@ PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(ActionsDAGPtr actions_dag,
     bool use_column_identifier_as_action_node_name_)
     : planner_context(planner_context_)
     , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_)
-    , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
 {
     actions_stack.emplace_back(std::move(actions_dag), nullptr);
 }
@@ -497,16 +497,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         return visitFunction(node);
 
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-        "Expected column, constant, function. Actual {} with type: {}",
-        node->formatASTForErrorMessage(), node_type);
+        "Expected column, constant, function. Actual {}",
+        node->formatASTForErrorMessage());
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitColumn(const QueryTreeNodePtr & node)
 {
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
     const auto & column_node = node->as<ColumnNode &>();
-    if (column_node.hasExpression() && !use_column_identifier_as_action_node_name)
-        return visitImpl(column_node.getExpression());
+
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
     for (Int64 i = actions_stack_size; i >= 0; --i)
     {

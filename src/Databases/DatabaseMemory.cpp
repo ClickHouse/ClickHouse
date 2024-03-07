@@ -1,6 +1,5 @@
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
-#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DDLDependencyVisitor.h>
@@ -208,17 +207,6 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     }
 
     return res;
-}
-
-void registerDatabaseMemory(DatabaseFactory & factory)
-{
-    auto create_fn = [](const DatabaseFactory::Arguments & args)
-    {
-        return make_shared<DatabaseMemory>(
-            args.database_name,
-            args.context);
-    };
-    factory.registerDatabase("Memory", create_fn);
 }
 
 }

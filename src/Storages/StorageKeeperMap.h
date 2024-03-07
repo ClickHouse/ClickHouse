@@ -125,10 +125,10 @@ private:
     std::string primary_key;
 
     std::string zk_data_path;
-    std::string zk_metadata_path;
-    std::string zk_tables_path;
 
-    std::string table_unique_id;
+    std::string zk_metadata_path;
+
+    std::string zk_tables_path;
     std::string zk_table_path;
 
     std::string zk_dropped_path;
@@ -146,7 +146,7 @@ private:
     mutable std::mutex init_mutex;
     mutable std::optional<bool> table_is_valid;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

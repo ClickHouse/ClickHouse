@@ -61,10 +61,10 @@ start_server
 
 setup_logs_replication
 
-clickhouse-client --query "CREATE DATABASE datasets"
-clickhouse-client --multiquery < create.sql
-clickhouse-client --query "SHOW TABLES FROM datasets"
-
+# shellcheck disable=SC2086 # No quotes because I want to split it into words.
+/s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
+chmod 777 -R /var/lib/clickhouse
+clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
 stop_server
@@ -194,7 +194,6 @@ stop_server
 
 # Let's enable S3 storage by default
 export USE_S3_STORAGE_FOR_MERGE_TREE=1
-export RANDOMIZE_OBJECT_KEY_TYPE=1
 export ZOOKEEPER_FAULT_INJECTION=1
 configure
 

@@ -8,10 +8,11 @@ from pprint import pformat
 from typing import Any, List, Literal, Optional, Tuple
 
 import boto3  # type: ignore
+
 from lambda_shared import (
-    RUNNER_TYPE_LABELS,
     CHException,
     ClickHouseHelper,
+    RUNNER_TYPE_LABELS,
     get_parameter_from_ssm,
 )
 
@@ -51,7 +52,7 @@ class Queue:
     label: str
 
 
-def get_scales() -> Tuple[int, int]:
+def get_scales(runner_type: str) -> Tuple[int, int]:
     "returns the multipliers for scaling down and up ASG by types"
     # Scaling down is quicker on the lack of running jobs than scaling up on
     # queue
@@ -95,7 +96,7 @@ def set_capacity(
             continue
         raise ValueError("Queue status is not in ['in_progress', 'queued']")
 
-    scale_down, scale_up = get_scales()
+    scale_down, scale_up = get_scales(runner_type)
     # With lyfecycle hooks some instances are actually free because some of
     # them are in 'Terminating:Wait' state
     effective_capacity = max(
@@ -114,8 +115,6 @@ def set_capacity(
         # Are we already at the capacity limits
         stop = stop or asg["MaxSize"] <= asg["DesiredCapacity"]
         # Let's calculate a new desired capacity
-        # (capacity_deficit + scale_up - 1) // scale_up : will increase min by 1
-        # if there is any capacity_deficit
         desired_capacity = (
             asg["DesiredCapacity"] + (capacity_deficit + scale_up - 1) // scale_up
         )

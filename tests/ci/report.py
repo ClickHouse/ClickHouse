@@ -1,12 +1,6 @@
 # -*- coding: utf-8 -*-
-import csv
-import datetime
-import json
-import logging
-import os
 from ast import literal_eval
 from dataclasses import asdict, dataclass
-from html import escape
 from pathlib import Path
 from typing import (
     Dict,
@@ -19,11 +13,17 @@ from typing import (
     Tuple,
     Union,
 )
+from html import escape
+import csv
+import datetime
+import json
+import logging
+import os
 
 from build_download_helper import get_gh_api
-from ci_config import CI_CONFIG, BuildConfig
-from ci_utils import normalize_string
+from ci_config import BuildConfig, CI_CONFIG
 from env_helper import REPORT_PATH, TEMP_PATH
+
 
 logger = logging.getLogger(__name__)
 
@@ -34,31 +34,28 @@ SUCCESS: Final = "success"
 
 OK: Final = "OK"
 FAIL: Final = "FAIL"
-SKIPPED: Final = "SKIPPED"
 
 StatusType = Literal["error", "failure", "pending", "success"]
-STATUSES = [ERROR, FAILURE, PENDING, SUCCESS]  # type: List[StatusType]
-
-
 # The order of statuses from the worst to the best
-def _state_rank(status: str) -> int:
-    "return the index of status or index of SUCCESS in case of wrong status"
-    try:
-        return STATUSES.index(status)  # type: ignore
-    except ValueError:
-        return 3
+_STATES = {ERROR: 0, FAILURE: 1, PENDING: 2, SUCCESS: 3}
 
 
-def get_worst_status(statuses: Iterable[str]) -> StatusType:
-    worst_status = SUCCESS  # type: StatusType
+def get_worst_status(statuses: Iterable[str]) -> str:
+    worst_status = None
     for status in statuses:
-        ind = _state_rank(status)
-        if ind < _state_rank(worst_status):
-            worst_status = STATUSES[ind]
+        if _STATES.get(status) is None:
+            continue
+        if worst_status is None:
+            worst_status = status
+            continue
+        if _STATES.get(status) < _STATES.get(worst_status):
+            worst_status = status
 
         if worst_status == ERROR:
             break
 
+    if worst_status is None:
+        return ""
     return worst_status
 
 
@@ -293,10 +290,9 @@ class JobReport:
         return JOB_REPORT_FILE.is_file()
 
     @classmethod
-    def load(cls, from_file=None):  # type: ignore
+    def load(cls):  # type: ignore
         res = {}
-        from_file = from_file or JOB_REPORT_FILE
-        with open(from_file, "r", encoding="utf-8") as json_file:
+        with open(JOB_REPORT_FILE, "r") as json_file:
             res = json.load(json_file)
             # Deserialize the nested lists of TestResult
             test_results_data = res.get("test_results", [])
@@ -309,14 +305,13 @@ class JobReport:
         if JOB_REPORT_FILE.exists():
             JOB_REPORT_FILE.unlink()
 
-    def dump(self, to_file=None):
+    def dump(self):
         def path_converter(obj):
             if isinstance(obj, Path):
                 return str(obj)
             raise TypeError("Type not serializable")
 
-        to_file = to_file or JOB_REPORT_FILE
-        with open(to_file, "w", encoding="utf-8") as json_file:
+        with open(JOB_REPORT_FILE, "w") as json_file:
             json.dump(asdict(self), json_file, default=path_converter, indent=2)
 
 
@@ -418,7 +413,7 @@ class BuildResult:
     def load_from_file(cls, file: Union[Path, str]):  # type: ignore
         if not Path(file).exists():
             return None
-        with open(file, "r", encoding="utf-8") as json_file:
+        with open(file, "r") as json_file:
             res = json.load(json_file)
         return BuildResult(**res)
 
@@ -452,12 +447,6 @@ class BuildResult:
         if self.build_config is None:
             return self._wrong_config_message
         return self.build_config.sanitizer
-
-    @property
-    def coverage(self) -> str:
-        if self.build_config is None:
-            return self._wrong_config_message
-        return str(self.build_config.coverage)
 
     @property
     def grouped_urls(self) -> List[List[str]]:
@@ -560,7 +549,7 @@ class BuildResult:
 
     def write_json(self, directory: Union[Path, str] = REPORT_PATH) -> Path:
         path = Path(directory) / self.get_report_name(
-            self.build_name, self.pr_number or normalize_string(self.head_ref)
+            self.build_name, self.pr_number or self.head_ref
         )
         path.write_text(
             json.dumps(
@@ -597,6 +586,7 @@ class ReportColorTheme:
         blue = "#00B4FF"
 
     default = (ReportColor.green, ReportColor.red, ReportColor.yellow)
+    bugfixcheck = (ReportColor.yellow, ReportColor.blue, ReportColor.blue)
 
 
 ColorTheme = Tuple[str, str, str]
@@ -784,7 +774,6 @@ HTML_BASE_BUILD_TEMPLATE = (
 <th>Build type</th>
 <th>Version</th>
 <th>Sanitizer</th>
-<th>Coverage</th>
 <th>Status</th>
 <th>Build log</th>
 <th>Build time</th>
@@ -826,8 +815,6 @@ def create_build_html_report(
             else:
                 row.append("<td>none</td>")
 
-            row.append(f"<td>{build_result.coverage}</td>")
-
             if build_result.status:
                 style = _get_status_style(build_result.status)
                 row.append(f'<td style="{style}">{build_result.status}</td>')
@@ -859,7 +846,7 @@ def create_build_html_report(
                 build_result.build_config is not None
                 and build_result.build_config.sparse_checkout
             ):
-                comment += " (note: sparse checkout is used, see update-submodules.sh)"
+                comment += " (note: sparse checkout is used)"
             row.append(f"<td>{comment}</td>")
 
             row.append("</tr>")

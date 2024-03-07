@@ -409,7 +409,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
             #pragma clang diagnostic pop
 
             if (max_dest_size > std::numeric_limits<int>::max())
-                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", ReadableSize(source.size()));
+                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress column of size {}", formatReadableSizeWithBinarySuffix(source.size()));
 
             scratch.resize(max_dest_size);
 
@@ -448,7 +448,6 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 std::move(dest_buf),
                 method,
                 /*level*/ 3,
-                /*zstd_window_log*/ 0,
                 source.size(),
                 /*existing_memory*/ source.data());
             chassert(compressed_buf->position() == source.data());

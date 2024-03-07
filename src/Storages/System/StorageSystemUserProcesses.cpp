@@ -14,25 +14,24 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemUserProcesses::getColumnsDescription()
+NamesAndTypesList StorageSystemUserProcesses::getNamesAndTypes()
 {
-    auto description = ColumnsDescription
-    {
+    return {
         {"user", std::make_shared<DataTypeString>()},
         {"memory_usage", std::make_shared<DataTypeInt64>()},
         {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
         {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
     };
-
-    description.setAliases({
-        {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
-        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"}
-    });
-
-    return description;
 }
 
-void StorageSystemUserProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+NamesAndAliases StorageSystemUserProcesses::getNamesAndAliases()
+{
+    return {
+        {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
+        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"}};
+}
+
+void StorageSystemUserProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     const auto user_info = context->getProcessList().getUserInfo(true);
 

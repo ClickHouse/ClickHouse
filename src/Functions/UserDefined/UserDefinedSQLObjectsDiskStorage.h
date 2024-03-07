@@ -44,7 +44,7 @@ private:
 
     ContextPtr global_context;
     String dir_path;
-    LoggerPtr log;
+    Poco::Logger * log;
     std::atomic<bool> objects_loaded = false;
 };
 

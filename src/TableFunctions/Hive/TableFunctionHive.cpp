@@ -46,7 +46,7 @@ public:
     void parseArguments(const ASTPtr & ast_function_, ContextPtr context_) override;
 
 private:
-    LoggerPtr logger = getLogger("TableFunctionHive");
+    Poco::Logger * logger = &Poco::Logger::get("TableFunctionHive");
 
     String cluster_name;
     String hive_metastore_url;

@@ -62,7 +62,7 @@ class MergeTreeConditionFullText final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeConditionFullText(
-            const ActionsDAGPtr & filter_actions_dag,
+            const SelectQueryInfo & query_info,
             ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
@@ -90,7 +90,6 @@ private:
             FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,
             FUNCTION_IN,
-            FUNCTION_MATCH,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
             FUNCTION_HAS_ANY,
@@ -144,6 +143,9 @@ private:
     BloomFilterParameters params;
     TokenExtractorPtr token_extractor;
     RPN rpn;
+
+    /// Sets from syntax analyzer.
+    PreparedSetsPtr prepared_sets;
 };
 
 class MergeTreeIndexFullText final : public IMergeTreeIndex
@@ -163,7 +165,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const ActionsDAGPtr & filter_dag, ContextPtr context) const override;
+            const SelectQueryInfo & query, ContextPtr context) const override;
 
     BloomFilterParameters params;
     /// Function for selecting next token.

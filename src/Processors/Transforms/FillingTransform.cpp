@@ -1,6 +1,5 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/IDataType.h>
@@ -28,7 +27,7 @@ void logDebug(String key, const T & value, const char * separator = " : ")
         else
             ss << value;
 
-        LOG_DEBUG(getLogger("FillingTransform"), "{}{}{}", key, separator, ss.str());
+        LOG_DEBUG(&Poco::Logger::get("FillingTransform"), "{}{}{}", key, separator, ss.str());
     }
 }
 
@@ -53,13 +52,13 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
 
 template <typename T>
 static FillColumnDescription::StepFunction getStepFunction(
-    IntervalKind::Kind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
+    IntervalKind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
 {
     static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
     switch (kind) // NOLINT(bugprone-switch-missing-default-case)
     {
 #define DECLARE_CASE(NAME) \
-        case IntervalKind::Kind::NAME: \
+        case IntervalKind::NAME: \
             return [step, scale, &date_lut](Field & field) { \
                 field = Add##NAME##sImpl::execute(static_cast<T>(\
                     field.get<T>()), static_cast<Int32>(step), date_lut, utc_time_zone, scale); };
@@ -161,7 +160,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
             switch (*descr.step_kind) // NOLINT(bugprone-switch-missing-default-case)
             {
 #define DECLARE_CASE(NAME) \
-                case IntervalKind::Kind::NAME: \
+                case IntervalKind::NAME: \
                     descr.step_func = [step, &time_zone = date_time64->getTimeZone()](Field & field) \
                     { \
                         auto field_decimal = field.get<DecimalField<DateTime64>>(); \

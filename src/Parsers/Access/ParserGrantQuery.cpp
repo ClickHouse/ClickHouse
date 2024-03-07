@@ -200,10 +200,8 @@ namespace
             if (!ParserKeyword{"ON"}.ignore(pos, expected))
                 return false;
 
-            String database_name;
-            String table_name;
-            bool any_database = false;
-            bool any_table = false;
+            String database_name, table_name;
+            bool any_database = false, any_table = false;
             if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
                 return false;
 

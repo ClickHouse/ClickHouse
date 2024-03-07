@@ -21,12 +21,11 @@ class ReadBufferFromRemoteFSGather final : public ReadBufferFromFileBase
 friend class ReadIndirectBufferFromRemoteFS;
 
 public:
-    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(bool restricted_seek, const std::string & path)>;
+    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(const std::string & path, size_t read_until_position)>;
 
     ReadBufferFromRemoteFSGather(
         ReadBufferCreator && read_buffer_creator_,
         const StoredObjects & blobs_to_read_,
-        const std::string & cache_path_prefix_,
         const ReadSettings & settings_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
         bool use_external_buffer_);
@@ -54,7 +53,7 @@ public:
     bool isContentCached(size_t offset, size_t size) override;
 
 private:
-    SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object, size_t start_offset);
+    SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);
 
     bool nextImpl() override;
 
@@ -71,12 +70,10 @@ private:
     const ReadSettings settings;
     const StoredObjects blobs_to_read;
     const ReadBufferCreator read_buffer_creator;
-    const std::string cache_path_prefix;
     const std::shared_ptr<FilesystemCacheLog> cache_log;
     const String query_id;
     const bool use_external_buffer;
-    const bool with_file_cache;
-    const bool with_page_cache;
+    const bool with_cache;
 
     size_t read_until_position = 0;
     size_t file_offset_of_buffer_end = 0;
@@ -85,7 +82,7 @@ private:
     size_t current_buf_idx = 0;
     SeekableReadBufferPtr current_buf;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size);

@@ -4,7 +4,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Backups/BackupOperationInfo.h>
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -15,7 +14,7 @@ namespace DB
 struct BackupLogElement
 {
     BackupLogElement() = default;
-    explicit BackupLogElement(BackupOperationInfo info_);
+    BackupLogElement(BackupOperationInfo info_);
     BackupLogElement(const BackupLogElement &) = default;
     BackupLogElement & operator=(const BackupLogElement &) = default;
     BackupLogElement(BackupLogElement &&) = default;
@@ -26,9 +25,10 @@ struct BackupLogElement
     BackupOperationInfo info{};
 
     static std::string name() { return "BackupLog"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class BackupLog : public SystemLog<BackupLogElement>

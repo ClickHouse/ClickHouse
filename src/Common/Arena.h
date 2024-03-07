@@ -70,7 +70,7 @@ private:
             return *this;
         }
 
-        explicit MemoryChunk(size_t size_)
+        MemoryChunk(size_t size_)
         {
             ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
             ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
