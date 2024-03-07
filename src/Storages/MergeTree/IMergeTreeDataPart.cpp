@@ -1451,6 +1451,11 @@ bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
         parent_part == nullptr && projection_parts.empty();
 }
 
+bool IMergeTreeDataPart::hasLightweightDelete() const
+{
+    return columns.contains(RowExistsColumn::name);
+}
+
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const
 {
     TransactionID expected_tid = txn ? txn->tid : Tx::PrehistoricTID;
