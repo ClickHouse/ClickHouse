@@ -216,7 +216,7 @@ private:
             if (enable_parallel_processing_of_joins)
             {
                 /// We don't enable parallel replicas for IN (subquery)
-                if (!settings.parallel_replicas_allow_subqueries_for_in && ast->as<ASTSubquery>())
+                if (!settings.parallel_replicas_allow_in_with_subquery && ast->as<ASTSubquery>())
                 {
                     if (settings.allow_experimental_parallel_reading_from_replicas == 1)
                     {
