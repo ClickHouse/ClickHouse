@@ -52,8 +52,8 @@ protected:
         size_t curr = next; /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 * pos = vec.data(); /// This also accelerates the code.
 
-        UInt64 * end = &vec[real_block_size];
-        while (pos < end)
+        UInt64 * end_ = &vec[real_block_size];
+        while (pos < end_)
             *pos++ = curr++;
 
         next += step;
