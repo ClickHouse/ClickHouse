@@ -10,6 +10,7 @@
 #include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
@@ -622,6 +623,15 @@ try
 
     buildLoggers(config(), logger());
     main_config_reloader->start();
+
+    std::optional<CgroupsMemoryUsageObserver> observer;
+    auto cgroups_memory_observer_wait_time = config().getUInt64("keeper_server.cgroups_memory_observer_wait_time", 1);
+    if (cgroups_memory_observer_wait_time > 0)
+    {
+        observer.emplace(std::chrono::seconds(cgroups_memory_observer_wait_time));
+        observer->startThread();
+    }
+
 
     LOG_INFO(log, "Ready for connections.");
 

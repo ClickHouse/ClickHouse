@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ThreadPool.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <atomic>
 #include <chrono>
@@ -14,7 +15,7 @@ namespace DB
 /// - When the soft memory limit is hit, drop jemalloc cache.
 /// - When the hard memory limit is hit, update MemoryTracking metric to throw memory exceptions faster.
 #if defined(OS_LINUX)
-class CgroupsMemoryUsageObserver
+class CgroupsMemoryUsageObserver : public WithContext
 {
 public:
     enum class CgroupsVersion
@@ -27,6 +28,7 @@ public:
     ~CgroupsMemoryUsageObserver();
 
     void setLimits(uint64_t hard_limit_, uint64_t soft_limit_);
+    void startThread();
 
     size_t getHardLimit() const { return hard_limit; }
     size_t getSoftLimit() const { return soft_limit; }
@@ -64,16 +66,17 @@ private:
 
     File file;
 
-    void startThread();
     void stopThread();
 
     void runThread();
     void processMemoryUsage(uint64_t usage);
 
     std::mutex thread_mutex;
+    std::mutex set_limit_mutex;
     std::condition_variable cond;
     ThreadFromGlobalPool thread;
     bool quit = false;
+    uint64_t last_memory_amount;
 };
 
 #else

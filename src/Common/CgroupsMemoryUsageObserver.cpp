@@ -8,7 +8,9 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
+#include <base/getMemoryAmount.h>
 #include <base/sleep.h>
 
 #include <filesystem>
@@ -48,10 +50,9 @@ CgroupsMemoryUsageObserver::~CgroupsMemoryUsageObserver()
 
 void CgroupsMemoryUsageObserver::setLimits(uint64_t hard_limit_, uint64_t soft_limit_)
 {
+    std::lock_guard<std::mutex> lock(set_limit_mutex);
     if (hard_limit_ == hard_limit && soft_limit_ == soft_limit)
         return;
-
-    stopThread();
 
     hard_limit = hard_limit_;
     soft_limit = soft_limit_;
@@ -93,8 +94,6 @@ void CgroupsMemoryUsageObserver::setLimits(uint64_t hard_limit_, uint64_t soft_l
             LOG_INFO(log, "Dropped below soft memory limit ({})", ReadableSize(soft_limit_));
         }
     };
-
-    startThread();
 
     LOG_INFO(log, "Set new limits, soft limit: {}, hard limit: {}", ReadableSize(soft_limit_), ReadableSize(hard_limit_));
 }
@@ -277,7 +276,7 @@ void CgroupsMemoryUsageObserver::stopThread()
 void CgroupsMemoryUsageObserver::runThread()
 {
     setThreadName("CgrpMemUsgObsr");
-
+    last_memory_amount = getMemoryAmount();
     std::unique_lock lock(thread_mutex);
     while (true)
     {
@@ -286,8 +285,21 @@ void CgroupsMemoryUsageObserver::runThread()
 
         try
         {
-            uint64_t memory_usage = file.readMemoryUsage();
-            processMemoryUsage(memory_usage);
+            uint64_t memory_limit = getMemoryAmount();
+            if (memory_limit != last_memory_amount)
+            {
+                last_memory_amount = memory_limit;
+                /// if we find memory amount changes, we just reload config.
+                /// Reloading config will check the memory amount again and calculate soft/hard limit again.
+                auto global_context = getContext()->getGlobalContext();
+                global_context->reloadConfig();
+            }
+            std::lock_guard<std::mutex> set_limit_lock(set_limit_mutex);
+            if (soft_limit > 0 && hard_limit > 0)
+            {
+                uint64_t memory_usage = file.readMemoryUsage();
+                processMemoryUsage(memory_usage);
+            }
         }
         catch (...)
         {
