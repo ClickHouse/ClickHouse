@@ -678,7 +678,7 @@ inline void writeCSVString(const char * begin, const char * end, WriteBuffer & b
         const char * pos = begin;
         while (true)
         {
-            const char * next_pos = find_first_symbols(pos, end);
+            const char * next_pos = find_first_symbols<quote>(pos, end);
 
             if (next_pos == end)
             {

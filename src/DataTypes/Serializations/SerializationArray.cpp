@@ -664,7 +664,7 @@ void SerializationArray::serializeTextCSV(const IColumn & column, size_t row_num
     /// There is no good way to serialize an array in CSV. Therefore, we serialize it into a string, and then write the resulting string in CSV.
     WriteBufferFromOwnString wb;
     serializeText(column, row_num, wb, settings);
-    writeCSV(wb.str(), ostr, settings.csv.string_quote);
+    writeCSV(wb.str(), ostr, settings.csv.allow_string_quote);
 }
 
 
