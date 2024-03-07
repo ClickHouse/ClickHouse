@@ -1,4 +1,3 @@
-#include <memory>
 #include <Planner/PlannerJoins.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -42,7 +41,6 @@
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
-#include "PlannerActionsVisitor.h"
 
 namespace DB
 {
@@ -234,13 +232,6 @@ void buildJoinClause(
 
     if (function_name == "equals" || function_name == "isNotDistinctFrom" || is_asof_join_inequality)
     {
-        if (function_node->getArguments().getNodes().size() != 2)
-        {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "JOIN {} ON expression expected two arguments",
-                join_node.formatASTForErrorMessage());
-        }
-
         const auto left_child = function_node->getArguments().getNodes().at(0);
         const auto right_child = function_node->getArguments().getNodes().at(1);
 
@@ -253,7 +244,7 @@ void buildJoinClause(
             left_table_expressions,
             right_table_expressions,
             join_node);
-        
+
         if (left_expression_sides.empty() && right_expression_sides.empty())
         {
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,

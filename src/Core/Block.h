@@ -213,4 +213,5 @@ Block materializeBlock(const Block & block);
 void materializeBlockInplace(Block & block);
 
 Block concatenateBlocks(const std::vector<Block> & blocks);
+
 }

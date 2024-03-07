@@ -21,11 +21,13 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/NullableUtils.h>
+#include <Interpreters/RowRefs.h>
 
 #include <Storages/IStorage.h>
 
@@ -34,8 +36,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
-#include "ExpressionActions.h"
-#include "RowRefs.h"
 
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
@@ -1742,7 +1742,7 @@ NO_INLINE size_t joinRightColumns(
         added_columns.filter = IColumn::Filter(rows, 0);
 
     Arena pool;
-    
+
     if constexpr (join_features.need_replication)
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
 
