@@ -73,7 +73,8 @@ RUN curl -Lo /usr/bin/clang-tidy-cache \
         "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/clang-tidy-cache" \
     && chmod +x /usr/bin/clang-tidy-cache
 
-COPY --from=clickhouse/cctools /cctools /cctools
+# If the cctools is updated, then first build it in the CI, then update here in a different commit
+COPY --from=clickhouse/cctools:5a908f73878a /cctools /cctools
 
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir
