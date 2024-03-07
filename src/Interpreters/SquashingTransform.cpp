@@ -1,11 +1,4 @@
-#include <memory>
-#include <vector>
 #include <Interpreters/SquashingTransform.h>
-#include "DataTypes/Serializations/ISerialization.h"
-#include "Processors/Chunk.h"
-#include "base/sleep.h"
-#include "base/types.h"
-#include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 
 
@@ -135,6 +128,7 @@ bool SquashingTransform::isEnoughSize(size_t rows, size_t bytes) const
 }
 
 
+
 NewSquashingTransform::NewSquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
@@ -170,7 +164,6 @@ Block NewSquashingTransform::addImpl(ReferenceType input_chunk)
         append(std::move(one), info->data_type);
     }
     
-    // if (isEnoughSize(accumulated_block))
     {
         Block to_return;
         std::swap(to_return, accumulated_block);
@@ -202,8 +195,6 @@ void NewSquashingTransform::append(ReferenceType input_chunk, DataTypePtr data_t
         accumulated_block.getByPosition(i).column = std::move(mutable_column);
     }
 }
-
-
 
 BalanceTransform::BalanceTransform(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
     : min_block_size_rows(min_block_size_rows_)
@@ -245,11 +236,9 @@ Chunk BalanceTransform::addImpl(ReferenceType input_block)
     Chunk input_chunk(input_block.getColumns(), input_block.rows());
     if (!data_type && !input_block.getDataTypes().empty())
         data_type = input_block.getDataTypes()[0];
-    // /// End of input stream.
     if (!input_chunk)
     {
         Chunk res_chunk = convertToChunk(chunks_to_merge_vec);
-        // // std::cerr << "end of stream. Adding info to chunk " << std::endl;
         return res_chunk;
     }
 
@@ -258,11 +247,9 @@ Chunk BalanceTransform::addImpl(ReferenceType input_block)
 
     if (input_chunk)
         chunks_to_merge_vec.push_back(input_chunk.clone());
-    // std::cerr << "pushing back data. size: " << chunks_to_merge_vec.size() << std::endl;
 
     if (isEnoughSize(chunks_to_merge_vec))
     {
-        // // // std::cerr << "enough size" << std::endl;
         Chunk res_chunk = convertToChunk(chunks_to_merge_vec);
         return res_chunk;
     }
@@ -279,14 +266,7 @@ bool BalanceTransform::isEnoughSize(const std::vector<Chunk> & chunks)
         rows += chunk.getNumRows();
         bytes += chunk.bytes();
     }
-    auto free_memory = memory_tracker->getHardLimit() - memory_tracker->get();
-    std::cerr << "========Just memory representation, free memory: " << free_memory << ", chunk size: " << bytes << std::endl
-    << " hardLimit: " << memory_tracker->getHardLimit() << " get(): " << memory_tracker->get() << std::endl;
     checkAndWaitMemoryAvailability(bytes);
-
-    free_memory = memory_tracker->getHardLimit() - memory_tracker->get();
-    std::cerr << "========Just memory representation after, free memory: " << free_memory << ", chunk size: " << bytes << std::endl
-    << ", hardLimit: " << memory_tracker->getHardLimit() << ", get(): " << memory_tracker->get() << std::endl;
 
     return isEnoughSize(rows, bytes);
 }
@@ -298,12 +278,7 @@ void BalanceTransform::checkAndWaitMemoryAvailability(size_t bytes)
     {
         auto free_memory = hard_limit - memory_tracker->get();
         while (Int64(bytes) >= free_memory)
-        {
-            // std::cerr << "========Waiting a while from memory, free memory: " << free_memory << ", chunk size: " << bytes << std::endl;
-            // sleepForMilliseconds(10);
-            // checkAndWaitMemoryAvailability(bytes);
             free_memory = hard_limit - memory_tracker->get();
-        }
     }
 }
 
