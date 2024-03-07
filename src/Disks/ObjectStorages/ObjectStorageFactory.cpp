@@ -166,7 +166,7 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
 
         /// NOTE: should we still perform this check for clickhouse-disks?
         if (!skip_access_check)
-            checkS3Capabilities(*object_storage, s3_capabilities, name);
+            checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name);
 
         return object_storage;
     });
@@ -202,7 +202,7 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
 
         /// NOTE: should we still perform this check for clickhouse-disks?
         if (!skip_access_check)
-            checkS3Capabilities(*object_storage, s3_capabilities, name);
+            checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name);
 
         return object_storage;
     });
