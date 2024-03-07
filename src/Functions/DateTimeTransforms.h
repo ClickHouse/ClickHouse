@@ -473,7 +473,7 @@ struct ToStartOfInterval;
 static constexpr auto TO_START_OF_INTERVAL_NAME = "toStartOfInterval";
 
 template <>
-struct ToStartOfInterval<IntervalKind::Kind::Nanosecond>
+struct ToStartOfInterval<IntervalKind::Nanosecond>
 {
     static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64)
     {
@@ -508,7 +508,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Nanosecond>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Kind::Microsecond>
+struct ToStartOfInterval<IntervalKind::Microsecond>
 {
     static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64)
     {
@@ -537,8 +537,8 @@ struct ToStartOfInterval<IntervalKind::Kind::Microsecond>
         else if (scale_multiplier > 1000000)
         {
             Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000000);
-            if (t >= 0) [[likely]] /// When we divide the `t` value we should round the result
-                return (t / microseconds + scale_diff / 2) / scale_diff * microseconds;
+            if (t >= 0) [[likely]]
+                return t / microseconds / scale_diff * microseconds;
             else
                 return ((t + 1) / microseconds / scale_diff - 1) * microseconds;
         }
@@ -551,7 +551,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Microsecond>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Kind::Millisecond>
+struct ToStartOfInterval<IntervalKind::Millisecond>
 {
     static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64)
     {
@@ -580,8 +580,8 @@ struct ToStartOfInterval<IntervalKind::Kind::Millisecond>
         else if (scale_multiplier > 1000)
         {
             Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000);
-            if (t >= 0) [[likely]]  /// When we divide the `t` value we should round the result
-                return (t / milliseconds + scale_diff / 2) / scale_diff * milliseconds;
+            if (t >= 0) [[likely]]
+                return t / milliseconds / scale_diff * milliseconds;
             else
                 return ((t + 1) / milliseconds / scale_diff - 1) * milliseconds;
         }
@@ -594,7 +594,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Millisecond>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Kind::Second>
+struct ToStartOfInterval<IntervalKind::Second>
 {
     static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64)
     {
@@ -615,7 +615,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Second>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Kind::Minute>
+struct ToStartOfInterval<IntervalKind::Minute>
 {
     static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64)
     {
@@ -636,7 +636,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Minute>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Kind::Hour>
+struct ToStartOfInterval<IntervalKind::Hour>
 {
     static UInt32 execute(UInt16, Int64, const DateLUTImpl &, Int64)
     {
@@ -657,7 +657,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Hour>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Kind::Day>
+struct ToStartOfInterval<IntervalKind::Day>
 {
     static UInt32 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
@@ -678,7 +678,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Day>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Kind::Week>
+struct ToStartOfInterval<IntervalKind::Week>
 {
     static UInt16 execute(UInt16 d, Int64 weeks, const DateLUTImpl & time_zone, Int64)
     {
@@ -699,7 +699,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Kind::Month>
+struct ToStartOfInterval<IntervalKind::Month>
 {
     static UInt16 execute(UInt16 d, Int64 months, const DateLUTImpl & time_zone, Int64)
     {
@@ -720,7 +720,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Kind::Quarter>
+struct ToStartOfInterval<IntervalKind::Quarter>
 {
     static UInt16 execute(UInt16 d, Int64 quarters, const DateLUTImpl & time_zone, Int64)
     {
@@ -741,7 +741,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
 };
 
 template <>
-struct ToStartOfInterval<IntervalKind::Kind::Year>
+struct ToStartOfInterval<IntervalKind::Year>
 {
     static UInt16 execute(UInt16 d, Int64 years, const DateLUTImpl & time_zone, Int64)
     {

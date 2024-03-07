@@ -43,10 +43,12 @@ StorageHDFSCluster::StorageHDFSCluster(
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & compression_method)
-    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageHDFSCluster (" + table_id_.table_name + ")"))
+    const String & compression_method_,
+    bool structure_argument_was_provided_)
+    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageHDFSCluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
     , uri(uri_)
     , format_name(format_name_)
+    , compression_method(compression_method_)
 {
     checkHDFSURL(uri_);
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
@@ -55,20 +57,11 @@ StorageHDFSCluster::StorageHDFSCluster(
 
     if (columns_.empty())
     {
-        ColumnsDescription columns;
-        if (format_name == "auto")
-            std::tie(columns, format_name) = StorageHDFS::getTableStructureAndFormatFromData(uri_, compression_method, context_);
-        else
-            columns = StorageHDFS::getTableStructureFromData(format_name, uri_, compression_method, context_);
+        auto columns = StorageHDFS::getTableStructureFromData(format_name, uri_, compression_method, context_);
         storage_metadata.setColumns(columns);
     }
     else
-    {
-        if (format_name == "auto")
-            format_name = StorageHDFS::getTableStructureAndFormatFromData(uri_, compression_method, context_).second;
-
         storage_metadata.setColumns(columns_);
-    }
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
@@ -76,20 +69,19 @@ StorageHDFSCluster::StorageHDFSCluster(
     virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
-void StorageHDFSCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const DB::StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
+void StorageHDFSCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context)
 {
     ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
     if (!expression_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function hdfsCluster, got '{}'", queryToString(query));
 
-    TableFunctionHDFSCluster::updateStructureAndFormatArgumentsIfNeeded(
-        expression_list->children, storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(), format_name, context);
+    TableFunctionHDFSCluster::addColumnsStructureToArguments(expression_list->children, structure, context);
 }
 
 
-RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
+RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const
 {
-    auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(uri, predicate, virtual_columns, context);
+    auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(uri, query, virtual_columns, context);
     auto callback = std::make_shared<std::function<String()>>([iter = std::move(iterator)]() mutable -> String { return iter->next().path; });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }

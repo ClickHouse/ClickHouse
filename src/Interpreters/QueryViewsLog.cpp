@@ -19,7 +19,7 @@
 
 namespace DB
 {
-ColumnsDescription QueryViewsLogElement::getColumnsDescription()
+NamesAndTypesList QueryViewsLogElement::getNamesAndTypes()
 {
     auto view_status_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
         {"QueryStart", static_cast<Int8>(QUERY_START)},
@@ -33,8 +33,7 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
         {"Live", static_cast<Int8>(ViewType::LIVE)},
         {"Window", static_cast<Int8>(ViewType::WINDOW)}});
 
-    return ColumnsDescription
-    {
+    return {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
@@ -58,8 +57,7 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
         {"status", std::move(view_status_datatype)},
         {"exception_code", std::make_shared<DataTypeInt32>()},
         {"exception", std::make_shared<DataTypeString>()},
-        {"stack_trace", std::make_shared<DataTypeString>()}
-    };
+        {"stack_trace", std::make_shared<DataTypeString>()}};
 }
 
 NamesAndAliases QueryViewsLogElement::getNamesAndAliases()

@@ -11,10 +11,6 @@ set (CLICKHOUSE_DISKS_SOURCES
     CommandRemove.cpp
     CommandWrite.cpp)
 
-if (CLICKHOUSE_CLOUD)
-    set (CLICKHOUSE_DISKS_SOURCES ${CLICKHOUSE_DISKS_SOURCES} CommandPackedIO.cpp)
-endif ()
-
 set (CLICKHOUSE_DISKS_LINK
     PRIVATE
         boost::program_options

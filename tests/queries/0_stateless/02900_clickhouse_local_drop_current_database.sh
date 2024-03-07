@@ -10,6 +10,6 @@ ${CLICKHOUSE_LOCAL} --echo --multiquery "
     SELECT 1;
     DROP DATABASE foo;
     SELECT 2;
-    USE default;
+    USE _local;
     SELECT 3;
 "

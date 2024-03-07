@@ -37,7 +37,6 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
         result.append("USE_PARALLEL_REPLICAS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
-        result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
     if "analyzer" in check_name:
         result.append("USE_NEW_ANALYZER=1")
 
@@ -81,7 +80,6 @@ def get_run_command(
         f"--volume={fuzzers_path}:/fuzzers "
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
         f"--volume={result_path}:/test_output "
-        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
     )
 

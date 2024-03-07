@@ -85,7 +85,10 @@ std::string DataTypeMap::doGetName() const
 std::string DataTypeMap::doGetPrettyName(size_t indent) const
 {
     WriteBufferFromOwnString s;
-    s << "Map(" << key_type->getPrettyName(indent) << ", " << value_type->getPrettyName(indent) << ')';
+    s << "Map(\n"
+      << fourSpaceIndent(indent + 1) << key_type->getPrettyName(indent + 1) << ",\n"
+      << fourSpaceIndent(indent + 1) << value_type->getPrettyName(indent + 1) << '\n'
+      << fourSpaceIndent(indent) << ')';
     return s.str();
 }
 
@@ -141,14 +144,6 @@ DataTypePtr DataTypeMap::getNestedTypeWithUnnamedTuple() const
     const auto & from_array = assert_cast<const DataTypeArray &>(*nested);
     const auto & from_tuple = assert_cast<const DataTypeTuple &>(*from_array.getNestedType());
     return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(from_tuple.getElements()));
-}
-
-void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) const
-{
-    callback(*key_type);
-    key_type->forEachChild(callback);
-    callback(*value_type);
-    value_type->forEachChild(callback);
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

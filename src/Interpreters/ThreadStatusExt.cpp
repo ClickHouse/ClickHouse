@@ -546,7 +546,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
     String res = serializeAST(*q);
-    if (auto masker = SensitiveDataMasker::getInstance())
+    if (auto * masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
     res = res.substr(0, context->getSettingsRef().log_queries_cut_to_length);

@@ -13,7 +13,6 @@
 #include <base/sort.h>
 
 #include <ranges>
-#include <Poco/Timestamp.h>
 
 namespace DB
 {
@@ -37,7 +36,7 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     zookeeper_path = storage.zookeeper_path;
     replica_path = storage.replica_path;
     logger_name = storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)";
-    log = getLogger(logger_name);
+    log = &Poco::Logger::get(logger_name);
 }
 
 
@@ -861,9 +860,6 @@ ActiveDataPartSet getPartNamesToMutate(
 
 int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback)
 {
-    if (pull_log_blocker.isCancelled())
-        throw Exception(ErrorCodes::ABORTED, "Log pulling is cancelled");
-
     std::lock_guard lock(update_mutations_mutex);
 
     Coordination::Stat mutations_stat;
@@ -1354,17 +1350,9 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     sum_parts_size_in_bytes += part_in_memory->block.bytes();
                 else
                     sum_parts_size_in_bytes += part->getBytesOnDisk();
-
-                if (entry.type == LogEntry::MUTATE_PART && !storage.mutation_backoff_policy.partCanBeMutated(part->name))
-                {
-                        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "
-                           "because recently it has failed. According to exponential backoff policy, put aside this log entry.";
-
-                        LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
-                        return false;
-                }
             }
         }
+
         if (merger_mutator.merges_blocker.isCancelled())
         {
             constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because merges and mutations are cancelled now.";
@@ -1798,7 +1786,7 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 }
 
 
-MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
+std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
     std::unique_lock lock(state_mutex);
 
@@ -1808,8 +1796,9 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
 
     Int64 part_data_version = part->info.getDataVersion();
     Int64 part_metadata_version = part->getMetadataVersion();
+    LOG_TEST(log, "Looking for mutations for part {} (part data version {}, part metadata version {})", part->name, part_data_version, part_metadata_version);
 
-    MutationCommands result;
+    std::map<int64_t, MutationCommands> result;
 
     bool seen_all_data_mutations = false;
     bool seen_all_metadata_mutations = false;
@@ -1822,15 +1811,7 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
         if (seen_all_data_mutations && seen_all_metadata_mutations)
             break;
 
-        auto & entry = mutation_status->entry;
-
-        auto add_to_result = [&] {
-            for (const auto & command : entry->commands | std::views::reverse)
-                if (AlterConversions::supportsMutationCommandType(command.type))
-                    result.emplace_back(command);
-        };
-
-        auto alter_version = entry->alter_version;
+        auto alter_version = mutation_status->entry->alter_version;
         if (alter_version != -1)
         {
             if (alter_version > storage.getInMemoryMetadataPtr()->getMetadataVersion())
@@ -1838,18 +1819,21 @@ MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const
 
             /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
-                add_to_result();
+                result[mutation_version] = mutation_status->entry->commands;
             else
                 seen_all_metadata_mutations = true;
         }
         else
         {
             if (mutation_version > part_data_version)
-                add_to_result();
+                result[mutation_version] = mutation_status->entry->commands;
             else
                 seen_all_data_mutations = true;
         }
     }
+
+    LOG_TEST(log, "Got {} commands for part {} (part data version {}, part metadata version {})",
+        result.size(), part->name, part_data_version, part_metadata_version);
 
     return result;
 }
@@ -2165,7 +2149,7 @@ LocalMergePredicate::LocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
 
 template<typename VirtualPartsT, typename MutationsStateT>
 CommittingBlocks BaseMergePredicate<VirtualPartsT, MutationsStateT>::getCommittingBlocks(
-    zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, LoggerPtr log_)
+    zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, Poco::Logger * log_)
 {
     CommittingBlocks committing_blocks;
 
@@ -2638,8 +2622,7 @@ String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & 
 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback,
-                                        std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode,
-                                        std::unordered_set<String> src_replicas)
+                                        std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode)
 {
     std::lock_guard<std::mutex> lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);
@@ -2656,57 +2639,14 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
             LogEntry::REPLACE_RANGE,
             LogEntry::DROP_PART
         };
-
-        std::unordered_set<String> existing_replicas;
-        if (!src_replicas.empty())
-        {
-            Strings unfiltered_hosts;
-            unfiltered_hosts = storage.getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-            for (const auto & host : unfiltered_hosts)
-                existing_replicas.insert(host);
-        }
-
         out_entry_names.reserve(queue.size());
-
         for (const auto & entry : queue)
         {
-            bool entry_matches = !lightweight_entries_only || std::find(lightweight_entries.begin(), lightweight_entries.end(), entry->type) != lightweight_entries.end();
-            if (!entry_matches)
-                continue;
-
-            // `src_replicas` is used for specified sets of replicas; however, we also account for
-            // entries from removed or unknown replicas. This is necessary because the `source_replica`
-            // field in a replication queue entry doesn't always indicate the current existence or state
-            // of the part in that replica. Therefore, we include entries from replicas not listed in zookeeper.
-            // The `need_wait_for_entry` condition ensures:
-            // 1. Waiting for entries from both specified (`src_replicas`) and potentially removed
-            //    or unknown replicas, as `source_replica` may not reflect the current part status.
-            // 2. Handling cases where parts become broken (e.g., due to a hard restart) leading to
-            //    changes in the source replica or empty `source_replica` fields.
-
-            // Example Scenario:
-            // - A part is added on replica1 and fetched by replica2. If the part on replica1 breaks and
-            //   replica1 schedules a re-fetch from another source, a GET_PART entry with an empty
-            //   `source_replica` may be created.
-            // - If replica3 is added and replica2 (with the intact part) is removed, SYNC .. FROM replica2
-            //   might not account for the re-fetch need from replica1, risking data inconsistencies.
-            // - Therefore, `need_wait_for_entry` considers entries with specified sources, those not in
-            //   zookeeper->getChildren(zookeeper_path + "/replicas"), and entries with empty `source_replica`.
-
-            bool is_entry_from_specified_replica = src_replicas.contains(entry->source_replica);
-
-            chassert(!existing_replicas.contains(""));
-            bool is_entry_from_removed_or_unknown_replica = !existing_replicas.contains(entry->source_replica) || entry->source_replica.empty();
-
-            bool need_wait_for_entry = src_replicas.empty() || is_entry_from_specified_replica || is_entry_from_removed_or_unknown_replica;
-
-            if (need_wait_for_entry)
-            {
+            if (!lightweight_entries_only
+                || std::find(lightweight_entries.begin(), lightweight_entries.end(), entry->type) != lightweight_entries.end())
                 out_entry_names.insert(entry->znode_name);
-            }
         }
-
-        LOG_TRACE(log, "Waiting for {} entries to be processed: {}", out_entry_names.size(), fmt::join(out_entry_names, ", "));
+        LOG_TEST(log, "Waiting for {} entries to be processed: {}", out_entry_names.size(), fmt::join(out_entry_names, ", "));
     }
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));

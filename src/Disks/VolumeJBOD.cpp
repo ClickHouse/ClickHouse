@@ -21,9 +21,7 @@ VolumeJBOD::VolumeJBOD(
     : IVolume(name_, config, config_prefix, disk_selector)
     , disks_by_size(disks.begin(), disks.end())
 {
-    LoggerPtr logger = getLogger("StorageConfiguration");
-
-    volume_priority = config.getUInt64(config_prefix + ".volume_priority", std::numeric_limits<UInt64>::max());
+    Poco::Logger * logger = &Poco::Logger::get("StorageConfiguration");
 
     auto has_max_bytes = config.has(config_prefix + ".max_data_part_size_bytes");
     auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");
@@ -87,7 +85,7 @@ VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
         DiskSelectorPtr disk_selector)
     : VolumeJBOD(volume_jbod.name, config, config_prefix, disk_selector)
 {
-    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override.load();
+    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override.load(std::memory_order_relaxed);
     last_used = volume_jbod.last_used.load(std::memory_order_relaxed);
 }
 

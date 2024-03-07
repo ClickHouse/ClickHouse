@@ -54,7 +54,7 @@ namespace
 UserDefinedSQLObjectsDiskStorage::UserDefinedSQLObjectsDiskStorage(const ContextPtr & global_context_, const String & dir_path_)
     : global_context(global_context_)
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
-    , log{getLogger("UserDefinedSQLObjectsLoaderFromDisk")}
+    , log{&Poco::Logger::get("UserDefinedSQLObjectsLoaderFromDisk")}
 {
     createDirectory();
 }

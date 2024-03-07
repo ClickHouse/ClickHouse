@@ -9,20 +9,19 @@
 
 namespace DB
 {
-ColumnsDescription StorageSystemUserDirectories::getColumnsDescription()
+NamesAndTypesList StorageSystemUserDirectories::getNamesAndTypes()
 {
-    /// TODO: Fill in all the comments.
-    return ColumnsDescription
-    {
+    NamesAndTypesList names_and_types{
         {"name", std::make_shared<DataTypeString>()},
         {"type", std::make_shared<DataTypeString>()},
         {"params", std::make_shared<DataTypeString>()},
         {"precedence", std::make_shared<DataTypeUInt64>()},
     };
+    return names_and_types;
 }
 
 
-void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     const auto & access_control = context->getAccessControl();
     auto storages = access_control.getStorages();

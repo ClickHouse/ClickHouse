@@ -38,7 +38,7 @@ public:
         const String & format_name_,
         std::unique_ptr<FileLogSettings> settings,
         const String & comment,
-        LoadingStrictnessLevel mode);
+        bool attach);
 
     using Files = std::vector<String>;
 
@@ -149,7 +149,7 @@ private:
     FileInfos file_infos;
 
     const String format_name;
-    LoggerPtr log;
+    Poco::Logger * log;
 
     DiskPtr disk;
 

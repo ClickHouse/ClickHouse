@@ -212,8 +212,6 @@ Possible values:
 
 Default value: `'basic'`.
 
-Cloud default value: `'best_effort'`.
-
 See also:
 
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
@@ -379,12 +377,6 @@ Allow parsing bools as numbers in JSON input formats.
 
 Enabled by default.
 
-## input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
-
-Allow parsing bools as strings in JSON input formats.
-
-Enabled by default.
-
 ## input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
 Allow parsing numbers as strings in JSON input formats.
@@ -467,7 +459,7 @@ Enabled by default.
 
 Allow to use String type for JSON keys that contain only `Null`/`{}`/`[]` in data sample during schema inference.
 In JSON formats any value can be read as String, and we can avoid errors like `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` during schema inference
-by using String type for keys with unknown types.
+by using String type for keys with unknown types. 
 
 Example:
 
@@ -891,7 +883,7 @@ Default value: `,`.
 
 If it is set to true, allow strings in single quotes.
 
-Disabled by default.
+Enabled by default.
 
 ### format_csv_allow_double_quotes {#format_csv_allow_double_quotes}
 
@@ -1271,28 +1263,6 @@ Possible values:
 
 Default value: `0`.
 
-### output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
-
-Use signed integer types instead of unsigned in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
-
-Possible values:
-
-- 0 — Unsigned integer types are used for indexes in `DICTIONARY` type.
-- 1 — Signed integer types are used for indexes in `DICTIONARY` type.
-
-Default value: `1`.
-
-### output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
-
-Use 64-bit integer type in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
-
-Possible values:
-
-- 0 — Type for indexes in `DICTIONARY` type is determined automatically.
-- 1 — 64-bit integer type is used for indexes in `DICTIONARY` type.
-
-Default value: `0`.
-
 ### output_format_arrow_string_as_string {#output_format_arrow_string_as_string}
 
 Use Arrow String type instead of Binary for String columns.
@@ -1599,13 +1569,7 @@ Result:
 
 Use ANSI escape sequences to paint colors in Pretty formats.
 
-possible values:
-
--   `0` — Disabled. Pretty formats do not use ANSI escape sequences.
--   `1` — Enabled. Pretty formats will use ANSI escape sequences except for `NoEscapes` formats.
--   `auto` - Enabled if `stdout` is a terminal except for `NoEscapes` formats.
-
-Default value is `auto`.
+Enabled by default.
 
 ### output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 
@@ -1656,42 +1620,11 @@ Result:
    └─────────────────────────┴─────────┘
 ```
 
-### output_format_pretty_single_large_number_tip_threshold {#output_format_pretty_single_large_number_tip_threshold}
-
-Print a readable number tip on the right side of the table if the block consists of a single number which exceeds
-this value (except 0).
-
-Possible values:
-
-- 0 — The readable number tip will not be printed.
-- Positive integer — The readable number tip will be printed if the single number exceeds this value.
-
-Default value: `1000000`.
-
-**Example**
-
-Query:
-
-```sql
-SELECT 1000000000 as a;
-```
-
-Result:
-```text
-┌──────────a─┐
-│ 1000000000 │ -- 1.00 billion
-└────────────┘
-```
-
 ## Template format settings {#template-format-settings}
 
 ### format_template_resultset {#format_template_resultset}
 
 Path to file which contains format string for result set (for Template format).
-
-### format_template_resultset_format {#format_template_resultset_format}
-
-Format string for result set (for Template format)
 
 ### format_template_row {#format_template_row}
 
@@ -1700,10 +1633,6 @@ Path to file which contains format string for rows (for Template format).
 ### format_template_rows_between_delimiter {#format_template_rows_between_delimiter}
 
 Delimiter between rows (for Template format).
-
-### format_template_row_format {#format_template_row_format}
-
-Format string for rows (for Template format)
 
 ## CustomSeparated format settings {custom-separated-format-settings}
 

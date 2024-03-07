@@ -20,11 +20,9 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemS3Queue::getColumnsDescription()
+NamesAndTypesList StorageSystemS3Queue::getNamesAndTypes()
 {
-    /// TODO: Fill in all the comments
-    return ColumnsDescription
-    {
+    return {
         {"zookeeper_path", std::make_shared<DataTypeString>()},
         {"file_name", std::make_shared<DataTypeString>()},
         {"rows_processed", std::make_shared<DataTypeUInt64>()},
@@ -37,11 +35,11 @@ ColumnsDescription StorageSystemS3Queue::getColumnsDescription()
 }
 
 StorageSystemS3Queue::StorageSystemS3Queue(const StorageID & table_id_)
-    : IStorageSystemOneBlock(table_id_, getColumnsDescription())
+    : IStorageSystemOneBlock(table_id_)
 {
 }
 
-void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     for (const auto & [zookeeper_path, metadata] : S3QueueMetadataFactory::instance().getAll())
     {

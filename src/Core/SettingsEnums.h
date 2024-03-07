@@ -6,7 +6,6 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
 #include <Common/ShellCommandSettings.h>
-#include <Parsers/ASTSQLSecurity.h>
 
 
 namespace DB
@@ -141,7 +140,6 @@ enum class DefaultTableEngine
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
-
 enum class CleanDeletedRows
 {
     Never = 0, /// Disable.
@@ -175,8 +173,6 @@ enum class DistributedDDLOutputMode
     THROW,
     NULL_STATUS_ON_TIMEOUT,
     NEVER_THROW,
-    THROW_ONLY_ACTIVE,
-    NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE,
 };
 
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
@@ -268,5 +264,4 @@ DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 
-DECLARE_SETTING_ENUM(SQLSecurityType)
 }

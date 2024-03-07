@@ -20,12 +20,11 @@ RUNNER_TYPE_LABELS = [
     "style-checker",
     "style-checker-aarch64",
     # private runners
+    "private-style-checker",
     "private-builder",
-    "private-clickpipes",
     "private-func-tester",
     "private-fuzzer-unit-tester",
     "private-stress-tester",
-    "private-style-checker",
 ]
 
 

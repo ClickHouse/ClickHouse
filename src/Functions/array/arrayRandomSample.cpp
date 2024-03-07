@@ -1,6 +1,5 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
@@ -81,7 +80,7 @@ public:
             const size_t cur_samples = std::min(num_elements, samples);
 
             indices.resize(num_elements);
-            iota(indices.data(), indices.size(), prev_array_offset);
+            std::iota(indices.begin(), indices.end(), prev_array_offset);
             std::shuffle(indices.begin(), indices.end(), rng);
 
             for (UInt64 i = 0; i < cur_samples; i++)

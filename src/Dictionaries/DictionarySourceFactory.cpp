@@ -65,7 +65,7 @@ namespace
 }
 
 
-DictionarySourceFactory::DictionarySourceFactory() : log(getLogger("DictionarySourceFactory"))
+DictionarySourceFactory::DictionarySourceFactory() : log(&Poco::Logger::get("DictionarySourceFactory"))
 {
 }
 

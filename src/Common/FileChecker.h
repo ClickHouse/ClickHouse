@@ -1,10 +1,8 @@
 #pragma once
 
 #include <Storages/CheckResults.h>
-#include <Common/Logger.h>
 #include <map>
 #include <base/types.h>
-#include <memory>
 #include <mutex>
 
 namespace Poco { class Logger; }
@@ -19,7 +17,7 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class FileChecker
 {
 public:
-    explicit FileChecker(const String & file_info_path_);
+    FileChecker(const String & file_info_path_);
     FileChecker(DiskPtr disk_, const String & file_info_path_);
 
     void setPath(const String & file_info_path_);
@@ -50,7 +48,7 @@ public:
 
     struct DataValidationTasks
     {
-        explicit DataValidationTasks(const std::map<String, size_t> & map_)
+        DataValidationTasks(const std::map<String, size_t> & map_)
             : map(map_), it(map.begin())
         {}
 
@@ -85,7 +83,7 @@ private:
     size_t getRealFileSize(const String & path_) const;
 
     const DiskPtr disk;
-    const LoggerPtr log;
+    const Poco::Logger * log;
 
     String files_info_path;
     std::map<String, size_t> map;

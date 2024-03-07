@@ -2796,17 +2796,6 @@ SELECT TOP 3 name, value FROM system.settings;
 3. │ max_block_size          │ 65505   │
    └─────────────────────────┴─────────┘
 ```
-### output_format_pretty_color {#output_format_pretty_color}
-
-Включает/выключает управляющие последовательности ANSI в форматах Pretty. 
-
-Возможные значения:
-
--   `0` — выключена. Не исползует ANSI последовательности в форматах Pretty.
--   `1` — включена. Исползует ANSI последовательности с исключением форматов `NoEscapes`.
--   `auto` - включена если `stdout` является терминалом с исключением форматов `NoEscapes`.
-
-Значение по умолчанию: `auto`
 
 ## system_events_show_zero_values {#system_events_show_zero_values}
 
@@ -3258,7 +3247,7 @@ SELECT * FROM test2;
 
 ## allow_experimental_live_view {#allow-experimental-live-view}
 
-Включает устаревшую возможность использования [LIVE-представлений](../../sql-reference/statements/create/view.md#live-view).
+Включает экспериментальную возможность использования [LIVE-представлений](../../sql-reference/statements/create/view.md#live-view).
 
 Возможные значения:
 - 0 — живые представления не поддерживаются.
@@ -3268,15 +3257,21 @@ SELECT * FROM test2;
 
 ## live_view_heartbeat_interval {#live-view-heartbeat-interval}
 
-Устарело.
+Задает интервал в секундах для периодической проверки существования [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view).
+
+Значение по умолчанию: `15`.
 
 ## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
 
-Устарело.
+Задает наибольшее число вставок, после которых запрос на формирование [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) исполняется снова.
+
+Значение по умолчанию: `64`.
 
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
-Устарело.
+Задает время в секундах, по истечении которого [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) с установленным автообновлением обновляется.
+
+Значение по умолчанию: `60`.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 

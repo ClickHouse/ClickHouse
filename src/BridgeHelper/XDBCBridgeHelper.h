@@ -65,7 +65,7 @@ public:
             const std::string & connection_string_,
             bool use_connection_pooling_)
         : IXDBCBridgeHelper(context_->getGlobalContext())
-        , log(getLogger(BridgeHelperMixin::getName() + "BridgeHelper"))
+        , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
         , connection_string(connection_string_)
         , use_connection_pooling(use_connection_pooling_)
         , http_timeout(http_timeout_)
@@ -123,7 +123,7 @@ protected:
 
     const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
 
-    LoggerPtr getLog() const override { return log; }
+    Poco::Logger * getLog() const override { return log; }
 
     bool startBridgeManually() const override { return BridgeHelperMixin::startBridgeManually(); }
 
@@ -146,7 +146,7 @@ protected:
 private:
     using Configuration = Poco::Util::AbstractConfiguration;
 
-    LoggerPtr log;
+    Poco::Logger * log;
     std::string connection_string;
     bool use_connection_pooling;
     Poco::Timespan http_timeout;

@@ -3,7 +3,6 @@
 #include <string>
 #include <vector>
 #include <Core/Block.h>
-#include <Common/re2.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -11,6 +10,15 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/ParsedTemplateFormatString.h>
 #include <Formats/SchemaInferenceUtils.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {

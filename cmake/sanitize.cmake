@@ -63,14 +63,14 @@ endif()
 option(WITH_COVERAGE "Instrumentation for code coverage with default implementation" OFF)
 
 if (WITH_COVERAGE)
-    message (STATUS "Enabled instrumentation for code coverage")
+    message (INFORMATION "Enabled instrumentation for code coverage")
     set(COVERAGE_FLAGS "-fprofile-instr-generate -fcoverage-mapping")
 endif()
 
 option (SANITIZE_COVERAGE "Instrumentation for code coverage with custom callbacks" OFF)
 
 if (SANITIZE_COVERAGE)
-    message (STATUS "Enabled instrumentation for code coverage")
+    message (INFORMATION "Enabled instrumentation for code coverage")
 
     # We set this define for whole build to indicate that at least some parts are compiled with coverage.
     # And to expose it in system.build_options.
@@ -79,10 +79,6 @@ if (SANITIZE_COVERAGE)
 
     # But the actual coverage will be enabled on per-library basis: for ClickHouse code, but not for 3rd-party.
     set (COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard,pc-table")
-
-    set (WITHOUT_COVERAGE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table")
-    set (WITHOUT_COVERAGE_FLAGS_LIST -fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table)
-else()
-    set (WITHOUT_COVERAGE_FLAGS "")
-    set (WITHOUT_COVERAGE_FLAGS_LIST "")
 endif()
+
+set (WITHOUT_COVERAGE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table")
