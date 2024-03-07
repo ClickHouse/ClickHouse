@@ -34,42 +34,37 @@
 
 
 template <typename T>
-int digits10(T x)
+inline int digits10(T x)
 {
-    if (x < T(10ULL))
+    if (x < 10ULL)
         return 1;
-    if (x < T(100ULL))
+    if (x < 100ULL)
         return 2;
-    if constexpr (sizeof(T) == 1)
+    if (x < 1000ULL)
         return 3;
-    else
+
+    if (x < 1000000000000ULL)
     {
-        if (x < T(1000ULL))
-            return 3;
-
-        if (x < T(1000000000000ULL))
+        if (x < 100000000ULL)
         {
-            if (x < T(100000000ULL))
+            if (x < 1000000ULL)
             {
-                if (x < T(1000000ULL))
-                {
-                    if (x < T(10000ULL))
-                        return 4;
-                    else
-                        return 5 + (x >= T(100000ULL));
-                }
-
-                return 7 + (x >= T(10000000ULL));
+                if (x < 10000ULL)
+                    return 4;
+                else
+                    return 5 + (x >= 100000ULL);
             }
 
-            if (x < T(10000000000ULL))
-                return 9 + (x >= T(1000000000ULL));
-
-            return 11 + (x >= T(100000000000ULL));
+            return 7 + (x >= 10000000ULL);
         }
 
-        return 12 + digits10(x / T(1000000000000ULL));
+        if (x < 10000000000ULL)
+            return 9 + (x >= 1000000000ULL);
+
+        return 11 + (x >= 100000000000ULL);
     }
+
+    return 12 + digits10(x / 1000000000000ULL);
 }
 
 
