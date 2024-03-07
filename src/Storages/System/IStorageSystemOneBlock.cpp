@@ -56,10 +56,9 @@ void IStorageSystemOneBlock::read(
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
-
 {
     storage_snapshot->check(column_names);
-    Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
+    Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
     std::vector<UInt8> columns_mask;
 
     if (supportsColumnsMask())
