@@ -8,7 +8,7 @@ from collections import namedtuple
 from typing import Any, Dict, Iterable, List, Optional
 
 import boto3  # type: ignore
-import requests  # type: ignore
+import requests
 
 RUNNER_TYPE_LABELS = [
     "builder",

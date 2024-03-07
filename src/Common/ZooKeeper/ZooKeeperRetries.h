@@ -5,8 +5,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 
-#include <memory>
-
 namespace DB
 {
 
@@ -220,8 +218,8 @@ private:
             return false;
         }
 
-        if (process_list_element && !process_list_element->checkTimeLimitSoft())
-            return false;
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
 
         /// retries
         logLastError("will retry due to error");

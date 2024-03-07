@@ -500,10 +500,11 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
                  on_exception,
                  process_list_element_holder = process_list_element ? process_list_element->getProcessListEntry() : nullptr]
                 {
-                    CurrentThread::QueryScope query_scope(context_in_use);
+                    setThreadName("BackupWorker");
                     BackupMutablePtr backup_async;
                     try
                     {
+                        CurrentThread::QueryScope query_scope(context_in_use);
                         doBackup(
                             backup_async,
                             backup_query,
@@ -877,9 +878,10 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
                  on_exception,
                  process_list_element_holder = process_list_element ? process_list_element->getProcessListEntry() : nullptr]
                 {
-                    CurrentThread::QueryScope query_scope(context_in_use);
+                    setThreadName("RestorerWorker");
                     try
                     {
+                        CurrentThread::QueryScope query_scope(context_in_use);
                         doRestore(
                             restore_query,
                             restore_id,
