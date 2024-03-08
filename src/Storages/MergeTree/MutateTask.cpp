@@ -1005,7 +1005,6 @@ using MutationContextPtr = std::shared_ptr<MutationContext>;
 class MergeProjectionPartsTask : public IExecutableTask
 {
 public:
-
     MergeProjectionPartsTask(
         String name_,
         MergeTreeData::MutableDataPartsVector && parts_,

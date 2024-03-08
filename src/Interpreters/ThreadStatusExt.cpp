@@ -151,15 +151,21 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group)
     /// might be nullptr
     prev_thread_group = CurrentThread::getGroup();
 
-    CurrentThread::detachFromGroupIfNotDetached();
-    CurrentThread::attachToGroup(thread_group);
+    if (thread_group != prev_thread_group)
+    {
+        CurrentThread::detachFromGroupIfNotDetached();
+        CurrentThread::attachToGroup(thread_group);
+    }
 }
 
 ThreadGroupSwitcher::~ThreadGroupSwitcher()
 {
-    CurrentThread::detachFromGroupIfNotDetached();
-    if (prev_thread_group)
-        CurrentThread::attachToGroup(prev_thread_group);
+    if (CurrentThread::getGroup() != prev_thread_group)
+    {
+        CurrentThread::detachFromGroupIfNotDetached();
+        if (prev_thread_group)
+            CurrentThread::attachToGroup(prev_thread_group);
+    }
 }
 
 void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)

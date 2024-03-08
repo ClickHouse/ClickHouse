@@ -161,7 +161,6 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
         return false;
     };
 
-
     auto execute_fetch = [&] (bool need_to_check_missing_part) -> bool
     {
         if (storage.executeFetch(entry, need_to_check_missing_part))
@@ -170,10 +169,9 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
         return false;
     };
 
-
     switch (state)
     {
-        case State::NEED_PREPARE :
+        case State::NEED_PREPARE:
         {
             {
                 auto res = checkExistingPart();
@@ -193,7 +191,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             state = State::NEED_EXECUTE_INNER_MERGE;
             return true;
         }
-        case State::NEED_EXECUTE_INNER_MERGE :
+        case State::NEED_EXECUTE_INNER_MERGE:
         {
             try
             {
@@ -212,7 +210,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 
             return true;
         }
-        case State::NEED_FINALIZE :
+        case State::NEED_FINALIZE:
         {
             try
             {
@@ -228,7 +226,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 
             return remove_processed_entry();
         }
-        case State::SUCCESS :
+        case State::SUCCESS:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Do not call execute on previously succeeded task");
         }
