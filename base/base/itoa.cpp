@@ -34,7 +34,6 @@
 
 namespace
 {
-
 template <typename T>
 ALWAYS_INLINE inline constexpr T pow10(size_t x)
 {
@@ -117,7 +116,6 @@ QuotientAndRemainder<N> inline split(UnsignedOfSize<N> value)
     return {quotient, remainder};
 }
 
-
 ALWAYS_INLINE inline char * outDigit(char * p, uint8_t value)
 {
     *p = '0' + value;
@@ -146,7 +144,6 @@ ALWAYS_INLINE inline char * outTwoDigits(char * p, uint8_t value)
     p += 2;
     return p;
 }
-
 
 namespace convert
 {
@@ -296,7 +293,6 @@ ALWAYS_INLINE inline char * itoa(I i, char * p)
 }
 }
 
-
 const uint64_t max_multiple_of_hundred_that_fits_in_64_bits = 1'00'00'00'00'00'00'00'00'00ull;
 const int max_multiple_of_hundred_blocks = 9;
 static_assert(max_multiple_of_hundred_that_fits_in_64_bits % 100 == 0);
@@ -411,7 +407,6 @@ ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
     return highest_part_print;
 }
 
-
 ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
 {
     *pos = '-';
@@ -450,7 +445,6 @@ ALWAYS_INLINE inline char * writeSIntText(T x, char * pos)
     return writeUIntText(UnsignedT(x), pos);
 }
 }
-
 
 char * itoa(UInt8 i, char * p)
 {
