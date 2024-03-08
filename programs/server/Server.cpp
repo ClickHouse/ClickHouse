@@ -1768,7 +1768,8 @@ try
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
             global_context,
             server_settings.async_insert_threads,
-            server_settings.async_insert_queue_flush_on_shutdown));
+            server_settings.async_insert_queue_flush_on_shutdown,
+            server_settings.max_pending_async_inserts));
     }
 
     /// Set path for format schema files

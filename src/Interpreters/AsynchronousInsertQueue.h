@@ -9,7 +9,9 @@
 #include <Common/ThreadPool.h>
 #include <Processors/Chunk.h>
 
+#include <atomic>
 #include <future>
+#include <mutex>
 #include <shared_mutex>
 #include <variant>
 
@@ -23,7 +25,7 @@ class AsynchronousInsertQueue : public WithContext
 public:
     using Milliseconds = std::chrono::milliseconds;
 
-    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_);
+    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_, size_t max_pending_inserts_);
     ~AsynchronousInsertQueue();
 
     struct PushResult
@@ -246,13 +248,16 @@ private:
     std::atomic<bool> flush_stopped{false};
 
     /// A mutex that prevents concurrent forced flushes of queue.
-    mutable std::mutex flush_mutex;
+    mutable std::timed_mutex flush_mutex;
 
     /// Dump the data only inside this pool.
     ThreadPool pool;
 
     /// Uses async_insert_busy_timeout_ms and processBatchDeadlines()
     std::vector<ThreadFromGlobalPool> dump_by_first_update_threads;
+
+    std::atomic_int64_t pending_inserts{0};
+    const int64_t max_pending_inserts;
 
     LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
@@ -269,7 +274,7 @@ private:
     void processBatchDeadlines(size_t shard_num);
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num);
 
-    static void processData(
+    void processData(
         InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
@@ -291,6 +296,10 @@ private:
 
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
+
+    void flushAllImpl(std::timed_mutex & l);
+
+    void checkQueueLimit(std::chrono::seconds wait_timeout);
 
 public:
     auto getQueueLocked(size_t shard_num) const
