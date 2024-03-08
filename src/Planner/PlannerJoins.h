@@ -157,7 +157,6 @@ public:
 
     bool hasMixedFilterCondition() const
     {
-        // return has_mixed_filter_condition;
         return !mixed_filter_condition_nodes.empty();
     }
     /// Dump clause into buffer
