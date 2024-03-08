@@ -23,11 +23,6 @@ SELECT * FROM alter_attach ORDER BY x;
 ALTER TABLE alter_attach ATTACH PARTITION 2;
 SELECT * FROM alter_attach ORDER BY x;
 
-ALTER TABLE alter_attach DETACH PARTITION ALL;
-SELECT * FROM alter_attach ORDER BY x;
-ALTER TABLE alter_attach ATTACH PARTITION ALL;
-SELECT * FROM alter_attach ORDER BY x;
-
 DROP TABLE IF EXISTS detach_all_no_partition;
 CREATE TABLE detach_all_no_partition (x UInt64, p UInt8) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO detach_all_no_partition VALUES (1, 1), (2, 1), (3, 1);
@@ -93,5 +88,45 @@ ALTER TABLE partition_all2 FREEZE PARTITION ALL; -- { serverError 344 }
 CHECK TABLE partition_all2 PARTITION ALL; -- { serverError 344 }
 OPTIMIZE TABLE partition_all2 PARTITION ALL; -- { serverError 344 }
 
+-- test ATTACH ALL
+CREATE TABLE partition_attach_all (x UInt64, p UInt8) ENGINE = MergeTree ORDER BY x PARTITION BY p;
+INSERT INTO partition_attach_all VALUES (1, 1), (2, 2), (3, 3);
+
+ALTER TABLE partition_attach_all DETACH PARTITION ALL;
+SELECT * FROM partition_attach_all ORDER BY x;
+ALTER TABLE partition_attach_all ATTACH PARTITION ALL;
+SELECT * FROM partition_attach_all ORDER BY x;
+
+ALTER TABLE partition_attach_all DETACH PARTITION 1;
+SELECT * FROM partition_attach_all ORDER BY x;
+ALTER TABLE partition_attach_all ATTACH PARTITION ALL;
+SELECT * FROM partition_attach_all ORDER BY x;
+
+ALTER TABLE partition_attach_all DROP PARTITION ALL;
+SELECT * FROM partition_attach_all ORDER BY x;
+ALTER TABLE partition_attach_all ATTACH PARTITION ALL;
+SELECT * FROM partition_attach_all ORDER BY x;
+
+CREATE TABLE replicated_partition_attach_all (x UInt64, p UInt8)
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00753_{database}/replicated_partition_attach_all', '1')
+        ORDER BY x
+        PARTITION BY p;
+
+ALTER TABLE replicated_partition_attach_all DETACH PARTITION ALL;
+SELECT * FROM replicated_partition_attach_all ORDER BY x;
+ALTER TABLE replicated_partition_attach_all ATTACH PARTITION ALL;
+SELECT * FROM replicated_partition_attach_all ORDER BY x;
+
+ALTER TABLE replicated_partition_attach_all DETACH PARTITION 1;
+SELECT * FROM replicated_partition_attach_all ORDER BY x;
+ALTER TABLE replicated_partition_attach_all ATTACH PARTITION ALL;
+SELECT * FROM replicated_partition_attach_all ORDER BY x;
+
+ALTER TABLE replicated_partition_attach_all DROP PARTITION ALL;
+SELECT * FROM replicated_partition_attach_all ORDER BY x;
+ALTER TABLE replicated_partition_attach_all ATTACH PARTITION ALL;
+SELECT * FROM replicated_partition_attach_all ORDER BY x;
+
 DROP TABLE partition_all;
 DROP TABLE partition_all2;
+DROP TABLE partition_attach_all;
