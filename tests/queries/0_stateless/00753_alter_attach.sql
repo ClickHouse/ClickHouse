@@ -88,6 +88,9 @@ ALTER TABLE partition_all2 FREEZE PARTITION ALL; -- { serverError 344 }
 CHECK TABLE partition_all2 PARTITION ALL; -- { serverError 344 }
 OPTIMIZE TABLE partition_all2 PARTITION ALL; -- { serverError 344 }
 
+DROP TABLE partition_all;
+DROP TABLE partition_all2;
+
 -- test ATTACH ALL
 CREATE TABLE partition_attach_all (x UInt64, p UInt8) ENGINE = MergeTree ORDER BY x PARTITION BY p;
 INSERT INTO partition_attach_all VALUES (1, 1), (2, 2), (3, 3);
@@ -127,6 +130,5 @@ SELECT * FROM replicated_partition_attach_all ORDER BY x;
 ALTER TABLE replicated_partition_attach_all ATTACH PARTITION ALL;
 SELECT * FROM replicated_partition_attach_all ORDER BY x;
 
-DROP TABLE partition_all;
-DROP TABLE partition_all2;
 DROP TABLE partition_attach_all;
+DROP TABLE replicated_partition_attach_all;
