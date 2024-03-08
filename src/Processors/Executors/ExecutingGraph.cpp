@@ -1,6 +1,7 @@
 #include <Processors/Executors/ExecutingGraph.h>
 #include <stack>
 #include <Common/Stopwatch.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -279,9 +280,23 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
                 try
                 {
                     auto & processor = *node.processor;
+
+                    auto & thread_status = CurrentThread::get();
+                    auto prev_alloc_bytes = thread_status.alloc_bytes;
+                    auto prev_alloc_calls = thread_status.alloc_calls;
+                    auto prev_free_bytes = thread_status.free_bytes;
+                    auto prev_free_calls = thread_status.free_calls;
+
                     IProcessor::Status last_status = node.last_processor_status;
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
+
+                    IProcessor::ProcessorMemStats mem_stats;
+                    mem_stats.alloc_bytes = thread_status.alloc_bytes - prev_alloc_bytes;
+                    mem_stats.alloc_calls = thread_status.alloc_calls - prev_alloc_calls;
+                    mem_stats.free_bytes = thread_status.free_bytes - prev_free_bytes;
+                    mem_stats.free_calls = thread_status.free_calls - prev_free_calls;
+                    processor.traceMemoryStats(mem_stats);
 
                     if (profile_processors)
                     {

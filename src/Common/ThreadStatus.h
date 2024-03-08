@@ -188,6 +188,10 @@ public:
     Progress progress_in;
     Progress progress_out;
 
+    UInt64 alloc_bytes = 0;
+    UInt64 alloc_calls = 0;
+    UInt64 free_bytes = 0;
+    UInt64 free_calls = 0;
 private:
     /// Group of threads, to which this thread attached
     ThreadGroupPtr thread_group;

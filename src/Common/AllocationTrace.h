@@ -12,6 +12,7 @@ struct AllocationTrace
 
     ALWAYS_INLINE void onAlloc(void * ptr, size_t size) const
     {
+        updateThreadStatusOnAlloc(size);
         if (likely(sample_probability <= 0))
             return;
 
@@ -20,6 +21,7 @@ struct AllocationTrace
 
     ALWAYS_INLINE void onFree(void * ptr, size_t size) const
     {
+        updateThreadStatusOnFree(size);
         if (likely(sample_probability <= 0))
             return;
 
@@ -29,6 +31,8 @@ struct AllocationTrace
 private:
     double sample_probability = 0;
 
+    void updateThreadStatusOnAlloc(size_t size) const;
+    void updateThreadStatusOnFree(size_t size) const;
     void onAllocImpl(void * ptr, size_t size) const;
     void onFreeImpl(void * ptr, size_t size) const;
 };

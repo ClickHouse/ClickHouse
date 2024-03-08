@@ -2,6 +2,9 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/Stopwatch.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Common/CurrentThread.h>
+
+#include <iostream>
 
 namespace DB
 {
@@ -44,7 +47,20 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 {
     try
     {
+        auto & thread_status = CurrentThread::get();
+        auto prev_alloc_bytes = thread_status.alloc_bytes;
+        auto prev_alloc_calls = thread_status.alloc_calls;
+        auto prev_free_bytes = thread_status.free_bytes;
+        auto prev_free_calls = thread_status.free_calls;
+
         node->processor->work();
+
+        IProcessor::ProcessorMemStats mem_stats;
+        mem_stats.alloc_bytes = thread_status.alloc_bytes - prev_alloc_bytes;
+        mem_stats.alloc_calls = thread_status.alloc_calls - prev_alloc_calls;
+        mem_stats.free_bytes = thread_status.free_bytes - prev_free_bytes;
+        mem_stats.free_calls = thread_status.free_calls - prev_free_calls;
+        node->processor->traceMemoryStats(mem_stats);
 
         /// Update read progress only for source nodes.
         bool is_source = node->back_edges.empty();

@@ -41,6 +41,15 @@ ColumnsDescription ProcessorProfileLogElement::getColumnsDescription()
         {"input_bytes", std::make_shared<DataTypeUInt64>()},
         {"output_rows", std::make_shared<DataTypeUInt64>()},
         {"output_bytes", std::make_shared<DataTypeUInt64>()},
+        {"input_blocks", std::make_shared<DataTypeUInt64>()},
+        {"input_allocated_bytes", std::make_shared<DataTypeUInt64>()},
+        {"output_blocks", std::make_shared<DataTypeUInt64>()},
+        {"output_allocated_bytes", std::make_shared<DataTypeUInt64>()},
+        {"alloc_bytes", std::make_shared<DataTypeUInt64>()},
+        {"alloc_calls", std::make_shared<DataTypeUInt64>()},
+        {"free_bytes", std::make_shared<DataTypeUInt64>()},
+        {"free_calls", std::make_shared<DataTypeUInt64>()},
+        {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
     };
 }
 
@@ -74,6 +83,15 @@ void ProcessorProfileLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(input_bytes);
     columns[i++]->insert(output_rows);
     columns[i++]->insert(output_bytes);
+    columns[i++]->insert(input_blocks);
+    columns[i++]->insert(input_allocated_bytes);
+    columns[i++]->insert(output_blocks);
+    columns[i++]->insert(output_allocated_bytes);
+    columns[i++]->insert(alloc_bytes);
+    columns[i++]->insert(alloc_calls);
+    columns[i++]->insert(free_bytes);
+    columns[i++]->insert(free_calls);
+    columns[i++]->insert(peak_memory_usage);
 }
 
 
