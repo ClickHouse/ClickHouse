@@ -1992,19 +1992,18 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
     auto str_hash = DB::toString(node_with_hash.hash);
 
-    bool can_use_global_scalars = !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
+    bool can_use_global_scalars = !only_analyze && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
 
     auto & scalars_cache = can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local;
-    auto scalar_value_it = scalars_cache.find(node_with_hash);
 
-    if (scalar_value_it != scalars_cache.end())
+    if (scalars_cache.contains(node_with_hash))
     {
         if (can_use_global_scalars)
             ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
         else
             ProfileEvents::increment(ProfileEvents::ScalarSubqueriesLocalCacheHit);
 
-        scalar_block = scalar_value_it->second;
+        scalar_block = scalars_cache.at(node_with_hash);
     }
     else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
     {
