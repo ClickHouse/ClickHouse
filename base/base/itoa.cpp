@@ -165,16 +165,16 @@ ALWAYS_INLINE inline char * outDigit(char * p, uint8_t value)
 // into ascii characters as described by Andrei Alexandrescu in
 // https://www.facebook.com/notes/facebook-engineering/three-optimization-tips-for-c/10151361643253920/
 
-static const char digits[201] = "00010203040506070809"
-                                "10111213141516171819"
-                                "20212223242526272829"
-                                "30313233343536373839"
-                                "40414243444546474849"
-                                "50515253545556575859"
-                                "60616263646566676869"
-                                "70717273747576777879"
-                                "80818283848586878889"
-                                "90919293949596979899";
+const char digits[201] = "00010203040506070809"
+                         "10111213141516171819"
+                         "20212223242526272829"
+                         "30313233343536373839"
+                         "40414243444546474849"
+                         "50515253545556575859"
+                         "60616263646566676869"
+                         "70717273747576777879"
+                         "80818283848586878889"
+                         "90919293949596979899";
 
 ALWAYS_INLINE inline char * outTwoDigits(char * p, uint8_t value)
 {
@@ -334,23 +334,24 @@ ALWAYS_INLINE inline char * itoa(I i, char * p)
 
 
 const uint64_t max_multiple_of_hundred_that_fits_in_64_bits = 1'00'00'00'00'00'00'00'00'00ull;
-constexpr int max_multiple_of_hundred_blocks = 9;
+const int max_multiple_of_hundred_blocks = 9;
 static_assert(max_multiple_of_hundred_that_fits_in_64_bits % 100 == 0);
 
 ALWAYS_INLINE inline char * writeUIntText(UInt128 _x, char * p)
 {
-    /// If we the highest 8 byte item is empty, we can print only the lowest item as i64
+    /// If we the highest 64bit item is empty, we can print just the lowest item as u64
     if (_x.items[UInt128::_impl::little(1)] == 0)
         return convert::itoa(_x.items[UInt128::_impl::little(0)], p);
 
-    /// Doing operations using __int128 is faster, as we already rely on this feature
+    /// Doing operations using __int128 is faster and we already rely on this feature
     using T = unsigned __int128;
     T x = (T(_x.items[UInt128::_impl::little(1)]) << 64) + T(_x.items[UInt128::_impl::little(0)]);
 
     /// We are going to accumulate blocks of 2 digits to print until the number is small enough to be printed as u64
     /// To do this we could do: x / 100, x % 100
-    /// But this is too many iterations with long integers, so instead we can divide by a much longer integer
-    /// max_multiple_of_hundred_that_fits_in_64_bits and then get the blocks out of this (as u64)
+    /// But these would mean doing many iterations with long integers, so instead we divide by a much longer integer
+    /// multiple of 100 (100^9) and then get the blocks out of it (as u64)
+    /// Once we reach u64::max we can stop and use the fast method to print that in the front
     static const T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
     static const T largest_uint64 = std::numeric_limits<uint64_t>::max();
     uint8_t two_values[20] = {0}; // 39 Max characters / 2
@@ -358,15 +359,15 @@ ALWAYS_INLINE inline char * writeUIntText(UInt128 _x, char * p)
     int current_block = 0;
     while (x > largest_uint64)
     {
-        uint64_t remainder = uint64_t(x % large_divisor);
+        uint64_t u64_remainder = uint64_t(x % large_divisor);
         x /= large_divisor;
 
         int pos = current_block;
-        while (remainder)
+        while (u64_remainder)
         {
-            two_values[pos] = uint8_t(remainder % 100);
+            two_values[pos] = uint8_t(u64_remainder % 100);
             pos++;
-            remainder /= 100;
+            u64_remainder /= 100;
         }
         current_block += max_multiple_of_hundred_blocks;
     }
@@ -417,15 +418,15 @@ ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
 
     while (x > largest_uint128)
     {
-        uint64_t remainder = uint64_t(x % large_divisor);
+        uint64_t u64_remainder = uint64_t(x % large_divisor);
         x /= large_divisor;
 
         int pos = current_pos;
-        while (remainder)
+        while (u64_remainder)
         {
-            two_values[pos] = uint8_t(remainder % 100);
+            two_values[pos] = uint8_t(u64_remainder % 100);
             pos++;
-            remainder /= 100;
+            u64_remainder /= 100;
         }
         current_pos += max_multiple_of_hundred_blocks;
     }
