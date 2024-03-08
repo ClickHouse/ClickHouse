@@ -42,5 +42,10 @@ WHERE test2.col1 IS NOT NULL
 ORDER BY test2.col1
 ;
 
+SELECT col2, col2 + 1 FROM test1
+FULL OUTER JOIN test2 USING (col1)
+PREWHERE (col2 * 2) :: UInt8
+;
+
 DROP TABLE IF EXISTS test1;
 DROP TABLE IF EXISTS test2;

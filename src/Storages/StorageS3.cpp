@@ -161,7 +161,7 @@ public:
         , num_streams(num_streams_)
     {
         query_configuration = storage.updateConfigurationAndGetCopy(context);
-        virtual_columns = storage.getVirtuals();
+        virtual_columns = storage.getVirtualsList();
     }
 
 private:
@@ -258,45 +258,46 @@ private:
 
     KeyWithInfoPtr nextAssumeLocked()
     {
-        if (buffer_iter != buffer.end())
+        do
         {
-            auto answer = *buffer_iter;
-            ++buffer_iter;
-
-            /// If url doesn't contain globs, we didn't list s3 bucket and didn't get object info for the key.
-            /// So we get object info lazily here on 'next()' request.
-            if (!answer->info)
+            if (buffer_iter != buffer.end())
             {
-                answer->info = S3::getObjectInfo(*client, globbed_uri.bucket, answer->key, globbed_uri.version_id, request_settings);
-                if (file_progress_callback)
-                    file_progress_callback(FileProgress(0, answer->info->size));
+                auto answer = *buffer_iter;
+                ++buffer_iter;
+
+                /// If url doesn't contain globs, we didn't list s3 bucket and didn't get object info for the key.
+                /// So we get object info lazily here on 'next()' request.
+                if (!answer->info)
+                {
+                    answer->info = S3::getObjectInfo(*client, globbed_uri.bucket, answer->key, globbed_uri.version_id, request_settings);
+                    if (file_progress_callback)
+                        file_progress_callback(FileProgress(0, answer->info->size));
+                }
+
+                return answer;
             }
 
-            return answer;
-        }
+            if (is_finished)
+                return {};
 
-        if (is_finished)
-            return {};
-
-        try
-        {
-            fillInternalBufferAssumeLocked();
-        }
-        catch (...)
-        {
-            /// In case of exception thrown while listing new batch of files
-            /// iterator may be partially initialized and its further using may lead to UB.
-            /// Iterator is used by several processors from several threads and
-            /// it may take some time for threads to stop processors and they
-            /// may still use this iterator after exception is thrown.
-            /// To avoid this UB, reset the buffer and return defaults for further calls.
-            is_finished = true;
-            buffer.clear();
-            buffer_iter = buffer.begin();
-            throw;
-        }
-
-        return nextAssumeLocked();
+            try
+            {
+                fillInternalBufferAssumeLocked();
+            }
+            catch (...)
+            {
+                /// In case of exception thrown while listing new batch of files
+                /// iterator may be partially initialized and its further using may lead to UB.
+                /// Iterator is used by several processors from several threads and
+                /// it may take some time for threads to stop processors and they
+                /// may still use this iterator after exception is thrown.
+                /// To avoid this UB, reset the buffer and return defaults for further calls.
+                is_finished = true;
+                buffer.clear();
+                buffer_iter = buffer.begin();
+                throw;
+            }
+        } while (true);
     }
 
     void fillInternalBufferAssumeLocked()
@@ -1083,8 +1084,7 @@ StorageS3::StorageS3(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
@@ -1151,7 +1151,7 @@ void StorageS3::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), virtual_columns);
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
@@ -1982,16 +1982,6 @@ void registerStorageCOS(StorageFactory & factory)
 void registerStorageOSS(StorageFactory & factory)
 {
     return registerStorageS3Impl("OSS", factory);
-}
-
-NamesAndTypesList StorageS3::getVirtuals() const
-{
-    return virtual_columns;
-}
-
-Names StorageS3::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 bool StorageS3::supportsPartitionBy() const
