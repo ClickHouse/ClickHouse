@@ -8,7 +8,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
-#include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
 #include <base/sleep.h>
@@ -291,8 +290,7 @@ void CgroupsMemoryUsageObserver::runThread()
                 last_memory_amount = memory_limit;
                 /// if we find memory amount changes, we just reload config.
                 /// Reloading config will check the memory amount again and calculate soft/hard limit again.
-                auto global_context = getContext()->getGlobalContext();
-                global_context->reloadConfig();
+                on_memory_limit_update();
             }
             std::lock_guard<std::mutex> set_limit_lock(set_limit_mutex);
             if (soft_limit > 0 && hard_limit > 0)

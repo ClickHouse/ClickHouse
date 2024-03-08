@@ -1701,6 +1701,11 @@ try
         throw;
     }
 
+    if (cgroups_memory_usage_observer)
+        cgroups_memory_usage_observer->setOnMemoryLimitUpdate([&](){
+            main_config_reloader->reload();
+        });
+
     /// Reload config in SYSTEM RELOAD CONFIG query.
     global_context->setConfigReloadCallback([&]()
     {
