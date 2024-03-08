@@ -22,6 +22,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
+#include <Common/SignalHandlers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatFactory.h>
@@ -300,7 +301,13 @@ public:
 };
 
 
-ClientBase::~ClientBase() = default;
+ClientBase::~ClientBase()
+{
+    writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    signal_listener_thread.join();
+    HandledSignals::instance().reset();
+}
+
 ClientBase::ClientBase() = default;
 
 
@@ -3007,6 +3014,14 @@ void ClientBase::init(int argc, char ** argv)
     }
 
     has_log_comment = config().has("log_comment");
+
+    /// Print stacktrace in case of crash
+    HandledSignals::instance().setupCommonDeadlySignalHandlers();
+
+    fatal_channel_ptr = new Poco::ConsoleChannel;
+    fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_TRACE);
+    signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
+    signal_listener_thread.start(*signal_listener);
 }
 
 }

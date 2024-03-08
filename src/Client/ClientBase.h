@@ -10,6 +10,7 @@
 #include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
 #include <Poco/Util/Application.h>
+#include <Poco/ConsoleChannel.h>
 #include <Interpreters/Context.h>
 #include <Client/Suggest.h>
 #include <Client/QueryFuzzer.h>
@@ -191,6 +192,11 @@ protected:
     /// since other members can use them.
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
+
+    LoggerPtr fatal_log;
+    Poco::AutoPtr<Poco::Channel> fatal_channel_ptr;
+    Poco::Thread signal_listener_thread;
+    std::unique_ptr<Poco::Runnable> signal_listener;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
