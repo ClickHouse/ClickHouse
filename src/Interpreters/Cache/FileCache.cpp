@@ -27,6 +27,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheReserveMicroseconds;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
+    extern const Event FilesystemCacheReserveLockFailed;
 }
 
 namespace DB
@@ -781,7 +782,17 @@ bool FileCache::tryReserve(
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
 
     assertInitialized();
-    auto cache_lock = lockCache();
+    auto cache_lock = tryLockCache();
+    if (!cache_lock)
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheReserveLockFailed);
+
+        LOG_TEST(
+            log, "Didn't reserve space due to lock contention (while reserving for {}:{})",
+            file_segment.key(), file_segment.offset());
+
+        return false;
+    }
 
     LOG_TEST(
         log, "Trying to reserve space ({} bytes) for {}:{}, current usage {}/{}",
