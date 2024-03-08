@@ -460,6 +460,7 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
             DefaultPartialSort());
 }
 
+
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
@@ -471,32 +472,35 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     if (0 == col_size)
         return res;
 
-    Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
-    res_chars.reserve_exact(chars.size() / col_size * replicate_offsets.back());
-    res_offsets.reserve_exact(replicate_offsets.back());
+    res_offsets.resize_exact(replicate_offsets.back());
 
-    Offset prev_replicate_offset = 0;
-    Offset prev_string_offset = 0;
-    Offset current_new_offset = 0;
-
+    Chars & res_chars = res->chars;
+    size_t res_chars_size = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
-        size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
-        size_t string_size = offsets[i] - prev_string_offset;
+        size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
+        size_t string_size = offsets[i] - offsets[i - 1];
+        res_chars_size += size_to_replicate * string_size;
+    }
+    res_chars.resize_exact(res_chars_size);
 
+    size_t curr_row = 0;
+    size_t curr_offset = 0;
+    for (size_t i = 0; i < col_size; ++i)
+    {
+        const size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
+        const size_t string_size = offsets[i] - offsets[i-1];
+        const UInt8 * src = &chars[offsets[i - 1]];
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
-            current_new_offset += string_size;
-            res_offsets.push_back(current_new_offset);
-
-            res_chars.resize(res_chars.size() + string_size);
             memcpySmallAllowReadWriteOverflow15(
-                &res_chars[res_chars.size() - string_size], &chars[prev_string_offset], string_size);
-        }
+                &res_chars[curr_offset], src, string_size);
 
-        prev_replicate_offset = replicate_offsets[i];
-        prev_string_offset = offsets[i];
+            curr_offset += string_size;
+            res_offsets[curr_row] = curr_offset;
+            ++curr_row;
+        }
     }
 
     return res;
