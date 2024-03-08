@@ -471,6 +471,7 @@ private:
     bool empty() const;
 
     void validateAdditionalFilterExpression(ExpressionActionsPtr additional_filter_expression);
+    bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 };
 
 }

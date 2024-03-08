@@ -149,7 +149,7 @@ public:
     {
         mixed_filter_condition_nodes.push_back(condition_node);
     }
-    
+
     const ActionsDAG::NodeRawConstPtrs & getMixedFilterConditionNodes() const
     {
         return mixed_filter_condition_nodes;
