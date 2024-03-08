@@ -4336,6 +4336,18 @@ Possible values:
 
 Default value: `0`.
 
+
+## function_locate_has_mysql_compatible_argument_order {#function-locate-has-mysql-compatible-argument-order}
+
+Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md#locate).
+
+Possible values:
+
+- 0 — Function `locate` accepts arguments `(haystack, needle[, start_pos])`.
+- 1 — Function `locate` accepts arguments `(needle, haystack, [, start_pos])` (MySQL-compatible behavior)
+
+Default value: `1`.
+
 ## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
