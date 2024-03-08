@@ -57,8 +57,20 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     sudo mv /etc/clickhouse-server/config.d/zookeeper.xml.tmp /etc/clickhouse-server/config.d/zookeeper.xml
 
     # it contains some new settings, but we can safely remove it
+    rm /etc/clickhouse-server/config.d/handlers.yaml
     rm /etc/clickhouse-server/users.d/s3_cache_new.xml
     rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
+
+    function remove_keeper_config()
+    {
+        sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+          | sed "/<$1>$2<\/$1>/d" \
+          > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+        sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+    }
+    # commit_logs_cache_size_threshold setting doesn't exist on some older versions
+    remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
+    remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
 fi
 
 # For flaky check we also enable thread fuzzer

@@ -165,9 +165,6 @@ jobs:
       test_name: Docker server image
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
-        python3 docker_server.py --release-type head --no-push \
-          --image-repo clickhouse/clickhouse-server --image-path docker/server --allow-build-reuse
   DockerKeeperImage:
     needs: [RunConfig, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
@@ -176,9 +173,6 @@ jobs:
       test_name: Docker keeper image
       runner_type: style-checker
       data: ${{ needs.RunConfig.outputs.data }}
-      run_command: |
-        python3 docker_server.py --release-type head --no-push \
-          --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper --allow-build-reuse
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
@@ -197,14 +191,8 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
-      runner_type: style-checker
+      runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
-      additional_envs: |
-        NEEDS_DATA<<NDENV
-        ${{ toJSON(needs) }}
-        NDENV
-      run_command: |
-        python3 build_report_check.py "$CHECK_NAME"
   BuilderSpecialReport:
     # run report check for failed builds to indicate the CI error
     if: ${{ !cancelled() }}
@@ -215,26 +203,36 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse special build check
-      runner_type: style-checker
+      runner_type: style-checker-aarch64
       data: ${{ needs.RunConfig.outputs.data }}
-      additional_envs: |
-        NEEDS_DATA<<NDENV
-        ${{ toJSON(needs) }}
-        NDENV
-      run_command: |
-        python3 build_report_check.py "$CHECK_NAME"
   MarkReleaseReady:
-    if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
+    if: ${{ !failure() && !cancelled() }}
     needs:
       - BuilderBinDarwin
       - BuilderBinDarwinAarch64
       - BuilderDebRelease
       - BuilderDebAarch64
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, style-checker-aarch64]
     steps:
+      - name: Debug
+        run: |
+          echo need with different filters
+          cat << 'EOF'
+          ${{ toJSON(needs) }}
+          ${{ toJSON(needs.*.result) }}
+          no failures ${{ !contains(needs.*.result, 'failure') }}
+          no skips ${{ !contains(needs.*.result, 'skipped') }}
+          no both ${{ !(contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
+          EOF
+      - name: Not ready
+        # fail the job to be able restart it
+        if: ${{ contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure') }}
+        run: exit 1
       - name: Check out repository code
+        if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
         uses: ClickHouse/checkout@v1
       - name: Mark Commit Release Ready
+        if: ${{ ! (contains(needs.*.result, 'skipped') || contains(needs.*.result, 'failure')) }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 mark_release_ready.py
