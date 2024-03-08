@@ -161,7 +161,7 @@ public:
         , num_streams(num_streams_)
     {
         query_configuration = storage.updateConfigurationAndGetCopy(context);
-        virtual_columns = storage.getVirtuals();
+        virtual_columns = storage.getVirtualsList();
     }
 
 private:
@@ -1084,8 +1084,7 @@ StorageS3::StorageS3(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
@@ -1152,7 +1151,7 @@ void StorageS3::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), virtual_columns);
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
@@ -1983,16 +1982,6 @@ void registerStorageCOS(StorageFactory & factory)
 void registerStorageOSS(StorageFactory & factory)
 {
     return registerStorageS3Impl("OSS", factory);
-}
-
-NamesAndTypesList StorageS3::getVirtuals() const
-{
-    return virtual_columns;
-}
-
-Names StorageS3::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 bool StorageS3::supportsPartitionBy() const
