@@ -471,10 +471,9 @@ private:
 
         const typename Kernel::ConstParams kernel_params = initConstParams(arguments);
 
-        auto result = ColumnVector<ResultType>::create(input_rows_count);
-        auto & result_data = result->getData();
+        auto col_res = ColumnVector<ResultType>::create(input_rows_count);
+        auto & result_data = col_res->getData();
 
-        /// Do the actual computation
         ColumnArray::Offset prev = 0;
         size_t row = 0;
 
@@ -503,7 +502,7 @@ private:
             result_data[row] = Kernel::finalize(state, kernel_params);
             row++;
         }
-        return result;
+        return col_res;
     }
 
     /// Special case when the 1st parameter is Const
@@ -542,7 +541,6 @@ private:
         auto result = ColumnVector<ResultType>::create(input_rows_count);
         auto & result_data = result->getData();
 
-        /// Do the actual computation
         size_t prev = 0;
         size_t row = 0;
 

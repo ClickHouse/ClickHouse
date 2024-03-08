@@ -140,6 +140,7 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayScalarProduct>(); }
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -174,13 +175,13 @@ public:
     ACTION(Float32) \
     ACTION(Float64)
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /* input_rows_count */) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         switch (result_type->getTypeId())
         {
         #define ON_TYPE(type) \
             case TypeIndex::type: \
-                return executeWithResultType<type>(arguments); \
+                return executeWithResultType<type>(arguments, input_rows_count); \
                 break;
 
             SUPPORTED_TYPES(ON_TYPE)
@@ -193,7 +194,7 @@ public:
 
 private:
     template <typename ResultType>
-    ColumnPtr executeWithResultType(const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeWithResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         DataTypePtr type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
 
@@ -201,7 +202,7 @@ private:
         {
 #define ON_TYPE(type) \
             case TypeIndex::type: \
-                return executeWithResultTypeAndLeftType<ResultType, type>(arguments); \
+                return executeWithResultTypeAndLeftType<ResultType, type>(arguments, input_rows_count); \
                 break;
 
             SUPPORTED_TYPES(ON_TYPE)
@@ -218,7 +219,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType>
-    ColumnPtr executeWithResultTypeAndLeftType(const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeWithResultTypeAndLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         DataTypePtr type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
@@ -226,7 +227,7 @@ private:
         {
         #define ON_TYPE(type) \
             case TypeIndex::type: \
-                return executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, type>(arguments[0].column, arguments[1].column); \
+                return executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, type>(arguments[0].column, arguments[1].column, input_rows_count); \
                 break;
 
             SUPPORTED_TYPES(ON_TYPE)
@@ -243,15 +244,15 @@ private:
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y) const
+    ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         if (typeid_cast<const ColumnConst *>(col_x.get()))
         {
-            return executeWithLeftArgConst<ResultType, LeftType, RightType>(col_x, col_y);
+            return executeWithLeftArgConst<ResultType, LeftType, RightType>(col_x, col_y, input_rows_count);
         }
         else if (typeid_cast<const ColumnConst *>(col_y.get()))
         {
-            return executeWithLeftArgConst<ResultType, RightType, LeftType>(col_y, col_x);
+            return executeWithLeftArgConst<ResultType, RightType, LeftType>(col_y, col_x, input_rows_count);
         }
 
         col_x = col_x->convertToFullColumnIfConst();
@@ -268,16 +269,13 @@ private:
         if (!array_x.hasEqualOffsets(array_y))
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments for function {} must have equal sizes", getName());
 
-        auto col_res = ColumnVector<ResultType>::create();
-        auto & result = col_res->getData();
-
-        size_t size = offsets_x.size();
-        result.resize(size);
+        auto col_res = ColumnVector<ResultType>::create(input_rows_count);
+        auto & result_data = col_res->getData();
 
         ColumnArray::Offset current_offset = 0;
-        for (size_t row = 0; row < size; ++row)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t array_size = offsets_x[row] - current_offset;
+            const size_t array_size = offsets_x[row] - current_offset;
 
             size_t i = 0;
 
@@ -298,7 +296,7 @@ private:
             for (; i < array_size; ++i)
                 Kernel::template accumulate<ResultType>(state, static_cast<ResultType>(data_x[current_offset + i]), static_cast<ResultType>(data_y[current_offset + i]));
 
-            result[row] = Kernel::template finalize<ResultType>(state);
+            result_data[row] = Kernel::template finalize<ResultType>(state);
 
             current_offset = offsets_x[row];
         }
@@ -307,7 +305,7 @@ private:
     }
 
     template <typename ResultType, typename LeftType, typename RightType>
-    ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y) const
+    ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
     {
         col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
         col_y = col_y->convertToFullColumnIfConst();
@@ -336,16 +334,13 @@ private:
             prev_offset = offset_y;
         }
 
-        auto col_res = ColumnVector<ResultType>::create();
+        auto col_res = ColumnVector<ResultType>::create(input_rows_count);
         auto & result = col_res->getData();
 
-        size_t size = offsets_y.size();
-        result.resize(size);
-
         ColumnArray::Offset current_offset = 0;
-        for (size_t row = 0; row < size; ++row)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t array_size = offsets_x[0];
+            const size_t array_size = offsets_x[0];
 
             typename Kernel::template State<ResultType> state;
             size_t i = 0;
