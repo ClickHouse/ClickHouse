@@ -1141,6 +1141,8 @@ def test_sync_replica(started_cluster):
 
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA test_sync_database")
 
+    assert "2\n" == main_node.query("SELECT sum(is_active) FROM system.clusters WHERE cluster='test_sync_database'")
+
     assert dummy_node.query(
         "SELECT count() FROM system.tables where database='test_sync_database'"
     ).strip() == str(number_of_tables)
