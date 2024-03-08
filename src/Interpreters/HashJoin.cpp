@@ -1494,7 +1494,7 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
 }
 
 template<typename AddedColumns>
-ColumnPtr buildAdditionFilter(
+ColumnPtr buildAdditionalFilter(
     size_t left_start_row,
     const std::vector<RowRef> & selected_rows,
     const std::vector<size_t> & row_replicate_offset,
@@ -1771,7 +1771,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                 left_row_iter,
                 left_start_row);
         }
-        auto filter_col = buildAdditionFilter(left_start_row, selected_rows, row_replicate_offset, added_columns);
+        auto filter_col = buildAdditionalFilter(left_start_row, selected_rows, row_replicate_offset, added_columns);
         copy_final_matched_rows(left_start_row, filter_col);
 
         if constexpr (join_features.need_replication)
