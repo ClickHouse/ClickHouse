@@ -23,6 +23,7 @@ Block appendGroupingSetColumn(Block header);
 Block generateOutputHeader(const Block & input_header, const Names & keys, bool use_nulls);
 
 class AggregatingProjectionStep;
+class MergingAggregatedStep;
 
 /// Aggregation. See AggregatingTransform.
 class AggregatingStep : public ITransformingStep
@@ -60,6 +61,7 @@ public:
 
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
 
+    bool isFinal() const { return final; }
     bool inOrder() const { return !sort_description_for_merging.empty(); }
     bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
@@ -75,6 +77,22 @@ public:
     /// When we apply aggregate projection (which is partial), this step should be replaced to AggregatingProjection.
     /// Argument input_stream would be the second input (from projection).
     std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
+
+    void enforceTwoLevelAgg();
+
+    std::shared_ptr<AggregatingStep> makePreliminaryAgg(const Settings & settings) const;
+
+    std::shared_ptr<MergingAggregatedStep> makeMergingAggregatedStep(const DataStream & input_stream_, const Settings & settings) const;
+
+    bool isPreliminaryAgg() const
+    {
+        return is_preliminary_agg;
+    }
+
+    StepType stepType() const override
+    {
+        return Agg;
+    }
 
 private:
     void updateOutputStream() override;
@@ -108,6 +126,8 @@ private:
     Processors finalizing;
 
     Processors aggregating;
+
+    bool is_preliminary_agg = false; // used to query coordination distribution
 };
 
 class AggregatingProjectionStep : public IQueryPlanStep

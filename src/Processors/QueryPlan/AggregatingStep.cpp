@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
@@ -554,6 +555,81 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
 
     assertBlocksHaveEqualStructure(getOutputStream().header, aggregating_projection->getOutputStream().header, "AggregatingStep");
     return aggregating_projection;
+}
+
+void AggregatingStep::enforceTwoLevelAgg()
+{
+    params.group_by_two_level_threshold = 1;
+    params.group_by_two_level_threshold_bytes = 1;
+}
+
+std::shared_ptr<AggregatingStep> AggregatingStep::makePreliminaryAgg(const Settings & settings) const
+{
+    std::shared_ptr<AggregatingStep> preliminary_agg = std::make_shared<AggregatingStep>(
+        input_streams.front(),
+        params,
+        grouping_sets_params,
+        false,
+        max_block_size,
+        aggregation_in_order_max_block_bytes,
+        merge_threads,
+        temporary_data_merge_threads,
+        storage_has_evenly_distributed_read,
+        group_by_use_nulls,
+        sort_description_for_merging,
+        group_by_sort_description,
+        (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results),
+        memory_bound_merging_of_aggregation_results_enabled,
+        explicit_sorting_required_for_aggregation_in_order);
+
+    preliminary_agg->is_preliminary_agg = true;
+    return preliminary_agg;
+}
+
+std::shared_ptr<MergingAggregatedStep> AggregatingStep::makeMergingAggregatedStep(const DataStream & input_stream_, const Settings & settings) const
+{
+    auto keys = params.keys;
+    if (/*has_grouping_sets*/ !grouping_sets_params.empty())
+        keys.insert(keys.begin(), "__grouping_set");
+
+    /** There are two modes of distributed aggregation.
+      *
+      * 1. In different threads read from the remote servers blocks.
+      * Save all the blocks in the RAM. Merge blocks.
+      * If the aggregation is two-level - parallelize to the number of buckets.
+      *
+      * 2. In one thread, read blocks from different servers in order.
+      * RAM stores only one block from each server.
+      * If the aggregation is a two-level aggregation, we consistently merge the blocks of each next level.
+      *
+      * The second option consumes less memory (up to 256 times less)
+      *  in the case of two-level aggregation, which is used for large results after GROUP BY,
+      *  but it can work more slowly.
+      */
+
+    Aggregator::Params params_(
+        keys,
+        params.aggregates,
+        params.overflow_row,
+        settings.max_threads,
+        settings.max_block_size,
+        settings.min_hit_rate_to_use_consecutive_keys_optimization);
+
+    std::shared_ptr<MergingAggregatedStep> merging_step = std::make_shared<MergingAggregatedStep>(
+        input_stream_,
+        params_,
+        final,
+        /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
+        settings.distributed_aggregation_memory_efficient && grouping_sets_params.empty(),
+        settings.max_threads,
+        settings.aggregation_memory_efficient_merge_threads,
+        (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results),
+        settings.max_block_size,
+        settings.aggregation_in_order_max_block_bytes,
+        group_by_sort_description,
+        settings.enable_memory_bound_merging_of_aggregation_results);
+
+    return merging_step;
 }
 
 void AggregatingStep::updateOutputStream()

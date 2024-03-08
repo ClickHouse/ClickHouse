@@ -885,6 +885,22 @@ class IColumn;
     M(Int64, ignore_cold_parts_seconds, 0, "Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.", 0) \
     M(Int64, prefer_warmed_unmerged_parts_seconds, 0, "Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see cache_populated_by_fetch), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for ReplicatedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.", 0) \
     M(Bool, iceberg_engine_ignore_schema_evolution, false, "Ignore schema evolution in Iceberg table engine and read all data using latest schema saved on table creation. Note that it can lead to incorrect result", 0) \
+    \
+    /** CBO Optimizer */ \
+    M(Bool, allow_experimental_query_coordination, false, "Allow experimental fragment", 0) \
+    M(Bool, optimize_query_coordination_sharding_key, true, "Optimize GROUP BY sharding_key queries for query coordination.", 0) \
+    M(CBOStepExecutionMode, cbo_aggregating_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "Aggregating step execution mode", 0) \
+    M(CBOStepExecutionMode, cbo_topn_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "TopN step execution mode.", 0) \
+    M(CBOStepExecutionMode, cbo_sorting_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "Sorting step execution mode mode.", 0) \
+    M(CBOStepExecutionMode, cbo_limiting_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "Limit step execution mode mode.", 0) \
+    M(Float, cost_cpu_weight, 0.2f, "Represent the weight of cpu in cost modeling.", 0) \
+    M(Float, cost_mem_weight, 0.2f, "Represent the weight of memory in cost modeling.", 0) \
+    M(Float, cost_net_weight, 0.6f, "Represent the weight of network in cost modeling.", 0) \
+    M(Float, statistics_agg_unknown_column_first_key_coefficient, 0.001f, "To calculate row count of aggregating result, when there is any column whose statistics is unknown, we use the coefficient to calculate the ndv of the first key.", 0) \
+    M(Float, statistics_agg_unknown_column_rest_key_coefficient, 0.1f, "To calculate row count of aggregating result, we use the coefficient to calculate the ndv of the rest keys.", 0) \
+    M(Float, statistics_agg_full_cardinality_coefficient, 0.1f, "When calculating statistics for preliminary aggregating, first we assume data is evenly distributed into shards and all shards has full cardinality of data set. But in practice a shard may have only partial of cardinality, so we multiply a coefficient.", 0) \
+    M(Float, cost_pre_sorting_operation_weight, 0.1f, "Weight of one row calculation of preliminary sorting step.", 0) \
+    M(Float, cost_merge_agg_uniq_calculation_weight, 1.0f, "Weight of uniq and uniqExact agg function in merging stage. Uniq and uniqExact function in merging stage takes long time than one stage agg in some data quantities. So here we add a coefficient to use one stage aggregating.", 0)
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.

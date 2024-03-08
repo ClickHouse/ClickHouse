@@ -65,7 +65,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     if (optimize_distinct_in_order)
     {
         const auto & input_stream = input_streams.back();
-        const SortDescription distinct_sort_desc = getSortDescription(input_stream.sort_description, columns);
+        const SortDescription distinct_sort_desc = DB::getSortDescription(input_stream.sort_description, columns);
         if (!distinct_sort_desc.empty())
         {
             /// pre-distinct for sorted chunks
@@ -133,6 +133,12 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
             return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
         });
+}
+
+SortDescription DistinctStep::getSortDescription() const
+{
+    const auto & input_stream = input_streams.back();
+    return DB::getSortDescription(input_stream.sort_description, columns);
 }
 
 void DistinctStep::describeActions(FormatSettings & settings) const

@@ -1263,6 +1263,12 @@ try
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
+    if (server_settings.enable_background_statistics)
+    {
+        global_context->initializeStatisticsStorage(server_settings.background_statistics_refresh_period_sec);
+        LOG_INFO(log, "Statistics storage initialized");
+    }
+
     size_t query_cache_max_size_in_bytes = config().getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
     size_t query_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
     size_t query_cache_query_cache_max_entry_size_in_bytes = config().getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);

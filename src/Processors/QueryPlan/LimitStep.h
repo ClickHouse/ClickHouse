@@ -9,6 +9,14 @@ namespace DB
 class LimitStep : public ITransformingStep
 {
 public:
+    /// Only work on query coordination
+    enum Phase
+    {
+        Final,
+        Preliminary,
+        Unknown,
+    };
+
     LimitStep(
         const DataStream & input_stream_,
         size_t limit_, size_t offset_,
@@ -33,6 +41,24 @@ public:
 
     bool withTies() const { return with_ties; }
 
+    size_t getLimit() const { return limit; }
+
+    size_t getOffset() const { return offset; }
+
+    Phase getPhase() const { return phase; }
+
+    void setPhase(Phase phase_) { phase = phase_; }
+
+    const SortDescription & getSortDescription() const
+    {
+        return description;
+    }
+
+    StepType stepType() const override
+    {
+        return Limit;
+    }
+
 private:
     void updateOutputStream() override
     {
@@ -45,6 +71,8 @@ private:
 
     bool with_ties;
     const SortDescription description;
+
+    Phase phase = Phase::Unknown;
 };
 
 }

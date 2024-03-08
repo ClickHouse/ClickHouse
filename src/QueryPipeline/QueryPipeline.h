@@ -169,6 +169,9 @@ private:
     friend class CompletedPipelineExecutor;
     friend class RefreshTask;
     friend class QueryPipelineBuilder;
+    friend class PipelineExecutors;
+    friend class CompletedPipelinesExecutor;
+    friend class QueryCoordinationExecutor;
 };
 
 }

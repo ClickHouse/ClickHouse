@@ -10,12 +10,13 @@
 
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -171,7 +172,13 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
 
-    while (!stack.empty())
+    std::unordered_set<Node *> all_nodes;
+    for (auto & node : nodes)
+    {
+        all_nodes.insert(&node);
+    }
+
+    while (!stack.empty() && all_nodes.contains(stack.top().node))
     {
         auto & frame = stack.top();
 
@@ -182,7 +189,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         }
 
         size_t next_child = frame.pipelines.size();
-        if (next_child == frame.node->children.size())
+        if (next_child == frame.node->children.size() || !all_nodes.contains(frame.node->children[next_child])) /// children belong next fragment
         {
             bool limit_max_threads = frame.pipelines.empty();
             last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
@@ -203,8 +210,88 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     return last_pipeline;
 }
 
-static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
+static void explainStep(
+    const PlanNode & node,
+    IQueryPlanStep::FormatSettings & settings,
+    const QueryPlan::ExplainPlanOptions & options)
 {
+    const IQueryPlanStep & step = *node.step;
+
+    std::string prefix(settings.offset, ' ');
+    settings.out << prefix;
+    settings.out << step.getName();
+
+    const auto & description = step.getStepDescription();
+    if (options.description && !description.empty())
+        settings.out <<" (" << description << ')';
+
+    settings.out.write('\n');
+
+    if (options.header)
+    {
+        settings.out << prefix;
+
+        if (!step.hasOutputStream())
+            settings.out << "No header";
+        else if (!step.getOutputStream().header)
+            settings.out << "Empty header";
+        else
+        {
+            settings.out << "Header: ";
+            bool first = true;
+
+            for (const auto & elem : step.getOutputStream().header)
+            {
+                if (!first)
+                    settings.out << "\n" << prefix << "        ";
+
+                first = false;
+                elem.dumpNameAndType(settings.out);
+            }
+        }
+        settings.out.write('\n');
+    }
+
+    if (options.statistics)
+    {
+        settings.out << prefix;
+        settings.out << "Statistics: ";
+        settings.out << node.statistics.getOutputRowSize();
+        settings.out.write('\n');
+    }
+
+    if (options.cost)
+    {
+        settings.out << prefix;
+        settings.out << "Cost: ";
+        settings.out << node.cost.toString();
+        settings.out.write('\n');
+    }
+
+    if (options.sorting)
+    {
+        if (step.hasOutputStream())
+        {
+            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
+            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
+            {
+                settings.out << ": ";
+                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
+            }
+            settings.out.write('\n');
+        }
+    }
+
+    if (options.actions)
+        step.describeActions(settings);
+
+    if (options.indexes)
+        step.describeIndexes(settings);
+}
+
+static void explainStep(const PlanNode & node, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
+{
+    const IQueryPlanStep & step = *node.step;
     map.add("Node Type", step.getName());
 
     if (options.description)
@@ -230,6 +317,12 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
 
         map.add("Header", std::move(header_array));
     }
+
+    if (options.statistics)
+        map.add("Statistics", node.statistics.getOutputRowSize());
+
+    if (options.cost)
+        map.add("Cost", node.cost.toString());
 
     if (options.actions)
         step.describeActions(map);
@@ -265,7 +358,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
                 frame.children_array = std::make_unique<JSONBuilder::JSONArray>();
 
             frame.node_map = std::make_unique<JSONBuilder::JSONMap>();
-            explainStep(*frame.node->step, *frame.node_map, options);
+            explainStep(*frame.node, *frame.node_map, options);
         }
 
         if (frame.next_child < frame.node->children.size())
@@ -297,75 +390,20 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
     return tree;
 }
 
-static void explainStep(
-    const IQueryPlanStep & step,
-    IQueryPlanStep::FormatSettings & settings,
-    const QueryPlan::ExplainPlanOptions & options)
-{
-    std::string prefix(settings.offset, ' ');
-    settings.out << prefix;
-    settings.out << step.getName();
-
-    const auto & description = step.getStepDescription();
-    if (options.description && !description.empty())
-        settings.out <<" (" << description << ')';
-
-    settings.out.write('\n');
-
-    if (options.header)
-    {
-        settings.out << prefix;
-
-        if (!step.hasOutputStream())
-            settings.out << "No header";
-        else if (!step.getOutputStream().header)
-            settings.out << "Empty header";
-        else
-        {
-            settings.out << "Header: ";
-            bool first = true;
-
-            for (const auto & elem : step.getOutputStream().header)
-            {
-                if (!first)
-                    settings.out << "\n" << prefix << "        ";
-
-                first = false;
-                elem.dumpNameAndType(settings.out);
-            }
-        }
-        settings.out.write('\n');
-
-    }
-
-    if (options.sorting)
-    {
-        if (step.hasOutputStream())
-        {
-            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
-            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
-            {
-                settings.out << ": ";
-                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
-            }
-            settings.out.write('\n');
-        }
-    }
-
-    if (options.actions)
-        step.describeActions(settings);
-
-    if (options.indexes)
-        step.describeIndexes(settings);
-}
-
-std::string debugExplainStep(const IQueryPlanStep & step)
+std::string debugExplainStep(const PlanNode & node)
 {
     WriteBufferFromOwnString out;
     IQueryPlanStep::FormatSettings settings{.out = out};
     QueryPlan::ExplainPlanOptions options{.actions = true};
-    explainStep(step, settings, options);
+    explainStep(node, settings, options);
     return out.str();
+}
+
+String QueryPlan::dumpPlan(ExplainPlanOptions options)
+{
+    WriteBufferFromOwnString buffer;
+    explainPlan(buffer, options);
+    return buffer.str();
 }
 
 void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent)
@@ -384,14 +422,20 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
 
-    while (!stack.empty())
+    std::unordered_set<Node *> all_nodes;
+    for (auto & node : nodes)
+    {
+        all_nodes.insert(&node);
+    }
+
+    while (!stack.empty() && all_nodes.contains(stack.top().node))
     {
         auto & frame = stack.top();
 
         if (!frame.is_description_printed)
         {
             settings.offset = (indent + stack.size() - 1) * settings.indent;
-            explainStep(*frame.node->step, settings, options);
+            explainStep(*frame.node, settings, options);
             frame.is_description_printed = true;
         }
 

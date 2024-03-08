@@ -60,6 +60,14 @@ public:
         std::optional<bool> skip_unavailable_endpoints = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
+    /// Get one connection for the specified host_port.
+    /// Used for query coordination.
+    Entry getOne(
+        const ConnectionTimeouts & timeouts,
+        const Settings & settings,
+        const String & host_port,
+        AsyncCallback async_callback = {});
+
     /// The same as getMany(), but return std::vector<TryResult>.
     std::vector<TryResult> getManyForTableFunction(const ConnectionTimeouts & timeouts,
                                                    const Settings & settings, PoolMode pool_mode);

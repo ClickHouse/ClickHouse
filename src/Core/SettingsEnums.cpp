@@ -212,4 +212,10 @@ IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
     {{"DEFINER", SQLSecurityType::DEFINER},
      {"INVOKER", SQLSecurityType::INVOKER},
      {"NONE", SQLSecurityType::NONE}})
+
+IMPLEMENT_SETTING_ENUM(CBOStepExecutionMode, ErrorCodes::BAD_ARGUMENTS,
+                       {{"one_stage", CBOStepExecutionMode::ONE_STAGE},
+                        {"two_stage", CBOStepExecutionMode::TWO_STAGE},
+                        {"determined_by_optimizer", CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER}})
+
 }

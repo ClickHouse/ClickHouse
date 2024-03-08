@@ -38,6 +38,8 @@ BlockIO & BlockIO::operator= (BlockIO && rhs) noexcept
     process_list_entry      = std::move(rhs.process_list_entry);
     pipeline                = std::move(rhs.pipeline);
 
+    query_coord_state       = std::move(rhs.query_coord_state);
+
     finish_callback         = std::move(rhs.finish_callback);
     exception_callback      = std::move(rhs.exception_callback);
 

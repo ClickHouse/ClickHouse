@@ -5,6 +5,7 @@
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTAnalyzeQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -117,7 +118,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     if (query->as<ASTSelectQuery>())
     {
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef().allow_experimental_query_coordination)
+            interpreter_name = "InterpreterSelectQueryCoordination";
+        else if (context->getSettingsRef().allow_experimental_analyzer)
             interpreter_name = "InterpreterSelectQueryAnalyzer";
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
@@ -128,7 +131,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
 
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (context->getSettingsRef().allow_experimental_query_coordination)
+            interpreter_name = "InterpreterSelectQueryCoordination";
+        else if (context->getSettingsRef().allow_experimental_analyzer)
             interpreter_name = "InterpreterSelectQueryAnalyzer";
         else
             interpreter_name = "InterpreterSelectWithUnionQuery";
@@ -340,6 +345,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTDeleteQuery>())
     {
         interpreter_name = "InterpreterDeleteQuery";
+    }
+    else if (query->as<ASTAnalyzeQuery>())
+    {
+        interpreter_name = "InterpreterAnalyzeQuery";
     }
 
     if (!interpreters.contains(interpreter_name))

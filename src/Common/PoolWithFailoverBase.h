@@ -122,6 +122,13 @@ public:
 
     size_t getPoolSize() const { return nested_pools.size(); }
 
+    typename PoolWithFailoverBase<TNestedPool>::TryResult getOne(
+        size_t max_tries,
+        size_t max_ignored_errors,
+        const TryGetEntryFunc & try_get_entry,
+        const GetPriorityFunc & get_priority,
+        const String & host_port);
+
 protected:
 
     /// Returns a single connection.
@@ -325,6 +332,94 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 "Could not find enough connections to up-to-date replicas. Got: {}, needed: {}", up_to_date_count, max_entries);
 
     return try_results;
+}
+
+template <typename TNestedPool>
+typename PoolWithFailoverBase<TNestedPool>::TryResult
+PoolWithFailoverBase<TNestedPool>::getOne(
+    size_t max_tries,
+    size_t max_ignored_errors,
+    const TryGetEntryFunc & try_get_entry,
+    const GetPriorityFunc & get_priority,
+    const String & host_port)
+{
+    std::vector<ShuffledPool> shuffled_pools = getShuffledPools(max_ignored_errors, get_priority);
+
+    /// We will try to get a connection from each pool until a connection is produced or max_tries is reached.
+    TryResult try_result;
+
+    /// At exit update shared error counts with error counts occurred during this call.
+    SCOPE_EXIT(
+    {
+        updateSharedErrorCounts(shuffled_pools);
+    });
+
+    std::string fail_messages;
+
+    std::vector<bool> is_failed(shuffled_pools.size(), false);
+    auto all_failed = [&]() -> bool
+    {
+        bool res = true;
+        for (bool failed : is_failed)
+        {
+            res &= failed;
+        }
+        return res;
+    };
+
+    size_t total_max_tries = shuffled_pools.size() * max_tries;
+    size_t tries_num = 0;
+    while (!all_failed() && tries_num < total_max_tries)
+    {
+        for (size_t i = 0; i < shuffled_pools.size(); ++i)
+        {
+            ShuffledPool & shuffled_pool = shuffled_pools[i];
+
+            if (max_tries && shuffled_pool.error_count >= max_tries)
+            {
+                is_failed[i] = true;
+                continue;
+            }
+
+            std::string fail_message;
+            try_result = try_get_entry(shuffled_pool.pool, fail_message);
+            tries_num++;
+
+            if (!fail_message.empty())
+                fail_messages += fail_message + '\n';
+
+            if (!try_result.entry.isNull())
+            {
+                if (try_result.entry->getHostPort() == host_port)
+                {
+                    return try_result;
+                }
+                else
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                LOG_WARNING(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
+                ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
+
+                shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
+
+                if (shuffled_pool.error_count >= max_tries)
+                {
+                    ProfileEvents::increment(ProfileEvents::DistributedConnectionFailAtAll);
+                }
+            }
+        }
+    }
+
+    if (all_failed())
+        throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                               "All connection tries failed. Log: \n\n{}\n", fail_messages);
+
+    throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                           "All connection tries failed. Not found connection to {}", host_port);
 }
 
 template <typename TNestedPool>

@@ -1,0 +1,6 @@
+Expression ((Project names + Projection))
+  MergingAggregated
+    Expression (Change column names)
+      ReadFromPreparedSource (Optimized trivial count)
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+  ReadFromMergeTree (default.query_coordination_fallback)

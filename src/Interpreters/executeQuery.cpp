@@ -65,6 +65,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <QueryCoordination/Exchange/ExchangeManager.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -1324,6 +1325,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
+
+                if (context->getSettingsRef().allow_experimental_query_coordination)
+                    ExchangeManager::getInstance().removeExchangeDataSources(elem.client_info.current_query_id);
             };
 
             auto exception_callback =
@@ -1339,6 +1343,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     my_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
                 logQueryException(elem, context, start_watch, ast, query_span, internal, log_error);
+
+                if (context->getSettingsRef().allow_experimental_query_coordination)
+                    ExchangeManager::getInstance().removeExchangeDataSources(elem.client_info.current_query_id);
             };
 
             res.finish_callback = std::move(finish_callback);

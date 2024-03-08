@@ -67,6 +67,22 @@ using DataStreams = std::vector<DataStream>;
 class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
+enum StepType
+{
+    Scan,
+    Agg,
+    Join,
+    Sort,
+    Limit,
+    Exchange,
+    Filters,
+    Union,
+    TopN,
+
+    /// Pattern
+    PatternAny,
+};
+
 /// Single step of query plan.
 class IQueryPlanStep
 {
@@ -139,6 +155,11 @@ public:
 
     virtual bool canUpdateInputStream() const { return false; }
 
+    virtual StepType stepType() const
+    {
+        return PatternAny;
+    }
+
 protected:
     virtual void updateOutputStream() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
 
@@ -155,5 +176,5 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 };
 
-using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+using QueryPlanStepPtr = std::shared_ptr<IQueryPlanStep>;
 }

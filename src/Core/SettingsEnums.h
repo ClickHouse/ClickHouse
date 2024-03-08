@@ -269,4 +269,13 @@ DECLARE_SETTING_ENUM(SchemaInferenceMode)
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
+
+enum class CBOStepExecutionMode
+{
+    ONE_STAGE,
+    TWO_STAGE,
+    DETERMINED_BY_OPTIMIZER
+};
+
+DECLARE_SETTING_ENUM(CBOStepExecutionMode)
 }

@@ -193,7 +193,7 @@ bool JoinedTables::isLeftTableFunction() const
     return left_table_expression && left_table_expression->as<ASTFunction>();
 }
 
-std::unique_ptr<InterpreterSelectWithUnionQuery> JoinedTables::makeLeftTableSubquery(const SelectQueryOptions & select_options)
+std::unique_ptr<IInterpreterUnionOrSelectQuery> JoinedTables::makeLeftTableSubquery(const SelectQueryOptions & select_options)
 {
     if (!isLeftTableSubquery())
         return {};

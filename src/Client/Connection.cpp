@@ -1,39 +1,43 @@
 #include <memory>
-#include <Poco/Net/NetException.h>
-#include <Core/Defines.h>
-#include <Core/Settings.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/copyData.h>
-#include <IO/TimeoutSetter.h>
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
 #include <Client/ClientBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
-#include <Common/ClickHouseRevision.h>
-#include <Common/Exception.h>
-#include <Common/NetException.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/DNSResolver.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/OpenSSLHelpers.h>
-#include <Common/randomSeed.h>
-#include <Common/logger_useful.h>
-#include <Core/Block.h>
-#include <Interpreters/ClientInfo.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/Block.h>
+#include <Core/Defines.h>
+#include <Core/Settings.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/ReadHelpers.h>
+#include <IO/TimeoutSetter.h>
+#include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/ISink.h>
+#include <QueryCoordination/Fragments/FragmentRequest.h>
+#include <QueryCoordination/QueryCoordinationMetaInfo.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/ISink.h>
-#include <Processors/Executors/PipelineExecutor.h>
-#include <pcg_random.hpp>
 #include <base/scope_guard.h>
+#include <pcg_random.hpp>
+#include <Poco/Net/NetException.h>
+#include <Common/ClickHouseRevision.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/DNSResolver.h>
+#include <Common/Exception.h>
+#include <Common/NetException.h>
+#include <Common/OpenSSLHelpers.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
+#include "QueryCoordination/Exchange/ExchangeDataRequest.h"
 
 #include <Common/config_version.h>
 #include "config.h"
@@ -460,6 +464,11 @@ const String & Connection::getDescription() const
     return description;
 }
 
+const String Connection::getHostPort() const
+{
+    return Cluster::Address::toString(host, port);
+}
+
 const String & Connection::getHost() const
 {
     return host;
@@ -614,7 +623,22 @@ void Connection::sendQuery(
     const Settings * settings,
     const ClientInfo * client_info,
     bool with_pending_data,
-    std::function<void(const Progress &)>)
+    std::function<void(const Progress &)> func)
+{
+    sendQuery(timeouts, query, query_parameters, query_id_, stage, settings, client_info, with_pending_data, func, true);
+}
+
+void Connection::sendQuery(
+    const ConnectionTimeouts & timeouts,
+    const String & query,
+    const NameToNameMap & query_parameters,
+    const String & query_id_,
+    UInt64 stage,
+    const Settings * settings,
+    const ClientInfo * client_info,
+    bool with_pending_data,
+    std::function<void(const Progress &)>,
+    bool need_protocol)
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::CLIENT);
     span.addAttribute("clickhouse.query_id", query_id_);
@@ -665,7 +689,11 @@ void Connection::sendQuery(
 
     query_id = query_id_;
 
-    writeVarUInt(Protocol::Client::Query, *out);
+    if (need_protocol)
+    {
+        writeVarUInt(Protocol::Client::Query, *out);
+    }
+
     writeStringBinary(query_id, *out);
 
     /// Client info.
@@ -759,6 +787,48 @@ void Connection::sendCancel()
     out->next();
 }
 
+void Connection::sendExchangeData(const ExchangeDataRequest & request)
+{
+    compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
+
+    writeVarUInt(Protocol::Client::ExchangeData, *out);
+    request.write(*out);
+
+    writeVarUInt(static_cast<bool>(compression), *out);
+
+    out->next();
+
+    maybe_compressed_out.reset();
+    block_out.reset();
+}
+
+void Connection::sendFragments(
+    const ConnectionTimeouts & timeouts,
+    const String & query,
+    const NameToNameMap & query_parameters,
+    const String & query_id_,
+    UInt64 stage,
+    const Settings * settings,
+    const ClientInfo * client_info,
+    const FragmentsRequest & fragment,
+    const QueryCoordinationMetaInfo & meta_info)
+{
+    writeVarUInt(Protocol::Client::PlanFragments, *out);
+    sendQuery(timeouts, query, query_parameters, query_id_, stage, settings, client_info, true, {}, false);
+    fragment.write(*out);
+
+    LOG_DEBUG(log_wrapper.get(), "Send QueryCoordinationMetaInfo {}", meta_info.toString());
+    meta_info.write(*out);
+    sendData(Block(), "", false); // tcphandler and executeQuery use initializeExternalTablesIfSet
+    out->next();
+}
+
+void Connection::sendBeginExecutePipelines(const String & query_id_)
+{
+    writeVarUInt(Protocol::Client::BeginExecutePipelines, *out);
+    writeStringBinary(query_id_, *out);
+    out->next();
+}
 
 void Connection::sendData(const Block & block, const String & name, bool scalar)
 {
@@ -1094,6 +1164,9 @@ Packet Connection::receivePacket()
             case Protocol::Server::TimezoneUpdate:
                 readStringBinary(server_timezone, *in);
                 res.server_timezone = server_timezone;
+                return res;
+
+            case Protocol::Server::PipelinesReady:
                 return res;
 
             default:

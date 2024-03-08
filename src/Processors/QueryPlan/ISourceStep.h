@@ -9,12 +9,15 @@ class ISourceStep : public IQueryPlanStep
 {
 public:
     explicit ISourceStep(DataStream output_stream_);
+    ISourceStep();
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     virtual void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
 
     void describePipeline(FormatSettings & settings) const override;
+
+    StepType stepType() const override { return Scan; }
 };
 
 }

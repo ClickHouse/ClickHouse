@@ -97,7 +97,6 @@ void updateStepsDataStreams(StepStack & steps_to_update)
     if (!steps_to_update.empty())
     {
         const DataStream * input_stream = &steps_to_update.back()->getOutputStream();
-        chassert(dynamic_cast<ISourceStep *>(steps_to_update.back()));
         steps_to_update.pop_back();
 
         while (!steps_to_update.empty())
@@ -911,16 +910,24 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         return;
 
     StepStack steps_to_update;
-    if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
+    if (auto * union_step = typeid_cast<UnionStep *>(node.children.front()->step.get()))
     {
         auto & union_node = node.children.front();
 
         std::vector<InputOrderInfoPtr> infos;
         const SortDescription * max_sort_descr = nullptr;
         infos.reserve(node.children.size());
+
+        DataStreams child_streams;
         for (auto * child : union_node->children)
         {
-            infos.push_back(buildInputOrderInfo(*sorting, *child, steps_to_update));
+            StepStack child_steps_to_update;
+            infos.push_back(buildInputOrderInfo(*sorting, *child, child_steps_to_update));
+
+            /// update data stream's sorting properties
+            updateStepsDataStreams(child_steps_to_update);
+
+            child_streams.emplace_back(child->step->getOutputStream());
 
             if (infos.back() && (!max_sort_descr || max_sort_descr->size() < infos.back()->sort_description_for_merging.size()))
                 max_sort_descr = &infos.back()->sort_description_for_merging;
@@ -969,6 +976,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         }
 
         sorting->convertToFinishSorting(*max_sort_descr);
+
+        union_step->updateInputStreams(child_streams);
     }
     else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front(), steps_to_update))
     {

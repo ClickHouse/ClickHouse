@@ -128,6 +128,10 @@ namespace DB
     M(Bool, format_alter_operations_with_parentheses, false, "If enabled, each operation in alter queries will be surrounded with parentheses in formatted queries to make them less ambiguous.", 0) \
     M(String, default_replica_path, "/clickhouse/tables/{uuid}/{shard}", "The path to the table in ZooKeeper", 0) \
     M(String, default_replica_name, "{replica}", "The replica name in ZooKeeper", 0) \
+    \
+    M(Bool, enable_background_statistics, true, "Enable background table statistics collecting and refreshing.", 0) \
+    M(UInt64, background_statistics_refresh_period_sec, 6 * 3600, "Background table statistics refreshing period in second.", 0) \
+    M(UInt64, background_statistics_collect_period_sec, 24 * 3600, "Background table statistics collecting period in second.", 0)
 
     /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in StorageSystemServerSettings.cpp
 

@@ -114,6 +114,11 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
+#include <base/find_symbols.h>
+#include <QueryCoordination/Coordinator.h>
+#include <Optimizer/Statistics/IStatisticsStorage.h>
+#include <Optimizer/Statistics/CachedStatisticsStorage.h>
+
 
 
 namespace fs = std::filesystem;
@@ -389,6 +394,9 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for trace_collector modified only during initialization
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
 
+    mutable std::mutex statistics_storage_mutex;
+    IStatisticsStoragePtr statistics_storage;
+
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     mutable std::mutex clusters_mutex;                       /// Guards clusters, clusters_config and cluster_discovery
@@ -564,6 +572,13 @@ struct ContextSharedPart : boost::noncopyable
 
         /// Need to flush the async insert queue before shutting down the database catalog
         async_insert_queue.reset();
+
+        /// Stop background table statistics refreshing task.
+        if (statistics_storage)
+        {
+            statistics_storage->shutdown();
+            statistics_storage.reset();
+        }
 
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
@@ -1306,6 +1321,32 @@ std::optional<UUID> Context::getUserID() const
 {
     SharedLockGuard lock(mutex);
     return user_id;
+}
+
+bool Context::addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_)
+{
+    std::lock_guard lock(mutex);
+    if (query_coordination_meta.cluster_name.empty())
+    {
+        query_coordination_meta.cluster_name = cluster_name_;
+        query_coordination_meta.storages = storages_;
+        query_coordination_meta.sharding_keys = sharding_keys_;
+    }
+    else
+    {
+        if (query_coordination_meta.cluster_name != cluster_name_)
+            return false;
+
+        query_coordination_meta.storages.insert(query_coordination_meta.storages.end(), storages_.begin(), storages_.end());
+        query_coordination_meta.sharding_keys.insert(query_coordination_meta.sharding_keys.end(), sharding_keys_.begin(), sharding_keys_.end());
+    }
+    return true;
+}
+
+const QueryCoordinationMetaInfo & Context::getQueryCoordinationMetaInfo() const
+{
+    std::lock_guard lock(mutex);
+    return query_coordination_meta;
 }
 
 void Context::setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::lock_guard<ContextSharedMutex> &)
@@ -4090,6 +4131,25 @@ StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) con
     /// (We can assume that tables with the same `disk` setting are on the same storage policy).
 
     return storage_policy;
+}
+
+IStatisticsStoragePtr & Context::getStatisticsStorage() const
+{
+    std::lock_guard lock(shared->statistics_storage_mutex);
+    if (!shared->statistics_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics storage must be initialized before requests");
+
+    return shared->statistics_storage;
+}
+
+void Context::initializeStatisticsStorage(UInt64 refresh_interval)
+{
+    std::lock_guard lock(shared->statistics_storage_mutex);
+    if (!shared->statistics_storage)
+    {
+        shared->statistics_storage = std::make_shared<CachedStatisticsStorage>(refresh_interval);
+        shared->statistics_storage->initialize(this->global_context_instance);
+    }
 }
 
 DisksMap Context::getDisksMap() const

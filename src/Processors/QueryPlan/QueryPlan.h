@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
-#include <Columns/IColumn.h>
+#include <Optimizer/Statistics/Stats.h>
+#include <Optimizer/Cost/Cost.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 
 #include <list>
@@ -16,7 +18,7 @@ namespace DB
 class DataStream;
 
 class IQueryPlanStep;
-using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+using QueryPlanStepPtr = std::shared_ptr<IQueryPlanStep>;
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
@@ -44,12 +46,12 @@ class QueryPlan
 {
 public:
     QueryPlan();
-    ~QueryPlan();
     QueryPlan(QueryPlan &&) noexcept;
-    QueryPlan & operator=(QueryPlan &&) noexcept;
+    virtual ~QueryPlan();
+    virtual QueryPlan & operator=(QueryPlan &&) noexcept;
 
     void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
-    void addStep(QueryPlanStepPtr step);
+    virtual void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
@@ -73,6 +75,10 @@ public:
         bool indexes = false;
         /// Add information about sorting
         bool sorting = false;
+        /// Add information about statistics, only work with query coordination
+        bool statistics = false;
+        /// Add information about cost, only work with query coordination
+        bool cost = false;
     };
 
     struct ExplainPipelineOptions
@@ -85,6 +91,7 @@ public:
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
     void explainEstimate(MutableColumns & columns);
+    String dumpPlan(ExplainPlanOptions options);
 
     /// Do not allow to change the table while the pipeline alive.
     void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }
@@ -102,30 +109,41 @@ public:
     bool getConcurrencyControl() const { return concurrency_control; }
 
     /// Tree node. Step and it's children.
-    struct Node
+    struct PlanNode
     {
         QueryPlanStepPtr step;
-        std::vector<Node *> children = {};
-    };
+        std::vector<PlanNode *> children = {};
 
+        UInt32 plan_id;
+
+        /// Just for explain statement
+        Cost cost;
+        Stats statistics;
+    };
+    using Node = PlanNode;
     using Nodes = std::list<Node>;
 
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
 
-private:
+    const Nodes & getNodes() const { return nodes; }
+
+    const QueryPlanResourceHolder & getResources() const { return resources; }
+
+protected:
+    void checkInitialized() const;
+    void checkNotCompleted() const;
+
     QueryPlanResourceHolder resources;
     Nodes nodes;
     Node * root = nullptr;
-
-    void checkInitialized() const;
-    void checkNotCompleted() const;
 
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
     bool concurrency_control = false;
 };
 
-std::string debugExplainStep(const IQueryPlanStep & step);
+using PlanNode = QueryPlan::PlanNode;
+std::string debugExplainStep(const PlanNode & node);
 
 }
