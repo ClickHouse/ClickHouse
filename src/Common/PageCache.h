@@ -75,7 +75,7 @@ struct FileChunkAddress
     /// E.g. "s3:<bucket>/<path>"
     std::string path;
     /// Optional string with ETag, or file modification time, or anything else.
-    std::string file_version;
+    std::string file_version{};
     size_t offset = 0;
 
     PageCacheKey hash() const;
@@ -270,28 +270,28 @@ private:
 
     mutable std::mutex global_mutex;
 
-    pcg64 rng;
+    pcg64 rng TSA_GUARDED_BY(global_mutex);
 
-    std::vector<Mmap> mmaps;
-    size_t total_chunks = 0;
+    std::vector<Mmap> mmaps TSA_GUARDED_BY(global_mutex);
+    size_t total_chunks TSA_GUARDED_BY(global_mutex) = 0;
 
     /// All non-pinned chunks, including ones not assigned to any file. Least recently used is begin().
-    boost::intrusive::list<PageChunk, boost::intrusive::base_hook<PageChunkLRUListHook>, boost::intrusive::constant_time_size<true>> lru;
+    boost::intrusive::list<PageChunk, boost::intrusive::base_hook<PageChunkLRUListHook>, boost::intrusive::constant_time_size<true>> lru TSA_GUARDED_BY(global_mutex);
 
-    HashMap<PageCacheKey, PageChunk *> chunk_by_key;
+    HashMap<PageCacheKey, PageChunk *> chunk_by_key TSA_GUARDED_BY(global_mutex);
 
     /// Get a usable chunk, doing eviction or allocation if needed.
     /// Caller is responsible for clearing pages_populated.
-    PageChunk * getFreeChunk(std::unique_lock<std::mutex> & /* global_mutex */);
-    void addMmap(std::unique_lock<std::mutex> & /* global_mutex */);
-    void evictChunk(PageChunk * chunk, std::unique_lock<std::mutex> & /* global_mutex */);
+    PageChunk * getFreeChunk() TSA_REQUIRES(global_mutex);
+    void addMmap() TSA_REQUIRES(global_mutex);
+    void evictChunk(PageChunk * chunk) TSA_REQUIRES(global_mutex);
 
     void removeRef(PageChunk * chunk) noexcept;
 
     /// These may run in parallel with getFreeChunk(), so be very careful about which fields of the PageChunk we touch here.
-    void sendChunkToLimbo(PageChunk * chunk, std::unique_lock<std::mutex> & /* chunk_mutex */) const noexcept;
+    void sendChunkToLimbo(PageChunk * chunk, std::lock_guard<std::mutex> & /* chunk_mutex */) const noexcept;
     /// Returns {pages_restored, pages_evicted}.
-    std::pair<size_t, size_t> restoreChunkFromLimbo(PageChunk * chunk, std::unique_lock<std::mutex> & /* chunk_mutex */) const noexcept;
+    std::pair<size_t, size_t> restoreChunkFromLimbo(PageChunk * chunk, std::lock_guard<std::mutex> & /* chunk_mutex */) const noexcept;
 };
 
 using PageCachePtr = std::shared_ptr<PageCache>;

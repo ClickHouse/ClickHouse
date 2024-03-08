@@ -475,6 +475,7 @@ The server successfully detected this situation and will download merged part fr
     M(FileSegmentUseMicroseconds, "File segment use() time") \
     M(FileSegmentRemoveMicroseconds, "File segment remove() time") \
     M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time") \
+    M(FileSegmentFailToIncreasePriority, "Number of times the priority was not increased due to a high contention on the cache lock") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segments count, which were hold") \
     M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)") \
     \
