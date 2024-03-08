@@ -86,6 +86,7 @@
 namespace ProfileEvents
 {
     extern const Event ScalarSubqueriesGlobalCacheHit;
+    extern const Event ScalarSubqueriesLocalCacheHit;
     extern const Event ScalarSubqueriesCacheMiss;
 }
 
@@ -1444,7 +1445,8 @@ private:
     std::unordered_map<QueryTreeNodePtr, size_t> node_to_tree_size;
 
     /// Global scalar subquery to scalar value map
-    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value;
+    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_local;
+    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_global;
 
     const bool only_analyze;
 };
@@ -1951,6 +1953,24 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedFunctions(const st
     return result_node;
 }
 
+bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
+{
+    if (!node)
+        return false;
+
+    if (const auto * table_node = node->as<TableNode>())
+    {
+        if (table_node->getStorageID().getFullNameNotQuoted() == context.getViewSource()->getStorageID().getFullNameNotQuoted())
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (subtreeHasViewSource(child.get(), context))
+            return true;
+
+    return false;
+}
+
 /// Evaluate scalar subquery and perform constant folding if scalar subquery does not have constant value
 void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
@@ -1970,12 +1990,27 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     node_without_alias->removeAlias();
 
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
-    auto scalar_value_it = scalar_subquery_to_scalar_value.find(node_with_hash);
+    auto str_hash = DB::toString(node_with_hash.hash);
 
-    if (scalar_value_it != scalar_subquery_to_scalar_value.end())
+    bool can_use_global_scalars = !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
+
+    auto & scalars_cache = can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local;
+    auto scalar_value_it = scalars_cache.find(node_with_hash);
+
+    if (scalar_value_it != scalars_cache.end())
     {
-        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+        if (can_use_global_scalars)
+            ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+        else
+            ProfileEvents::increment(ProfileEvents::ScalarSubqueriesLocalCacheHit);
+
         scalar_block = scalar_value_it->second;
+    }
+    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
+    {
+        scalar_block = context->getQueryContext()->getScalar(str_hash);
+        scalar_subquery_to_scalar_value_global.emplace(node_with_hash, scalar_block);
+        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
     }
     else
     {
@@ -2087,7 +2122,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
         }
 
-        scalar_subquery_to_scalar_value.emplace(node_with_hash, scalar_block);
+        scalars_cache.emplace(node_with_hash, scalar_block);
+        if (can_use_global_scalars && context->hasQueryContext())
+            context->getQueryContext()->addScalar(str_hash, scalar_block);
     }
 
     const auto & scalar_column_with_type = scalar_block.safeGetByPosition(0);
