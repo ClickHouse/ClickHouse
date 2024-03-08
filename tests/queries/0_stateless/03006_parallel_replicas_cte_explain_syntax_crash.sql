@@ -24,7 +24,7 @@ AS SELECT *
 FROM numbers(1000000)
 SETTINGS allow_suspicious_low_cardinality_types = 1;
 
-SET allow_experimental_analyzer = 0;
+SET allow_experimental_analyzer = 1;
 SET allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3;
 EXPLAIN SYNTAX
 WITH
@@ -41,4 +41,3 @@ WITH
     )
 SELECT count()
 FROM cte2;
--- SETTINGS allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', max_parallel_replicas = 3;
