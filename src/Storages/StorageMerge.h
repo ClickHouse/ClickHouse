@@ -49,8 +49,10 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsPrewhere() const override { return tableSupportsPrewhere(); }
+    bool supportsPrewhere() const override { return true; }
     std::optional<NameSet> supportedPrewhereColumns() const override;
+
+    bool canMoveConditionsToPrewhere() const override { return tableSupportsPrewhere(); }
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
