@@ -3,10 +3,16 @@
 #include <Common/DateLUT.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 /** Time window functions:
   *
@@ -171,7 +177,16 @@ class FunctionTimeWindow : public IFunction
 {
 public:
     static constexpr auto name = TimeWindowImpl<type>::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeWindow>(); }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        if (!context->getSettingsRef().allow_experimental_window_view
+            && context->getSettingsRef().need_allow_experimental_window_view_to_use_time_window_functions)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')");
+        return std::make_shared<FunctionTimeWindow>();
+    }
+
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
