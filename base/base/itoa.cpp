@@ -32,9 +32,11 @@
 #include <base/extended_types.h>
 #include <base/itoa.h>
 
+namespace
+{
 
 template <typename T>
-inline int digits10(T x)
+int digits10T(T x)
 {
     if (x < 10ULL)
         return 1;
@@ -64,12 +66,8 @@ inline int digits10(T x)
         return 11 + (x >= 100000000000ULL);
     }
 
-    return 12 + digits10(x / 1000000000000ULL);
+    return 12 + digits10T(x / 1000000000000ULL);
 }
-
-
-namespace
-{
 
 template <typename T>
 ALWAYS_INLINE inline constexpr T pow10(size_t x)
@@ -487,67 +485,62 @@ ALWAYS_INLINE inline char * writeSIntText(T x, char * pos)
 }
 }
 
-template <typename T>
-char * itoa(T i, char * p)
-{
-    return convert::itoa(i, p);
-}
 
-template <>
 char * itoa(UInt8 i, char * p)
 {
     return convert::itoa(uint8_t(i), p);
 }
 
-template <>
 char * itoa(Int8 i, char * p)
 {
     return convert::itoa(int8_t(i), p);
 }
 
-template <>
 char * itoa(UInt128 i, char * p)
 {
     return writeUIntText(i, p);
 }
 
-template <>
 char * itoa(Int128 i, char * p)
 {
     return writeSIntText(i, p);
 }
 
-template <>
 char * itoa(UInt256 i, char * p)
 {
     return writeUIntText(i, p);
 }
 
-template <>
 char * itoa(Int256 i, char * p)
 {
     return writeSIntText(i, p);
 }
 
+#define DEFAULT_ITOA(T) \
+    char * itoa(T i, char * p) \
+    { \
+        return convert::itoa(i, p); \
+    }
+
 #define FOR_MISSING_INTEGER_TYPES(M) \
-    M(int8_t) \
     M(uint8_t) \
     M(UInt16) \
     M(UInt32) \
     M(UInt64) \
+    M(int8_t) \
     M(Int16) \
     M(Int32) \
     M(Int64)
 
-#define INSTANTIATION(T) template char * itoa(T i, char * p);
-FOR_MISSING_INTEGER_TYPES(INSTANTIATION)
+FOR_MISSING_INTEGER_TYPES(DEFAULT_ITOA)
 
 #if defined(OS_DARWIN)
-INSTANTIATION(size_t)
+DEFAULT_ITOA(unsigned long)
+DEFAULT_ITOA(long)
 #endif
 
 #undef FOR_MISSING_INTEGER_TYPES
-#undef INSTANTIATION
+#undef DEFAULT_ITOA
 
 
 #define DIGITS_INTEGER_TYPES(M) \
@@ -559,7 +552,12 @@ INSTANTIATION(size_t)
     M(UInt128) \
     M(UInt256)
 
-#define INSTANTIATION(T) template int digits10(T x);
+#define INSTANTIATION(T) \
+    int digits10(T x) \
+    { \
+        return digits10T(x); \
+    }
+
 DIGITS_INTEGER_TYPES(INSTANTIATION)
 
 #undef DIGITS_INTEGER_TYPES
