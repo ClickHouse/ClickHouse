@@ -36,40 +36,6 @@ namespace
 {
 
 template <typename T>
-int digits10T(T x)
-{
-    if (x < 10ULL)
-        return 1;
-    if (x < 100ULL)
-        return 2;
-    if (x < 1000ULL)
-        return 3;
-
-    if (x < 1000000000000ULL)
-    {
-        if (x < 100000000ULL)
-        {
-            if (x < 1000000ULL)
-            {
-                if (x < 10000ULL)
-                    return 4;
-                else
-                    return 5 + (x >= 100000ULL);
-            }
-
-            return 7 + (x >= 10000000ULL);
-        }
-
-        if (x < 10000000000ULL)
-            return 9 + (x >= 1000000000ULL);
-
-        return 11 + (x >= 100000000000ULL);
-    }
-
-    return 12 + digits10T(x / 1000000000000ULL);
-}
-
-template <typename T>
 ALWAYS_INLINE inline constexpr T pow10(size_t x)
 {
     return x ? 10 * pow10<T>(x - 1) : 1;
@@ -541,24 +507,3 @@ DEFAULT_ITOA(long)
 
 #undef FOR_MISSING_INTEGER_TYPES
 #undef DEFAULT_ITOA
-
-
-#define DIGITS_INTEGER_TYPES(M) \
-    M(uint8_t) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(UInt128) \
-    M(UInt256)
-
-#define INSTANTIATION(T) \
-    int digits10(T x) \
-    { \
-        return digits10T(x); \
-    }
-
-DIGITS_INTEGER_TYPES(INSTANTIATION)
-
-#undef DIGITS_INTEGER_TYPES
-#undef INSTANTIATION

@@ -28,16 +28,3 @@ INSTANTIATION(long)
 
 #undef FOR_MISSING_INTEGER_TYPES
 #undef INSTANTIATION
-
-#define DIGITS_INTEGER_TYPES(M) \
-    M(uint8_t) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(UInt128) \
-    M(UInt256)
-#define INSTANTIATION(T) int digits10(T x);
-DIGITS_INTEGER_TYPES(INSTANTIATION)
-#undef DIGITS_INTEGER_TYPES
-#undef INSTANTIATION
