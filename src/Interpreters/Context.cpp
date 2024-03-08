@@ -3270,7 +3270,7 @@ bool checkZooKeeperConfigIsLocal(const Poco::Util::AbstractConfiguration & confi
         if (startsWith(key, "node"))
         {
             String host = config.getString(config_name + "." + key + ".host");
-            if (isLocalAddress(DNSResolver::instance().resolveHost(host)))
+            if (isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(host).front()))
                 return true;
         }
     }
