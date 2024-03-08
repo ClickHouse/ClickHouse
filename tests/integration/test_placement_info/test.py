@@ -57,7 +57,9 @@ def start_cluster():
 
 def test_placement_info_from_imds():
     with open(os.path.join(os.path.dirname(__file__), "configs/imds.xml"), "r") as f:
-        node_imds.replace_config("/etc/clickhouse-server/config.d/imds_bootstrap.xml", f.read())
+        node_imds.replace_config(
+            "/etc/clickhouse-server/config.d/imds_bootstrap.xml", f.read()
+        )
     node_imds.stop_clickhouse(kill=True)
     node_imds.start_clickhouse()
 
