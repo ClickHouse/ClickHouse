@@ -51,7 +51,9 @@ private:
     std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
     std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
 
-    MergeTreeMarksLoader marks_loader;
+    /// Used to load marks - optional, because if we read the whole part, it is unneeded.
+    size_t marks_count;
+    std::optional<MergeTreeMarksLoader> marks_loader;
 
     /// Storage columns with collected separate arrays of Nested to columns of Nested type.
     /// They maybe be needed for finding offsets of missed Nested columns in parts.

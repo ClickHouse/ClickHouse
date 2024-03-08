@@ -63,8 +63,8 @@ private:
 
     bool is_low_cardinality_dictionary = false;
 
+    /// Total marks in the data part.
     size_t marks_count;
-
 
     ReadBuffer * data_buffer;
     CompressedReadBufferBase * compressed_data_buffer;
@@ -79,7 +79,8 @@ private:
     std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
     std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
 
-    MergeTreeMarksLoader marks_loader;
+    /// Used to load marks - optional, because if we read the whole part, it is unneeded.
+    std::optional<MergeTreeMarksLoader> marks_loader;
 };
 
 }

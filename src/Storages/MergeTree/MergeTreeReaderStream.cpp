@@ -44,16 +44,21 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , mark_cache(mark_cache_)
     , save_marks_in_cache(settings.save_marks_in_cache)
     , index_granularity_info(index_granularity_info_)
-    , marks_loader(
-        data_part_reader_,
-        mark_cache,
-        index_granularity_info->getMarksFilePath(path_prefix),
-        marks_count,
-        *index_granularity_info,
-        save_marks_in_cache,
-        settings.read_settings,
-        load_marks_cache_threadpool_)
 {
+    bool read_whole_part = all_mark_ranges.size() == 1 && all_mark_ranges[0].begin == 0 && all_mark_ranges[0].end == marks_count;
+    if (!read_whole_part)
+    {
+        /// At this moment in time, it can start asynchronous loading of marks into the mark cache.
+        marks_loader.emplace(
+            data_part_reader_,
+            mark_cache,
+            index_granularity_info->getMarksFilePath(path_prefix),
+            marks_count,
+            *index_granularity_info,
+            save_marks_in_cache,
+            settings.read_settings,
+            load_marks_cache_threadpool_);
+    }
 }
 
 void MergeTreeReaderStream::init()
@@ -69,8 +74,8 @@ void MergeTreeReaderStream::init()
     {
         size_t left_mark = mark_range.begin;
         size_t right_mark = mark_range.end;
-        size_t left_offset = (left_mark > 0 && left_mark < marks_count)
-            ? marks_loader.getMark(left_mark).offset_in_compressed_file
+        size_t left_offset = (left_mark > 0 && left_mark < marks_count && marks_loader)
+            ? marks_loader->getMark(left_mark).offset_in_compressed_file
             : 0;
         auto mark_range_bytes = getRightOffset(right_mark) - left_offset;
 
@@ -157,6 +162,7 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark)
 
         if (is_low_cardinality_dictionary)
         {
+            chassert(marks_loader);
 
             /// In LowCardinality dictionary several consecutive marks can point to the same offset.
             ///
@@ -181,7 +187,7 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark)
             auto indices = collections::range(right_mark, marks_count);
             auto next_different_mark = [&](auto lhs, auto rhs)
             {
-                return marks_loader.getMark(lhs).asTuple() < marks_loader.getMark(rhs).asTuple();
+                return marks_loader->getMark(lhs).asTuple() < marks_loader->getMark(rhs).asTuple();
             };
             auto it = std::upper_bound(indices.begin(), indices.end(), right_mark, std::move(next_different_mark));
 
@@ -193,9 +199,9 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark)
 
         /// This is a good scenario. The compressed block is finished within the right mark,
         /// and previous mark was different.
-        if (marks_loader.getMark(right_mark).offset_in_decompressed_block == 0
-            && marks_loader.getMark(right_mark) != marks_loader.getMark(right_mark - 1))
-            return marks_loader.getMark(right_mark).offset_in_compressed_file;
+        if (marks_loader->getMark(right_mark).offset_in_decompressed_block == 0
+            && marks_loader->getMark(right_mark) != marks_loader->getMark(right_mark - 1))
+            return marks_loader->getMark(right_mark).offset_in_compressed_file;
 
         /// If right_mark has non-zero offset in decompressed block, we have to
         /// read its compressed block in a whole, because it may consist of data from previous granule.
@@ -213,15 +219,15 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark)
         auto indices = collections::range(right_mark, marks_count);
         auto next_different_compressed_offset = [&](auto lhs, auto rhs)
         {
-            return marks_loader.getMark(lhs).offset_in_compressed_file < marks_loader.getMark(rhs).offset_in_compressed_file;
+            return marks_loader->getMark(lhs).offset_in_compressed_file < marks_loader->getMark(rhs).offset_in_compressed_file;
         };
         auto it = std::upper_bound(indices.begin(), indices.end(), right_mark, std::move(next_different_compressed_offset));
 
         if (it != indices.end())
-            return marks_loader.getMark(*it).offset_in_compressed_file;
+            return marks_loader->getMark(*it).offset_in_compressed_file;
     }
     else if (right_mark == 0)
-        return marks_loader.getMark(right_mark).offset_in_compressed_file;
+        return marks_loader->getMark(right_mark).offset_in_compressed_file;
 
     return file_size;
 }
@@ -229,7 +235,8 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark)
 void MergeTreeReaderStream::seekToMark(size_t index)
 {
     init();
-    MarkInCompressedFile mark = marks_loader.getMark(index);
+    chassert(marks_loader);
+    MarkInCompressedFile mark = marks_loader->getMark(index);
 
     try
     {

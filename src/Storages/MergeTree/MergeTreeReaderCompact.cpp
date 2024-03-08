@@ -37,19 +37,25 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         mark_ranges_,
         settings_,
         avg_value_size_hints_)
-    , marks_loader(
-          data_part_info_for_read_,
-          mark_cache,
-          data_part_info_for_read_->getIndexGranularityInfo().getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
-          data_part_info_for_read_->getMarksCount(),
-          data_part_info_for_read_->getIndexGranularityInfo(),
-          settings.save_marks_in_cache,
-          settings.read_settings,
-          load_marks_threadpool_,
-          data_part_info_for_read_->getColumns().size())
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
 {
+    marks_count = data_part_info_for_read_->getMarksCount();
+    bool read_whole_part = all_mark_ranges.size() == 1 && all_mark_ranges[0].begin == 0 && all_mark_ranges[0].end == marks_count;
+    if (!read_whole_part)
+    {
+        /// At this moment in time, it can start asynchronous loading of marks into the mark cache.
+        marks_loader.emplace(
+            data_part_info_for_read_,
+            mark_cache,
+            data_part_info_for_read_->getIndexGranularityInfo().getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
+            marks_count,
+            data_part_info_for_read_->getIndexGranularityInfo(),
+            settings.save_marks_in_cache,
+            settings.read_settings,
+            load_marks_threadpool_,
+            data_part_info_for_read_->getColumns().size());
+    }
 }
 
 void MergeTreeReaderCompact::initialize()
@@ -59,9 +65,12 @@ void MergeTreeReaderCompact::initialize()
         fillColumnPositions();
 
         /// Do not use max_read_buffer_size, but try to lower buffer size with maximal size of granule to avoid reading much data.
-        auto buffer_size = getReadBufferSize(*data_part_info_for_read, marks_loader, column_positions, all_mark_ranges);
-        if (buffer_size)
-            settings.read_settings = settings.read_settings.adjustBufferSize(buffer_size);
+        if (marks_loader)
+        {
+            auto buffer_size = getReadBufferSize(*data_part_info_for_read, *marks_loader, column_positions, all_mark_ranges);
+            if (buffer_size)
+                settings.read_settings = settings.read_settings.adjustBufferSize(buffer_size);
+        }
 
         if (!settings.read_settings.local_fs_buffer_size || !settings.read_settings.remote_fs_buffer_size)
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
@@ -429,7 +438,8 @@ catch (...)
 
 void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
 {
-    MarkInCompressedFile mark = marks_loader.getMark(row_index, column_index);
+    chassert(marks_loader);
+    MarkInCompressedFile mark = marks_loader->getMark(row_index, column_index);
     try
     {
         compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
@@ -447,8 +457,11 @@ void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
 void MergeTreeReaderCompact::adjustUpperBound(size_t last_mark)
 {
     size_t right_offset = 0;
-    if (last_mark < data_part_info_for_read->getMarksCount()) /// Otherwise read until the end of file
-        right_offset = marks_loader.getMark(last_mark).offset_in_compressed_file;
+    if (last_mark < marks_count) /// Otherwise read until the end of file
+    {
+        chassert(marks_loader);
+        right_offset = marks_loader->getMark(last_mark).offset_in_compressed_file;
+    }
 
     if (right_offset == 0)
     {
