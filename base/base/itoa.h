@@ -25,6 +25,10 @@ template <> char * itoa(Int256 i, char * p);
     extern template char * itoa(T i, char * p);
 FOR_MISSING_INTEGER_TYPES(INSTANTIATION)
 
+#if defined(OS_DARWIN)
+INSTANTIATION(size_t)
+#endif
+
 #undef FOR_MISSING_INTEGER_TYPES
 #undef INSTANTIATION
 
