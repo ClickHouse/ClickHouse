@@ -1227,12 +1227,6 @@ void QueryFuzzer::collectFuzzInfoMain(ASTPtr ast)
 {
     collectFuzzInfoRecurse(ast);
 
-    aliases.clear();
-    for (const auto & alias : aliases_set)
-    {
-        aliases.push_back(alias);
-    }
-
     column_like.clear();
     for (const auto & [name, value] : column_like_map)
     {
@@ -1285,16 +1279,6 @@ void QueryFuzzer::addColumnLike(ASTPtr ast)
 
 void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
 {
-    if (auto * impl = dynamic_cast<ASTWithAlias *>(ast.get()))
-    {
-        if (aliases_set.size() > 1000)
-        {
-            aliases_set.clear();
-        }
-
-        aliases_set.insert(impl->alias);
-    }
-
     if (typeid_cast<ASTLiteral *>(ast.get()))
     {
         addColumnLike(ast);
