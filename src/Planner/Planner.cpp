@@ -1181,7 +1181,7 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
     if (select_query_options.is_subquery)
         updateContextForSubqueryExecution(mutable_context);
 
-    return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context));
+    return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context), select_query_options);
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,

@@ -75,6 +75,12 @@ public:
         return constant_value->getType();
     }
 
+    /// Check if conversion to AST requires wrapping with _CAST function.
+    bool requiresCastCall() const;
+
+    /// Check if constant is a result of _CAST function constant folding.
+    bool receivedFromInitiatorServer() const;
+
     void setMaskId(size_t id)
     {
         mask_id = id;

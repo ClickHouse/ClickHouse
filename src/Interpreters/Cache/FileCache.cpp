@@ -188,6 +188,11 @@ CacheGuard::Lock FileCache::lockCache() const
     return cache_guard.lock();
 }
 
+CacheGuard::Lock FileCache::tryLockCache() const
+{
+    return cache_guard.tryLock();
+}
+
 FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const
 {
     /// Given range = [left, right] and non-overlapping ordered set of file segments,
