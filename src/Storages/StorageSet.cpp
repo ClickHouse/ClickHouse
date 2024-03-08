@@ -53,9 +53,9 @@ private:
     String backup_path;
     String backup_tmp_path;
     String backup_file_name;
-    std::unique_ptr<WriteBufferFromFileBase> backup_buf;
-    CompressedWriteBuffer compressed_backup_buf;
-    NativeWriter backup_stream;
+    WriteBufferPtr backup_buf;
+    std::unique_ptr<CompressedWriteBuffer> compressed_backup_buf;
+    std::unique_ptr<NativeWriter> backup_stream;
     bool persistent;
 };
 
@@ -72,14 +72,17 @@ SetOrJoinSink::SetOrJoinSink(
     , WithContext(ctx)
     , table(table_)
     , metadata_snapshot(metadata_snapshot_)
-    , backup_path(backup_path_)
-    , backup_tmp_path(backup_tmp_path_)
-    , backup_file_name(backup_file_name_)
-    , backup_buf(table_.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name))
-    , compressed_backup_buf(*backup_buf)
-    , backup_stream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock())
     , persistent(persistent_)
 {
+    if (table.storesDataOnDisk() && persistent)
+    {
+        backup_path = backup_path_;
+        backup_tmp_path = backup_tmp_path_;
+        backup_file_name = backup_file_name_;
+        backup_buf = table_.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name);
+        compressed_backup_buf = std::make_unique<CompressedWriteBuffer>(*backup_buf);
+        backup_stream = std::make_unique<NativeWriter>(*compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
+    }
 }
 
 void SetOrJoinSink::consume(Chunk chunk)
@@ -87,20 +90,19 @@ void SetOrJoinSink::consume(Chunk chunk)
     Block block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     table.insertBlock(block, getContext());
-    if (persistent)
-        backup_stream.write(block);
+    if (backup_stream)
+        backup_stream->write(block);
 }
 
 void SetOrJoinSink::onFinish()
 {
     table.finishInsert();
-    if (persistent)
+    if (backup_stream)
     {
-        backup_stream.flush();
-        compressed_backup_buf.next();
+        backup_stream->flush();
+        compressed_backup_buf->next();
         backup_buf->next();
         backup_buf->finalize();
-
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
     }
 }
@@ -215,13 +217,16 @@ std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
-    if (disk->exists(path))
-        disk->removeRecursive(path);
-    else
-        LOG_INFO(getLogger("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
+    if (storesDataOnDisk())
+    {
+        if (disk->exists(path))
+            disk->removeRecursive(path);
+        else
+            LOG_INFO(getLogger("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
 
-    disk->createDirectories(path);
-    disk->createDirectories(fs::path(path) / "tmp/");
+        disk->createDirectories(path);
+        disk->createDirectories(fs::path(path) / "tmp/");
+    }
 
     Block header = metadata_snapshot->getSampleBlock();
 
@@ -238,6 +243,9 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
 void StorageSetOrJoinBase::restore()
 {
+    if (!storesDataOnDisk())
+        return;
+
     if (!disk->exists(fs::path(path) / "tmp/"))
     {
         disk->createDirectories(fs::path(path) / "tmp/");
@@ -269,6 +277,9 @@ void StorageSetOrJoinBase::restore()
 
 void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 {
+    if (!storesDataOnDisk())
+        return;
+
     ContextPtr ctx = nullptr;
     auto backup_buf = disk->readFile(file_path);
     CompressedReadBuffer compressed_backup_buf(*backup_buf);
@@ -292,7 +303,8 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 void StorageSetOrJoinBase::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     /// Rename directory with data.
-    disk->replaceFile(path, new_path_to_table_data);
+    if (storesDataOnDisk())
+        disk->replaceFile(path, new_path_to_table_data);
 
     path = new_path_to_table_data;
     renameInMemory(new_table_id);

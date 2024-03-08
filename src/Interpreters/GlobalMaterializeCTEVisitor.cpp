@@ -3,6 +3,7 @@
 #include "Common/tests/gtest_global_context.h"
 #include "Parsers/ASTSelectIntersectExceptQuery.h"
 #include "Parsers/ASTSelectWithUnionQuery.h"
+#include "Storages/ConstraintsDescription.h"
 
 
 namespace DB
@@ -33,13 +34,13 @@ void DB::GlobalMaterializeCTEVisitor::visit(ASTPtr & ast)
         for (auto & child : cte_list->children)
         {
             /// WTH t AS MATERIALIZED (subquery)
-            if (auto * with = child->as<ASTWithElement>(); with->has_materialized_keyword)
+            if (auto * with = child->as<ASTWithElement>(); with && with->has_materialized_keyword)
             {
                 data.addExternalStorage(*with, {});
                 child = nullptr;
             }
         }
-        /// Remove null children
+        /// Remove null childrens from WITH list
         cte_list->children.erase(std::remove(cte_list->children.begin(), cte_list->children.end(), nullptr), cte_list->children.end());
         if (cte_list->children.empty())
             select->setExpression(ASTSelectQuery::Expression::WITH, nullptr);
@@ -49,8 +50,8 @@ void DB::GlobalMaterializeCTEVisitor::visit(ASTPtr & ast)
 void GlobalMaterializeCTEVisitor::Data::addExternalStorage(ASTWithElement & cte_expr, const Names & required_columns)
 {
     String external_table_name = cte_expr.name;
-
-    auto interpreter = interpretSubquery(cte_expr.subquery, getContext(), subquery_depth, required_columns);
+    auto context = getContext();
+    auto interpreter = interpretSubquery(cte_expr.subquery, context, subquery_depth, required_columns);
 
     Block sample = interpreter->getSampleBlock();
     NamesAndTypesList columns = sample.getNamesAndTypesList();
@@ -58,17 +59,18 @@ void GlobalMaterializeCTEVisitor::Data::addExternalStorage(ASTWithElement & cte_
     auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
         getContext(),
         ColumnsDescription{columns},
-        ConstraintsDescription{},
-        nullptr,
-        /*create_for_global_subquery*/ true);
+        ConstraintsDescription{});
+    if(!context->getSettingsRef().send_materialized_cte_tables_to_remote_shard)
+        external_storage_holder->can_be_sent_to_remote = false;
     StoragePtr external_storage = external_storage_holder->getTable();
-    getContext()->addExternalTable(external_table_name, std::move(*external_storage_holder));
+    context->addExternalTable(external_table_name, std::move(*external_storage_holder));
     FutureTableFromCTE future_table;
+    future_table.name = external_table_name;
     future_table.external_table = external_storage;
     future_table.source = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*future_table.source);
     if (future_tables.emplace(external_table_name, std::move(future_table)).second)
-        LOG_DEBUG(getLogger("GlobalMaterializedCTEMatcher"), "Created external table {} for materialized CTE", external_table_name);
+        LOG_DEBUG(getLogger("GlobalMaterializedCTEMatcher"), "Created external table `{}` for materialized CTE", external_table_name);
     else
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table from CTE with name {} already exists", external_table_name);
 }

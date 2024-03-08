@@ -16,6 +16,9 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_as("AS");
     ParserKeyword s_materialized("MATERIALIZED");
     ParserSubquery s_subquery;
+    ParserKeyword s_engine("ENGINE");
+    ParserToken s_eq(TokenType::Equals);
+    ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
 
     auto old_pos = pos;
     if (ASTPtr name, subquery;
@@ -29,6 +32,17 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             with_element->subquery = subquery;
             with_element->children.push_back(with_element->subquery);
+            if (s_engine.ignore(pos, expected))
+            {
+                ASTPtr engine;
+                if (s_eq.ignore(pos, expected) && ident_with_optional_params_p.parse(pos, engine, expected))
+                {
+                    with_element->engine = std::move(engine);
+                    with_element->children.push_back(engine);
+                }
+                else
+                    return false;
+            }
             node = with_element;
         }
     }

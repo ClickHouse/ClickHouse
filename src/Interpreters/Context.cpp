@@ -1549,7 +1549,7 @@ const Block * Context::tryGetSpecialScalar(const String & name) const
     return &it->second;
 }
 
-Tables Context::getExternalTables() const
+Tables Context::getExternalTables(bool for_sending_to_remote) const
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
@@ -1558,18 +1558,22 @@ Tables Context::getExternalTables() const
 
     Tables res;
     for (const auto & table : external_tables_mapping)
+    {
+        if (for_sending_to_remote && !table.second->can_be_sent_to_remote)
+            continue;
         res[table.first] = table.second->getTable();
+    }
 
     auto query_context_ptr = query_context.lock();
     auto session_context_ptr = session_context.lock();
     if (query_context_ptr && query_context_ptr.get() != this)
     {
-        Tables buf = query_context_ptr->getExternalTables();
+        Tables buf = query_context_ptr->getExternalTables(for_sending_to_remote);
         res.insert(buf.begin(), buf.end());
     }
     else if (session_context_ptr && session_context_ptr.get() != this)
     {
-        Tables buf = session_context_ptr->getExternalTables();
+        Tables buf = session_context_ptr->getExternalTables(for_sending_to_remote);
         res.insert(buf.begin(), buf.end());
     }
     return res;

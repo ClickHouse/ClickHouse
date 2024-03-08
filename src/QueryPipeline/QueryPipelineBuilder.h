@@ -151,6 +151,12 @@ public:
         const SizeLimits & limits,
         PreparedSetsCachePtr prepared_sets_cache);
 
+    void addMaterializingCTEsTransform(
+        const Block & res_header,
+        StoragePtr external_table,
+        const String & cte_table_name,
+        const SizeLimits & limits);
+
     PipelineExecutorPtr execute();
 
     size_t getNumStreams() const { return pipe.numOutputPorts(); }

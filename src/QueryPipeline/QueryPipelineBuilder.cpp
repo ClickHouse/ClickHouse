@@ -31,6 +31,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
+#include "Processors/Transforms/MaterializingCTETransform.h"
 
 namespace DB
 {
@@ -606,6 +607,20 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             limits,
             std::move(prepared_sets_cache));
 
+    pipe.addTransform(std::move(transform));
+}
+
+void QueryPipelineBuilder::addMaterializingCTEsTransform(const Block & res_header, StoragePtr external_table, const String & cte_table_name, const SizeLimits & limits)
+{
+    dropTotalsAndExtremes();
+    resize(1);
+
+    auto transform = std::make_shared<MaterializingCTETransform>(
+        getHeader(),
+        res_header,
+        std::move(external_table),
+        cte_table_name,
+        limits);
     pipe.addTransform(std::move(transform));
 }
 

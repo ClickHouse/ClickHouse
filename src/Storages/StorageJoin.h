@@ -1,6 +1,10 @@
 #pragma once
 
 #include <Common/RWLock.h>
+#include "Parsers/ASTCreateQuery.h"
+#include "Storages/ColumnsDescription.h"
+#include "Storages/ConstraintsDescription.h"
+#include <Interpreters/IKeyValueEntity.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -24,6 +28,7 @@ using HashJoinPtr = std::shared_ptr<HashJoin>;
 class StorageJoin final : public StorageSetOrJoinBase
 {
 public:
+    /// For temporary in-memory join table, disk_ can be nullptr.
     StorageJoin(
         DiskPtr disk_,
         const String & relative_path_,
@@ -86,6 +91,19 @@ public:
     const Names & getKeyNames() const { return key_names; }
 
     bool supportsTrivialCountOptimization() const override { return true; }
+
+    static StoragePtr create(
+        String disk_name,
+        const String & relative_path,
+        const StorageID & table_id,
+        ASTStorage * storage,
+        const String & storage_name,
+        ASTs engine_args,
+        bool persistent,
+        const ColumnsDescription & columns,
+        const ConstraintsDescription & constraints,
+        const String & comment,
+        ContextPtr context);
 
 private:
     Block sample_block;

@@ -8,6 +8,8 @@ namespace DB
 
 struct FutureTableFromCTE
 {
+    /// Name of the table
+    String name;
     /// The external table that will hold data from the CTE.
     StoragePtr external_table;
     /// The query plan that will produce data for the external table.

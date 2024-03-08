@@ -95,13 +95,14 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     TemporaryTableHolder(ContextPtr context, const Creator & creator, const ASTPtr & query = {});
 
-    /// Creates temporary table with Engine=Memory
+    /// Creates temporary table with Engine=Memory by default (or custom engine if specified).
     TemporaryTableHolder(
         ContextPtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         const ASTPtr & query = {},
-        bool create_for_global_subquery = false);
+        bool create_for_global_subquery = false,
+        const ASTPtr & custom_engine = {});
 
     TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept;
     TemporaryTableHolder & operator=(TemporaryTableHolder && rhs) noexcept;
@@ -116,7 +117,9 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
+
     FutureSetFromSubqueryPtr future_set;
+    bool can_be_sent_to_remote = true;
 };
 
 ///TODO maybe remove shared_ptr from here?

@@ -67,9 +67,14 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
 #include "Interpreters/GlobalMaterializeCTEVisitor.h"
+#include "Interpreters/MaterializedTableFromCTE.h"
+#include "Planner/Utils.h"
 #include "Processors/Executors/PushingPipelineExecutor.h"
 #include "Processors/QueryPlan/BuildQueryPipelineSettings.h"
+#include "Processors/QueryPlan/IQueryPlanStep.h"
 #include "Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h"
+#include "Processors/QueryPlan/UnionStep.h"
+#include "Processors/Sinks/EmptySink.h"
 #include "QueryPipeline/QueryPlanResourceHolder.h"
 #include <Dictionaries/IDictionary.h>
 #include <Functions/FunctionsExternalDictionaries.h>
@@ -289,6 +294,40 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
 }
 
+static void buildTemporaryTablesFromCTE(
+    FutureTablesFromCTE future_tables,
+    ContextPtr context
+)
+{
+    if (future_tables.empty())
+        return;
+
+    /// Build query plan
+    auto query_plan = QueryPlan();
+    DataStreams input_streams;
+    std::vector<std::unique_ptr<QueryPlan>> plans;
+    for (auto & [_, future_table] : future_tables)
+    {
+        auto plan = future_table.build(context);
+        input_streams.emplace_back(plan->getCurrentDataStream());
+        plans.emplace_back(std::move(plan));
+    }
+
+    /// Create a dummy UNION step to merge all plans into a single plans. The output is unused.
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+    union_step->setStepDescription("Dummy Union");
+    query_plan.unitePlans(std::move(union_step), std::move(plans));
+    LOG_DEBUG(getLogger("executeQuery"), "Plan to build temporary tables from CTE:\n{}\n", dumpQueryPlan(query_plan));
+    LOG_DEBUG(getLogger("executeQuery"), "Pipeline to build temporary tables from CTE:\n{}\n", dumpQueryPipeline(query_plan));
+
+    /// Execute the plan
+    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    pipeline.complete(std::make_shared<EmptySink>(pipeline.getHeader()));
+
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
+}
 
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
@@ -909,19 +948,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             FutureTablesFromCTE future_materialized_cte_tables;
             GlobalMaterializeCTEVisitor::Data data(context, future_materialized_cte_tables);
             GlobalMaterializeCTEVisitor(data).visit(ast);
-            /// TODO: fill the external tables from `future_materialized_cte_tables` here
-            /// It's easy to do it sequentially, but we need to do it in parallel. That is the purpose of `MaterializeCTEStep` and `MaterializeCTETransform`
-            for (auto & [_, future_table] : future_materialized_cte_tables)
-            {
-                auto & source = future_table.source;
-                auto & external_table = future_table.external_table;
-                auto builder = source->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-                auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-                pipeline.complete(external_table->write({}, external_table->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
-
-                CompletedPipelineExecutor executor(pipeline);
-                executor.execute();
-            }
+            buildTemporaryTablesFromCTE(std::move(future_materialized_cte_tables), context);
         }
 
         /// Propagate WITH statement to children ASTSelect.
