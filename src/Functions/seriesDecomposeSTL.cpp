@@ -42,8 +42,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-            {"period", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Unsigned Integer"},
+            {"time_series", &isArray<IDataType>, nullptr, "Array"},
+            {"period", &isNativeUInt<IDataType>, nullptr, "Unsigned Integer"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 

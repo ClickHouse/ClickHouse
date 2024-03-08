@@ -28,8 +28,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
             FunctionArgumentDescriptors args{
-                {"array", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-                {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"}
+                {"array", &isArray<IDataType>, nullptr, "Array"},
+                {"length", &isInteger<IDataType>, nullptr, "Integer"}
             };
             validateFunctionArgumentTypes(*this, arguments, args);
 
