@@ -69,7 +69,9 @@ void MergeTreeReaderStream::init()
     {
         size_t left_mark = mark_range.begin;
         size_t right_mark = mark_range.end;
-        size_t left_offset = left_mark < marks_count ? marks_loader.getMark(left_mark).offset_in_compressed_file : 0;
+        size_t left_offset = (left_mark > 0 && left_mark < marks_count)
+            ? marks_loader.getMark(left_mark).offset_in_compressed_file
+            : 0;
         auto mark_range_bytes = getRightOffset(right_mark) - left_offset;
 
         max_mark_range_bytes = std::max(max_mark_range_bytes, mark_range_bytes);
@@ -267,11 +269,10 @@ void MergeTreeReaderStream::seekToStart()
 
 void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
 {
-    /**
-     * Note: this method is called multiple times for the same range of marks -- each time we
-     * read from stream, but we must update last_right_offset only if it is bigger than
-     * the last one to avoid redundantly cancelling prefetches.
-     */
+    /** Note: this method is called multiple times for the same range of marks -- each time we
+      * read from stream, but we must update last_right_offset only if it is bigger than
+      * the last one to avoid redundantly cancelling prefetches.
+      */
     init();
     auto right_offset = getRightOffset(right_mark);
     if (!right_offset)
@@ -279,7 +280,7 @@ void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
         if (last_right_offset && *last_right_offset == 0)
             return;
 
-        last_right_offset = 0; // Zero value means the end of file.
+        last_right_offset = 0; /// Zero value means the end of file.
         data_buffer->setReadUntilEnd();
     }
     else
