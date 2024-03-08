@@ -2122,7 +2122,7 @@ void InterpreterSelectQuery::applyFiltersToPrewhereInAnalysis(ExpressionAnalysis
     {
         /// Add row level security actions to prewhere.
         analysis.prewhere_info->row_level_filter = analysis.filter_info->actions;
-        analysis.prewhere_info->row_level_column_name = std::move(analysis.filter_info->column_name);
+        analysis.prewhere_info->row_level_column_name = analysis.filter_info->column_name;
         analysis.prewhere_info->row_level_filter->projectInput(false);
         analysis.filter_info = nullptr;
     }
