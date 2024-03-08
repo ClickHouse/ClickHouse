@@ -247,6 +247,12 @@ quit
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
 
+    # The fuzzer_pid belongs to the timeout process.
+    actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
+
+    echo "Attaching gdb to the fuzzer itself"
+    gdb -batch -command script.gdb -p $actual_fuzzer_pid &
+
     # Wait for the fuzzer to complete.
     # Note that the 'wait || ...' thing is required so that the script doesn't
     # exit because of 'set -e' when 'wait' returns nonzero code.
@@ -387,7 +393,7 @@ if [ -f core.zst ]; then
 fi
 
 # Keep all the lines in the paragraphs containing <Fatal> that either contain <Fatal> or don't start with 20... (year)
-sed -n '/<Fatal>/,/^$/p' s.log | awk '/<Fatal>/ || !/^20/' server.log > fatal.log ||:
+sed -n '/<Fatal>/,/^$/p' server.log | awk '/<Fatal>/ || !/^20/' > fatal.log ||:
 FATAL_LINK=''
 if [ -s fatal.log ]; then
     FATAL_LINK='<a href="fatal.log">fatal.log</a>'

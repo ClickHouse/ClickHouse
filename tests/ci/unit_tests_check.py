@@ -23,7 +23,7 @@ def get_test_name(line):
     for element in elements:
         if "(" not in element and ")" not in element:
             return element
-    raise Exception(f"No test name in line '{line}'")
+    raise ValueError(f"No test name in line '{line}'")
 
 
 def process_results(
@@ -176,6 +176,7 @@ def main():
 
     run_command = (
         f"docker run --cap-add=SYS_PTRACE --volume={tests_binary}:/unit_tests_dbms "
+        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         f"--volume={test_output}:/test_output {docker_image}"
     )
 

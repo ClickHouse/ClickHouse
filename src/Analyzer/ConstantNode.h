@@ -75,6 +75,11 @@ public:
         return constant_value->getType();
     }
 
+    void setMaskId(size_t id)
+    {
+        mask_id = id;
+    }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -90,6 +95,7 @@ private:
     ConstantValuePtr constant_value;
     String value_string;
     QueryTreeNodePtr source_expression;
+    size_t mask_id = 0;
 
     static constexpr size_t children_size = 0;
 };
