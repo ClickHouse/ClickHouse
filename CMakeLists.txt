@@ -61,8 +61,8 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
 
-    # -fsanitize=memory is too heavy
-    if (SANITIZE STREQUAL "memory")
+    # -fsanitize=memory and address are too heavy
+    if (SANITIZE)
        set (RLIMIT_DATA 10000000000) # 10G
     endif()
 
