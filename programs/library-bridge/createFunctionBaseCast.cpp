@@ -13,7 +13,7 @@ namespace ErrorCodes
 FunctionBasePtr createFunctionBaseCast(
     ContextPtr, const ColumnsWithTypeAndName &, const DataTypePtr &, std::optional<CastDiagnostic>, CastType)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type conversions are not implemented for ODBC Bridge");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type conversions are not implemented for Library Bridge");
 }
 
 }
