@@ -184,7 +184,7 @@ static bool jemallocOptionEnabled(const char *name)
     return value;
 }
 #else
-static bool jemallocOptionEnabled(const char *) { return 0; }
+static bool jemallocOptionEnabled(const char *) { return false; }
 #endif
 
 int mainEntryClickHouseServer(int argc, char ** argv)
@@ -1228,6 +1228,13 @@ try
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
+    size_t page_cache_size = server_settings.page_cache_size;
+    if (page_cache_size != 0)
+        global_context->setPageCache(
+            server_settings.page_cache_chunk_size, server_settings.page_cache_mmap_size,
+            page_cache_size, server_settings.page_cache_use_madv_free,
+            server_settings.page_cache_use_transparent_huge_pages);
+
     String index_uncompressed_cache_policy = server_settings.index_uncompressed_cache_policy;
     size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;
     double index_uncompressed_cache_size_ratio = server_settings.index_uncompressed_cache_size_ratio;
@@ -1774,7 +1781,7 @@ try
     }
     else
     {
-        DNSResolver::instance().setCacheMaxSize(server_settings.dns_cache_max_size);
+        DNSResolver::instance().setCacheMaxEntries(server_settings.dns_cache_max_entries);
 
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(
@@ -1874,7 +1881,6 @@ try
         {
             total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
         }
-
     }
 #endif
 
@@ -1887,10 +1893,6 @@ try
 #if defined(SANITIZER)
     LOG_INFO(log, "Query Profiler disabled because they cannot work under sanitizers"
         " when two different stack unwinding methods will interfere with each other.");
-#endif
-
-#if !defined(__x86_64__)
-    LOG_INFO(log, "Query Profiler and TraceCollector is only tested on x86_64. It also known to not work under qemu-user.");
 #endif
 
     if (!hasPHDRCache())

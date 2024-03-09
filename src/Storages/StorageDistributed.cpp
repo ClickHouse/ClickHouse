@@ -19,6 +19,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Columns/ColumnConst.h>
 
@@ -104,11 +105,8 @@
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 
-#include <Storages/BlockNumberColumn.h>
-
 #include <memory>
 #include <filesystem>
-#include <optional>
 #include <cassert>
 
 
@@ -290,22 +288,17 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
 StorageDistributed::~StorageDistributed() = default;
 
 
-NamesAndTypesList StorageDistributed::getVirtuals() const
+VirtualColumnsDescription StorageDistributed::createVirtuals()
 {
-    /// NOTE This is weird. Most of these virtual columns are part of MergeTree
+    /// NOTE: This is weird.
+    /// Most of these virtual columns are part of MergeTree
     /// tables info. But Distributed is general-purpose engine.
-    return NamesAndTypesList{
-        NameAndTypePair("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-        NameAndTypePair("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-        NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
-        NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
-        NameAndTypePair("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-        NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
-        NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
-        NameAndTypePair("_row_exists", std::make_shared<DataTypeUInt8>()),
-        NameAndTypePair(BlockNumberColumn::name, BlockNumberColumn::type),
-        NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
-    };
+    StorageInMemoryMetadata metadata;
+    auto desc = MergeTreeData::createVirtuals(metadata);
+
+    desc.addEphemeral("_shard_num", std::make_shared<DataTypeUInt32>(), "Deprecated. Use function shardNum instead");
+
+    return desc;
 }
 
 StorageDistributed::StorageDistributed(
@@ -354,6 +347,7 @@ StorageDistributed::StorageDistributed(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
 
     if (sharding_key_)
     {
@@ -744,6 +738,32 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
 namespace
 {
 
+class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
+{
+    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node || !column_node->hasExpression())
+            return nullptr;
+
+        const auto & column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+            return nullptr;
+
+        auto column_expression = column_node->getExpression();
+        column_expression->setAlias(column_node->getColumnName());
+        return column_expression;
+    }
+
+public:
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto column_expression = getColumnNodeAliasExpression(node))
+            node = column_expression;
+    }
+};
+
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
@@ -796,6 +816,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
+    ReplaseAliasColumnsVisitor replase_alias_columns_visitor;
+    replase_alias_columns_visitor.visit(query_tree_to_modify);
 
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
 }
@@ -1892,7 +1914,7 @@ void registerStorageDistributed(StorageFactory & factory)
         }
 
         /// TODO: move some arguments from the arguments to the SETTINGS.
-        DistributedSettings distributed_settings;
+        DistributedSettings distributed_settings = context->getDistributedSettings();
         if (args.storage_def->settings)
         {
             distributed_settings.loadFromQuery(*args.storage_def);

@@ -227,6 +227,58 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
     assert instance.contains_in_log("KerberosInit failure:")
 
 
+def test_kafka_config_from_sql_named_collection(kafka_cluster):
+    kafka_produce(
+        kafka_cluster,
+        "kafka_json_as_string",
+        [
+            '{"t": 123, "e": {"x": "woof"} }',
+            "",
+            '{"t": 124, "e": {"x": "test"} }',
+            '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}',
+        ],
+    )
+
+    instance.query(
+        """
+        CREATE NAMED COLLECTION kafka_config AS
+            kafka.security_protocol = 'SASL_PLAINTEXT',
+            kafka.sasl_mechanism = 'GSSAPI',
+            kafka.sasl_kerberos_service_name = 'kafka',
+            kafka.sasl_kerberos_keytab = '/tmp/keytab/clickhouse.keytab',
+            kafka.sasl_kerberos_principal = 'anotherkafkauser/instance@TEST.CLICKHOUSE.TECH',
+            kafka.debug = 'security',
+            kafka.api_version_request = 'false',
+
+            kafka_broker_list = 'kerberized_kafka1:19092',
+            kafka_topic_list = 'kafka_json_as_string',
+            kafka_commit_on_select = 1,
+            kafka_group_name = 'kafka_json_as_string',
+            kafka_format = 'JSONAsString',
+            kafka_flush_interval_ms=1000;
+        """
+    )
+    instance.query(
+        """
+        CREATE TABLE test.kafka (field String)
+            ENGINE = Kafka(kafka_config);
+        """
+    )
+
+    time.sleep(3)
+
+    result = instance.query("SELECT * FROM test.kafka;")
+    expected = """\
+{"t": 123, "e": {"x": "woof"} }
+{"t": 124, "e": {"x": "test"} }
+{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}
+"""
+    assert TSV(result) == TSV(expected)
+    assert instance.contains_in_log(
+        "Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows"
+    )
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

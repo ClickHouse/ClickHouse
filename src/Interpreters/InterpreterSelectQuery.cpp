@@ -604,7 +604,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query.setFinal();
     }
 
-    auto analyze = [&] ()
+    auto analyze = [&] (bool try_move_to_prewhere)
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
@@ -633,6 +633,38 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// Restore original view name. Save rewritten subquery for future usage in StorageView.
             query_info.view_query = view->restoreViewName(getSelectQuery(), view_table);
             view = nullptr;
+        }
+
+        if (try_move_to_prewhere
+            && storage && storage->canMoveConditionsToPrewhere()
+            && query.where() && !query.prewhere()
+            && !query.hasJoin()) /// Join may produce rows with nulls or default values, it's difficult to analyze if they affected or not.
+        {
+            /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
+            if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
+            {
+                /// Extract column compressed sizes.
+                std::unordered_map<std::string, UInt64> column_compressed_sizes;
+                for (const auto & [name, sizes] : column_sizes)
+                    column_compressed_sizes[name] = sizes.data_compressed;
+
+                SelectQueryInfo current_info;
+                current_info.query = query_ptr;
+                current_info.syntax_analyzer_result = syntax_analyzer_result;
+
+                Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
+                const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
+
+                MergeTreeWhereOptimizer where_optimizer{
+                    std::move(column_compressed_sizes),
+                    metadata_snapshot,
+                    storage->getConditionEstimatorByPredicate(query_info, storage_snapshot, context),
+                    queried_columns,
+                    supported_prewhere_columns,
+                    log};
+
+                where_optimizer.optimize(current_info, context);
+            }
         }
 
         if (query.prewhere() && query.where())
@@ -748,12 +780,30 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         result_header = getSampleBlockImpl();
     };
 
-    analyze();
+
+    /// This is a hack to make sure we reanalyze if GlobalSubqueriesVisitor changed allow_experimental_parallel_reading_from_replicas
+    /// inside the query context (because it doesn't have write access to the main context)
+    UInt64 parallel_replicas_before_analysis
+        = context->hasQueryContext() ? context->getQueryContext()->getSettingsRef().allow_experimental_parallel_reading_from_replicas : 0;
+
+    /// Conditionally support AST-based PREWHERE optimization.
+    analyze(shouldMoveToPrewhere() && (!settings.query_plan_optimize_prewhere || !settings.query_plan_enable_optimizations));
+
 
     bool need_analyze_again = false;
     bool can_analyze_again = false;
+
     if (context->hasQueryContext())
     {
+        /// As this query can't be executed with parallel replicas, we must reanalyze it
+        if (context->getQueryContext()->getSettingsRef().allow_experimental_parallel_reading_from_replicas
+            != parallel_replicas_before_analysis)
+        {
+            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("max_parallel_replicas", UInt64{0});
+            need_analyze_again = true;
+        }
+
         /// Check number of calls of 'analyze' function.
         /// If it is too big, we will not analyze the query again not to have exponential blowup.
         std::atomic<size_t> & current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter;
@@ -792,14 +842,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// Reuse already built sets for multiple passes of analysis
         prepared_sets = query_analyzer->getPreparedSets();
 
-        analyze();
+        /// Do not try move conditions to PREWHERE for the second time.
+        /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
+        analyze(/* try_move_to_prewhere = */ false);
     }
 
     /// If there is no WHERE, filter blocks as usual
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
-    if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction())
+    if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction() && !options.ignore_access_check)
     {
         /// The current user should have the SELECT privilege. If this table_id is for a table
         /// function we don't check access rights here because in this case they have been already
@@ -840,7 +892,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     {
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it and reanalyze
         context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        context->setSetting("max_parallel_replicas", UInt64{0});
+        context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_DEBUG(log, "Disabling parallel replicas to be able to use a trivial count optimization");
         return true;
     }
@@ -2491,7 +2543,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
     else if (storage)
     {
-        if (typeid_cast<const StorageMerge *>(storage.get()))
+        if (shouldMoveToPrewhere() && settings.query_plan_optimize_prewhere && settings.query_plan_enable_optimizations
+            && typeid_cast<const StorageMerge *>(storage.get()))
             collectFiltersForAnalysis(query_ptr, context, storage_snapshot, options, query_info);
 
         /// Table.
