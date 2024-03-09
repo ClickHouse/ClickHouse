@@ -53,6 +53,7 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
                                 .withSettings(getContext()->getReadSettings())
                                 .withTimeouts(timeouts)
                                 .withHostFilter(&getContext()->getRemoteHostFilter())
+                                .withSkipNotFound(true)
                                 .create(credentials);
 
         String file_name;
@@ -98,10 +99,6 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
     }
     catch (HTTPException & e)
     {
-        /// 404 - no files
-        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            return {};
-
         e.addMessage("while loading disk metadata");
         throw;
     }

@@ -460,24 +460,20 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         try
         {
-            auto res = std::make_unique<ReadWriteBufferFromHTTP>(
-                HTTPConnectionGroupType::STORAGE,
-                request_uri,
-                http_method,
-                proxy_config,
-                read_settings,
-                timeouts,
-                credentials,
-                &context_->getRemoteHostFilter(),
-                settings.max_read_buffer_size,
-                settings.max_http_get_redirects,
-                callback,
-                /*use_external_buffer*/ false,
-                skip_url_not_found_error,
-                headers,
-                delay_initialization,
-                /*file_info_*/ std::nullopt);
-
+            auto res = BuilderRWBufferFromHTTP(request_uri)
+                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                           .withMethod(http_method)
+                           .withProxy(proxy_config)
+                           .withSettings(read_settings)
+                           .withTimeouts(timeouts)
+                           .withHostFilter(&context_->getRemoteHostFilter())
+                           .withBufSize(settings.max_read_buffer_size)
+                           .withRedirects(settings.max_http_get_redirects)
+                           .withOutCallback(callback)
+                           .withSkipNotFound(skip_url_not_found_error)
+                           .withHeaders(headers)
+                           .withDelayInit(delay_initialization)
+                           .create(credentials);
 
             if (context_->getSettingsRef().engine_url_skip_empty_files && res->eof() && option != std::prev(end))
             {

@@ -202,6 +202,7 @@ class BuilderRWBufferFromHTTP
     size_t max_redirects = 0;
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = nullptr;
     bool use_external_buffer = false;
+    bool http_skip_not_found_url = false;
     HTTPHeaderEntries http_header_entries{};
     bool delay_initialization = true;
 
@@ -229,6 +230,7 @@ public:
     setterMember(withHeaders, http_header_entries)
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
+    setterMember(withSkipNotFound, http_skip_not_found_url)
 #undef setterMember
 
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_)
@@ -246,7 +248,7 @@ public:
             max_redirects,
             out_stream_callback,
             use_external_buffer,
-            /*http_skip_not_found_url=*/ false,
+            http_skip_not_found_url,
             http_header_entries,
             delay_initialization,
             /*file_info_=*/ std::nullopt);
