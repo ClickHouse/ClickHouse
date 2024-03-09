@@ -11,9 +11,6 @@ set (CLICKHOUSE_LIBRARY_BRIDGE_SOURCES
     LibraryBridgeHandlers.cpp
     SharedLibrary.cpp
     library-bridge.cpp
-
-    ../../src/Functions/CastOverloadResolverImpl.cpp
-    ../../src/Functions/CastInternalOverloadResolverImpl.cpp
 )
 
 clickhouse_add_executable(clickhouse-library-bridge ${CLICKHOUSE_LIBRARY_BRIDGE_SOURCES})
