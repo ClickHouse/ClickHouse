@@ -259,7 +259,7 @@ ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std
     res.is_remote = 1;
     for (const auto & replica : replicas)
     {
-        if (isLocalAddress(DNSResolver::instance().resolveHost(replica.host_name)))
+        if (isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(replica.host_name).front()))
         {
             res.is_remote = 0;
             break;

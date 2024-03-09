@@ -64,6 +64,44 @@ template <> struct is_arithmetic<UInt256> { static constexpr bool value = true; 
 template <typename T>
 inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
 
+#define FOR_EACH_ARITHMETIC_TYPE(M) \
+    M(DataTypeDate) \
+    M(DataTypeDate32) \
+    M(DataTypeDateTime) \
+    M(DataTypeInt8) \
+    M(DataTypeUInt8) \
+    M(DataTypeInt16) \
+    M(DataTypeUInt16) \
+    M(DataTypeInt32) \
+    M(DataTypeUInt32) \
+    M(DataTypeInt64) \
+    M(DataTypeUInt64) \
+    M(DataTypeInt128) \
+    M(DataTypeUInt128) \
+    M(DataTypeInt256) \
+    M(DataTypeUInt256) \
+    M(DataTypeFloat32) \
+    M(DataTypeFloat64)
+
+#define FOR_EACH_ARITHMETIC_TYPE_PASS(M, X) \
+    M(DataTypeDate, X) \
+    M(DataTypeDate32, X) \
+    M(DataTypeDateTime, X) \
+    M(DataTypeInt8, X) \
+    M(DataTypeUInt8, X) \
+    M(DataTypeInt16, X) \
+    M(DataTypeUInt16, X) \
+    M(DataTypeInt32, X) \
+    M(DataTypeUInt32, X) \
+    M(DataTypeInt64, X) \
+    M(DataTypeUInt64, X) \
+    M(DataTypeInt128, X) \
+    M(DataTypeUInt128, X) \
+    M(DataTypeInt256, X) \
+    M(DataTypeUInt256, X) \
+    M(DataTypeFloat32, X) \
+    M(DataTypeFloat64, X)
+
 template <typename T>
 struct make_unsigned // NOLINT(readability-identifier-naming)
 {

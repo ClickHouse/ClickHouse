@@ -79,13 +79,14 @@ static String getServerUUID()
     return toString(server_uuid);
 }
 
-bool checkBatchRemove(S3ObjectStorage & storage, const String & key_with_trailing_slash)
+bool checkBatchRemove(S3ObjectStorage & storage)
 {
-    /// NOTE: key_with_trailing_slash is the disk prefix, it is required
-    /// because access is done via S3ObjectStorage not via IDisk interface
-    /// (since we don't have disk yet).
-    const String path = fmt::format("{}clickhouse_remove_objects_capability_{}", key_with_trailing_slash, getServerUUID());
-    StoredObject object(path);
+    /// NOTE: Here we are going to write and later drop some key.
+    /// We are using generateObjectKeyForPath() which returns random object key.
+    /// That generated key is placed in a right directory where we should have write access.
+    const String path = fmt::format("clickhouse_remove_objects_capability_{}", getServerUUID());
+    const auto key = storage.generateObjectKeyForPath(path);
+    StoredObject object(key.serialize(), path);
     try
     {
         auto file = storage.writeObject(object, WriteMode::Rewrite);

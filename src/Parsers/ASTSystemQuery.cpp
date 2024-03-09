@@ -114,6 +114,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
             settings.ostr << '.';
         }
 
+        chassert(table);
         table->formatImpl(settings, state, frame);
         return settings.ostr;
     };
@@ -415,6 +416,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::STOP_THREAD_FUZZER:
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
+        case Type::DROP_PAGE_CACHE:
             break;
         case Type::UNKNOWN:
         case Type::END:
