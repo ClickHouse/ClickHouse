@@ -5,13 +5,6 @@
 namespace DB
 {
 
-namespace
-{
-
-struct CastInternalName { static constexpr auto name = "_CAST"; };
-
-}
-
 FunctionBasePtr createFunctionBaseCast(
     ContextPtr context
     , const ColumnsWithTypeAndName & arguments
@@ -25,7 +18,7 @@ FunctionBasePtr createFunctionBaseCast(
         data_types[i] = arguments[i].type;
 
     auto monotonicity = MonotonicityHelper::getMonotonicityInformation(arguments.front().type, return_type.get());
-    return std::make_unique<FunctionCast<CastInternalName>>(context, CastInternalName::name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+    return std::make_unique<FunctionCast>(context, "CAST", std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
 }
 
 REGISTER_FUNCTION(Conversion)
@@ -151,6 +144,56 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMonth, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalQuarter, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalYear, PositiveMonotonicity>>();
+}
+
+
+MonotonicityHelper::MonotonicityForRange MonotonicityHelper::getMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type)
+{
+    if (const auto * type = checkAndGetDataType<DataTypeUInt8>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeUInt16>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeUInt32>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeUInt64>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeUInt128>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeUInt256>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeInt8>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeInt16>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeInt32>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeInt64>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeInt128>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeInt256>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeFloat32>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeFloat64>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeDate>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeDate32>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeDateTime>(to_type))
+        return monotonicityForType(type);
+    if (const auto * type = checkAndGetDataType<DataTypeString>(to_type))
+        return monotonicityForType(type);
+    if (isEnum(from_type))
+    {
+        if (const auto * type = checkAndGetDataType<DataTypeEnum8>(to_type))
+            return monotonicityForType(type);
+        if (const auto * type = checkAndGetDataType<DataTypeEnum16>(to_type))
+            return monotonicityForType(type);
+    }
+    /// other types like Null, FixedString, Array and Tuple have no monotonicity defined
+    return {};
 }
 
 }

@@ -3170,13 +3170,17 @@ private:
 };
 
 
+struct FunctionCastName
+{
+    static constexpr auto name = "CAST";
+};
+
 class FunctionCastBase : public IFunctionBase
 {
 public:
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
 };
 
-template <typename FunctionName>
 class FunctionCast final : public FunctionCastBase
 {
 public:
@@ -3204,7 +3208,7 @@ public:
         try
         {
             return std::make_unique<ExecutableFunctionCast>(
-                    prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), cast_name, diagnostic);
+                prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), cast_name, diagnostic);
         }
         catch (Exception & e)
         {
@@ -3278,7 +3282,7 @@ private:
         {
             /// In case when converting to Nullable type, we apply different parsing rule,
             /// that will not throw an exception but return NULL in case of malformed input.
-            FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionName, ConvertFromStringExceptionMode::Null>::create();
+            FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionCastName, ConvertFromStringExceptionMode::Null>::create();
             return createFunctionAdaptor(function, from_type);
         }
         else if (!can_apply_accurate_cast)
@@ -3304,7 +3308,7 @@ private:
                     {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
             case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
-                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName, ConvertDefaultBehaviorTag, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
+                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, ConvertDefaultBehaviorTag, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
                 arguments, result_type, input_rows_count, ADDITIONS()); \
                 break;
                         if (wrapper_cast_type == CastType::accurate)
@@ -3334,7 +3338,7 @@ private:
                     {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
             case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
-            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName, ConvertDefaultBehaviorTag, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::template execute<ADDITIONS>( \
+            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, ConvertDefaultBehaviorTag, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::template execute<ADDITIONS>( \
 arguments, result_type, input_rows_count); \
                 break;
                         if (wrapper_cast_type == CastType::accurate)
@@ -3368,7 +3372,7 @@ arguments, result_type, input_rows_count); \
             {
                 if (wrapper_cast_type == CastType::accurateOrNull)
                 {
-                    auto nullable_column_wrapper = FunctionCast<FunctionName>::createToNullableColumnWrapper();
+                    auto nullable_column_wrapper = FunctionCast::createToNullableColumnWrapper();
                     return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
                 }
                 else
@@ -3494,7 +3498,7 @@ arguments, result_type, input_rows_count); \
                     {
                         AccurateConvertStrategyAdditions additions;
                         additions.scale = scale;
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
                             arguments, result_type, input_rows_count, additions);
 
                         return true;
@@ -3503,7 +3507,7 @@ arguments, result_type, input_rows_count); \
                     {
                         AccurateOrNullConvertStrategyAdditions additions;
                         additions.scale = scale;
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
                             arguments, result_type, input_rows_count, additions);
 
                         return true;
@@ -3516,14 +3520,14 @@ arguments, result_type, input_rows_count); \
                         /// Consistent with CAST(Nullable(String) AS Nullable(Numbers))
                         /// In case when converting to Nullable type, we apply different parsing rule,
                         /// that will not throw an exception but return NULL in case of malformed input.
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName, ConvertReturnNullOnErrorTag>::execute(
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, ConvertReturnNullOnErrorTag>::execute(
                             arguments, result_type, input_rows_count, scale);
 
                         return true;
                     }
                 }
 
-                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(arguments, result_type, input_rows_count, scale);
+                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, scale);
 
                 return true;
             });
@@ -3533,7 +3537,7 @@ arguments, result_type, input_rows_count); \
             {
                 if (wrapper_cast_type == CastType::accurateOrNull)
                 {
-                    auto nullable_column_wrapper = FunctionCast<FunctionName>::createToNullableColumnWrapper();
+                    auto nullable_column_wrapper = FunctionCast::createToNullableColumnWrapper();
                     return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
                 }
                 else
@@ -4922,54 +4926,7 @@ public:
         return FunctionTo<DataType>::Type::Monotonic::get;
     }
 
-    static MonotonicityForRange getMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type)
-    {
-        if (const auto * type = checkAndGetDataType<DataTypeUInt8>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeUInt16>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeUInt32>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeUInt64>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeUInt128>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeUInt256>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeInt8>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeInt16>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeInt32>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeInt64>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeInt128>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeInt256>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeFloat32>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeFloat64>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeDate>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeDate32>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeDateTime>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeString>(to_type))
-            return monotonicityForType(type);
-        if (isEnum(from_type))
-        {
-            if (const auto * type = checkAndGetDataType<DataTypeEnum8>(to_type))
-                return monotonicityForType(type);
-            if (const auto * type = checkAndGetDataType<DataTypeEnum16>(to_type))
-                return monotonicityForType(type);
-        }
-        /// other types like Null, FixedString, Array and Tuple have no monotonicity defined
-        return {};
-    }
+    static MonotonicityForRange getMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type);
 };
 
 FunctionBasePtr createFunctionBaseCast(

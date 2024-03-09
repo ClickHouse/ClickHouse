@@ -1,12 +1,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -16,6 +16,13 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+FunctionBasePtr createFunctionBaseCast(
+    ContextPtr context
+    , const ColumnsWithTypeAndName & arguments
+    , const DataTypePtr & return_type
+    , std::optional<CastDiagnostic> diagnostic
+    , CastType cast_type);
 
 
 /** CastInternal does not preserve nullability of the data type,
