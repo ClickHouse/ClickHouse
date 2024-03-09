@@ -630,7 +630,8 @@ try
     {
         observer.emplace(std::chrono::seconds(cgroups_memory_observer_wait_time));
         observer->startThread();
-        observer->setOnMemoryLimitUpdate([&](){
+        observer->setOnMemoryLimitUpdate([&]()
+        {
             main_config_reloader->reload();
         });
     }
