@@ -3,7 +3,6 @@
 # Check that there are no new translation units compiled to an object file larger than a certain size.
 
 TU_EXCLUDES=(
-    CastOverloadResolver
     AggregateFunctionUniq
     FunctionsConversion
 
