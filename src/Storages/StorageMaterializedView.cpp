@@ -6,6 +6,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTRefreshStrategy.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
@@ -16,6 +18,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
 
@@ -144,15 +147,73 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (query.refresh_strategy)
     {
-        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy);
-        refresh_on_start = mode < LoadingStrictnessLevel::ATTACH && !query.is_create_empty && !query.is_create_empty;
+        fixed_uuid = query.refresh_strategy->append;
+
+        auto db = DatabaseCatalog::instance().getDatabase(getStorageID().database_name);
+        bool is_replicated_db = db->getEngineName() == "Replicated";
+
+        /// Decide whether to enable coordination.
+        if (is_replicated_db)
+        {
+            if (fixed_uuid)
+            {
+                /// In APPEND mode, both coordinated and uncoordinated mode make sense, so allow choosing it with a setting.
+                RefreshSettings s;
+                if (query.refresh_strategy->settings)
+                    s.applyChanges(query.refresh_strategy->settings->changes);
+                refresh_coordinated = !s.all_replicas;
+            }
+            else
+            {
+                /// In non-APPEND mode, uncoordinated refresh would just break. Require coordination.
+                refresh_coordinated = true;
+            }
+        }
+
+        /// Sanity-check the table engine.
+        if (mode < LoadingStrictnessLevel::ATTACH && !fixed_uuid)
+        {
+            String inner_engine;
+            if (has_inner_table)
+            {
+                if (query.storage && query.storage->engine)
+                    inner_engine = query.storage->engine->name;
+            }
+            else
+            {
+                StoragePtr inner_table = DatabaseCatalog::instance().tryGetTable(query.to_table_id, getContext());
+                if (inner_table)
+                    inner_engine = inner_table->getName();
+            }
+            if (!inner_engine.empty())
+            {
+                bool is_replicated_table = inner_engine.starts_with("Replicated") || inner_engine.starts_with("Shared");
+                if (is_replicated_table && !is_replicated_db)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "This combination doesn't work: refreshable materialized view, no APPEND, non-replicated database, replicated table. Each refresh would replace the replicated table locally, but other replicas wouldn't see it. Refusing to create.");
+                if (!is_replicated_table && refresh_coordinated)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "This combination doesn't work: refreshable materialized view, no APPEND, replicated database, non-replicated table. The refresh would be done on one replica, but the table would be replaced on other replicas too (with empty tables). Refusing to create.");
+                /// Combination (!is_replicated_table && refresh_coordinated && fixed_uuid) is also questionable:
+                /// each refresh would append to a table on one arbitrarily chosen replica. But in principle it can be useful,
+                /// e.g. if SELECTs are done using clusterAllReplicas(). (For the two disallowed cases above, clusterAllReplicas() wouldn't work reliably.)
+            }
+        }
+
+        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty);
+    }
+
+    if (!fixed_uuid)
+    {
+        if (query.to_inner_uuid != UUIDHelpers::Nil)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID is not allowed for materialized views with REFRESH without APPEND");
+        if (query.to_table_id.hasUUID())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "explicit UUID is not allowed for target table of materialized view with REFRESH without APPEND");
     }
 
     if (!has_inner_table)
     {
         target_table_id = query.to_table_id;
     }
-    else if (LoadingStrictnessLevel::ATTACH <= mode)
+    else if (mode >= LoadingStrictnessLevel::ATTACH)
     {
         /// If there is an ATTACH request, then the internal table must already be created.
         target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()), query.to_inner_uuid);
@@ -162,8 +223,10 @@ StorageMaterializedView::StorageMaterializedView(
         /// We will create a query to create an internal table.
         auto create_context = Context::createCopy(local_context);
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
-        manual_create_query->setDatabase(getStorageID().database_name);
-        manual_create_query->setTable(generateInnerTableName(getStorageID()));
+        String db_name = getStorageID().database_name;
+        String inner_name = generateInnerTableName(getStorageID());
+        manual_create_query->setDatabase(db_name);
+        manual_create_query->setTable(inner_name);
         manual_create_query->uuid = query.to_inner_uuid;
 
         auto new_columns_list = std::make_shared<ASTColumns>();
@@ -176,7 +239,10 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->getDatabase(), manual_create_query->getTable()}, getContext())->getStorageID();
+        if (fixed_uuid)
+            target_table_id = DatabaseCatalog::instance().getTable({db_name, inner_name}, getContext())->getStorageID();
+        else
+            target_table_id = StorageID(db_name, inner_name);
     }
 }
 
@@ -208,6 +274,9 @@ void StorageMaterializedView::read(
 {
     auto context = getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(local_context);
     auto storage = getTargetTable();
+
+    syncIfRefreshedByAnotherReplica(storage.get());
+
     auto lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
@@ -299,20 +368,33 @@ void StorageMaterializedView::drop()
     /// but DROP acquires DDLGuard for the name of MV. And we cannot acquire second DDLGuard for the inner name in DROP,
     /// because it may lead to lock-order-inversion (DDLGuards must be acquired in lexicographical order).
     dropInnerTableIfAny(/* sync */ false, getContext());
+
+    if (refresher)
+        refresher->drop(getContext());
 }
 
 void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
-    /// We will use `sync` argument wneh this function is called from a DROP query
-    /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
-    /// See the comment in StorageMaterializedView::drop.
-    /// DDL queries with StorageMaterializedView are fundamentally broken.
-    /// Best-effort to make them work: the inner table name is almost always less than the MV name (so it's safe to lock DDLGuard)
-    auto inner_table_id = getTargetTableId();
-    bool may_lock_ddl_guard = getStorageID().getQualifiedName() < inner_table_id.getQualifiedName();
-    if (has_inner_table && tryGetTargetTable())
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
-                                               sync, /* ignore_sync_setting */ true, may_lock_ddl_guard);
+    if (!has_inner_table)
+        return;
+
+    std::vector<StorageID> to_drop = {getTargetTableId()};
+    if (!fixed_uuid)
+        to_drop.push_back(StorageID(to_drop[0].getDatabaseName(), ".tmp" + to_drop[0].getTableName()));
+
+    for (StorageID inner_table_id : to_drop)
+    {
+        /// We will use `sync` argument wneh this function is called from a DROP query
+        /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
+        /// See the comment in StorageMaterializedView::drop.
+        /// DDL queries with StorageMaterializedView are fundamentally broken.
+        /// Best-effort to make them work: the inner table name is almost always less than the MV name (so it's safe to lock DDLGuard)
+        bool may_lock_ddl_guard = getStorageID().getQualifiedName() < inner_table_id.getQualifiedName();
+        auto table_exists = DatabaseCatalog::instance().tryGetTable(inner_table_id, getContext()) != nullptr;
+        if (table_exists)
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
+                                                   sync, /* ignore_sync_setting */ true, may_lock_ddl_guard);
+    }
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
@@ -350,8 +432,6 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext() const
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
-    /// TODO: Set view's definer as the current user in refresh_context, so that the correct user's
-    ///       quotas and permissions apply for this query.
     return refresh_context;
 }
 
@@ -368,19 +448,21 @@ std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefresh(bool app
         String db_name = db->getDatabaseName();
         auto new_table_name = ".tmp" + generateInnerTableName(getStorageID());
 
-        auto create_table_query = db->getCreateTableQuery(inner_table_id.table_name, getContext());
-        auto & create_query = create_table_query->as<ASTCreateQuery &>();
-        create_query.setTable(new_table_name);
-        create_query.setDatabase(db->getDatabaseName());
-        create_query.create_or_replace = true;
-        create_query.replace_table = true;
-        create_query.uuid = UUIDHelpers::Nil;
+        auto create_query = std::dynamic_pointer_cast<ASTCreateQuery>(db->getCreateTableQuery(inner_table_id.table_name, getContext()));
+        create_query->setTable(new_table_name);
+        create_query->setDatabase(db_name);
+        create_query->create_or_replace = true;
+        create_query->replace_table = true;
+        /// Use UUID to ensure that the INSERT below inserts into the exact table we created, even if another replica replaced it.
+        create_query->generateRandomUUID(/* always_generate_new_uuid */ true);
 
-        InterpreterCreateQuery create_interpreter(create_table_query, refresh_context);
+        InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
+        /// Notice that we discard the BlockIO that execute() returns. This means that in case of DatabaseReplicated we don't wait
+        /// for other replicas to execute the query, only the current replica. Same in exchangeTargetTable() and dropTempTable().
         create_interpreter.execute();
 
-        target_table = DatabaseCatalog::instance().getTable({db_name, new_table_name}, getContext())->getStorageID();
+        target_table = StorageID(db_name, new_table_name, create_query->uuid);
         out_temp_table_id = target_table;
     }
 
@@ -404,29 +486,27 @@ std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefresh(bool app
     return insert_query;
 }
 
-StorageID StorageMaterializedView::exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context)
+std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context)
 {
     /// Known problem: if the target table was ALTERed during refresh, this will effectively revert
     /// the ALTER.
 
     auto stale_table_id = getTargetTableId();
+    fresh_table.uuid = UUIDHelpers::Nil;
 
     auto db = DatabaseCatalog::instance().getDatabase(stale_table_id.database_name);
     auto target_db = DatabaseCatalog::instance().getDatabase(fresh_table.database_name);
+    bool exchange = DatabaseCatalog::instance().isTableExist(stale_table_id, refresh_context);
 
     CurrentThread::QueryScope query_scope(refresh_context);
 
     auto rename_query = std::make_shared<ASTRenameQuery>();
-    rename_query->exchange = true;
+    rename_query->exchange = exchange;
     rename_query->addElement(fresh_table.database_name, fresh_table.table_name, stale_table_id.database_name, stale_table_id.table_name);
 
     InterpreterRenameQuery(rename_query, refresh_context).execute();
 
-    std::swap(stale_table_id.database_name, fresh_table.database_name);
-    std::swap(stale_table_id.table_name, fresh_table.table_name);
-
-    setTargetTableId(std::move(fresh_table));
-    return stale_table_id;
+    return exchange ? std::make_optional(fresh_table) : std::nullopt;
 }
 
 void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context)
@@ -449,6 +529,23 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
         tryLogCurrentException(&Poco::Logger::get("StorageMaterializedView"), "Failed to drop temporary table after refresh");
     }
 }
+
+void StorageMaterializedView::syncIfRefreshedByAnotherReplica(IStorage * table)
+{
+    if (fixed_uuid || !refresh_coordinated)
+        return;
+    UUID uuid = table->getStorageID().uuid;
+
+    std::lock_guard lock(replica_sync_mutex);
+    if (uuid != last_seen_inner_uuid)
+    {
+        InterpreterSystemQuery::trySyncReplica(table, SyncReplicaMode::DEFAULT, {}, getContext());
+
+        /// (Race condition: this may revert from a newer uuid to an older one. This doesn't break
+        ///  anything, just causes an unnecessary sync. Should be rare.)
+        last_seen_inner_uuid = uuid;
+    }
+ }
 
 void StorageMaterializedView::alter(
     const AlterCommands & params,
@@ -503,7 +600,10 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         else if (command.type == AlterCommand::MODIFY_QUERY)
             continue;
         else if (command.type == AlterCommand::MODIFY_REFRESH && refresher)
+        {
+            refresher->checkAlterIsPossible(*command.refresh->as<ASTRefreshStrategy>());
             continue;
+        }
 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                         command.type, getName());
@@ -580,12 +680,7 @@ void StorageMaterializedView::startup()
         DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
 
     if (refresher)
-    {
-        refresher->initializeAndStart();
-
-        if (refresh_on_start)
-            refresher->run();
-    }
+        refresher->startup();
 }
 
 void StorageMaterializedView::shutdown(bool)
@@ -622,7 +717,7 @@ Strings StorageMaterializedView::getDataPaths() const
 void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     /// We backup the target table's data only if it's inner.
-    if (hasInnerTable())
+    if (hasInnerTable() && fixed_uuid)
     {
         if (auto table = tryGetTargetTable())
             table->backupData(backup_entries_collector, data_path_in_backup, partitions);
@@ -634,13 +729,13 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
 
 void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    if (hasInnerTable())
+    if (hasInnerTable() && fixed_uuid)
         return getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
 }
 
 bool StorageMaterializedView::supportsBackupPartition() const
 {
-    if (hasInnerTable())
+    if (hasInnerTable() && fixed_uuid)
         return getTargetTable()->supportsBackupPartition();
     return false;
 }
@@ -704,12 +799,6 @@ DB::StorageID StorageMaterializedView::getTargetTableId() const
 {
     std::lock_guard guard(target_table_id_mutex);
     return target_table_id;
-}
-
-void StorageMaterializedView::setTargetTableId(DB::StorageID id)
-{
-    std::lock_guard guard(target_table_id_mutex);
-    target_table_id = std::move(id);
 }
 
 void StorageMaterializedView::updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name)
