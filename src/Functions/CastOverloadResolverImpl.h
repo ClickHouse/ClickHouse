@@ -29,55 +29,48 @@ struct CastInternalName
   * Cast preserves nullability according to setting `cast_keep_nullable`,
   * i.e. Cast(toNullable(toInt8(1)) as Int32) will be Nullable(Int32(1)) if `cast_keep_nullable` == 1.
   */
-template <CastType cast_type, bool internal>
 class CastOverloadResolverImpl : public IFunctionOverloadResolver
 {
 public:
     using MonotonicityForRange = FunctionCastBase::MonotonicityForRange;
 
-    static constexpr auto name = cast_type == CastType::accurate
-        ? "accurateCast"
-        : (cast_type == CastType::accurateOrNull ? "accurateCastOrNull"
-        : (internal ? "_CAST" : "CAST"));
-
-    String getName() const override { return name; }
+    String getName() const override
+    {
+        if (cast_type == CastType::accurate)
+            return "accurateCast";
+        if (cast_type == CastType::accurateOrNull)
+            return "accurateCastOrNull";
+        if (internal)
+            return "_CAST";
+        else
+            return "CAST";
+    }
 
     size_t getNumberOfArguments() const override { return 2; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    explicit CastOverloadResolverImpl(ContextPtr context_, std::optional<CastDiagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
+    explicit CastOverloadResolverImpl(ContextPtr context_, CastType cast_type_, bool internal_, std::optional<CastDiagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
         : context(context_)
+        , cast_type(cast_type_)
+        , internal(internal_)
         , diagnostic(std::move(diagnostic_))
         , keep_nullable(keep_nullable_)
         , data_type_validation_settings(data_type_validation_settings_)
     {
     }
 
-    static FunctionOverloadResolverPtr create(ContextPtr context)
+    static FunctionOverloadResolverPtr create(ContextPtr context, CastType cast_type, bool internal)
     {
         const auto & settings_ref = context->getSettingsRef();
 
-        if constexpr (internal)
-            return createImpl(context, {}, false /*keep_nullable*/);
-
-        return createImpl(context, {}, settings_ref.cast_keep_nullable, DataTypeValidationSettings(settings_ref));
-    }
-
-    static FunctionOverloadResolverPtr createImpl(ContextPtr context, std::optional<CastDiagnostic> diagnostic = {}, bool keep_nullable = false, const DataTypeValidationSettings & data_type_validation_settings = {})
-    {
-        assert(!internal || !keep_nullable);
-        return std::make_unique<CastOverloadResolverImpl>(context, std::move(diagnostic), keep_nullable, data_type_validation_settings);
-    }
-
-    static FunctionOverloadResolverPtr createImpl(std::optional<CastDiagnostic> diagnostic = {}, bool keep_nullable = false, const DataTypeValidationSettings & data_type_validation_settings = {})
-    {
-        assert(!internal || !keep_nullable);
-        return std::make_unique<CastOverloadResolverImpl>(ContextPtr(), std::move(diagnostic), keep_nullable, data_type_validation_settings);
+        if (internal)
+            return std::make_unique<CastOverloadResolverImpl>(context, cast_type, internal, std::nullopt, false /*keep_nullable*/, DataTypeValidationSettings{});
+        else
+            return std::make_unique<CastOverloadResolverImpl>(context, cast_type, internal, std::nullopt, settings_ref.cast_keep_nullable, DataTypeValidationSettings(settings_ref));
     }
 
 protected:
-
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes data_types(arguments.size());
@@ -87,8 +80,10 @@ protected:
 
         auto monotonicity = MonotonicityHelper::getMonotonicityInformation(arguments.front().type, return_type.get());
 
-        using Function = FunctionCast<std::conditional_t<internal, CastInternalName, CastName>>;
-        return std::make_unique<Function>(context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+        if (internal)
+            return std::make_unique<FunctionCast<CastInternalName>>(context, CastInternalName::name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+        else
+            return std::make_unique<FunctionCast<CastName>>(context, CastName::name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -106,10 +101,10 @@ protected:
         DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
         validateDataType(type, data_type_validation_settings);
 
-        if constexpr (cast_type == CastType::accurateOrNull)
+        if (cast_type == CastType::accurateOrNull)
             return makeNullable(type);
 
-        if constexpr (internal)
+        if (internal)
             return type;
 
         if (keep_nullable && arguments.front().type->isNullable() && type->canBeInsideNullable())
@@ -124,25 +119,11 @@ protected:
 
 private:
     ContextPtr context;
+    CastType cast_type;
+    bool internal;
     std::optional<CastDiagnostic> diagnostic;
     bool keep_nullable;
     DataTypeValidationSettings data_type_validation_settings;
 };
-
-
-template <CastType cast_type>
-using CastOverloadResolver = CastOverloadResolverImpl<cast_type, false>;
-
-template <CastType cast_type>
-using CastInternalOverloadResolver = CastOverloadResolverImpl<cast_type, true>;
-
-
-extern template class CastOverloadResolverImpl<CastType::nonAccurate, false>;
-extern template class CastOverloadResolverImpl<CastType::accurate, false>;
-extern template class CastOverloadResolverImpl<CastType::accurateOrNull, false>;
-
-extern template class CastOverloadResolverImpl<CastType::nonAccurate, true>;
-extern template class CastOverloadResolverImpl<CastType::accurate, true>;
-extern template class CastOverloadResolverImpl<CastType::accurateOrNull, true>;
 
 }
