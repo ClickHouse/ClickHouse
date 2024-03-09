@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
 {
     const auto * arg_type = named_column.type.get();
