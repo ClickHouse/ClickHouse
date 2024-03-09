@@ -26,14 +26,19 @@ UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
     return static_cast<UInt32>(field.get<UInt32>());
 }
 
+FunctionOverloadResolverPtr createInternalCastOverloadResolver(CastType type, std::optional<CastDiagnostic> diagnostic)
+{
+    return CastOverloadResolverImpl::create(ContextPtr{}, type, true, diagnostic);
+}
+
 REGISTER_FUNCTION(CastOverloadResolvers)
 {
-    factory.registerFunction("_CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, true); }, {}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction("_CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, true, {}); }, {}, FunctionFactory::CaseInsensitive);
     /// Note: "internal" (not affected by null preserving setting) versions of accurate cast functions are unneeded.
 
-    factory.registerFunction("CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, false); }, {}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction("accurateCast", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurate, false); }, {});
-    factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false); }, {});
+    factory.registerFunction("CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, false, {}); }, {}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction("accurateCast", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurate, false, {}); }, {});
+    factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false, {}); }, {});
 }
 
 }
