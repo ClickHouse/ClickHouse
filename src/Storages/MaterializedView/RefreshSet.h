@@ -3,44 +3,15 @@
 #include <IO/Progress.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
-#include <Storages/MaterializedView/RefreshTask_fwd.h>
 #include <Common/CurrentMetrics.h>
 #include <list>
 
 namespace DB
 {
 
-enum class RefreshState
-{
-    Disabled = 0,
-    Scheduled,
-    WaitingForDependencies,
-    Running,
-};
-
-enum class LastRefreshResult
-{
-    Unknown = 0,
-    Cancelled,
-    Error,
-    Finished
-};
-
-struct RefreshInfo
-{
-    StorageID view_id = StorageID::createEmpty();
-    RefreshState state = RefreshState::Scheduled;
-    LastRefreshResult last_refresh_result = LastRefreshResult::Unknown;
-    std::optional<UInt32> last_attempt_time;
-    std::optional<UInt32> last_success_time;
-    UInt64 last_attempt_duration_ms = 0;
-    UInt32 next_refresh_time = 0;
-    UInt64 refresh_count = 0;
-    UInt64 retry = 0;
-    String exception_message; // if last_refresh_result is Error
-    std::vector<StorageID> remaining_dependencies;
-    ProgressValues progress;
-};
+class RefreshTask;
+using RefreshTaskPtr = std::shared_ptr<RefreshTask>;
+using RefreshTaskList = std::list<RefreshTaskPtr>;
 
 /// Set of refreshable views
 class RefreshSet
@@ -78,24 +49,21 @@ public:
         Handle(RefreshSet * parent_set_, StorageID id_, RefreshTaskList::iterator iter_, std::vector<StorageID> dependencies_);
     };
 
-    using InfoContainer = std::vector<RefreshInfo>;
-
     RefreshSet();
 
-    void emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskHolder task);
+    void emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task);
 
     /// Finds active refreshable view(s) by database and table name.
     /// Normally there's at most one, but we allow name collisions here, just in case.
     RefreshTaskList findTasks(const StorageID & id) const;
+    std::vector<RefreshTaskPtr> getTasks() const;
 
-    InfoContainer getInfo() const;
-
-    /// Get tasks that depend on the given one.
-    std::vector<RefreshTaskHolder> getDependents(const StorageID & id) const;
+    /// Calls notifyDependencyProgress() on all tasks that depend on `id`.
+    void notifyDependents(const StorageID & id) const;
 
 private:
     using TaskMap = std::unordered_map<StorageID, RefreshTaskList, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
-    using DependentsMap = std::unordered_map<StorageID, std::unordered_set<RefreshTaskHolder>, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using DependentsMap = std::unordered_map<StorageID, std::unordered_set<RefreshTaskPtr>, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
 
     /// Protects the two maps below, not locked for any nontrivial operations (e.g. operations that
     /// block or lock other mutexes).

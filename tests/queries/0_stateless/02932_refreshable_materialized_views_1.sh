@@ -20,10 +20,10 @@ $CLICKHOUSE_CLIENT -nq "
         engine Memory
         empty
         as select number as x from numbers(2) union all select rand64() as x;
-    select '<1: created view>', view, remaining_dependencies, exception, last_refresh_result in ('Unknown', 'Finished') from refreshes;
+    select '<1: created view>', exception, view from refreshes;
     show create a;"
 # Wait for any refresh. (xargs trims the string and turns \t and \n into spaces)
-while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" == 'Unknown' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select last_success_time is null from refreshes -- $LINENO" | xargs`" != '0' ]
 do
     sleep 0.5
 done
@@ -50,7 +50,7 @@ done
 # to make sure the clock+timer code works at all. If it turns out flaky, increase refresh period above.
 $CLICKHOUSE_CLIENT -nq "
     select '<3: time difference at least>', min2(reinterpret(now64(), 'Int64') - $start_time, 1000);
-    select '<4: next refresh in>', next_refresh_time-last_refresh_time from refreshes;"
+    select '<4: next refresh in>', next_refresh_time-last_success_time from refreshes;"
 
 # Create a source table from which views will read.
 $CLICKHOUSE_CLIENT -nq "
@@ -62,22 +62,23 @@ $CLICKHOUSE_CLIENT -nq "
     system wait view a;
     system refresh view a;
     system wait view a;
-    select '<4.1: fake clock>', status, last_refresh_time, next_refresh_time from refreshes;
+    select '<4.1: fake clock>', status, last_success_time, next_refresh_time from refreshes;
     alter table a modify refresh every 2 year;
     alter table a modify query select x*2 as x from src;
-    select '<4.5: altered>', status, last_refresh_result, next_refresh_time from refreshes;
+    system wait view a;
+    select '<4.5: altered>', status, last_success_time, next_refresh_time from refreshes;
     show create a;"
 # Advance time to trigger the refresh.
 $CLICKHOUSE_CLIENT -nq "
     select '<5: no refresh>', count() from a;
     system test view a set fake time '2052-02-03 04:05:06';"
-while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_time from refreshes -- $LINENO" | xargs`" != '2052-02-03 04:05:06' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select last_success_time, status from refreshes -- $LINENO" | xargs`" != '2052-02-03 04:05:06 Scheduled' ]
 do
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -nq "
     select '<6: refreshed>', * from a;
-    select '<7: refreshed>', status, last_refresh_result, next_refresh_time from refreshes;"
+    select '<7: refreshed>', status, last_success_time, next_refresh_time from refreshes;"
 
 # Create a dependent view, refresh it once.
 $CLICKHOUSE_CLIENT -nq "
@@ -86,13 +87,13 @@ $CLICKHOUSE_CLIENT -nq "
     system test view b set fake time '2052-11-11 11:11:11';
     system refresh view b;
     system wait view b;
-    select '<7.5: created dependent>', last_refresh_time from refreshes where view = 'b';"
+    select '<7.5: created dependent>', last_success_time from refreshes where view = 'b';"
 # Next refresh shouldn't start until the dependency refreshes.
 $CLICKHOUSE_CLIENT -nq "
     select '<8: refreshed>', * from b;
-    select '<9: refreshed>', view, status, last_refresh_result, next_refresh_time from refreshes;
+    select '<9: refreshed>', view, status, next_refresh_time from refreshes;
     system test view b set fake time '2054-01-24 23:22:21';"
-while [ "`$CLICKHOUSE_CLIENT -nq "select status, next_refresh_time from refreshes where view = 'b' -- $LINENO" | xargs`" != 'WaitingForDependencies 2054-01-01 00:00:00' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes where view = 'b' -- $LINENO" | xargs`" != 'WaitingForDependencies' ]
 do
     sleep 0.5
 done
@@ -109,7 +110,7 @@ $CLICKHOUSE_CLIENT -nq "
 # Create the source table again, check that refresh succeeds (in particular that tables are looked
 # up by name rather than uuid).
 $CLICKHOUSE_CLIENT -nq "
-    select '<10: creating>', view, status, remaining_dependencies, next_refresh_time from refreshes;
+    select '<10: creating>', view, status, next_refresh_time from refreshes;
     create table src (x Int16) engine Memory as select 2;
     system test view a set fake time '2054-01-01 00:00:01';"
 while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes where view = 'b' -- $LINENO" | xargs`" != 'Scheduled' ]
@@ -120,27 +121,10 @@ done
 $CLICKHOUSE_CLIENT -nq "
     select '<11: chain-refreshed a>', * from a;
     select '<12: chain-refreshed b>', * from b;
-    select '<13: chain-refreshed>', view, status, remaining_dependencies, last_refresh_result, last_refresh_time, next_refresh_time, exception == '' from refreshes;"
+    select '<13: chain-refreshed>', view, status, last_success_time, last_refresh_time, next_refresh_time, exception == '' from refreshes;"
 
-# Make the dependent table run ahead by one refresh cycle, make sure it waits for the dependency to
-# catch up to the same cycle.
-$CLICKHOUSE_CLIENT -nq "
-    system test view b set fake time '2059-01-01 00:00:00';
-    system refresh view b;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select next_refresh_time from refreshes where view = 'b' -- $LINENO" | xargs`" != '2060-01-01 00:00:00' ]
-do
-    sleep 0.5
-done
 $CLICKHOUSE_CLIENT -nq "
     system test view b set fake time '2061-01-01 00:00:00';
-    system test view a set fake time '2057-01-01 00:00:00';"
-while [ "`$CLICKHOUSE_CLIENT -nq "select status, next_refresh_time from refreshes -- $LINENO" | xargs`" != 'Scheduled 2058-01-01 00:00:00 WaitingForDependencies 2060-01-01 00:00:00' ]
-do
-    sleep 0.5
-done
-
-$CLICKHOUSE_CLIENT -nq "
-    select '<14: waiting for next cycle>', view, status, remaining_dependencies, next_refresh_time from refreshes;
     truncate src;
     insert into src values (3);
     system test view a set fake time '2060-02-02 02:02:02';"
@@ -167,7 +151,7 @@ do
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -nq "
-    select '<18: removed dependency>', view, status, remaining_dependencies, last_refresh_time,next_refresh_time, refresh_count from refreshes where view = 'b';
+    select '<18: removed dependency>', view, status, last_success_time, last_refresh_time, next_refresh_time from refreshes where view = 'b';
     show create b;"
 
 $CLICKHOUSE_CLIENT -nq "

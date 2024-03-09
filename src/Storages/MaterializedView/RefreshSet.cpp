@@ -69,7 +69,7 @@ void RefreshSet::Handle::reset()
 
 RefreshSet::RefreshSet() = default;
 
-void RefreshSet::emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskHolder task)
+void RefreshSet::emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task)
 {
     std::lock_guard guard(mutex);
     const auto iter = addTaskLocked(id, task);
@@ -118,26 +118,29 @@ RefreshTaskList RefreshSet::findTasks(const StorageID & id) const
     return {};
 }
 
-RefreshSet::InfoContainer RefreshSet::getInfo() const
+std::vector<RefreshTaskPtr> RefreshSet::getTasks() const
 {
     std::unique_lock lock(mutex);
-    auto tasks_copy = tasks;
-    lock.unlock();
-
-    InfoContainer res;
-    for (const auto & [id, list] : tasks_copy)
+    std::vector<RefreshTaskPtr> res;
+    for (const auto & [_, list] : tasks_copy)
         for (const auto & task : list)
-            res.push_back(task->getInfo());
+            res.push_back(task);
     return res;
 }
 
-std::vector<RefreshTaskHolder> RefreshSet::getDependents(const StorageID & id) const
+void RefreshSet::notifyDependents(const StorageID & id) const
 {
-    std::lock_guard lock(mutex);
-    auto it = dependents.find(id);
-    if (it == dependents.end())
-        return {};
-    return std::vector<RefreshTaskHolder>(it->second.begin(), it->second.end());
+    std::vector<RefreshTaskPtr> res;
+    {
+        std::lock_guard lock(mutex);
+        auto it = dependents.find(id);
+        if (it == dependents.end())
+            return;
+        for (const auto & task : it->second)
+            res.push_back(task->second);
+    }
+    for (const RefreshTaskPtr & t : res)
+        t->notifyDependencyProgress();
 }
 
 RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, RefreshTaskList::iterator iter_, std::vector<StorageID> dependencies_)
