@@ -1741,27 +1741,27 @@ struct ToRelativeWeekNumImpl
 {
     static constexpr auto name = "toRelativeWeekNum";
 
-    static auto execute(Int64 t, const DateLUTImpl & time_zone)
+    static auto execute(Int64 t, const DateLUTImpl & time_zone, const UInt8 week_mode = 1)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeWeekNum(t));
+            return static_cast<Int32>(time_zone.toRelativeWeekNum(t, week_mode));
         else
-            return static_cast<UInt16>(time_zone.toRelativeWeekNum(t));
+            return static_cast<UInt16>(time_zone.toRelativeWeekNum(t, week_mode));
     }
-    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone, const UInt8 week_mode = 1)
     {
-        return time_zone.toRelativeWeekNum(static_cast<time_t>(t));
+        return time_zone.toRelativeWeekNum(static_cast<time_t>(t), week_mode);
     }
-    static auto execute(Int32 d, const DateLUTImpl & time_zone)
+    static auto execute(Int32 d, const DateLUTImpl & time_zone, const UInt8 week_mode = 1)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<Int32>(time_zone.toRelativeWeekNum(ExtendedDayNum(d)));
+            return static_cast<Int32>(time_zone.toRelativeWeekNum(ExtendedDayNum(d), week_mode));
         else
-            return static_cast<UInt16>(time_zone.toRelativeWeekNum(ExtendedDayNum(d)));
+            return static_cast<UInt16>(time_zone.toRelativeWeekNum(ExtendedDayNum(d), week_mode));
     }
-    static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone, const UInt8 week_mode = 1)
     {
-        return time_zone.toRelativeWeekNum(DayNum(d));
+        return time_zone.toRelativeWeekNum(DayNum(d), week_mode);
     }
     static constexpr bool hasPreimage() { return false; }
 

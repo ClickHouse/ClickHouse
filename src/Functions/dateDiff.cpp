@@ -1,3 +1,5 @@
+#include "Interpreters/Context.h"
+
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -41,7 +43,10 @@ class DateDiffImpl
 public:
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 
-    explicit DateDiffImpl(const String & name_) : name(name_) {}
+    explicit DateDiffImpl(const String & name_, const UInt8 enable_default_monday_first_)
+        : name(name_)
+        , enable_default_monday_first(enable_default_monday_first_)
+    {}
 
     template <typename Transform>
     void dispatchForColumns(
@@ -168,8 +173,20 @@ public:
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
         if constexpr (is_diff)
+        {
+            if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
+            {
+                UInt8 week_mode = 2;
+                if (enable_default_monday_first)
+                    week_mode = 1;
+
+                return static_cast<Int64>(transform_y.execute(y, timezone_y, week_mode))
+                    - static_cast<Int64>(transform_x.execute(x, timezone_x, week_mode));
+            }
+
             return static_cast<Int64>(transform_y.execute(y, timezone_y))
                 - static_cast<Int64>(transform_x.execute(x, timezone_x));
+        }
         else
         {
             auto res = static_cast<Int64>(transform_y.execute(y, timezone_y))
@@ -312,6 +329,7 @@ public:
     }
 private:
     String name;
+    const bool enable_default_monday_first = true;
 };
 
 
@@ -330,7 +348,12 @@ class FunctionDateDiff : public IFunction
 {
 public:
     static constexpr auto name = is_relative ? "dateDiff" : "age";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateDiff>(context); }
+
+    explicit FunctionDateDiff(ContextPtr context)
+        : enable_default_monday_first(context->getSettingsRef().default_mode_week_functions != DefaultWeekMode::SUNDAY)
+    {
+    }
 
     String getName() const override
     {
@@ -423,7 +446,8 @@ public:
         return res;
     }
 private:
-    DateDiffImpl<is_relative> impl{name};
+    const bool enable_default_monday_first = true;
+    DateDiffImpl<is_relative> impl{name, enable_default_monday_first};
 };
 
 
@@ -483,7 +507,7 @@ public:
         return res;
     }
 private:
-    DateDiffImpl<true> impl{name};
+    DateDiffImpl<true> impl{name, true};
 };
 
 }
