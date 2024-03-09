@@ -1818,14 +1818,10 @@ struct ConvertImpl<FromDataType, ToDataType, Name, ConvertReturnZeroOnErrorTag, 
     : ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::Normal> {};
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple or types with custom serialization.
-template <typename StringColumnType>
 struct ConvertImplGenericFromString
 {
     static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
     {
-        static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
-                "Can be used only to parse from ColumnString or ColumnFixedString");
-
         const IColumn & column_from = *arguments[0].column;
         const IDataType & data_type_to = *result_type;
         auto res = data_type_to.createColumn();
@@ -1841,63 +1837,52 @@ struct ConvertImplGenericFromString
         IColumn & column_to,
         const ISerialization & serialization_from,
         size_t input_rows_count,
-        const PaddedPODArray<UInt8> * null_map = nullptr,
-        const IDataType * result_type = nullptr)
+        const PaddedPODArray<UInt8> * null_map,
+        const IDataType * result_type)
     {
-        static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
-                "Can be used only to parse from ColumnString or ColumnFixedString");
+        column_to.reserve(input_rows_count);
 
-        if (const StringColumnType * col_from_string = checkAndGetColumn<StringColumnType>(&column_from))
+        FormatSettings format_settings;
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            column_to.reserve(input_rows_count);
-
-            FormatSettings format_settings;
-            for (size_t i = 0; i < input_rows_count; ++i)
+            if (null_map && (*null_map)[i])
             {
-                if (null_map && (*null_map)[i])
+                column_to.insertDefault();
+                continue;
+            }
+
+            const auto & val = column_from.getDataAt(i);
+            ReadBufferFromMemory read_buffer(val.data, val.size);
+            try
+            {
+                serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
+            }
+            catch (const Exception & e)
+            {
+                auto * nullable_column = typeid_cast<ColumnNullable *>(&column_to);
+                if (e.code() == ErrorCodes::CANNOT_PARSE_BOOL && nullable_column)
                 {
-                    column_to.insertDefault();
+                    auto & col_nullmap = nullable_column->getNullMapData();
+                    if (col_nullmap.size() != nullable_column->size())
+                        col_nullmap.resize_fill(nullable_column->size());
+                    if (nullable_column->size() == (i + 1))
+                        nullable_column->popBack(1);
+                    nullable_column->insertDefault();
                     continue;
                 }
+                throw;
+            }
 
-                const auto & val = col_from_string->getDataAt(i);
-                ReadBufferFromMemory read_buffer(val.data, val.size);
-                try
-                {
-                    serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
-                }
-                catch (const Exception & e)
-                {
-                    auto * nullable_column = typeid_cast<ColumnNullable *>(&column_to);
-                    if (e.code() == ErrorCodes::CANNOT_PARSE_BOOL && nullable_column)
-                    {
-                        auto & col_nullmap = nullable_column->getNullMapData();
-                        if (col_nullmap.size() != nullable_column->size())
-                            col_nullmap.resize_fill(nullable_column->size());
-                        if (nullable_column->size() == (i + 1))
-                            nullable_column->popBack(1);
-                        nullable_column->insertDefault();
-                        continue;
-                    }
-                    throw;
-                }
-
-                if (!read_buffer.eof())
-                {
-                    if (result_type)
-                        throwExceptionForIncompletelyParsedValue(read_buffer, *result_type);
-                    else
-                        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-                            "Cannot parse string to column {}. Expected eof", column_to.getName());
-                }
+            if (!read_buffer.eof())
+            {
+                if (result_type)
+                    throwExceptionForIncompletelyParsedValue(read_buffer, *result_type);
+                else
+                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
+                        "Cannot parse string to column {}. Expected eof", column_to.getName());
             }
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of conversion function from string",
-                column_from.getName());
     }
-
 };
 
 
@@ -3392,7 +3377,7 @@ arguments, result_type, input_rows_count); \
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
-            return &ConvertImplGenericFromString<ColumnString>::execute;
+            return &ConvertImplGenericFromString::execute;
         }
 
         return createWrapper<ToDataType>(from_type, to_type, requested_result_is_nullable);
@@ -3555,7 +3540,7 @@ arguments, result_type, input_rows_count); \
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return &ConvertImplGenericFromString<ColumnString>::execute;
+            return &ConvertImplGenericFromString::execute;
         }
         else if (const auto * agg_type = checkAndGetDataType<DataTypeAggregateFunction>(from_type_untyped.get()))
         {
@@ -3598,7 +3583,7 @@ arguments, result_type, input_rows_count); \
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return &ConvertImplGenericFromString<ColumnString>::execute;
+            return &ConvertImplGenericFromString::execute;
         }
 
         DataTypePtr from_type_holder;
@@ -3689,7 +3674,7 @@ arguments, result_type, input_rows_count); \
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return &ConvertImplGenericFromString<ColumnString>::execute;
+            return &ConvertImplGenericFromString::execute;
         }
 
         const auto * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
@@ -4034,7 +4019,7 @@ arguments, result_type, input_rows_count); \
         {
             return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
-                auto res = ConvertImplGenericFromString<ColumnString>::execute(arguments, result_type, nullable_source, input_rows_count)->assumeMutable();
+                auto res = ConvertImplGenericFromString::execute(arguments, result_type, nullable_source, input_rows_count)->assumeMutable();
                 res->finalize();
                 return res;
             };
@@ -4831,7 +4816,7 @@ arguments, result_type, input_rows_count); \
                         auto wrapped_result_type = result_type;
                         if (requested_result_is_nullable)
                             wrapped_result_type = makeNullable(result_type);
-                        return ConvertImplGenericFromString<typename FromDataType::ColumnType>::execute(
+                        return ConvertImplGenericFromString::execute(
                             arguments, wrapped_result_type, column_nullable, input_rows_count);
                     };
                     return true;
