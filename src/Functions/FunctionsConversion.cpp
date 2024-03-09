@@ -93,11 +93,27 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
+namespace
+{
+
 /** Type conversion functions.
   * toType - conversion in "natural way";
   */
 
-UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column);
+UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
+{
+    const auto * arg_type = named_column.type.get();
+    bool ok = checkAndGetDataType<DataTypeUInt64>(arg_type)
+        || checkAndGetDataType<DataTypeUInt32>(arg_type)
+        || checkAndGetDataType<DataTypeUInt16>(arg_type)
+        || checkAndGetDataType<DataTypeUInt8>(arg_type);
+    if (!ok)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of toDecimal() scale {}", named_column.type->getName());
+
+    Field field;
+    named_column.column->get(0, field);
+    return static_cast<UInt32>(field.get<UInt32>());
+}
 
 /// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
 struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
@@ -1269,23 +1285,6 @@ template <typename DataType>
 void convertFromTime(typename DataType::FieldType & x, time_t & time)
 {
     x = time;
-}
-
-template <>
-inline void convertFromTime<DataTypeDate>(DataTypeDate::FieldType & x, time_t & time)
-{
-    if (unlikely(time < 0))
-        x = 0;
-    else if (unlikely(time > 0xFFFF))
-        x = 0xFFFF;
-    else
-        x = time;
-}
-
-template <>
-inline void convertFromTime<DataTypeDate32>(DataTypeDate32::FieldType & x, time_t & time)
-{
-    x = static_cast<UInt32>(time);
 }
 
 template <>
@@ -4959,6 +4958,8 @@ public:
         return {};
     }
 };
+
+}
 
 
 FunctionBasePtr createFunctionBaseCast(
