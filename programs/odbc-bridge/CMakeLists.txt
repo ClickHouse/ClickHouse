@@ -13,6 +13,9 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     getIdentifierQuote.cpp
     odbc-bridge.cpp
     validateODBCConnectionString.cpp
+
+    ../../src/Functions/CastOverloadResolverImpl.cpp
+    ../../src/Functions/CastInternalOverloadResolverImpl.cpp
 )
 
 clickhouse_add_executable(clickhouse-odbc-bridge ${CLICKHOUSE_ODBC_BRIDGE_SOURCES})
