@@ -29,7 +29,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int REFRESH_FAILED;
-    extern const int BAD_ARGUMENTS;
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -245,7 +244,8 @@ void RefreshTask::cancel()
 
 void RefreshTask::wait()
 {
-    auto throw_if_error = [&] {
+    auto throw_if_error = [&]
+    {
         if (!view)
             throw Exception(ErrorCodes::TABLE_IS_DROPPED, "The table was dropped or detached");
         if (!coordination.running_znode_exists && !coordination.root_znode.last_attempt_succeeded && coordination.root_znode.last_attempt_time.time_since_epoch().count() != 0)

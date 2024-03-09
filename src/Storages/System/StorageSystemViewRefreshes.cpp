@@ -31,7 +31,7 @@ ColumnsDescription StorageSystemViewRefreshes::getColumnsDescription()
         {"retry", std::make_shared<DataTypeUInt64>(), "How many failed attempts there were so far, for the current refresh."},
         {"progress", std::make_shared<DataTypeFloat64>(), "Progress of the current refresh, between 0 and 1. Not available if status is RunningOnAnotherReplica."},
         {"read_rows", std::make_shared<DataTypeUInt64>(), "Number of rows read by the current refresh so far. Not available if status is RunningOnAnotherReplica."},
-        {"read_bytes", std::make_shared<DataTypeUInt64>(), "Number of bytes read during the current refresh.},
+        {"read_bytes", std::make_shared<DataTypeUInt64>(), "Number of bytes read during the current refresh."},
         {"total_rows", std::make_shared<DataTypeUInt64>(), "Estimated total number of rows that need to be read by the current refresh. Not available if status is RunningOnAnotherReplica."},
         {"total_bytes", std::make_shared<DataTypeUInt64>(), "Estimated total number of bytes that need to be read by the current refresh."},
         {"written_rows", std::make_shared<DataTypeUInt64>(), "Number of rows written during the current refresh."},
