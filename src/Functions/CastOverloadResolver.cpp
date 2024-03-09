@@ -12,6 +12,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+namespace
+{
+
 /** CastInternal does not preserve nullability of the data type,
   * i.e. CastInternal(toNullable(toInt8(1)) as Int32) will be Int32(1).
   *
@@ -135,6 +138,8 @@ using CastOverloadResolver = CastOverloadResolverImpl<cast_type, false, CastOver
 
 template <CastType cast_type>
 using CastInternalOverloadResolver = CastOverloadResolverImpl<cast_type, true, CastInternalOverloadName, CastInternalName>;
+
+}
 
 
 FunctionOverloadResolverPtr createInternalCastOverloadResolver(CastType type, std::optional<CastDiagnostic> diagnostic)
