@@ -111,7 +111,6 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
-    extern const int ILLEGAL_PREWHERE;
 }
 
 StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
@@ -223,9 +222,14 @@ bool StorageMerge::isRemote() const
     return first_remote_table != nullptr;
 }
 
-bool StorageMerge::tableSupportsPrewhere() const
+bool StorageMerge::supportsPrewhere() const
 {
-    /// NOTE: This check is used during query analysis as condition for applying
+    return getFirstTable([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
+}
+
+bool StorageMerge::canMoveConditionsToPrewhere() const
+{
+    /// NOTE: This check and the above check are used during query analysis as condition for applying
     /// "move to PREWHERE" optimization. However, it contains a logical race:
     /// If new table that matches regexp for current storage and doesn't support PREWHERE
     /// will appear after this check and before calling "read" method, the optimized query may fail.
@@ -365,18 +369,6 @@ void StorageMerge::read(
     const size_t max_block_size,
     size_t num_streams)
 {
-    if (query_info.prewhere_info)
-    {
-        auto storage = getFirstTable([](const auto & table) { return !table->supportsPrewhere(); });
-        if (storage)
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_PREWHERE,
-                "Storage Merge doesn't support PREWHERE because table {} doesn't support PREWHERE",
-                storage->getStorageID().getFullTableName());
-        }
-    }
-
     /// What will be result structure depending on query processed stage in source tables?
     Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
 
