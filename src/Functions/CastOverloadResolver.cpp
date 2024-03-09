@@ -17,11 +17,12 @@ namespace ErrorCodes
 }
 
 FunctionBasePtr createFunctionBaseCast(
-    ContextPtr context
-    , const ColumnsWithTypeAndName & arguments
-    , const DataTypePtr & return_type
-    , std::optional<CastDiagnostic> diagnostic
-    , CastType cast_type);
+    ContextPtr context,
+    const char * name,
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & return_type,
+    std::optional<CastDiagnostic> diagnostic,
+    CastType cast_type);
 
 
 /** CastInternal does not preserve nullability of the data type,
@@ -33,7 +34,7 @@ FunctionBasePtr createFunctionBaseCast(
 class CastOverloadResolverImpl : public IFunctionOverloadResolver
 {
 public:
-    String getName() const override
+    const char * getNameImpl() const
     {
         if (cast_type == CastType::accurate)
             return "accurateCast";
@@ -43,6 +44,11 @@ public:
             return "_CAST";
         else
             return "CAST";
+    }
+
+    String getName() const override
+    {
+        return getNameImpl();
     }
 
     size_t getNumberOfArguments() const override { return 2; }
@@ -72,7 +78,7 @@ public:
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        return createFunctionBaseCast(context, arguments, return_type, diagnostic, cast_type);
+        return createFunctionBaseCast(context, getNameImpl(), arguments, return_type, diagnostic, cast_type);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

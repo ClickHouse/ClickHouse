@@ -4963,11 +4963,12 @@ public:
 
 
 FunctionBasePtr createFunctionBaseCast(
-    ContextPtr context
-    , const ColumnsWithTypeAndName & arguments
-    , const DataTypePtr & return_type
-    , std::optional<CastDiagnostic> diagnostic
-    , CastType cast_type)
+    ContextPtr context,
+    const char * name,
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & return_type,
+    std::optional<CastDiagnostic> diagnostic,
+    CastType cast_type)
 {
     DataTypes data_types(arguments.size());
 
@@ -4975,7 +4976,7 @@ FunctionBasePtr createFunctionBaseCast(
         data_types[i] = arguments[i].type;
 
     auto monotonicity = MonotonicityHelper::getMonotonicityInformation(arguments.front().type, return_type.get());
-    return std::make_unique<FunctionCast>(context, "CAST", std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+    return std::make_unique<FunctionCast>(context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
 }
 
 REGISTER_FUNCTION(Conversion)
