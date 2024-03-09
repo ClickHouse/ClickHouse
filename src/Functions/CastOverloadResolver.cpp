@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/CastOverloadResolverImpl.h>
+#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB

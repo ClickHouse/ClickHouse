@@ -4972,4 +4972,11 @@ public:
     }
 };
 
+FunctionBasePtr createFunctionBaseCast(
+    ContextPtr context
+    , const ColumnsWithTypeAndName & arguments
+    , const DataTypePtr & return_type
+    , std::optional<CastDiagnostic> diagnostic
+    , CastType cast_type);
+
 }

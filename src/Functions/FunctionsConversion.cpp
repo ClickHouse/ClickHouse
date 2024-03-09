@@ -5,6 +5,29 @@
 namespace DB
 {
 
+namespace
+{
+
+struct CastInternalName { static constexpr auto name = "_CAST"; };
+
+}
+
+FunctionBasePtr createFunctionBaseCast(
+    ContextPtr context
+    , const ColumnsWithTypeAndName & arguments
+    , const DataTypePtr & return_type
+    , std::optional<CastDiagnostic> diagnostic
+    , CastType cast_type)
+{
+    DataTypes data_types(arguments.size());
+
+    for (size_t i = 0; i < arguments.size(); ++i)
+        data_types[i] = arguments[i].type;
+
+    auto monotonicity = MonotonicityHelper::getMonotonicityInformation(arguments.front().type, return_type.get());
+    return std::make_unique<FunctionCast<CastInternalName>>(context, CastInternalName::name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+}
+
 REGISTER_FUNCTION(Conversion)
 {
     factory.registerFunction<FunctionToUInt8>();

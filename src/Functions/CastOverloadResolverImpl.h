@@ -1,7 +1,12 @@
 #pragma once
 
 #include <Functions/FunctionsConversion.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/CastOverloadResolver.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnString.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
 
@@ -13,15 +18,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-struct CastName
-{
-    static constexpr auto name = "CAST";
-};
-
-struct CastInternalName
-{
-    static constexpr auto name = "_CAST";
-};
 
 /** CastInternal does not preserve nullability of the data type,
   * i.e. CastInternal(toNullable(toInt8(1)) as Int32) will be Int32(1).
@@ -32,8 +28,6 @@ struct CastInternalName
 class CastOverloadResolverImpl : public IFunctionOverloadResolver
 {
 public:
-    using MonotonicityForRange = FunctionCastBase::MonotonicityForRange;
-
     String getName() const override
     {
         if (cast_type == CastType::accurate)
@@ -73,17 +67,7 @@ public:
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        DataTypes data_types(arguments.size());
-
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-
-        auto monotonicity = MonotonicityHelper::getMonotonicityInformation(arguments.front().type, return_type.get());
-
-        if (internal)
-            return std::make_unique<FunctionCast<CastInternalName>>(context, CastInternalName::name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
-        else
-            return std::make_unique<FunctionCast<CastName>>(context, CastName::name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+        return createFunctionBaseCast(context, arguments, return_type, diagnostic, cast_type);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
