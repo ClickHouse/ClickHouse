@@ -13,6 +13,15 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+struct CastName
+{
+    static constexpr auto name = "CAST";
+};
+
+struct CastInternalName
+{
+    static constexpr auto name = "_CAST";
+};
 
 /** CastInternal does not preserve nullability of the data type,
   * i.e. CastInternal(toNullable(toInt8(1)) as Int32) will be Int32(1).
@@ -20,15 +29,16 @@ namespace ErrorCodes
   * Cast preserves nullability according to setting `cast_keep_nullable`,
   * i.e. Cast(toNullable(toInt8(1)) as Int32) will be Nullable(Int32(1)) if `cast_keep_nullable` == 1.
   */
-template <CastType cast_type, bool internal, typename CastName, typename FunctionName>
+template <CastType cast_type, bool internal>
 class CastOverloadResolverImpl : public IFunctionOverloadResolver
 {
 public:
     using MonotonicityForRange = FunctionCastBase::MonotonicityForRange;
 
     static constexpr auto name = cast_type == CastType::accurate
-        ? CastName::accurate_cast_name
-        : (cast_type == CastType::accurateOrNull ? CastName::accurate_cast_or_null_name : CastName::cast_name);
+        ? "accurateCast"
+        : (cast_type == CastType::accurateOrNull ? "accurateCastOrNull"
+        : (internal ? "_CAST" : "CAST"));
 
     String getName() const override { return name; }
 
@@ -76,7 +86,9 @@ protected:
             data_types[i] = arguments[i].type;
 
         auto monotonicity = MonotonicityHelper::getMonotonicityInformation(arguments.front().type, return_type.get());
-        return std::make_unique<FunctionCast<FunctionName>>(context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+
+        using Function = FunctionCast<std::conditional_t<internal, CastInternalName, CastName>>;
+        return std::make_unique<Function>(context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -118,32 +130,19 @@ private:
 };
 
 
-struct CastOverloadName
-{
-    static constexpr auto cast_name = "CAST";
-    static constexpr auto accurate_cast_name = "accurateCast";
-    static constexpr auto accurate_cast_or_null_name = "accurateCastOrNull";
-};
-
-struct CastInternalOverloadName
-{
-    static constexpr auto cast_name = "_CAST";
-    static constexpr auto accurate_cast_name = "accurate_Cast";
-    static constexpr auto accurate_cast_or_null_name = "accurate_CastOrNull";
-};
+template <CastType cast_type>
+using CastOverloadResolver = CastOverloadResolverImpl<cast_type, false>;
 
 template <CastType cast_type>
-using CastOverloadResolver = CastOverloadResolverImpl<cast_type, false, CastOverloadName, CastName>;
+using CastInternalOverloadResolver = CastOverloadResolverImpl<cast_type, true>;
 
-template <CastType cast_type>
-using CastInternalOverloadResolver = CastOverloadResolverImpl<cast_type, true, CastInternalOverloadName, CastInternalName>;
 
-extern template class CastOverloadResolverImpl<CastType::nonAccurate, false, CastOverloadName, CastName>;
-extern template class CastOverloadResolverImpl<CastType::accurate, false, CastOverloadName, CastName>;
-extern template class CastOverloadResolverImpl<CastType::accurateOrNull, false, CastOverloadName, CastName>;
+extern template class CastOverloadResolverImpl<CastType::nonAccurate, false>;
+extern template class CastOverloadResolverImpl<CastType::accurate, false>;
+extern template class CastOverloadResolverImpl<CastType::accurateOrNull, false>;
 
-extern template class CastOverloadResolverImpl<CastType::nonAccurate, true, CastInternalOverloadName, CastInternalName>;
-extern template class CastOverloadResolverImpl<CastType::accurate, true, CastInternalOverloadName, CastInternalName>;
-extern template class CastOverloadResolverImpl<CastType::accurateOrNull, true, CastInternalOverloadName, CastInternalName>;
+extern template class CastOverloadResolverImpl<CastType::nonAccurate, true>;
+extern template class CastOverloadResolverImpl<CastType::accurate, true>;
+extern template class CastOverloadResolverImpl<CastType::accurateOrNull, true>;
 
 }

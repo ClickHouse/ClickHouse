@@ -3,8 +3,8 @@
 namespace DB
 {
 
-template class CastOverloadResolverImpl<CastType::nonAccurate, false, CastOverloadName, CastName>;
-template class CastOverloadResolverImpl<CastType::accurate, false, CastOverloadName, CastName>;
-template class CastOverloadResolverImpl<CastType::accurateOrNull, false, CastOverloadName, CastName>;
+template class CastOverloadResolverImpl<CastType::nonAccurate, false>;
+template class CastOverloadResolverImpl<CastType::accurate, false>;
+template class CastOverloadResolverImpl<CastType::accurateOrNull, false>;
 
 }

@@ -5,6 +5,21 @@
 namespace DB
 {
 
+UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
+{
+    const auto * arg_type = named_column.type.get();
+    bool ok = checkAndGetDataType<DataTypeUInt64>(arg_type)
+        || checkAndGetDataType<DataTypeUInt32>(arg_type)
+        || checkAndGetDataType<DataTypeUInt16>(arg_type)
+        || checkAndGetDataType<DataTypeUInt8>(arg_type);
+    if (!ok)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of toDecimal() scale {}", named_column.type->getName());
+
+    Field field;
+    named_column.column->get(0, field);
+    return static_cast<UInt32>(field.get<UInt32>());
+}
+
 REGISTER_FUNCTION(Conversion)
 {
     factory.registerFunction<FunctionToUInt8>();
