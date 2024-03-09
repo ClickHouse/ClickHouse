@@ -18,9 +18,9 @@ Columns:
 - `next_refresh_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Time at which the next refresh is scheduled to start, if status = Scheduled.
 - `exception` ([String](../../sql-reference/data-types/string.md)) — Error message from previous attempt if it failed.
 - `retry` ([UInt64](../../sql-reference/data-types/int-uint.md)) — How many failed attempts there were so far, for the current refresh.
-- `progress` ([Float64](../../sql-reference/data-types/float.md)) — Progress of the current refresh, between 0 and 1. Not available if status is RunningOnAnotherReplica.
-- `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of rows read by the current refresh so far. Not available if status is RunningOnAnotherReplica.
-- `total_rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Estimated total number of rows that need to be read by the current refresh. Not available if status is RunningOnAnotherReplica.
+- `progress` ([Float64](../../sql-reference/data-types/float.md)) — Progress of the current refresh, between 0 and 1. Not available if status is `RunningOnAnotherReplica`.
+- `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of rows read by the current refresh so far. Not available if status is `RunningOnAnotherReplica`.
+- `total_rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Estimated total number of rows that need to be read by the current refresh. Not available if status is `RunningOnAnotherReplica`.
 
 (There are additional columns related to current refresh progress, but they are currently unreliable.)
 
