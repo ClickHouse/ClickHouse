@@ -906,6 +906,16 @@ String Context::getFilesystemCacheUser() const
     return shared->filesystem_cache_user;
 }
 
+StoragePtr Context::getOrCacheStorage(const String & name, std::function<StoragePtr()> f) const
+{
+    if (auto storage = storage_cache.find(name); storage != storage_cache.end())
+        return storage->second;
+    auto storage = f();
+    if (storage)
+        storage_cache.insert({name, storage});
+    return storage;
+}
+
 Strings Context::getWarnings() const
 {
     Strings common_warnings;

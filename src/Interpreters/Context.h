@@ -33,6 +33,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <unordered_map>
 
 
 namespace Poco::Net { class IPAddress; }
@@ -424,6 +425,9 @@ protected:
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
 
+    /// Cache for storages resolved during query processing.
+    mutable std::unordered_map<String, StoragePtr> storage_cache;
+
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -517,6 +521,8 @@ public:
     String getUserScriptsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
+
+    StoragePtr getOrCacheStorage(const String & name, std::function<StoragePtr()> f) const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
