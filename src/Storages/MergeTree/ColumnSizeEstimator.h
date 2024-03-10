@@ -9,7 +9,7 @@ namespace DB
 /* Allow to compute more accurate progress statistics */
 class ColumnSizeEstimator
 {
-    using ColumnToSize = std::map<String, size_t>;
+    using ColumnToSize = std::map<String, UInt64>;
     ColumnToSize map;
 public:
 
