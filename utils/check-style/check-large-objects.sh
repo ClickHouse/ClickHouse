@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+export LC_ALL=C # The "total" should be printed without localization
+
 # Check that there are no new translation units compiled to an object file larger than a certain size.
 
 TU_EXCLUDES=(
