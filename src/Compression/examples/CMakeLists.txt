@@ -1,2 +1,2 @@
 clickhouse_add_executable (compressed_buffer compressed_buffer.cpp)
-target_link_libraries (compressed_buffer PRIVATE dbms)
+target_link_libraries (compressed_buffer PRIVATE clickhouse_common_io)
