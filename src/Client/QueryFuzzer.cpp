@@ -1232,7 +1232,7 @@ void QueryFuzzer::addTableLike(ASTPtr ast)
         const auto iter = std::next(table_like.begin(), fuzz_rand() % table_like.size());
         const auto ast_del = *iter;
         table_like.erase(iter);
-        table_like_map.erase(ast_del.first);    
+        table_like_map.erase(ast_del.first);
     }
 
     const auto name = ast->formatForErrorMessage();
