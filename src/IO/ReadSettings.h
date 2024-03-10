@@ -63,6 +63,7 @@ enum class RemoteFSReadMethod
 class MMappedFileCache;
 class PageCache;
 
+/// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct ReadSettings
 {
     /// Method to use reading from local filesystem.
