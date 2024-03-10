@@ -63,21 +63,23 @@ public:
       */
     bool next()
     {
-        assert(!hasPendingData());
-        assert(position() <= working_buffer.end());
+        chassert(!hasPendingData());
+        chassert(position() <= working_buffer.end());
 
         bytes += offset();
         bool res = nextImpl();
         if (!res)
+        {
             working_buffer = Buffer(pos, pos);
+        }
         else
         {
-            pos = working_buffer.begin() + nextimpl_working_buffer_offset;
-            assert(position() != working_buffer.end());
+            pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
+            chassert(position() < working_buffer.end());
         }
         nextimpl_working_buffer_offset = 0;
 
-        assert(position() <= working_buffer.end());
+        chassert(position() <= working_buffer.end());
 
         return res;
     }
