@@ -488,6 +488,7 @@ class ClickHouseCluster:
         self.with_mysql8 = False
         self.with_mysql_cluster = False
         self.with_postgres = False
+        self.with_postgres11 = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
         self.with_kafka = False
@@ -638,6 +639,9 @@ class ClickHouseCluster:
         self.postgres3_logs_dir = os.path.join(self.postgres_dir, "postgres3")
         self.postgres4_logs_dir = os.path.join(self.postgres_dir, "postgres4")
         self.postgres_id = self.get_instance_docker_id(self.postgres_host)
+
+        # available when with_postgres11 == True
+        self.postgres_host = "postgres11"
 
         # available when with_postgresql_java_client = True
         self.postgresql_java_client_host = "java"
@@ -1147,7 +1151,7 @@ class ClickHouseCluster:
         env_variables["POSTGRES_DIR"] = self.postgres_logs_dir
         env_variables["POSTGRES_LOGS_FS"] = "bind"
 
-        self.with_postgres = True
+        self.with_postgres11 = True
         self.base_postgres_cmd = [
             "docker-compose",
             "--env-file",
@@ -1847,6 +1851,13 @@ class ClickHouseCluster:
             if not self.with_postgres:
                 cmds.append(
                     self.setup_postgres_cmd(
+                        instance, env_variables, docker_compose_yml_dir
+                    )
+                )
+
+            if not self.with_postgres11:
+                cmds.append(
+                    self.setup_postgres11_cmd(
                         instance, env_variables, docker_compose_yml_dir
                     )
                 )
@@ -2825,6 +2836,17 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_postgres_to_start()
 
+            if self.with_postgres11 and self.base_postgres_cmd:
+                logging.debug("Setup Postgres")
+                if os.path.exists(self.postgres_dir):
+                    shutil.rmtree(self.postgres_dir)
+                os.makedirs(self.postgres_logs_dir)
+                os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                subprocess_check_call(self.base_postgres_cmd + common_opts)
+                self.up_called = True
+                self.wait_postgres_to_start()
+
             if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
                 logging.debug("Setup Postgres")
                 os.makedirs(self.postgres2_logs_dir)
@@ -3298,6 +3320,7 @@ class ClickHouseInstance:
         clickhouse_path_dir,
         with_odbc_drivers,
         with_postgres,
+        with_postgres11,
         with_postgres_cluster,
         with_postgresql_java_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
@@ -3360,6 +3383,7 @@ class ClickHouseInstance:
         self.with_mysql8 = with_mysql8
         self.with_mysql_cluster = with_mysql_cluster
         self.with_postgres = with_postgres
+        self.with_postgres11 = with_postgres11
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
         self.with_kafka = with_kafka
