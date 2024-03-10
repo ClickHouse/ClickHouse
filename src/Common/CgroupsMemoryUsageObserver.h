@@ -91,7 +91,7 @@ public:
 
     void setLimits(uint64_t, uint64_t) {}
     size_t readMemoryUsage() { return 0; }
-    void startThread();
+    void startThread() {}
     size_t getHardLimit() { return 0; }
     size_t getSoftLimit() { return 0; }
     void setOnMemoryLimitUpdate(std::function<void()>) {}
