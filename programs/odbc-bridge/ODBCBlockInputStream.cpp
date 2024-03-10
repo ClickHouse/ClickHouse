@@ -98,7 +98,7 @@ void ODBCSource::insertValue(
         case ValueType::vtFloat64:
             column.insert(row.get<double>(idx));
             break;
-        case ValueType::vtFixedString:[[fallthrough]];
+        case ValueType::vtFixedString:
         case ValueType::vtEnum8:
         case ValueType::vtEnum16:
         case ValueType::vtString:
@@ -134,9 +134,9 @@ void ODBCSource::insertValue(
             column.insert(time);
             break;
         }
-        case ValueType::vtDecimal32: [[fallthrough]];
-        case ValueType::vtDecimal64: [[fallthrough]];
-        case ValueType::vtDecimal128: [[fallthrough]];
+        case ValueType::vtDecimal32:
+        case ValueType::vtDecimal64:
+        case ValueType::vtDecimal128:
         case ValueType::vtDecimal256:
         {
             auto value = row.get<std::string>(idx);
