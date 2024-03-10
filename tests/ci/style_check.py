@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+from concurrent.futures import ProcessPoolExecutor
 import csv
 import logging
 import os
@@ -119,7 +120,7 @@ def checkout_last_ref(pr_info: PRInfo) -> None:
 def main():
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("git_helper").setLevel(logging.DEBUG)
-    args = parse_args()
+    # args = parse_args()
 
     stopwatch = Stopwatch()
 
@@ -127,28 +128,46 @@ def main():
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
-    pr_info = PRInfo()
+    # pr_info = PRInfo()
 
     IMAGE_NAME = "clickhouse/style-test"
     image = pull_image(get_docker_image(IMAGE_NAME))
-    cmd = (
+    cmd_1 = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
         f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"{image}"
+        f"--entrypoint= -w/ClickHouse/utils/check-style "
+        f"{image} ./check_cpp_docs.sh"
     )
+    cmd_2 = (
+        f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
+        f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
+        f"--entrypoint= -w/ClickHouse/utils/check-style "
+        f"{image} ./check_py.sh"
+    )
+    logging.info("Is going to run the command: %s", cmd_1)
+    logging.info("Is going to run the command: %s", cmd_2)
 
-    if args.push:
-        checkout_head(pr_info)
+    with ProcessPoolExecutor(max_workers=2) as executor:
+        # Submit commands for execution in parallel
+        future1 = executor.submit(subprocess.run, cmd_1, shell=True)
+        future2 = executor.submit(subprocess.run, cmd_2, shell=True)
+        # Wait for both commands to complete
+        _ = future1.result()
+        _ = future2.result()
 
-    logging.info("Is going to run the command: %s", cmd)
+    # if args.push:
+    #     checkout_head(pr_info)
+
     subprocess.check_call(
-        cmd,
+        f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
+        f"--out-results-file {temp_path}/test_results.tsv --out-status-file {temp_path}/check_status.tsv || "
+        f'echo -e "failure\tCannot parse results" > {temp_path}/check_status.tsv',
         shell=True,
     )
 
-    if args.push:
-        commit_push_staged(pr_info)
-        checkout_last_ref(pr_info)
+    # if args.push:
+    #     commit_push_staged(pr_info)
+    #     checkout_last_ref(pr_info)
 
     state, description, test_results, additional_files = process_result(temp_path)
 
