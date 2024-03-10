@@ -50,7 +50,7 @@ Chunk ODBCSource::generate()
             const auto & sample = description.sample_block.getByPosition(idx);
 
             if (!result.is_null(idx))
-                insertValue(*columns[idx], sample.type, description.types[idx].first, result, idx);
+                insertValue(*columns[idx], removeNullable(sample.type), description.types[idx].first, result, idx);
             else
                 insertDefaultValue(*columns[idx], *sample.column);
         }
