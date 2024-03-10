@@ -271,11 +271,11 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateT
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
 
-enum class DefaultWeekMode
+enum class FirstDayOfWeek
 {
-    MONDAY,
-    SUNDAY
+    Monday,
+    Sunday
 };
 
-DECLARE_SETTING_ENUM(DefaultWeekMode)
+DECLARE_SETTING_ENUM(FirstDayOfWeek)
 }
