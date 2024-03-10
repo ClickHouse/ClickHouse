@@ -300,7 +300,7 @@ def test_predefined_connection_configuration(started_cluster):
     )
     pg_manager.execute(f"INSERT INTO test_table SELECT 1, 2")
     instance.query(
-        "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'"
+        "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres11) SETTINGS materialized_postgresql_tables_list='test_table'"
     )
     check_tables_are_synchronized(instance, "test_table")
     pg_manager.drop_materialized_db()
@@ -712,7 +712,7 @@ def test_materialized_view(started_cluster):
     pg_manager.execute(f"INSERT INTO test_table SELECT 1, 2")
     instance.query("DROP DATABASE IF EXISTS test_database")
     instance.query(
-        "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'"
+        "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres11) SETTINGS materialized_postgresql_tables_list='test_table'"
     )
     check_tables_are_synchronized(instance, "test_table")
     instance.query("DROP TABLE IF EXISTS mv")
