@@ -1130,6 +1130,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     bool part_offset_condition_exact_range
         = !part_offset_condition || part_offset_condition->alwaysUnknownOrTrue() || part_offset_condition->matchesExactContinuousRange();
     const String & part_name = part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPart()->name) : part->name;
+
     if (!key_condition_exact_range || !part_offset_condition_exact_range)
     {
         // Do exclusion search, where we drop ranges that do not match
@@ -1144,10 +1145,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part->index_granularity_info.index_granularity_bytes);
 
         /** There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
-        * At each step, take the left segment and check if it fits.
-        * If fits, split it into smaller ones and put them on the stack. If not, discard it.
-        * If the segment is already of one mark length, add it to response and discard it.
-        */
+          * At each step, take the left segment and check if it fits.
+          * If fits, split it into smaller ones and put them on the stack. If not, discard it.
+          * If the segment is already of one mark length, add it to response and discard it.
+          */
         std::vector<MarkRange> ranges_stack = { {0, marks_count} };
 
         size_t steps = 0;
@@ -1157,7 +1158,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             MarkRange range = ranges_stack.back();
             ranges_stack.pop_back();
 
-            steps++;
+            ++steps;
 
             if (!may_be_true_in_range(range))
                 continue;
