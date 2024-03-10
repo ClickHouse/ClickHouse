@@ -22,7 +22,10 @@ Normally, using this table engine is not justified. However, it can be used for 
 
 The Memory engine is used by the system for temporary tables with external query data (see the section “External data for processing a query”), and for implementing `GLOBAL IN` (see the section “IN operators”).
 
-## Engine Parameters
+Upper and lower bounds can be specified to limit Memory engine table size, effectively allowing it to act as a circular
+buffer (see [Engine Parameters](#engine-parameters)).
+
+## Engine Parameters {#engine-parameters}
 
 - `min_bytes_to_keep` — Minimum bytes to keep when memory table is size-capped.
   - Default value: `0`
