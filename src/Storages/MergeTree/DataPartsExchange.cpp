@@ -10,7 +10,6 @@
 #include <IO/S3Common.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -191,8 +190,6 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
         }
 
         if (data_settings->allow_remote_fs_zero_copy_replication &&
-            /// In memory data part does not have metadata yet.
-            !isInMemoryPart(part) &&
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
             auto disk_type = part->getDataPartStorage().getDiskType();
@@ -205,11 +202,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             }
         }
 
-        if (isInMemoryPart(part))
-            sendPartFromMemory(part, out, send_projections);
-        else
-            sendPartFromDisk(part, out, client_protocol_version, false, send_projections);
-
+        sendPartFromDisk(part, out, client_protocol_version, false, send_projections);
         data.addLastSentPart(part->info);
     }
     catch (const NetException &)
@@ -231,36 +224,6 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     }
 }
 
-void Service::sendPartFromMemory(
-    const MergeTreeData::DataPartPtr & part, WriteBuffer & out, bool send_projections)
-{
-    auto metadata_snapshot = data.getInMemoryMetadataPtr();
-    if (send_projections)
-    {
-        for (const auto & [name, projection] : part->getProjectionParts())
-        {
-            auto projection_sample_block = metadata_snapshot->projections.get(name).sample_block;
-            auto part_in_memory = asInMemoryPart(projection);
-            if (!part_in_memory)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection {} of part {} is not stored in memory", name, part->name);
-
-            writeStringBinary(name, out);
-            projection->checksums.write(out);
-            NativeWriter block_out(out, 0, projection_sample_block);
-            block_out.write(part_in_memory->block);
-        }
-    }
-
-    auto part_in_memory = asInMemoryPart(part);
-    if (!part_in_memory)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} is not stored in memory", part->name);
-
-    NativeWriter block_out(out, 0, metadata_snapshot->getSampleBlock());
-    part->checksums.write(out);
-    block_out.write(part_in_memory->block);
-
-    data.getSendsThrottler()->add(part_in_memory->block.bytes());
-}
 
 MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     const MergeTreeData::DataPartPtr & part,
@@ -641,8 +604,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                             remote_fs_metadata, fmt::join(capability, ", "));
         if (server_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got 'remote_fs_metadata' cookie with old protocol version {}", server_protocol_version);
-        if (part_type == PartType::InMemory)
-            throw Exception(ErrorCodes::INCORRECT_PART_TYPE, "Got 'remote_fs_metadata' cookie for in-memory part");
 
         try
         {
@@ -701,29 +662,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     }
 
     auto storage_id = data.getStorageID();
-    String new_part_path = part_type == PartType::InMemory ? "memory" : fs::path(data.getFullPathOnDisk(disk)) / part_name / "";
+    String new_part_path = fs::path(data.getFullPathOnDisk(disk)) / part_name / "";
     auto entry = data.getContext()->getReplicatedFetchList().insert(
         storage_id.getDatabaseName(), storage_id.getTableName(),
         part_info.partition_id, part_name, new_part_path,
         replica_path, uri, to_detached, sum_files_size);
 
     in->setNextCallback(ReplicatedFetchReadCallback(*entry));
-
-    if (part_type == PartType::InMemory)
-    {
-        auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
-
-        auto data_part_storage = std::make_shared<DataPartStorageOnDiskFull>(
-            volume,
-            data.getRelativeDataPath(),
-            part_name);
-
-        return std::make_pair(downloadPartToMemory(
-            data_part_storage, part_name,
-            MergeTreePartInfo::fromPartName(part_name, data.format_version),
-            part_uuid, metadata_snapshot, context, *in,
-            projections, false, throttler), std::move(temporary_directory_lock));
-    }
 
     auto output_buffer_getter = [](IDataPartStorage & part_storage, const String & file_name, size_t file_size)
     {
@@ -734,66 +679,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         part_name, replica_path, to_detached, tmp_prefix,
         disk, false, *in, output_buffer_getter,
         projections, throttler, sync),std::move(temporary_directory_lock));
-}
-
-MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
-    MutableDataPartStoragePtr data_part_storage,
-    const String & part_name,
-    const MergeTreePartInfo & part_info,
-    const UUID & part_uuid,
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
-    PooledReadWriteBufferFromHTTP & in,
-    size_t projections,
-    bool is_projection,
-    ThrottlerPtr throttler)
-{
-    auto new_data_part = std::make_shared<MergeTreeDataPartInMemory>(data, part_name, part_info, data_part_storage);
-
-    for (size_t i = 0; i < projections; ++i)
-    {
-        String projection_name;
-        readStringBinary(projection_name, in);
-
-        MergeTreePartInfo new_part_info("all", 0, 0, 0);
-        auto projection_part_storage = data_part_storage->getProjection(projection_name + ".proj");
-
-        auto new_projection_part = downloadPartToMemory(
-            projection_part_storage, projection_name,
-            new_part_info, part_uuid, metadata_snapshot,
-            context, in, 0, true, throttler);
-
-        new_data_part->addProjectionPart(projection_name, std::move(new_projection_part));
-    }
-
-    MergeTreeData::DataPart::Checksums checksums;
-    if (!checksums.read(in))
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot deserialize checksums");
-
-    NativeReader block_in(in, 0);
-    auto block = block_in.read();
-    throttler->add(block.bytes());
-
-    new_data_part->setColumns(block.getNamesAndTypesList(), {}, metadata_snapshot->getMetadataVersion());
-
-    if (!is_projection)
-    {
-        new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        new_data_part->uuid = part_uuid;
-        new_data_part->is_temp = true;
-        new_data_part->minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
-        new_data_part->partition.create(metadata_snapshot, block, 0, context);
-    }
-
-    MergedBlockOutputStream part_out(
-        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, {},
-        CompressionCodecFactory::instance().get("NONE", {}), NO_TRANSACTION_PTR);
-
-    part_out.write(block);
-    part_out.finalizePart(new_data_part, false);
-    new_data_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
-
-    return new_data_part;
 }
 
 void Fetcher::downloadBaseOrProjectionPartToDisk(
