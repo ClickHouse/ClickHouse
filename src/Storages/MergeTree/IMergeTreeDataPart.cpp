@@ -349,7 +349,7 @@ const IMergeTreeDataPart::Index & IMergeTreeDataPart::getIndex() const
     if (!index_loaded)
         loadIndex();
     index_loaded = true;
-    return index;
+    return TSA_SUPPRESS_WARNING_FOR_READ(index); /// The variable is guaranteed to be unchanged after return.
 }
 
 
@@ -1477,6 +1477,11 @@ bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
         parent_part == nullptr && projection_parts.empty();
 }
 
+bool IMergeTreeDataPart::hasLightweightDelete() const
+{
+    return columns.contains(RowExistsColumn::name);
+}
+
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const
 {
     TransactionID expected_tid = txn ? txn->tid : Tx::PrehistoricTID;
@@ -1662,10 +1667,6 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     {
         size_t file_size = getDataPartStorage().getFileSize(TXN_VERSION_METADATA_FILE_NAME);
         auto buf = getDataPartStorage().readFile(TXN_VERSION_METADATA_FILE_NAME, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
-
-        /// FIXME https://github.com/ClickHouse/ClickHouse/issues/48465
-        if (dynamic_cast<CachedOnDiskReadBufferFromFile *>(buf.get()))
-            return true;
 
         readStringUntilEOF(content, *buf);
         ReadBufferFromString str_buf{content};

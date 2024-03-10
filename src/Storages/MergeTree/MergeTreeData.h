@@ -444,8 +444,6 @@ public:
 
     bool supportsTrivialCountOptimization() const override { return !hasLightweightDeletedMask(); }
 
-    NamesAndTypesList getVirtuals() const override;
-
     /// Snapshot for MergeTree contains the current set of data parts
     /// at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
@@ -993,15 +991,13 @@ public:
     void removeQueryId(const String & query_id) const;
     void removeQueryIdNoLock(const String & query_id) const TSA_REQUIRES(query_id_set_mutex);
 
-    /// Return the partition expression types as a Tuple type. Return DataTypeUInt8 if partition expression is empty.
-    DataTypePtr getPartitionValueType() const;
+    static const Names virtuals_useful_for_filter;
 
     /// Construct a sample block of virtual columns.
-    Block getSampleBlockWithVirtualColumns() const;
+    Block getHeaderWithVirtualsForFilter() const;
 
     /// Construct a block consisting only of possible virtual columns for part pruning.
-    /// If one_part is true, fill in at most one part.
-    Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part, bool ignore_empty = false) const;
+    Block getBlockWithVirtualsForFilter(const MergeTreeData::DataPartsVector & parts, bool ignore_empty = false) const;
 
     /// In merge tree we do inserts with several steps. One of them:
     /// X. write part to temporary directory with some temp name
@@ -1091,6 +1087,8 @@ public:
         ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const;
 
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
+
+    static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1359,7 +1357,7 @@ protected:
             size_t max_postpone_time_ms;
             size_t max_postpone_power;
 
-            PartMutationInfo(size_t max_postpone_time_ms_)
+            explicit PartMutationInfo(size_t max_postpone_time_ms_)
                             : retry_count(0ull)
                             , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
                             , max_postpone_time_ms(max_postpone_time_ms_)

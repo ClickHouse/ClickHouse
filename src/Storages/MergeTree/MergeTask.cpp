@@ -8,7 +8,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
-#include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
 #include <DataTypes/ObjectUtils.h>
@@ -1076,14 +1075,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     if (global_ctx->deduplicate)
     {
-        /// We don't want to deduplicate by block number column
-        /// so if deduplicate_by_columns is empty, add all columns except _block_number
-        if (supportsBlockNumberColumn(global_ctx) && global_ctx->deduplicate_by_columns.empty())
+        const auto & virtuals = *global_ctx->data->getVirtualsPtr();
+
+        /// We don't want to deduplicate by virtual persistent column.
+        /// If deduplicate_by_columns is empty, add all columns except virtuals.
+        if (global_ctx->deduplicate_by_columns.empty())
         {
-            for (const auto & col : global_ctx->merging_column_names)
+            for (const auto & column_name : global_ctx->merging_column_names)
             {
-                if (col != BlockNumberColumn::name)
-                    global_ctx->deduplicate_by_columns.emplace_back(col);
+                if (virtuals.tryGet(column_name, VirtualsKind::Persistent))
+                    continue;
+
+                global_ctx->deduplicate_by_columns.emplace_back(column_name);
             }
         }
 

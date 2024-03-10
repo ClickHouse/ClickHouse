@@ -112,6 +112,7 @@ CDMA
 CESU
 CIDR
 CIDRToRange
+CKMAN
 CLOB
 CLion
 CMPLNT
@@ -772,7 +773,6 @@ ReferenceKeyed
 Refreshable
 RegexpTree
 RemoteRead
-SharedMergeTree
 ReplacingMergeTree
 ReplicasMaxAbsoluteDelay
 ReplicasMaxInsertsInQueue
@@ -841,6 +841,8 @@ Sematext
 SendExternalTables
 SendScalars
 ShareAlike
+SharedMergeTree
+Shortkeys
 Shortkeys
 SimHash
 Simhash
@@ -1078,6 +1080,8 @@ anyheavy
 anylast
 appendTrailingCharIfAbsent
 approximative
+approxtopk
+approxtopsum
 argMax
 argMin
 argmax
@@ -1238,6 +1242,7 @@ buildable
 builtins
 byteHammingDistance
 byteSize
+byteSlice
 byteSwap
 bytebase
 bytesToCutForIPv
@@ -1288,6 +1293,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckman
 clangd
 cli
 clickcache
@@ -1615,7 +1621,6 @@ greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
-grouparrayintersect
 groupArrayIntersect
 groupArrayLast
 groupArrayMovingAvg
@@ -1632,6 +1637,7 @@ groupBitmapXor
 groupUniqArray
 grouparray
 grouparrayinsertat
+grouparrayintersect
 grouparraylast
 grouparraymovingavg
 grouparraymovingsum
@@ -1697,6 +1703,7 @@ hyperscan
 hypot
 hyvor
 iTerm
+iTerm
 icosahedron
 icudata
 idempotency
@@ -1744,7 +1751,6 @@ isValidJSON
 isValidUTF
 isZeroOrNull
 iteratively
-iTerm
 jaccard
 jaccardIndex
 jaroSimilarity
@@ -1895,6 +1901,7 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+mergeTreeIndex
 mergeable
 mergetree
 messageID
@@ -2317,7 +2324,6 @@ shardNum
 sharded
 sharding
 shortcircuit
-Shortkeys
 shortkeys
 shoutout
 simdjson
@@ -2423,6 +2429,7 @@ subranges
 subreddits
 subseconds
 subsequence
+substreams
 substring
 substringIndex
 substringIndexUTF
@@ -2486,6 +2493,7 @@ theilsu
 themself
 threadpool
 throwIf
+timeDiff
 timeSlot
 timeSlots
 timeZone
@@ -2537,6 +2545,7 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
+toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2722,6 +2731,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+writability
 wrt
 xcode
 xeus

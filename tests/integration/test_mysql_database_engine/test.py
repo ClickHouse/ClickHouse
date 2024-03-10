@@ -943,7 +943,7 @@ def test_predefined_connection_configuration(started_cluster):
         result = clickhouse_node.query("show create table test_database.test_table")
         assert (
             result.strip()
-            == "CREATE TABLE test_database.test_table\\n(\\n    `id` Int32\\n)\\nENGINE = MySQL(mysql1, table = \\'test_table\\')"
+            == "CREATE TABLE test_database.test_table\\n(\\n    `id` Int32\\n)\\nENGINE = MySQL(mysql1, `table` = \\'test_table\\')"
         )
 
         clickhouse_node.query("DROP DATABASE test_database")
