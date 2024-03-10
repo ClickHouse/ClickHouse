@@ -43,10 +43,8 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int INSECURE_PATH;
-    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
-    extern const int INCORRECT_PART_TYPE;
     extern const int ZERO_COPY_REPLICATION_ERROR;
 }
 
