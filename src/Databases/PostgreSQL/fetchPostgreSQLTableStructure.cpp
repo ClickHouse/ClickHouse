@@ -179,7 +179,7 @@ int getVersion(T & tx)
 
 template<typename T>
 PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
-    T & tx, const String & postgres_table, const String & query, bool use_nulls, bool only_names_and_types)
+    T & tx, const String & postgres_table, const String & query, bool use_nulls, bool only_names_and_types, int version)
 {
     auto columns = NamesAndTypes();
     PostgreSQLTableStructure::Attributes attributes;
@@ -204,8 +204,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             }
             else
             {
-                int version = getVersion(tx);
-
+                /// For postgresql major version >= 12.
                 if (version >= 120000)
                 {
                     std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string, std::string> row;
@@ -233,6 +232,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
                         ++i;
                     }
                 }
+                /// For postgresql major version < 12.
                 else
                 {
                     std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string> row;
@@ -342,6 +342,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     int version = getVersion(tx);
 
     std::string query;
+
+    /// For postgresql major version >= 12.
     if (version >= 120000)
     {
         query = fmt::format(
@@ -357,6 +359,9 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "AND NOT attisdropped AND attnum > 0 "
             "ORDER BY attnum ASC", where);
     }
+    /// For postgresql major version < 12.
+    /// Generated columns is supported from postgresql 12 and above,
+    /// hence we are skipping them if postgresql major version < 12.
     else
     {
         query = fmt::format(
@@ -373,7 +378,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     }
 
     auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
-    table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);
+    table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false, version);
 
     if (!table.physical_columns)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_with_schema);
@@ -421,7 +426,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
                 "AND a.attnum = ANY(i.indkey) "
                 "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary", where);
 
-        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
+        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true, version);
     }
 
     if (with_replica_identity_index && !table.primary_key_columns)
@@ -449,7 +454,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             (postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema))
         );
 
-        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
+        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true, version);
     }
 
     return table;

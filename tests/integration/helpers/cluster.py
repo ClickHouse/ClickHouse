@@ -1139,6 +1139,26 @@ class ClickHouseCluster:
         ]
         return self.base_postgres_cmd
 
+    def setup_postgres11_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_postgres_11.yml")]
+        )
+        env_variables["POSTGRES_PORT"] = str(self.postgres_port)
+        env_variables["POSTGRES_DIR"] = self.postgres_logs_dir
+        env_variables["POSTGRES_LOGS_FS"] = "bind"
+
+        self.with_postgres = True
+        self.base_postgres_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgres_11.yml"),
+        ]
+        return self.base_postgres_cmd
+
     def setup_postgres_cluster_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1589,6 +1609,7 @@ class ClickHouseCluster:
         clickhouse_path_dir=None,
         with_odbc_drivers=False,
         with_postgres=False,
+        with_postgres11=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
@@ -1711,6 +1732,7 @@ class ClickHouseCluster:
             clickhouse_path_dir=clickhouse_path_dir,
             with_odbc_drivers=with_odbc_drivers,
             with_postgres=with_postgres,
+            with_postgres11=with_postgres11,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
             clickhouse_start_command=clickhouse_start_command,
@@ -1792,6 +1814,11 @@ class ClickHouseCluster:
         if with_postgres and not self.with_postgres:
             cmds.append(
                 self.setup_postgres_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_postgres11 and not self.with_postgres11:
+            cmds.append(
+                self.setup_postgres11_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_postgres_cluster and not self.with_postgres_cluster:
