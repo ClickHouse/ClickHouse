@@ -487,14 +487,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         creds.setPassword(password);
     }
 
-    std::unique_ptr<PooledReadWriteBufferFromHTTP> in = std::make_unique<PooledReadWriteBufferFromHTTP>(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_POST,
-        nullptr,
-        creds,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        0, /* no redirects */
-        context->getCommonFetchesSessionFactory());
+    auto in = BuilderRWBufferFromHTTP(uri)
+                  .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+                  .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                  .withTimeouts(timeouts)
+                  .withDelayInit(false)
+                  .create(creds);
 
     int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
     String remote_fs_metadata = parse<String>(in->getResponseCookie("remote_fs_metadata", ""));
@@ -518,11 +516,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
     {
         readBinary(sum_files_size, *in);
+
         if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
         {
             IMergeTreeDataPart::TTLInfos ttl_infos;
             String ttl_infos_string;
             readBinary(ttl_infos_string, *in);
+
             ReadBufferFromString ttl_infos_buffer(ttl_infos_string);
             assertString("ttl format version: 1\n", ttl_infos_buffer);
             ttl_infos.read(ttl_infos_buffer);
@@ -570,6 +570,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     }
 
     UInt64 revision = parse<UInt64>(in->getResponseCookie("disk_revision", "0"));
+
     if (revision)
         disk->syncRevision(revision);
 
@@ -679,10 +680,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         projections, throttler, sync),std::move(temporary_directory_lock));
 }
 
+
 void Fetcher::downloadBaseOrProjectionPartToDisk(
     const String & replica_path,
     const MutableDataPartStoragePtr & data_part_storage,
-    PooledReadWriteBufferFromHTTP & in,
+    ReadWriteBufferFromHTTP & in,
     OutputBufferGetter output_buffer_getter,
     MergeTreeData::DataPart::Checksums & checksums,
     ThrottlerPtr throttler,
@@ -690,6 +692,8 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 {
     size_t files;
     readBinary(files, in);
+    LOG_DEBUG(log, "Downloading files {}", files);
+
 
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
 
@@ -755,7 +759,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const String & tmp_prefix,
     DiskPtr disk,
     bool to_remote_disk,
-    PooledReadWriteBufferFromHTTP & in,
+    ReadWriteBufferFromHTTP & in,
     OutputBufferGetter output_buffer_getter,
     size_t projections,
     ThrottlerPtr throttler,

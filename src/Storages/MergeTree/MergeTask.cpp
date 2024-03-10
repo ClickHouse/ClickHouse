@@ -296,7 +296,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     switch (global_ctx->chosen_merge_algorithm)
     {
-        case MergeAlgorithm::Horizontal :
+        case MergeAlgorithm::Horizontal:
         {
             global_ctx->merging_columns = global_ctx->storage_columns;
             global_ctx->merging_column_names = global_ctx->all_column_names;
@@ -304,7 +304,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             global_ctx->gathering_column_names.clear();
             break;
         }
-        case MergeAlgorithm::Vertical :
+        case MergeAlgorithm::Vertical:
         {
             ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->createRawStream();
             ctx->rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*ctx->rows_sources_uncompressed_write_buf);
