@@ -114,6 +114,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
             settings.ostr << '.';
         }
 
+        chassert(table);
         table->formatImpl(settings, state, frame);
         return settings.ostr;
     };
@@ -172,8 +173,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::START_PULLING_REPLICATION_LOG:
         case Type::STOP_CLEANUP:
         case Type::START_CLEANUP:
-        case Type::START_VIRTUAL_PARTS_UPDATE:
-        case Type::STOP_VIRTUAL_PARTS_UPDATE:
         {
             if (table)
             {
@@ -294,12 +293,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
                 print_keyword(" FOR ");
                 print_identifier(schema_cache_storage);
             }
-            break;
-        }
-        case Type::DROP_DISTRIBUTED_CACHE:
-        {
-            if (!distributed_cache_servive_id.empty())
-                settings.ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_servive_id;
             break;
         }
         case Type::UNFREEZE:
@@ -423,6 +416,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::STOP_THREAD_FUZZER:
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
+        case Type::DROP_PAGE_CACHE:
             break;
         case Type::UNKNOWN:
         case Type::END:
