@@ -19,7 +19,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageConfiguration.h>
@@ -151,9 +151,9 @@ public:
 
     String getName() const override;
 
-    void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
+    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override
     {
-        setKeyConditionImpl(nodes, context_, sample_block);
+        setKeyConditionImpl(filter_actions_dag, context_, sample_block);
     }
 
     Chunk generate() override;
@@ -336,9 +336,6 @@ public:
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
-    NamesAndTypesList getVirtuals() const override;
-    static Names getVirtualColumnNames();
-
     bool supportsPartitionBy() const override;
 
     static void processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection);
@@ -378,7 +375,6 @@ private:
 
     Configuration configuration;
     std::mutex configuration_update_mutex;
-    NamesAndTypesList virtual_columns;
 
     String name;
     const bool distributed_processing;

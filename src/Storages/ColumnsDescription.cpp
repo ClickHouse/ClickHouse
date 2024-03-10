@@ -31,14 +31,10 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Storages/BlockNumberColumn.h>
 
 
 namespace DB
 {
-
-CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
-
 
 namespace ErrorCodes
 {
@@ -482,6 +478,10 @@ NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) con
     NamesAndTypesList res;
     switch (options.kind)
     {
+        case GetColumnsOptions::None:
+        {
+            break;
+        }
         case GetColumnsOptions::All:
         {
             res = getAll();
@@ -559,6 +559,12 @@ const ColumnDescription & ColumnsDescription::get(const String & column_name) co
     return *it;
 }
 
+const ColumnDescription * ColumnsDescription::tryGet(const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    return it == columns.get<1>().end() ? nullptr : &(*it);
+}
+
 static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
 {
     switch (kind)
@@ -572,7 +578,8 @@ static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
         case ColumnDefaultKind::Ephemeral:
             return GetColumnsOptions::Ephemeral;
     }
-    UNREACHABLE();
+
+    return GetColumnsOptions::None;
 }
 
 NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & options, const Names & names) const
@@ -782,33 +789,6 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
     const auto it = columns.get<1>().find(column_name);
 
     return it != columns.get<1>().end() && it->codec != nullptr;
-}
-
-CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    const auto it = columns.get<1>().find(column_name);
-
-    if (it == columns.get<1>().end() || !it->codec)
-        return default_codec;
-
-    return CompressionCodecFactory::instance().get(it->codec, it->type, default_codec);
-}
-
-CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
-{
-    assert (column_name != BlockNumberColumn::name);
-    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
-}
-
-ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
-{
-    assert (column_name != BlockNumberColumn::name);
-    const auto it = columns.get<1>().find(column_name);
-
-    if (it == columns.get<1>().end() || !it->codec)
-        return default_codec->getFullCodecDesc();
-
-    return it->codec;
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const

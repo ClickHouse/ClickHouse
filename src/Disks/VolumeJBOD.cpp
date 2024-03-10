@@ -23,6 +23,8 @@ VolumeJBOD::VolumeJBOD(
 {
     LoggerPtr logger = getLogger("StorageConfiguration");
 
+    volume_priority = config.getUInt64(config_prefix + ".volume_priority", std::numeric_limits<UInt64>::max());
+
     auto has_max_bytes = config.has(config_prefix + ".max_data_part_size_bytes");
     auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");
     if (has_max_bytes && has_max_ratio)

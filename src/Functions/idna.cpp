@@ -6,16 +6,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 
-#ifdef __clang__
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wnewline-eof"
-#endif
-#    include <ada/idna/to_ascii.h>
-#    include <ada/idna/to_unicode.h>
-#    include <ada/idna/unicode_transcoding.h>
-#ifdef __clang__
-#    pragma clang diagnostic pop
-#endif
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnewline-eof"
+#include <ada/idna/to_ascii.h>
+#include <ada/idna/to_unicode.h>
+#include <ada/idna/unicode_transcoding.h>
+#pragma clang diagnostic pop
 
 namespace DB
 {
@@ -199,4 +195,3 @@ Computes the Unicode representation of ASCII-encoded Internationalized Domain Na
 }
 
 #endif
-

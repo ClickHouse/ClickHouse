@@ -31,7 +31,7 @@ struct AuthResult
 {
     UUID user_id;
     /// Session settings received from authentication server (if any)
-    SettingsChanges settings;
+    SettingsChanges settings{};
 };
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
