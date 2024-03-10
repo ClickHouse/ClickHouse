@@ -118,7 +118,8 @@ void ODBCSource::insertValue(
             auto value = row.get<std::string>(idx);
             ReadBufferFromString in(value);
             time_t time = 0;
-            readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
+            const DataTypeDateTime & datetime_type = assert_cast<const DataTypeDateTime &>(*data_type);
+            readDateTimeText(time, in, datetime_type.getTimeZone());
             if (time < 0)
                 time = 0;
             column.insert(static_cast<UInt32>(time));
@@ -129,8 +130,8 @@ void ODBCSource::insertValue(
             auto value = row.get<std::string>(idx);
             ReadBufferFromString in(value);
             DateTime64 time = 0;
-            const auto * datetime_type = assert_cast<const DataTypeDateTime64 *>(data_type.get());
-            readDateTime64Text(time, datetime_type->getScale(), in, datetime_type->getTimeZone());
+            const DataTypeDateTime64 & datetime_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
+            readDateTime64Text(time, datetime_type.getScale(), in, datetime_type.getTimeZone());
             column.insert(time);
             break;
         }
