@@ -114,6 +114,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
             settings.ostr << '.';
         }
 
+        chassert(table);
         table->formatImpl(settings, state, frame);
         return settings.ostr;
     };

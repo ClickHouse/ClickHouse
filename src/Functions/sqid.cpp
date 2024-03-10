@@ -98,7 +98,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"sqid", &isString<IDataType>, nullptr, "String"}
+            {"sqid", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
