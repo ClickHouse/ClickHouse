@@ -3158,15 +3158,10 @@ struct FunctionCastName
     static constexpr auto name = "CAST";
 };
 
-class FunctionCastBase : public IFunctionBase
+class FunctionCast final : public IFunctionBase
 {
 public:
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
-};
-
-class FunctionCast final : public FunctionCastBase
-{
-public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
 
     FunctionCast(ContextPtr context_
@@ -4901,7 +4896,7 @@ arguments, result_type, input_rows_count); \
 class MonotonicityHelper
 {
 public:
-    using MonotonicityForRange = FunctionCastBase::MonotonicityForRange;
+    using MonotonicityForRange = FunctionCast::MonotonicityForRange;
 
     template <typename DataType>
     static auto monotonicityForType(const DataType * const)
