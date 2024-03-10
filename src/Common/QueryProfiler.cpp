@@ -11,7 +11,6 @@
 #include <base/phdr_cache.h>
 #include <base/errnoToString.h>
 
-#include <random>
 
 namespace CurrentMetrics
 {
@@ -24,6 +23,7 @@ namespace ProfileEvents
     extern const Event QueryProfilerSignalOverruns;
     extern const Event QueryProfilerConcurrencyOverruns;
     extern const Event QueryProfilerRuns;
+    extern const Event QueryProfilerErrors;
 }
 
 namespace DB
@@ -83,11 +83,29 @@ namespace
 #endif
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
-        const StackTrace stack_trace(signal_context);
+        std::optional<StackTrace> stack_trace;
 
-        TraceSender::send(trace_type, stack_trace, {});
+#if defined(SANITIZER)
+        constexpr bool sanitizer = true;
+#else
+        constexpr bool sanitizer = false;
+#endif
+
+        asynchronous_stack_unwinding = true;
+        if (sanitizer || 0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
+        {
+            stack_trace.emplace(signal_context);
+        }
+        else
+        {
+            ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerErrors);
+        }
+        asynchronous_stack_unwinding = false;
+
+        if (stack_trace)
+            TraceSender::send(trace_type, *stack_trace, {});
+
         ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerRuns);
-
         errno = saved_errno;
     }
 

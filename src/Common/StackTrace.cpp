@@ -532,3 +532,7 @@ void StackTrace::dropCache()
     std::lock_guard lock{stacktrace_cache_mutex};
     cacheInstance().clear();
 }
+
+
+thread_local bool asynchronous_stack_unwinding = false;
+thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;
