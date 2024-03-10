@@ -350,8 +350,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
             global_ctx->new_data_part->setColumns(
                 global_ctx->storage_columns,
-                part_serialization_infos,
-                global_ctx->metadata_snapshot->getMetadataVersion());
+                part_serialization_infos);
         }
     }
 
