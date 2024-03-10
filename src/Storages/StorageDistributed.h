@@ -146,8 +146,6 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
-    NamesAndTypesList getVirtuals() const override;
-
     /// Used by InterpreterInsertQuery
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
@@ -233,6 +231,8 @@ private:
 
     std::optional<QueryPipeline> distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
     std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
+
+    static VirtualColumnsDescription createVirtuals();
 
     String remote_database;
     String remote_table;

@@ -16,6 +16,7 @@
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <Analyzer/FunctionNode.h>
@@ -100,7 +101,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
                 no_sign_request = true;
                 args_to_idx = {{"format", 2}};
             }
-            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}};
             else
                 args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
@@ -119,14 +120,14 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
                 no_sign_request = true;
                 args_to_idx = {{"format", 2}, {"structure", 3}};
             }
-            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
             {
                 args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
             }
             else
             {
                 auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
-                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+                if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
                 {
                     args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
                 }
@@ -153,7 +154,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
             else
             {
                 auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
-                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+                if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
                 {
                     args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}};
                 }
@@ -170,7 +171,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         else if (count == 6)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
-            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
             {
                 args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}};
             }
@@ -300,7 +301,7 @@ void TableFunctionS3::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, con
                 args.push_back(structure_literal);
             }
             /// s3(source, format, structure)
-            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
             {
                 if (second_arg == "auto")
                     args[1] = format_literal;
@@ -330,7 +331,7 @@ void TableFunctionS3::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, con
                     args[3] = structure_literal;
             }
             /// s3(source, format, structure, compression_method)
-            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
             {
                 if (second_arg == "auto")
                     args[1] = format_literal;
@@ -401,8 +402,7 @@ bool TableFunctionS3::supportsReadingSubsetOfColumns(const ContextPtr & context)
 
 std::unordered_set<String> TableFunctionS3::getVirtualsToCheckBeforeUsingStructureHint() const
 {
-    auto virtual_column_names = StorageS3::getVirtualColumnNames();
-    return {virtual_column_names.begin(), virtual_column_names.end()};
+    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
 }
 
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const

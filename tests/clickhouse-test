@@ -5,47 +5,46 @@
 # pylint: disable=too-many-lines
 # pylint: disable=anomalous-backslash-in-string
 
-import enum
-from queue import Full
-import shutil
-import itertools
-import sys
-import os
-import os.path
-import glob
-import signal
-import re
 import copy
-import traceback
-import math
+import enum
+import glob
 
 # Not requests, to avoid requiring extra dependency.
 import http.client
-import urllib.parse
+import itertools
 import json
+import math
+import multiprocessing
+import os
+import os.path
+import platform
+import random
+import re
+import shutil
+import signal
+import socket
+import string
+import subprocess
+import sys
+import traceback
+import urllib.parse
 
 # for crc32
 import zlib
-
 from argparse import ArgumentParser
-from typing import Tuple, Union, Optional, Dict, Set, List
-import subprocess
-from subprocess import Popen
-from subprocess import PIPE
+from contextlib import closing
 from datetime import datetime, timedelta
-from time import time, sleep
 from errno import ESRCH
+from queue import Full
+from subprocess import PIPE, Popen
+from time import sleep, time
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 try:
     import termcolor  # type: ignore
 except ImportError:
     termcolor = None
 
-import random
-import string
-import multiprocessing
-import socket
-from contextlib import closing
 
 USE_JINJA = True
 try:
@@ -69,7 +68,7 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
 
-def stringhash(s):
+def stringhash(s: str) -> int:
     # default hash() function consistent
     # only during process invocation https://stackoverflow.com/a/42089311
     return zlib.crc32(s.encode("utf-8"))
@@ -91,6 +90,10 @@ def trim_for_log(s):
         return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
     else:
         return "\n".join(lines)
+
+
+class TestException(Exception):
+    pass
 
 
 class HTTPError(Exception):
@@ -249,7 +252,7 @@ def get_db_engine(args, database_name):
 
 
 def get_create_database_settings(args, testcase_args):
-    create_database_settings = dict()
+    create_database_settings = {}
     if testcase_args:
         create_database_settings["log_comment"] = testcase_args.testcase_basename
     if args.db_engine == "Ordinary":
@@ -573,27 +576,6 @@ def get_localzone():
     return os.getenv("TZ", "/".join(os.readlink("/etc/localtime").split("/")[-2:]))
 
 
-def supports_io_uring():
-    return not subprocess.call(
-        [
-            args.binary,
-            "-q",
-            "select * from file('/dev/null', 'LineAsString')",
-            "--storage_file_read_method",
-            "io_uring",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-
-def get_local_filesystem_methods():
-    methods = ["read", "pread", "mmap", "pread_threadpool"]
-    if supports_io_uring():
-        methods.append("io_uring")
-    return methods
-
-
 class SettingsRandomizer:
     settings = {
         "max_insert_threads": lambda: 0
@@ -634,7 +616,10 @@ class SettingsRandomizer:
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "local_filesystem_read_method": lambda: random.choice(
-            get_local_filesystem_methods()
+            # Allow to use uring only when running on Linux
+            ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
+            if platform.system().lower() == "linux"
+            else ["read", "pread", "mmap", "pread_threadpool"]
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
@@ -699,6 +684,8 @@ class SettingsRandomizer:
                 get_localzone(),
             ]
         ),
+        "use_page_cache_for_disks_without_file_cache": lambda: random.random() < 0.7,
+        "page_cache_inject_eviction": lambda: random.random() < 0.5,
     }
 
     @staticmethod
@@ -1201,7 +1188,7 @@ class TestCase:
         )
 
         if result_is_different:
-            diff_proc = Popen(
+            with Popen(
                 [
                     "diff",
                     "-U",
@@ -1212,23 +1199,23 @@ class TestCase:
                 encoding="latin-1",
                 stdout=PIPE,
                 universal_newlines=True,
-            )
-            if self.show_whitespaces_in_diff:
-                sed_proc = Popen(
-                    ["sed", "-e", "s/[ \t]\\+$/&$/g"],
-                    stdin=diff_proc.stdout,
-                    stdout=PIPE,
-                )
-                diff_proc.stdout.close()  # Allow diff to receive a SIGPIPE if cat exits.
-                diff = sed_proc.communicate()[0].decode("utf-8", errors="ignore")
-            else:
-                diff = diff_proc.communicate()[0]
+            ) as diff_proc:
+                if self.show_whitespaces_in_diff:
+                    with Popen(
+                        ["sed", "-e", "s/[ \t]\\+$/&$/g"],
+                        stdin=diff_proc.stdout,
+                        stdout=PIPE,
+                    ) as sed_proc:
+                        diff = sed_proc.communicate()[0].decode(
+                            "utf-8", errors="ignore"
+                        )
+                else:
+                    diff = diff_proc.communicate()[0]
 
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
-                file = open(self.stdout_file, "rb")
-                diff += str(file.read())
-                file.close()
+                with open(self.stdout_file, "rb") as file:
+                    diff += str(file.read())
                 diff += "==================="
             description += f"\n{diff}\n"
             if debug_log:
@@ -1391,6 +1378,7 @@ class TestCase:
 
         command = pattern.format(**params)
 
+        # pylint:disable-next=consider-using-with; TODO: fix
         proc = Popen(command, shell=True, env=os.environ, start_new_session=True)
 
         while (
@@ -1557,7 +1545,7 @@ class TestCase:
             )
 
             if len(leftover_tables) != 0:
-                raise Exception(
+                raise TestException(
                     f"The test should cleanup its tables ({leftover_tables}), otherwise it is inconvenient for running it locally."
                 )
 
@@ -1640,7 +1628,7 @@ class TestSuite:
             ):
                 return "#"
             else:
-                raise Exception(f"Unknown file_extension: {filename}")
+                raise TestException(f"Unknown file_extension: {filename}")
 
         def parse_tags_from_line(line, comment_sign) -> Set[str]:
             if not line.startswith(comment_sign):
@@ -1701,17 +1689,22 @@ class TestSuite:
         self.suite_tmp_path: str = suite_tmp_path
         self.suite: str = suite
 
-        filter_func = lambda x: True  # noqa: ignore E731
-
         if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
             if args.run_by_hash_num > args.run_by_hash_total:
-                raise Exception(
+                raise TestException(
                     f"Incorrect run by hash, value {args.run_by_hash_num} bigger than total {args.run_by_hash_total}"
                 )
 
-            filter_func = (
-                lambda x: stringhash(x) % args.run_by_hash_total == args.run_by_hash_num
-            )
+            def filter_func(x: str) -> bool:
+                return bool(
+                    stringhash(x) % args.run_by_hash_total == args.run_by_hash_num
+                )
+
+        else:
+
+            def filter_func(x: str) -> bool:
+                _ = x
+                return True
 
         self.all_tests: List[str] = self.get_tests_list(
             self.tests_in_suite_key_func, filter_func
@@ -2433,7 +2426,7 @@ def main(args):
             pid = get_server_pid()
             print("Got server pid", pid)
             print_stacktraces()
-        raise Exception(msg)
+        raise TestException(msg)
 
     args.build_flags = collect_build_flags(args)
     args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
@@ -2637,7 +2630,7 @@ def find_binary(name):
     if os.access(bin_path, os.X_OK):
         return bin_path
 
-    raise Exception(f"{name} was not found in PATH")
+    raise TestException(f"{name} was not found in PATH")
 
 
 def find_clickhouse_command(binary, command):
