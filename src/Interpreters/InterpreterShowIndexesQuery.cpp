@@ -37,7 +37,7 @@ FROM (
             name AS table,
             1 AS non_unique,
             'PRIMARY' AS key_name,
-            row_number() over (order by null) AS seq_in_index,
+            row_number() over (order by database) AS seq_in_index,
             arrayJoin(splitByString(', ', primary_key)) AS column_name,
             'A' AS collation,
             0 AS cardinality,
