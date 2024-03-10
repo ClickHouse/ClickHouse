@@ -230,7 +230,7 @@ IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
      {"INVOKER", SQLSecurityType::INVOKER},
      {"NONE", SQLSecurityType::NONE}})
 
-IMPLEMENT_SETTING_ENUM(DefaultWeekMode, ErrorCodes::BAD_ARGUMENTS,
-                       {{"monday", DefaultWeekMode::MONDAY},
-                        {"sunday", DefaultWeekMode::SUNDAY}})
+IMPLEMENT_SETTING_ENUM(FirstDayOfWeek, ErrorCodes::BAD_ARGUMENTS,
+                       {{"Monday", FirstDayOfWeek::Monday},
+                        {"Sunday", FirstDayOfWeek::Sunday}})
 }

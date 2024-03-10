@@ -97,7 +97,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"use_page_cache_for_disks_without_file_cache", false, false, "Added userspace page cache"},
               {"read_from_page_cache_if_exists_otherwise_bypass_cache", false, false, "Added userspace page cache"},
               {"page_cache_inject_eviction", false, false, "Added userspace page cache"},
-              {"default_mode_week_functions", "monday", "monday", "Change default week mode for week conversion functions"},
+              {"first_day_of_week", "Monday", "Monday", "Added a setting for the first day of the week for date/time functions"},
               {"input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects", false, false, "Allow to use String type for ambiguous paths during named tuple inference from JSON objects"},
               {"traverse_shadow_remote_data_paths", false, false, "Traverse shadow directory when query system.remote_data_paths."},
               {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", false, true, "Deduplication is dependent materialized view cannot work together with async inserts."},

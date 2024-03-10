@@ -33,7 +33,7 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToStartOfInterval>(context); }
 
     explicit FunctionToStartOfInterval(ContextPtr context)
-        : enable_default_monday_first(context->getSettingsRef().default_mode_week_functions != DefaultWeekMode::SUNDAY)
+        : enable_default_monday_first(context->getSettingsRef().first_day_of_week != FirstDayOfWeek::Sunday)
     {
     }
 
