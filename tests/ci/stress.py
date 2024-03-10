@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """This script is used in docker images for stress tests and upgrade tests"""
-from multiprocessing import cpu_count
-from pathlib import Path
-from subprocess import Popen, call, check_output, STDOUT, PIPE
-from typing import List
 import argparse
 import logging
 import random
 import time
+from multiprocessing import cpu_count
+from pathlib import Path
+from subprocess import PIPE, STDOUT, Popen, call, check_output
+from typing import List
 
 
 def get_options(i: int, upgrade_check: bool) -> str:
@@ -90,12 +90,13 @@ def run_func_test(
     ]
     pipes = []
     for i, path in enumerate(output_paths):
-        with open(path, "w") as op:
+        with open(path, "w", encoding="utf-8") as op:
             full_command = (
                 f"{cmd} {get_options(i, upgrade_check)} {global_time_limit_option} "
                 f"{skip_tests_option} {upgrade_check_option}"
             )
             logging.info("Run func tests '%s'", full_command)
+            # pylint:disable-next=consider-using-with
             pipes.append(Popen(full_command, shell=True, stdout=op, stderr=op))
             time.sleep(0.5)
     return pipes
@@ -204,6 +205,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
                         continue
                     command = make_query_command(f"DETACH DATABASE {db}")
                     # we don't wait for drop
+                    # pylint:disable-next=consider-using-with
                     Popen(command, shell=True)
                 break
             except Exception as ex:
@@ -212,7 +214,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
                 )
                 time.sleep(i)
         else:
-            raise Exception(
+            raise RuntimeError(
                 "Cannot drop databases after stress tests. Probably server consumed "
                 "too much memory and cannot execute simple queries"
             )
@@ -293,7 +295,9 @@ def main():
     args = parse_args()
 
     if args.drop_databases and not args.hung_check:
-        raise Exception("--drop-databases only used in hung check (--hung-check)")
+        raise argparse.ArgumentTypeError(
+            "--drop-databases only used in hung check (--hung-check)"
+        )
 
     # FIXME Hung check with ubsan is temporarily disabled due to
     # https://github.com/ClickHouse/ClickHouse/issues/45372
@@ -359,15 +363,17 @@ def main():
             ]
         )
         hung_check_log = args.output_folder / "hung_check.log"  # type: Path
-        tee = Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE)
-        res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600)
-        if tee.stdin is not None:
-            tee.stdin.close()
+        with Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE) as tee:
+            res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600)
+            if tee.stdin is not None:
+                tee.stdin.close()
         if res != 0 and have_long_running_queries and not suppress_hung_check:
             logging.info("Hung check failed with exit code %d", res)
         else:
             hung_check_status = "No queries hung\tOK\t\\N\t\n"
-            with open(args.output_folder / "test_results.tsv", "w+") as results:
+            with open(
+                args.output_folder / "test_results.tsv", "w+", encoding="utf-8"
+            ) as results:
                 results.write(hung_check_status)
                 hung_check_log.unlink()
 
