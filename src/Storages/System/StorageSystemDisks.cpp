@@ -73,9 +73,9 @@ Pipe StorageSystemDisks::read(
         col_unreserved->insert(disk_ptr->getUnreservedSpace().value_or(std::numeric_limits<UInt64>::max()));
         col_keep->insert(disk_ptr->getKeepingFreeSpace());
         auto data_source_description = disk_ptr->getDataSourceDescription();
-        col_type->insert(data_source_description.type);
-        col_object_storage_type->insert(data_source_description.object_storage_type);
-        col_metadata_type->insert(data_source_description.metadata_type);
+        col_type->insert(magic_enum::enum_name(data_source_description.type));
+        col_object_storage_type->insert(magic_enum::enum_name(data_source_description.object_storage_type));
+        col_metadata_type->insert(magic_enum::enum_name(data_source_description.metadata_type));
         col_is_encrypted->insert(data_source_description.is_encrypted);
         col_is_read_only->insert(disk_ptr->isReadOnly());
         col_is_write_once->insert(disk_ptr->isWriteOnce());
