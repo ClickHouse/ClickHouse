@@ -1906,18 +1906,6 @@ struct ConvertImpl<T, T, Name, ConvertDefaultBehaviorTag>
     }
 };
 
-template <typename Name>
-struct ConvertImpl<DataTypeUInt8, DataTypeUInt8, Name, ConvertDefaultBehaviorTag>
-{
-    template <typename Additions = void *>
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/,
-                             Additions additions [[maybe_unused]] = Additions())
-    {
-
-        return arguments[0].column;
-    }
-};
-
 
 /** Conversion from FixedString to String.
   * Cutting sequences of zero bytes from end of strings.
