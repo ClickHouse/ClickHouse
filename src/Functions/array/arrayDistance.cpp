@@ -455,9 +455,6 @@ private:
             return executeWithLeftArgConst<ResultType, RightType, LeftType>(col_y, col_x, input_rows_count, arguments);
         }
 
-        col_x = col_x->convertToFullColumnIfConst();
-        col_y = col_y->convertToFullColumnIfConst();
-
         const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
         const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
 
