@@ -47,7 +47,7 @@ protected:
 public:
     ASTAlterQuery::AlterObjectType alter_object;
 
-    ParserAlterCommandList(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
+    explicit ParserAlterCommandList(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
         : alter_object(alter_object_) {}
 };
 
