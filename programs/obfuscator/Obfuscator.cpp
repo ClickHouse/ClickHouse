@@ -1204,8 +1204,8 @@ public:
 
 }
 
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma clang diagnostic ignored "-Wunused-function"
+#clang GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
