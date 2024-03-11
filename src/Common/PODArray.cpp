@@ -22,7 +22,7 @@ void protectMemoryRegion(void * addr, size_t len, int prot)
 }
 #endif
 
-size_t byte_size(size_t num_elements, size_t element_size)
+ALWAY_INLINE size_t byte_size(size_t num_elements, size_t element_size)
 {
     size_t amount;
     if (__builtin_mul_overflow(num_elements, element_size, &amount))
