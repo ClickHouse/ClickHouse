@@ -5430,3 +5430,9 @@ Enabling this setting can lead to incorrect result as in case of evolved schema 
 :::
 
 Default value: 'false'.
+
+## first_day_of_week
+
+The first day of the week (Monday or Sunday) used by `toStartOfInterval` and `date_diff` functions when using weeks as units.
+
+Default value: 'Monday'.
