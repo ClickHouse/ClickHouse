@@ -157,6 +157,37 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     return true;
 }
 
+EvictionCandidates SLRUFileCachePriority::collectCandidatesForEviction(
+    size_t desired_size,
+    size_t desired_elements_count,
+    size_t max_candidates_to_evict,
+    FileCacheReserveStat & stat,
+    const CacheGuard::Lock & lock)
+{
+    if (!max_candidates_to_evict)
+        return {};
+
+    const auto desired_probationary_size = getRatio(desired_size, 1 - size_ratio);
+    const auto desired_probationary_elements_num = getRatio(desired_elements_count, 1 - size_ratio);
+
+    auto res = probationary_queue.collectCandidatesForEviction(
+        desired_probationary_size, desired_probationary_elements_num, max_candidates_to_evict, stat, lock);
+
+    chassert(res.size() <= max_candidates_to_evict);
+    chassert(res.size() == stat.stat.releasable_count);
+
+    if (res.size() == max_candidates_to_evict)
+        return res;
+
+    const auto desired_protected_size = getRatio(max_size, size_ratio);
+    const auto desired_protected_elements_num = getRatio(max_elements, size_ratio);
+
+    auto res_add = protected_queue.collectCandidatesForEviction(
+        desired_protected_size, desired_protected_elements_num, max_candidates_to_evict - res.size(), stat, lock);
+    res.add(res_add, lock);
+    return res;
+}
+
 void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const CacheGuard::Lock & lock)
 {
     /// If entry is already in protected queue,

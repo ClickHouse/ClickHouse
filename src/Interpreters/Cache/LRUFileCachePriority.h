@@ -50,6 +50,13 @@ public:
         const UserID & user_id,
         const CacheGuard::Lock &) override;
 
+    EvictionCandidates collectCandidatesForEviction(
+        size_t desired_size,
+        size_t desired_elements_count,
+        size_t max_candidates_to_evict,
+        FileCacheReserveStat & stat,
+        const CacheGuard::Lock &) override;
+
     void shuffle(const CacheGuard::Lock &) override;
 
     struct LRUPriorityDump : public IPriorityDump
@@ -88,6 +95,13 @@ private:
     };
     using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
     void iterate(IterateFunc && func, const CacheGuard::Lock &);
+
+    using StopConditionFunc = std::function<bool()>;
+    void iterateForEviction(
+        EvictionCandidates & res,
+        FileCacheReserveStat & stat,
+        StopConditionFunc stop_condition,
+        const CacheGuard::Lock &);
 
     LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CacheGuard::Lock &);
     LRUIterator add(EntryPtr entry, const CacheGuard::Lock &);

@@ -98,12 +98,21 @@ public:
 
     virtual PriorityDumpPtr dump(const CacheGuard::Lock &) = 0;
 
+    /// Collect eviction candidates sufficient to free `size` bytes.
     virtual bool collectCandidatesForEviction(
         size_t size,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
         const UserID & user_id,
+        const CacheGuard::Lock &) = 0;
+
+    /// Collect eviction `candidates_num` candidates for eviction.
+    virtual EvictionCandidates collectCandidatesForEviction(
+        size_t desired_size,
+        size_t desired_elements_count,
+        size_t max_candidates_to_evict,
+        FileCacheReserveStat & stat,
         const CacheGuard::Lock &) = 0;
 
     virtual bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CacheGuard::Lock &) = 0;

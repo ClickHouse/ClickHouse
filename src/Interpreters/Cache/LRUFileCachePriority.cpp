@@ -230,6 +230,40 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     if (canFit(size, lock))
         return true;
 
+    auto can_fit = [&]
+    {
+        return canFit(size, stat.stat.releasable_size, stat.stat.releasable_count, lock);
+    };
+    iterateForEviction(res, stat, can_fit, lock);
+    return can_fit();
+}
+
+EvictionCandidates LRUFileCachePriority::collectCandidatesForEviction(
+    size_t desired_size,
+    size_t desired_elements_count,
+    size_t max_candidates_to_evict,
+    FileCacheReserveStat & stat,
+    const CacheGuard::Lock & lock)
+{
+    if (!max_candidates_to_evict)
+        return {};
+
+    EvictionCandidates res;
+    auto stop_condition = [&, this]()
+    {
+        return (getSize(lock) <= desired_size && getElementsCount(lock) <= desired_elements_count)
+            || res.size() >= max_candidates_to_evict;
+    };
+    iterateForEviction(res, stat, stop_condition, lock);
+    return res;
+}
+
+void LRUFileCachePriority::iterateForEviction(
+    EvictionCandidates & res,
+    FileCacheReserveStat & stat,
+    StopConditionFunc stop_condition,
+    const CacheGuard::Lock & lock)
+{
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
 
     IterateFunc iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
@@ -240,6 +274,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         if (segment_metadata->evicting())
         {
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
+            stat.update(segment_metadata->size(), file_segment->getKind(), false);
         }
         else if (segment_metadata->releasable())
         {
@@ -248,27 +283,23 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         }
         else
         {
-            stat.update(segment_metadata->size(), file_segment->getKind(), false);
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
+            stat.update(segment_metadata->size(), file_segment->getKind(), false);
         }
 
         return IterationResult::CONTINUE;
     };
 
-    auto can_fit = [&]
-    {
-        return canFit(size, stat.stat.releasable_size, stat.stat.releasable_count, lock);
-    };
-
     iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
-        return can_fit() ? IterationResult::BREAK : iterate_func(locked_key, segment_metadata);
+        return stop_condition() ? IterationResult::BREAK : iterate_func(locked_key, segment_metadata);
     }, lock);
-
-    return can_fit();
 }
 
-LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(LRUIterator & it, LRUFileCachePriority & other, const CacheGuard::Lock &)
+LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
+    LRUIterator & it,
+    LRUFileCachePriority & other,
+    const CacheGuard::Lock &)
 {
     const auto & entry = *it.getEntry();
     if (entry.size == 0)

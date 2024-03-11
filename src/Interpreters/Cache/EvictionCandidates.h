@@ -7,9 +7,19 @@ namespace DB
 class EvictionCandidates
 {
 public:
+    EvictionCandidates() = default;
+    EvictionCandidates(EvictionCandidates && other) noexcept
+    {
+        candidates = std::move(other.candidates);
+        candidates_size = std::move(other.candidates_size);
+        invalidated_queue_entries = std::move(other.invalidated_queue_entries);
+        finalize_eviction_func = std::move(other.finalize_eviction_func);
+    }
     ~EvictionCandidates();
 
     void add(LockedKey & locked_key, const FileSegmentMetadataPtr & candidate);
+
+    void add(const EvictionCandidates & other, const CacheGuard::Lock &) { candidates.insert(other.candidates.begin(), other.candidates.end()); }
 
     void evict();
 
