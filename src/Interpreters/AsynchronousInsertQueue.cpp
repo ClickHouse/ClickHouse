@@ -459,6 +459,7 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
         shard.last_insert_time = now;
         shard.busy_timeout_ms = timeout_ms;
 
+        ++pending_inserts;
         CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
@@ -1091,7 +1092,7 @@ void AsynchronousInsertQueue::checkQueueLimit(std::chrono::seconds wait_timeout)
 {
     LOG_DEBUG(&Poco::Logger::get("debug"), "pending_inserts={}", pending_inserts);
 
-    if (++pending_inserts <= max_pending_inserts)
+    if (pending_inserts <= max_pending_inserts)
         return;
 
     if (flush_mutex.try_lock_for(wait_timeout))

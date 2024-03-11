@@ -20,6 +20,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE $table(s Int32) ENGINE=MergeTree ORDER BY 
 # in other words, only forceful flush (when number of pending inserts will exceed threshold) should lead to removing entries from queue.
 client_opts=(
   --async_insert 1
+  --async_insert_busy_timeout_ms 1000000000
   --async_insert_busy_timeout_max_ms 1000000000
   --async_insert_busy_timeout_min_ms 1000000000
   --async_insert_cleanup_timeout_ms 1000000000
