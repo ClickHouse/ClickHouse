@@ -232,7 +232,7 @@ ASTPtr QueryFuzzer::getRandomColumnLike()
         return nullptr;
     }
 
-    ASTPtr new_ast = column_like[fuzz_rand() % column_like.size()]->clone();
+    ASTPtr new_ast = column_like[fuzz_rand() % column_like.size()].second->clone();
     new_ast->setAlias("");
 
     return new_ast;
@@ -272,7 +272,7 @@ void QueryFuzzer::replaceWithTableLike(ASTPtr & ast)
         return;
     }
 
-    ASTPtr new_ast = table_like[fuzz_rand() % table_like.size()]->clone();
+    ASTPtr new_ast = table_like[fuzz_rand() % table_like.size()].second->clone();
 
     std::string old_alias = ast->tryGetAlias();
     new_ast->setAlias(old_alias);
@@ -1168,23 +1168,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         fuzz(select->children);
     }
-    /*
-     * The time to fuzz the settings has not yet come.
-     * Apparently we don't have any infrastructure to validate the values of
-     * the settings, and the first query with max_block_size = -1 breaks
-     * because of overflows here and there.
-     *//*
-     * else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
-     * {
-     *      for (auto & c : set->changes)
-     *      {
-     *          if (fuzz_rand() % 50 == 0)
-     *          {
-     *              c.value = fuzzField(c.value);
-     *          }
-     *      }
-     * }
-     */
+    else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
+    {
+        /// Fuzz settings
+        for (auto & c : set->changes)
+            if (fuzz_rand() % 50 == 0)
+                c.value = fuzzField(c.value);
+    }
     else if (auto * literal = typeid_cast<ASTLiteral *>(ast.get()))
     {
         // There is a caveat with fuzzing the children: many ASTs also keep the
@@ -1224,57 +1214,46 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
 }
 
+#define AST_FUZZER_PART_TYPE_CAP 1000
+
 /*
  * This functions collects various parts of query that we can then substitute
  * to a query being fuzzed.
- *
- * TODO: we just stop remembering new parts after our corpus reaches certain size.
- * This is boring, should implement a random replacement of existing parst with
- * small probability. Do this after we add this fuzzer to CI and fix all the
- * problems it can routinely find even in this boring version.
  */
 void QueryFuzzer::collectFuzzInfoMain(ASTPtr ast)
 {
     collectFuzzInfoRecurse(ast);
-
-    aliases.clear();
-    for (const auto & alias : aliases_set)
-    {
-        aliases.push_back(alias);
-    }
-
-    column_like.clear();
-    for (const auto & [name, value] : column_like_map)
-    {
-        column_like.push_back(value);
-    }
-
-    table_like.clear();
-    for (const auto & [name, value] : table_like_map)
-    {
-        table_like.push_back(value);
-    }
 }
 
 void QueryFuzzer::addTableLike(ASTPtr ast)
 {
-    if (table_like_map.size() > 1000)
+    if (table_like_map.size() > AST_FUZZER_PART_TYPE_CAP)
     {
-        table_like_map.clear();
+        const auto iter = std::next(table_like.begin(), fuzz_rand() % table_like.size());
+        const auto ast_del = *iter;
+        table_like.erase(iter);
+        table_like_map.erase(ast_del.first);
     }
 
     const auto name = ast->formatForErrorMessage();
     if (name.size() < 200)
     {
-        table_like_map.insert({name, ast});
+        const auto res = table_like_map.insert({name, ast});
+        if (res.second)
+        {
+            table_like.push_back({name, ast});
+        }
     }
 }
 
 void QueryFuzzer::addColumnLike(ASTPtr ast)
 {
-    if (column_like_map.size() > 1000)
+    if (column_like_map.size() > AST_FUZZER_PART_TYPE_CAP)
     {
-        column_like_map.clear();
+        const auto iter = std::next(column_like.begin(), fuzz_rand() % column_like.size());
+        const auto ast_del = *iter;
+        column_like.erase(iter);
+        column_like_map.erase(ast_del.first);
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -1289,22 +1268,16 @@ void QueryFuzzer::addColumnLike(ASTPtr ast)
     }
     if (name.size() < 200)
     {
-        column_like_map.insert({name, ast});
+        const auto res = column_like_map.insert({name, ast});
+        if (res.second)
+        {
+            column_like.push_back({name, ast});
+        }
     }
 }
 
 void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
 {
-    if (auto * impl = dynamic_cast<ASTWithAlias *>(ast.get()))
-    {
-        if (aliases_set.size() > 1000)
-        {
-            aliases_set.clear();
-        }
-
-        aliases_set.insert(impl->alias);
-    }
-
     if (typeid_cast<ASTLiteral *>(ast.get()))
     {
         addColumnLike(ast);

@@ -16,7 +16,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/castColumn.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
@@ -28,7 +27,6 @@
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <boost/functional/hash.hpp>
-#include <base/sort.h>
 
 
 namespace DB

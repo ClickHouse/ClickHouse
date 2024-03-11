@@ -132,13 +132,18 @@ void buildScatterSelector(
 
 /// Computes ttls and updates ttl infos
 void updateTTL(
+    const ContextPtr context,
     const TTLDescription & ttl_entry,
     IMergeTreeDataPart::TTLInfos & ttl_infos,
     DB::MergeTreeDataPartTTLInfo & ttl_info,
     const Block & block,
     bool update_part_min_max_ttls)
 {
-    auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(ttl_entry.expression, block, ttl_entry.result_column);
+    auto expr_and_set = ttl_entry.buildExpression(context);
+    for (auto & subquery : expr_and_set.sets->getSubqueries())
+        subquery->buildSetInplace(context);
+
+    auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
 
     if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(ttl_column.get()))
     {
@@ -379,13 +384,13 @@ Block MergeTreeDataWriter::mergeBlock(
 
     /// Check that after first merge merging_algorithm is waiting for data from input 0.
     if (status.required_source != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: required source after the first merge is not 0. Chunk rows: {}, is_finished: {}, required_source: {}, algorithm: {}", status.chunk.getNumRows(), status.is_finished, status.required_source, merging_algorithm->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Required source after the first merge is not 0. Chunk rows: {}, is_finished: {}, required_source: {}, algorithm: {}", status.chunk.getNumRows(), status.is_finished, status.required_source, merging_algorithm->getName());
 
     status = merging_algorithm->merge();
 
     /// Check that merge is finished.
     if (!status.is_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: merge is not finished after the second merge.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge is not finished after the second merge.");
 
     /// Merged Block is sorted and we don't need to use permutation anymore
     permutation = nullptr;
@@ -434,7 +439,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         auto max_month = date_lut.toNumYYYYMM(max_date);
 
         if (min_month != max_month)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: part spans more than one month.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part spans more than one month.");
 
         part_name = new_part_info.getPartNameV0(min_date, max_date);
     }
@@ -507,7 +512,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
     for (const auto & ttl_entry : move_ttl_entries)
-        updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
+        updateTTL(context, ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
     ReservationPtr reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
@@ -562,20 +567,20 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     }
 
     if (metadata_snapshot->hasRowsTTL())
-        updateTTL(metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
+        updateTTL(context, metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
 
     for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.group_by_ttl[ttl_entry.result_column], block, true);
+        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.group_by_ttl[ttl_entry.result_column], block, true);
 
     for (const auto & ttl_entry : metadata_snapshot->getRowsWhereTTLs())
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.rows_where_ttl[ttl_entry.result_column], block, true);
+        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.rows_where_ttl[ttl_entry.result_column], block, true);
 
     for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
+        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
 
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     for (const auto & ttl_entry : recompression_ttl_entries)
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
+        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
 
     new_data_part->ttl_infos.update(move_ttl_infos);
 

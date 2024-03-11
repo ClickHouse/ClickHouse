@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import re
 from typing import Dict, List, Set, Union
 from urllib.parse import quote
 
@@ -19,7 +20,6 @@ from env_helper import (
     GITHUB_SERVER_URL,
 )
 
-FORCE_TESTS_LABEL = "force tests"
 SKIP_MERGEABLE_CHECK_LABEL = "skip mergeable check"
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 
@@ -289,6 +289,11 @@ class PRInfo:
     def is_master(self) -> bool:
         return self.number == 0 and self.head_ref == "master"
 
+    def is_release(self) -> bool:
+        return self.number == 0 and bool(
+            re.match(r"^2[1-9]\.[1-9][0-9]*$", self.head_ref)
+        )
+
     def is_release_branch(self) -> bool:
         return self.number == 0
 
@@ -369,6 +374,7 @@ class PRInfo:
                 (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
                 or "docker/docs" in f
                 or "docs_check.py" in f
+                or "aspell-dict.txt" in f
                 or ext == ".md"
             ):
                 return False

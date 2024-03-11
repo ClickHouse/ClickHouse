@@ -134,13 +134,13 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"used_storages", array_low_cardinality_string, "Canonical names of storages, which were used during query execution."},
         {"used_table_functions", array_low_cardinality_string, "Canonical names of table functions, which were used during query execution."},
 
-        {"used_row_policies", array_low_cardinality_string},
+        {"used_row_policies", array_low_cardinality_string, "The list of row policies names that were used during query execution."},
 
-        {"transaction_id", getTransactionIDDataType()},
+        {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
         {"query_cache_usage", std::move(query_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query cache, 'Write' = The query result was written into the query cache, 'Read' = The query result was read from the query cache."},
 
-        {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>())},
+        {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
     };
 }
 

@@ -62,6 +62,7 @@ __bitBoolMaskOr
 __bitSwapLastTwo
 __bitWrapperFunc
 __getScalar
+__scalarSubqueryResult
 abs
 accurateCast
 accurateCastOrDefault

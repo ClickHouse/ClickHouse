@@ -138,19 +138,24 @@ StorageS3Queue::StorageS3Queue(
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
-        auto columns = StorageS3::getTableStructureFromDataImpl(configuration, format_settings, context_);
+        ColumnsDescription columns;
+        if (configuration.format == "auto")
+            std::tie(columns, configuration.format) = StorageS3::getTableStructureAndFormatFromData(configuration, format_settings, context_);
+        else
+            columns = StorageS3::getTableStructureFromData(configuration, format_settings, context_);
         storage_metadata.setColumns(columns);
     }
     else
     {
+        if (configuration.format == "auto")
+            configuration.format = StorageS3::getTableStructureAndFormatFromData(configuration, format_settings, context_).second;
         storage_metadata.setColumns(columns_);
     }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
     task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
@@ -234,18 +239,25 @@ class ReadFromS3Queue : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromS3Queue"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromS3Queue(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
         ReadFromFormatInfo info_,
         std::shared_ptr<StorageS3Queue> storage_,
-        ContextPtr context_,
         size_t max_block_size_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(sample_block)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
         , info(std::move(info_))
         , storage(std::move(storage_))
-        , context(std::move(context_))
         , max_block_size(max_block_size_)
     {
     }
@@ -253,7 +265,6 @@ public:
 private:
     ReadFromFormatInfo info;
     std::shared_ptr<StorageS3Queue> storage;
-    ContextPtr context;
     size_t max_block_size;
 
     std::shared_ptr<StorageS3Queue::FileIterator> iterator;
@@ -270,9 +281,9 @@ void ReadFromS3Queue::createIterator(const ActionsDAG::Node * predicate)
 }
 
 
-void ReadFromS3Queue::applyFilters()
+void ReadFromS3Queue::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -284,7 +295,7 @@ void StorageS3Queue::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -303,13 +314,16 @@ void StorageS3Queue::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageS3Queue>(shared_from_this());
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
 
     auto reading = std::make_unique<ReadFromS3Queue>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        local_context,
         read_from_format_info.source_header,
         read_from_format_info,
         std::move(this_ptr),
-        local_context,
         max_block_size);
 
     query_plan.addStep(std::move(reading));
@@ -478,7 +492,7 @@ bool StorageS3Queue::streamToViews()
     auto block_io = interpreter.execute();
     auto file_iterator = createFileIterator(s3queue_context, nullptr);
 
-    auto read_from_format_info = prepareReadingFromFormat(block_io.pipeline.getHeader().getNames(), storage_snapshot, supportsSubsetOfColumns(s3queue_context), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(block_io.pipeline.getHeader().getNames(), storage_snapshot, supportsSubsetOfColumns(s3queue_context));
 
     Pipes pipes;
     pipes.reserve(s3queue_settings->s3queue_processing_threads_num);
@@ -587,8 +601,9 @@ void StorageS3Queue::checkTableStructure(const String & zookeeper_prefix, const 
 std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
     auto glob_iterator = std::make_unique<StorageS3QueueSource::GlobIterator>(
-        *configuration.client, configuration.url, predicate, virtual_columns, local_context,
+        *configuration.client, configuration.url, predicate, getVirtualsList(), local_context,
         /* read_keys */nullptr, configuration.request_settings);
+
     return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), s3queue_settings->s3queue_current_shard_num, shutdown_called);
 }
 

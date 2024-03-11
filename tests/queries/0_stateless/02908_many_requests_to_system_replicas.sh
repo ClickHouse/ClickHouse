@@ -33,7 +33,7 @@ done
 wait;
 
 
-echo "Making making $CONCURRENCY requests to system.replicas"
+echo "Making $CONCURRENCY requests to system.replicas"
 
 for i in `seq 1 $CONCURRENCY`;
 do
