@@ -31,23 +31,43 @@ from helpers.postgres_utility import queries
 
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance(
-    "instance",
+
+instance1 = cluster.add_instance(
+    "instance1",
     main_configs=["configs/log_conf.xml"],
     user_configs=["configs/users.xml"],
     with_postgres=True,
     stay_alive=True,
 )
+instance2 = cluster.add_instance(
+    "instance2",
+    main_configs=["configs/log_conf.xml"],
+    user_configs=["configs/users.xml"],
+    with_postgres11=True,
+    stay_alive=True,
+)
 
-pg_manager = PostgresManager()
+pg_manager1 = PostgresManager()
+pg_manager2 = PostgresManager()
+
+pg_managers = {
+    "instance1": pg_manager1,
+    "instance2": pg_manager2,
+}
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
-        pg_manager.init(
-            instance,
+        pg_manager1.init(
+            instance1,
+            cluster.postgres_ip,
+            cluster.postgres_port,
+            default_database="postgres_database",
+        )
+        pg_manager2.init(
+            instance2,
             cluster.postgres_ip,
             cluster.postgres_port,
             default_database="postgres_database",
@@ -65,8 +85,13 @@ def setup_teardown():
     pg_manager.restart()
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_load_and_sync_all_database_tables(started_cluster):
     NUM_TABLES = 5
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     pg_manager.create_and_fill_postgres_tables(NUM_TABLES)
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
@@ -78,8 +103,12 @@ def test_load_and_sync_all_database_tables(started_cluster):
     assert int(result) == NUM_TABLES
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_replicating_dml(started_cluster):
     NUM_TABLES = 5
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
 
     for i in range(NUM_TABLES):
         pg_manager.create_postgres_table(f"postgresql_replica_{i}")
@@ -121,7 +150,11 @@ def test_replicating_dml(started_cluster):
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_different_data_types(started_cluster):
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
@@ -227,8 +260,13 @@ def test_different_data_types(started_cluster):
     cursor.execute("drop table if exists test_array_data_type;")
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_load_and_sync_subset_of_database_tables(started_cluster):
     NUM_TABLES = 10
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     pg_manager.create_and_fill_postgres_tables(NUM_TABLES)
 
     publication_tables = ""
@@ -276,7 +314,11 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
             check_tables_are_synchronized(instance, table_name)
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_changing_replica_identity_value(started_cluster):
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     pg_manager.create_postgres_table("postgresql_replica")
     instance.query(
         "INSERT INTO postgres_database.postgresql_replica SELECT 50 + number, number from numbers(50)"
@@ -294,8 +336,13 @@ def test_changing_replica_identity_value(started_cluster):
     check_tables_are_synchronized(instance, "postgresql_replica")
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_clickhouse_restart(started_cluster):
     NUM_TABLES = 5
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     pg_manager.create_and_fill_postgres_tables(NUM_TABLES)
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
@@ -313,7 +360,11 @@ def test_clickhouse_restart(started_cluster):
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_replica_identity_index(started_cluster):
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     pg_manager.create_postgres_table(
         "postgresql_replica", template=postgres_table_template_3
     )
@@ -347,8 +398,12 @@ def test_replica_identity_index(started_cluster):
     check_tables_are_synchronized(instance, "postgresql_replica", order_by="key1")
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_table_schema_changes(started_cluster):
     NUM_TABLES = 5
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
 
     for i in range(NUM_TABLES):
         pg_manager.create_postgres_table(
@@ -392,6 +447,7 @@ def test_table_schema_changes(started_cluster):
     )
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_many_concurrent_queries(started_cluster):
     table = "test_many_conc"
     query_pool = [
@@ -409,6 +465,9 @@ def test_many_concurrent_queries(started_cluster):
     ]
 
     NUM_TABLES = 5
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
 
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
@@ -500,7 +559,11 @@ def test_many_concurrent_queries(started_cluster):
         print(count1, count2)
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_single_transaction(started_cluster):
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
@@ -531,7 +594,11 @@ def test_single_transaction(started_cluster):
     check_tables_are_synchronized(instance, table_name)
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_virtual_columns(started_cluster):
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
@@ -559,8 +626,13 @@ def test_virtual_columns(started_cluster):
     print(result)
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_multiple_databases(started_cluster):
     NUM_TABLES = 5
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
@@ -654,7 +726,11 @@ def test_multiple_databases(started_cluster):
             )
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_concurrent_transactions(started_cluster):
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     def transaction(thread_id):
         conn = get_postgres_conn(
             ip=started_cluster.postgres_ip,
@@ -699,7 +775,11 @@ def test_concurrent_transactions(started_cluster):
         assert int(count1) == int(count2)
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     def transaction(thread_id):
         if thread_id % 2:
             conn = get_postgres_conn(
@@ -752,8 +832,13 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_drop_database_while_replication_startup_not_finished(started_cluster):
     NUM_TABLES = 5
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     pg_manager.create_and_fill_postgres_tables(NUM_TABLES, 100000)
     for i in range(6):
         pg_manager.create_materialized_db(
@@ -763,8 +848,13 @@ def test_drop_database_while_replication_startup_not_finished(started_cluster):
         pg_manager.drop_materialized_db()
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_restart_server_while_replication_startup_not_finished(started_cluster):
     NUM_TABLES = 5
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     pg_manager.create_and_fill_postgres_tables(NUM_TABLES, 100000)
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
@@ -774,6 +864,7 @@ def test_restart_server_while_replication_startup_not_finished(started_cluster):
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_abrupt_server_restart_while_heavy_replication(started_cluster):
     def transaction(thread_id):
         if thread_id % 2:
@@ -798,6 +889,10 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
             conn.commit()
 
     NUM_TABLES = 6
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     pg_manager.create_and_fill_postgres_tables(tables_num=NUM_TABLES, numbers=0)
 
     threads = []
@@ -820,8 +915,13 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_quoting_1(started_cluster):
     table_name = "user"
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     pg_manager.create_and_fill_postgres_table(table_name)
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
@@ -829,8 +929,13 @@ def test_quoting_1(started_cluster):
     check_tables_are_synchronized(instance, table_name)
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_quoting_2(started_cluster):
     table_name = "user"
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     pg_manager.create_and_fill_postgres_table(table_name)
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip,
@@ -840,9 +945,14 @@ def test_quoting_2(started_cluster):
     check_tables_are_synchronized(instance, table_name)
 
 
+@pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
 def test_user_managed_slots(started_cluster):
     slot_name = "user_slot"
     table_name = "test_table"
+
+    instance = cluster.instances[instance_name]
+    pg_manager = pg_managers.get(instance_name)
+
     pg_manager.create_and_fill_postgres_table(table_name)
 
     replication_connection = get_postgres_conn(
