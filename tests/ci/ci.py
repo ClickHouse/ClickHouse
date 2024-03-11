@@ -1111,7 +1111,7 @@ def _configure_jobs(
     digests: Dict[str, str] = {}
 
     print("::group::Job Digests")
-    for job in CI_CONFIG.job_generator():
+    for job in CI_CONFIG.job_generator(pr_info.head_ref):
         digest = job_digester.get_job_digest(CI_CONFIG.get_digest_config(job))
         digests[job] = digest
         print(f"    job [{job.rjust(50)}] has digest [{digest}]")
@@ -1756,7 +1756,8 @@ def main() -> int:
         result["build"] = build_digest
         result["docs"] = docs_digest
         result["ci_flags"] = ci_flags
-        result["stages_data"] = _generate_ci_stage_config(jobs_data)
+        if not args.skip_jobs:
+            result["stages_data"] = _generate_ci_stage_config(jobs_data)
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
     ### CONFIGURE action: end
