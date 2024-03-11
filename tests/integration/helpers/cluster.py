@@ -640,9 +640,6 @@ class ClickHouseCluster:
         self.postgres4_logs_dir = os.path.join(self.postgres_dir, "postgres4")
         self.postgres_id = self.get_instance_docker_id(self.postgres_host)
 
-        # available when with_postgres11 == True
-        self.postgres_host = "postgres11"
-
         # available when with_postgresql_java_client = True
         self.postgresql_java_client_host = "java"
         self.postgresql_java_client_docker_id = self.get_instance_docker_id(
