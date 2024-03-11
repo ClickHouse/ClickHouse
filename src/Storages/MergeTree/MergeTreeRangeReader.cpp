@@ -872,7 +872,7 @@ size_t MergeTreeRangeReader::currentMark() const
     return stream.currentMark();
 }
 
-const NameSet MergeTreeRangeReader::virtuals_to_fill = {"_part_offset", BlockOffsetColumn::name};
+const NameSet MergeTreeRangeReader::virtuals_to_fill = {"_part_offset", "_block_offset"};
 
 size_t MergeTreeRangeReader::Stream::numPendingRows() const
 {
@@ -1146,30 +1146,29 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (!result.rows_per_granule.empty())
         result.adjustLastGranule();
 
-    /// Column _block_offset is the same as _part_offset if it's not persisted in part.
-    bool has_part_offset = read_sample_block.has("_part_offset");
-    bool has_block_offset = read_sample_block.has(BlockOffsetColumn::name);
+    ColumnPtr part_offset_column;
 
-    if (has_part_offset || has_block_offset)
+    auto add_offset_column = [&](const auto & column_name)
     {
-        auto part_offset_column = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+        size_t pos = read_sample_block.getPositionByName(column_name);
+        chassert(pos < result.columns.size());
 
-        auto add_offset_column = [&](const auto & column_name)
-        {
-            size_t pos = read_sample_block.getPositionByName(column_name);
-            chassert(pos < result.columns.size());
+        /// Column may be persisted in part.
+        if (result.columns[pos])
+            return;
 
-            /// Column may be persisted in part.
-            if (!result.columns[pos])
-                result.columns[pos] = part_offset_column;
-        };
+        if (!part_offset_column)
+            part_offset_column = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
 
-        if (has_part_offset)
-            add_offset_column("_part_offset");
+        result.columns[pos] = part_offset_column;
+    };
 
-        if (has_block_offset)
-            add_offset_column(BlockOffsetColumn::name);
-    }
+    if (read_sample_block.has("_part_offset"))
+        add_offset_column("_part_offset");
+
+    /// Column _block_offset is the same as _part_offset if it's not persisted in part.
+    if (read_sample_block.has(BlockOffsetColumn::name))
+        add_offset_column(BlockOffsetColumn::name);
 
     return result;
 }
