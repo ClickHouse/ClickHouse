@@ -1440,6 +1440,8 @@ The calculation is performed relative to specific points in time:
 (*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
     hour values between 1 and 23 are useful.
 
+If unit `week` was specified, `toStartOfInterval` assumes that weeks start on Monday by default. You can change this behavior with [`first_day_of_week`](/docs/en/operations/settings/settings.md/#first-day-of-week)
+
 **See Also**
 
 - [date_trunc](#date_trunc)
@@ -1747,7 +1749,7 @@ Result:
 Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
 The difference is calculated using relative units, e.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for unit `day` (see [toRelativeDayNum](#torelativedaynum)), 1 month for unit `month` (see [toRelativeMonthNum](#torelativemonthnum)) and 1 year for unit `year` (see [toRelativeYearNum](#torelativeyearnum)).
 
-If unit `week` was specified, `date\_diff` assumes that weeks start on Monday. Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
+If unit `week` was specified, `date\_diff` assumes that weeks start on Monday by default. You can change this behavior with [`first_day_of_week`](/docs/en/operations/settings/settings.md/#first-day-of-week)
 
 For an alternative to `date\_diff`, see function `age`.
 

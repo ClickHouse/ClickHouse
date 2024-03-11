@@ -5469,3 +5469,9 @@ Default value: 'false'.
 ## allow_suspicious_primary_key {#allow_suspicious_primary_key}
 
 Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
+
+## first_day_of_week
+
+The first day of the week (Monday or Sunday) used by `toStartOfInterval` and `date_diff` functions when using weeks as units.
+
+Default value: 'Monday'.
