@@ -19,6 +19,7 @@ class ColumnArray final : public COWHelper<IColumnHelper<ColumnArray>, ColumnArr
 {
 private:
     friend class COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
+    friend class ColumnMap;
 
     /** Create an array column with specified values and offsets. */
     ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column);
