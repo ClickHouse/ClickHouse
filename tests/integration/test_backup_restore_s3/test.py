@@ -130,11 +130,11 @@ def check_system_tables(backup_query_id=None):
         if disk
     ]
     expected_disks = (
-        ("default", "local", "None", "None"),
-        ("disk_s3", "object_storage", "s3", "local"),
-        ("disk_s3_cache", "object_storage", "s3", "local"),
-        ("disk_s3_other_bucket", "object_storage", "s3", "local"),
-        ("disk_s3_plain", "object_storage", "s3", "plain"),
+        ("default", "Local", "None", "None"),
+        ("disk_s3", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_cache", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_plain", "ObjectStorage", "S3", "Plain"),
     )
     assert len(expected_disks) == len(disks)
     for expected_disk in expected_disks:
