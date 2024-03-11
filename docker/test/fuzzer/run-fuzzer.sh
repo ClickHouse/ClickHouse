@@ -343,10 +343,9 @@ quit
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        { rg -ao "Found error:.*" fuzzer.log \
-            || rg -ao "Exception:.*" fuzzer.log \
-            || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
-            | tail -1 > description.txt
+        echo "Achtung!" > description.txt
+        echo "Fuzzer went wrong with error code: ($fuzzer_exit_code). Its process died somehow when the server stayed alive. The server log probably won't tell you much so try to find information in other files." >>description.txt
+        { rg -ao "Found error:.*" fuzzer.log || rg -ao "Exception:.*" fuzzer.log; } | tail -1 >>description.txt
     fi
 
     if test -f core.*; then
