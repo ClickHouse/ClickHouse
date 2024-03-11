@@ -99,7 +99,6 @@ struct ReadSettings
     bool enable_filesystem_cache = true;
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
     bool enable_filesystem_cache_log = false;
-    bool force_read_through_cache_merges = false;
     size_t filesystem_cache_segments_batch_size = 20;
 
     bool use_page_cache_for_disks_without_file_cache = false;
