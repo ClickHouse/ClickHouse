@@ -10,6 +10,7 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/setThreadName.h>
 
 #include <magic_enum.hpp>
 
@@ -195,7 +196,7 @@ bool FileSegment::isDownloaded() const
 String FileSegment::getCallerId()
 {
     if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
-        return "None:" + toString(getThreadId());
+        return fmt::format("None:{}:{}", getThreadName(), toString(getThreadId()));
 
     return std::string(CurrentThread::getQueryId()) + ":" + toString(getThreadId());
 }
