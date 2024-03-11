@@ -12,6 +12,7 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/AzureBlob/Configuration.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Formats/FormatFactory.h>
 #include <Analyzer/FunctionNode.h>
@@ -116,8 +117,7 @@ template <typename Definition, typename StorageSettings, typename Configuration>
 std::unordered_set<String> TableFunctionObjectStorage<
     Definition, StorageSettings, Configuration>::getVirtualsToCheckBeforeUsingStructureHint() const
 {
-    auto virtual_column_names = StorageObjectStorage<StorageSettings>::getVirtualColumnNames();
-    return {virtual_column_names.begin(), virtual_column_names.end()};
+    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>

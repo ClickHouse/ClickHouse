@@ -60,8 +60,7 @@ StorageObjectStorageCluster<Definition, StorageSettings, Configuration>::Storage
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(
-        storage_metadata.getSampleBlock().getNamesAndTypesList());
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>

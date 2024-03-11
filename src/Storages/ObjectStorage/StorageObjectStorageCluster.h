@@ -35,8 +35,6 @@ public:
 
     std::string getName() const override { return engine_name; }
 
-    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
-
     RemoteQueryExecutor::Extension
     getTaskIteratorExtension(
         const ActionsDAG::Node * predicate,

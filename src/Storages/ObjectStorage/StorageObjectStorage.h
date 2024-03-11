@@ -71,10 +71,6 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
-    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
-
-    static Names getVirtualColumnNames();
-
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }

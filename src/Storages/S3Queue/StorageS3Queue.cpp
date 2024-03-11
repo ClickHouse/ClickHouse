@@ -156,8 +156,7 @@ StorageS3Queue::StorageS3Queue(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
     task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
@@ -316,7 +315,7 @@ void StorageS3Queue::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageS3Queue>(shared_from_this());
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
 
     auto reading = std::make_unique<ReadFromS3Queue>(
         column_names,
@@ -485,7 +484,7 @@ bool StorageS3Queue::streamToViews()
     auto block_io = interpreter.execute();
     auto file_iterator = createFileIterator(s3queue_context, nullptr);
 
-    auto read_from_format_info = prepareReadingFromFormat(block_io.pipeline.getHeader().getNames(), storage_snapshot, supportsSubsetOfColumns(s3queue_context), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(block_io.pipeline.getHeader().getNames(), storage_snapshot, supportsSubsetOfColumns(s3queue_context));
 
     Pipes pipes;
     pipes.reserve(s3queue_settings->s3queue_processing_threads_num);
@@ -589,7 +588,8 @@ std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator
 {
     auto settings = S3StorageSettings::create(local_context->getSettingsRef());
     auto glob_iterator = std::make_unique<StorageObjectStorageSource::GlobIterator>(
-        object_storage, configuration, predicate, virtual_columns, local_context, nullptr, settings.list_object_keys_size);
+        object_storage, configuration, predicate, getVirtualsList(), local_context, nullptr, settings.list_object_keys_size);
+
     return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), s3queue_settings->s3queue_current_shard_num, shutdown_called);
 }
 

@@ -84,8 +84,6 @@ StorageObjectStorage<StorageSettings>::StorageObjectStorage(
                    object_storage_, configuration_, columns_, constraints_, format_settings_,
                    comment, engine_name, context))
     , engine_name(engine_name_)
-    , virtual_columns(VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(
-                          getInMemoryMetadataPtr()->getSampleBlock().getNamesAndTypesList()))
     , format_settings(format_settings_)
     , partition_by(partition_by_)
     , distributed_processing(distributed_processing_)
@@ -98,18 +96,8 @@ StorageObjectStorage<StorageSettings>::StorageObjectStorage(
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
         objects.emplace_back(key);
-}
 
-template <typename StorageSettings>
-Names StorageObjectStorage<StorageSettings>::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
-}
-
-template <typename StorageSettings>
-bool StorageObjectStorage<StorageSettings>::supportsSubsetOfColumns(const ContextPtr & context) const
-{
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(getInMemoryMetadataPtr()->getColumns()));
 }
 
 template <typename StorageSettings>
@@ -122,6 +110,12 @@ template <typename StorageSettings>
 bool StorageObjectStorage<StorageSettings>::parallelizeOutputAfterReading(ContextPtr context) const
 {
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
+}
+
+template <typename StorageSettings>
+bool StorageObjectStorage<StorageSettings>::supportsSubsetOfColumns(const ContextPtr & context) const
+{
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
 template <typename StorageSettings>
@@ -160,8 +154,7 @@ void StorageObjectStorage<StorageSettings>::read(
                         getName());
     }
 
-    const auto read_from_format_info = prepareReadingFromFormat(
-        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
+    const auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 

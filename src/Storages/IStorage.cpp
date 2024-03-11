@@ -27,10 +27,20 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
 }
 
+IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
+    : storage_id(std::move(storage_id_))
+    , virtuals(std::make_unique<VirtualColumnsDescription>())
+{
+    if (metadata_)
+        metadata.set(std::move(metadata_));
+    else
+        metadata.set(std::make_unique<StorageInMemoryMetadata>());
+}
+
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Virtual column maybe overridden by real column
-    return !metadata_snapshot->getColumns().has(column_name) && getVirtuals().contains(column_name);
+    return !metadata_snapshot->getColumns().has(column_name) && virtuals.get()->has(column_name);
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -235,11 +245,6 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 {
     std::lock_guard lock(id_mutex);
     storage_id = new_table_id;
-}
-
-NamesAndTypesList IStorage::getVirtuals() const
-{
-    return {};
 }
 
 Names IStorage::getAllRegisteredNames() const
