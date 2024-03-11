@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 import argparse
-from concurrent.futures import ProcessPoolExecutor
 import csv
 import logging
 import os
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import List, Tuple
 
@@ -121,7 +121,7 @@ def checkout_last_ref(pr_info: PRInfo) -> None:
 def main():
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("git_helper").setLevel(logging.DEBUG)
-    # args = parse_args()
+    args = parse_args()
 
     stopwatch = Stopwatch()
 
@@ -141,12 +141,14 @@ def main():
         f"--entrypoint= -w/ClickHouse/utils/check-style "
         f"{image} ./check_cpp.sh"
     )
+
     cmd_py = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
         f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
         f"--entrypoint= -w/ClickHouse/utils/check-style "
         f"{image} ./check_py.sh"
     )
+
     cmd_docs = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
         f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
@@ -175,12 +177,14 @@ def main():
             _ = future1.result()
 
         if run_pycheck:
+            if args.push:
+                checkout_head(pr_info)
             logging.info("Run py files check: %s", cmd_py)
             future2 = executor.submit(subprocess.run, cmd_py, shell=True)
             _ = future2.result()
-
-    # if args.push:
-    #     checkout_head(pr_info)
+            if args.push:
+                commit_push_staged(pr_info)
+                checkout_last_ref(pr_info)
 
     subprocess.check_call(
         f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
@@ -188,10 +192,6 @@ def main():
         f'echo -e "failure\tCannot parse results" > {temp_path}/check_status.tsv',
         shell=True,
     )
-
-    # if args.push:
-    #     commit_push_staged(pr_info)
-    #     checkout_last_ref(pr_info)
 
     state, description, test_results, additional_files = process_result(temp_path)
 
