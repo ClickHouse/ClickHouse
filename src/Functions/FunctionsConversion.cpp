@@ -1056,7 +1056,7 @@ struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name, Con
     }
 };
 
-static inline ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
+inline ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 {
     ColumnUInt8::MutablePtr null_map = nullptr;
     if (const auto * col_null = checkAndGetColumn<ColumnNullable>(col.get()))
@@ -1984,7 +1984,7 @@ struct NameParseDateTimeBestEffortOrZero;
 struct NameParseDateTimeBestEffortOrNull;
 
 template<typename Name, typename ToDataType>
-static inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
+inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
 {
     if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
         return true;
@@ -3391,7 +3391,7 @@ arguments, result_type, input_rows_count); \
             case IntervalKind::Kind::INTERVAL_KIND: \
                 return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::create(), from_type);
 
-    static WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind)
+    static WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind::Kind kind)
     {
         switch (kind)
         {
@@ -3994,7 +3994,7 @@ arguments, result_type, input_rows_count); \
         {
             return [is_nullable = to_type->hasNullableSubcolumns()] (ColumnsWithTypeAndName & arguments, const DataTypePtr & , const ColumnNullable * , size_t) -> ColumnPtr
             {
-                auto & column_object = assert_cast<const ColumnObject &>(*arguments.front().column);
+                const auto & column_object = assert_cast<const ColumnObject &>(*arguments.front().column);
                 auto res = ColumnObject::create(is_nullable);
                 for (size_t i = 0; i < column_object.size(); i++)
                     res->insert(column_object[i]);
