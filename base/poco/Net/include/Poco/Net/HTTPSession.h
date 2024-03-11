@@ -64,6 +64,15 @@ namespace Net
         Poco::Timespan getTimeout() const;
         /// Returns the timeout for the HTTP session.
 
+        Poco::Timespan getConnectionTimeout() const;
+        /// Returns connection timeout for the HTTP session.
+
+        Poco::Timespan getSendTimeout() const;
+        /// Returns send timeout for the HTTP session.
+
+        Poco::Timespan getReceiveTimeout() const;
+        /// Returns receive timeout for the HTTP session.
+
         bool connected() const;
         /// Returns true if the underlying socket is connected.
 
@@ -217,12 +226,25 @@ namespace Net
         return _keepAlive;
     }
 
-
     inline Poco::Timespan HTTPSession::getTimeout() const
     {
         return _receiveTimeout;
     }
 
+    inline Poco::Timespan HTTPSession::getConnectionTimeout() const
+    {
+        return _connectionTimeout;
+    }
+
+    inline Poco::Timespan HTTPSession::getSendTimeout() const
+    {
+        return _sendTimeout;
+    }
+
+    inline Poco::Timespan HTTPSession::getReceiveTimeout() const
+    {
+        return _receiveTimeout;
+    }
 
     inline StreamSocket & HTTPSession::socket()
     {

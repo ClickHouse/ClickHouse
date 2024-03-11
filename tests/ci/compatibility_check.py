@@ -26,7 +26,7 @@ DOWNLOAD_RETRIES_COUNT = 5
 
 def process_os_check(log_path: Path) -> TestResult:
     name = log_path.name
-    with open(log_path, "r") as log:
+    with open(log_path, "r", encoding="utf-8") as log:
         line = log.read().split("\n")[0].strip()
         if line != "OK":
             return TestResult(name, "FAIL")
@@ -35,7 +35,7 @@ def process_os_check(log_path: Path) -> TestResult:
 
 def process_glibc_check(log_path: Path, max_glibc_version: str) -> TestResults:
     test_results = []  # type: TestResults
-    with open(log_path, "r") as log:
+    with open(log_path, "r", encoding="utf-8") as log:
         for line in log:
             if line.strip():
                 columns = line.strip().split(" ")
@@ -204,7 +204,7 @@ def main():
     elif "aarch64" in check_name:
         max_glibc_version = "2.18"  # because of build with newer sysroot?
     else:
-        raise Exception("Can't determine max glibc version")
+        raise RuntimeError("Can't determine max glibc version")
 
     state, description, test_results, additional_logs = process_result(
         result_path,

@@ -31,7 +31,7 @@ FileLogSource::FileLogSource(
     , max_streams_number(max_streams_number_)
     , handle_error_mode(handle_error_mode_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
-    , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtuals().getNames()))
+    , virtual_header(storage_snapshot->virtual_columns->getSampleBlock())
 {
     consumer = std::make_unique<FileLogConsumer>(storage, max_block_size, poll_time_out, context, stream_number_, max_streams_number_);
 

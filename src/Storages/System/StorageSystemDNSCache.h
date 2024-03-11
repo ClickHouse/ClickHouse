@@ -9,7 +9,7 @@ namespace DB
 class Context;
 
 /// system.dns_cache table.
-class StorageSystemDNSCache final : public IStorageSystemOneBlock<StorageSystemDNSCache>
+class StorageSystemDNSCache final : public IStorageSystemOneBlock
 {
 public:
     std::string getName() const override { return "SystemDNSCache"; }
@@ -19,7 +19,7 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 };
 
 }

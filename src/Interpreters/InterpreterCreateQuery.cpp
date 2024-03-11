@@ -38,7 +38,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/BlockNumberColumn.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -812,24 +811,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
         else
         {
-            /** To get valid sample block we need to prepare query without only_analyze, because we need to execute scalar
-              * subqueries. Otherwise functions that expect only constant arguments will throw error during query analysis,
-              * because the result of scalar subquery is not a constant.
-              *
-              * Example:
-              * CREATE MATERIALIZED VIEW test_mv ENGINE=MergeTree ORDER BY arr
-              * AS
-              * WITH (SELECT '\d[a-z]') AS constant_value
-              * SELECT extractAll(concat(toString(number), 'a'), assumeNotNull(constant_value)) AS arr
-              * FROM test_table;
-              *
-              * For new analyzer this issue does not exists because we always execute scalar subqueries.
-              * We can improve this in new analyzer, and execute scalar subqueries only in contexts when we expect constant
-              * for example: LIMIT, OFFSET, functions parameters, functions constant only arguments.
-              */
-
-            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), SelectQueryOptions());
-            as_select_sample = interpreter.getSampleBlock();
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
         }
 
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
@@ -894,24 +876,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column.name));
     }
 
-    /// Check if _row_exists for lightweight delete column in column_lists for merge tree family.
-    if (create.storage && create.storage->engine && endsWith(create.storage->engine->name, "MergeTree"))
-    {
-        auto search = all_columns.find(LightweightDeleteDescription::FILTER_COLUMN.name);
-        if (search != all_columns.end())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Cannot create table with column '{}' for *MergeTree engines because it "
-                            "is reserved for lightweight delete feature",
-                            LightweightDeleteDescription::FILTER_COLUMN.name);
-
-        auto search_block_number = all_columns.find(BlockNumberColumn::name);
-        if (search_block_number != all_columns.end())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Cannot create table with column '{}' for *MergeTree engines because it "
-                            "is reserved for storing block number",
-                            BlockNumberColumn::name);
-    }
-
     const auto & settings = getContext()->getSettingsRef();
 
     /// If it's not attach and not materialized view to existing table,
@@ -924,9 +888,23 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
+void validateVirtualColumns(const IStorage & storage)
+{
+    auto virtual_columns = storage.getVirtualsPtr();
+    for (const auto & storage_column : storage.getInMemoryMetadataPtr()->getColumns())
+    {
+        if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
+                storage_column.name, storage.getName());
+        }
+    }
+}
+
 namespace
 {
-    void checkTemporaryTableEngineName(const String& name)
+    void checkTemporaryTableEngineName(const String & name)
     {
         if (name.starts_with("Replicated") || name.starts_with("Shared") || name == "KeeperMap")
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated, Shared or KeeperMap table engines");
@@ -1246,7 +1224,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             {
                 input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
                     getContext(),
-                    {}).getSampleBlock();
+                    SelectQueryOptions().analyze()).getSampleBlock();
             }
 
             Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
@@ -1509,6 +1487,16 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
     }
 
+    validateVirtualColumns(*res);
+
+    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()))
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column of type Object, "
+            "because storage {} doesn't support dynamic subcolumns",
+            res->getName());
+    }
+
     if (!create.attach && getContext()->getSettingsRef().database_replicated_allow_only_replicated_engine)
     {
         bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
@@ -1557,14 +1545,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// Also note that "startup" method is exception-safe. If exception is thrown from "startup",
     /// we can safely destroy the object without a call to "shutdown", because there is guarantee
     /// that no background threads/similar resources remain after exception from "startup".
-
-    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()))
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create table with column of type Object, "
-            "because storage {} doesn't support dynamic subcolumns",
-            res->getName());
-    }
 
     res->startup();
     return true;

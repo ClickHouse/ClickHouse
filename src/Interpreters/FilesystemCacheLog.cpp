@@ -38,20 +38,20 @@ ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
 
     return ColumnsDescription
     {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"event_date", std::make_shared<DataTypeDate>()},
-        {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"query_id", std::make_shared<DataTypeString>()},
-        {"source_file_path", std::make_shared<DataTypeString>()},
-        {"file_segment_range", std::make_shared<DataTypeTuple>(types)},
-        {"total_requested_range", std::make_shared<DataTypeTuple>(types)},
-        {"key", std::make_shared<DataTypeString>()},
-        {"offset", std::make_shared<DataTypeUInt64>()},
-        {"size", std::make_shared<DataTypeUInt64>()},
-        {"read_type", std::make_shared<DataTypeString>()},
-        {"read_from_cache_attempted", std::make_shared<DataTypeUInt8>()},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
-        {"read_buffer_id", std::make_shared<DataTypeString>()},
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname"},
+        {"event_date", std::make_shared<DataTypeDate>(), "Event date"},
+        {"event_time", std::make_shared<DataTypeDateTime>(), "Event time"},
+        {"query_id", std::make_shared<DataTypeString>(), "Id of the query"},
+        {"source_file_path", std::make_shared<DataTypeString>(), "File segment path on filesystem"},
+        {"file_segment_range", std::make_shared<DataTypeTuple>(types), "File segment range"},
+        {"total_requested_range", std::make_shared<DataTypeTuple>(types), "Full read range"},
+        {"key", std::make_shared<DataTypeString>(), "File segment key"},
+        {"offset", std::make_shared<DataTypeUInt64>(), "File segment offset"},
+        {"size", std::make_shared<DataTypeUInt64>(), "Read size"},
+        {"read_type", std::make_shared<DataTypeString>(), "Read type: READ_FROM_CACHE, READ_FROM_FS_AND_DOWNLOADED_TO_CACHE, READ_FROM_FS_BYPASSING_CACHE"},
+        {"read_from_cache_attempted", std::make_shared<DataTypeUInt8>(), "Whether reading from cache was attempted"},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "Profile events collected while reading this file segment"},
+        {"read_buffer_id", std::make_shared<DataTypeString>(), "Internal implementation read buffer id"},
     };
 }
 

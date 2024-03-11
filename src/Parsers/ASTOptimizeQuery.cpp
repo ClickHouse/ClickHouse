@@ -15,6 +15,7 @@ void ASTOptimizeQuery::formatQueryImpl(const FormatSettings & settings, FormatSt
         settings.ostr << '.';
     }
 
+    chassert(table);
     table->formatImpl(settings, state, frame);
 
     formatOnCluster(settings);

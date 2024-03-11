@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-import re
 import logging
+import re
 from typing import List, Optional, Tuple
 
-import requests  # type: ignore
+import requests
 
 CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/tags"
 CLICKHOUSE_PACKAGE_URL = (
@@ -82,13 +82,14 @@ def get_previous_release(server_version: Optional[Version]) -> Optional[ReleaseI
             CLICKHOUSE_TAGS_URL, {"page": page, "per_page": 100}, timeout=10
         )
         if not response.ok:
-            raise Exception(
-                "Cannot load the list of tags from github: " + response.reason
+            logger.error(
+                "Cannot load the list of tags from github: %s", response.reason
             )
+            response.raise_for_status()
 
         releases_str = set(re.findall(VERSION_PATTERN, response.text))
         if len(releases_str) == 0:
-            raise Exception(
+            raise ValueError(
                 "Cannot find previous release for "
                 + str(server_version)
                 + " server version"

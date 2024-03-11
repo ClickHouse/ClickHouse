@@ -12,10 +12,9 @@ from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import CiLogsCredentials
-
-from docker_images_helper import DockerImage, pull_image, get_docker_image
+from docker_images_helper import DockerImage, get_docker_image, pull_image
 from download_release_packages import download_last_release
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from pr_info import PRInfo
 from report import ERROR, SUCCESS, JobReport, StatusType, TestResults, read_test_results
 from stopwatch import Stopwatch
@@ -54,8 +53,7 @@ def get_image_name(check_name: str) -> str:
         return "clickhouse/stateless-test"
     if "stateful" in check_name.lower():
         return "clickhouse/stateful-test"
-    else:
-        raise Exception(f"Cannot deduce image name based on check name {check_name}")
+    raise ValueError(f"Cannot deduce image name based on check name {check_name}")
 
 
 def get_run_command(

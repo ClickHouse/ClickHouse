@@ -84,8 +84,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"array_1", &isArray<IDataType>, nullptr, "Array"},
-            {"array_2", &isArray<IDataType>, nullptr, "Array"},
+            {"array_1", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+            {"array_2", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
         return std::make_shared<DataTypeNumber<ResultType>>();

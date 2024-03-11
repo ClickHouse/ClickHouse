@@ -20,7 +20,7 @@ namespace DB
 {
 
 class StorageReplicatedMergeTree;
-class PooledReadWriteBufferFromHTTP;
+class ReadWriteBufferFromHTTP;
 
 namespace DataPartsExchange
 {
@@ -94,7 +94,7 @@ private:
     void downloadBaseOrProjectionPartToDisk(
         const String & replica_path,
         const MutableDataPartStoragePtr & data_part_storage,
-        PooledReadWriteBufferFromHTTP & in,
+        ReadWriteBufferFromHTTP & in,
         OutputBufferGetter output_buffer_getter,
         MergeTreeData::DataPart::Checksums & checksums,
         ThrottlerPtr throttler,
@@ -107,7 +107,7 @@ private:
         const String & tmp_prefix_,
         DiskPtr disk,
         bool to_remote_disk,
-        PooledReadWriteBufferFromHTTP & in,
+        ReadWriteBufferFromHTTP & in,
         OutputBufferGetter output_buffer_getter,
         size_t projections,
         ThrottlerPtr throttler,
@@ -120,7 +120,7 @@ private:
        const UUID & part_uuid,
        const StorageMetadataPtr & metadata_snapshot,
        ContextPtr context,
-       PooledReadWriteBufferFromHTTP & in,
+       ReadWriteBufferFromHTTP & in,
        size_t projections,
        bool is_projection,
        ThrottlerPtr throttler);
@@ -131,7 +131,7 @@ private:
        bool to_detached,
        const String & tmp_prefix_,
        DiskPtr disk,
-       PooledReadWriteBufferFromHTTP & in,
+       ReadWriteBufferFromHTTP & in,
        size_t projections,
        MergeTreeData::DataPart::Checksums & checksums,
        ThrottlerPtr throttler);

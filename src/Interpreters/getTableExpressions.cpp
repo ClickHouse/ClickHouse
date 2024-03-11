@@ -99,7 +99,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
-        virtuals = function_storage->getVirtuals();
+        virtuals = function_storage->getVirtualsList();
     }
     else if (table_expression.database_and_table_name)
     {
@@ -110,7 +110,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
-        virtuals = table->getVirtuals();
+        virtuals = table->getVirtualsList();
     }
 
     return names_and_type_list;

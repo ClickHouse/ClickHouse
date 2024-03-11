@@ -15,7 +15,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/LightweightDeleteDescription.h>
 
 
 namespace DB

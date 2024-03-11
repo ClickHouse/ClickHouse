@@ -56,9 +56,10 @@ def dst_node_addrs(started_cluster, request):
 
     yield
 
-    # Clear static DNS entries
+    # Clear static DNS entries and all keep alive connections
     src_node.set_hosts([])
     src_node.query("SYSTEM DROP DNS CACHE")
+    src_node.query("SYSTEM DROP CONNECTIONS CACHE")
 
 
 @pytest.mark.parametrize(
@@ -77,7 +78,8 @@ def dst_node_addrs(started_cluster, request):
 def test_url_destination_host_with_multiple_addrs(dst_node_addrs, expectation):
     with expectation:
         result = src_node.query(
-            "SELECT * FROM url('http://dst_node:8123/?query=SELECT+42', TSV, 'column1 UInt32')"
+            "SELECT * FROM url('http://dst_node:8123/?query=SELECT+42', TSV, 'column1 UInt32')",
+            settings={"http_max_tries": "3"},
         )
         assert result == "42\n"
 

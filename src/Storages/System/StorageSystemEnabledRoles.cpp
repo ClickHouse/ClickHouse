@@ -23,7 +23,7 @@ ColumnsDescription StorageSystemEnabledRoles::getColumnsDescription()
 }
 
 
-void StorageSystemEnabledRoles::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemEnabledRoles::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto roles_info = context->getRolesInfo();
     auto user = context->getUser();

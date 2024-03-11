@@ -100,7 +100,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_arguments{
-            {"value", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"}
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
         };
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_arguments);

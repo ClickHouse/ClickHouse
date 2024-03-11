@@ -23,7 +23,7 @@ def get_test_name(line):
     for element in elements:
         if "(" not in element and ")" not in element:
             return element
-    raise Exception(f"No test name in line '{line}'")
+    raise ValueError(f"No test name in line '{line}'")
 
 
 def process_results(

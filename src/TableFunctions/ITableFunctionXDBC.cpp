@@ -153,17 +153,16 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls", toString(use_nulls));
 
     Poco::Net::HTTPBasicCredentials credentials{};
-    ReadWriteBufferFromHTTP buf(
-        columns_info_uri,
-        Poco::Net::HTTPRequest::HTTP_POST,
-        {},
-        ConnectionTimeouts::getHTTPTimeouts(
-            context->getSettingsRef(),
-            context->getServerSettings().keep_alive_timeout),
-        credentials);
+    auto buf = BuilderRWBufferFromHTTP(columns_info_uri)
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(
+                        context->getSettingsRef(),
+                        context->getServerSettings().keep_alive_timeout))
+                   .create(credentials);
 
     std::string columns_info;
-    readStringBinary(columns_info, buf);
+    readStringBinary(columns_info, *buf);
     NamesAndTypesList columns = NamesAndTypesList::parse(columns_info);
 
     return ColumnsDescription{columns};

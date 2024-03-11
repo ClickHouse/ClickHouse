@@ -4,8 +4,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <memory>
-
 
 namespace DB
 {

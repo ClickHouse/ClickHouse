@@ -49,7 +49,7 @@ std::string ReadBufferFromFileDescriptor::getFileName() const
 }
 
 
-size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset)
+size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset) const
 {
     chassert(min_bytes <= max_bytes);
 
@@ -265,7 +265,7 @@ bool ReadBufferFromFileDescriptor::checkIfActuallySeekable()
     return res == 0 && S_ISREG(stat.st_mode);
 }
 
-size_t ReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &)
+size_t ReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &) const
 {
     chassert(use_pread);
     return readImpl(to, n, n, offset);

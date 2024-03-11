@@ -53,6 +53,7 @@ protected:
                 settings.ostr << '.';
             }
 
+            chassert(table);
             table->formatImpl(settings, state, frame);
         }
 

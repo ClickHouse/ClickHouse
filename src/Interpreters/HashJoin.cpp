@@ -1727,9 +1727,9 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
             }
             else
             {
-                    if constexpr (!flag_per_row)
-                        used_flags.template setUsed<need_flags, false>(find_results[i - 1]);
-                    setUsed<need_filter>(added_columns.filter, left_start_row + i - 1);
+                if constexpr (!flag_per_row)
+                    used_flags.template setUsed<need_flags, false>(find_results[i - 1]);
+                setUsed<need_filter>(added_columns.filter, left_start_row + i - 1);
                 if constexpr (add_missing)
                     added_columns.applyLazyDefaults();
             }

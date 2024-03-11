@@ -114,6 +114,8 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_int(static_cast<uint64_t>(coordination_settings->election_timeout_lower_bound_ms));
     writeText("election_timeout_upper_bound_ms=", buf);
     write_int(static_cast<uint64_t>(coordination_settings->election_timeout_upper_bound_ms));
+    writeText("leadership_expiry_ms=", buf);
+    write_int(static_cast<uint64_t>(coordination_settings->leadership_expiry_ms));
 
     writeText("reserved_log_items=", buf);
     write_int(coordination_settings->reserved_log_items);

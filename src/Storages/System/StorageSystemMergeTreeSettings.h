@@ -14,7 +14,7 @@ class Context;
   *  which allows to get information about the current MergeTree settings.
   */
 template <bool replicated>
-class SystemMergeTreeSettings final : public IStorageSystemOneBlock<SystemMergeTreeSettings<replicated>>
+class SystemMergeTreeSettings final : public IStorageSystemOneBlock
 {
 public:
     std::string getName() const override { return replicated ? "SystemReplicatedMergeTreeSettings" : "SystemMergeTreeSettings"; }
@@ -22,9 +22,9 @@ public:
     static ColumnsDescription getColumnsDescription();
 
 protected:
-    using IStorageSystemOneBlock<SystemMergeTreeSettings<replicated>>::IStorageSystemOneBlock;
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 };
 
 }

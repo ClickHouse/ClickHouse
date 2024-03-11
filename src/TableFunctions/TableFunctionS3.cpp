@@ -16,6 +16,7 @@
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <Analyzer/FunctionNode.h>
@@ -401,8 +402,7 @@ bool TableFunctionS3::supportsReadingSubsetOfColumns(const ContextPtr & context)
 
 std::unordered_set<String> TableFunctionS3::getVirtualsToCheckBeforeUsingStructureHint() const
 {
-    auto virtual_column_names = StorageS3::getVirtualColumnNames();
-    return {virtual_column_names.begin(), virtual_column_names.end()};
+    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
 }
 
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const

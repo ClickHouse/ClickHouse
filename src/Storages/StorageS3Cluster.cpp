@@ -67,8 +67,7 @@ StorageS3Cluster::StorageS3Cluster(
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
-
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 void StorageS3Cluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const DB::StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
@@ -92,7 +91,7 @@ void StorageS3Cluster::updateConfigurationIfChanged(ContextPtr local_context)
 RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
-        *s3_configuration.client, s3_configuration.url, predicate, virtual_columns, context, nullptr, s3_configuration.request_settings, context->getFileProgressCallback());
+        *s3_configuration.client, s3_configuration.url, predicate, getVirtualsList(), context, nullptr, s3_configuration.request_settings, context->getFileProgressCallback());
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
     {
@@ -102,12 +101,6 @@ RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(const 
     });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
-
-NamesAndTypesList StorageS3Cluster::getVirtuals() const
-{
-    return virtual_columns;
-}
-
 
 }
 

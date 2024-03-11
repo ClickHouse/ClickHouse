@@ -47,6 +47,7 @@ void ASTDropIndexQuery::formatQueryImpl(const FormatSettings & settings, FormatS
             settings.ostr << '.';
         }
 
+        chassert(table);
         table->formatImpl(settings, state, frame);
     }
 

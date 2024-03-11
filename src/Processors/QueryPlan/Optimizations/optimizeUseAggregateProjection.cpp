@@ -431,7 +431,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
-    Block key_virtual_columns = reading.getMergeTreeData().getSampleBlockWithVirtualColumns();
+    Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter();
 
     AggregateProjectionCandidates candidates;
 

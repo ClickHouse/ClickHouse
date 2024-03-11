@@ -1181,7 +1181,7 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
     if (select_query_options.is_subquery)
         updateContextForSubqueryExecution(mutable_context);
 
-    return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context));
+    return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context), select_query_options);
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
@@ -1373,7 +1373,7 @@ void Planner::buildPlanForQueryNode()
     const auto & settings = query_context->getSettingsRef();
     if (query_context->canUseTaskBasedParallelReplicas())
     {
-        if (planner_context->getPreparedSets().hasSubqueries())
+        if (!settings.parallel_replicas_allow_in_with_subquery && planner_context->getPreparedSets().hasSubqueries())
         {
             if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");

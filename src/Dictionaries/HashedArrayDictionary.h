@@ -29,6 +29,7 @@ struct HashedArrayDictionaryStorageConfiguration
     size_t shards = 1;
     size_t shard_load_queue_backlog = 10000;
     bool use_async_executor = false;
+    std::chrono::seconds load_timeout{0};
 };
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>

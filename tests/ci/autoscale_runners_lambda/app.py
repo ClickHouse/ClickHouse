@@ -51,7 +51,7 @@ class Queue:
     label: str
 
 
-def get_scales(runner_type: str) -> Tuple[int, int]:
+def get_scales() -> Tuple[int, int]:
     "returns the multipliers for scaling down and up ASG by types"
     # Scaling down is quicker on the lack of running jobs than scaling up on
     # queue
@@ -95,7 +95,7 @@ def set_capacity(
             continue
         raise ValueError("Queue status is not in ['in_progress', 'queued']")
 
-    scale_down, scale_up = get_scales(runner_type)
+    scale_down, scale_up = get_scales()
     # With lyfecycle hooks some instances are actually free because some of
     # them are in 'Terminating:Wait' state
     effective_capacity = max(

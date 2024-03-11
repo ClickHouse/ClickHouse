@@ -22,7 +22,7 @@ String trim(const char * text)
     return String(view);
 }
 
-void StorageSystemDashboards::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemDashboards::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     static const std::vector<std::map<String, String>> dashboards
     {

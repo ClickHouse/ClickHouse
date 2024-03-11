@@ -227,7 +227,7 @@ void HTTPClientSession::setKeepAliveTimeout(const Poco::Timespan& timeout)
 std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request)
 {
 	_pRequestStream = 0;
-	_pResponseStream = 0;
+    _pResponseStream = 0;
 	clearException();
 	_responseReceived = false;
 
@@ -501,5 +501,26 @@ bool HTTPClientSession::bypassProxy() const
 	else return false;
 }
 
+void HTTPClientSession::assign(Poco::Net::HTTPClientSession & session)
+{
+    poco_assert (this != &session);
+
+    if (session.buffered())
+        throw Poco::LogicException("assign a session with not empty buffered data");
+
+    if (buffered())
+        throw Poco::LogicException("assign to a session with not empty buffered data");
+
+    attachSocket(session.detachSocket());
+    setLastRequest(session.getLastRequest());
+    setResolvedHost(session.getResolvedHost());
+    setKeepAlive(session.getKeepAlive());
+
+    setTimeout(session.getConnectionTimeout(), session.getSendTimeout(), session.getReceiveTimeout());
+    setKeepAliveTimeout(session.getKeepAliveTimeout());
+    setProxyConfig(session.getProxyConfig());
+
+    session.reset();
+}
 
 } } // namespace Poco::Net

@@ -30,7 +30,7 @@ ColumnsDescription StorageSystemAsynchronousInserts::getColumnsDescription()
     };
 }
 
-void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     using namespace std::chrono;
 

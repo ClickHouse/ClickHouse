@@ -74,6 +74,7 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
             settings.ostr << '.';
         }
 
+        chassert(table);
         table->formatImpl(settings, state, frame);
     }
 

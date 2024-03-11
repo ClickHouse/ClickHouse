@@ -16,12 +16,12 @@ ColumnsDescription StorageSystemMerges::getColumnsDescription()
         {"elapsed", std::make_shared<DataTypeFloat64>(), "The time elapsed (in seconds) since the merge started."},
         {"progress", std::make_shared<DataTypeFloat64>(), "The percentage of completed work from 0 to 1."},
         {"num_parts", std::make_shared<DataTypeUInt64>(), "The number of parts to be merged."},
-        {"source_part_names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), ""},
+        {"source_part_names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of source parts names."},
         {"result_part_name", std::make_shared<DataTypeString>(), "The name of the part that will be formed as the result of merging."},
-        {"source_part_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), ""},
-        {"result_part_path", std::make_shared<DataTypeString>(), ""},
-        {"partition_id", std::make_shared<DataTypeString>()},
-        {"partition", std::make_shared<DataTypeString>()},
+        {"source_part_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of paths for each source part."},
+        {"result_part_path", std::make_shared<DataTypeString>(), "The path of the part that will be formed as the result of merging."},
+        {"partition_id", std::make_shared<DataTypeString>(), "The identifier of the partition where the merge is happening."},
+        {"partition", std::make_shared<DataTypeString>(), "The name of the partition"},
         {"is_mutation", std::make_shared<DataTypeUInt8>(), "1 if this process is a part mutation."},
         {"total_size_bytes_compressed", std::make_shared<DataTypeUInt64>(), "The total size of the compressed data in the merged chunks."},
         {"total_size_bytes_uncompressed", std::make_shared<DataTypeUInt64>(), "The total size of compressed data in the merged chunks."},
@@ -39,7 +39,7 @@ ColumnsDescription StorageSystemMerges::getColumnsDescription()
 }
 
 
-void StorageSystemMerges::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemMerges::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);

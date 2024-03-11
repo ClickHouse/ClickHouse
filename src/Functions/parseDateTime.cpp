@@ -489,12 +489,12 @@ namespace
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args{
-                {"time", &isString<IDataType>, nullptr, "String"},
-                {"format", &isString<IDataType>, nullptr, "String"}
+                {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+                {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
             };
 
             FunctionArgumentDescriptors optional_args{
-                {"timezone", &isString<IDataType>, &isColumnConst, "const String"}
+                {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
             };
 
             validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);

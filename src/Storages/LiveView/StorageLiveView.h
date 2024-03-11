@@ -74,8 +74,6 @@ public:
 
     bool supportsFinal() const override { return true; }
 
-    NamesAndTypesList getVirtuals() const override;
-
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     void drop() override;

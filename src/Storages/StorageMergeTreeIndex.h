@@ -21,7 +21,8 @@ public:
         const ColumnsDescription & columns,
         bool with_marks_);
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -33,14 +34,15 @@ public:
     String getName() const override { return "MergeTreeIndex"; }
 
 private:
-    MergeTreeData::DataPartsVector getFilteredDataParts(SelectQueryInfo & query_info, const ContextPtr & context) const;
+    friend class ReadFromMergeTreeIndex;
+
+    MergeTreeData::DataPartsVector getFilteredDataParts(const ActionsDAG::Node * predicate, const ContextPtr & context) const;
 
     StoragePtr source_table;
     bool with_marks;
 
     MergeTreeData::DataPartsVector data_parts;
     Block key_sample_block;
-    Poco::Logger * log;
 };
 
 }

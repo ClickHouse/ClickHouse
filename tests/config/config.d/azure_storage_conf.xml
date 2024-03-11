@@ -2,7 +2,8 @@
     <storage_configuration>
         <disks>
             <azure>
-                <type>azure_blob_storage</type>
+                <type>object_storage</type>
+                <object_storage_type>azure</object_storage_type>
                 <storage_account_url>http://localhost:10000/devstoreaccount1</storage_account_url>
                 <container_name>cont</container_name>
                 <skip_access_check>false</skip_access_check>

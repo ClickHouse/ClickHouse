@@ -118,6 +118,7 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
      {"null_status_on_timeout", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT},
      {"throw_only_active", DistributedDDLOutputMode::THROW_ONLY_ACTIVE},
      {"null_status_on_timeout_only_active", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE},
+     {"none_only_active", DistributedDDLOutputMode::NONE_ONLY_ACTIVE},
      {"never_throw", DistributedDDLOutputMode::NEVER_THROW}})
 
 IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,

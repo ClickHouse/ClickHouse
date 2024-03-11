@@ -53,14 +53,14 @@ def main():
     print(build_name)
     urls = read_build_urls(build_name, reports_path)
     if not urls:
-        raise Exception("No build URLs found")
+        raise ValueError("No build URLs found")
 
     for url in urls:
         if url.endswith("/clickhouse"):
             build_url = url
             break
     else:
-        raise Exception("Cannot find the clickhouse binary among build results")
+        raise ValueError("Cannot find the clickhouse binary among build results")
 
     logging.info("Got build url %s", build_url)
 

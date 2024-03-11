@@ -103,7 +103,6 @@ struct ReadSettings
     bool avoid_readthrough_cache_outside_query_context = true;
     size_t filesystem_cache_segments_batch_size = 20;
 
-    //asdqwe assign these two
     bool use_page_cache_for_disks_without_file_cache = false;
     bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
     bool page_cache_inject_eviction = false;
@@ -123,7 +122,7 @@ struct ReadSettings
     // Resource to be used during reading
     ResourceLink resource_link;
 
-    size_t http_max_tries = 1;
+    size_t http_max_tries = 10;
     size_t http_retry_initial_backoff_ms = 100;
     size_t http_retry_max_backoff_ms = 1600;
     bool http_skip_not_found_url_for_globs = true;

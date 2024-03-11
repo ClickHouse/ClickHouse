@@ -11,7 +11,7 @@ class Context;
 
 /** Implements the `distribution_queue` system table, which allows you to view the INSERT queues for the Distributed tables.
   */
-class StorageSystemDistributionQueue final : public IStorageSystemOneBlock<StorageSystemDistributionQueue>
+class StorageSystemDistributionQueue final : public IStorageSystemOneBlock
 {
 public:
     std::string getName() const override { return "SystemDistributionQueue"; }
@@ -21,7 +21,7 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const override;
 };
 
 }

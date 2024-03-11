@@ -303,7 +303,7 @@ def post_commit_status_to_file(
     file_path: Path, description: str, state: str, report_url: str
 ) -> None:
     if file_path.exists():
-        raise Exception(f'File "{file_path}" already exists!')
+        raise FileExistsError(f'File "{file_path}" already exists!')
     with open(file_path, "w", encoding="utf-8") as f:
         out = csv.writer(f, delimiter="\t")
         out.writerow([state, report_url, description])
@@ -329,7 +329,7 @@ class CommitStatusData:
     @classmethod
     def load_from_file(cls, file_path: Union[Path, str]):  # type: ignore
         res = {}
-        with open(file_path, "r") as json_file:
+        with open(file_path, "r", encoding="utf-8") as json_file:
             res = json.load(json_file)
         return CommitStatusData(**cls._filter_dict(res))
 
@@ -347,7 +347,7 @@ class CommitStatusData:
 
     def dump_to_file(self, file_path: Union[Path, str]) -> None:
         file_path = Path(file_path) or STATUS_FILE_PATH
-        with open(file_path, "w") as json_file:
+        with open(file_path, "w", encoding="utf-8") as json_file:
             json.dump(asdict(self), json_file)
 
     def is_ok(self):

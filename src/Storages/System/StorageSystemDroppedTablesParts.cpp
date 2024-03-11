@@ -10,7 +10,7 @@ namespace DB
 {
 
 
-StoragesDroppedInfoStream::StoragesDroppedInfoStream(const SelectQueryInfo & query_info, ContextPtr context)
+StoragesDroppedInfoStream::StoragesDroppedInfoStream(const ActionsDAG::Node * predicate, ContextPtr context)
         : StoragesInfoStreamBase(context)
 {
     /// Will apply WHERE to subset of columns and then add more columns.
@@ -73,7 +73,7 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const SelectQueryInfo & que
     if (block_to_filter.rows())
     {
         /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
         rows = block_to_filter.rows();
     }
 

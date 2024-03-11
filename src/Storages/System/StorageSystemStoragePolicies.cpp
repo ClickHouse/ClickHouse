@@ -37,16 +37,16 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & tab
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(
         ColumnsDescription({
-             {"policy_name", std::make_shared<DataTypeString>()},
-             {"volume_name", std::make_shared<DataTypeString>()},
-             {"volume_priority", std::make_shared<DataTypeUInt64>()},
-             {"disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-             {"volume_type", std::make_shared<DataTypeEnum8>(getTypeEnumValues<VolumeType>())},
-             {"max_data_part_size", std::make_shared<DataTypeUInt64>()},
-             {"move_factor", std::make_shared<DataTypeFloat32>()},
-             {"prefer_not_to_merge", std::make_shared<DataTypeUInt8>()},
-             {"perform_ttl_move_on_insert", std::make_shared<DataTypeUInt8>()},
-             {"load_balancing", std::make_shared<DataTypeEnum8>(getTypeEnumValues<VolumeLoadBalancing>())}
+            {"policy_name", std::make_shared<DataTypeString>(), "The name of the storage policy."},
+            {"volume_name", std::make_shared<DataTypeString>(), "The name of the volume."},
+            {"volume_priority", std::make_shared<DataTypeUInt64>(), "The priority of the volume."},
+            {"disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of all disks names which are a part of this storage policy."},
+            {"volume_type", std::make_shared<DataTypeEnum8>(getTypeEnumValues<VolumeType>()), "The type of the volume - JBOD or a single disk."},
+            {"max_data_part_size", std::make_shared<DataTypeUInt64>(), "the maximum size of a part that can be stored on any of the volumes disks."},
+            {"move_factor", std::make_shared<DataTypeFloat32>(), "When the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1)."},
+            {"prefer_not_to_merge", std::make_shared<DataTypeUInt8>(), "You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation)."},
+            {"perform_ttl_move_on_insert", std::make_shared<DataTypeUInt8>(), "Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule."},
+            {"load_balancing", std::make_shared<DataTypeEnum8>(getTypeEnumValues<VolumeLoadBalancing>()), "Policy for disk balancing, `round_robin` or `least_used`."}
     }));
     // TODO: Add string column with custom volume-type-specific options
     setInMemoryMetadata(storage_metadata);
