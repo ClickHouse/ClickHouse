@@ -412,7 +412,9 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     blockSignals({SIGPIPE});
 
     /// Setup signal handlers.
+    HandledSignals::instance().setupTerminateHandler();
     HandledSignals::instance().setupCommonDeadlySignalHandlers();
+    HandledSignals::instance().setupCommonTerminateRequestSignalHandlers();
     HandledSignals::instance().addSignalHandler({SIGHUP}, closeLogsSignalHandler, true);
 
     /// Set up Poco ErrorHandler for Poco Threads.

@@ -3016,7 +3016,10 @@ void ClientBase::init(int argc, char ** argv)
     has_log_comment = config().has("log_comment");
 
     /// Print stacktrace in case of crash
+    HandledSignals::instance().setupTerminateHandler();
     HandledSignals::instance().setupCommonDeadlySignalHandlers();
+    /// We don't setup signal handlers for SIGINT, SIGQUIT, SIGTERM because we don't
+    /// have an option for client to shutdown gracefully.
 
     fatal_channel_ptr = new Poco::ConsoleChannel;
     fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);

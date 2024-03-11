@@ -110,7 +110,9 @@ struct HandledSignals
     HandledSignals();
     ~HandledSignals();
 
+    void setupTerminateHandler();
     void setupCommonDeadlySignalHandlers();
+    void setupCommonTerminateRequestSignalHandlers();
 
     void addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal);
 
@@ -118,4 +120,3 @@ struct HandledSignals
 
     static HandledSignals & instance();
 };
-

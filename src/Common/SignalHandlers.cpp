@@ -577,16 +577,22 @@ HandledSignals & HandledSignals::instance()
     return res;
 }
 
-void HandledSignals::setupCommonDeadlySignalHandlers()
+void HandledSignals::setupTerminateHandler()
 {
     std::set_terminate(terminate_handler);
+}
 
+void HandledSignals::setupCommonDeadlySignalHandlers()
+{
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
     addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP, SIGTRAP}, signalHandler, true);
-    addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, true);
 
 #if defined(SANITIZER)
     __sanitizer_set_death_callback(sanitizerDeathCallback);
 #endif
 }
 
+void HandledSignals::setupCommonTerminateRequestSignalHandlers()
+{
+    addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, true);
+}
