@@ -1068,6 +1068,8 @@ class TestCase:
     ):
         description = ""
 
+        # Special case when tests were run in fuzzer mode, in this case
+        # we don't check the output and just return special status FUZZES.
         if fuzz:
             description += "\n" + stdout
             return TestResult(
@@ -1354,6 +1356,7 @@ class TestCase:
         start_time = args.testcase_start_time
         database = args.testcase_database
         timeout = args.timeout
+        # In fuzzer mode set timeout to min(timeout, stop_time - current_time) to respect global timeout.
         if fuzz and stop_time is not None:
             timeout = min(timeout, stop_time - start_time.timestamp())
 
@@ -1381,6 +1384,7 @@ class TestCase:
         }
 
         if fuzz:
+            # In fuzzer mode output all to stdout.
             pattern = "{test} > {stdout} 2>&1"
         else:
             # >> append to stderr (but not stdout since it is not used there),
@@ -1739,6 +1743,7 @@ class TestSuite:
             self.tests_in_suite_key_func, filter_func
         )
 
+        # If extreme_fuzz_tests were specified, add these tests before each test in tests list.
         if args.fuzz and args.extreme_fuzz_tests:
             extreme_fuzz_tests = list(
                 self.get_selected_tests(lambda x: True, args.extreme_fuzz_tests)
@@ -2595,10 +2600,13 @@ def main(args):
         try:
             total_tests_run += do_run_tests(args.jobs, test_suite, args.parallel)
         except Terminated:
+            # Avoid non-0 return code in fuzzer mode when tests are
+            # terminated by timeout.
             if args.fuzz:
                 sys.exit(0)
             raise
 
+    # In fuzzer mode we usually check server status after the fuzzing manually.
     if server_died.is_set() and not args.fuzz:
         exit_code.value = 1
 
