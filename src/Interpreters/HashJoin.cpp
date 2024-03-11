@@ -806,6 +806,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     }
 
     size_t rows = source_block.rows();
+    data->rows_to_join += rows;
 
     const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
     ColumnPtrMap all_key_columns(right_key_names.size());
@@ -923,7 +924,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             total_bytes = getTotalByteCount();
         }
     }
-
+    data->keys_to_join = total_rows;
     shrinkStoredBlocksToFit(total_bytes);
 
 
@@ -1040,6 +1041,7 @@ public:
     {
         PaddedPODArray<UInt64> blocks;
         PaddedPODArray<UInt32> row_nums;
+        PaddedPODArray<UInt64> rows;
     };
 
     AddedColumns(
@@ -1053,6 +1055,7 @@ public:
         : join_on_keys(join_on_keys_)
         , rows_to_add(left_block.rows())
         , is_join_get(is_join_get_)
+        , join_data_sorted(join.getJoinedData()->sorted)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
         if (is_asof_join)
@@ -1063,6 +1066,7 @@ public:
             has_columns_to_add = num_columns_to_add > 0;
             lazy_output.blocks.reserve(rows_to_add);
             lazy_output.row_nums.reserve(rows_to_add);
+            lazy_output.rows.reserve(rows_to_add);
         }
 
         columns.reserve(num_columns_to_add);
@@ -1111,7 +1115,7 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
-    void appendFromBlock(const Block & block, size_t row_num, bool has_default);
+    void appendFromBlock(const Block & block, size_t row_num, size_t rows, bool has_default);
 
     void appendDefaultRow();
 
@@ -1184,6 +1188,7 @@ private:
     // default_count cannot represent the position of the row
     LazyOutput lazy_output;
     bool has_columns_to_add;
+    bool join_data_sorted = false;
 
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
@@ -1231,11 +1236,17 @@ void AddedColumns<true>::buildOutput()
                 if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get());
                     nullable_col && !column_from_block.column->isNullable())
                 {
-                    nullable_col->insertFromNotNullable(*column_from_block.column, lazy_output.row_nums[j]);
+                    if (!join_data_sorted)
+                        nullable_col->insertFromNotNullable(*column_from_block.column, lazy_output.row_nums[j]);
+                    else
+                        nullable_col->insertRangeFromNotNullable(*column_from_block.column, lazy_output.row_nums[j], lazy_output.rows[j]);
                     continue;
                 }
             }
-            col->insertFrom(*column_from_block.column, lazy_output.row_nums[j]);
+            if (!join_data_sorted)
+                col->insertFrom(*column_from_block.column, lazy_output.row_nums[j]);
+            else
+                col->insertRangeFrom(*column_from_block.column, lazy_output.row_nums[j], lazy_output.rows[j]);
         }
         apply_default();
     }
@@ -1258,7 +1269,7 @@ void AddedColumns<true>::applyLazyDefaults()
 }
 
 template <>
-void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num,const bool has_defaults)
+void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num, size_t, const bool has_defaults)
 {
     if (has_defaults)
         applyLazyDefaults();
@@ -1290,15 +1301,16 @@ void AddedColumns<false>::appendFromBlock(const Block & block, size_t row_num,co
 }
 
 template <>
-void AddedColumns<true>::appendFromBlock(const Block & block, size_t row_num, bool)
+void AddedColumns<true>::appendFromBlock(const Block & block, size_t row_num, size_t rows, bool)
 {
 #ifndef NDEBUG
     checkBlock(block);
 #endif
     if (has_columns_to_add)
     {
-        lazy_output.blocks.emplace_back(reinterpret_cast<UInt64>(&block));
-        lazy_output.row_nums.emplace_back(static_cast<uint32_t>(row_num));
+       lazy_output.blocks.emplace_back(reinterpret_cast<UInt64>(&block));
+       lazy_output.row_nums.emplace_back(static_cast<uint32_t>(row_num));
+       if (join_data_sorted) lazy_output.rows.emplace_back(rows);
     }
 }
 template<>
@@ -1314,6 +1326,7 @@ void AddedColumns<true>::appendDefaultRow()
     {
         lazy_output.blocks.emplace_back(0);
         lazy_output.row_nums.emplace_back(0);
+        if (join_data_sorted) lazy_output.rows.emplace_back(1);
     }
 }
 
@@ -1433,7 +1446,7 @@ void addFoundRowAll(
         {
             if (!known_rows.isKnown(std::make_pair(it->block, it->row_num)))
             {
-                added.appendFromBlock(*it->block, it->row_num, false);
+                added.appendFromBlock(*it->block, it->row_num, 1, false);
                 ++current_offset;
                 if (!new_known_rows_ptr)
                 {
@@ -1457,8 +1470,8 @@ void addFoundRowAll(
     {
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            added.appendFromBlock(*it->block, it->row_num, false);
-            ++current_offset;
+            added.appendFromBlock(*it->block, it->row_num, it->rows, false);
+            current_offset += it->rows;
         }
     }
 }
@@ -1546,7 +1559,7 @@ NO_INLINE size_t joinRightColumns(
                         else
                             used_flags.template setUsed<join_features.need_flags, multiple_disjuncts>(find_result);
 
-                        added_columns.appendFromBlock(*row_ref.block, row_ref.row_num, join_features.add_missing);
+                        added_columns.appendFromBlock(*row_ref.block, row_ref.row_num, 1, join_features.add_missing);
                     }
                     else
                         addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
@@ -1577,7 +1590,7 @@ NO_INLINE size_t joinRightColumns(
                     if (used_once)
                     {
                         setUsed<need_filter>(added_columns.filter, i);
-                        added_columns.appendFromBlock(*mapped.block, mapped.row_num, join_features.add_missing);
+                        added_columns.appendFromBlock(*mapped.block, mapped.row_num, 1, join_features.add_missing);
                     }
 
                     break;
@@ -1595,7 +1608,7 @@ NO_INLINE size_t joinRightColumns(
                 {
                     setUsed<need_filter>(added_columns.filter, i);
                     used_flags.template setUsed<join_features.need_flags, multiple_disjuncts>(find_result);
-                    added_columns.appendFromBlock(*mapped.block, mapped.row_num, join_features.add_missing);
+                    added_columns.appendFromBlock(*mapped.block, mapped.row_num, 1, join_features.add_missing);
 
                     if (join_features.is_any_or_semi_join)
                     {
@@ -2025,7 +2038,6 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         joinBlockImplCross(block, not_processed);
         return;
     }
-
     if (kind == JoinKind::Right || kind == JoinKind::Full)
     {
         materializeBlockInplace(block);
@@ -2050,6 +2062,85 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
     }
+}
+
+template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
+void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
+{
+    constexpr JoinFeatures<KIND, STRICTNESS> join_features;
+    if constexpr (join_features.is_all_join && (join_features.left || join_features.inner))
+    {
+        auto merge_rows_into_one_block = [&](BlocksList & blocks, RowRefList & rows_ref)
+        {
+            auto it = rows_ref.begin();
+            if (it.ok())
+            {
+                if (blocks.empty() || blocks.back().rows() > DEFAULT_BLOCK_SIZE)
+                    blocks.emplace_back(it->block->cloneEmpty());
+            }
+            else
+            {
+                return;
+            }
+            auto & block = blocks.back();
+            size_t start_row = block.rows();
+            for (; it.ok(); ++it)
+            {
+                for (size_t i = 0; i < block.columns(); ++i)
+                {
+                    auto & col = *(block.getByPosition(i).column->assumeMutable());
+                    col.insertFrom(*it->block->getByPosition(i).column, it->row_num);
+                }
+            }
+            if (block.rows() > start_row)
+            {
+                RowRefList new_rows_ref(&block, start_row, block.rows() - start_row);
+                rows_ref = std::move(new_rows_ref);
+            }
+        };
+
+        auto visit_rows_map = [&](BlocksList & blocks, MapsAll & rows_map)
+        {
+            switch (data->type)
+            {
+        #define M(TYPE) \
+                case Type::TYPE: \
+                {\
+                    rows_map.TYPE->forEachMapped([&](RowRefList & rows_ref) { merge_rows_into_one_block(blocks, rows_ref); }); \
+                    break; \
+                }
+                APPLY_FOR_JOIN_VARIANTS(M)
+        #undef M
+                default:
+                    break;
+            }
+        };
+        BlocksList sorted_blocks;
+        visit_rows_map(sorted_blocks, map);
+        data->blocks.swap(sorted_blocks);
+    }
+}
+
+void HashJoin::tryRerangeRightTableData()
+{
+    if (!data || data->blocks.empty() || data->maps.size() > 1)
+        return;
+    size_t keys_to_join = data->keys_to_join != 0 ? data->keys_to_join : getTotalRowCount();
+    if (keys_to_join == 0
+        || sample_block_with_columns_to_add.columns() == 0
+        || data->rows_to_join > table_join->rightTableSortRowsUpperLimit()
+        || data->rows_to_join / keys_to_join < table_join->rightTableSortPerkeyRowsLowerLimit())
+    {
+        LOG_DEBUG(log, "The joined right table total rows :{}, total keys :{}, columns added:{}",
+            data->rows_to_join, keys_to_join, sample_block_with_columns_to_add.columns());
+        return;
+    }
+    joinDispatch(
+        kind,
+        strictness,
+        data->maps.front(),
+        [&](auto kind_, auto strictness_, auto & map_) { tryRerangeRightTableDataImpl<kind_, decltype(map_), strictness_>(map_); });
+    data->sorted = true;
 }
 
 HashJoin::~HashJoin()

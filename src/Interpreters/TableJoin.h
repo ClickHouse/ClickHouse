@@ -145,6 +145,8 @@ private:
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
+    const size_t right_table_sort_rows_upper_limit = 0;
+    const size_t right_table_sort_per_key_rows_lower_limit = 0;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -284,6 +286,8 @@ public:
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
     size_t maxBytesInLeftBuffer() const { return partial_merge_join_left_table_buffer_bytes; }
     size_t maxFilesToMerge() const { return max_files_to_merge; }
+    size_t rightTableSortRowsUpperLimit() const { return right_table_sort_rows_upper_limit; }
+    size_t rightTableSortPerkeyRowsLowerLimit() const { return right_table_sort_per_key_rows_lower_limit; }
     const String & temporaryFilesCodec() const { return temporary_files_codec; }
     bool needStreamWithNonJoinedRows() const;
 

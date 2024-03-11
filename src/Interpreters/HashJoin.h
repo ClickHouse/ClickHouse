@@ -363,12 +363,17 @@ public:
         Block sample_block; /// Block as it would appear in the BlockList
         BlocksList blocks; /// Blocks of "right" table.
         BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
-
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
 
         size_t blocks_allocated_size = 0;
         size_t blocks_nullmaps_allocated_size = 0;
+        /// Number of rows of right table to join
+        size_t rows_to_join = 0;
+        /// Number of keys of right table to join
+        size_t keys_to_join = 0;
+        /// Whether the right table reranged by key
+        bool sorted = false;
     };
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
@@ -399,7 +404,12 @@ public:
     void shrinkStoredBlocksToFit(size_t & total_bytes_in_join);
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
-
+    /// If right table is low cardinality on join keys, we could re-arrange rows with same join keys
+    /// so that they are stored close to each other in memory. This could speed up copying of data from
+    /// right table into the result.
+    void tryRerangeRightTableData() override;
+    template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
+    void tryRerangeRightTableDataImpl(Map & map);
 private:
     friend class NotJoinedHash;
 

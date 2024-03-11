@@ -26,12 +26,21 @@ struct RowRef
     using SizeT = uint32_t; /// Do not use size_t cause of memory economy
 
     const Block * block = nullptr;
+    // The row offset in block.
     SizeT row_num = 0;
+    // If there are multiple consecutive lines with the same keys, then the number of such lines.
+    SizeT rows = 1;
 
     RowRef() = default;
     RowRef(const Block * block_, size_t row_num_)
         : block(block_)
         , row_num(static_cast<SizeT>(row_num_))
+        , rows(1)
+    {}
+    RowRef(const Block * block_, size_t row_start_, size_t row_num_)
+        : block(block_)
+        , row_num(static_cast<SizeT>(row_start_))
+        , rows(static_cast<SizeT>(row_num_))
     {}
 };
 
@@ -123,6 +132,7 @@ struct RowRefList : RowRef
 
     RowRefList() {} /// NOLINT
     RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
+    RowRefList(const Block * block_, size_t row_start_, size_t row_num_) : RowRef(block_, row_start_, row_num_) {}
 
     ForwardIterator begin() const { return ForwardIterator(this); }
 
