@@ -258,6 +258,7 @@ protected:
     /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
 
+    String app_name; /// name of clickhouse app to be used in help, with dash or without
     String home_path;
     String history_file; /// Path to a file containing command history.
 

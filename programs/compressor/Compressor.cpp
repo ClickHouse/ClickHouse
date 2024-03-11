@@ -97,8 +97,11 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: " << argv[0] << " [options] < INPUT > OUTPUT" << std::endl;
-            std::cout << "Usage: " << argv[0] << " [options] INPUT OUTPUT" << std::endl;
+            const::std::string app_name = std::string_view(argv[0]).contains("clickhouse-compressor") ? "clickhouse-compressor" : "clickhouse compressor";
+
+            std::cout << fmt::format("Usage: {app} [options] < INPUT > OUTPUT\n"
+                "Alternative usage: {app} [options] INPUT OUTPUT\n", fmt::arg("app", app_name));
+
             std::cout << desc << std::endl;
             std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-compressor/\n";
             return 0;

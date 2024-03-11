@@ -65,6 +65,10 @@ private:
 
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
+
+    std::string getHelpFooter();
+    std::string getHelpHeader();
+
 };
 
 }

@@ -15,7 +15,7 @@ public:
     CommandRemove()
     {
         command_name = "remove";
-        description = "Remove file or directory with all children. Throws exception if file doesn't exists.\nPath should be in format './' or './path' or 'path'";
+        description = "Remove file or directory with all children. Throws exception if file doesn't exists. Path should be in format './' or './path' or 'path'";
         usage = "remove [OPTION]... <PATH>";
     }
 

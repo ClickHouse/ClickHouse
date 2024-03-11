@@ -915,12 +915,49 @@ bool Client::processWithFuzzing(const String & full_query)
 }
 
 
+String Client::getHelpHeader()
+{
+    return fmt::format(
+        "Usage: {app} [initial table definition] [--query <query>]\n"
+        "{app} is a client application that is used to connect to ClickHouse.\n"
+
+        "It can run queries as command line tool if you pass queries as an argument or as interactive client."
+        " Queries can run one at a time, or in in a multiquery mode with --multiquery option."
+        " To change settings you may use 'SET' statements and SETTINGS clause in queries or set is for a "
+        " session with corresponding {app} arguments.\n"
+        "'{app}' command will try connect to clickhouse-server running on the same server."
+        " If you have credentials set up pass them with --user <username> --password <password>"
+        " or with --ask-password argument that will open command prompt.\n\n"
+
+        "This one will try connect to tcp native port(9000) without encryption:\n"
+        "    {app} --host clickhouse.example.com --password mysecretpassword\n"
+        "To connect to secure endpoint just set --secure argument. If you have "
+        " artered port set it with --port <your port>.\n"
+        "    {app} --secure --host clickhouse.example.com --password mysecretpassword\n",
+        fmt::arg("app", app_name));
+}
+
+
+String Client::getHelpFooter()
+{
+    return fmt::format(
+        "Note: If you have clickhouse installed on your system you can use '{app}'"
+        " invocation with a dash.\n\n"
+        "Example printing current longest running query on a server:\n"
+        "    {app} --query 'SELECT * FROM system.processes ORDER BY elapsed LIMIT 1 FORMAT Vertical'\n"
+        "Example creating table and inserting data:\n",
+        fmt::arg("app", app_name));
+}
+
+
 void Client::printHelpMessage(const OptionsDescription & options_description)
 {
+    std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
     std::cout << options_description.external_description.value() << "\n";
     std::cout << options_description.hosts_and_ports_description.value() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    std::cout << getHelpFooter() << "\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
 

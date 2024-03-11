@@ -2798,6 +2798,8 @@ void ClientBase::init(int argc, char ** argv)
     Arguments common_arguments = {""}; /// 0th argument is ignored.
     std::vector<Arguments> hosts_and_ports_arguments;
 
+    app_name = std::string_view(argv[0]).contains("clickhouse-" + getName()) ? "clickhouse-" + getName() : "clickhouse " + getName();
+
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
     /// Support for Unicode dashes
