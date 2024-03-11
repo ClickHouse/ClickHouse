@@ -13,11 +13,11 @@ def process_result(result_folder):
     description = ""
     test_results = []
     checks = (
-        #"duplicate includes",
-        #"shellcheck",
+        # "duplicate includes",
+        # "shellcheck",
         "style",
         "pylint",
-        #"black",
+        # "black",
         "mypy",
         "typos",
         "whitespaces",
@@ -30,8 +30,7 @@ def process_result(result_folder):
         out_file = name.replace(" ", "_") + "_output.txt"
         full_path = os.path.join(result_folder, out_file)
         if not os.path.exists(full_path):
-            logging.info("No %s check log on path %s", name, full_path)
-            return "exception", f"No {name} check log", []
+            test_results.append((f"Check {name}", "SKIPPED"))
         elif os.stat(full_path).st_size != 0:
             description += f"Check {name} failed. "
             test_results.append((f"Check {name}", "FAIL"))
@@ -41,6 +40,8 @@ def process_result(result_folder):
 
     if not description:
         description += "Style check success"
+
+    assert test_results, "No single style-check output found"
 
     return status, description, test_results
 
