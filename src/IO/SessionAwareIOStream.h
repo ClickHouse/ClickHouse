@@ -3,7 +3,7 @@
 #include <iosfwd>
 
 
-namespace DB::S3
+namespace DB
 {
 /**
  * Wrapper of IOStream to store response stream and corresponding HTTP session.
