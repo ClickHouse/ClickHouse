@@ -67,26 +67,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def checkout_head(pr_info: PRInfo) -> None:
-    # It works ONLY for PRs, and only over ssh, so either
-    # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
-    assert pr_info.number
-    if not pr_info.head_name == pr_info.base_name:
-        # We can't push to forks, sorry folks
-        return
-    remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
-    fetch_cmd = (
-        f"{GIT_PREFIX} fetch --depth=1 "
-        f"{remote_url} {pr_info.head_ref}:head-{pr_info.head_ref}"
-    )
-    if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
-        with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
-            git_runner(fetch_cmd)
-    else:
-        git_runner(fetch_cmd)
-    git_runner(f"git checkout -f head-{pr_info.head_ref}")
-
-
 def commit_push_staged(pr_info: PRInfo) -> None:
     # It works ONLY for PRs, and only over ssh, so either
     # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
@@ -177,8 +157,6 @@ def main():
             _ = future1.result()
 
         if run_pycheck:
-            if args.push:
-                checkout_head(pr_info)
             logging.info("Run py files check: %s", cmd_py)
             future2 = executor.submit(subprocess.run, cmd_py, shell=True)
             _ = future2.result()
