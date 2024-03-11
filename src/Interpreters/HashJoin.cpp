@@ -1573,7 +1573,6 @@ void addFoundRowRefAll(
             auto row_ref = std::make_pair(it->block, it->row_num);
             if (!known_rows.isKnown(row_ref))
             {
-
                 selected_rows.emplace_back(row_ref.first, row_ref.second);
                 ++current_offset;
                 if (!new_known_rows_ptr)
@@ -1598,22 +1597,28 @@ void addFoundRowRefAll(
 }
 
 /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename KeyGetter, typename Map, bool need_filter, bool flag_per_row, typename AddedColumns>
+template <
+    typename KeyGetter,
+    typename Map,
+    bool need_filter,
+    bool need_replication,
+    bool flag_per_row,
+    bool need_flags,
+    bool add_missing,
+    typename AddedColumns>
 NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
-    constexpr JoinFeatures<KIND, STRICTNESS> join_features;
-
     size_t left_block_rows = added_columns.rows_to_add;
     if constexpr (need_filter)
         added_columns.filter = IColumn::Filter(left_block_rows, 0);
 
     std::unique_ptr<Arena> pool;
 
-    if constexpr (join_features.need_replication)
+    if constexpr (need_replication)
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(left_block_rows);
 
     std::vector<size_t> row_replicate_offset;
@@ -1640,7 +1645,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
         selected_rows.clear();
         for (; left_row_iter < left_block_rows; ++left_row_iter)
         {
-            if constexpr (join_features.need_replication)
+            if constexpr (need_replication)
             {
                 if (unlikely(total_added_rows + current_added_rows >= max_joined_block_rows))
                 {
@@ -1663,15 +1668,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                 {
                     auto & mapped = find_result.getMapped();
                     find_results.push_back(find_result);
-                    if constexpr (join_features.is_all_join)
-                    {
-                        addFoundRowRefAll<flag_per_row>(
-                            mapped, selected_rows, current_added_rows, known_rows);
-                    }
-                    else
-                    {
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported join type. kind:{}, strictness:{}", KIND, STRICTNESS);
-                    }
+                    addFoundRowRefAll<flag_per_row>(mapped, selected_rows, current_added_rows, known_rows);
                 }
             }
             row_replicate_offset.push_back(current_added_rows);
@@ -1697,16 +1694,16 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
         {
             bool any_matched = false;
             /// For all right join, flag_per_row is true, we need mark used flags for each row.
-            if constexpr (join_features.is_all_join && flag_per_row)
+            if constexpr (flag_per_row)
             {
                 for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                 {
                     if ((*filter_flags)[replicated_row])
                     {
                         any_matched = true;
-                        added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                        added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
                         total_added_rows += 1;
-                        used_flags.template setUsed<join_features.need_flags, flag_per_row>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                        used_flags.template setUsed<need_flags, flag_per_row>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
                     }
                     ++selected_right_row_it;
                 }
@@ -1718,7 +1715,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                     if ((*filter_flags)[replicated_row])
                     {
                         any_matched = true;
-                        added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                        added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
                         total_added_rows += 1;
                     }
                     ++selected_right_row_it;
@@ -1726,27 +1723,18 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
             }
             if (!any_matched)
             {
-                if constexpr (join_features.is_anti_join && join_features.left)
-                    setUsed<need_filter>(added_columns.filter, left_start_row + i - 1);
-                addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, total_added_rows);
+                addNotFoundRow<add_missing, need_replication>(added_columns, total_added_rows);
             }
             else
             {
-                if constexpr (join_features.is_all_join)
-                {
                     if constexpr (!flag_per_row)
-                        used_flags.template setUsed<join_features.need_flags, false>(find_results[i - 1]);
+                        used_flags.template setUsed<need_flags, false>(find_results[i - 1]);
                     setUsed<need_filter>(added_columns.filter, left_start_row + i - 1);
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join type. kind:{}, strictness:{}", KIND, STRICTNESS);
-                }
-                if (join_features.add_missing)
+                if constexpr (add_missing)
                     added_columns.applyLazyDefaults();
             }
 
-            if constexpr (join_features.need_replication)
+            if constexpr (need_replication)
             {
                 (*added_columns.offsets_to_replicate)[left_start_row + i - 1] = total_added_rows;
             }
@@ -1774,7 +1762,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
         auto filter_col = buildAdditionalFilter(left_start_row, selected_rows, row_replicate_offset, added_columns);
         copy_final_matched_rows(left_start_row, filter_col);
 
-        if constexpr (join_features.need_replication)
+        if constexpr (need_replication)
         {
             // Add a check for current_added_rows to avoid run the filter expression on too small size batch.
             if (total_added_rows >= max_joined_block_rows || current_added_rows < 1024)
@@ -1784,7 +1772,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
         }
     }
 
-    if constexpr (join_features.need_replication)
+    if constexpr (need_replication)
     {
         added_columns.offsets_to_replicate->resize_assume_reserved(left_row_iter);
         added_columns.filter.resize_assume_reserved(left_row_iter);
@@ -1941,21 +1929,46 @@ size_t joinRightColumnsSwitchMultipleDisjuncts(
     AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
-    if (added_columns.additional_filter_expression)
-    {
-        constexpr JoinFeatures<KIND, STRICTNESS> join_features;
-        constexpr bool mark_per_row_used = join_features.right || join_features.full;
-        return mapv.size() > 1 ? joinRightColumnsWithAddtitionalFilter<KIND, STRICTNESS, KeyGetter, Map, need_filter, true>(
-                   std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags)
-                               : joinRightColumnsWithAddtitionalFilter<KIND, STRICTNESS, KeyGetter, Map, need_filter, mark_per_row_used>(
-                                   std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
-    }
-    else
+    auto join_without_additional_filter = [&]()
     {
         return mapv.size() > 1 ? joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, true>(
                    std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags)
                                : joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, need_filter, false>(
                                    std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
+    };
+
+    constexpr JoinFeatures<KIND, STRICTNESS> join_features;
+    if constexpr (join_features.is_all_join)
+    {
+        if (added_columns.additional_filter_expression)
+        {
+           constexpr bool mark_per_row_used = join_features.right || join_features.full;
+           return mapv.size() > 1
+               ? joinRightColumnsWithAddtitionalFilter<
+                   KeyGetter,
+                   Map,
+                   need_filter,
+                   join_features.need_replication,
+                   join_features.need_flags,
+                   join_features.add_missing,
+                   true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags)
+               : joinRightColumnsWithAddtitionalFilter<
+                   KeyGetter,
+                   Map,
+                   need_filter,
+                   join_features.need_replication,
+                   join_features.need_flags,
+                   join_features.add_missing,
+                   mark_per_row_used>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
+        }
+        else
+        {
+            return join_without_additional_filter();
+        }
+    }
+    else
+    {
+        return join_without_additional_filter();
     }
 }
 
