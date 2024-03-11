@@ -3019,7 +3019,7 @@ void ClientBase::init(int argc, char ** argv)
     HandledSignals::instance().setupCommonDeadlySignalHandlers();
 
     fatal_channel_ptr = new Poco::ConsoleChannel;
-    fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_TRACE);
+    fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
 }
