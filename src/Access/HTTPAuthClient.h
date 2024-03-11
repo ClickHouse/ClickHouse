@@ -36,7 +36,7 @@ public:
 
     Result authenticateRequest(Poco::Net::HTTPRequest & request) const
     {
-        auto session = makeHTTPSession(uri, timeouts);
+        auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, timeouts);
         Poco::Net::HTTPResponse response;
 
         auto milliseconds_to_wait = retry_initial_backoff_ms;
