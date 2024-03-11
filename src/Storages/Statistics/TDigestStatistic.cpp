@@ -3,6 +3,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 Float64 TDigestStatistic::estimateLess(Float64 val) const
 {
     return data.getCountLessThan(val);
@@ -28,6 +33,14 @@ void TDigestStatistic::update(const ColumnPtr & column)
         Float64 value = column->getFloat64(i);
         data.add(value, 1);
     }
+}
+
+void TDigestStatistic::merge(const IStatistic & other)
+{
+    if (const auto * casted = dynamic_cast<const TDigestStatistic *>(&other))
+        data.merge(casted->data);
+    else
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot merge statistics of different types");
 }
 
 UInt64 TDigestStatistic::count()

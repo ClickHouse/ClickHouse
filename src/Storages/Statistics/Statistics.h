@@ -53,6 +53,8 @@ public:
 
     virtual void update(const ColumnPtr & column) = 0;
 
+    virtual void merge(const IStatistic & other) = 0;
+
     virtual UInt64 count() = 0;
 
 protected:

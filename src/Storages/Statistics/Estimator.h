@@ -37,7 +37,7 @@ private:
 
             if (typeid_cast<TDigestStatistic *>(statistic.get()))
             {
-                tdigest = std::static_pointer_cast<TDigestStatistic>(statistic);
+                tdigest->merge(*statistic);
             }
         }
 

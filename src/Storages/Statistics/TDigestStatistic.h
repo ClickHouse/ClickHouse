@@ -22,6 +22,8 @@ public:
 
     void update(const ColumnPtr & column) override;
 
+    void merge(const IStatistic & other) override;
+
     UInt64 count() override;
 };
 
