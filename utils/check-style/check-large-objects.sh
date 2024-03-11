@@ -7,8 +7,6 @@ TU_EXCLUDES=(
     AggregateFunctionUniq
     FunctionsConversion
 
-    RangeHashedDictionary
-
     Aggregator
 )
 
