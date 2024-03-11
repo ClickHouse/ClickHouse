@@ -106,7 +106,7 @@ Alias: `OCTET_LENGTH`
 
 ## emptyArrayUInt8
 
-Accepts zero arguments and returns an empty UInt8 array.
+Returns an empty UInt8 array.
 
 **Syntax**
 
@@ -122,34 +122,23 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(UInt8)) ENGINE=Memory;
-
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayUInt8());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 255) WHERE uid = 1231;
-SELECT * FROM users;
+SELECT emptyArrayUInt8();
 ```
 
 Result:
 
 ```response
-1234	Alex	33	[]
-1234	Alex	33	[255]
+[]
 ```
 
 ## emptyArrayUInt16
 
-Accepts zero arguments and returns an empty UInt16 array.
+Returns an empty UInt16 array.
 
 **Syntax**
 
@@ -165,34 +154,24 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(UInt16)) ENGINE=Memory;
+SELECT emptyArrayUInt16();
 
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayUInt16());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 65535) WHERE uid = 1231;
-SELECT * FROM users;
 ```
 
 Result:
 
 ```response
-1231	Alex    33	[]
-1231	Alex    33	[65535]
+[]
 ```
 
 ## emptyArrayUInt32
 
-Accepts zero arguments and returns an empty UInt32 array.
+Returns an empty UInt32 array.
 
 **Syntax**
 
@@ -208,34 +187,23 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(UInt32)) ENGINE=Memory;
-
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayUInt32());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 4294967295) WHERE uid = 1231;
-SELECT * FROM users;
+SELECT emptyArrayUInt32();
 ```
 
 Result:
 
 ```response
-1231	Alex	33	[]
-1231	Alex	33	[4294967295]
+[]
 ```
 
 ## emptyArrayUInt64
 
-Accepts zero arguments and returns an empty UInt64 array.
+Returns an empty UInt64 array.
 
 **Syntax**
 
@@ -251,34 +219,23 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(UInt64)) ENGINE=Memory;
-
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayUInt64());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 18446744073709551615) WHERE uid = 1231;
-SELECT * FROM users;
+SELECT emptyArrayUInt64();
 ```
 
 Result:
 
 ```response
-1231	Alex	33	[]
-1231	Alex	33	[18446744073709551615]
+[]
 ```
 
 ## emptyArrayInt8
 
-Accepts zero arguments and returns an empty Int8 array.
+Returns an empty Int8 array.
 
 **Syntax**
 
@@ -294,34 +251,23 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(Int8)) ENGINE=Memory;
-
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayInt8());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 127) WHERE uid = 1231;
-SELECT * FROM users;
+SELECT emptyArrayInt8();
 ```
 
 Result:
 
 ```response
-1234	Alex	33	[]
-1234	Alex	33	[127]
+[]
 ```
 
 ## emptyArrayInt16
 
-Accepts zero arguments and returns an empty Int16 array.
+Returns an empty Int16 array.
 
 **Syntax**
 
@@ -337,34 +283,23 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(Int16)) ENGINE=Memory;
-
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayInt16());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 32767) WHERE uid = 1231;
-SELECT * FROM users;
+SELECT emptyArrayInt16();
 ```
 
 Result:
 
 ```response
-1231	Alex    33	[]
-1231	Alex    33	[32767]
+[]
 ```
 
 ## emptyArrayInt32
 
-Accepts zero arguments and returns an empty Int32 array.
+Returns an empty Int32 array.
 
 **Syntax**
 
@@ -380,34 +315,23 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(Int32)) ENGINE=Memory;
-
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayInt32());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 2147483647) WHERE uid = 1231;
-SELECT * FROM users;
+SELECT emptyArrayInt32();
 ```
 
 Result:
 
 ```response
-1231	Alex	33	[]
-1231	Alex	33	[2147483647]
+[]
 ```
 
 ## emptyArrayInt64
 
-Accepts zero arguments and returns an empty Int64 array.
+Returns an empty Int64 array.
 
 **Syntax**
 
@@ -423,34 +347,23 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(Int64)) ENGINE=Memory;
-
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayInt64());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 9223372036854775807) WHERE uid = 1231;
-SELECT * FROM users;
+SELECT emptyArrayInt64();
 ```
 
 Result:
 
 ```response
-1231	Alex	33	[]
-1231	Alex	33	[9223372036854775807]
+[]
 ```
 
 ## emptyArrayFloat32 
 
-Returns an empty Float32 array. Accepts zero arguments.
+Returns an empty Float32 array.
 
 **Syntax**
 
@@ -466,34 +379,23 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(Int32)) ENGINE=Memory;
-
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayFloat32());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 3.4e+38) WHERE uid = 1231;
-SELECT * FROM users;
+SELECT emptyArrayFloat32();
 ```
 
 Result:
 
 ```response
-1231	Alex	33	[]
-1231	Alex	33	[-2147483648]
+[]
 ```
 
 ## emptyArrayFloat64
 
-Accepts zero arguments and returns an empty Float64 array.
+Returns an empty Float64 array.
 
 **Syntax**
 
@@ -509,34 +411,23 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, contacts Array(Int)) ENGINE=Memory;
-
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayFloat64());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE contacts = arrayPushBack(contacts, 1.999999999e+9) WHERE uid = 1231;
-SELECT * FROM users;
+SELECT emptyArrayFloat64();
 ```
 
 Result:
 
 ```response
-1231	Alex	33	[]
-1231	Alex	33	[1999999999]
+[]
 ```
 
 ## emptyArrayDate
 
-Accepts zero arguments and returns an empty Date array.
+Returns an empty Date array.
 
 **Syntax**
 
@@ -552,33 +443,22 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, userDates Array(Date)) ENGINE=Memory;
-
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayDate());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE userDates = arrayPushBack(userDates, today()) WHERE uid = 1231;
-ALTER TABLE users UPDATE userDates = arrayPushBack(userDates, addDays(today(), 1)) WHERE uid = 1231;
-SELECT * FROM users;
+SELECT emptyArrayDate();
 ```
 
 ## emptyArrayDateTime
 
-Accepts zero arguments and returns an empty DateTime array.
+Returns an empty DateTime array.
 
 **Syntax**
 
 ```sql
-emptyArrayDateTime()
+[]
 ```
 
 **Arguments**
@@ -589,35 +469,23 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, userDates Array(DateTime)) ENGINE=Memory;
-
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayDateTime());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE userDates = arrayPushBack(userDates, now()) WHERE uid = 1231;
-ALTER TABLE users UPDATE userDates = arrayPushBack(userDates, addDays(now(), 1)) WHERE uid = 1231;
-SELECT * FROM users;
+SELECT emptyArrayDateTime();
 ```
 
 Result:
 
 ```response
-1231	Alex	33	[]
-1231	Alex	33	['2024-01-29 18:08:01','2024-01-30 18:08:01']
+[]
 ```
 
 ## emptyArrayString
 
-Accepts zero arguments and returns an empty String array.
+Returns an empty String array.
 
 **Syntax**
 
@@ -633,30 +501,18 @@ None.
 
 An empty array.
 
-**Implementation details**
-
-None.
-
 **Examples**
 
 Query:
 
 ```sql
-CREATE TABLE users (uid Int16, name String, age Int16, aliases Array(String)) ENGINE=Memory;
-
-INSERT INTO users VALUES (1231, 'Alex', 33, emptyArrayString());
-SELECT * FROM users;
-
-ALTER TABLE users UPDATE aliases = arrayPushBack(aliases, 'Al') WHERE uid = 1231;
-ALTER TABLE users UPDATE aliases = arrayPushBack(aliases, 'Little Alex') WHERE uid = 1231;
-SELECT * FROM users;
+SELECT emptyArrayString();
 ```
 
 Result:
 
 ```response
-1231	Alex	33	[]
-1231	Alex	33	['Al','Little Alex']
+[]
 ```
 
 ## emptyArrayToSingle
