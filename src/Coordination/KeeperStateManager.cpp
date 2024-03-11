@@ -30,7 +30,7 @@ bool isLocalhost(const std::string & hostname)
 {
     try
     {
-        return isLocalAddress(DNSResolver::instance().resolveHost(hostname));
+        return isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(hostname).front());
     }
     catch (...)
     {
@@ -227,7 +227,7 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
           keeper_context_))
     , server_state_file_name("state")
     , keeper_context(keeper_context_)
-    , logger(&Poco::Logger::get("KeeperStateManager"))
+    , logger(getLogger("KeeperStateManager"))
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
     configuration_wrapper.cluster_config = nuraft::cs_new<nuraft::cluster_config>();
@@ -241,28 +241,30 @@ KeeperStateManager::KeeperStateManager(
     const std::string & config_prefix_,
     const std::string & server_state_file_name_,
     const Poco::Util::AbstractConfiguration & config,
-    const CoordinationSettingsPtr & coordination_settings,
     KeeperContextPtr keeper_context_)
     : my_server_id(my_server_id_)
     , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
     , config_prefix(config_prefix_)
-    , configuration_wrapper(parseServersConfiguration(config, false, coordination_settings->async_replication))
+    , configuration_wrapper(parseServersConfiguration(config, false, keeper_context_->getCoordinationSettings()->async_replication))
     , log_store(nuraft::cs_new<KeeperLogStore>(
           LogFileSettings
           {
-              .force_sync = coordination_settings->force_sync,
-              .compress_logs = coordination_settings->compress_logs,
-              .rotate_interval = coordination_settings->rotate_log_storage_interval,
-              .max_size = coordination_settings->max_log_file_size,
-              .overallocate_size = coordination_settings->log_file_overallocate_size},
+              .force_sync = keeper_context_->getCoordinationSettings()->force_sync,
+              .compress_logs = keeper_context_->getCoordinationSettings()->compress_logs,
+              .rotate_interval = keeper_context_->getCoordinationSettings()->rotate_log_storage_interval,
+              .max_size = keeper_context_->getCoordinationSettings()->max_log_file_size,
+              .overallocate_size = keeper_context_->getCoordinationSettings()->log_file_overallocate_size,
+              .latest_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()->latest_logs_cache_size_threshold,
+              .commit_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()->commit_logs_cache_size_threshold
+          },
           FlushSettings
           {
-              .max_flush_batch_size = coordination_settings->max_flush_batch_size,
+              .max_flush_batch_size = keeper_context_->getCoordinationSettings()->max_flush_batch_size,
           },
           keeper_context_))
     , server_state_file_name(server_state_file_name_)
     , keeper_context(keeper_context_)
-    , logger(&Poco::Logger::get("KeeperStateManager"))
+    , logger(getLogger("KeeperStateManager"))
 {
 }
 
@@ -495,7 +497,7 @@ ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
             if (old_endpoint != server_config->get_endpoint())
             {
                 LOG_WARNING(
-                    &Poco::Logger::get("RaftConfiguration"),
+                    getLogger("RaftConfiguration"),
                     "Config will be ignored because a server with ID {} is already present in the cluster on a different endpoint ({}). "
                     "The endpoint of the current servers should not be changed. For servers on a new endpoint, please use a new ID.",
                     new_id,

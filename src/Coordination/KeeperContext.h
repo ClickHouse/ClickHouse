@@ -1,8 +1,8 @@
 #pragma once
 #include <Coordination/KeeperFeatureFlags.h>
-#include <Disks/DiskSelector.h>
-#include <IO/WriteBufferFromString.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 
@@ -11,10 +11,19 @@ namespace DB
 
 class KeeperDispatcher;
 
+struct CoordinationSettings;
+using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
+
+class DiskSelector;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
+class WriteBufferFromOwnString;
+
 class KeeperContext
 {
 public:
-    explicit KeeperContext(bool standalone_keeper_);
+    KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr coordination_settings_);
 
     enum class Phase : uint8_t
     {
@@ -56,10 +65,24 @@ public:
     UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }
     void updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config);
 
-    /// set to true when we have preprocessed or committed all the logs
-    /// that were already present locally during startup
-    std::atomic<bool> local_logs_preprocessed = false;
-    std::atomic<bool> shutdown_called = false;
+    bool setShutdownCalled();
+    const auto & isShutdownCalled() const
+    {
+        return shutdown_called;
+    }
+
+    void setLocalLogsPreprocessed();
+    bool localLogsPreprocessed() const;
+
+    void waitLocalLogsPreprocessedOrShutdown();
+
+    uint64_t lastCommittedIndex() const;
+    void setLastCommitIndex(uint64_t commit_index);
+    /// returns true if the log is committed, false if timeout happened
+    bool waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms);
+
+    const CoordinationSettingsPtr & getCoordinationSettings() const;
+
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -73,7 +96,15 @@ private:
 
     DiskPtr getDisk(const Storage & storage) const;
 
-    Phase server_state{Phase::INIT};
+    std::mutex local_logs_preprocessed_cv_mutex;
+    std::condition_variable local_logs_preprocessed_cv;
+
+    /// set to true when we have preprocessed or committed all the logs
+    /// that were already present locally during startup
+    std::atomic<bool> local_logs_preprocessed = false;
+    std::atomic<bool> shutdown_called = false;
+
+    std::atomic<Phase> server_state{Phase::INIT};
 
     bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
@@ -97,6 +128,15 @@ private:
     KeeperDispatcher * dispatcher{nullptr};
 
     std::atomic<UInt64> memory_soft_limit = 0;
+
+    std::atomic<UInt64> last_committed_log_idx = 0;
+
+    /// will be set by dispatcher when waiting for certain commits
+    std::optional<UInt64> wait_commit_upto_idx = 0;
+    std::mutex last_committed_log_idx_cv_mutex;
+    std::condition_variable last_committed_log_idx_cv;
+
+    CoordinationSettingsPtr coordination_settings;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

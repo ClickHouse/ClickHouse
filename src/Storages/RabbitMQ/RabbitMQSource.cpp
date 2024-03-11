@@ -11,10 +11,10 @@
 namespace DB
 {
 
-static std::pair<Block, Block> getHeaders(StorageRabbitMQ & storage_, const StorageSnapshotPtr & storage_snapshot)
+static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->getSampleBlockForColumns(storage_.getVirtuals().getNames());
+    auto virtual_header = storage_snapshot->virtual_columns->getSampleBlock();
 
     return {non_virtual_header, virtual_header};
 }
@@ -40,7 +40,7 @@ RabbitMQSource::RabbitMQSource(
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
-        getHeaders(storage_, storage_snapshot_),
+        getHeaders(storage_snapshot_),
         context_,
         columns,
         max_block_size_,
@@ -70,7 +70,7 @@ RabbitMQSource::RabbitMQSource(
     , ack_in_suffix(ack_in_suffix_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
-    , log(&Poco::Logger::get("RabbitMQSource"))
+    , log(getLogger("RabbitMQSource"))
     , max_execution_time_ms(max_execution_time_)
 {
     storage.incrementReader();
@@ -123,7 +123,11 @@ Chunk RabbitMQSource::generateImpl()
     }
 
     if (is_finished || !consumer || consumer->isConsumerStopped())
+    {
+        LOG_TRACE(log, "RabbitMQSource is stopped (is_finished: {}, consumer_stopped: {})",
+                  is_finished, consumer ? toString(consumer->isConsumerStopped()) : "No consumer");
         return {};
+    }
 
     /// Currently it is one time usage source: to make sure data is flushed
     /// strictly by timeout or by block size.
@@ -254,13 +258,12 @@ Chunk RabbitMQSource::generateImpl()
 
 bool RabbitMQSource::sendAck()
 {
-    if (!consumer)
-        return false;
+    return consumer && consumer->ackMessages(commit_info);
+}
 
-    if (!consumer->ackMessages(commit_info))
-        return false;
-
-    return true;
+bool RabbitMQSource::sendNack()
+{
+    return consumer && consumer->nackMessages(commit_info);
 }
 
 }

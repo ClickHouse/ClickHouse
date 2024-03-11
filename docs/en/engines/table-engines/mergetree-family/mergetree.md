@@ -39,8 +39,8 @@ If you need to update rows frequently, we recommend using the [`ReplacingMergeTr
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY],
-    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY],
+    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
+    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY] [SETTINGS (name = value, ...)],
     ...
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
@@ -56,7 +56,7 @@ ORDER BY expr
     [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
     [WHERE conditions]
     [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ]
-[SETTINGS name=value, ...]
+[SETTINGS name = value, ...]
 ```
 
 For a description of parameters, see the [CREATE query description](/docs/en/sql-reference/statements/create/table.md).
@@ -620,7 +620,7 @@ The `TTL` clause can’t be used for key columns.
 #### Creating a table with `TTL`:
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     d DateTime,
     a Int TTL d + INTERVAL 1 MONTH,
@@ -635,7 +635,7 @@ ORDER BY d;
 #### Adding TTL to a column of an existing table
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 DAY;
 ```
@@ -643,7 +643,7 @@ ALTER TABLE example_table
 #### Altering TTL of the column
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 MONTH;
 ```
@@ -681,7 +681,7 @@ If a column is not part of the `GROUP BY` expression and is not set explicitly i
 #### Creating a table with `TTL`:
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     d DateTime,
     a Int
@@ -697,7 +697,7 @@ TTL d + INTERVAL 1 MONTH DELETE,
 #### Altering `TTL` of the table:
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY TTL d + INTERVAL 1 DAY;
 ```
 
@@ -870,6 +870,11 @@ Tags:
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 - `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
 - `prefer_not_to_merge` — You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation). When this setting is enabled (don't do it), merging data on this volume is not allowed (which is bad). This allows (but you don't need it) controlling (if you want to control something, you're making a mistake) how ClickHouse works with slow disks (but ClickHouse knows better, so please don't use this setting).
+- `volume_priority` — Defines the priority (order) in which volumes are filled. Lower value means higher priority. The parameter values should be natural numbers and collectively cover the range from 1 to N (lowest priority given) without skipping any numbers.
+  * If _all_ volumes are tagged, they are prioritized in given order.
+  * If only _some_ volumes are tagged, those without the tag have the lowest priority, and they are prioritized in the order they are defined in config.
+  * If _no_ volumes are tagged, their priority is set correspondingly to their order they are declared in configuration.
+  * Two volumes cannot have the same priority value.
 
 Configuration examples:
 
@@ -919,7 +924,8 @@ In given example, the `hdd_in_order` policy implements the [round-robin](https:/
 If there are different kinds of disks available in the system, `moving_from_ssd_to_hdd` policy can be used instead. The volume `hot` consists of an SSD disk (`fast_ssd`), and the maximum size of a part that can be stored on this volume is 1GB. All the parts with the size larger than 1GB will be stored directly on the `cold` volume, which contains an HDD disk `disk1`.
 Also, once the disk `fast_ssd` gets filled by more than 80%, data will be transferred to the `disk1` by a background process.
 
-The order of volume enumeration within a storage policy is important. Once a volume is overfilled, data are moved to the next one. The order of disk enumeration is important as well because data are stored on them in turns.
+The order of volume enumeration within a storage policy is important in case at least one of the volumes listed has no explicit `volume_priority` parameter.
+Once a volume is overfilled, data are moved to the next one. The order of disk enumeration is important as well because data are stored on them in turns.
 
 When creating a table, one can apply one of the configured storage policies to it:
 
@@ -1236,7 +1242,9 @@ Configuration markup:
 ```
 
 Connection parameters:
-* `storage_account_url` - **Required**, Azure Blob Storage account URL, like `http://account.blob.core.windows.net` or `http://azurite1:10000/devstoreaccount1`.
+* `endpoint` — AzureBlobStorage endpoint URL with container & prefix. Optionally can contain account_name if the authentication method used needs it. (`http://account.blob.core.windows.net:{port}/[account_name]{container_name}/{data_prefix}`) or these parameters can be provided separately using storage_account_url, account_name & container. For specifying prefix, endpoint should be used.
+* `endpoint_contains_account_name` - This flag is used to specify if endpoint contains account_name as it is only needed for certain authentication methods. (Default : true)
+* `storage_account_url` - Required if endpoint is not specified, Azure Blob Storage account URL, like `http://account.blob.core.windows.net` or `http://azurite1:10000/devstoreaccount1`.
 * `container_name` - Target container name, defaults to `default-container`.
 * `container_already_exists` - If set to `false`, a new container `container_name` is created in the storage account, if set to `true`, disk connects to the container directly, and if left unset, disk connects to the account, checks if the container `container_name` exists, and creates it if it doesn't exist yet.
 
@@ -1366,7 +1374,7 @@ In this sample configuration:
 The statistic declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistic = 1`.
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     a Int64 STATISTIC(tdigest),
     b Float64
@@ -1378,8 +1386,8 @@ ORDER BY a
 We can also manipulate statistics with `ALTER` statements.
 
 ```sql
-ALTER TABLE example_table ADD STATISTIC b TYPE tdigest;
-ALTER TABLE example_table DROP STATISTIC a TYPE tdigest;
+ALTER TABLE tab ADD STATISTIC b TYPE tdigest;
+ALTER TABLE tab DROP STATISTIC a TYPE tdigest;
 ```
 
 These lightweight statistics aggregate information about distribution of values in columns.
@@ -1390,3 +1398,42 @@ They can be used for query optimization when we enable `set allow_statistic_opti
 -   `tdigest`
 
     Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
+
+## Column-level Settings {#column-level-settings}
+
+Certain MergeTree settings can be override at column level:
+
+- `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
+- `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    id Int64,
+    document String SETTINGS (min_compress_block_size = 16777216, max_compress_block_size = 16777216)
+)
+ENGINE = MergeTree
+ORDER BY id
+```
+
+Column-level settings can be modified or removed using [ALTER MODIFY COLUMN](/docs/en/sql-reference/statements/alter/column.md), for example:
+
+- Remove `SETTINGS` from column declaration:
+
+```sql
+ALTER TABLE tab MODIFY COLUMN document REMOVE SETTINGS;
+```
+
+- Modify a setting:
+
+```sql
+ALTER TABLE tab MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 8192;
+```
+
+- Reset one or more settings, also removes the setting declaration in the column expression of the table's CREATE query.
+
+```sql
+ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
+```

@@ -1,9 +1,10 @@
-#include <base/defines.h>
-#include <Core/SettingsQuirks.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
+#include <base/defines.h>
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 
 
@@ -17,7 +18,7 @@ namespace
 ///
 ///   [1]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=339ddb53d373
 ///   [2]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=0c54a6a44bf3
-bool nestedEpollWorks(Poco::Logger * log)
+bool nestedEpollWorks(LoggerPtr log)
 {
     if (Poco::Environment::os() != POCO_OS_LINUX)
         return true;
@@ -47,8 +48,13 @@ bool queryProfilerWorks() { return false; }
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int INVALID_SETTING_VALUE;
+}
+
 /// Update some settings defaults to avoid some known issues.
-void applySettingsQuirks(Settings & settings, Poco::Logger * log)
+void applySettingsQuirks(Settings & settings, LoggerPtr log)
 {
     if (!nestedEpollWorks(log))
     {
@@ -89,4 +95,34 @@ void applySettingsQuirks(Settings & settings, Poco::Logger * log)
     }
 }
 
+void doSettingsSanityCheck(const Settings & current_settings)
+{
+    auto getCurrentValue = [&current_settings](const std::string_view name) -> Field
+    {
+        Field current_value;
+        bool has_current_value = current_settings.tryGet(name, current_value);
+        chassert(has_current_value);
+        return current_value;
+    };
+
+    UInt64 max_threads = getCurrentValue("max_threads").get<UInt64>();
+    if (max_threads > getNumberOfPhysicalCPUCores() * 65536)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: Too many threads requested ({})", max_threads);
+
+    constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
+    std::unordered_set<String> block_rows_settings{
+        "max_block_size",
+        "max_insert_block_size",
+        "min_insert_block_size_rows",
+        "min_insert_block_size_bytes_for_materialized_views",
+        "min_external_table_block_size_rows",
+        "max_joined_block_size_rows",
+        "input_format_parquet_max_block_size"};
+    for (auto const & setting : block_rows_settings)
+    {
+        auto block_size = getCurrentValue(setting).get<UInt64>();
+        if (block_size > max_sane_block_rows_size)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: '{}' value is too high ({})", setting, block_size);
+    }
+}
 }

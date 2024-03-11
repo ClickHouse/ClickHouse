@@ -14,7 +14,7 @@ namespace DB::MySQLReplication
 class BinlogClient
 {
 public:
-    BinlogClient(const BinlogFactoryPtr & factory,
+    explicit BinlogClient(const BinlogFactoryPtr & factory,
                  const String & name = {},
                  UInt64 max_bytes_in_buffer_ = DBMS_DEFAULT_BUFFER_SIZE,
                  UInt64 max_flush_ms_ = 1000);
@@ -48,7 +48,7 @@ private:
     std::vector<BinlogEventsDispatcherPtr> dispatchers;
     String binlog_checksum;
     mutable std::mutex mutex;
-    Poco::Logger * logger = nullptr;
+    LoggerPtr logger = nullptr;
     int dispatchers_count = 0;
 };
 

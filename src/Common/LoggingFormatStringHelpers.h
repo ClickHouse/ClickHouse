@@ -8,7 +8,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <base/EnumReflection.h>
-
+#include <Common/Logger.h>
 
 struct PreformattedMessage;
 consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs);
@@ -21,12 +21,12 @@ struct FormatStringHelperImpl
     std::string_view message_format_string;
     fmt::format_string<Args...> fmt_str;
     template<typename T>
-    consteval FormatStringHelperImpl(T && str) : message_format_string(tryGetStaticFormatString(str)), fmt_str(std::forward<T>(str))
+    consteval FormatStringHelperImpl(T && str) : message_format_string(tryGetStaticFormatString(str)), fmt_str(std::forward<T>(str)) /// NOLINT
     {
         formatStringCheckArgsNumImpl(message_format_string, sizeof...(Args));
     }
     template<typename T>
-    FormatStringHelperImpl(fmt::basic_runtime<T> && str) : message_format_string(), fmt_str(std::forward<fmt::basic_runtime<T>>(str)) {}
+    FormatStringHelperImpl(fmt::basic_runtime<T> && str) : fmt_str(std::forward<fmt::basic_runtime<T>>(str)) {} /// NOLINT
 
     PreformattedMessage format(Args && ...args) const;
 };
@@ -43,9 +43,9 @@ struct PreformattedMessage
     template <typename... Args>
     static PreformattedMessage create(FormatStringHelper<Args...> fmt, Args &&... args);
 
-    operator const std::string & () const { return text; }
-    operator std::string () && { return std::move(text); }
-    operator fmt::format_string<> () const { UNREACHABLE(); }
+    operator const std::string & () const { return text; } /// NOLINT
+    operator std::string () && { return std::move(text); } /// NOLINT
+    operator fmt::format_string<> () const { UNREACHABLE(); } /// NOLINT
 
     void apply(std::string & out_text, std::string_view & out_format_string) const &
     {
@@ -203,10 +203,10 @@ class LogFrequencyLimiterIml
     static time_t last_cleanup;
     static std::mutex mutex;
 
-    Poco::Logger * logger;
+    LoggerPtr logger;
     time_t min_interval_s;
 public:
-    LogFrequencyLimiterIml(Poco::Logger * logger_, time_t min_interval_s_) : logger(logger_), min_interval_s(min_interval_s_) {}
+    LogFrequencyLimiterIml(LoggerPtr logger_, time_t min_interval_s_) : logger(std::move(logger_)), min_interval_s(min_interval_s_) {}
 
     LogFrequencyLimiterIml & operator -> () { return *this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
@@ -218,7 +218,7 @@ public:
     /// Clears messages that were logged last time more than too_old_threshold_s seconds ago
     static void cleanup(time_t too_old_threshold_s = 600);
 
-    Poco::Logger * getLogger() { return logger; }
+    LoggerPtr getLogger() { return logger; }
 };
 
 /// This wrapper helps to avoid too noisy log messages from similar objects.
@@ -240,11 +240,11 @@ class LogSeriesLimiter
         return records;
     }
 
-    Poco::Logger * logger = nullptr;
+    LoggerPtr logger = nullptr;
     bool accepted = false;
     String debug_message;
 public:
-    LogSeriesLimiter(Poco::Logger * logger_, size_t allowed_count_, time_t interval_s_);
+    LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, time_t interval_s_);
 
     LogSeriesLimiter & operator -> () { return *this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
@@ -253,18 +253,18 @@ public:
 
     void log(Poco::Message & message);
 
-    Poco::Logger * getLogger() { return logger; }
+    LoggerPtr getLogger() { return logger; }
 };
 
 /// This wrapper is useful to save formatted message into a String before sending it to a logger
 class LogToStrImpl
 {
     String & out_str;
-    Poco::Logger * logger;
+    LoggerPtr logger;
     std::unique_ptr<LogFrequencyLimiterIml> maybe_nested;
     bool propagate_to_actual_log = true;
 public:
-    LogToStrImpl(String & out_str_, Poco::Logger * logger_) : out_str(out_str_), logger(logger_) {}
+    LogToStrImpl(String & out_str_, LoggerPtr logger_) : out_str(out_str_), logger(std::move(logger_)) {}
     LogToStrImpl(String & out_str_, std::unique_ptr<LogFrequencyLimiterIml> && maybe_nested_)
         : out_str(out_str_), logger(maybe_nested_->getLogger()), maybe_nested(std::move(maybe_nested_)) {}
     LogToStrImpl & operator -> () { return *this; }

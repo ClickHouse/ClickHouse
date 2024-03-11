@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -29,7 +30,7 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
         LoadBalancing load_balancing,
         time_t decrease_error_period_,
         size_t max_error_cap_)
-    : Base(std::move(nested_pools_), decrease_error_period_, max_error_cap_, &Poco::Logger::get("ConnectionPoolWithFailover"))
+    : Base(std::move(nested_pools_), decrease_error_period_, max_error_cap_, getLogger("ConnectionPoolWithFailover"))
     , get_priority_load_balancing(load_balancing)
 {
     const std::string & local_hostname = getFQDNOrHostName();
@@ -63,7 +64,7 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
         throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
                             "Cannot get connection from ConnectionPoolWithFailover cause nested pools are empty");
 
-    TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
+    TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     {
         return tryGetEntry(pool, timeouts, fail_message, settings, {});
     };
@@ -77,14 +78,6 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     const bool fallback_to_stale_replicas = settings.fallback_to_stale_replicas_for_distributed_queries;
 
     return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
-}
-
-Priority ConnectionPoolWithFailover::getPriority() const
-{
-    return (*std::max_element(nested_pools.begin(), nested_pools.end(), [](const auto & a, const auto & b)
-    {
-        return a->getPriority() < b->getPriority();
-    }))->getPriority();
 }
 
 ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
@@ -126,7 +119,7 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(
     std::optional<bool> skip_unavailable_endpoints,
     GetPriorityForLoadBalancing::Func priority_func)
 {
-    TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
+    TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     { return tryGetEntry(pool, timeouts, fail_message, settings, nullptr, async_callback); };
 
     std::vector<TryResult> results = getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, priority_func);
@@ -143,7 +136,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     const Settings & settings,
     PoolMode pool_mode)
 {
-    TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
+    TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     {
         return tryGetEntry(pool, timeouts, fail_message, settings);
     };
@@ -160,7 +153,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     std::optional<bool> skip_unavailable_endpoints,
     GetPriorityForLoadBalancing::Func priority_func)
 {
-    TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
+    TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     { return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check, async_callback); };
 
     return getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, priority_func);
@@ -199,11 +192,20 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         max_entries = nested_pools.size();
     }
     else if (pool_mode == PoolMode::GET_ONE)
+    {
         max_entries = 1;
+    }
     else if (pool_mode == PoolMode::GET_MANY)
+    {
+        if (settings.max_parallel_replicas == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the setting max_parallel_replicas must be greater than 0");
+
         max_entries = settings.max_parallel_replicas;
+    }
     else
+    {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown pool allocation mode");
+    }
 
     if (!priority_func)
         priority_func = makeGetPriorityFunc(settings);
@@ -216,7 +218,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
 
 ConnectionPoolWithFailover::TryResult
 ConnectionPoolWithFailover::tryGetEntry(
-        IConnectionPool & pool,
+        const ConnectionPoolPtr & pool,
         const ConnectionTimeouts & timeouts,
         std::string & fail_message,
         const Settings & settings,
@@ -226,7 +228,7 @@ ConnectionPoolWithFailover::tryGetEntry(
 #if defined(OS_LINUX)
     if (async_callback)
     {
-        ConnectionEstablisherAsync connection_establisher_async(&pool, &timeouts, settings, log, table_to_check);
+        ConnectionEstablisherAsync connection_establisher_async(pool, &timeouts, settings, log, table_to_check);
         while (true)
         {
             connection_establisher_async.resume();
@@ -246,20 +248,20 @@ ConnectionPoolWithFailover::tryGetEntry(
     }
 #endif
 
-    ConnectionEstablisher connection_establisher(&pool, &timeouts, settings, log, table_to_check);
+    ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, table_to_check);
     TryResult result;
     connection_establisher.run(result, fail_message);
     return result;
 }
 
 std::vector<ConnectionPoolWithFailover::Base::ShuffledPool>
-ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPriorityForLoadBalancing::Func priority_func)
+ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPriorityForLoadBalancing::Func priority_func, bool use_slowdown_count)
 {
     if (!priority_func)
         priority_func = makeGetPriorityFunc(settings);
 
     UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
-    return Base::getShuffledPools(max_ignored_errors, priority_func);
+    return Base::getShuffledPools(max_ignored_errors, priority_func, use_slowdown_count);
 }
 
 }

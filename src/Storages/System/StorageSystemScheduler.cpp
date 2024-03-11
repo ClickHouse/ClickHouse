@@ -4,15 +4,15 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <IO/ISchedulerNode.h>
-#include <IO/IResourceManager.h>
-#include <IO/Resource/FairPolicy.h>
-#include <IO/Resource/PriorityPolicy.h>
-#include <IO/Resource/SemaphoreConstraint.h>
-#include <IO/Resource/ThrottlerConstraint.h>
-#include <IO/Resource/FifoQueue.h>
+#include <Common/Scheduler/ISchedulerNode.h>
+#include <Common/Scheduler/IResourceManager.h>
+#include <Common/Scheduler/Nodes/FairPolicy.h>
+#include <Common/Scheduler/Nodes/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
+#include <Common/Scheduler/Nodes/FifoQueue.h>
 #include <Interpreters/Context.h>
-#include "IO/ResourceRequest.h"
+#include "Common/Scheduler/ResourceRequest.h"
 
 
 namespace DB
@@ -80,7 +80,7 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
 }
 
 
-void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     context->getResourceManager()->forEachNode([&] (const String & resource, const String & path, const String & type, const SchedulerNodePtr & node)
     {

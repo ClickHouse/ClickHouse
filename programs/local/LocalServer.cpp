@@ -221,7 +221,7 @@ void LocalServer::tryInitPath()
     {
         // The path is not provided explicitly - use a unique path in the system temporary directory
         // (or in the current dir if temporary don't exist)
-        Poco::Logger * log = &logger();
+        LoggerRawPtr log = &logger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
 
@@ -249,7 +249,7 @@ void LocalServer::tryInitPath()
         default_path = parent_folder / fmt::format("clickhouse-local-{}-{}-{}", getpid(), time(nullptr), randomSeed());
 
         if (exists(default_path))
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} exist!", default_path.string());
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} already exists.", default_path.string());
 
         create_directory(default_path);
         temporary_directory_to_delete = default_path;
@@ -289,6 +289,11 @@ void LocalServer::cleanup()
     try
     {
         connection.reset();
+
+        /// Suggestions are loaded async in a separate thread and it can use global context.
+        /// We should reset it before resetting global_context.
+        if (suggest)
+            suggest.reset();
 
         if (global_context)
         {
@@ -331,23 +336,23 @@ std::string LocalServer::getInitialCreateTableQuery()
     auto table_structure = config().getString("table-structure", "auto");
 
     String table_file;
-    String format_from_file_name;
+    std::optional<String> format_from_file_name;
     if (!config().has("table-file") || config().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
-        format_from_file_name = FormatFactory::instance().getFormatFromFileDescriptor(STDIN_FILENO);
+        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDIN_FILENO);
     }
     else
     {
         /// Use regular file
         auto file_name = config().getString("table-file");
         table_file = quoteString(file_name);
-        format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
+        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(file_name);
     }
 
     auto data_format = backQuoteIfNeed(
-        config().getString("table-data-format", config().getString("format", format_from_file_name.empty() ? "TSV" : format_from_file_name)));
+        config().getString("table-data-format", config().getString("format", format_from_file_name ? *format_from_file_name : "TSV")));
 
 
     if (table_structure == "auto")
@@ -501,6 +506,7 @@ try
     processConfig();
     adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     applyCmdSettings(global_context);
 
@@ -626,7 +632,7 @@ void LocalServer::processConfig()
 
     tryInitPath();
 
-    Poco::Logger * log = &logger();
+    LoggerRawPtr log = &logger();
 
     /// Maybe useless
     if (config().has("macros"))
@@ -823,6 +829,7 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
     std::cout << options_description.main_description.value() << "\n";
     std::cout << getHelpFooter() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
 #endif
 }
 
@@ -834,7 +841,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 
         /// If structure argument is omitted then initial query is not generated
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
-        ("file,f", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
+        ("file,F", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
 
         ("input-format", po::value<std::string>(), "input format of the initial table data")
         ("output-format", po::value<std::string>(), "default output format")

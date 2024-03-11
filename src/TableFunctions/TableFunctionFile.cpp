@@ -54,12 +54,12 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' mush be path or file descriptor", getName());
 }
 
-String TableFunctionFile::getFormatFromFirstArgument()
+std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
 {
     if (fd >= 0)
-        return FormatFactory::instance().getFormatFromFileDescriptor(fd);
+        return FormatFactory::instance().tryGetFormatFromFileDescriptor(fd);
     else
-        return FormatFactory::instance().getFormatFromFileName(filename, true);
+        return FormatFactory::instance().tryGetFormatFromFileName(filename);
 }
 
 StoragePtr TableFunctionFile::getStorage(const String & source,
@@ -104,17 +104,12 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
             archive_info
                 = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
 
+        if (format == "auto")
+            return StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context, archive_info).first;
         return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
     }
 
-
     return parseColumnsListFromString(structure, context);
-}
-
-std::unordered_set<String> TableFunctionFile::getVirtualsToCheckBeforeUsingStructureHint() const
-{
-    auto virtual_column_names = StorageFile::getVirtualColumnNames();
-    return {virtual_column_names.begin(), virtual_column_names.end()};
 }
 
 void registerTableFunctionFile(TableFunctionFactory & factory)

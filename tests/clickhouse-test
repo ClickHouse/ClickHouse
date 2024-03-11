@@ -5,47 +5,46 @@
 # pylint: disable=too-many-lines
 # pylint: disable=anomalous-backslash-in-string
 
-import enum
-from queue import Full
-import shutil
-import itertools
-import sys
-import os
-import os.path
-import platform
-import signal
-import re
 import copy
-import traceback
-import math
+import enum
+import glob
 
 # Not requests, to avoid requiring extra dependency.
 import http.client
-import urllib.parse
+import itertools
 import json
+import math
+import multiprocessing
+import os
+import os.path
+import platform
+import random
+import re
+import shutil
+import signal
+import socket
+import string
+import subprocess
+import sys
+import traceback
+import urllib.parse
 
 # for crc32
 import zlib
-
 from argparse import ArgumentParser
-from typing import Tuple, Union, Optional, Dict, Set, List
-import subprocess
-from subprocess import Popen
-from subprocess import PIPE
+from contextlib import closing
 from datetime import datetime, timedelta
-from time import time, sleep
 from errno import ESRCH
+from queue import Full
+from subprocess import PIPE, Popen
+from time import sleep, time
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 try:
     import termcolor  # type: ignore
 except ImportError:
     termcolor = None
 
-import random
-import string
-import multiprocessing
-import socket
-from contextlib import closing
 
 USE_JINJA = True
 try:
@@ -69,10 +68,16 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
 
-def stringhash(s):
+def stringhash(s: str) -> int:
     # default hash() function consistent
     # only during process invocation https://stackoverflow.com/a/42089311
     return zlib.crc32(s.encode("utf-8"))
+
+
+def read_file_as_binary_string(file_path):
+    with open(file_path, "rb") as file:
+        binary_data = file.read()
+    return binary_data
 
 
 # First and last lines of the log
@@ -85,6 +90,10 @@ def trim_for_log(s):
         return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
     else:
         return "\n".join(lines)
+
+
+class TestException(Exception):
+    pass
 
 
 class HTTPError(Exception):
@@ -101,6 +110,7 @@ class HTTPError(Exception):
 def clickhouse_execute_http(
     base_args,
     query,
+    body=None,
     timeout=30,
     settings=None,
     default_format=None,
@@ -140,6 +150,7 @@ def clickhouse_execute_http(
             client.request(
                 "POST",
                 f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
+                body=body,
             )
             res = client.getresponse()
             data = res.read()
@@ -160,6 +171,7 @@ def clickhouse_execute_http(
 def clickhouse_execute(
     base_args,
     query,
+    body=None,
     timeout=30,
     settings=None,
     max_http_retries=5,
@@ -168,6 +180,7 @@ def clickhouse_execute(
     return clickhouse_execute_http(
         base_args,
         query,
+        body,
         timeout,
         settings,
         max_http_retries=max_http_retries,
@@ -181,6 +194,7 @@ def clickhouse_execute_json(
     data = clickhouse_execute_http(
         base_args,
         query,
+        None,
         timeout,
         settings,
         "JSONEachRow",
@@ -238,7 +252,7 @@ def get_db_engine(args, database_name):
 
 
 def get_create_database_settings(args, testcase_args):
-    create_database_settings = dict()
+    create_database_settings = {}
     if testcase_args:
         create_database_settings["log_comment"] = testcase_args.testcase_basename
     if args.db_engine == "Ordinary":
@@ -400,7 +414,6 @@ def get_stacktraces_from_gdb(server_pid):
 
 
 # collect server stacktraces from system.stack_trace table
-# it does not work in Sandbox
 def get_stacktraces_from_clickhouse(args):
     settings_str = " ".join(
         [
@@ -678,6 +691,8 @@ class SettingsRandomizer:
                 get_localzone(),
             ]
         ),
+        "use_page_cache_for_disks_without_file_cache": lambda: random.random() < 0.7,
+        "page_cache_inject_eviction": lambda: random.random() < 0.5,
     }
 
     @staticmethod
@@ -959,6 +974,8 @@ class TestCase:
             else ""
         )
 
+        self.show_whitespaces_in_diff = args.show_whitespaces_in_diff
+
     # should skip test, should increment skipped_total, skip reason
     def should_skip_test(self, suite) -> Optional[FailureReason]:
         tags = self.tags
@@ -1194,7 +1211,7 @@ class TestCase:
         )
 
         if result_is_different:
-            diff = Popen(
+            with Popen(
                 [
                     "diff",
                     "-U",
@@ -1205,12 +1222,23 @@ class TestCase:
                 encoding="latin-1",
                 stdout=PIPE,
                 universal_newlines=True,
-            ).communicate()[0]
+            ) as diff_proc:
+                if self.show_whitespaces_in_diff:
+                    with Popen(
+                        ["sed", "-e", "s/[ \t]\\+$/&$/g"],
+                        stdin=diff_proc.stdout,
+                        stdout=PIPE,
+                    ) as sed_proc:
+                        diff = sed_proc.communicate()[0].decode(
+                            "utf-8", errors="ignore"
+                        )
+                else:
+                    diff = diff_proc.communicate()[0]
+
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
-                file = open(self.stdout_file, "rb")
-                diff += str(file.read())
-                file.close()
+                with open(self.stdout_file, "rb") as file:
+                    diff += str(file.read())
                 diff += "==================="
             description += f"\n{diff}\n"
             if debug_log:
@@ -1272,17 +1300,34 @@ class TestCase:
         ):
             clickhouse_execute(
                 args,
-                f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverage()",
+                f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', coverageCurrent()",
                 retry_error_codes=True,
             )
 
+            # Check for dumped coverage files
+            file_pattern = "coverage.*"
+            matching_files = glob.glob(file_pattern)
+            for file_path in matching_files:
+                try:
+                    body = read_file_as_binary_string(file_path)
+                    clickhouse_execute(
+                        args,
+                        f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
+                        body=body,
+                        retry_error_codes=True,
+                    )
+                except Exception as e:
+                    print("Cannot insert coverage data: ", str(e))
+                # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
+                os.remove(file_path)
+
             coverage = clickhouse_execute(
                 args,
-                "SELECT length(coverage())",
+                "SELECT length(coverageCurrent())",
                 retry_error_codes=True,
             ).decode()
 
-            description_full += f" Coverage: {coverage}"
+            description_full += f" (coverage: {coverage})"
 
         description_full += "\n"
 
@@ -1351,6 +1396,7 @@ class TestCase:
         # We want to calculate per-test code coverage. That's why we reset it before each test.
         if (
             args.collect_per_test_coverage
+            and args.reset_coverage_before_every_test
             and BuildFlags.SANITIZE_COVERAGE in args.build_flags
         ):
             clickhouse_execute(
@@ -1361,6 +1407,7 @@ class TestCase:
 
         command = pattern.format(**params)
 
+        # pylint:disable-next=consider-using-with; TODO: fix
         proc = Popen(command, shell=True, env=os.environ, start_new_session=True)
 
         while (
@@ -1527,7 +1574,7 @@ class TestCase:
             )
 
             if len(leftover_tables) != 0:
-                raise Exception(
+                raise TestException(
                     f"The test should cleanup its tables ({leftover_tables}), otherwise it is inconvenient for running it locally."
                 )
 
@@ -1610,7 +1657,7 @@ class TestSuite:
             ):
                 return "#"
             else:
-                raise Exception(f"Unknown file_extension: {filename}")
+                raise TestException(f"Unknown file_extension: {filename}")
 
         def parse_tags_from_line(line, comment_sign) -> Set[str]:
             if not line.startswith(comment_sign):
@@ -1671,17 +1718,22 @@ class TestSuite:
         self.suite_tmp_path: str = suite_tmp_path
         self.suite: str = suite
 
-        filter_func = lambda x: True  # noqa: ignore E731
-
         if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
             if args.run_by_hash_num > args.run_by_hash_total:
-                raise Exception(
+                raise TestException(
                     f"Incorrect run by hash, value {args.run_by_hash_num} bigger than total {args.run_by_hash_total}"
                 )
 
-            filter_func = (
-                lambda x: stringhash(x) % args.run_by_hash_total == args.run_by_hash_num
-            )
+            def filter_func(x: str) -> bool:
+                return bool(
+                    stringhash(x) % args.run_by_hash_total == args.run_by_hash_num
+                )
+
+        else:
+
+            def filter_func(x: str) -> bool:
+                _ = x
+                return True
 
         self.all_tests: List[str] = self.get_tests_list(
             self.tests_in_suite_key_func, filter_func
@@ -2441,7 +2493,7 @@ def main(args):
             pid = get_server_pid()
             print("Got server pid", pid)
             print_stacktraces()
-        raise Exception(msg)
+        raise TestException(msg)
 
     args.build_flags = collect_build_flags(args)
     args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
@@ -2514,19 +2566,20 @@ def main(args):
         clickhouse_execute(
             args,
             """
-                CREATE TABLE IF NOT EXISTS system.coverage
+                CREATE TABLE IF NOT EXISTS system.coverage_log
                 (
                     time DateTime,
                     test_name String,
                     coverage Array(UInt64)
-                ) ENGINE = MergeTree ORDER BY test_name;
+                ) ENGINE = MergeTree ORDER BY test_name
+                COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster';
             """,
         )
 
         # Coverage collected at the system startup before running any tests:
         clickhouse_execute(
             args,
-            "INSERT INTO system.coverage SELECT now(), '', coverage()",
+            "INSERT INTO system.coverage_log SELECT now(), '', coverageCurrent()",
         )
 
     total_tests_run = 0
@@ -2649,7 +2702,7 @@ def find_binary(name):
     if os.access(bin_path, os.X_OK):
         return bin_path
 
-    raise Exception(f"{name} was not found in PATH")
+    raise TestException(f"{name} was not found in PATH")
 
 
 def find_clickhouse_command(binary, command):
@@ -2867,6 +2920,12 @@ def parse_args():
         help="Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num",
     )
 
+    parser.add_argument(
+        "--show-whitespaces-in-diff",
+        action="store_true",
+        help="Display $ characters after line with trailing whitespaces in diff output",
+    )
+
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument(
         "--zookeeper",
@@ -2927,8 +2986,14 @@ def parse_args():
     parser.add_argument(
         "--collect-per-test-coverage",
         action="store_true",
-        default=False,
-        help="Create `system.coverage` table on the server and collect information about low-level code coverage on a per test basis there",
+        default=True,
+        help="Create `system.coverage_log` table on the server and collect information about low-level code coverage on a per test basis there",
+    )
+    parser.add_argument(
+        "--reset-coverage-before-every-test",
+        action="store_true",
+        default=True,
+        help="Collect isolated test coverage for every test instead of a cumulative. Useful only when tests are run sequentially.",
     )
     parser.add_argument(
         "--report-logs-stats",

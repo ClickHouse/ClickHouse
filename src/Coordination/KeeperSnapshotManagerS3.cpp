@@ -6,6 +6,8 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 
+#include <Disks/IDisk.h>
+
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Credentials.h>
 #include <IO/WriteBufferFromS3.h>
@@ -43,7 +45,7 @@ struct KeeperSnapshotManagerS3::S3Configuration
 
 KeeperSnapshotManagerS3::KeeperSnapshotManagerS3()
     : snapshots_s3_queue(std::numeric_limits<size_t>::max())
-    , log(&Poco::Logger::get("KeeperSnapshotManagerS3"))
+    , log(getLogger("KeeperSnapshotManagerS3"))
     , uuid(UUIDHelpers::generateV4())
 {}
 
@@ -215,6 +217,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
         }
 
         /// To avoid reference to binding
+
         const auto & snapshot_path_ref = snapshot_path;
 
         SCOPE_EXIT(

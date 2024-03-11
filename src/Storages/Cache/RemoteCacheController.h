@@ -116,7 +116,7 @@ private:
     //std::shared_ptr<ReadBuffer> remote_read_buffer;
     std::unique_ptr<WriteBufferFromFileBase> data_file_writer;
 
-    Poco::Logger * log = &Poco::Logger::get("RemoteCacheController");
+    LoggerPtr log = getLogger("RemoteCacheController");
 };
 using RemoteCacheControllerPtr = std::shared_ptr<RemoteCacheController>;
 

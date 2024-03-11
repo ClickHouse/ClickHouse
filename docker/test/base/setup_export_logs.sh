@@ -17,16 +17,20 @@ CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
 
 EXTRA_COLUMNS=${EXTRA_COLUMNS:-"pull_request_number UInt32, commit_sha String, check_start_time DateTime('UTC'), check_name LowCardinality(String), instance_type LowCardinality(String), instance_id String, INDEX ix_pr (pull_request_number) TYPE set(100), INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "}
 EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:-"CAST(0 AS UInt32) AS pull_request_number, '' AS commit_sha, now() AS check_start_time, toLowCardinality('') AS check_name, toLowCardinality('') AS instance_type, '' AS instance_id"}
-EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name, "}
+EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
 
 # trace_log needs more columns for symbolization
 EXTRA_COLUMNS_TRACE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), lines Array(LowCardinality(String)), "
 EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), trace)::Array(LowCardinality(String)) AS symbols, arrayMap(x -> addressToLine(x), trace)::Array(LowCardinality(String)) AS lines"
 
+# coverage_log needs more columns for symbolization, but only symbol names (the line numbers are too heavy to calculate)
+EXTRA_COLUMNS_COVERAGE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), "
+EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), coverage)::Array(LowCardinality(String)) AS symbols"
+
 
 function __set_connection_args
 {
-    # It's impossible to use generous $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
+    # It's impossible to use a generic $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
     # That's why we must stick to the generated option
     CONNECTION_ARGS=(
         --receive_timeout=45 --send_timeout=45 --secure
@@ -129,6 +133,19 @@ function setup_logs_replication
     debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
     echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
 
+    # We will pre-create a table system.coverage_log.
+    # It is normally created by clickhouse-test rather than the server,
+    # so we will create it in advance to make it be picked up by the next commands:
+
+    clickhouse-client --query "
+        CREATE TABLE IF NOT EXISTS system.coverage_log
+        (
+            time DateTime COMMENT 'The time of test run',
+            test_name String COMMENT 'The name of the test',
+            coverage Array(UInt64) COMMENT 'An array of addresses of the code (a subset of addresses instrumented for coverage) that were encountered during the test run'
+        ) ENGINE = Null COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
+    "
+
     # For each system log table:
     echo 'Create %_log tables'
     clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
@@ -139,11 +156,16 @@ function setup_logs_replication
             # Do not try to resolve stack traces in case of debug/sanitizers
             # build, since it is too slow (flushing of trace_log can take ~1min
             # with such MV attached)
-            if [[ "$debug_or_sanitizer_build" = 1 ]]; then
+            if [[ "$debug_or_sanitizer_build" = 1 ]]
+            then
                 EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
             else
                 EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_TRACE_LOG}"
             fi
+        elif [[ "$table" = "coverage_log" ]]
+        then
+            EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_COVERAGE_LOG}"
+            EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG}"
         else
             EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS}"
             EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
@@ -160,7 +182,7 @@ function setup_logs_replication
         # Create the destination table with adapted name and structure:
         statement=$(clickhouse-client --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
             s/^\($/('"$EXTRA_COLUMNS_FOR_TABLE"'/;
-            s/ORDER BY \(/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"'/;
+            s/^ORDER BY (([^\(].+?)|\((.+?)\))$/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"', \2\3)/;
             s/^CREATE TABLE system\.\w+_log$/CREATE TABLE IF NOT EXISTS '"$table"'_'"$hash"'/;
             /^TTL /d
             ')
@@ -168,7 +190,7 @@ function setup_logs_replication
         echo -e "Creating remote destination table ${table}_${hash} with statement:\n${statement}" >&2
 
         echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
-            --distributed_ddl_task_timeout=30 \
+            --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \
             "${CONNECTION_ARGS[@]}" || continue
 
         echo "Creating table system.${table}_sender" >&2
