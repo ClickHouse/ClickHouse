@@ -45,8 +45,15 @@ def test_different_types(cluster):
 
     for fields in response[1:]:  # skip header
         assert len(fields) >= 7
+        expected_disk_type = disk_types.get(fields[name_col_ix], "UNKNOWN")
+
+        if expected_disk_type != "Local":
+            disk_type = fields[response[0].index("object_storage_type")]
+        else:
+            disk_type = fields[type_col_ix]
+
         assert (
-            disk_types.get(fields[name_col_ix], "UNKNOWN") == fields[type_col_ix]
+            expected_disk_type == disk_type
         ), f"Wrong type ({fields[type_col_ix]}) for disk {fields[name_col_ix]}!"
         if "encrypted" in fields[name_col_ix]:
             assert (
