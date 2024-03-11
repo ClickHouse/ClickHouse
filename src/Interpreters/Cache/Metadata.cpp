@@ -1012,7 +1012,7 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
         file_segment->cache, key_metadata, file_segment->queue_iterator);
 
     if (diff)
-        metadata->getQueueIterator()->updateSize(-diff);
+        metadata->getQueueIterator()->decrementSize(diff);
 
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 }

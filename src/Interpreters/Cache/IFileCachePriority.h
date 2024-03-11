@@ -45,7 +45,12 @@ public:
 
         virtual size_t increasePriority(const CacheGuard::Lock &) = 0;
 
-        virtual void updateSize(int64_t size) = 0;
+        /// Note: IncrementSize unlike decrementSize requires a cache lock, because
+        /// it requires more consistency guarantees for eviction.
+
+        virtual void incrementSize(size_t size, const CacheGuard::Lock &) = 0;
+
+        virtual void decrementSize(size_t size) = 0;
 
         virtual void remove(const CacheGuard::Lock &) = 0;
 
@@ -93,13 +98,11 @@ public:
 
     virtual PriorityDumpPtr dump(const CacheGuard::Lock &) = 0;
 
-    using FinalizeEvictionFunc = std::function<void(const CacheGuard::Lock & lk)>;
     virtual bool collectCandidatesForEviction(
         size_t size,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
-        FinalizeEvictionFunc & finalize_eviction_func,
         const UserID & user_id,
         const CacheGuard::Lock &) = 0;
 

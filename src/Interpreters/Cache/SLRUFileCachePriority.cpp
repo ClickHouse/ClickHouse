@@ -101,7 +101,6 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr reservee,
-    FinalizeEvictionFunc & finalize_eviction_func,
     const UserID & user_id,
     const CacheGuard::Lock & lock)
 {
@@ -109,7 +108,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     /// for a corresponding file segment, so it will be directly put into probationary queue.
     if (!reservee)
     {
-        return probationary_queue.collectCandidatesForEviction(size, stat, res, reservee, finalize_eviction_func, user_id, lock);
+        return probationary_queue.collectCandidatesForEviction(size, stat, res, reservee, user_id, lock);
     }
 
     /// If `it` not nullptr (e.g. is already in some queue),
@@ -117,7 +116,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     /// (in order to know where we need to free space).
     if (!assert_cast<SLRUIterator *>(reservee.get())->is_protected)
     {
-        return probationary_queue.collectCandidatesForEviction(size, stat, res, reservee, finalize_eviction_func, user_id, lock);
+        return probationary_queue.collectCandidatesForEviction(size, stat, res, reservee, user_id, lock);
     }
 
     /// Entry is in protected queue.
@@ -132,18 +131,17 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     /// required to make space for additionary `size` bytes for entry.
     auto downgrade_candidates = std::make_shared<EvictionCandidates>();
     FileCacheReserveStat downgrade_stat;
-    FinalizeEvictionFunc noop;
 
-    if (!protected_queue.collectCandidatesForEviction(size, downgrade_stat, *downgrade_candidates, reservee, noop, user_id, lock))
+    if (!protected_queue.collectCandidatesForEviction(size, downgrade_stat, *downgrade_candidates, reservee, user_id, lock))
         return false;
 
     const size_t size_to_downgrade = downgrade_stat.stat.releasable_size;
 
     if (!probationary_queue.canFit(size_to_downgrade, lock)
-        && !probationary_queue.collectCandidatesForEviction(size_to_downgrade, stat, res, reservee, noop, user_id, lock))
+        && !probationary_queue.collectCandidatesForEviction(size_to_downgrade, stat, res, reservee, user_id, lock))
         return false;
 
-    finalize_eviction_func = [=, this](const CacheGuard::Lock & lk) mutable
+    res.setFinalizeEvictionFunc([=, this](const CacheGuard::Lock & lk) mutable
     {
         for (const auto & [key, key_candidates] : *downgrade_candidates)
         {
@@ -154,7 +152,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
                 candidate_it->is_protected = false;
             }
         }
-    };
+    });
 
     return true;
 }
@@ -186,9 +184,8 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
     /// queue to probationary queue.
     EvictionCandidates downgrade_candidates;
     FileCacheReserveStat downgrade_stat;
-    FinalizeEvictionFunc noop;
 
-    if (!protected_queue.collectCandidatesForEviction(size, downgrade_stat, downgrade_candidates, {}, noop, "", lock))
+    if (!protected_queue.collectCandidatesForEviction(size, downgrade_stat, downgrade_candidates, {}, "", lock))
     {
         /// We cannot make space for entry to be moved to protected queue
         /// (not enough releasable file segments).
@@ -211,7 +208,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
 
     if (size_to_free)
     {
-        if (!probationary_queue.collectCandidatesForEviction(size_to_free, stat, eviction_candidates, {}, noop, {}, lock))
+        if (!probationary_queue.collectCandidatesForEviction(size_to_free, stat, eviction_candidates, {}, {}, lock))
         {
             /// "downgrade" candidates cannot be moved to probationary queue,
             /// so entry cannot be moved to protected queue as well.
@@ -220,7 +217,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
             return;
         }
         /// Make space for "downgrade" candidates.
-        eviction_candidates.evict(nullptr, lock);
+        eviction_candidates.evict();
     }
 
     /// All checks passed, now we can move downgrade candidates to
@@ -294,10 +291,16 @@ size_t SLRUFileCachePriority::SLRUIterator::increasePriority(const CacheGuard::L
     return getEntry()->hits;
 }
 
-void SLRUFileCachePriority::SLRUIterator::updateSize(int64_t size)
+void SLRUFileCachePriority::SLRUIterator::incrementSize(size_t size, const CacheGuard::Lock & lock)
 {
     assertValid();
-    lru_iterator.updateSize(size);
+    lru_iterator.incrementSize(size, lock);
+}
+
+void SLRUFileCachePriority::SLRUIterator::decrementSize(size_t size)
+{
+    assertValid();
+    lru_iterator.decrementSize(size);
 }
 
 void SLRUFileCachePriority::SLRUIterator::invalidate()

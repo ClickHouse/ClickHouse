@@ -32,7 +32,7 @@ void EvictionCandidates::add(LockedKey & locked_key, const FileSegmentMetadataPt
     ++candidates_size;
 }
 
-void EvictionCandidates::evict(FileCacheQueryLimit::QueryContext * query_context, const CacheGuard::Lock & lock)
+void EvictionCandidates::evict()
 {
     if (candidates.empty())
         return;
@@ -59,14 +59,27 @@ void EvictionCandidates::evict(FileCacheQueryLimit::QueryContext * query_context
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
 
             locked_key->removeFileSegment(segment->offset(), segment->lock());
-            queue_it->remove(lock);
-
-            if (query_context)
-                query_context->remove(segment->key(), segment->offset(), lock);
+            queue_it->invalidate();
 
             to_evict.pop_back();
         }
     }
+}
+
+void EvictionCandidates::finalize(FileCacheQueryLimit::QueryContext * query_context, const CacheGuard::Lock & lock)
+{
+    for (const auto & it : invalidated_queue_entries)
+    {
+        if (query_context)
+        {
+            const auto & entry = it->getEntry();
+            query_context->remove(entry->key, entry->offset, lock);
+        }
+        it->remove(lock);
+    }
+
+    if (finalize_eviction_func)
+        finalize_eviction_func(lock);
 }
 
 }

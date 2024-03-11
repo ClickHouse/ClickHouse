@@ -814,12 +814,10 @@ bool FileCache::tryReserve(
     }
 
     EvictionCandidates eviction_candidates;
-    IFileCachePriority::FinalizeEvictionFunc finalize_eviction_func;
 
     if (query_priority)
     {
-        if (!query_priority->collectCandidatesForEviction(
-                size, reserve_stat, eviction_candidates, {}, finalize_eviction_func, user.user_id, cache_lock))
+        if (!query_priority->collectCandidatesForEviction(size, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
             return false;
 
         LOG_TEST(log, "Query limits satisfied (while reserving for {}:{})", file_segment.key(), file_segment.offset());
@@ -832,26 +830,38 @@ bool FileCache::tryReserve(
     auto queue_iterator = file_segment.getQueueIterator();
     chassert(!queue_iterator || file_segment.getReservedSize() > 0);
 
-    if (!main_priority->collectCandidatesForEviction(
-            size, reserve_stat, eviction_candidates, queue_iterator, finalize_eviction_func, user.user_id, cache_lock))
+    if (!main_priority->collectCandidatesForEviction(size, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
         return false;
+
+    /// Let's release cache lock if we are going to remove files from filesystem.
+    bool release_lock = eviction_candidates.size() > 0;
+    if (release_lock)
+        cache_lock.unlock();
 
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
         return false;
 
-    eviction_candidates.evict(query_context.get(), cache_lock);
+    /// Remove eviction candidates from filesystem.
+    eviction_candidates.evict();
 
-    if (finalize_eviction_func)
-        finalize_eviction_func(cache_lock);
+    /// Take cache lock again.
+    if (release_lock)
+        cache_lock.lock();
 
+    /// Remove invalidated queue entries and execute (only for SLRU) finalize func.
+    eviction_candidates.finalize(query_context.get(), cache_lock);
+
+    /// Space reservation is incremental, so file_segment_metadata is created first (with state Empty),
+    /// and queue_iterator is assigned on first space reservation attempt
+    /// (so it is nullptr here if we are reserving for the first time).
     if (queue_iterator)
     {
-        queue_iterator->updateSize(size);
+        /// Increase size of queue entry.
+        queue_iterator->incrementSize(size, cache_lock);
     }
     else
     {
-        /// Space reservation is incremental, so file_segment_metadata is created first (with state empty),
-        /// and getQueueIterator() is assigned on first space reservation attempt.
+        /// Create a new queue entry and assign currently reserved size to it.
         queue_iterator = main_priority->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_lock);
         file_segment.setQueueIterator(queue_iterator);
     }
@@ -863,7 +873,7 @@ bool FileCache::tryReserve(
     {
         auto query_queue_it = query_context->tryGet(file_segment.key(), file_segment.offset(), cache_lock);
         if (query_queue_it)
-            query_queue_it->updateSize(size);
+            query_queue_it->incrementSize(size, cache_lock);
         else
             query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_lock);
     }

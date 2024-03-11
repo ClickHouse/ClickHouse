@@ -11,13 +11,18 @@ public:
 
     void add(LockedKey & locked_key, const FileSegmentMetadataPtr & candidate);
 
-    void evict(FileCacheQueryLimit::QueryContext * query_context, const CacheGuard::Lock &);
+    void evict();
+
+    void finalize(FileCacheQueryLimit::QueryContext * query_context, const CacheGuard::Lock & lock);
 
     size_t size() const { return candidates_size; }
 
     auto begin() const { return candidates.begin(); }
 
     auto end() const { return candidates.end(); }
+
+    using FinalizeEvictionFunc = std::function<void(const CacheGuard::Lock & lk)>;
+    void setFinalizeEvictionFunc(FinalizeEvictionFunc && func) { finalize_eviction_func = func; }
 
 private:
     struct KeyCandidates
@@ -28,6 +33,8 @@ private:
 
     std::unordered_map<FileCacheKey, KeyCandidates> candidates;
     size_t candidates_size = 0;
+    std::vector<IFileCachePriority::IteratorPtr> invalidated_queue_entries;
+    FinalizeEvictionFunc finalize_eviction_func;
 };
 
 using EvictionCandidatesPtr = std::unique_ptr<EvictionCandidates>;

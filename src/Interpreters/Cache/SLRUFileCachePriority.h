@@ -44,7 +44,6 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
-        FinalizeEvictionFunc & finalize_eviction_func,
         const UserID & user_id,
         const CacheGuard::Lock &) override;
 
@@ -80,7 +79,9 @@ public:
 
     void invalidate() override;
 
-    void updateSize(int64_t size) override;
+    void incrementSize(size_t size, const CacheGuard::Lock &) override;
+
+    void decrementSize(size_t size) override;
 
     QueueEntryType getType() const override { return is_protected ? QueueEntryType::SLRU_Protected : QueueEntryType::SLRU_Probationary; }
 

@@ -15,6 +15,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictionSkippedFileSegments;
+    extern const Event FilesystemCacheEvictionSkippedEvictingFileSegments;
     extern const Event FilesystemCacheEvictionTries;
     extern const Event FilesystemCacheEvictMicroseconds;
     extern const Event FilesystemCacheEvictedBytes;
@@ -223,7 +224,6 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr,
-    FinalizeEvictionFunc &,
     const UserID &,
     const CacheGuard::Lock & lock)
 {
@@ -237,7 +237,11 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         const auto & file_segment = segment_metadata->file_segment;
         chassert(file_segment->assertCorrectness());
 
-        if (segment_metadata->releasable())
+        if (segment_metadata->evicting())
+        {
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
+        }
+        else if (segment_metadata->releasable())
         {
             res.add(locked_key, segment_metadata);
             stat.update(segment_metadata->size(), file_segment->getKind(), true);
@@ -375,18 +379,32 @@ void LRUFileCachePriority::LRUIterator::invalidate()
     entry->size = 0;
 }
 
-void LRUFileCachePriority::LRUIterator::updateSize(int64_t size)
+void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CacheGuard::Lock &)
 {
     assertValid();
 
     const auto & entry = *iterator;
     LOG_TEST(
         cache_priority->log,
-        "Update size with {} in LRU queue for key: {}, offset: {}, previous size: {}",
+        "Increment size with {} in LRU queue for key: {}, offset: {}, previous size: {}",
         size, entry->key, entry->offset, entry->size);
 
     cache_priority->updateSize(size);
     entry->size += size;
+}
+
+void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
+{
+    assertValid();
+
+    const auto & entry = *iterator;
+    LOG_TEST(
+        cache_priority->log,
+        "Decrement size with {} in LRU queue for key: {}, offset: {}, previous size: {}",
+        size, entry->key, entry->offset, entry->size);
+
+    cache_priority->updateSize(-size);
+    entry->size -= size;
 }
 
 size_t LRUFileCachePriority::LRUIterator::increasePriority(const CacheGuard::Lock &)
