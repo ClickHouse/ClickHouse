@@ -2609,8 +2609,9 @@ void NO_INLINE Aggregator::mergeDataNullKey(
     }
 }
 
-template <typename Method, bool use_compiled_functions, bool prefetch, typename Table>
-void NO_INLINE Aggregator::mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena) const
+template <typename Method, bool prefetch, typename Table>
+void NO_INLINE
+Aggregator::mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]]) const
 {
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
@@ -2637,7 +2638,7 @@ void NO_INLINE Aggregator::mergeDataImpl(Table & table_dst, Table & table_src, A
     table_src.clearAndShrink();
 
 #if USE_EMBEDDED_COMPILER
-    if constexpr (use_compiled_functions)
+    if (use_compiled_functions)
     {
         const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
         compiled_functions.merge_aggregate_states_function(dst_places.data(), src_places.data(), dst_places.size());
@@ -2787,26 +2788,16 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
         if (!no_more_keys)
         {
+            bool use_compiled_functions = false;
 #if USE_EMBEDDED_COMPILER
-            if (compiled_aggregate_functions_holder)
-            {
-                if (prefetch)
-                    mergeDataImpl<Method, true, true>(
-                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
-                else
-                    mergeDataImpl<Method, true, false>(
-                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
-            }
-            else
+            use_compiled_functions = compiled_aggregate_functions_holder != nullptr;
 #endif
-            {
-                if (prefetch)
-                    mergeDataImpl<Method, false, true>(
-                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
-                else
-                    mergeDataImpl<Method, false, false>(
-                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
-            }
+            if (prefetch)
+                mergeDataImpl<Method, true>(
+                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, use_compiled_functions);
+            else
+                mergeDataImpl<Method, false>(
+                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, use_compiled_functions);
         }
         else if (res->without_key)
         {
@@ -2851,26 +2842,22 @@ void NO_INLINE Aggregator::mergeBucketImpl(
             return;
 
         AggregatedDataVariants & current = *data[result_num];
+        bool use_compiled_functions = false;
 #if USE_EMBEDDED_COMPILER
-        if (compiled_aggregate_functions_holder)
-        {
-            if (prefetch)
-                mergeDataImpl<Method, true, true>(
-                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
-            else
-                mergeDataImpl<Method, true, false>(
-                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
-        }
-        else
+        use_compiled_functions = compiled_aggregate_functions_holder != nullptr;
 #endif
-        {
-            if (prefetch)
-                mergeDataImpl<Method, false, true>(
-                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
-            else
-                mergeDataImpl<Method, false, false>(
-                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
-        }
+        if (prefetch)
+            mergeDataImpl<Method, true>(
+                getDataVariant<Method>(*res).data.impls[bucket],
+                getDataVariant<Method>(current).data.impls[bucket],
+                arena,
+                use_compiled_functions);
+        else
+            mergeDataImpl<Method, false>(
+                getDataVariant<Method>(*res).data.impls[bucket],
+                getDataVariant<Method>(current).data.impls[bucket],
+                arena,
+                use_compiled_functions);
     }
 }
 

@@ -1429,8 +1429,8 @@ private:
             Arena * arena) const;
 
     /// Merge data from hash table `src` into `dst`.
-    template <typename Method, bool use_compiled_functions, bool prefetch, typename Table>
-    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena) const;
+    template <typename Method, bool prefetch, typename Table>
+    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
