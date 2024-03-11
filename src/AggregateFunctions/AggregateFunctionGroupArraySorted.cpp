@@ -310,10 +310,12 @@ public:
         {
             for (Field & element : values)
             {
-                UInt8 is_null = 0;
-                readBinary(is_null, buf);
-                if (!is_null)
+                bool has_value = 0;
+                readBinary(has_value, buf);
+                if (has_value)
                     serialization->deserializeBinary(element, buf, {});
+                else
+                    element = Field{};
             }
         }
         else
