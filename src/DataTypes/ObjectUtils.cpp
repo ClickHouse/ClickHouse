@@ -28,9 +28,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
-    extern const int LOGICAL_ERROR;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int NOT_IMPLEMENTED;
+    extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
 size_t getNumberOfDimensions(const IDataType & type)
@@ -92,7 +92,7 @@ ColumnPtr createArrayOfColumn(ColumnPtr column, size_t num_dimensions)
 Array createEmptyArrayField(size_t num_dimensions)
 {
     if (num_dimensions == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create array field with 0 dimensions");
+        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Cannot create array field with 0 dimensions");
 
     Array array;
     Array * current_array = &array;
@@ -231,7 +231,7 @@ static std::pair<ColumnPtr, DataTypePtr> recursivlyConvertDynamicColumnToTuple(
         };
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Type {} unexpectedly has dynamic columns", type->getName());
+    throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Type {} unexpectedly has dynamic columns", type->getName());
 }
 
 void convertDynamicColumnsToTuples(Block & block, const StorageSnapshotPtr & storage_snapshot)
@@ -247,7 +247,7 @@ void convertDynamicColumnsToTuples(Block & block, const StorageSnapshotPtr & sto
         GetColumnsOptions options(GetColumnsOptions::AllPhysical);
         auto storage_column = storage_snapshot->tryGetColumn(options, column.name);
         if (!storage_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in storage", column.name);
+            throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Column '{}' not found in storage", column.name);
 
         auto storage_column_concrete = storage_snapshot->getColumn(options.withExtendedObjects(), column.name);
 
@@ -315,7 +315,7 @@ static DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool che
     {
         const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get());
         if (!type_tuple)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
                 "Least common type for object can be deduced only from tuples, but {} given", type->getName());
 
         auto [tuple_paths, tuple_types] = flattenTuple(type);
@@ -427,7 +427,7 @@ static DataTypePtr getLeastCommonTypeForDynamicColumnsImpl(
     if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_in_storage.get()))
         return getLeastCommonTypeForTuple(*type_tuple, concrete_types, check_ambiguos_paths);
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Type {} unexpectedly has dynamic columns", type_in_storage->getName());
+    throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Type {} unexpectedly has dynamic columns", type_in_storage->getName());
 }
 
 DataTypePtr getLeastCommonTypeForDynamicColumns(
@@ -481,7 +481,7 @@ DataTypePtr createConcreteEmptyDynamicColumn(const DataTypePtr & type_in_storage
         return recreateTupleWithElements(*type_tuple, new_elements);
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Type {} unexpectedly has dynamic columns", type_in_storage->getName());
+    throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Type {} unexpectedly has dynamic columns", type_in_storage->getName());
 }
 
 bool hasDynamicSubcolumns(const ColumnsDescription & columns)
@@ -613,7 +613,7 @@ DataTypePtr reduceNumberOfDimensions(DataTypePtr type, size_t dimensions_to_redu
     {
         const auto * type_array = typeid_cast<const DataTypeArray *>(type.get());
         if (!type_array)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough dimensions to reduce");
+            throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Not enough dimensions to reduce");
 
         type = type_array->getNestedType();
     }
@@ -627,7 +627,7 @@ ColumnPtr reduceNumberOfDimensions(ColumnPtr column, size_t dimensions_to_reduce
     {
         const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
         if (!column_array)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough dimensions to reduce");
+            throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Not enough dimensions to reduce");
 
         column = column_array->getDataPtr();
     }
@@ -705,6 +705,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node & node)
         size_t num_elements = tuple_columns.size();
         Columns tuple_elements_columns(num_elements);
         DataTypes tuple_elements_types(num_elements);
+        size_t last_offset = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_columns.back()).getData().back();
 
         /// Reduce extra array dimensions to get columns and types of Nested elements.
         for (size_t i = 0; i < num_elements; ++i)
@@ -712,6 +713,14 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node & node)
             assert(tuple_columns[i].array_dimensions == tuple_columns[0].array_dimensions);
             tuple_elements_columns[i] = reduceNumberOfDimensions(tuple_columns[i].column, tuple_columns[i].array_dimensions);
             tuple_elements_types[i] = reduceNumberOfDimensions(tuple_columns[i].type, tuple_columns[i].array_dimensions);
+            if (tuple_elements_columns[i]->size() != last_offset)
+                throw Exception(
+                    ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
+                    "Cannot create a type for subcolumn {} in Object data type: offsets_column has data inconsistent with nested_column. "
+                    "Data size: {}, last offset: {}",
+                    node.path.getPath(),
+                    tuple_elements_columns[i]->size(),
+                    last_offset);
         }
 
         auto result_column = ColumnArray::create(ColumnTuple::create(tuple_elements_columns), offsets_columns.back());
@@ -720,6 +729,16 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node & node)
         /// Recreate result Array type and Array column.
         for (auto it = offsets_columns.rbegin() + 1; it != offsets_columns.rend(); ++it)
         {
+            last_offset = assert_cast<const ColumnArray::ColumnOffsets &>((**it)).getData().back();
+            if (result_column->size() != last_offset)
+                throw Exception(
+                    ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
+                    "Cannot create a type for subcolumn {} in Object data type: offsets_column has data inconsistent with nested_column. "
+                    "Data size: {}, last offset: {}",
+                    node.path.getPath(),
+                    result_column->size(),
+                    last_offset);
+
             result_column = ColumnArray::create(result_column, *it);
             result_type = std::make_shared<DataTypeArray>(result_type);
         }
@@ -822,7 +841,7 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     assert(paths.size() == tuple_columns.size());
 
     if (paths.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unflatten empty Tuple");
+        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Cannot unflatten empty Tuple");
 
     /// We add all paths to the subcolumn tree and then create a type from it.
     /// The tree stores column, type and number of array dimensions
@@ -841,7 +860,7 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
         tree.add(paths[i], [&](Node::Kind kind, bool exists) -> std::shared_ptr<Node>
             {
                 if (pos >= num_parts)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
                         "Not enough name parts for path {}. Expected at least {}, got {}",
                             paths[i].getPath(), pos + 1, num_parts);
 
