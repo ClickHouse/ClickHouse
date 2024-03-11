@@ -110,6 +110,21 @@ private:
     bool set_totals = false;
 };
 
+class RerangeRightJoinSideTransform : public IProcessor
+{
+public:
+    RerangeRightJoinSideTransform(Block input_header, JoinPtr join_);
+    String getName() const override { return "RerangeRightJoinSide"; }
+
+    InputPort * addTotalsPort();
+
+    Status prepare() override;
+    void work() override;
+
+private:
+    JoinPtr join;
+};
+
 
 class DelayedBlocksTask : public ChunkInfo
 {
