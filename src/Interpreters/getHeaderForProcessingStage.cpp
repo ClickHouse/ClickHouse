@@ -121,7 +121,12 @@ Block getHeaderForProcessingStage(
 
                     auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(left_table_expression);
                     const auto & query_context = query_info.planner_context->getQueryContext();
-                    auto columns = table_expression_data.getColumns();
+
+                    NamesAndTypes columns;
+                    const auto & column_name_to_column = table_expression_data.getColumnNameToColumn();
+                    for (const auto & column_name : table_expression_data.getSelectedColumnsNames())
+                        columns.push_back(column_name_to_column.at(column_name));
+
                     auto new_query_node = buildSubqueryToReadColumnsFromTableExpression(columns, left_table_expression, query_context);
                     query = new_query_node->toAST();
                 }
@@ -137,8 +142,9 @@ Block getHeaderForProcessingStage(
 
             if (context->getSettingsRef().allow_experimental_analyzer)
             {
-                auto storage = std::make_shared<StorageDummy>(
-                    storage_snapshot->storage.getStorageID(), storage_snapshot->metadata->getColumns(), storage_snapshot);
+                auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
+                                                                                        storage_snapshot->getAllColumnsDescription(),
+                                                                                        storage_snapshot);
                 InterpreterSelectQueryAnalyzer interpreter(query, context, storage, SelectQueryOptions(processed_stage).analyze());
                 result = interpreter.getSampleBlock();
             }
@@ -152,8 +158,7 @@ Block getHeaderForProcessingStage(
             return result;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical Error: unknown processed stage.");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown processed stage.");
 }
 
 }
-

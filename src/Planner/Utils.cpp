@@ -469,12 +469,19 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         NameSet table_expression_required_names_without_filter)
 {
     const auto & query_context = planner_context->getQueryContext();
-
     auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
     QueryAnalysisPass query_analysis_pass(table_expression);
     query_analysis_pass.run(filter_query_tree, query_context);
 
+    return buildFilterInfo(std::move(filter_query_tree), table_expression, planner_context, std::move(table_expression_required_names_without_filter));
+}
+
+FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
+        const QueryTreeNodePtr & table_expression,
+        PlannerContextPtr & planner_context,
+        NameSet table_expression_required_names_without_filter)
+{
     if (table_expression_required_names_without_filter.empty())
     {
         auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
@@ -482,7 +489,7 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         table_expression_required_names_without_filter.insert(table_expression_names.begin(), table_expression_names.end());
     }
 
-    collectSourceColumns(filter_query_tree, planner_context);
+    collectSourceColumns(filter_query_tree, planner_context, false /*keep_alias_columns*/);
     collectSets(filter_query_tree, *planner_context);
 
     auto filter_actions_dag = std::make_shared<ActionsDAG>();

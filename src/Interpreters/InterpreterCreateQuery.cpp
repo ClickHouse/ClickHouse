@@ -2,6 +2,9 @@
 
 #include <filesystem>
 
+#include <Access/AccessControl.h>
+#include <Access/User.h>
+
 #include "Common/Exception.h"
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
@@ -35,7 +38,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/BlockNumberColumn.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -809,24 +811,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
         else
         {
-            /** To get valid sample block we need to prepare query without only_analyze, because we need to execute scalar
-              * subqueries. Otherwise functions that expect only constant arguments will throw error during query analysis,
-              * because the result of scalar subquery is not a constant.
-              *
-              * Example:
-              * CREATE MATERIALIZED VIEW test_mv ENGINE=MergeTree ORDER BY arr
-              * AS
-              * WITH (SELECT '\d[a-z]') AS constant_value
-              * SELECT extractAll(concat(toString(number), 'a'), assumeNotNull(constant_value)) AS arr
-              * FROM test_table;
-              *
-              * For new analyzer this issue does not exists because we always execute scalar subqueries.
-              * We can improve this in new analyzer, and execute scalar subqueries only in contexts when we expect constant
-              * for example: LIMIT, OFFSET, functions parameters, functions constant only arguments.
-              */
-
-            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), SelectQueryOptions());
-            as_select_sample = interpreter.getSampleBlock();
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
         }
 
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
@@ -891,24 +876,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column.name));
     }
 
-    /// Check if _row_exists for lightweight delete column in column_lists for merge tree family.
-    if (create.storage && create.storage->engine && endsWith(create.storage->engine->name, "MergeTree"))
-    {
-        auto search = all_columns.find(LightweightDeleteDescription::FILTER_COLUMN.name);
-        if (search != all_columns.end())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Cannot create table with column '{}' for *MergeTree engines because it "
-                            "is reserved for lightweight delete feature",
-                            LightweightDeleteDescription::FILTER_COLUMN.name);
-
-        auto search_block_number = all_columns.find(BlockNumberColumn::name);
-        if (search_block_number != all_columns.end())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Cannot create table with column '{}' for *MergeTree engines because it "
-                            "is reserved for storing block number",
-                            BlockNumberColumn::name);
-    }
-
     const auto & settings = getContext()->getSettingsRef();
 
     /// If it's not attach and not materialized view to existing table,
@@ -921,9 +888,23 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
+void validateVirtualColumns(const IStorage & storage)
+{
+    auto virtual_columns = storage.getVirtualsPtr();
+    for (const auto & storage_column : storage.getInMemoryMetadataPtr()->getColumns())
+    {
+        if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
+                storage_column.name, storage.getName());
+        }
+    }
+}
+
 namespace
 {
-    void checkTemporaryTableEngineName(const String& name)
+    void checkTemporaryTableEngineName(const String & name)
     {
         if (name.starts_with("Replicated") || name.starts_with("Shared") || name == "KeeperMap")
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated, Shared or KeeperMap table engines");
@@ -1095,6 +1076,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
+    if (!create.sql_security && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
+        create.sql_security = std::make_shared<ASTSQLSecurity>();
+
+    if (create.sql_security)
+        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.attach, create.is_materialized_view);
+
     DDLGuardPtr ddl_guard;
 
     // If this is a stub ATTACH query, read the query definition from the database
@@ -1237,7 +1224,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             {
                 input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
                     getContext(),
-                    {}).getSampleBlock();
+                    SelectQueryOptions().analyze()).getSampleBlock();
             }
 
             Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
@@ -1500,6 +1487,16 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
     }
 
+    validateVirtualColumns(*res);
+
+    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()))
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column of type Object, "
+            "because storage {} doesn't support dynamic subcolumns",
+            res->getName());
+    }
+
     if (!create.attach && getContext()->getSettingsRef().database_replicated_allow_only_replicated_engine)
     {
         bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
@@ -1548,14 +1545,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// Also note that "startup" method is exception-safe. If exception is thrown from "startup",
     /// we can safely destroy the object without a call to "shutdown", because there is guarantee
     /// that no background threads/similar resources remain after exception from "startup".
-
-    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()))
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create table with column of type Object, "
-            "because storage {} doesn't support dynamic subcolumns",
-            res->getName());
-    }
 
     res->startup();
     return true;
@@ -1881,6 +1870,61 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
         ASTPtr columns = std::make_shared<ASTExpressionList>(*create_query_from_storage.columns_list->columns);
         create.columns_list->set(create.columns_list->columns, columns);
     }
+}
+
+void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach, bool is_materialized_view)
+{
+    /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
+    if (!sql_security.type.has_value())
+    {
+        SQLSecurityType default_security;
+
+        if (is_materialized_view)
+            default_security = context_->getSettingsRef().default_materialized_view_sql_security;
+        else
+            default_security = context_->getSettingsRef().default_normal_view_sql_security;
+
+        if (default_security == SQLSecurityType::DEFINER)
+        {
+            String default_definer = context_->getSettingsRef().default_view_definer;
+            if (default_definer == "CURRENT_USER")
+                sql_security.is_definer_current_user = true;
+            else
+                sql_security.definer = std::make_shared<ASTUserNameWithHost>(default_definer);
+        }
+
+        sql_security.type = default_security;
+    }
+
+    /// Resolves `DEFINER = CURRENT_USER`. Can change the SQL security type if we try to resolve the user during the attachment.
+    const auto current_user_name = context_->getUserName();
+    if (sql_security.is_definer_current_user)
+    {
+        if (current_user_name.empty())
+            /// This can happen only when attaching a view for the first time after migration and with `CURRENT_USER` default.
+            if (is_materialized_view)
+                sql_security.type = SQLSecurityType::NONE;
+            else
+                sql_security.type = SQLSecurityType::INVOKER;
+        else if (sql_security.definer)
+            sql_security.definer->replace(current_user_name);
+        else
+            sql_security.definer = std::make_shared<ASTUserNameWithHost>(current_user_name);
+    }
+
+    /// Checks the permissions for the specified definer user.
+    if (sql_security.definer && !sql_security.is_definer_current_user && !is_attach)
+    {
+        const auto definer_name = sql_security.definer->toString();
+
+        /// Validate that the user exists.
+        context_->getAccessControl().getID<User>(definer_name);
+        if (definer_name != current_user_name)
+            context_->checkAccess(AccessType::SET_DEFINER, definer_name);
+    }
+
+    if (sql_security.type == SQLSecurityType::NONE && !is_attach)
+        context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory)
