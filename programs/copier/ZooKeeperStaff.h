@@ -180,7 +180,7 @@ public:
                     auto logger = getLogger("ClusterCopier");
                     if (rsp.error == Coordination::Error::ZOK)
                     {
-                        switch (rsp.type)
+                        switch (rsp.type) /// NOLINT(bugprone-switch-missing-default-case)
                         {
                             case Coordination::CREATED:
                                 LOG_DEBUG(logger, "CleanStateClock change: CREATED, at {}", rsp.path);

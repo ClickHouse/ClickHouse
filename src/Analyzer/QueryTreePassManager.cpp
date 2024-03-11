@@ -46,6 +46,7 @@
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
+#include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
 
 
@@ -164,7 +165,6 @@ private:
 
 /** ClickHouse query tree pass manager.
   *
-  * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
@@ -246,9 +246,9 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
     }
 }
 
-void addQueryTreePasses(QueryTreePassManager & manager)
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 {
-    manager.addPass(std::make_unique<QueryAnalysisPass>());
+    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
 
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
@@ -263,6 +263,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<SumIfToCountIfPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
+
+    /// should before AggregateFunctionsArithmericOperationsPass
+    manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>());
 
     manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
     manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());

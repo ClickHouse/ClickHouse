@@ -2,7 +2,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
@@ -63,6 +62,17 @@ void ColumnFixedString::insert(const Field & x)
     insertData(s.data(), s.size());
 }
 
+bool ColumnFixedString::tryInsert(const Field & x)
+{
+    if (x.getType() != Field::Types::Which::String)
+        return false;
+    const String & s = x.get<const String &>();
+    if (s.size() > n)
+        return false;
+    insertData(s.data(), s.size());
+    return true;
+}
+
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
 {
     const ColumnFixedString & src = assert_cast<const ColumnFixedString &>(src_);
@@ -84,30 +94,6 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
     chars.resize(old_size + n);
     memcpy(chars.data() + old_size, pos, length);
     memset(chars.data() + old_size + length, 0, n - length);
-}
-
-StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin, const UInt8 * null_bit) const
-{
-    constexpr size_t null_bit_size = sizeof(UInt8);
-    StringRef res;
-    char * pos;
-    if (null_bit)
-    {
-        res.size = * null_bit ? null_bit_size : null_bit_size + n;
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-        memcpy(pos, null_bit, null_bit_size);
-        if (*null_bit) return res;
-        pos += null_bit_size;
-    }
-    else
-    {
-        res.size = n;
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-    }
-    memcpy(pos, &chars[n * index], n);
-    return res;
 }
 
 const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
@@ -362,11 +348,6 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
             memcpySmallAllowReadWriteOverflow15(&res->chars[curr_offset * n], &chars[i * n], n);
 
     return res;
-}
-
-void ColumnFixedString::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
 }
 
 void ColumnFixedString::getExtremes(Field & min, Field & max) const

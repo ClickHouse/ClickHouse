@@ -12,7 +12,7 @@ namespace DB
 struct OpenTelemetrySpanLogElement : public OpenTelemetry::Span
 {
     OpenTelemetrySpanLogElement() = default;
-    OpenTelemetrySpanLogElement(const OpenTelemetry::Span & span)
+    explicit OpenTelemetrySpanLogElement(const OpenTelemetry::Span & span)
         : OpenTelemetry::Span(span) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
