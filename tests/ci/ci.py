@@ -140,7 +140,7 @@ class CiCache:
         self.s3 = s3
         self.job_digests = job_digests
         self.cache_s3_paths = {
-            job_type: f"{self._S3_CACHE_PREFIX}/{job_type.value}-{self.job_digests[self._get_reference_job_name(job_type)]}/"
+            job_type: f"{self._S3_CACHE_PREFIX}/{job_type.value}-{self._get_digest_for_job_type(self.job_digests, job_type)}/"
             for job_type in self.JobType
         }
         self.s3_record_prefixes = {
@@ -155,14 +155,23 @@ class CiCache:
         if not self._LOCAL_CACHE_PATH.exists():
             self._LOCAL_CACHE_PATH.mkdir(parents=True, exist_ok=True)
 
-    def _get_reference_job_name(self, job_type: JobType) -> str:
-        res = Build.PACKAGE_RELEASE
+    def _get_digest_for_job_type(
+        self, job_digests: Dict[str, str], job_type: JobType
+    ) -> str:
         if job_type == self.JobType.DOCS:
-            res = JobNames.DOCS_CHECK
+            res = job_digests[JobNames.DOCS_CHECK]
         elif job_type == self.JobType.SRCS:
-            res = Build.PACKAGE_RELEASE
+            # any build type job has the same digest - pick up Build.PACKAGE_RELEASE or Build.PACKAGE_ASAN as a failover
+            # Build.PACKAGE_RELEASE may not exist in the list if we have reduced CI pipeline
+            if Build.PACKAGE_RELEASE in job_digests:
+                res = job_digests[Build.PACKAGE_RELEASE]
+            elif Build.PACKAGE_ASAN in job_digests:
+                # failover, if failover does not work - fix it!
+                res = job_digests[Build.PACKAGE_ASAN]
+            else:
+                assert False, "BUG, no build job in digest' list"
         else:
-            assert False
+            assert False, "BUG, New JobType? - please update func"
         return res
 
     def _get_record_file_name(
@@ -1183,13 +1192,13 @@ def _configure_jobs(
 
         if batches_to_do:
             jobs_to_do.append(job)
+            jobs_params[job] = {
+                "batches": batches_to_do,
+                "num_batches": num_batches,
+            }
         elif add_to_skip:
             # treat job as being skipped only if it's controlled by digest
             jobs_to_skip.append(job)
-        jobs_params[job] = {
-            "batches": batches_to_do,
-            "num_batches": num_batches,
-        }
 
     if not pr_info.is_release_branch():
         # randomization bucket filtering (pick one random job from each bucket, for jobs with configured random_bucket property)
@@ -1268,6 +1277,33 @@ def _configure_jobs(
             jobs_to_do = list(
                 set(job for job in jobs_to_do_requested if job not in jobs_to_skip)
             )
+            # if requested job does not have params in jobs_params (it happens for "run_by_label" job)
+            #   we need to add params - otherwise it won't run as "batches" list will be empty
+            for job in jobs_to_do:
+                if job not in jobs_params:
+                    num_batches = CI_CONFIG.get_job_config(job).num_batches
+                    jobs_params[job] = {
+                        "batches": list(range(num_batches)),
+                        "num_batches": num_batches,
+                    }
+
+        requested_batches = set()
+        for token in commit_tokens:
+            if token.startswith("batch_"):
+                try:
+                    batches = [
+                        int(batch) for batch in token.removeprefix("batch_").split("_")
+                    ]
+                except Exception:
+                    print(f"ERROR: failed to parse commit tag [{token}]")
+                requested_batches.update(batches)
+        if requested_batches:
+            print(
+                f"NOTE: Only specific job batches were requested [{list(requested_batches)}]"
+            )
+            for job, params in jobs_params.items():
+                if params["num_batches"] > 1:
+                    params["batches"] = list(requested_batches)
 
     return {
         "digests": digests,
@@ -1372,7 +1408,11 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
 def _fetch_commit_tokens(message: str) -> List[str]:
     pattern = r"#[\w-]+"
     matches = [match[1:] for match in re.findall(pattern, message)]
-    res = [match for match in matches if match in Labels or match.startswith("job_")]
+    res = [
+        match
+        for match in matches
+        if match in Labels or match.startswith("job_") or match.startswith("batch_")
+    ]
     return res
 
 
