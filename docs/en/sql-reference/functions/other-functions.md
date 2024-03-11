@@ -1866,7 +1866,7 @@ As you can see, `runningAccumulate` merges states for each group of rows separat
 
 ## joinGet
 
-Allows you to extract data from a specific column in a Join table, similar to how you would access a value from a dictionary.
+The function lets you extract data from the table the same way as from a [dictionary](../../sql-reference/dictionaries/index.md).
 
 Gets the data from [Join](../../engines/table-engines/special/join.md#creating-a-table) tables using the specified join key.
 
@@ -1885,69 +1885,6 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 - `join_keys` — list of keys.
 
 **Returned value**
-
-Returns a list of values corresponded to list of keys.
-
-If certain does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
-
-More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
-
-**Example**
-
-Input table:
-
-``` sql
-CREATE DATABASE db_test
-CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
-INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
-```
-
-``` text
-┌─id─┬─val─┐
-│  4 │  13 │
-│  2 │  12 │
-│  1 │  11 │
-└────┴─────┘
-```
-
-Query:
-
-``` sql
-SELECT joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
-```
-
-Result:
-
-``` text
-┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
-│                                                0 │
-│                                               11 │
-│                                               12 │
-│                                                0 │
-└──────────────────────────────────────────────────┘
-```
-
-## joinGetOrNull
-
-Allows you to extract data from a specific column in a Join table, similar to how you would access a value from a dictionary.
-
-Gets the data from [Join](../../engines/table-engines/special/join.md#creating-a-table) tables using the specified join key.
-
-Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
-
-### Syntax
-
-```sql
-joinGet(join_storage_table_name, `value_column`, join_keys)
-```
-
-### Parameters
-
-- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed. The identifier is searched in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
-- `value_column` — name of the column of the table that contains required data.
-- `join_keys` — list of keys.
-
-### Returned value
 
 Returns a list of values corresponded to list of keys.
 
