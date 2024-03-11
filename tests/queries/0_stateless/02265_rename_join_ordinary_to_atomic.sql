@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET send_logs_level = 'fatal';
+
 set allow_deprecated_database_ordinary=1;
 DROP DATABASE IF EXISTS 02265_atomic_db;
 DROP DATABASE IF EXISTS 02265_ordinary_db;

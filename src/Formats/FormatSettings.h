@@ -203,6 +203,7 @@ struct FormatSettings
         bool quote_decimals = false;
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
+        bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
         bool write_named_tuples_as_objects = false;
         bool skip_null_value_in_named_tuples = false;
         bool defaults_for_missing_elements_in_named_tuple = false;
@@ -278,6 +279,7 @@ struct FormatSettings
         SettingFieldUInt64Auto color{"auto"};
 
         bool output_format_pretty_row_numbers = false;
+        UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
 
         enum class Charset
         {

@@ -50,11 +50,6 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
 # Broken symlinks
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
 
-# Double whitespaces
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE_DIRS |
-    while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done
-
 # Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
 declare -A EXTERN_TYPES
 EXTERN_TYPES[ErrorCodes]=int
@@ -156,9 +151,6 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
 find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
     grep -vP $EXCLUDE_DIRS |
     xargs xmllint --noout --nonet
-
-# FIXME: for now only clickhouse-test
-pylint --rcfile=$ROOT_PATH/.pylintrc --persistent=no --score=n $ROOT_PATH/tests/clickhouse-test $ROOT_PATH/tests/ci/*.py
 
 find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
     grep -vP $EXCLUDE_DIRS |
@@ -450,3 +442,8 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3' &&
     echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
+
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
+    echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."

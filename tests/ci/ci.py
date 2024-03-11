@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Union
 import docker_images_helper
 import upload_result_helper
 from build_check import get_release_or_pr
-from ci_config import CI_CONFIG, Build, JobNames, Labels
+from ci_config import CI_CONFIG, Build, CIStages, Labels, JobNames
 from ci_utils import GHActions, is_hex, normalize_string
 from clickhouse_helper import (
     CiLogsCredentials,
@@ -397,7 +397,7 @@ class CiCache:
                 status.dump_to_file(record_file)
             elif record_type == self.RecordType.PENDING:
                 assert isinstance(status, PendingState)
-                with open(record_file, "w") as json_file:
+                with open(record_file, "w", encoding="utf-8") as json_file:
                     json.dump(asdict(status), json_file)
             else:
                 assert False
@@ -645,7 +645,8 @@ class CiCache:
         if not jobs_with_params:
             return {}
         poll_interval_sec = 300
-        TIMEOUT = 3600
+        # TIMEOUT * MAX_ROUNDS_TO_WAIT must be less than 6h (GH job timeout) with a room for rest RunConfig work
+        TIMEOUT = 3000  # 50 min
         MAX_ROUNDS_TO_WAIT = 6
         MAX_JOB_NUM_TO_WAIT = 3
         await_finished: Dict[str, List[int]] = {}
@@ -953,10 +954,18 @@ def _mark_success_action(
     # FIXME: find generic design for propagating and handling job status (e.g. stop using statuses in GH api)
     #   now job ca be build job w/o status data, any other job that exit with 0 with or w/o status data
     if CI_CONFIG.is_build_job(job):
-        # there is no status for build jobs
-        # create dummy success to mark it as done
+        # there is no CommitStatus for build jobs
+        # create dummy status relying on JobReport
         # FIXME: consider creating commit status for build jobs too, to treat everything the same way
-        CommitStatusData(SUCCESS, "dummy description", "dummy_url").dump_status()
+        job_report = JobReport.load() if JobReport.exist() else None
+        if job_report and job_report.status == SUCCESS:
+            CommitStatusData(
+                SUCCESS,
+                "dummy description",
+                "dummy_url",
+                pr_num=pr_info.number,
+                sha=pr_info.sha,
+            ).dump_status()
 
     job_status = None
     if CommitStatusData.exist():
@@ -997,7 +1006,7 @@ def _mark_success_action(
 
 def _print_results(result: Any, outfile: Optional[str], pretty: bool = False) -> None:
     if outfile:
-        with open(outfile, "w") as f:
+        with open(outfile, "w", encoding="utf-8") as f:
             if isinstance(result, str):
                 print(result, file=f)
             elif isinstance(result, dict):
@@ -1102,7 +1111,7 @@ def _configure_jobs(
     digests: Dict[str, str] = {}
 
     print("::group::Job Digests")
-    for job in CI_CONFIG.job_generator():
+    for job in CI_CONFIG.job_generator(pr_info.head_ref):
         digest = job_digester.get_job_digest(CI_CONFIG.get_digest_config(job))
         digests[job] = digest
         print(f"    job [{job.rjust(50)}] has digest [{digest}]")
@@ -1110,15 +1119,14 @@ def _configure_jobs(
 
     ## b. check what we need to run
     ci_cache = None
-    if not ci_cache_disabled:
+    if not ci_cache_disabled and CI:
         ci_cache = CiCache(s3, digests).update()
         ci_cache.print_status()
 
     jobs_to_wait: Dict[str, Dict[str, Any]] = {}
     randomization_buckets = {}  # type: Dict[str, Set[str]]
 
-    for job in digests:
-        digest = digests[job]
+    for job, digest in digests.items():
         job_config = CI_CONFIG.get_job_config(job)
         num_batches: int = job_config.num_batches
         batches_to_do: List[int] = []
@@ -1272,6 +1280,29 @@ def _configure_jobs(
             job: params for job, params in jobs_params.items() if job in jobs_to_do
         },
     }
+
+
+def _generate_ci_stage_config(jobs_data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """
+    populates GH Actions' workflow with real jobs
+    "Builds_1": [{"job_name": NAME, "runner_type": RUNER_TYPE}]
+    "Tests_1": [{"job_name": NAME, "runner_type": RUNER_TYPE}]
+    ...
+    """
+    result = {}  # type: Dict[str, Any]
+    stages_to_do = []
+    for job in jobs_data["jobs_to_do"]:
+        stage_type = CI_CONFIG.get_job_ci_stage(job)
+        if stage_type == CIStages.NA:
+            continue
+        if stage_type not in result:
+            result[stage_type] = []
+            stages_to_do.append(stage_type)
+        result[stage_type].append(
+            {"job_name": job, "runner_type": CI_CONFIG.get_runner_type(job)}
+        )
+    result["stages_to_do"] = stages_to_do
+    return result
 
 
 def _create_gh_status(
@@ -1604,11 +1635,11 @@ def main() -> int:
 
     indata: Optional[Dict[str, Any]] = None
     if args.infile:
-        indata = (
-            json.loads(args.infile)
-            if not os.path.isfile(args.infile)
-            else json.load(open(args.infile))
-        )
+        if os.path.isfile(args.infile):
+            with open(args.infile, encoding="utf-8") as jfd:
+                indata = json.load(jfd)
+        else:
+            indata = json.loads(args.infile)
         assert indata and isinstance(indata, dict), "Invalid --infile json"
 
     result: Dict[str, Any] = {}
@@ -1682,7 +1713,7 @@ def main() -> int:
         if not args.skip_jobs:
             ci_cache = CiCache(s3, jobs_data["digests"])
 
-            if pr_info.is_release_branch():
+            if pr_info.is_master():
                 # wait for pending jobs to be finished, await_jobs is a long blocking call
                 # wait pending jobs (for now only on release/master branches)
                 ready_jobs_batches_dict = ci_cache.await_jobs(
@@ -1725,6 +1756,8 @@ def main() -> int:
         result["build"] = build_digest
         result["docs"] = docs_digest
         result["ci_flags"] = ci_flags
+        if not args.skip_jobs:
+            result["stages_data"] = _generate_ci_stage_config(jobs_data)
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
     ### CONFIGURE action: end
@@ -1763,24 +1796,29 @@ def main() -> int:
                 print(build_result.as_json())
                 print("::endgroup::")
         else:
-            # this is a test job - check if GH commit status is present
-
-            # rerun helper check
-            # FIXME: remove rerun_helper check and rely on ci cache only
+            # this is a test job - check if GH commit status or cache record is present
             commit = get_commit(
                 Github(get_best_robot_token(), per_page=100), pr_info.sha
             )
-            rerun_helper = RerunHelper(commit, check_name_with_group)
-            if rerun_helper.is_already_finished_by_status():
-                status = rerun_helper.get_finished_status()
-                assert status
-                previous_status = status.state
-                print("::group::Commit Status")
-                print(status)
-                print("::endgroup::")
+
+            # rerun helper check
+            # FIXME: remove rerun_helper check and rely on ci cache only
+            if check_name not in (
+                # we might want to rerun reports' jobs - disable rerun check for them
+                JobNames.BUILD_CHECK,
+                JobNames.BUILD_CHECK_SPECIAL,
+            ):
+                rerun_helper = RerunHelper(commit, check_name_with_group)
+                if rerun_helper.is_already_finished_by_status():
+                    status = rerun_helper.get_finished_status()
+                    assert status
+                    previous_status = status.state
+                    print("::group::Commit Status")
+                    print(status)
+                    print("::endgroup::")
 
             # ci cache check
-            elif not indata["ci_flags"][Labels.NO_CI_CACHE]:
+            if not previous_status and not indata["ci_flags"][Labels.NO_CI_CACHE]:
                 ci_cache = CiCache(s3, indata["jobs_data"]["digests"]).update()
                 job_config = CI_CONFIG.get_job_config(check_name)
                 if ci_cache.is_successful(

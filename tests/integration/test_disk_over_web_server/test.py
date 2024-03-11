@@ -278,7 +278,7 @@ def test_unavailable_server(cluster):
             "Caught exception while loading metadata.*Connection refused"
         )
         assert node2.contains_in_log(
-            "HTTP request to \`http://nginx:8080/test1/.*\` failed at try 1/10 with bytes read: 0/unknown. Error: Connection refused."
+            "Failed to make request to 'http://nginx:8080/test1/.*'. Error: 'Connection refused'. Failed at try 10/10."
         )
     finally:
         node2.exec_in_container(
