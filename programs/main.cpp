@@ -62,10 +62,7 @@ int mainEntryClickHouseStart(int argc, char ** argv);
 int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_DISKS
 int mainEntryClickHouseDisks(int argc, char ** argv);
-#endif
 
 bool hasHelpArg (char* arg)
 {
@@ -144,17 +141,10 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
-#endif
-#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
-#endif
-#if ENABLE_CLICKHOUSE_SU
     {"su", mainEntryClickHouseSU},
-#endif
     {"hash-binary", mainEntryClickHouseHashBinary},
-#if ENABLE_CLICKHOUSE_DISKS
     {"disks", mainEntryClickHouseDisks},
-#endif
     {"help", mainEntryHelp},
 };
 
