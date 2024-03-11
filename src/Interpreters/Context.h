@@ -425,7 +425,8 @@ protected:
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
 
-    /// Cache for storages resolved during query processing.
+    /// Cache for storages resolved during query processing - we want to use the same storages we have resolved on
+    /// analysis stage for the execution - storage can be changed by concurently running 'EXCHANGE TABLES' query.
     mutable std::unordered_map<String, StoragePtr> storage_cache;
 
 public:
