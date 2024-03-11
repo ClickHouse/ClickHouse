@@ -833,7 +833,9 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster, instanc
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_drop_database_while_replication_startup_not_finished(started_cluster, instance_name):
+def test_drop_database_while_replication_startup_not_finished(
+    started_cluster, instance_name
+):
     NUM_TABLES = 5
 
     instance = cluster.instances[instance_name]
@@ -849,7 +851,9 @@ def test_drop_database_while_replication_startup_not_finished(started_cluster, i
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_restart_server_while_replication_startup_not_finished(started_cluster, instance_name):
+def test_restart_server_while_replication_startup_not_finished(
+    started_cluster, instance_name
+):
     NUM_TABLES = 5
 
     instance = cluster.instances[instance_name]

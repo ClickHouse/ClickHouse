@@ -1819,7 +1819,9 @@ class ClickHouseCluster:
 
         if with_postgres11 and not self.with_postgres11:
             cmds.append(
-                self.setup_postgres11_cmd(instance, env_variables, docker_compose_yml_dir)
+                self.setup_postgres11_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         if with_postgres_cluster and not self.with_postgres_cluster:
