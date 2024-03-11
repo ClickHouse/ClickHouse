@@ -130,7 +130,7 @@ def check_system_tables(backup_query_id=None):
         if disk
     ]
     expected_disks = (
-        ("default", "local", "", ""),
+        ("default", "local", "None", "None"),
         ("disk_s3", "object_storage", "s3", "local"),
         ("disk_s3_cache", "object_storage", "s3", "local"),
         ("disk_s3_other_bucket", "object_storage", "s3", "local"),
