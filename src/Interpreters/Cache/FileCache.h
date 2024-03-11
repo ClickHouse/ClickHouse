@@ -173,7 +173,7 @@ public:
     void deactivateBackgroundOperations();
 
     CacheGuard::Lock lockCache() const;
-    CacheGuard::Lock tryLockCache() const;
+    CacheGuard::Lock tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout = std::nullopt) const;
 
     std::vector<FileSegment::Info> sync();
 
