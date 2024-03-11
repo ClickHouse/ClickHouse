@@ -1192,13 +1192,13 @@ def _configure_jobs(
 
         if batches_to_do:
             jobs_to_do.append(job)
+            jobs_params[job] = {
+                "batches": batches_to_do,
+                "num_batches": num_batches,
+            }
         elif add_to_skip:
             # treat job as being skipped only if it's controlled by digest
             jobs_to_skip.append(job)
-        jobs_params[job] = {
-            "batches": batches_to_do,
-            "num_batches": num_batches,
-        }
 
     if not pr_info.is_release_branch():
         # randomization bucket filtering (pick one random job from each bucket, for jobs with configured random_bucket property)
@@ -1277,6 +1277,33 @@ def _configure_jobs(
             jobs_to_do = list(
                 set(job for job in jobs_to_do_requested if job not in jobs_to_skip)
             )
+            # if requested job does not have params in jobs_params (it happens for "run_by_label" job)
+            #   we need to add params - otherwise it won't run as "batches" list will be empty
+            for job in jobs_to_do:
+                if job not in jobs_params:
+                    num_batches = CI_CONFIG.get_job_config(job).num_batches
+                    jobs_params[job] = {
+                        "batches": list(range(num_batches)),
+                        "num_batches": num_batches,
+                    }
+
+        requested_batches = set()
+        for token in commit_tokens:
+            if token.startswith("batch_"):
+                try:
+                    batches = [
+                        int(batch) for batch in token.removeprefix("batch_").split("_")
+                    ]
+                except Exception:
+                    print(f"ERROR: failed to parse commit tag [{token}]")
+                requested_batches.update(batches)
+        if requested_batches:
+            print(
+                f"NOTE: Only specific job batches were requested [{list(requested_batches)}]"
+            )
+            for job, params in jobs_params.items():
+                if params["num_batches"] > 1:
+                    params["batches"] = list(requested_batches)
 
     return {
         "digests": digests,
@@ -1381,7 +1408,11 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
 def _fetch_commit_tokens(message: str) -> List[str]:
     pattern = r"#[\w-]+"
     matches = [match[1:] for match in re.findall(pattern, message)]
-    res = [match for match in matches if match in Labels or match.startswith("job_")]
+    res = [
+        match
+        for match in matches
+        if match in Labels or match.startswith("job_") or match.startswith("batch_")
+    ]
     return res
 
 
