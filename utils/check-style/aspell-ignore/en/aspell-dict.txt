@@ -383,7 +383,7 @@ IsResClassIII
 IsValid
 JBOD
 JOINed
-JoinGetOrNull
+joinGetOrNull
 JOINs
 JSONArrayLength
 JSONAsObject
@@ -463,7 +463,7 @@ Levenshtein
 LibFuzzer
 LightHouse
 LineAsString
-Linestring
+linestring
 Linf
 LinfDistance
 LinfNorm
@@ -760,8 +760,8 @@ RawBLOB
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
-ReadWKTPoint
-ReadWKTRing
+readWKTPoint
+readWKTRing
 RecipeNLG
 Recompressing
 Recompression
@@ -885,7 +885,7 @@ Subcolumns
 Subexpression
 Submodules
 Subqueries
-Subsecond
+subsecond
 Substrings
 SummingMergeTree
 SuperSet
