@@ -776,6 +776,7 @@ struct IdentifierResolveScope
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
     QueryTreeNodePtrWithHashSet nullable_group_by_keys;
+    QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> nullable_join_columns;
 
     /// Use identifier lookup to result cache
     bool use_identifier_lookup_to_result_cache = true;
@@ -1276,7 +1277,11 @@ private:
         return {};
     }
 
-    static void convertJoinedColumnTypeToNullIfNeeded(QueryTreeNodePtr & resolved_identifier, const JoinKind & join_kind, std::optional<JoinTableSide> resolved_side, const ContextPtr & context)
+    static QueryTreeNodePtr convertJoinedColumnTypeToNullIfNeeded(
+        const QueryTreeNodePtr & resolved_identifier,
+        const JoinKind & join_kind,
+        std::optional<JoinTableSide> resolved_side,
+        IdentifierResolveScope & scope)
     {
         if (resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN &&
             JoinCommon::canBecomeNullable(resolved_identifier->getResultType()) &&
@@ -1284,16 +1289,20 @@ private:
             (isLeft(join_kind) && resolved_side && *resolved_side == JoinTableSide::Right) ||
             (isRight(join_kind) && resolved_side && *resolved_side == JoinTableSide::Left)))
         {
-            auto & resolved_column = resolved_identifier->as<ColumnNode &>();
+            auto nullable_resolved_identifier = resolved_identifier->clone();
+            auto & resolved_column = nullable_resolved_identifier->as<ColumnNode &>();
             auto new_result_type = makeNullableOrLowCardinalityNullable(resolved_column.getColumnType());
             resolved_column.setColumnType(new_result_type);
             if (resolved_column.hasExpression())
             {
                 auto & resolved_expression = resolved_column.getExpression();
                 if (!resolved_expression->getResultType()->equals(*new_result_type))
-                    resolved_expression = buildCastFunction(resolved_expression, new_result_type, context, true);
+                    resolved_expression = buildCastFunction(resolved_expression, new_result_type, scope.context, true);
             }
+            scope.nullable_join_columns[nullable_resolved_identifier] = resolved_identifier;
+            return nullable_resolved_identifier;
         }
+        return nullptr;
     }
 
     /// Resolve identifier functions
@@ -3534,8 +3543,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
     if (scope.join_use_nulls)
     {
-        resolved_identifier = resolved_identifier->clone();
-        convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side, scope.context);
+        auto nullable_resolved_identifier = convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side, scope);
+        if (nullable_resolved_identifier)
+            resolved_identifier = nullable_resolved_identifier;
     }
 
     return resolved_identifier;
@@ -4428,10 +4438,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         {
                             const auto & table_expression_data = table_expression_data_it->second;
                             const auto & column_name = using_column_from_table.getColumnName();
-                            if (!table_expression_data.column_name_to_column_node.contains(column_name))
-                            {
-                                return true;
-                            }
+                            return !table_expression_data.column_name_to_column_node.contains(column_name);
                         }
                         return false;
                     };
@@ -4562,12 +4569,14 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             {
                 auto join_identifier_side = getColumnSideFromJoinTree(node, *nearest_scope_join_node);
                 auto projection_name_it = node_to_projection_name.find(node);
-                node = node->clone();
-                /// Set the same projection name for new nullable node
-                if (projection_name_it != node_to_projection_name.end())
-                    node_to_projection_name.emplace(node, projection_name_it->second);
-
-                convertJoinedColumnTypeToNullIfNeeded(node, nearest_scope_join_node->getKind(), join_identifier_side, scope.context);
+                auto nullable_node = convertJoinedColumnTypeToNullIfNeeded(node, nearest_scope_join_node->getKind(), join_identifier_side, scope);
+                if (nullable_node)
+                {
+                    node = nullable_node;
+                    /// Set the same projection name for new nullable node
+                    if (projection_name_it != node_to_projection_name.end())
+                        node_to_projection_name.emplace(node, projection_name_it->second);
+                }
             }
         }
     }
@@ -7526,6 +7535,29 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 
+class ReplaceColumnsVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsVisitor>
+{
+public:
+    explicit ReplaceColumnsVisitor(const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map_, const ContextPtr & context_)
+        : replacement_map(replacement_map_)
+        , context(context_)
+    {}
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto it = replacement_map.find(node); it != replacement_map.end())
+            node = it->second;
+        if (auto * function_node = node->as<FunctionNode>())
+            rerunFunctionResolve(function_node, context);
+    }
+
+    bool shouldTraverseTopToBottom() const { return false; }
+
+private:
+    const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map;
+    const ContextPtr & context;
+};
+
 /** Resolve query.
   * This function modifies query node during resolve. It is caller responsibility to clone query node before resolve
   * if it is needed for later use.
@@ -7713,21 +7745,23 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 scope.scope_node->formatASTForErrorMessage());
     }
 
-    if (query_node_typed.getPrewhere())
+    if (auto & prewhere_node = query_node_typed.getPrewhere())
     {
-        /** Expression in PREWHERE with JOIN should not be modified by join_use_nulls.
-          * Example: SELECT * FROM t1 JOIN t2 USING (id) PREWHERE a = 1
-          * Column `a` should be resolved from table and should not change its type to Nullable.
-          */
-        bool join_use_nulls = scope.join_use_nulls;
-        bool use_identifier_lookup_to_result_cache = scope.use_identifier_lookup_to_result_cache;
-        scope.join_use_nulls = false;
-        scope.use_identifier_lookup_to_result_cache = false;
+        resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        resolveExpressionNode(query_node_typed.getPrewhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-        scope.join_use_nulls = join_use_nulls;
-        scope.use_identifier_lookup_to_result_cache = use_identifier_lookup_to_result_cache;
+        if (scope.join_use_nulls)
+        {
+            /** Expression in PREWHERE with JOIN should not be modified by join_use_nulls.
+              * Example: SELECT * FROM t1 JOIN t2 USING (id) PREWHERE b = 1
+              * Column `a` should be resolved from table and should not change its type to Nullable.
+              * More complicated example when column is somewhere inside an expression:
+              * SELECT a + 1 as b FROM t1 JOIN t2 USING (id) PREWHERE b = 1
+              * expression `a + 1 as b` in projection and in PREWHERE should have different `a`.
+              */
+            prewhere_node = prewhere_node->clone();
+            ReplaceColumnsVisitor replace_visitor(scope.nullable_join_columns, scope.context);
+            replace_visitor.visit(prewhere_node);
+        }
     }
 
     if (query_node_typed.getWhere())

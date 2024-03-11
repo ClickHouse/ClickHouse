@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS tabc;
-CREATE TABLE tabc (a UInt32, b UInt32 ALIAS a + 1, c UInt32 ALIAS b + 1) ENGINE = MergeTree ORDER BY a;
-INSERT INTO tabc SELECT number FROM numbers(4);
+CREATE TABLE tabc (a UInt32, b UInt32 ALIAS a + 1, c UInt32 ALIAS b + 1, s String) ENGINE = MergeTree ORDER BY a;
+INSERT INTO tabc (a, s) SELECT number, 'abc' || toString(number) FROM numbers(4);
 
 DROP TABLE IF EXISTS ta;
 CREATE TABLE ta (a Int32) ENGINE = MergeTree ORDER BY tuple();
@@ -38,6 +38,7 @@ SELECT b + 1 AS a, * FROM (SELECT b FROM tb) t1 LEFT JOIN (SELECT a, b FROM tabc
 SELECT b + 1 AS a, * FROM (SELECT b FROM tb) t1 RIGHT JOIN (SELECT a, b FROM tabc) t2 USING (a) ORDER BY ALL;
 SELECT b + 1 AS a, * FROM (SELECT b FROM tb) t1 FULL JOIN (SELECT a, b FROM tabc) t2 USING (a) ORDER BY ALL;
 
+SELECT b + 1 AS a, s FROM tb FULL OUTER JOIN tabc USING (a) PREWHERE a > 2 ORDER BY ALL;
 
 DROP TABLE IF EXISTS tabc;
 DROP TABLE IF EXISTS ta;
