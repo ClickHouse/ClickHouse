@@ -653,7 +653,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node & node)
     auto collect_tuple_elemets = [](const auto & children)
     {
         if (children.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create type from empty Tuple or Nested node");
+            throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Cannot create type from empty Tuple or Nested node");
 
         std::vector<std::tuple<String, ColumnWithTypeAndDimensions>> tuple_elements;
         tuple_elements.reserve(children.size());
