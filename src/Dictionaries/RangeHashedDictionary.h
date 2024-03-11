@@ -15,6 +15,8 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryHelpers.h>
+#include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -28,10 +30,6 @@
 
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
-
-#include <Dictionaries/ClickHouseDictionarySource.h>
-#include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
 
 
 namespace DB
