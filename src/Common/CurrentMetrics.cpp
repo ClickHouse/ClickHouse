@@ -274,7 +274,19 @@
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
     M(DistrCacheReadRequests, "Number of executed Read requests to Distributed Cache") \
     M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
-    M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache")
+    M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache") \
+    \
+    M(StorageConnectionsStored, "Total count of sessions stored in the session pool for storages") \
+    M(StorageConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for storages") \
+    \
+    M(DiskConnectionsStored, "Total count of sessions stored in the session pool for disks") \
+    M(DiskConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for disks") \
+    \
+    M(HTTPConnectionsStored, "Total count of sessions stored in the session pool for http hosts") \
+    M(HTTPConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for http hosts") \
+    \
+    M(AddressesActive, "Total count of addresses which are used for creation connections with connection pools") \
+
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
