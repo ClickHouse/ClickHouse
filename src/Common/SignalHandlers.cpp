@@ -231,11 +231,11 @@ void SignalListener::run()
         // levels and more info, but for completeness we log all signals
         // here at trace level.
         // Don't use strsignal here, because it's not thread-safe.
-        LOG_TRACE(log, "Received signal {}", sig);
+        // LOG_TRACE(log, "Received signal {}", sig);
 
         if (sig == StopThread)
         {
-            LOG_INFO(log, "Stop SignalListener thread");
+            // LOG_INFO(log, "Stop SignalListener thread");
             break;
         }
         else if (sig == SIGHUP)
