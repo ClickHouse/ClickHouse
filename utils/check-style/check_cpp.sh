@@ -4,31 +4,35 @@
 
 cd /ClickHouse/utils/check-style || echo -e "failure\tRepo not found" > /test_output/check_status.tsv
 
+start_total=`date +%s`
+
 # FIXME: 30 sec to wait
 # echo "Check duplicates" | ts
 # ./check-duplicate-includes.sh |& tee /test_output/duplicate_includes_output.txt
 
-echo "Check style" | ts
+start=`date +%s`
 ./check-style -n              |& tee /test_output/style_output.txt
-echo "Check typos" | ts
-./check-typos                 |& tee /test_output/typos_output.txt
-echo "Check docs spelling" | ts
-./check-doc-aspell            |& tee /test_output/docs_spelling_output.txt
-echo "Check whitespaces" | ts
+runtime=$((`date +%s`-start))
+echo "Check style. Done. $runtime seconds."
+
+start=`date +%s`
 ./check-whitespaces -n        |& tee /test_output/whitespaces_output.txt
-echo "Check workflows" | ts
+runtime=$((`date +%s`-start))
+echo "Check whitespaces. Done. $runtime seconds."
+
+start=`date +%s`
 ./check-workflows             |& tee /test_output/workflows_output.txt
-echo "Check submodules" | ts
+runtime=$((`date +%s`-start))
+echo "Check workflows. Done. $runtime seconds."
+
+start=`date +%s`
 ./check-submodules            |& tee /test_output/submodules_output.txt
-echo "Check style. Done" | ts
+runtime=$((`date +%s`-start))
+echo "Check submodules. Done. $runtime seconds."
 
 # FIXME: 6 min to wait
 # echo "Check shell scripts with shellcheck" | ts
 # ./shellcheck-run.sh           |& tee /test_output/shellcheck_output.txt
 
-
-# FIXME: move out
-# /process_style_check_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
-# echo "Check help for changelog generator works" | ts
-# cd ../changelog || exit 1
-# ./changelog.py -h 2>/dev/null 1>&2
+runtime=$((`date +%s`-start_total))
+echo "Check style total. Done. $runtime seconds."
