@@ -32,8 +32,13 @@ def process_result(result_folder):
         if not os.path.exists(full_path):
             test_results.append((f"Check {name}", "SKIPPED"))
         elif os.stat(full_path).st_size != 0:
+            with open(full_path, 'r') as file:
+                lines = file.readlines()
+                if len(lines) > 100:
+                    lines = lines[:100] + ['====TRIMMED====']
+                content = "\n".join(lines)
             description += f"Check {name} failed. "
-            test_results.append((f"Check {name}", "FAIL"))
+            test_results.append((f"Check {name}", "FAIL", None, content))
             status = "failure"
         else:
             test_results.append((f"Check {name}", "OK"))
