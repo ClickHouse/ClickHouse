@@ -337,6 +337,9 @@ class PRInfo:
         )
 
     def fetch_changed_files(self):
+        if self.changed_files_requested:
+            return
+
         if not getattr(self, "diff_urls", False):
             raise TypeError("The event does not have diff URLs")
 
