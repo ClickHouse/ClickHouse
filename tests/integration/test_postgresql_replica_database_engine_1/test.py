@@ -86,7 +86,7 @@ def setup_teardown():
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_load_and_sync_all_database_tables(started_cluster):
+def test_load_and_sync_all_database_tables(started_cluster, instance_name):
     NUM_TABLES = 5
 
     instance = cluster.instances[instance_name]
@@ -104,7 +104,7 @@ def test_load_and_sync_all_database_tables(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_replicating_dml(started_cluster):
+def test_replicating_dml(started_cluster, instance_name):
     NUM_TABLES = 5
 
     instance = cluster.instances[instance_name]
@@ -151,7 +151,7 @@ def test_replicating_dml(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_different_data_types(started_cluster):
+def test_different_data_types(started_cluster, instance_name):
     instance = cluster.instances[instance_name]
     pg_manager = pg_managers.get(instance_name)
 
@@ -261,7 +261,7 @@ def test_different_data_types(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_load_and_sync_subset_of_database_tables(started_cluster):
+def test_load_and_sync_subset_of_database_tables(started_cluster, instance_name):
     NUM_TABLES = 10
 
     instance = cluster.instances[instance_name]
@@ -315,7 +315,7 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_changing_replica_identity_value(started_cluster):
+def test_changing_replica_identity_value(started_cluster, instance_name):
     instance = cluster.instances[instance_name]
     pg_manager = pg_managers.get(instance_name)
 
@@ -337,7 +337,7 @@ def test_changing_replica_identity_value(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_clickhouse_restart(started_cluster):
+def test_clickhouse_restart(started_cluster, instance_name):
     NUM_TABLES = 5
 
     instance = cluster.instances[instance_name]
@@ -361,7 +361,7 @@ def test_clickhouse_restart(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_replica_identity_index(started_cluster):
+def test_replica_identity_index(started_cluster, instance_name):
     instance = cluster.instances[instance_name]
     pg_manager = pg_managers.get(instance_name)
 
@@ -399,7 +399,7 @@ def test_replica_identity_index(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_table_schema_changes(started_cluster):
+def test_table_schema_changes(started_cluster, instance_name):
     NUM_TABLES = 5
 
     instance = cluster.instances[instance_name]
@@ -448,7 +448,7 @@ def test_table_schema_changes(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_many_concurrent_queries(started_cluster):
+def test_many_concurrent_queries(started_cluster, instance_name):
     table = "test_many_conc"
     query_pool = [
         "DELETE FROM {} WHERE (value*value) % 3 = 0;",
@@ -560,7 +560,7 @@ def test_many_concurrent_queries(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_single_transaction(started_cluster):
+def test_single_transaction(started_cluster, instance_name):
     instance = cluster.instances[instance_name]
     pg_manager = pg_managers.get(instance_name)
 
@@ -595,7 +595,7 @@ def test_single_transaction(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_virtual_columns(started_cluster):
+def test_virtual_columns(started_cluster, instance_name):
     instance = cluster.instances[instance_name]
     pg_manager = pg_managers.get(instance_name)
 
@@ -627,7 +627,7 @@ def test_virtual_columns(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_multiple_databases(started_cluster):
+def test_multiple_databases(started_cluster, instance_name):
     NUM_TABLES = 5
 
     instance = cluster.instances[instance_name]
@@ -727,7 +727,7 @@ def test_multiple_databases(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_concurrent_transactions(started_cluster):
+def test_concurrent_transactions(started_cluster, instance_name):
     instance = cluster.instances[instance_name]
     pg_manager = pg_managers.get(instance_name)
 
@@ -776,7 +776,7 @@ def test_concurrent_transactions(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
+def test_abrupt_connection_loss_while_heavy_replication(started_cluster, instance_name):
     instance = cluster.instances[instance_name]
     pg_manager = pg_managers.get(instance_name)
 
@@ -833,7 +833,7 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_drop_database_while_replication_startup_not_finished(started_cluster):
+def test_drop_database_while_replication_startup_not_finished(started_cluster, instance_name):
     NUM_TABLES = 5
 
     instance = cluster.instances[instance_name]
@@ -849,7 +849,7 @@ def test_drop_database_while_replication_startup_not_finished(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_restart_server_while_replication_startup_not_finished(started_cluster):
+def test_restart_server_while_replication_startup_not_finished(started_cluster, instance_name):
     NUM_TABLES = 5
 
     instance = cluster.instances[instance_name]
@@ -865,7 +865,7 @@ def test_restart_server_while_replication_startup_not_finished(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_abrupt_server_restart_while_heavy_replication(started_cluster):
+def test_abrupt_server_restart_while_heavy_replication(started_cluster, instance_name):
     def transaction(thread_id):
         if thread_id % 2:
             conn = get_postgres_conn(
@@ -916,7 +916,7 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_quoting_1(started_cluster):
+def test_quoting_1(started_cluster, instance_name):
     table_name = "user"
 
     instance = cluster.instances[instance_name]
@@ -930,7 +930,7 @@ def test_quoting_1(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_quoting_2(started_cluster):
+def test_quoting_2(started_cluster, instance_name):
     table_name = "user"
 
     instance = cluster.instances[instance_name]
@@ -946,7 +946,7 @@ def test_quoting_2(started_cluster):
 
 
 @pytest.mark.parametrize("instance_name", ["instance1", "instance2"])
-def test_user_managed_slots(started_cluster):
+def test_user_managed_slots(started_cluster, instance_name):
     slot_name = "user_slot"
     table_name = "test_table"
 
