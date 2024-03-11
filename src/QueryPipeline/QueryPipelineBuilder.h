@@ -152,6 +152,7 @@ public:
         PreparedSetsCachePtr prepared_sets_cache);
 
     void addMaterializingCTEsTransform(
+        ContextPtr context,
         const Block & res_header,
         StoragePtr external_table,
         const String & cte_table_name,

@@ -156,8 +156,18 @@ TemporaryTableHolder::TemporaryTableHolder(
                     /*persistent*/ false,
                     ColumnsDescription{columns},
                     ConstraintsDescription{constraints},
-                    /*comment*/"For materializing CTE",
+                    /*comment*/ "For materializing CTE",
                     context_);
+            }
+            else if (engine->name == "Set")
+            {
+                return std::make_shared<StorageSet>(
+                    /*disk*/ nullptr, /*relative_path*/ "",
+                    table_id,
+                    ColumnsDescription{columns},
+                    ConstraintsDescription{constraints},
+                    /*comments*/ "For materializing CTE",
+                    /*persistent*/ false);
             }
 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} is not supported for temporary table", engine->name);

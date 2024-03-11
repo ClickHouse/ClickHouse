@@ -66,16 +66,16 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
-#include "Interpreters/GlobalMaterializeCTEVisitor.h"
-#include "Interpreters/MaterializedTableFromCTE.h"
-#include "Planner/Utils.h"
-#include "Processors/Executors/PushingPipelineExecutor.h"
-#include "Processors/QueryPlan/BuildQueryPipelineSettings.h"
-#include "Processors/QueryPlan/IQueryPlanStep.h"
-#include "Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h"
-#include "Processors/QueryPlan/UnionStep.h"
-#include "Processors/Sinks/EmptySink.h"
-#include "QueryPipeline/QueryPlanResourceHolder.h"
+#include <Interpreters/GlobalMaterializeCTEVisitor.h>
+#include <Interpreters/MaterializedTableFromCTE.h>
+#include <Planner/Utils.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Dictionaries/IDictionary.h>
 #include <Functions/FunctionsExternalDictionaries.h>
 #include <Interpreters/IKeyValueEntity.h>
@@ -313,10 +313,16 @@ static void buildTemporaryTablesFromCTE(
         plans.emplace_back(std::move(plan));
     }
 
-    /// Create a dummy UNION step to merge all plans into a single plans. The output is unused.
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
-    union_step->setStepDescription("Dummy Union");
-    query_plan.unitePlans(std::move(union_step), std::move(plans));
+    if (plans.size() > 1)
+    {
+        /// Create a dummy UNION step to merge all plans into a single plans. The output is unused.
+        auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+        union_step->setStepDescription("Dummy Union");
+        query_plan.unitePlans(std::move(union_step), std::move(plans));
+    }
+    else
+        query_plan = std::move(*plans.front());
+
     LOG_DEBUG(getLogger("executeQuery"), "Plan to build temporary tables from CTE:\n{}\n", dumpQueryPlan(query_plan));
     LOG_DEBUG(getLogger("executeQuery"), "Pipeline to build temporary tables from CTE:\n{}\n", dumpQueryPipeline(query_plan));
 
@@ -325,8 +331,10 @@ static void buildTemporaryTablesFromCTE(
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(pipeline.getHeader()));
 
-    CompletedPipelineExecutor executor(pipeline);
-    executor.execute();
+    {
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
+    }
 }
 
 QueryLogElement logQueryStart(
@@ -940,7 +948,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (context->getSettingsRef().enable_materialized_cte)
         {
-            /// Materialize all CTE with MATERIALIZE keyword add to query context as temporary tables
+            /// Materialize all CTE with MATERIALIZED keyword add to query context as temporary tables
             /// We need to do it here before analyzing the query
             /// We also need to fill the external tables here, otherwise the following query may work incorrectly if
             /// id is the primary key and we need it for primary key analysis:

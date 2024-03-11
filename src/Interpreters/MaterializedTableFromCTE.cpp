@@ -1,11 +1,11 @@
-#include "MaterializedTableFromCTE.h"
-#include "Interpreters/Context.h"
-#include "Processors/QueryPlan/MaterializingCTEStep.h"
+#include <Interpreters/MaterializedTableFromCTE.h>
+#include <Interpreters/Context.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 namespace DB
 {
 
-std::unique_ptr<QueryPlan> FutureTableFromCTE::build(const ContextPtr & context)
+std::unique_ptr<QueryPlan> FutureTableFromCTE::build(ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
 

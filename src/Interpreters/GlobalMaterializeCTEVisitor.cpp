@@ -1,13 +1,22 @@
-#include "GlobalMaterializeCTEVisitor.h"
+#include <Interpreters/GlobalMaterializeCTEVisitor.h>
 #include <Interpreters/Context.h>
-#include "Common/tests/gtest_global_context.h"
-#include "Parsers/ASTSelectIntersectExceptQuery.h"
-#include "Parsers/ASTSelectWithUnionQuery.h"
-#include "Storages/ConstraintsDescription.h"
+#include <Common/tests/gtest_global_context.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Storages/ConstraintsDescription.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int WRONG_GLOBAL_SUBQUERY;
+    extern const int LOGICAL_ERROR;
+    extern const int TABLE_ALREADY_EXISTS;
+}
 
 void DB::GlobalMaterializeCTEVisitor::visit(ASTPtr & ast)
 {
@@ -59,7 +68,10 @@ void GlobalMaterializeCTEVisitor::Data::addExternalStorage(ASTWithElement & cte_
     auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
         getContext(),
         ColumnsDescription{columns},
-        ConstraintsDescription{});
+        ConstraintsDescription{},
+        /*query*/ nullptr,
+        /*create_for_global_subquery*/ false,
+        cte_expr.engine);
     if(!context->getSettingsRef().send_materialized_cte_tables_to_remote_shard)
         external_storage_holder->can_be_sent_to_remote = false;
     StoragePtr external_storage = external_storage_holder->getTable();

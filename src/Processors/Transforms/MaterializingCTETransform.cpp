@@ -8,6 +8,7 @@
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <exception>
 
@@ -38,12 +39,14 @@ MaterializingCTETransform::~MaterializingCTETransform()
 }
 
 MaterializingCTETransform::MaterializingCTETransform(
+    ContextPtr context_,
     Block in_header_,
     Block out_header_,
     StoragePtr external_table_,
     const String & cte_table_name_,
     SizeLimits network_transfer_limits_)
     : IAccumulatingTransform(std::move(in_header_), std::move(out_header_))
+    , WithContext(context_)
     , cte_table_name(cte_table_name_)
     , external_table(std::move(external_table_))
     , network_transfer_limits(std::move(network_transfer_limits_))
@@ -75,7 +78,7 @@ void MaterializingCTETransform::startSubquery()
 
     if (external_table)
         /// TODO: make via port
-        table_out = QueryPipeline(external_table->write({}, external_table->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
+        table_out = QueryPipeline(external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext(), /*async_insert=*/false));
 
 
     if (table_out.initialized())

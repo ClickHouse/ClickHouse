@@ -38,7 +38,7 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 if (s_eq.ignore(pos, expected) && ident_with_optional_params_p.parse(pos, engine, expected))
                 {
                     with_element->engine = std::move(engine);
-                    with_element->children.push_back(engine);
+                    with_element->children.push_back(with_element->engine);
                 }
                 else
                     return false;

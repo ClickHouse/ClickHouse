@@ -133,8 +133,8 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     setInMemoryMetadata(storage_metadata);
 
 
-    if (relative_path_.empty())
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
+    if (disk && relative_path_.empty())
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "On-disk Join and Set storages require data path");
 
     path = relative_path_;
 }

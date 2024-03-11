@@ -7,9 +7,9 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
-#include "Common/CurrentThread.h"
+#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
-#include "Interpreters/Context_fwd.h"
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Context.h>
 
@@ -53,7 +53,7 @@ MaterializingCTEStep::MaterializingCTEStep(
 void MaterializingCTEStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     // pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(set_and_key), std::move(external_table), network_transfer_limits, context->getPreparedSetsCache());
-    pipeline.addMaterializingCTEsTransform(getOutputStream().header, external_table, cte_table_name, network_transfer_limits);
+    pipeline.addMaterializingCTEsTransform(getContext(), getOutputStream().header, external_table, cte_table_name, network_transfer_limits);
 }
 
 void MaterializingCTEStep::updateOutputStream()

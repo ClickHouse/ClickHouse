@@ -610,12 +610,13 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
     pipe.addTransform(std::move(transform));
 }
 
-void QueryPipelineBuilder::addMaterializingCTEsTransform(const Block & res_header, StoragePtr external_table, const String & cte_table_name, const SizeLimits & limits)
+void QueryPipelineBuilder::addMaterializingCTEsTransform(ContextPtr context, const Block & res_header, StoragePtr external_table, const String & cte_table_name, const SizeLimits & limits)
 {
     dropTotalsAndExtremes();
     resize(1);
 
     auto transform = std::make_shared<MaterializingCTETransform>(
+        context,
         getHeader(),
         res_header,
         std::move(external_table),

@@ -23,10 +23,11 @@ class PushingPipelineExecutor;
 /// Don't return any data. Tables are created when Finish status is returned.
 /// In general, several work() methods need to be called to finish.
 /// Independent processors is created for each CTE expressions.
-class MaterializingCTETransform : public IAccumulatingTransform
+class MaterializingCTETransform : public IAccumulatingTransform, WithContext
 {
 public:
     MaterializingCTETransform(
+        ContextPtr context_,
         Block in_header_,
         Block out_header_,
         StoragePtr external_table_,
