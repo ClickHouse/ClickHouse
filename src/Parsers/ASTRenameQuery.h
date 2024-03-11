@@ -127,6 +127,7 @@ protected:
                 settings.ostr << '.';
             }
 
+            chassert(it->from.table);
             it->from.table->formatImpl(settings, state, frame);
 
             settings.ostr << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "");
@@ -137,6 +138,7 @@ protected:
                 settings.ostr << '.';
             }
 
+            chassert(it->to.table);
             it->to.table->formatImpl(settings, state, frame);
 
         }

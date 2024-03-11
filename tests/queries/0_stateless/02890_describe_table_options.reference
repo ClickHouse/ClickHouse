@@ -60,7 +60,6 @@ DESCRIBE remote(default, currentDatabase(), t_describe_options) FORMAT PrettyCom
 │ _part_offset   │ UInt64                    │              │                    │ Number of row in the part                                                               │                  │                │          1 │
 │ _row_exists    │ UInt8                     │              │                    │ Persisted mask created by lightweight delete that show whether row exists or is deleted │                  │                │          1 │
 │ _block_number  │ UInt64                    │              │                    │ Persisted original number of block that was assigned at insert                          │ Delta, LZ4       │                │          1 │
-│ _table         │ LowCardinality(String)    │              │                    │ Name of a table                                                                         │                  │                │          1 │
 │ _shard_num     │ UInt32                    │              │                    │ Deprecated. Use function shardNum instead                                               │                  │                │          1 │
 └────────────────┴───────────────────────────┴──────────────┴────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────┴──────────────────┴────────────────┴────────────┘
 SET describe_compact_output = 0, describe_include_virtual_columns = 1, describe_include_subcolumns = 1;
@@ -94,7 +93,6 @@ DESCRIBE remote(default, currentDatabase(), t_describe_options) FORMAT PrettyCom
 │ _part_offset   │ UInt64                    │              │                    │ Number of row in the part                                                               │                  │                │            0 │          1 │
 │ _row_exists    │ UInt8                     │              │                    │ Persisted mask created by lightweight delete that show whether row exists or is deleted │                  │                │            0 │          1 │
 │ _block_number  │ UInt64                    │              │                    │ Persisted original number of block that was assigned at insert                          │ Delta, LZ4       │                │            0 │          1 │
-│ _table         │ LowCardinality(String)    │              │                    │ Name of a table                                                                         │                  │                │            0 │          1 │
 │ _shard_num     │ UInt32                    │              │                    │ Deprecated. Use function shardNum instead                                               │                  │                │            0 │          1 │
 │ arr.size0      │ UInt64                    │              │                    │                                                                                         │                  │                │            1 │          0 │
 │ t.a            │ String                    │              │                    │                                                                                         │ ZSTD(1)          │                │            1 │          0 │
@@ -160,7 +158,6 @@ DESCRIBE remote(default, currentDatabase(), t_describe_options) FORMAT PrettyCom
 │ _part_offset   │ UInt64                    │          1 │
 │ _row_exists    │ UInt8                     │          1 │
 │ _block_number  │ UInt64                    │          1 │
-│ _table         │ LowCardinality(String)    │          1 │
 │ _shard_num     │ UInt32                    │          1 │
 └────────────────┴───────────────────────────┴────────────┘
 SET describe_compact_output = 1, describe_include_virtual_columns = 1, describe_include_subcolumns = 1;
@@ -194,7 +191,6 @@ DESCRIBE remote(default, currentDatabase(), t_describe_options) FORMAT PrettyCom
 │ _part_offset   │ UInt64                    │            0 │          1 │
 │ _row_exists    │ UInt8                     │            0 │          1 │
 │ _block_number  │ UInt64                    │            0 │          1 │
-│ _table         │ LowCardinality(String)    │            0 │          1 │
 │ _shard_num     │ UInt32                    │            0 │          1 │
 │ arr.size0      │ UInt64                    │            1 │          0 │
 │ t.a            │ String                    │            1 │          0 │

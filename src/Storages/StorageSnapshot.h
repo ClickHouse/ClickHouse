@@ -55,6 +55,9 @@ struct StorageSnapshot
 
     std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;
 
+    /// Get columns description
+    ColumnsDescription getAllColumnsDescription() const;
+
     /// Get all available columns with types according to options.
     NamesAndTypesList getColumns(const GetColumnsOptions & options) const;
 

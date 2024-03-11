@@ -80,6 +80,7 @@ def test_s3_table_functions_timeouts(started_cluster):
     Test with timeout limit of 1200ms.
     This should raise an Exception and pass.
     """
+
     with PartitionManager() as pm:
         pm.add_network_delay(node, 1200)
 

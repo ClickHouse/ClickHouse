@@ -296,7 +296,6 @@ VirtualColumnsDescription StorageDistributed::createVirtuals()
     StorageInMemoryMetadata metadata;
     auto desc = MergeTreeData::createVirtuals(metadata);
 
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of a table");
     desc.addEphemeral("_shard_num", std::make_shared<DataTypeUInt32>(), "Deprecated. Use function shardNum instead");
 
     return desc;
@@ -964,7 +963,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     else
         columns_to_send = metadata_snapshot->getSampleBlockNonMaterialized().getNames();
 
-    /// DistributedSink will not own cluster, but will own ConnectionPools of the cluster
+    /// DistributedSink will not own cluster
     return std::make_shared<DistributedSink>(
         local_context, *this, metadata_snapshot, cluster, insert_sync, timeout,
         StorageID{remote_database, remote_table}, columns_to_send);
