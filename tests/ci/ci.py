@@ -55,6 +55,8 @@ from report import ERROR, SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
 from version_helper import get_version_from_repo
 
+# pylint: disable=too-many-lines
+
 
 @dataclass
 class PendingState:
