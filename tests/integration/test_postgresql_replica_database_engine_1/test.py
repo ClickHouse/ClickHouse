@@ -55,6 +55,11 @@ pg_managers = {
     "instance2": pg_manager2,
 }
 
+pg_hostnames = {
+    "instance1": "postgres1",
+    "instance2": "postgres11",
+}
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -779,6 +784,7 @@ def test_concurrent_transactions(started_cluster, instance_name):
 def test_abrupt_connection_loss_while_heavy_replication(started_cluster, instance_name):
     instance = cluster.instances[instance_name]
     pg_manager = pg_managers.get(instance_name)
+    pg_hostname = pg_hostnames.get(instance_name)
 
     def transaction(thread_id):
         if thread_id % 2:
@@ -822,13 +828,13 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster, instanc
         thread.join()  # Join here because it takes time for data to reach wal
 
     time.sleep(2)
-    started_cluster.pause_container("postgres1")
+    started_cluster.pause_container(pg_hostname)
 
     # for i in range(NUM_TABLES):
     #     result = instance.query(f"SELECT count() FROM test_database.postgresql_replica_{i}")
     #     print(result) # Just debug
 
-    started_cluster.unpause_container("postgres1")
+    started_cluster.unpause_container(pg_hostname)
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
 
