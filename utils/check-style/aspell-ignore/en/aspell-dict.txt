@@ -1849,6 +1849,7 @@ linearized
 lineasstring
 linefeeds
 lineorder
+linestring
 linux
 llvm
 loadDefaultCAFile
@@ -2207,7 +2208,9 @@ rankCorr
 rapidjson
 rawblob
 readWKTMultiPolygon
+readWKTPoint
 readWKTPolygon
+readWKTRing
 readahead
 readline
 readme
