@@ -1146,6 +1146,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (!result.rows_per_granule.empty())
         result.adjustLastGranule();
 
+    fillVirtualColumns(result, leading_begin_part_offset, leading_end_part_offset);
+    return result;
+}
+
+void MergeTreeRangeReader::fillVirtualColumns(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
+{
     ColumnPtr part_offset_column;
 
     auto add_offset_column = [&](const auto & column_name)
@@ -1169,8 +1175,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     /// Column _block_offset is the same as _part_offset if it's not persisted in part.
     if (read_sample_block.has(BlockOffsetColumn::name))
         add_offset_column(BlockOffsetColumn::name);
-
-    return result;
 }
 
 ColumnPtr MergeTreeRangeReader::createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
