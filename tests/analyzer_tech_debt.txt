@@ -10,7 +10,6 @@
 01761_cast_to_enum_nullable
 01925_join_materialized_columns
 01952_optimize_distributed_group_by_sharding_key
-02174_cte_scalar_cache_mv
 02354_annoy
 # Check after constants refactoring
 02901_parallel_replicas_rollup
