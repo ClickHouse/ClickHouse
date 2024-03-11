@@ -24,6 +24,7 @@ namespace ProfileEvents
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentUseMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
+    extern const Event FileSegmentFailToIncreasePriority;
     extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
 }
@@ -966,8 +967,10 @@ void FileSegment::increasePriority()
     auto it = getQueueIterator();
     if (it)
     {
-        auto cache_lock = cache->lockCache();
-        hits_count = it->increasePriority(cache_lock);
+        if (auto cache_lock = cache->tryLockCache())
+            hits_count = it->increasePriority(cache_lock);
+        else
+            ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
     }
 }
 

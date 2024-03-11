@@ -102,7 +102,7 @@ struct TaskStateWithOwner
         return TaskStateWithOwner(state, owner).toString();
     }
 
-    String toString()
+    String toString() const
     {
         WriteBufferFromOwnString wb;
         wb << static_cast<UInt32>(state) << "\n" << escape << owner;
