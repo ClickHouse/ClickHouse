@@ -1602,9 +1602,9 @@ template <
     typename Map,
     bool need_filter,
     bool need_replication,
-    bool flag_per_row,
     bool need_flags,
     bool add_missing,
+    bool flag_per_row,
     typename AddedColumns>
 NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
     std::vector<KeyGetter> && key_getter_vector,
