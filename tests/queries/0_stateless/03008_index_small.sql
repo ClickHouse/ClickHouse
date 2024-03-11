@@ -16,4 +16,4 @@ ATTACH TABLE test;
 
 SELECT count() FROM test WHERE b >= 0;
 
--- DROP TABLE test;
+DROP TABLE test;
