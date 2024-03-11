@@ -5,9 +5,6 @@
 
 #include <Interpreters/SetVariants.h>
 
-#include <memory>
-#include <set>
-
 
 namespace DB
 {
