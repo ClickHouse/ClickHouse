@@ -47,6 +47,8 @@ from report import SUCCESS, BuildResult, JobReport
 from s3_helper import S3Helper
 from version_helper import get_version_from_repo
 
+# pylint: disable=too-many-lines
+
 
 def get_check_name(check_name: str, batch: int, num_batches: int) -> str:
     res = check_name
