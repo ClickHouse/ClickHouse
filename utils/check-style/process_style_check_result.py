@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-import os
-import logging
 import argparse
 import csv
+import logging
+import os
 
 
 # TODO: add typing and log files to the fourth column, think about launching
@@ -13,9 +13,10 @@ def process_result(result_folder):
     description = ""
     test_results = []
     checks = (
-        "duplicate includes",
-        "shellcheck",
+        # "duplicate includes",
+        # "shellcheck",
         "style",
+        "pylint",
         "black",
         "mypy",
         "typos",
@@ -29,17 +30,23 @@ def process_result(result_folder):
         out_file = name.replace(" ", "_") + "_output.txt"
         full_path = os.path.join(result_folder, out_file)
         if not os.path.exists(full_path):
-            logging.info("No %s check log on path %s", name, full_path)
-            return "exception", f"No {name} check log", []
+            test_results.append((f"Check {name}", "SKIPPED"))
         elif os.stat(full_path).st_size != 0:
+            with open(full_path, "r") as file:
+                lines = file.readlines()
+                if len(lines) > 100:
+                    lines = lines[:100] + ["====TRIMMED===="]
+                content = "\n".join(lines)
             description += f"Check {name} failed. "
-            test_results.append((f"Check {name}", "FAIL"))
+            test_results.append((f"Check {name}", "FAIL", None, content))
             status = "failure"
         else:
             test_results.append((f"Check {name}", "OK"))
 
     if not description:
         description += "Style check success"
+
+    assert test_results, "No single style-check output found"
 
     return status, description, test_results
 

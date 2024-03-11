@@ -46,6 +46,7 @@
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
 #include <Common/CPUID.h>
+#include <Common/HTTPConnectionPool.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/ServerUUID.h>
@@ -185,7 +186,7 @@ static bool jemallocOptionEnabled(const char *name)
     return value;
 }
 #else
-static bool jemallocOptionEnabled(const char *) { return 0; }
+static bool jemallocOptionEnabled(const char *) { return false; }
 #endif
 
 int mainEntryClickHouseServer(int argc, char ** argv)
@@ -1547,6 +1548,23 @@ try
             NamedCollectionUtils::reloadFromConfig(*config);
 
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
+
+            HTTPConnectionPools::instance().setLimits(
+                HTTPConnectionPools::Limits{
+                    new_server_settings.disk_connections_soft_limit,
+                    new_server_settings.disk_connections_warn_limit,
+                    new_server_settings.disk_connections_store_limit,
+                },
+                HTTPConnectionPools::Limits{
+                    new_server_settings.storage_connections_soft_limit,
+                    new_server_settings.storage_connections_warn_limit,
+                    new_server_settings.storage_connections_store_limit,
+                },
+                HTTPConnectionPools::Limits{
+                    new_server_settings.http_connections_soft_limit,
+                    new_server_settings.http_connections_warn_limit,
+                    new_server_settings.http_connections_store_limit,
+                });
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 

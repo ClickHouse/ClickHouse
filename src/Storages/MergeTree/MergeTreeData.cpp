@@ -68,7 +68,7 @@
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/BlockNumberColumn.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Freeze.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
@@ -431,6 +431,29 @@ MergeTreeData::MergeTreeData(
     };
 }
 
+VirtualColumnsDescription MergeTreeData::createVirtuals(const StorageInMemoryMetadata & metadata)
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of part");
+    desc.addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "Sequential index of the part in the query result");
+    desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)");
+    desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition");
+    desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)");
+    desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part");
+
+    if (metadata.hasPartitionKey())
+    {
+        auto partition_types = metadata.partition_key.sample_block.getDataTypes();
+        desc.addEphemeral("_partition_value", std::make_shared<DataTypeTuple>(std::move(partition_types)), "Value (a tuple) of a PARTITION BY expression");
+    }
+
+    desc.addPersistent(RowExistsColumn::name, RowExistsColumn::type, nullptr, "Persisted mask created by lightweight delete that show whether row exists or is deleted");
+    desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "Persisted original number of block that was assigned at insert");
+
+    return desc;
+}
+
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 {
     auto settings = getSettings();
@@ -678,6 +701,7 @@ void MergeTreeData::setProperties(
 {
     checkProperties(new_metadata, old_metadata, attach, false, allow_nullable_key, local_context);
     setInMemoryMetadata(new_metadata);
+    setVirtuals(createVirtuals(new_metadata));
 }
 
 namespace
@@ -1003,73 +1027,38 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
     /// TODO Checks for Graphite mode.
 }
 
+const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value"};
 
-DataTypePtr MergeTreeData::getPartitionValueType() const
+Block MergeTreeData::getHeaderWithVirtualsForFilter() const
 {
-    DataTypePtr partition_value_type;
-    auto partition_types = getInMemoryMetadataPtr()->partition_key.sample_block.getDataTypes();
-    if (partition_types.empty())
-        partition_value_type = std::make_shared<DataTypeUInt8>();
-    else
-        partition_value_type = std::make_shared<DataTypeTuple>(std::move(partition_types));
-    return partition_value_type;
+    Block header;
+    auto virtuals_desc = getVirtualsPtr();
+    for (const auto & name : virtuals_useful_for_filter)
+        if (auto column = virtuals_desc->tryGet(name))
+            header.insert({column->type->createColumn(), column->type, name});
+    return header;
 }
 
-
-Block MergeTreeData::getSampleBlockWithVirtualColumns() const
+Block MergeTreeData::getBlockWithVirtualsForFilter(const MergeTreeData::DataPartsVector & parts, bool ignore_empty) const
 {
-    DataTypePtr partition_value_type = getPartitionValueType();
-    return {
-        ColumnWithTypeAndName(
-            DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
-            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-            "_part"),
-        ColumnWithTypeAndName(
-            DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
-            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-            "_partition_id"),
-        ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid"),
-        ColumnWithTypeAndName(partition_value_type->createColumn(), partition_value_type, "_partition_value")};
-}
+    auto block = getHeaderWithVirtualsForFilter();
 
-
-Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part, bool ignore_empty) const
-{
-    auto block = getSampleBlockWithVirtualColumns();
-    MutableColumns columns = block.mutateColumns();
-
-    auto & part_column = columns[0];
-    auto & partition_id_column = columns[1];
-    auto & part_uuid_column = columns[2];
-    auto & partition_value_column = columns[3];
-
-    bool has_partition_value = typeid_cast<const ColumnTuple *>(partition_value_column.get());
     for (const auto & part_or_projection : parts)
     {
         if (ignore_empty && part_or_projection->isEmpty())
             continue;
-        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-        part_column->insert(part->name);
-        partition_id_column->insert(part->info.partition_id);
-        part_uuid_column->insert(part->uuid);
-        Tuple tuple(part->partition.value.begin(), part->partition.value.end());
-        if (has_partition_value)
-            partition_value_column->insert(tuple);
 
-        if (one_part)
+        const auto * part = part_or_projection->isProjectionPart()
+            ? part_or_projection->getParentPart()
+            : part_or_projection.get();
+
+        for (auto & column : block)
         {
-            part_column = ColumnConst::create(std::move(part_column), 1);
-            partition_id_column = ColumnConst::create(std::move(partition_id_column), 1);
-            part_uuid_column = ColumnConst::create(std::move(part_uuid_column), 1);
-            if (has_partition_value)
-                partition_value_column = ColumnConst::create(std::move(partition_value_column), 1);
-            break;
+            auto field = getFieldForConstVirtualColumn(column.name, *part);
+            column.column->assumeMutableRef().insert(field);
         }
     }
 
-    block.setColumns(std::move(columns));
-    if (!has_partition_value)
-        block.erase("_partition_value");
     return block;
 }
 
@@ -1078,13 +1067,14 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     const ActionsDAGPtr & filter_actions_dag, ContextPtr local_context, const DataPartsVector & parts) const
 {
     if (parts.empty())
-        return 0u;
+        return 0;
+
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, true /* one_part */);
+    auto virtual_columns_block = getBlockWithVirtualsForFilter({parts[0]});
 
     auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr);
 
-    // Generate valid expressions for filtering
+    /// Generate valid expressions for filtering
     bool valid = true;
     for (const auto * input : filter_dag->getInputs())
         if (!virtual_columns_block.has(input->result_name))
@@ -1097,7 +1087,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     std::unordered_set<String> part_values;
     if (valid)
     {
-        virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */);
+        virtual_columns_block = getBlockWithVirtualsForFilter(parts);
         VirtualColumnUtils::filterBlockWithDAG(filter_dag, virtual_columns_block, local_context);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
@@ -3659,6 +3649,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & columns = metadata_snapshot->getColumns();
+    auto virtuals = getVirtualsPtr();
 
     if (!hasDynamicSubcolumns(columns))
         return;
@@ -3666,7 +3657,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     const auto & part_columns = part->getColumns();
     for (const auto & part_column : part_columns)
     {
-        if (part_column.name == LightweightDeleteDescription::FILTER_COLUMN.name || part_column.name == BlockNumberColumn::name)
+        if (virtuals->has(part_column.name))
             continue;
 
         auto storage_column = columns.getPhysical(part_column.name);
@@ -6670,14 +6661,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     const auto & primary_key_max_column_name = metadata_snapshot->minmax_count_projection->primary_key_max_column_name;
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
-    if (required_columns_set.contains("_partition_value") && !typeid_cast<const DataTypeTuple *>(getPartitionValueType().get()))
-    {
-        throw Exception(
-            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-            "Missing column `_partition_value` because there is no partition column in table {}",
-            getStorageID().getTableName());
-    }
-
     if (!primary_key_max_column_name.empty())
         need_primary_key_max_column = required_columns_set.contains(primary_key_max_column_name);
 
@@ -6703,11 +6686,11 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     };
 
     Block virtual_columns_block;
-    auto virtual_block = getSampleBlockWithVirtualColumns();
+    auto virtual_block = getHeaderWithVirtualsForFilter();
     bool has_virtual_column = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
     if (has_virtual_column || filter_dag)
     {
-        virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */, true /* ignore_empty */);
+        virtual_columns_block = getBlockWithVirtualsForFilter(parts, /*ignore_empty=*/ true);
         if (virtual_columns_block.rows() == 0)
             return {};
     }
@@ -7979,21 +7962,6 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(MergeTreeDataPartP
         result->addMutationCommand(command);
 
     return result;
-}
-
-NamesAndTypesList MergeTreeData::getVirtuals() const
-{
-    return NamesAndTypesList{
-        NameAndTypePair("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-        NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
-        NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
-        NameAndTypePair("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-        NameAndTypePair("_partition_value", getPartitionValueType()),
-        NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
-        NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
-        LightweightDeleteDescription::FILTER_COLUMN,
-        NameAndTypePair(BlockNumberColumn::name, BlockNumberColumn::type),
-    };
 }
 
 size_t MergeTreeData::getTotalMergesWithTTLInMergeList() const
