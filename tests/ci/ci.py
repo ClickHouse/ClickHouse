@@ -140,7 +140,7 @@ class CiCache:
         self.s3 = s3
         self.job_digests = job_digests
         self.cache_s3_paths = {
-            job_type: f"{self._S3_CACHE_PREFIX}/{job_type.value}-{self.job_digests[self._get_reference_job_name(job_type)]}/"
+            job_type: f"{self._S3_CACHE_PREFIX}/{job_type.value}-{self._get_digest_for_job_type(self.job_digests, job_type)}/"
             for job_type in self.JobType
         }
         self.s3_record_prefixes = {
@@ -155,14 +155,23 @@ class CiCache:
         if not self._LOCAL_CACHE_PATH.exists():
             self._LOCAL_CACHE_PATH.mkdir(parents=True, exist_ok=True)
 
-    def _get_reference_job_name(self, job_type: JobType) -> str:
-        res = Build.PACKAGE_RELEASE
+    def _get_digest_for_job_type(
+        self, job_digests: Dict[str, str], job_type: JobType
+    ) -> str:
         if job_type == self.JobType.DOCS:
-            res = JobNames.DOCS_CHECK
+            res = job_digests[JobNames.DOCS_CHECK]
         elif job_type == self.JobType.SRCS:
-            res = Build.PACKAGE_RELEASE
+            # any build type job has the same digest - pick up Build.PACKAGE_RELEASE or Build.PACKAGE_ASAN as a failover
+            # Build.PACKAGE_RELEASE may not exist in the list if we have reduced CI pipeline
+            if Build.PACKAGE_RELEASE in job_digests:
+                res = job_digests[Build.PACKAGE_RELEASE]
+            elif Build.PACKAGE_ASAN in job_digests:
+                # failover, if failover does not work - fix it!
+                res = job_digests[Build.PACKAGE_ASAN]
+            else:
+                assert False, "BUG, no build job in digest' list"
         else:
-            assert False
+            assert False, "BUG, New JobType? - please update func"
         return res
 
     def _get_record_file_name(
