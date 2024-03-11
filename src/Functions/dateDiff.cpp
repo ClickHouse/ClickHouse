@@ -1,3 +1,4 @@
+#include "Core/SettingsEnums.h"
 #include "Interpreters/Context.h"
 
 #include <DataTypes/DataTypeDateTime.h>
@@ -43,9 +44,9 @@ class DateDiffImpl
 public:
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 
-    explicit DateDiffImpl(const String & name_, const UInt8 enable_default_monday_first_)
+    explicit DateDiffImpl(const String & name_, FirstDayOfWeek first_day_of_week)
         : name(name_)
-        , enable_default_monday_first(enable_default_monday_first_)
+        , enable_default_monday_first(first_day_of_week != FirstDayOfWeek::Sunday)
     {}
 
     template <typename Transform>
@@ -172,20 +173,12 @@ public:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
+        UInt8 day_of_week_mode = enable_default_monday_first ? 0 : 3;
+
         if constexpr (is_diff)
         {
-            if constexpr (std::is_same_v<TransformX, TransformDateTime64<ToRelativeWeekNumImpl<ResultPrecision::Extended>>>)
-            {
-                UInt8 week_mode = 2;
-                if (enable_default_monday_first)
-                    week_mode = 1;
-
-                return static_cast<Int64>(transform_y.execute(y, timezone_y, week_mode))
-                    - static_cast<Int64>(transform_x.execute(x, timezone_x, week_mode));
-            }
-
-            return static_cast<Int64>(transform_y.execute(y, timezone_y))
-                - static_cast<Int64>(transform_x.execute(x, timezone_x));
+            return static_cast<Int64>(transform_y.execute(y, timezone_y, day_of_week_mode))
+                - static_cast<Int64>(transform_x.execute(x, timezone_x, day_of_week_mode));
         }
         else
         {
@@ -351,7 +344,7 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateDiff>(context); }
 
     explicit FunctionDateDiff(ContextPtr context)
-        : enable_default_monday_first(context->getSettingsRef().first_day_of_week != FirstDayOfWeek::Sunday)
+        : first_day_of_week(context->getSettingsRef().first_day_of_week)
     {
     }
 
@@ -446,8 +439,8 @@ public:
         return res;
     }
 private:
-    const bool enable_default_monday_first = true;
-    DateDiffImpl<is_relative> impl{name, enable_default_monday_first};
+    FirstDayOfWeek first_day_of_week = FirstDayOfWeek::Monday;
+    DateDiffImpl<is_relative> impl{name, first_day_of_week};
 };
 
 
@@ -507,7 +500,7 @@ public:
         return res;
     }
 private:
-    DateDiffImpl<true> impl{name, true};
+    DateDiffImpl<true> impl{name, FirstDayOfWeek::Monday};
 };
 
 }

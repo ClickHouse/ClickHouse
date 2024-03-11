@@ -694,11 +694,11 @@ public:
     /// (round down to monday and divide DayNum by 7; we made an assumption,
     ///  that in domain of the function there was no weeks with any other number of days than 7)
     template <typename DateOrTime>
-    Int32 toRelativeWeekNum(DateOrTime v, UInt8 week_mode = 1) const
+    Int32 toRelativeWeekNum(DateOrTime v, UInt8 day_of_week_mode = 1) const
     {
         const LUTIndex i = toLUTIndex(v);
         /// We add 8 to avoid underflow at beginning of unix epoch.
-        return toDayNum(i + (8 - toDayOfWeek(i, week_mode))) / 7;
+        return toDayNum(i + (8 - toDayOfWeek(i, day_of_week_mode))) / 7;
     }
 
     /// Get year that contains most of the current week. Week begins at monday.
@@ -1056,10 +1056,7 @@ public:
         bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
         // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday, or
         // 3 days to start on Sunday.
-        auto offset = 3;
-        if (monday_first_mode)
-            offset = 4;
-
+        auto offset = monday_first_mode ? 4 : 3;
         UInt64 days = weeks * 7;
         if constexpr (std::is_same_v<Date, DayNum>)
             return DayNum(offset + (d - offset) / days * days);
