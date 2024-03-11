@@ -1756,7 +1756,8 @@ def main() -> int:
         result["build"] = build_digest
         result["docs"] = docs_digest
         result["ci_flags"] = ci_flags
-        result["stages_data"] = _generate_ci_stage_config(jobs_data)
+        if not args.skip_jobs:
+            result["stages_data"] = _generate_ci_stage_config(jobs_data)
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
     ### CONFIGURE action: end

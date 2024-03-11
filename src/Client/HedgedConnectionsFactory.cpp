@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ALL_REPLICAS_ARE_STALE;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 HedgedConnectionsFactory::HedgedConnectionsFactory(
@@ -82,7 +83,10 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
         }
         case PoolMode::GET_MANY:
         {
-            max_entries = max_parallel_replicas;
+            if (max_parallel_replicas == 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the setting max_parallel_replicas must be greater than 0");
+
+            max_entries = std::min(max_parallel_replicas, shuffled_pools.size());
             break;
         }
     }
