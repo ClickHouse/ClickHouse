@@ -1513,11 +1513,12 @@ private:
         bool final,
         ThreadPool * thread_pool) const;
 
-    template <bool no_more_keys, typename State, typename Table>
+    template <typename State, typename Table>
     void mergeStreamsImplCase(
         Arena * aggregates_pool,
         State & state,
         Table & data,
+        bool no_more_keys,
         AggregateDataPtr overflow_row,
         size_t row_begin,
         size_t row_end,
