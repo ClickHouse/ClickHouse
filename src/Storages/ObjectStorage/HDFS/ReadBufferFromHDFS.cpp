@@ -1,7 +1,7 @@
 #include "ReadBufferFromHDFS.h"
 
 #if USE_HDFS
-#include <Storages/HDFS/HDFSCommon.h>
+#include "HDFSCommon.h"
 #include <Common/Scheduler/ResourceGuard.h>
 #include <IO/Progress.h>
 #include <Common/Throttler.h>

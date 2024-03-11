@@ -1,7 +1,7 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 
 #if USE_HDFS
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Interpreters/Context.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/IAST.h>

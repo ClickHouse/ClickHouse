@@ -150,7 +150,7 @@ if (TARGET ch_contrib::azure_sdk)
 endif()
 
 if (TARGET ch_contrib::hdfs)
-    add_headers_and_sources(dbms Storages/HDFS)
+    add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
 

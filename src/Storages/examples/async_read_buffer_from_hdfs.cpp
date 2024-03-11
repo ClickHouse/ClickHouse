@@ -9,7 +9,7 @@
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Interpreters/Context.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Storages/HDFS/AsynchronousReadBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/AsynchronousReadBufferFromHDFS.h>
 
 int main()
 {

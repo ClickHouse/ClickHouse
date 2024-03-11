@@ -1,10 +1,10 @@
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 
 #include <IO/copyData.h>
-#include <Storages/HDFS/WriteBufferFromHDFS.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/WriteBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Common/getRandomASCIIString.h>
 

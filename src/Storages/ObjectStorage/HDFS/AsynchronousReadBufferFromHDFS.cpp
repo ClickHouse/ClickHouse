@@ -1,9 +1,9 @@
 #include "AsynchronousReadBufferFromHDFS.h"
 
 #if USE_HDFS
+#include "ReadBufferFromHDFS.h"
 #include <mutex>
 #include <Common/logger_useful.h>
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/AsynchronousReader.h>
 

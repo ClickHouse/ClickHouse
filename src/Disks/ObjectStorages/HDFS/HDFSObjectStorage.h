@@ -6,7 +6,7 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Core/UUID.h>
 #include <memory>
 #include <Poco/Util/AbstractConfiguration.h>

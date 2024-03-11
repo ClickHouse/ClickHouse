@@ -2,8 +2,8 @@
 
 #if USE_HDFS
 
-#include <Storages/HDFS/WriteBufferFromHDFS.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include "WriteBufferFromHDFS.h"
+#include "HDFSCommon.h"
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
