@@ -1,0 +1,13 @@
+<clickhouse>
+    <prometheus>
+        <port>9092</port>
+        <remote_write>
+            <endpoint>/write</endpoint>
+            <table>default.prometheus</table>
+        </remote_write>
+        <remote_read>
+            <endpoint>/read</endpoint>
+            <table>default.prometheus</table>
+        </remote_read>
+    </prometheus>
+</clickhouse>
