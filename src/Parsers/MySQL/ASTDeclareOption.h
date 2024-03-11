@@ -79,7 +79,7 @@ protected:
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 public:
-    ParserDeclareOptionImpl(const std::vector<OptionDescribe> & options_collection_) : options_collection(options_collection_) {}
+    explicit ParserDeclareOptionImpl(const std::vector<OptionDescribe> & options_collection_) : options_collection(options_collection_) {}
 };
 
 using ParserDeclareOption = ParserDeclareOptionImpl<false>;
