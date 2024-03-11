@@ -9,7 +9,6 @@
 
 #include <Interpreters/IJoin.h>
 #include <Interpreters/AggregationCommon.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/RowRefs.h>
 
 #include <Common/Arena.h>
@@ -32,6 +31,7 @@ namespace DB
 {
 
 class TableJoin;
+class ExpressionActions;
 
 namespace JoinStuff
 {
@@ -470,7 +470,7 @@ private:
 
     bool empty() const;
 
-    void validateAdditionalFilterExpression(ExpressionActionsPtr additional_filter_expression);
+    void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 };
 

@@ -4,8 +4,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -30,6 +28,7 @@ class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;
 class DictionaryJoinAdapter;
+class ExpressionActions;
 class StorageJoin;
 class StorageDictionary;
 class IKeyValueEntity;
@@ -156,7 +155,7 @@ private:
 
     Clauses clauses;
     /// Originally used for inequal join. If there is no any inequal join condition, it will be nullptr.
-    ExpressionActionsPtr full_join_expression = nullptr;
+    std::shared_ptr<ExpressionActions> full_join_expression = nullptr;
 
     ASTTableJoin table_join;
 
@@ -302,8 +301,8 @@ public:
     std::vector<JoinOnClause> & getClauses() { return clauses; }
     const std::vector<JoinOnClause> & getClauses() const { return clauses; }
 
-    const ExpressionActionsPtr & getFullJoinExpression() const { return full_join_expression; }
-    ExpressionActionsPtr & getFullJoinExpression() { return full_join_expression; }
+    const std::shared_ptr<ExpressionActions> & getFullJoinExpression() const { return full_join_expression; }
+    std::shared_ptr<ExpressionActions> & getFullJoinExpression() { return full_join_expression; }
 
     Names getAllNames(JoinTableSide side) const;
 

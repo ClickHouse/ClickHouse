@@ -1740,7 +1740,6 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
             }
             prev_replicated_row = row_replicate_offset[i];
         }
-
     };
 
     while (left_row_iter < left_block_rows && !exceeded_max_block_rows)
