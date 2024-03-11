@@ -3,10 +3,10 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 disk_types = {
-    "default": "local",
-    "disk_s3": "s3",
-    "disk_hdfs": "hdfs",
-    "disk_encrypted": "s3",
+    "default": "Local",
+    "disk_s3": "S3",
+    "disk_hdfs": "HDFS",
+    "disk_encrypted": "S3",
 }
 
 
@@ -55,7 +55,7 @@ def test_different_types(cluster):
 def test_select_by_type(cluster):
     node = cluster.instances["node"]
     for name, disk_type in list(disk_types.items()):
-        if disk_type != "s3":
+        if disk_type != "S3":
             assert (
                 node.query(
                     "SELECT name FROM system.disks WHERE type='" + disk_type + "'"
