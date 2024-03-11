@@ -50,12 +50,12 @@ ColumnMap::ColumnMap(MutableColumnPtr && nested_)
 
 MutableColumnPtr ColumnMap::cloneEmpty() const
 {
-    return ColumnMap::create(nested->cloneEmpty());
+    return ColumnMap::create(getNestedColumn().cloneEmpty());
 }
 
 MutableColumnPtr ColumnMap::cloneResized(size_t new_size) const
 {
-    return ColumnMap::create(nested->cloneResized(new_size));
+    return ColumnMap::create(getNestedColumn().cloneResized(new_size));
 }
 
 Field ColumnMap::operator[](size_t n) const
@@ -81,7 +81,7 @@ void ColumnMap::get(size_t n, Field & res) const
 
 bool ColumnMap::isDefaultAt(size_t n) const
 {
-    return nested->isDefaultAt(n);
+    return getNestedColumn().isDefaultAt(n);
 }
 
 StringRef ColumnMap::getDataAt(size_t) const
@@ -97,7 +97,7 @@ void ColumnMap::insertData(const char *, size_t)
 void ColumnMap::insert(const Field & x)
 {
     const auto & map = x.get<const Map &>();
-    nested->insert(Array(map.begin(), map.end()));
+    getNestedColumn().insert(Array(map.begin(), map.end()));
 }
 
 bool ColumnMap::tryInsert(const Field & x)
@@ -106,97 +106,95 @@ bool ColumnMap::tryInsert(const Field & x)
         return false;
 
     const auto & map = x.get<const Map &>();
-    return nested->tryInsert(Array(map.begin(), map.end()));
+    return getNestedColumn().tryInsert(Array(map.begin(), map.end()));
 }
 
 void ColumnMap::insertDefault()
 {
-    nested->insertDefault();
+    getNestedColumn().insertDefault();
 }
 void ColumnMap::popBack(size_t n)
 {
-    nested->popBack(n);
+    getNestedColumn().popBack(n);
 }
 
 StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    return nested->serializeValueIntoArena(n, arena, begin);
+    return getNestedColumn().serializeValueIntoArena(n, arena, begin);
 }
 
 char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
 {
-    return nested->serializeValueIntoMemory(n, memory);
+    return getNestedColumn().serializeValueIntoMemory(n, memory);
 }
 
 const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
 {
-    return nested->deserializeAndInsertFromArena(pos);
+    return getNestedColumn().deserializeAndInsertFromArena(pos);
 }
 
 const char * ColumnMap::skipSerializedInArena(const char * pos) const
 {
-    return nested->skipSerializedInArena(pos);
+    return getNestedColumn().skipSerializedInArena(pos);
 }
 
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    nested->updateHashWithValue(n, hash);
+    getNestedColumn().updateHashWithValue(n, hash);
 }
 
 void ColumnMap::updateWeakHash32(WeakHash32 & hash) const
 {
-    nested->updateWeakHash32(hash);
+    getNestedColumn().updateWeakHash32(hash);
 }
 
 void ColumnMap::updateHashFast(SipHash & hash) const
 {
-    nested->updateHashFast(hash);
+    getNestedColumn().updateHashFast(hash);
 }
 
 void ColumnMap::insertFrom(const IColumn & src, size_t n)
 {
-    nested->insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), n);
+    getNestedColumn().insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), n);
 }
 
 void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    nested->insertRangeFrom(
-        assert_cast<const ColumnMap &>(src).getNestedColumn(),
-        start, length);
+    getNestedColumn().insertRangeFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), start, length);
 }
 
 ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    auto filtered = nested->filter(filt, result_size_hint);
+    auto filtered = getNestedColumn().filter(filt, result_size_hint);
     return ColumnMap::create(filtered);
 }
 
 void ColumnMap::expand(const IColumn::Filter & mask, bool inverted)
 {
-    nested->expand(mask, inverted);
+    getNestedColumn().expand(mask, inverted);
 }
 
 ColumnPtr ColumnMap::permute(const Permutation & perm, size_t limit) const
 {
-    auto permuted = nested->permute(perm, limit);
+    auto permuted = getNestedColumn().permute(perm, limit);
     return ColumnMap::create(std::move(permuted));
 }
 
 ColumnPtr ColumnMap::index(const IColumn & indexes, size_t limit) const
 {
-    auto res = nested->index(indexes, limit);
+    auto res = getNestedColumn().index(indexes, limit);
     return ColumnMap::create(std::move(res));
 }
 
 ColumnPtr ColumnMap::replicate(const Offsets & offsets) const
 {
-    auto replicated = nested->replicate(offsets);
+    auto replicated = getNestedColumn().replicate(offsets);
     return ColumnMap::create(std::move(replicated));
 }
 
 MutableColumns ColumnMap::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
-    auto scattered_columns = nested->scatter(num_columns, selector);
+    auto scattered_columns = getNestedColumn().scatter(num_columns, selector);
     MutableColumns res;
     res.reserve(num_columns);
     for (auto && scattered : scattered_columns)
@@ -208,54 +206,54 @@ MutableColumns ColumnMap::scatter(ColumnIndex num_columns, const Selector & sele
 int ColumnMap::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 {
     const auto & rhs_map = assert_cast<const ColumnMap &>(rhs);
-    return nested->compareAt(n, m, rhs_map.getNestedColumn(), nan_direction_hint);
+    return getNestedColumn().compareAt(n, m, rhs_map.getNestedColumn(), nan_direction_hint);
 }
 
 void ColumnMap::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
-    nested->getPermutation(direction, stability, limit, nan_direction_hint, res);
+    getNestedColumn().getPermutation(direction, stability, limit, nan_direction_hint, res);
 }
 
 void ColumnMap::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                 size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    nested->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
+    getNestedColumn().updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
 }
 
 void ColumnMap::reserve(size_t n)
 {
-    nested->reserve(n);
+    getNestedColumn().reserve(n);
 }
 
 void ColumnMap::shrinkToFit()
 {
-    nested->shrinkToFit();
+    getNestedColumn().shrinkToFit();
 }
 
 void ColumnMap::ensureOwnership()
 {
-    nested->ensureOwnership();
+    getNestedColumn().ensureOwnership();
 }
 
 size_t ColumnMap::byteSize() const
 {
-    return nested->byteSize();
+    return getNestedColumn().byteSize();
 }
 
 size_t ColumnMap::byteSizeAt(size_t n) const
 {
-    return nested->byteSizeAt(n);
+    return getNestedColumn().byteSizeAt(n);
 }
 
 size_t ColumnMap::allocatedBytes() const
 {
-    return nested->allocatedBytes();
+    return getNestedColumn().allocatedBytes();
 }
 
 void ColumnMap::protect()
 {
-    nested->protect();
+    getNestedColumn().protect();
 }
 
 void ColumnMap::getExtremes(Field & min, Field & max) const
@@ -263,7 +261,7 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
     Field nested_min;
     Field nested_max;
 
-    nested->getExtremes(nested_min, nested_max);
+    getNestedColumn().getExtremes(nested_min, nested_max);
 
     /// Convert result Array fields to Map fields because client expect min and max field to have type Map
 
@@ -285,19 +283,19 @@ void ColumnMap::forEachSubcolumn(MutableColumnCallback callback)
 void ColumnMap::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     callback(*nested);
-    nested->forEachSubcolumnRecursively(callback);
+    getNestedColumn().forEachSubcolumnRecursively(callback);
 }
 
 bool ColumnMap::structureEquals(const IColumn & rhs) const
 {
     if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
-        return nested->structureEquals(*rhs_map->nested);
+        return getNestedColumn().structureEquals(*rhs_map->nested);
     return false;
 }
 
 ColumnPtr ColumnMap::compress() const
 {
-    auto compressed = nested->compress();
+    auto compressed = getNestedColumn().compress();
     const auto byte_size = compressed->byteSize();
     /// The order of evaluation of function arguments is unspecified
     /// and could cause interacting with object in moved-from state
