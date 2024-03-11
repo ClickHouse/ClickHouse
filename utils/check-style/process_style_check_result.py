@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-import os
-import logging
 import argparse
 import csv
+import logging
+import os
 
 
 # TODO: add typing and log files to the fourth column, think about launching
@@ -17,7 +17,7 @@ def process_result(result_folder):
         # "shellcheck",
         "style",
         "pylint",
-        # "black",
+        "black",
         "mypy",
         "typos",
         "whitespaces",
@@ -32,10 +32,10 @@ def process_result(result_folder):
         if not os.path.exists(full_path):
             test_results.append((f"Check {name}", "SKIPPED"))
         elif os.stat(full_path).st_size != 0:
-            with open(full_path, 'r') as file:
+            with open(full_path, "r") as file:
                 lines = file.readlines()
                 if len(lines) > 100:
-                    lines = lines[:100] + ['====TRIMMED====']
+                    lines = lines[:100] + ["====TRIMMED===="]
                 content = "\n".join(lines)
             description += f"Check {name} failed. "
             test_results.append((f"Check {name}", "FAIL", None, content))
