@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <deque>
 #include <memory>
 #include <mutex>
 
@@ -395,6 +396,8 @@ public:
     }
 };
 
+// NOTE: Nearest host and other DNS edit distance based algorithm might be able to consturct the host dynamically.
+// Or we can define a test constant priority to test load balancer behavior itself. -- This might be a better idea.
 class NearestHostname : public IBalancerWithPriorities
 {
 public:
@@ -470,6 +473,15 @@ bool isKeeperHostDNSAvailable(LoggerPtr log, const std::string & address, bool &
     return true;
 }
 
+std::unique_ptr<Coordination::IKeeper> ZooKeeperImplFactory::create(
+    const Coordination::ZooKeeper::Node & node,
+    zkutil::ZooKeeperArgs & args,
+    std::shared_ptr<ZooKeeperLog> zk_log)
+{
+    return std::make_unique<Coordination::ZooKeeper>(node, args, zk_log);
+}
+
+
 ZooKeeperLoadBalancer & ZooKeeperLoadBalancer::instance(const std::string & config_name)
 {
     static std::unordered_map<std::string, ZooKeeperLoadBalancer> load_balancer_by_name;
@@ -481,8 +493,8 @@ ZooKeeperLoadBalancer & ZooKeeperLoadBalancer::instance(const std::string & conf
     return load_balancer_by_name.emplace(config_name, ZooKeeperLoadBalancer(config_name)).first->second;
 }
 
-ZooKeeperLoadBalancer::ZooKeeperLoadBalancer(const std::string & config_name)
-    : log(getLogger("ZooKeeperLoadBalancer/" + config_name))
+ZooKeeperLoadBalancer::ZooKeeperLoadBalancer(const std::string & config_name, std::shared_ptr<IKeeperFactory> factory)
+    : log(getLogger("ZooKeeperLoadBalancer/" + config_name)), keeper_factory(factory)
 {
 }
 
@@ -508,7 +520,7 @@ void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<Zo
         throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
 }
 
-std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
+std::unique_ptr<Coordination::IKeeper> ZooKeeperLoadBalancer::createClient()
 {
     // We want to retry a better host later if it becomes offline temporarily. But currently we don't have background thread to check endpoint status,
     // so instead we reset all offline status when creating a new client.
@@ -532,6 +544,7 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
         LOG_INFO(log, "Connecting to ZooKeeper host {},"
                       " number of attempted hosts {}/{}",
                  endpoint.address, attempts, connection_balancer->getEndpointsCount());
+
         if (!isKeeperHostDNSAvailable(log, endpoint.address, dns_error_occurred))
         {
             LOG_ERROR(log, "Skip the host {} due to DNS error.", endpoint.address);
@@ -546,7 +559,8 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
                 .original_index = UInt8(endpoint.id),
                 .secure = endpoint.secure,
             };
-            auto client  = std::make_unique<Coordination::ZooKeeper>(zknode, args, zk_log);
+
+            auto client  = keeper_factory->create(zknode, args, zk_log);
 
             if (endpoint.settings.use_fallback_session_lifetime)
             {
@@ -554,6 +568,7 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
                     args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
                 LOG_INFO(log, "Connecting to a sub-optimal ZooKeeper with session timeout {} seconds", session_timeout_seconds);
             }
+
             connection_balancer->markHostOnline(endpoint.id);
 
             if (connection_balancer->hasBetterHostToConnect(endpoint.id))

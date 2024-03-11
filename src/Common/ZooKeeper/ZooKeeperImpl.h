@@ -219,8 +219,8 @@ public:
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
-    // Update session deadline to be in range [min_seconds, max_seconds].
-    UInt32 setClientSessionDeadline(UInt32 min_seconds, UInt32 max_seconds) override;
+    // // Update session deadline to be in range [min_seconds, max_seconds].
+    // UInt32 setClientSessionDeadline(UInt32 min_seconds, UInt32 max_seconds) override;
 
 private:
     ACLs default_acls;
@@ -268,7 +268,6 @@ private:
         clock::time_point time;
     };
 
-    std::optional<clock::time_point> client_session_deadline {};
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
     RequestsQueue requests_queue{1024};

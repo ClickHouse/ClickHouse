@@ -68,6 +68,22 @@ using ClientsConnectionBalancerPtr = std::unique_ptr<IClientsConnectionBalancer>
 
 ClientsConnectionBalancerPtr getConnectionBalancer(LoadBalancing load_balancing_type);
 
+// Used for unit test.
+class IKeeperFactory
+{
+public:
+    virtual std::unique_ptr<Coordination::IKeeper> create(
+        const Coordination::ZooKeeper::Node & node, zkutil::ZooKeeperArgs & args, std::shared_ptr<ZooKeeperLog> zk_log_) = 0;
+    virtual ~IKeeperFactory() = default;
+};
+
+class ZooKeeperImplFactory : public IKeeperFactory
+{
+public:
+    std::unique_ptr<Coordination::IKeeper> create(
+        const Coordination::ZooKeeper::Node & node, zkutil::ZooKeeperArgs & args, std::shared_ptr<ZooKeeperLog> zk_log_) override;
+};
+
 class ZooKeeperLoadBalancer
 {
 public:
@@ -76,7 +92,8 @@ public:
     // load balancer instance for different config name.
     static ZooKeeperLoadBalancer & instance(const std::string & config_name);
 
-    explicit ZooKeeperLoadBalancer(const std::string & config_name);
+    explicit ZooKeeperLoadBalancer(const std::string & config_name,
+        std::shared_ptr<IKeeperFactory> factory = std::make_unique<ZooKeeperImplFactory>());
 
     void init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_);
 
@@ -85,7 +102,7 @@ public:
         zk_log = zk_log_;
     }
 
-    std::unique_ptr<Coordination::ZooKeeper> createClient();
+    std::unique_ptr<Coordination::IKeeper> createClient();
 
 private:
     void recordKeeperHostError(UInt8 id);
@@ -96,6 +113,8 @@ private:
 
     std::shared_ptr<ZooKeeperLog> zk_log;
     LoggerPtr log;
+
+    std::shared_ptr<IKeeperFactory> keeper_factory;
 };
 
 }
