@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -77,14 +78,6 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     const bool fallback_to_stale_replicas = settings.fallback_to_stale_replicas_for_distributed_queries;
 
     return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
-}
-
-Priority ConnectionPoolWithFailover::getPriority() const
-{
-    return (*std::max_element(nested_pools.begin(), nested_pools.end(), [](const auto & a, const auto & b)
-    {
-        return a->getPriority() < b->getPriority();
-    }))->getPriority();
 }
 
 ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
@@ -199,11 +192,20 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         max_entries = nested_pools.size();
     }
     else if (pool_mode == PoolMode::GET_ONE)
+    {
         max_entries = 1;
+    }
     else if (pool_mode == PoolMode::GET_MANY)
+    {
+        if (settings.max_parallel_replicas == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the setting max_parallel_replicas must be greater than 0");
+
         max_entries = settings.max_parallel_replicas;
+    }
     else
+    {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown pool allocation mode");
+    }
 
     if (!priority_func)
         priority_func = makeGetPriorityFunc(settings);
@@ -253,13 +255,13 @@ ConnectionPoolWithFailover::tryGetEntry(
 }
 
 std::vector<ConnectionPoolWithFailover::Base::ShuffledPool>
-ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPriorityForLoadBalancing::Func priority_func)
+ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPriorityForLoadBalancing::Func priority_func, bool use_slowdown_count)
 {
     if (!priority_func)
         priority_func = makeGetPriorityFunc(settings);
 
     UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
-    return Base::getShuffledPools(max_ignored_errors, priority_func);
+    return Base::getShuffledPools(max_ignored_errors, priority_func, use_slowdown_count);
 }
 
 }

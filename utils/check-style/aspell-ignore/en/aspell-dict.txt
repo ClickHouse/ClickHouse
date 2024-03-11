@@ -112,6 +112,7 @@ CDMA
 CESU
 CIDR
 CIDRToRange
+CKMAN
 CLOB
 CLion
 CMPLNT
@@ -190,6 +191,7 @@ CustomSeparatedWithNamesAndTypes
 DBAs
 DBMSs
 DBeaver
+DD
 DDLWORKER
 DDLWorker
 DDLWorkerThreads
@@ -215,7 +217,6 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
-DD
 Decrypted
 Deduplicate
 Deduplication
@@ -259,6 +260,7 @@ ExactEdgeLengthRads
 ExecutablePool
 ExtType
 ExternalDistributed
+FFFFFFFF
 FFFD
 FIPS
 FOSDEM
@@ -545,6 +547,8 @@ MinIO
 MinMax
 MindsDB
 Mongodb
+mortonDecode
+mortonEncode
 MsgPack
 MultiPolygon
 Multiline
@@ -840,6 +844,9 @@ Sematext
 SendExternalTables
 SendScalars
 ShareAlike
+SharedMergeTree
+Shortkeys
+Shortkeys
 SimHash
 Simhash
 SimpleAggregateFunction
@@ -952,8 +959,8 @@ TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
 Transactional
-TwoColumnList
 Tukey
+TwoColumnList
 UBSan
 UDFs
 UInt
@@ -990,6 +997,7 @@ VIEWs
 Vadim
 Valgrind
 Vectorized
+VersionBadge
 VersionInteger
 VersionedCollapsingMergeTree
 VideoContainer
@@ -1075,6 +1083,8 @@ anyheavy
 anylast
 appendTrailingCharIfAbsent
 approximative
+approxtopk
+approxtopsum
 argMax
 argMin
 argmax
@@ -1235,6 +1245,7 @@ buildable
 builtins
 byteHammingDistance
 byteSize
+byteSlice
 byteSwap
 bytebase
 bytesToCutForIPv
@@ -1264,6 +1275,8 @@ centroid
 certificateFile
 cetera
 cfg
+cgroup
+cgroups
 chadmin
 changelog
 changelogs
@@ -1283,6 +1296,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckman
 clangd
 cli
 clickcache
@@ -1325,6 +1339,7 @@ cosineDistance
 countDigits
 countEqual
 countMatches
+countMatchesCaseInsensitive
 countSubstrings
 covarPop
 covarSamp
@@ -1609,6 +1624,7 @@ greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
+groupArrayIntersect
 groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
@@ -1624,6 +1640,7 @@ groupBitmapXor
 groupUniqArray
 grouparray
 grouparrayinsertat
+grouparrayintersect
 grouparraylast
 grouparraymovingavg
 grouparraymovingsum
@@ -1688,6 +1705,8 @@ hudi
 hyperscan
 hypot
 hyvor
+iTerm
+iTerm
 icosahedron
 icudata
 idempotency
@@ -1830,6 +1849,7 @@ linearized
 lineasstring
 linefeeds
 lineorder
+linestring
 linux
 llvm
 loadDefaultCAFile
@@ -1885,6 +1905,7 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+mergeTreeIndex
 mergeable
 mergetree
 messageID
@@ -2132,6 +2153,7 @@ py
 qryn
 quantile
 quantileBFloat
+quantileDD
 quantileDeterministic
 quantileExact
 quantileExactExclusive
@@ -2146,6 +2168,7 @@ quantileTDigestWeighted
 quantileTiming
 quantileTimingWeighted
 quantilebfloat
+quantileddsketch
 quantiledeterministic
 quantileexact
 quantileexactweighted
@@ -2158,8 +2181,6 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
-quantileddsketch
-quantileDD
 quartile
 queryID
 queryString
@@ -2187,7 +2208,9 @@ rankCorr
 rapidjson
 rawblob
 readWKTMultiPolygon
+readWKTPoint
 readWKTPolygon
+readWKTRing
 readahead
 readline
 readme
@@ -2292,8 +2315,8 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
-seriesOutliersDetectTukey
 seriesDecomposeSTL
+seriesOutliersDetectTukey
 seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
@@ -2307,6 +2330,7 @@ shardNum
 sharded
 sharding
 shortcircuit
+shortkeys
 shoutout
 simdjson
 simpleLinearRegression
@@ -2411,6 +2435,7 @@ subranges
 subreddits
 subseconds
 subsequence
+substreams
 substring
 substringIndex
 substringIndexUTF
@@ -2474,6 +2499,7 @@ theilsu
 themself
 threadpool
 throwIf
+timeDiff
 timeSlot
 timeSlots
 timeZone
@@ -2525,6 +2551,7 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
+toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2710,6 +2737,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+writability
 wrt
 xcode
 xeus
@@ -2721,6 +2749,7 @@ xz
 yaml
 yandex
 youtube
+ZCurve
 zLib
 zLinux
 zabbix
@@ -2730,6 +2759,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-iTerm
-shortkeys
-Shortkeys

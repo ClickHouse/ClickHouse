@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ALL_REPLICAS_ARE_STALE;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 HedgedConnectionsFactory::HedgedConnectionsFactory(
@@ -40,7 +41,8 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     , max_parallel_replicas(max_parallel_replicas_)
     , skip_unavailable_shards(skip_unavailable_shards_)
 {
-    shuffled_pools = pool->getShuffledPools(settings_, priority_func);
+    shuffled_pools = pool->getShuffledPools(settings_, priority_func, /* use_slowdown_count */ true);
+
     for (const auto & shuffled_pool : shuffled_pools)
         replicas.emplace_back(
             std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
@@ -81,7 +83,10 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
         }
         case PoolMode::GET_MANY:
         {
-            max_entries = max_parallel_replicas;
+            if (max_parallel_replicas == 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the setting max_parallel_replicas must be greater than 0");
+
+            max_entries = std::min(max_parallel_replicas, shuffled_pools.size());
             break;
         }
     }

@@ -18,9 +18,7 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-# isort: on
-
-from ci_config import CHECK_DESCRIPTIONS, CI_CONFIG, REQUIRED_CHECKS, CheckDescription
+from ci_config import REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
 from env_helper import GITHUB_JOB_URL, GITHUB_REPOSITORY, TEMP_PATH
 from pr_info import SKIP_MERGEABLE_CHECK_LABEL, PRInfo
 from report import (
@@ -65,21 +63,6 @@ class RerunHelper:
             if self.check_name in status.context:
                 return status
         return None
-
-
-def override_status(
-    status: StatusType, check_name: str, invert: bool = False
-) -> StatusType:
-    test_config = CI_CONFIG.test_configs.get(check_name)
-    if test_config and test_config.force_tests:
-        return SUCCESS
-
-    if invert:
-        if status == SUCCESS:
-            return ERROR
-        return SUCCESS
-
-    return status
 
 
 def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
@@ -320,7 +303,7 @@ def post_commit_status_to_file(
     file_path: Path, description: str, state: str, report_url: str
 ) -> None:
     if file_path.exists():
-        raise Exception(f'File "{file_path}" already exists!')
+        raise FileExistsError(f'File "{file_path}" already exists!')
     with open(file_path, "w", encoding="utf-8") as f:
         out = csv.writer(f, delimiter="\t")
         out.writerow([state, report_url, description])
@@ -346,7 +329,7 @@ class CommitStatusData:
     @classmethod
     def load_from_file(cls, file_path: Union[Path, str]):  # type: ignore
         res = {}
-        with open(file_path, "r") as json_file:
+        with open(file_path, "r", encoding="utf-8") as json_file:
             res = json.load(json_file)
         return CommitStatusData(**cls._filter_dict(res))
 
@@ -364,11 +347,14 @@ class CommitStatusData:
 
     def dump_to_file(self, file_path: Union[Path, str]) -> None:
         file_path = Path(file_path) or STATUS_FILE_PATH
-        with open(file_path, "w") as json_file:
+        with open(file_path, "w", encoding="utf-8") as json_file:
             json.dump(asdict(self), json_file)
 
     def is_ok(self):
         return self.status == SUCCESS
+
+    def is_failure(self):
+        return self.status == FAILURE
 
     @staticmethod
     def cleanup():
@@ -439,13 +425,14 @@ def set_mergeable_check(
 ) -> None:
     commit.create_status(
         context=MERGEABLE_NAME,
-        description=description,
+        description=format_description(description),
         state=state,
         target_url=GITHUB_JOB_URL(),
     )
 
 
 def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> None:
+    "check if the check_name in REQUIRED_CHECKS and then trigger update"
     not_run = (
         pr_info.labels.intersection({SKIP_MERGEABLE_CHECK_LABEL, "release"})
         or check_name not in REQUIRED_CHECKS
@@ -459,7 +446,11 @@ def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> 
     logging.info("Update Mergeable Check by %s", check_name)
 
     statuses = get_commit_filtered_statuses(commit)
+    trigger_mergeable_check(commit, statuses)
 
+
+def trigger_mergeable_check(commit: Commit, statuses: CommitStatuses) -> None:
+    """calculate and update MERGEABLE_NAME"""
     required_checks = [
         status for status in statuses if status.context in REQUIRED_CHECKS
     ]

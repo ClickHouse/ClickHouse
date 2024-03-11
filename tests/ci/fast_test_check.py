@@ -10,7 +10,7 @@ from typing import Tuple
 
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
-from pr_info import FORCE_TESTS_LABEL, PRInfo
+from pr_info import PRInfo
 from report import (
     ERROR,
     FAILURE,
@@ -37,9 +37,10 @@ def get_fasttest_cmd(
 ) -> str:
     return (
         f"docker run --cap-add=SYS_PTRACE --user={os.geteuid()}:{os.getegid()} "
+        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         "--network=host "  # required to get access to IAM credentials
         f"-e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output "
-        f"-e FASTTEST_SOURCE=/ClickHouse --cap-add=SYS_PTRACE "
+        f"-e FASTTEST_SOURCE=/ClickHouse "
         f"-e FASTTEST_CMAKE_FLAGS='-DCOMPILER_CACHE=sccache' "
         f"-e PULL_REQUEST_NUMBER={pr_number} -e COMMIT_SHA={commit_sha} "
         f"-e COPY_CLICKHOUSE_BINARY_TO_OUTPUT=1 "
@@ -190,13 +191,7 @@ def main():
 
     # Refuse other checks to run if fast test failed
     if state != SUCCESS:
-        if state == ERROR:
-            print("The status is 'error', report failure disregard the labels")
-            sys.exit(1)
-        elif FORCE_TESTS_LABEL in pr_info.labels:
-            print(f"'{FORCE_TESTS_LABEL}' enabled, reporting success")
-        else:
-            sys.exit(1)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
