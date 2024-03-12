@@ -419,6 +419,17 @@ struct FormatSettings
         MsgPackUUIDRepresentation output_uuid_representation = MsgPackUUIDRepresentation::EXT;
     } msgpack{};
 
+    enum class IonOutputWriterType
+    {
+        TEXT, // Write output as text in ascii
+        BINARY, // Write output as binary (compressed storage type)
+    };
+
+    struct
+    {
+        IonOutputWriterType output_type = IonOutputWriterType::TEXT;
+    } ion;
+
     struct MySQLDump
     {
         String table_name;

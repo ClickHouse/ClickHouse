@@ -76,6 +76,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
+void registerOutputFormatIon(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -208,6 +209,7 @@ void registerFormats()
     registerOutputFormatTemplate(factory);
     registerInputFormatMsgPack(factory);
     registerOutputFormatMsgPack(factory);
+    registerOutputFormatIon(factory);
     registerInputFormatRawBLOB(factory);
     registerOutputFormatRawBLOB(factory);
     registerInputFormatCustomSeparated(factory);

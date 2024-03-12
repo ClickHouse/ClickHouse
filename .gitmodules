@@ -125,6 +125,9 @@
 [submodule "contrib/msgpack-c"]
 	path = contrib/msgpack-c
 	url = https://github.com/msgpack/msgpack-c
+[submodule "contrib/ion-c"]
+	path = contrib/ion-c
+	url = https://github.com/amazon-ion/ion-c
 [submodule "contrib/libcpuid"]
 	path = contrib/libcpuid
 	url = https://github.com/ClickHouse/libcpuid
