@@ -27,7 +27,7 @@ Returns an integer of type `Float64`.
 
 **Implementation details**
 
-This function uses a numerically unstable algorithm. If you need numerical stability in calculations, use the slower but more stable [`varPopStable` function](#varPopStable). 
+This function uses a numerically unstable algorithm. If you need numerical stability in calculations, use the slower but more stable [`varPopStable` function](#varPopStable).
 
 **Example**
 
