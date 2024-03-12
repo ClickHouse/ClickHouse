@@ -357,7 +357,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
          */
         const auto & split_filter_column_name = stream_pushed_split_filter->getOutputs().front()->result_name;
         bool can_remove_filter = std::find(input_columns_names.begin(), input_columns_names.end(), split_filter_column_name) != input_columns_names.end();
-        const size_t updated_steps = addNewFilterStepOrThrow(parent_node, nodes, stream_pushed_split_filter, can_remove_filter, push_child_idx, false /*update_parent_filter*/);
+        const size_t updated_steps = addNewFilterStepOrThrow(parent_node,
+            nodes,
+            stream_pushed_split_filter,
+            can_remove_filter,
+            push_child_idx,
+            false /*update_parent_filter*/);
         assert(updated_steps > 0);
 
         LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
@@ -420,7 +425,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         {
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.
-            parent = std::make_unique<ExpressionStep>(child->getOutputStream(), new_filter_expression);
+            auto forward_columns_actions = std::make_shared<ActionsDAG>(child->getOutputStream().header.getColumnsWithTypeAndName());
+            parent = std::make_unique<ExpressionStep>(child->getOutputStream(), std::move(forward_columns_actions));
         }
     }
 
