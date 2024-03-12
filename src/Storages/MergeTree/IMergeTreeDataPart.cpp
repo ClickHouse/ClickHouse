@@ -837,6 +837,27 @@ void IMergeTreeDataPart::loadIndex() const
             for (size_t j = 0; j < key_size; ++j)
                 key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
 
+        /// Cut useless suffix columns, if necessary.
+        Float64 ratio_to_drop_suffix_columns = storage.getSettings()->primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns;
+        if (key_size > 1 && ratio_to_drop_suffix_columns > 0 && ratio_to_drop_suffix_columns < 1)
+        {
+            chassert(marks_count > 0);
+            for (size_t j = 0; j < key_size - 1; ++j)
+            {
+                size_t num_changes = 0;
+                for (size_t i = 1; i < marks_count; ++i)
+                    if (0 != loaded_index[j]->compareAt(i, i - 1, *loaded_index[j], 0))
+                        ++num_changes;
+
+                if (static_cast<Float64>(num_changes) / marks_count >= ratio_to_drop_suffix_columns)
+                {
+                    key_size = j + 1;
+                    loaded_index.resize(key_size);
+                    break;
+                }
+            }
+        }
+
         for (size_t i = 0; i < key_size; ++i)
         {
             loaded_index[i]->shrinkToFit();
