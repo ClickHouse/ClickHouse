@@ -67,7 +67,7 @@ def test_distributed_background_insert_split_batch_on_failure_OFF(started_cluste
                 f"insert into dist select number/100, number from system.numbers limit {limit} offset {limit*i}",
                 settings={
                     # max_memory_usage is the limit for the batch on the remote node
-                    # (local query should not be affected since 30MB is enough for 100K rows)
+                    # (local query should not be affected since 20MB is enough for 100K rows)
                     "max_memory_usage": "20Mi",
                     "max_untracked_memory": "0",
                 },
@@ -76,7 +76,8 @@ def test_distributed_background_insert_split_batch_on_failure_OFF(started_cluste
         if setting == "background_insert_batch" and setting_value == 1:
             with pytest.raises(
                 QueryRuntimeException,
-                match=r"DB::Exception: Received from.*Memory limit \(for query\) exceeded: .*while pushing to view default\.mv",
+                # no DOTALL in pytest.raises, use '(.|\n)'
+                match=r"DB::Exception: Received from.*Memory limit \(for query\) exceeded: (.|\n)*While sending a batch",
             ):
                 node2.query("system flush distributed dist")
             assert int(node2.query("select count() from dist_data")) == 0
@@ -94,8 +95,8 @@ def test_distributed_background_insert_split_batch_on_failure_ON(started_cluster
                 f"insert into dist select number/100, number from system.numbers limit {limit} offset {limit*i}",
                 settings={
                     # max_memory_usage is the limit for the batch on the remote node
-                    # (local query should not be affected since 30MB is enough for 100K rows)
-                    "max_memory_usage": "30Mi",
+                    # (local query should not be affected since 20MB is enough for 100K rows)
+                    "max_memory_usage": "20Mi",
                     "max_untracked_memory": "0",
                 },
             )
