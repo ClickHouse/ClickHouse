@@ -13,7 +13,7 @@ IonWriter::IonWriter(WriteBuffer & out_, bool output_as_binary_) : out(out_), io
     // init output options
     ION_WRITER_OPTIONS ion_options;
     memset(&ion_options, 0, sizeof(ion_options));
-    ion_options.output_as_binary = FALSE;
+    ion_options.output_as_binary = output_as_binary_; // todo: Fix switch of writer type from format settings
     if (!output_as_binary_)
         ion_options.pretty_print = TRUE;
 
