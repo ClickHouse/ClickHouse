@@ -1163,6 +1163,34 @@ class ClickHouseCluster:
         ]
         return self.base_postgres_cmd
 
+    def setup_postgres_and_postgres11_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_postgres.yml"),
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_postgres_11.yml"),
+            ]
+        )
+        env_variables["POSTGRES_PORT"] = str(self.postgres_port)
+        env_variables["POSTGRES_DIR"] = self.postgres_logs_dir
+        env_variables["POSTGRES_LOGS_FS"] = "bind"
+
+        self.with_postgres = True
+        self.with_postgres11 = True
+        self.base_postgres_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgres.yml"),
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgres_11.yml"),
+        ]
+        return self.base_postgres_cmd
+
     def setup_postgres_cluster_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1815,12 +1843,19 @@ class ClickHouseCluster:
                 )
             )
 
-        if with_postgres and not self.with_postgres:
+        if with_postgres and not self.with_postgres and with_postgres11 and not self.with_postgres11:
+            cmds.append(
+                self.setup_postgres_and_postgres11_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        elif with_postgres and not self.with_postgres:
             cmds.append(
                 self.setup_postgres_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
-        if with_postgres11 and not self.with_postgres11:
+        elif with_postgres11 and not self.with_postgres11:
             cmds.append(
                 self.setup_postgres11_cmd(
                     instance, env_variables, docker_compose_yml_dir
@@ -2299,10 +2334,10 @@ class ClickHouseCluster:
                 )
                 self.postgres_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres_conn.autocommit = True
-                logging.debug("Postgres Started")
+                logging.debug("Postgres 11 Started")
                 return
             except Exception as ex:
-                logging.debug("Can't connect to Postgres " + str(ex))
+                logging.debug("Can't connect to Postgres 11" + str(ex))
                 time.sleep(0.5)
 
         raise Exception("Cannot wait Postgres container")
@@ -2849,8 +2884,20 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_mysql_cluster_to_start()
 
-            if self.with_postgres and self.base_postgres_cmd:
-                logging.debug("Setup Postgres")
+            if self.with_postgres and self.with_postgres11 and self.base_postgres_cmd:
+                logging.debug("Setup Postgres 11 and Postgres 16")
+                if os.path.exists(self.postgres_dir):
+                    shutil.rmtree(self.postgres_dir)
+                os.makedirs(self.postgres_logs_dir)
+                os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                subprocess_check_call(self.base_postgres_cmd + common_opts)
+                self.up_called = True
+                self.wait_postgres_to_start()
+                self.wait_postgres11_to_start()
+
+            elif self.with_postgres and self.base_postgres_cmd:
+                logging.debug("Setup Postgres 16")
                 if os.path.exists(self.postgres_dir):
                     shutil.rmtree(self.postgres_dir)
                 os.makedirs(self.postgres_logs_dir)
@@ -2860,8 +2907,8 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_postgres_to_start()
 
-            if self.with_postgres11 and self.base_postgres_cmd:
-                logging.debug("Setup Postgres")
+            elif self.with_postgres11 and self.base_postgres_cmd:
+                logging.debug("Setup Postgres 11")
                 if os.path.exists(self.postgres_dir):
                     shutil.rmtree(self.postgres_dir)
                 os.makedirs(self.postgres_logs_dir)

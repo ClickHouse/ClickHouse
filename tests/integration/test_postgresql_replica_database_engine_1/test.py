@@ -43,7 +43,6 @@ instance2 = cluster.add_instance(
     "instance2",
     main_configs=["configs/log_conf.xml"],
     user_configs=["configs/users.xml"],
-    with_postgres=False,
     with_postgres11=True,
     stay_alive=True,
 )
