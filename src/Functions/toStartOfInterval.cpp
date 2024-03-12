@@ -1,9 +1,8 @@
-#include "Interpreters/Context.h"
-
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
+#include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -11,6 +10,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -27,13 +27,13 @@ namespace ErrorCodes
 
 class FunctionToStartOfInterval : public IFunction
 {
-    const bool enable_default_monday_first = true;
+    FirstDayOfWeek first_day_of_week;
 
 public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToStartOfInterval>(context); }
 
     explicit FunctionToStartOfInterval(ContextPtr context)
-        : enable_default_monday_first(context->getSettingsRef().first_day_of_week != FirstDayOfWeek::Sunday)
+        : first_day_of_week(context->getSettingsRef().first_day_of_week)
     {
     }
 
@@ -257,11 +257,11 @@ private:
         result_data.resize(size);
 
         Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
-        UInt8 week_mode = enable_default_monday_first ? 1 : 0;
+        UInt8 week_mode = first_day_of_week == FirstDayOfWeek::Monday ? 1 : 0;
 
         for (size_t i = 0; i != size; ++i)
         {
-            result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier, week_mode));
+            result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, scale_multiplier, week_mode, time_zone));
         }
 
         return result_col;

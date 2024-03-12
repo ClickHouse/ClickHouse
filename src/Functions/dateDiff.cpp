@@ -1,5 +1,3 @@
-#include "Core/SettingsEnums.h"
-#include "Interpreters/Context.h"
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -9,6 +7,7 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <Core/SettingsEnums.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -17,6 +16,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/TransformDateTime64.h>
 
+#include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
 #include <base/find_symbols.h>
@@ -44,9 +44,9 @@ class DateDiffImpl
 public:
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 
-    explicit DateDiffImpl(const String & name_, FirstDayOfWeek first_day_of_week)
+    DateDiffImpl(const String & name_, FirstDayOfWeek first_day_of_week_)
         : name(name_)
-        , enable_default_monday_first(first_day_of_week != FirstDayOfWeek::Sunday)
+        , first_day_of_week(first_day_of_week_)
     {}
 
     template <typename Transform>
@@ -173,12 +173,12 @@ public:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-        UInt8 day_of_week_mode = enable_default_monday_first ? 0 : 3;
+        UInt8 week_mode = first_day_of_week == FirstDayOfWeek::Monday ? 0 : 3;
 
         if constexpr (is_diff)
         {
-            return static_cast<Int64>(transform_y.execute(y, timezone_y, day_of_week_mode))
-                - static_cast<Int64>(transform_x.execute(x, timezone_x, day_of_week_mode));
+            return static_cast<Int64>(transform_y.execute(y, timezone_y, week_mode))
+                - static_cast<Int64>(transform_x.execute(x, timezone_x, week_mode));
         }
         else
         {
@@ -322,7 +322,7 @@ public:
     }
 private:
     String name;
-    const bool enable_default_monday_first = true;
+    FirstDayOfWeek first_day_of_week;
 };
 
 
@@ -439,7 +439,7 @@ public:
         return res;
     }
 private:
-    FirstDayOfWeek first_day_of_week = FirstDayOfWeek::Monday;
+    FirstDayOfWeek first_day_of_week;
     DateDiffImpl<is_relative> impl{name, first_day_of_week};
 };
 
