@@ -62,7 +62,7 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
 
 static UInt64 getExistingRowsCount(const Block & block)
 {
-    auto column = block.getByName(LightweightDeleteDescription::FILTER_COLUMN.name).column;
+    auto column = block.getByName(RowExistsColumn::name).column;
     const ColumnUInt8 * row_exists_col = typeid_cast<const ColumnUInt8 *>(column.get());
 
     if (!row_exists_col)
@@ -2225,7 +2225,7 @@ bool MutateTask::prepare()
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
 
-    if (ctx->updated_header.has(LightweightDeleteDescription::FILTER_COLUMN.name))
+    if (ctx->updated_header.has(RowExistsColumn::name))
     {
         /// This mutation contains lightweight delete, reset existing_rows_count of new data part to 0
         /// It will be updated while writing _row_exists column

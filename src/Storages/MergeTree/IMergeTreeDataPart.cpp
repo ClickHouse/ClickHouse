@@ -1342,7 +1342,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         return rows_count;
 
     NamesAndTypesList cols;
-    cols.push_back(LightweightDeleteDescription::FILTER_COLUMN);
+    cols.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
 
     StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
@@ -1351,7 +1351,8 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         cols,
         storage_snapshot_ptr,
         MarkRanges{MarkRange(0, total_mark)},
-        nullptr,
+        /*virtual_fields=*/ {},
+        /*uncompressed_cache=*/{},
         storage.getContext()->getMarkCache().get(),
         std::make_shared<AlterConversions>(),
         MergeTreeReaderSettings{},
