@@ -66,9 +66,12 @@ protected:
         UInt64 * pos = vec.data(); /// This also accelerates the code.
 
         UInt64 * current_end = &vec[real_block_size];
-        if (step > 1) {
+        if (step > 1)
+        {
             iota_with_step(pos, static_cast<size_t>(current_end - pos), curr, step);
-        } else {
+        }
+        else
+        {
             iota(pos, static_cast<size_t>(current_end - pos), curr);
         }
 
