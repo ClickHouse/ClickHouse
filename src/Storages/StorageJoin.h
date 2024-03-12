@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Common/RWLock.h>
-#include "Parsers/ASTCreateQuery.h"
-#include "Storages/ColumnsDescription.h"
-#include "Storages/ConstraintsDescription.h"
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ConstraintsDescription.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>

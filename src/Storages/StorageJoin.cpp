@@ -14,8 +14,8 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
-#include "Formats/NativeWriter.h"
-#include "IO/WriteBuffer.h"
+#include <Formats/NativeWriter.h>
+#include <IO/WriteBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <Disks/DiskLocal.h>
 #include <Parsers/ASTSetQuery.h>

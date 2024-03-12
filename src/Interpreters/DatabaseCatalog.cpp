@@ -26,13 +26,12 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
-#include "Interpreters/Context_fwd.h"
-#include "Parsers/ASTFunction.h"
-#include "Parsers/IAST_fwd.h"
-#include "Storages/ColumnsDescription.h"
-#include "Storages/IStorage_fwd.h"
-#include "Storages/StorageJoin.h"
-#include "config.h"
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/StorageJoin.h>
 
 #if USE_MYSQL
 #    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
