@@ -221,7 +221,7 @@ private:
         {
             std::lock_guard lock(mutex);
             auto it = cells.find(key);
-            if (it != cells.end() && !it->second.expired)
+            if (it != cells.end())
             {
                 if (!it->second.expired)
                 {
