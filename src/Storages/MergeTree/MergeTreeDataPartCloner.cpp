@@ -73,37 +73,6 @@ bool doesStoragePolicyAllowSameDisk(MergeTreeData * destination_mt_storage, cons
     return false;
 }
 
-DataPartStoragePtr flushPartStorageToDiskIfInMemory(
-    MergeTreeData * merge_tree_data,
-    const MergeTreeData::DataPartPtr & src_part,
-    const StorageMetadataPtr & metadata_snapshot,
-    const String & tmp_part_prefix,
-    const String & tmp_dst_part_name,
-    scope_guard & src_flushed_tmp_dir_lock,
-    MergeTreeData::MutableDataPartPtr src_flushed_tmp_part)
-{
-    if (auto src_part_in_memory = asInMemoryPart(src_part))
-    {
-        auto flushed_part_path = src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
-        auto tmp_src_part_file_name = fs::path(tmp_dst_part_name).filename();
-
-        src_flushed_tmp_dir_lock = src_part->storage.getTemporaryPartDirectoryHolder(tmp_src_part_file_name);
-
-        auto flushed_part_storage = src_part_in_memory->flushToDisk(*flushed_part_path, metadata_snapshot);
-
-        src_flushed_tmp_part = MergeTreeDataPartBuilder(*merge_tree_data, src_part->name, flushed_part_storage)
-                                   .withPartInfo(src_part->info)
-                                   .withPartFormatFromDisk()
-                                   .build();
-
-        src_flushed_tmp_part->is_temp = true;
-
-        return flushed_part_storage;
-    }
-
-    return src_part->getDataPartStoragePtr();
-}
-
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
     MergeTreeData * destination_mt_storage,
     const MergeTreeData::DataPartPtr & src_part,
@@ -125,8 +94,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
     scope_guard src_flushed_tmp_dir_lock;
     MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
 
-    auto src_part_storage = flushPartStorageToDiskIfInMemory(
-        destination_mt_storage, src_part, destination_metadata_snapshot, tmp_part_prefix, tmp_dst_part_name, src_flushed_tmp_dir_lock, src_flushed_tmp_part);
+    auto src_part_storage = src_part->getDataPartStoragePtr();
 
     auto dst_part_storage = src_part_storage->freeze(
         destination_mt_storage->getRelativeDataPath(),
