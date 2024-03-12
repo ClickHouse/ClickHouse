@@ -611,7 +611,9 @@ class CIConfig:
 
         assert result, f"BUG, no runner for [{check_name}]"
 
-        if ("aarch" in check_name or "arm" in check_name) and "aarch" not in result:
+        if (
+            "aarch" in check_name.lower() or "arm64" in check_name.lower()
+        ) and "aarch" not in result:
             if result == Runners.STRESS_TESTER:
                 # FIXME: no arm stress tester group atm
                 result = Runners.FUNC_TESTER_ARM
