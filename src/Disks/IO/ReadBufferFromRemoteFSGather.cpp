@@ -14,16 +14,15 @@ using namespace DB;
 
 namespace
 {
-bool withFileCache(const ReadSettings & settings)
-{
-    return settings.remote_fs_cache && settings.enable_filesystem_cache
-        && (!CurrentThread::getQueryId().empty() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
-            || !settings.avoid_readthrough_cache_outside_query_context);
-}
-bool withPageCache(const ReadSettings & settings, bool with_file_cache)
-{
-    return settings.page_cache && !with_file_cache && settings.use_page_cache_for_disks_without_file_cache;
-}
+    bool withFileCache(const ReadSettings & settings)
+    {
+        return settings.remote_fs_cache && settings.enable_filesystem_cache;
+    }
+
+    bool withPageCache(const ReadSettings & settings, bool with_file_cache)
+    {
+        return settings.page_cache && !with_file_cache && settings.use_page_cache_for_disks_without_file_cache;
+    }
 }
 
 namespace DB
