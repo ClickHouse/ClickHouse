@@ -906,9 +906,9 @@ String Context::getFilesystemCacheUser() const
     return shared->filesystem_cache_user;
 }
 
-StoragePtr Context::getOrCacheStorage(const String & name, std::function<StoragePtr()> f) const
+StoragePtr Context::getOrCacheStorage(const StorageID & id, std::function<StoragePtr()> f) const
 {
-    if (auto storage = storage_cache.find(name); storage != storage_cache.end())
+    if (auto storage = storage_cache.find(id); storage != storage_cache.end())
     {
         if (auto storage_ptr = storage->second.lock(); storage_ptr)
             return storage_ptr;
@@ -917,7 +917,7 @@ StoragePtr Context::getOrCacheStorage(const String & name, std::function<Storage
     }
     auto storage = f();
     if (storage)
-        storage_cache.insert({name, storage});
+        storage_cache.insert({id, storage});
     return storage;
 }
 

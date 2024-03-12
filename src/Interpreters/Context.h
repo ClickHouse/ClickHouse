@@ -427,7 +427,7 @@ protected:
 
     /// Cache for storages resolved during query processing - we want to use the same storages we have resolved on
     /// analysis stage for the execution - storage can be changed by concurrently running 'EXCHANGE TABLES' query.
-    mutable std::unordered_map<String, StorageWeakPtr> storage_cache;
+    mutable std::unordered_map<StorageID, StorageWeakPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> storage_cache;
 
 public:
     /// Some counters for current query execution.
@@ -523,7 +523,7 @@ public:
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
 
-    StoragePtr getOrCacheStorage(const String & name, std::function<StoragePtr()> f) const;
+    StoragePtr getOrCacheStorage(const StorageID & id, std::function<StoragePtr()> f) const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
