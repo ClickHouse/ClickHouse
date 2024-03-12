@@ -627,4 +627,19 @@ struct SettingFieldCustom
     void readBinary(ReadBuffer & in);
 };
 
+struct SettingFieldNonZeroUInt64 : public SettingFieldUInt64
+{
+public:
+    explicit SettingFieldNonZeroUInt64(UInt64 x = 1);
+    explicit SettingFieldNonZeroUInt64(const Field & f);
+
+    SettingFieldNonZeroUInt64 & operator=(UInt64 x);
+    SettingFieldNonZeroUInt64 & operator=(const Field & f);
+
+    void parseFromString(const String & str);
+
+private:
+    void checkValueNonZero() const;
+};
+
 }
