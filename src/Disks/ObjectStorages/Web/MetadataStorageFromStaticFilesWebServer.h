@@ -86,6 +86,10 @@ public:
 
     void createDirectoryRecursive(const std::string & path) override;
 
+    void removeDirectory(const std::string & path) override;
+
+    void removeRecursive(const std::string & path) override;
+
     void commit() override
     {
         /// Nothing to commit.

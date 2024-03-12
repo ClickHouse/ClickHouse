@@ -129,4 +129,14 @@ void MetadataStorageFromStaticFilesWebServerTransaction::createDirectoryRecursiv
     /// Noop.
 }
 
+void MetadataStorageFromStaticFilesWebServerTransaction::removeDirectory(const std::string &)
+{
+    /// Noop.
+}
+
+void MetadataStorageFromStaticFilesWebServerTransaction::removeRecursive(const std::string &)
+{
+    /// Noop.
+}
+
 }
