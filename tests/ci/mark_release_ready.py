@@ -7,10 +7,11 @@ import os
 from commit_status_helper import get_commit, post_commit_status
 from env_helper import GITHUB_JOB_URL
 from get_robot_token import get_best_robot_token
+from git_helper import commit as commit_arg
 from github_helper import GitHub
 from pr_info import PRInfo
 from release import RELEASE_READY_STATUS
-from git_helper import commit as commit_arg
+from report import SUCCESS
 
 
 def main():
@@ -50,12 +51,11 @@ def main():
     gh.get_rate_limit()
     post_commit_status(
         commit,
-        "success",
+        SUCCESS,
         url,
         description,
         RELEASE_READY_STATUS,
         pr_info,
-        dump_to_file=True,
     )
 
 

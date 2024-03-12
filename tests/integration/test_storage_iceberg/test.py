@@ -27,8 +27,14 @@ from datetime import datetime
 from pyspark.sql.functions import monotonically_increasing_id, row_number
 from pyspark.sql.window import Window
 from pyspark.sql.readwriter import DataFrameWriter, DataFrameWriterV2
+from minio.deleteobjects import DeleteObject
 
-from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
+from helpers.s3_tools import (
+    prepare_s3_bucket,
+    upload_directory,
+    get_file_contents,
+    list_s3_objects,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -61,6 +67,7 @@ def started_cluster():
             main_configs=["configs/config.d/named_collections.xml"],
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,
+            stay_alive=True,
         )
 
         logging.info("Starting cluster...")
@@ -135,12 +142,12 @@ def generate_data(spark, start, end):
     return df
 
 
-def create_iceberg_table(node, table_name, format="Parquet"):
+def create_iceberg_table(node, table_name, format="Parquet", bucket="root"):
     node.query(
         f"""
         DROP TABLE IF EXISTS {table_name};
         CREATE TABLE {table_name}
-        ENGINE=Iceberg(s3, filename = 'iceberg_data/default/{table_name}/', format={format})"""
+        ENGINE=Iceberg(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
     )
 
 
@@ -399,6 +406,8 @@ def test_evolved_schema(started_cluster, format_version):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
+    expected_data = instance.query(f"SELECT * FROM {TABLE_NAME} order by a, b")
+
     spark.sql(f"ALTER TABLE {TABLE_NAME} ADD COLUMNS (x bigint)")
     files = upload_directory(
         minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
@@ -406,6 +415,11 @@ def test_evolved_schema(started_cluster, format_version):
 
     error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
     assert "UNSUPPORTED_METHOD" in error
+
+    data = instance.query(
+        f"SELECT * FROM {TABLE_NAME} SETTINGS iceberg_engine_ignore_schema_evolution=1"
+    )
+    assert data == expected_data
 
 
 def test_row_based_deletes(started_cluster):
@@ -551,3 +565,56 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version):
     create_iceberg_table(instance, TABLE_NAME)
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500
+
+
+def test_restart_broken(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = "broken2"
+    TABLE_NAME = "test_restart_broken_table_function"
+
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
+
+    parquet_data_path = create_initial_data_file(
+        started_cluster,
+        instance,
+        "SELECT number, toString(number) FROM numbers(100)",
+        TABLE_NAME,
+    )
+
+    write_iceberg_from_file(spark, parquet_data_path, TABLE_NAME, format_version="1")
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+    create_iceberg_table(instance, TABLE_NAME, bucket=bucket)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    s3_objects = list_s3_objects(minio_client, bucket, prefix="")
+    assert (
+        len(
+            list(
+                minio_client.remove_objects(
+                    bucket,
+                    [DeleteObject(obj) for obj in s3_objects],
+                )
+            )
+        )
+        == 0
+    )
+    minio_client.remove_bucket(bucket)
+
+    instance.restart_clickhouse()
+
+    assert "NoSuchBucket" in instance.query_and_get_error(
+        f"SELECT count() FROM {TABLE_NAME}"
+    )
+
+    minio_client.make_bucket(bucket)
+
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100

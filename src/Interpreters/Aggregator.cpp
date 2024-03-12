@@ -105,7 +105,7 @@ public:
         if (const auto hint = cache->get(params.key))
         {
             LOG_TRACE(
-                &Poco::Logger::get("Aggregator"),
+                getLogger("Aggregator"),
                 "An entry for key={} found in cache: sum_of_sizes={}, median_size={}",
                 params.key,
                 hint->sum_of_sizes,
@@ -129,7 +129,7 @@ public:
             || hint->median_size < median_size)
         {
             LOG_TRACE(
-                &Poco::Logger::get("Aggregator"),
+                getLogger("Aggregator"),
                 "Statistics updated for key={}: new sum_of_sizes={}, median_size={}",
                 params.key,
                 sum_of_sizes,
@@ -229,7 +229,7 @@ void initDataVariantsWithSizeHint(
                 /// But we will also work with the big (i.e. not so cache friendly) HT from the beginning which may result in a slight slowdown.
                 /// So let's just do nothing.
                 LOG_TRACE(
-                    &Poco::Logger::get("Aggregator"),
+                    getLogger("Aggregator"),
                     "No space were preallocated in hash tables because 'max_size_to_preallocate_for_aggregation' has too small value: {}, "
                     "should be at least {}",
                     stats_collecting_params.max_size_to_preallocate_for_aggregation,
@@ -624,7 +624,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         {
             size_t alignment_of_next_state = params.aggregates[i + 1].function->alignOfData();
             if ((alignment_of_next_state & (alignment_of_next_state - 1)) != 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: alignOfData is not 2^N");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "`alignOfData` is not 2^N");
 
             /// Extend total_size to next alignment requirement
             /// Add padding by rounding up 'total_size_of_aggregate_states' to be a multiplier of alignment_of_next_state.
@@ -774,6 +774,17 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         }
     }
 
+    bool all_keys_are_numbers_or_strings = true;
+    for (size_t j = 0; j < params.keys_size; ++j)
+    {
+        if (!types_removed_nullable[j]->isValueRepresentedByNumber() && !isString(types_removed_nullable[j])
+            && !isFixedString(types_removed_nullable[j]))
+        {
+            all_keys_are_numbers_or_strings = false;
+            break;
+        }
+    }
+
     if (has_nullable_key)
     {
         /// Optimization for one key
@@ -832,8 +843,11 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
         }
 
+        if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
+            return AggregatedDataVariants::Type::nullable_prealloc_serialized;
+
         /// Fallback case.
-        return AggregatedDataVariants::Type::serialized;
+        return AggregatedDataVariants::Type::nullable_serialized;
     }
 
     /// No key has been found to be nullable.
@@ -857,7 +871,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::low_cardinality_keys128;
             if (size_of_field == 32)
                 return AggregatedDataVariants::Type::low_cardinality_keys256;
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: low cardinality numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
         }
 
         if (size_of_field == 1)
@@ -872,7 +886,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             return AggregatedDataVariants::Type::keys128;
         if (size_of_field == 32)
             return AggregatedDataVariants::Type::keys256;
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
     }
 
     if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
@@ -914,6 +928,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         else
             return AggregatedDataVariants::Type::key_string;
     }
+
+    if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
+        return AggregatedDataVariants::Type::prealloc_serialized;
 
     return AggregatedDataVariants::Type::serialized;
 }
@@ -3308,12 +3325,15 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     auto merge_method = method_chosen;
 
 #define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
-        M(key64)            \
-        M(key_string)       \
-        M(key_fixed_string) \
-        M(keys128)          \
-        M(keys256)          \
-        M(serialized)       \
+        M(key64)                          \
+        M(key_string)                     \
+        M(key_fixed_string)               \
+        M(keys128)                        \
+        M(keys256)                        \
+        M(serialized)                     \
+        M(nullable_serialized)            \
+        M(prealloc_serialized)            \
+        M(nullable_prealloc_serialized)   \
 
 #define M(NAME) \
     if (merge_method == AggregatedDataVariants::Type::NAME) \

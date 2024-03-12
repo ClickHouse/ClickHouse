@@ -45,7 +45,7 @@ DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, Cont
     : IDatabase(name_)
     , WithContext(context_->getGlobalContext())
     , source(source_url)
-    , log(&Poco::Logger::get("DatabaseHDFS(" + name_ + ")"))
+    , log(getLogger("DatabaseHDFS(" + name_ + ")"))
 {
     if (!source.empty())
     {

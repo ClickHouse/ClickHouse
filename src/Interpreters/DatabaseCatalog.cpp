@@ -827,7 +827,7 @@ DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
     , referential_dependencies{"ReferentialDeps"}
     , loading_dependencies{"LoadingDeps"}
     , view_dependencies{"ViewDeps"}
-    , log(&Poco::Logger::get("DatabaseCatalog"))
+    , log(getLogger("DatabaseCatalog"))
     , first_async_drop_in_queue(tables_marked_dropped.end())
 {
 }
@@ -1094,7 +1094,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             create->setTable(table_id.table_name);
             try
             {
-                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), /* force_restore */ true).second;
+                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), LoadingStrictnessLevel::FORCE_RESTORE).second;
                 table->is_dropped = true;
             }
             catch (...)

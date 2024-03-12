@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+from concurrent.futures import ProcessPoolExecutor
 import csv
 import logging
 import os
@@ -8,16 +9,13 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-
 from docker_images_helper import get_docker_image, pull_image
 from env_helper import REPO_COPY, TEMP_PATH
 from git_helper import GIT_PREFIX, git_runner
 from pr_info import PRInfo
-from report import JobReport, TestResults, read_test_results
+from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
 from ssh import SSHKey
 from stopwatch import Stopwatch
-
-NAME = "Style Check"
 
 
 def process_result(
@@ -39,19 +37,19 @@ def process_result(
             status = list(csv.reader(status_file, delimiter="\t"))
     if len(status) != 1 or len(status[0]) != 2:
         logging.info("Files in result folder %s", os.listdir(result_directory))
-        return "error", "Invalid check_status.tsv", test_results, additional_files
+        return ERROR, "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
         results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path)
         if len(test_results) == 0:
-            raise Exception("Empty results")
+            raise ValueError("Empty results")
 
         return state, description, test_results, additional_files
     except Exception:
-        if state == "success":
-            state, description = "error", "Failed to read test_results.tsv"
+        if state == SUCCESS:
+            state, description = ERROR, "Failed to read test_results.tsv"
         return state, description, test_results, additional_files
 
 
@@ -122,7 +120,7 @@ def checkout_last_ref(pr_info: PRInfo) -> None:
 def main():
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("git_helper").setLevel(logging.DEBUG)
-    args = parse_args()
+    # args = parse_args()
 
     stopwatch = Stopwatch()
 
@@ -130,28 +128,46 @@ def main():
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
-    pr_info = PRInfo()
+    # pr_info = PRInfo()
 
     IMAGE_NAME = "clickhouse/style-test"
     image = pull_image(get_docker_image(IMAGE_NAME))
-    cmd = (
+    cmd_1 = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
         f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"{image}"
+        f"--entrypoint= -w/ClickHouse/utils/check-style "
+        f"{image} ./check_cpp_docs.sh"
     )
+    cmd_2 = (
+        f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
+        f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
+        f"--entrypoint= -w/ClickHouse/utils/check-style "
+        f"{image} ./check_py.sh"
+    )
+    logging.info("Is going to run the command: %s", cmd_1)
+    logging.info("Is going to run the command: %s", cmd_2)
 
-    if args.push:
-        checkout_head(pr_info)
+    with ProcessPoolExecutor(max_workers=2) as executor:
+        # Submit commands for execution in parallel
+        future1 = executor.submit(subprocess.run, cmd_1, shell=True)
+        future2 = executor.submit(subprocess.run, cmd_2, shell=True)
+        # Wait for both commands to complete
+        _ = future1.result()
+        _ = future2.result()
 
-    logging.info("Is going to run the command: %s", cmd)
+    # if args.push:
+    #     checkout_head(pr_info)
+
     subprocess.check_call(
-        cmd,
+        f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
+        f"--out-results-file {temp_path}/test_results.tsv --out-status-file {temp_path}/check_status.tsv || "
+        f'echo -e "failure\tCannot parse results" > {temp_path}/check_status.tsv',
         shell=True,
     )
 
-    if args.push:
-        commit_push_staged(pr_info)
-        checkout_last_ref(pr_info)
+    # if args.push:
+    #     commit_push_staged(pr_info)
+    #     checkout_last_ref(pr_info)
 
     state, description, test_results, additional_files = process_result(temp_path)
 
@@ -164,7 +180,7 @@ def main():
         additional_files=additional_files,
     ).dump()
 
-    if state in ["error", "failure"]:
+    if state in [ERROR, FAILURE]:
         print(f"Style check failed: [{description}]")
         sys.exit(1)
 

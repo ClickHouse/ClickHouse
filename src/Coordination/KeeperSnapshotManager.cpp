@@ -1,24 +1,24 @@
+#include <filesystem>
+#include <memory>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
+#include <Core/Field.h>
+#include <Disks/DiskLocal.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <filesystem>
-#include <memory>
-#include <Common/logger_useful.h>
-#include <Coordination/KeeperContext.h>
-#include <Coordination/pathUtils.h>
-#include <Coordination/KeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include "Core/Field.h"
-#include <Disks/DiskLocal.h>
-
+#include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -32,23 +32,21 @@ namespace ErrorCodes
 
 namespace
 {
-    constexpr std::string_view tmp_prefix = "tmp_";
-
-    void moveFileBetweenDisks(DiskPtr disk_from, const std::string & path_from, DiskPtr disk_to, const std::string & path_to)
+    void moveSnapshotBetweenDisks(
+        DiskPtr disk_from,
+        const std::string & path_from,
+        DiskPtr disk_to,
+        const std::string & path_to,
+        const KeeperContextPtr & keeper_context)
     {
-        /// we use empty file with prefix tmp_ to detect incomplete copies
-        /// if a copy is complete we don't care from which disk we use the same file
-        /// so it's okay if a failure happens after removing of tmp file but before we remove
-        /// the snapshot from the source disk
-        auto from_path = fs::path(path_from);
-        auto tmp_snapshot_name = from_path.parent_path() / (std::string{tmp_prefix} + from_path.filename().string());
-        {
-            auto buf = disk_to->writeFile(tmp_snapshot_name);
-            buf->finalize();
-        }
-        disk_from->copyFile(from_path, *disk_to, path_to, {});
-        disk_to->removeFile(tmp_snapshot_name);
-        disk_from->removeFile(path_from);
+        moveFileBetweenDisks(
+            std::move(disk_from),
+            path_from,
+            std::move(disk_to),
+            path_to,
+            /*before_file_remove_op=*/{},
+            getLogger("KeeperSnapshotManager"),
+            keeper_context);
     }
 
     uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
@@ -74,33 +72,38 @@ namespace
 
         /// Serialize ACL
         writeBinary(node.acl_id, out);
-        writeBinary(node.is_sequental, out);
+        /// Write is_sequential for backwards compatibility
+        if (version < SnapshotVersion::V6)
+            writeBinary(false, out);
+
         /// Serialize stat
-        writeBinary(node.stat.czxid, out);
-        writeBinary(node.stat.mzxid, out);
-        writeBinary(node.stat.ctime, out);
-        writeBinary(node.stat.mtime, out);
-        writeBinary(node.stat.version, out);
-        writeBinary(node.stat.cversion, out);
-        writeBinary(node.stat.aversion, out);
-        writeBinary(node.stat.ephemeralOwner, out);
-        writeBinary(node.stat.dataLength, out);
-        writeBinary(node.stat.numChildren, out);
-        writeBinary(node.stat.pzxid, out);
+        writeBinary(node.czxid, out);
+        writeBinary(node.mzxid, out);
+        writeBinary(node.ctime(), out);
+        writeBinary(node.mtime, out);
+        writeBinary(node.version, out);
+        writeBinary(node.cversion, out);
+        writeBinary(node.aversion, out);
+        writeBinary(node.ephemeralOwner(), out);
+        if (version < SnapshotVersion::V6)
+            writeBinary(static_cast<int32_t>(node.data_size), out);
+        writeBinary(node.numChildren(), out);
+        writeBinary(node.pzxid, out);
 
-        writeBinary(node.seq_num, out);
+        writeBinary(node.seqNum(), out);
 
-        if (version >= SnapshotVersion::V4)
-        {
-            writeBinary(node.size_bytes, out);
-        }
+        if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
+            writeBinary(node.sizeInBytes(), out);
     }
 
     void readNode(KeeperStorage::Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
     {
-        String new_data;
-        readBinary(new_data, in);
-        node.setData(std::move(new_data));
+        readVarUInt(node.data_size, in);
+        if (node.data_size != 0)
+        {
+            node.data = std::unique_ptr<char[]>(new char[node.data_size]);
+            in.readStrict(node.data.get(), node.data_size);
+        }
 
         if (version >= SnapshotVersion::V1)
         {
@@ -129,25 +132,48 @@ namespace
 
         acl_map.addUsage(node.acl_id);
 
-        readBinary(node.is_sequental, in);
+        if (version < SnapshotVersion::V6)
+        {
+            bool is_sequential = false;
+            readBinary(is_sequential, in);
+        }
 
         /// Deserialize stat
-        readBinary(node.stat.czxid, in);
-        readBinary(node.stat.mzxid, in);
-        readBinary(node.stat.ctime, in);
-        readBinary(node.stat.mtime, in);
-        readBinary(node.stat.version, in);
-        readBinary(node.stat.cversion, in);
-        readBinary(node.stat.aversion, in);
-        readBinary(node.stat.ephemeralOwner, in);
-        readBinary(node.stat.dataLength, in);
-        readBinary(node.stat.numChildren, in);
-        readBinary(node.stat.pzxid, in);
-        readBinary(node.seq_num, in);
+        readBinary(node.czxid, in);
+        readBinary(node.mzxid, in);
+        int64_t ctime;
+        readBinary(ctime, in);
+        node.setCtime(ctime);
+        readBinary(node.mtime, in);
+        readBinary(node.version, in);
+        readBinary(node.cversion, in);
+        readBinary(node.aversion, in);
+        int64_t ephemeral_owner = 0;
+        readBinary(ephemeral_owner, in);
+        if (ephemeral_owner != 0)
+            node.setEphemeralOwner(ephemeral_owner);
 
-        if (version >= SnapshotVersion::V4)
+        if (version < SnapshotVersion::V6)
         {
-            readBinary(node.size_bytes, in);
+            int32_t data_length = 0;
+            readBinary(data_length, in);
+        }
+        int32_t num_children = 0;
+        readBinary(num_children, in);
+        if (ephemeral_owner == 0)
+            node.setNumChildren(num_children);
+
+        readBinary(node.pzxid, in);
+
+        int32_t seq_num = 0;
+        readBinary(seq_num, in);
+        if (ephemeral_owner == 0)
+            node.setSeqNum(seq_num);
+
+        if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
+        {
+            uint64_t size_bytes = 0;
+            readBinary(size_bytes, in);
         }
     }
 
@@ -227,7 +253,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         /// Benign race condition possible while taking snapshot: NuRaft decide to create snapshot at some log id
         /// and only after some time we lock storage and enable snapshot mode. So snapshot_container_size can be
         /// slightly bigger than required.
-        if (node.stat.mzxid > snapshot.zxid)
+        if (node.mzxid > snapshot.zxid)
             break;
 
         writeBinary(path, out);
@@ -349,30 +375,36 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     size_t snapshot_container_size;
     readBinary(snapshot_container_size, in);
 
+    storage.container.reserve(snapshot_container_size);
+
     if (recalculate_digest)
         storage.nodes_digest = 0;
 
-    const auto is_node_empty = [](const auto & node)
-    {
-        return node.getData().empty() && node.stat == Coordination::Stat{};
-    };
-
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
     {
-        std::string path;
-        readBinary(path, in);
+        size_t path_size = 0;
+        readVarUInt(path_size, in);
+        chassert(path_size != 0);
+        auto path_data = storage.container.allocateKey(path_size);
+        in.readStrict(path_data.get(), path_size);
+        std::string_view path{path_data.get(), path_size};
+
         KeeperStorage::Node node{};
         readNode(node, in, current_version, storage.acl_map);
 
         using enum Coordination::PathMatchResult;
         auto match_result = Coordination::matchPath(path, keeper_system_path);
 
-        const std::string error_msg = fmt::format("Cannot read node on path {} from a snapshot because it is used as a system node", path);
+        const auto get_error_msg = [&]
+        {
+            return fmt::format("Cannot read node on path {} from a snapshot because it is used as a system node", path);
+        };
+
         if (match_result == IS_CHILD)
         {
             if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
             {
-                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
                 continue;
             }
             else
@@ -380,15 +412,15 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                     ErrorCodes::LOGICAL_ERROR,
                     "{}. Ignoring it can lead to data loss. "
                     "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                    error_msg);
+                    get_error_msg());
         }
         else if (match_result == EXACT)
         {
-            if (!is_node_empty(node))
+            if (!node.empty())
             {
                 if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
                 {
-                    LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                    LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
                     node = KeeperStorage::Node{};
                 }
                 else
@@ -396,20 +428,24 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                         ErrorCodes::LOGICAL_ERROR,
                         "{}. Ignoring it can lead to data loss. "
                         "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                        error_msg);
+                        get_error_msg());
             }
-
-            // we always ignore the written size for this node
-            node.recalculateSize();
         }
 
-        storage.container.insertOrReplace(path, node);
-        if (node.stat.ephemeralOwner != 0)
-            storage.ephemerals[node.stat.ephemeralOwner].insert(path);
+        auto ephemeral_owner = node.ephemeralOwner();
+        if (!node.isEphemeral() && node.numChildren() > 0)
+            node.getChildren().reserve(node.numChildren());
+
+        if (ephemeral_owner != 0)
+            storage.ephemerals[node.ephemeralOwner()].insert(std::string{path});
 
         if (recalculate_digest)
             storage.nodes_digest += node.getDigest(path);
+
+        storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
     }
+
+    LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
 
     for (const auto & itr : storage.container)
     {
@@ -417,7 +453,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         {
             auto parent_path = parentNodePath(itr.key);
             storage.container.updateValue(
-                parent_path, [version, path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseNodeName(path), /*update_size*/ version < SnapshotVersion::V4); });
+                parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseNodeName(path)); });
         }
     }
 
@@ -425,16 +461,16 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     {
         if (itr.key != "/")
         {
-            if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
+            if (itr.value.numChildren() != static_cast<int32_t>(itr.value.getChildren().size()))
             {
 #ifdef NDEBUG
                 /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
-                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
-                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+                LOG_ERROR(getLogger("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
+                            " is different from actual children size {} for node {}", itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
 #else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
                                 " is different from actual children size {} for node {}",
-                                itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+                                itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
 #endif
             }
         }
@@ -565,9 +601,9 @@ KeeperSnapshotManager::KeeperSnapshotManager(
         std::vector<std::string> snapshot_files;
         for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
         {
-            if (it->name().starts_with(tmp_prefix))
+            if (it->name().starts_with(tmp_keeper_file_prefix))
             {
-                incomplete_files.emplace(it->name().substr(tmp_prefix.size()), it->path());
+                incomplete_files.emplace(it->name().substr(tmp_keeper_file_prefix.size()), it->path());
                 continue;
             }
 
@@ -586,7 +622,7 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 
             if (!inserted)
                 LOG_WARNING(
-                    &Poco::Logger::get("KeeperSnapshotManager"),
+                    log,
                     "Found another snapshots with last log idx {}, will use snapshot from disk {}",
                     snapshot_up_to,
                     disk->getName());
@@ -594,6 +630,9 @@ KeeperSnapshotManager::KeeperSnapshotManager(
 
         for (const auto & [name, path] : incomplete_files)
             disk->removeFile(path);
+
+        if (snapshot_files.empty())
+            LOG_TRACE(log, "No snapshots were found on {}", disk->getName());
 
         read_disks.insert(disk);
     };
@@ -757,7 +796,7 @@ void KeeperSnapshotManager::moveSnapshotsIfNeeded()
         {
             if (file_info.disk != latest_snapshot_disk)
             {
-                moveFileBetweenDisks(file_info.disk, file_info.path, latest_snapshot_disk, file_info.path);
+                moveSnapshotBetweenDisks(file_info.disk, file_info.path, latest_snapshot_disk, file_info.path, keeper_context);
                 file_info.disk = latest_snapshot_disk;
             }
         }
@@ -765,7 +804,7 @@ void KeeperSnapshotManager::moveSnapshotsIfNeeded()
         {
             if (file_info.disk != disk)
             {
-                moveFileBetweenDisks(file_info.disk, file_info.path, disk, file_info.path);
+                moveSnapshotBetweenDisks(file_info.disk, file_info.path, disk, file_info.path, keeper_context);
                 file_info.disk = disk;
             }
         }
@@ -821,6 +860,32 @@ SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStor
     }
 
     return {snapshot_file_name, disk};
+}
+
+size_t KeeperSnapshotManager::getLatestSnapshotIndex() const
+{
+    if (!existing_snapshots.empty())
+        return existing_snapshots.rbegin()->first;
+    return 0;
+}
+
+SnapshotFileInfo KeeperSnapshotManager::getLatestSnapshotInfo() const
+{
+    if (!existing_snapshots.empty())
+    {
+        const auto & [path, disk] = existing_snapshots.at(getLatestSnapshotIndex());
+
+        try
+        {
+            if (disk->exists(path))
+                return {path, disk};
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    }
+    return {"", nullptr};
 }
 
 }

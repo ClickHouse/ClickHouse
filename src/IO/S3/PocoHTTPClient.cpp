@@ -1,5 +1,4 @@
 #include <Poco/Timespan.h>
-#include "Common/DNSResolver.h"
 #include "config.h"
 
 #if USE_AWS_S3
@@ -146,10 +145,8 @@ ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguratio
         .withConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
         .withSendTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
         .withReceiveTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
-        .withTcpKeepAliveTimeout(Poco::Timespan(
-            client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0))
-        .withHttpKeepAliveTimeout(Poco::Timespan(
-            client_configuration.http_keep_alive_timeout_ms * 1000)); /// flag indicating whether keep-alive is enabled is set to each session upon creation
+        .withTCPKeepAliveTimeout(Poco::Timespan(
+            client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0));
 }
 
 PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration)
@@ -164,8 +161,6 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , get_request_throttler(client_configuration.get_request_throttler)
     , put_request_throttler(client_configuration.put_request_throttler)
     , extra_headers(client_configuration.extra_headers)
-    , http_connection_pool_size(client_configuration.http_connection_pool_size)
-    , wait_on_pool_size_limit(client_configuration.wait_on_pool_size_limit)
 {
 }
 
@@ -308,12 +303,8 @@ void PocoHTTPClient::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    /// Most sessions in pool are already connected and it is not possible to set proxy host/port to a connected session.
     const auto request_configuration = per_request_configuration();
-    if (http_connection_pool_size)
-        makeRequestInternalImpl<true>(request, request_configuration, response, readLimiter, writeLimiter);
-    else
-        makeRequestInternalImpl<false>(request, request_configuration, response, readLimiter, writeLimiter);
+    makeRequestInternalImpl(request, request_configuration, response, readLimiter, writeLimiter);
 }
 
 String getMethod(const Aws::Http::HttpRequest & request)
@@ -335,7 +326,6 @@ String getMethod(const Aws::Http::HttpRequest & request)
     }
 }
 
-template <bool pooled>
 void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Http::HttpRequest & request,
     const DB::ProxyConfiguration & proxy_configuration,
@@ -343,9 +333,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
 {
-    using SessionPtr = std::conditional_t<pooled, PooledHTTPSessionPtr, HTTPSessionPtr>;
-
-    Poco::Logger * log = &Poco::Logger::get("AWSClient");
+    LoggerPtr log = getLogger("AWSClient");
 
     auto uri = request.GetUri().GetURIString();
     auto method = getMethod(request);
@@ -396,40 +384,17 @@ void PocoHTTPClient::makeRequestInternalImpl(
         for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
-            SessionPtr session;
 
-            if (!proxy_configuration.host.empty())
-            {
-                if (enable_s3_requests_logging)
-                    LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
-                /// Reverse proxy can replace host header with resolved ip address instead of host name.
-                /// This can lead to request signature difference on S3 side.
-                if constexpr (pooled)
-                    session = makePooledHTTPSession(
-                        target_uri,
-                        getTimeouts(method, first_attempt, /*first_byte*/ true),
-                        http_connection_pool_size,
-                        wait_on_pool_size_limit,
-                        proxy_configuration);
-                else
-                    session = makeHTTPSession(
-                            target_uri,
-                            getTimeouts(method, first_attempt, /*first_byte*/ true),
-                            proxy_configuration);
-            }
-            else
-            {
-                if constexpr (pooled)
-                    session = makePooledHTTPSession(
-                        target_uri,
-                        getTimeouts(method, first_attempt, /*first_byte*/ true),
-                        http_connection_pool_size,
-                        wait_on_pool_size_limit);
-                else
-                    session = makeHTTPSession(
-                            target_uri,
-                            getTimeouts(method, first_attempt, /*first_byte*/ true));
-            }
+            if (enable_s3_requests_logging && !proxy_configuration.isEmpty())
+                LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
+
+            auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
+
+            auto session = makeHTTPSession(
+                group,
+                target_uri,
+                getTimeouts(method, first_attempt, /*first_byte*/ true),
+                proxy_configuration);
 
             /// In case of error this address will be written to logs
             request.SetResolvedRemoteHost(session->getResolvedAddress());
@@ -612,10 +577,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
 
         addMetric(request, S3MetricType::Errors);
-
-        /// Probably this is socket timeout or something more or less related to DNS
-        /// Let's just remove this host from DNS cache to be more safe
-        DNSResolver::instance().removeHostFromCache(Poco::URI(uri).getHost());
     }
 }
 

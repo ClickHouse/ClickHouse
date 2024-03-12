@@ -80,9 +80,10 @@ ObjectStoragePtr ObjectStorageFactory::create(
 }
 
 #if USE_AWS_S3
-static S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config,
-                        const std::string & config_prefix,
-                        const ContextPtr & context)
+namespace
+{
+
+S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context)
 {
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     S3::URI uri(endpoint);
@@ -92,6 +93,23 @@ static S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config,
         uri.key.push_back('/');
 
     return uri;
+}
+
+void checkS3Capabilities(
+    S3ObjectStorage & storage, const S3Capabilities s3_capabilities, const String & name)
+{
+    /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
+    if (s3_capabilities.support_batch_delete && !checkBatchRemove(storage))
+    {
+        LOG_WARNING(
+            getLogger("S3ObjectStorage"),
+            "Storage for disk {} does not support batch delete operations, "
+            "so `s3_capabilities.support_batch_delete` was automatically turned off during the access check. "
+            "To remove this message set `s3_capabilities.support_batch_delete` for the disk to `false`.",
+            name);
+        storage.setCapabilitiesSupportBatchDelete(false);
+    }
+}
 }
 
 void registerS3ObjectStorage(ObjectStorageFactory & factory)
@@ -116,20 +134,8 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
 
         /// NOTE: should we still perform this check for clickhouse-disks?
         if (!skip_access_check)
-        {
-            /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
-            if (s3_capabilities.support_batch_delete && !checkBatchRemove(*object_storage, uri.key))
-            {
-                LOG_WARNING(
-                    &Poco::Logger::get("S3ObjectStorage"),
-                    "Storage for disk {} does not support batch delete operations, "
-                    "so `s3_capabilities.support_batch_delete` was automatically turned off during the access check. "
-                    "To remove this message set `s3_capabilities.support_batch_delete` for the disk to `false`.",
-                    name
-                );
-                object_storage->setCapabilitiesSupportBatchDelete(false);
-            }
-        }
+            checkS3Capabilities(*object_storage, s3_capabilities, name);
+
         return object_storage;
     });
 }
@@ -143,7 +149,7 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool skip_access_check) -> ObjectStoragePtr
     {
         /// send_metadata changes the filenames (includes revision), while
         /// s3_plain do not care about this, and expect that the file name
@@ -159,8 +165,14 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         auto client = getClient(config, config_prefix, context, *settings);
         auto key_generator = getKeyGenerator(disk_type, uri, config, config_prefix);
 
-        return std::make_shared<S3PlainObjectStorage>(
+        auto object_storage = std::make_shared<S3PlainObjectStorage>(
             std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
+
+        /// NOTE: should we still perform this check for clickhouse-disks?
+        if (!skip_access_check)
+            checkS3Capabilities(*object_storage, s3_capabilities, name);
+
+        return object_storage;
     });
 }
 #endif
@@ -194,19 +206,23 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 #if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
-    factory.registerObjectStorageType("azure_blob_storage", [](
+    auto creator = [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
+        AzureBlobStorageEndpoint endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
         return std::make_unique<AzureObjectStorage>(
             name,
             getAzureBlobContainerClient(config, config_prefix),
-            getAzureBlobStorageSettings(config, config_prefix, context));
+            getAzureBlobStorageSettings(config, config_prefix, context),
+            endpoint.prefix.empty() ? endpoint.container_name : endpoint.container_name + "/" + endpoint.prefix);
 
-    });
+    };
+    factory.registerObjectStorageType("azure_blob_storage", creator);
+    factory.registerObjectStorageType("azure", creator);
 }
 #endif
 
@@ -240,7 +256,7 @@ void registerWebObjectStorage(ObjectStorageFactory & factory)
 
 void registerLocalObjectStorage(ObjectStorageFactory & factory)
 {
-    factory.registerObjectStorageType("local_blob_storage", [](
+    auto creator = [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -253,7 +269,10 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
         return std::make_shared<LocalObjectStorage>(object_key_prefix);
-    });
+    };
+
+    factory.registerObjectStorageType("local_blob_storage", creator);
+    factory.registerObjectStorageType("local", creator);
 }
 #endif
 

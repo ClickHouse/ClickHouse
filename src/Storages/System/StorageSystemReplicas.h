@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <Storages/IStorage.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -20,7 +20,8 @@ public:
 
     std::string getName() const override { return "SystemReplicas"; }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -32,7 +33,7 @@ public:
     bool isSystemStorage() const override { return true; }
 
 private:
-    std::unique_ptr<StorageSystemReplicasImpl> impl;
+    std::shared_ptr<StorageSystemReplicasImpl> impl;
 };
 
 }

@@ -6,7 +6,6 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TraceLog.h>
-#include <Poco/Logger.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
@@ -65,7 +64,7 @@ TraceCollector::~TraceCollector()
     if (thread.joinable())
         thread.join();
     else
-        LOG_ERROR(&Poco::Logger::get("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
+        LOG_ERROR(getLogger("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
 }
 
 

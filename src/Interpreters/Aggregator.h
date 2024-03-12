@@ -227,17 +227,17 @@ struct AggregationMethodOneNumber
     // Insert the key from the hash table into columns.
     static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/)
     {
-        ColumnVectorHelper * column;
+        ColumnFixedSizeHelper * column;
         if constexpr (nullable)
         {
             ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*key_columns[0]);
             ColumnUInt8 * null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
             null_map->insertDefault();
-            column = static_cast<ColumnVectorHelper *>(&nullable_col.getNestedColumn());
+            column = static_cast<ColumnFixedSizeHelper *>(&nullable_col.getNestedColumn());
         }
         else
         {
-            column = static_cast<ColumnVectorHelper *>(key_columns[0]);
+            column = static_cast<ColumnFixedSizeHelper *>(key_columns[0]);
         }
         static_assert(sizeof(FieldType) <= sizeof(Key));
         const auto * key_holder = reinterpret_cast<const char *>(&key);
@@ -561,7 +561,7 @@ struct AggregationMethodKeysFixed
   * That is, for example, for strings, it contains first the serialized length of the string, and then the bytes.
   * Therefore, when aggregating by several strings, there is no ambiguity.
   */
-template <typename TData>
+template <typename TData, bool nullable = false, bool prealloc = false>
 struct AggregationMethodSerialized
 {
     using Data = TData;
@@ -580,7 +580,7 @@ struct AggregationMethodSerialized
     }
 
     template <bool use_cache>
-    using StateImpl = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped>;
+    using StateImpl = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped, nullable, prealloc>;
 
     using State = StateImpl<true>;
     using StateNoCache = StateImpl<false>;
@@ -598,6 +598,14 @@ struct AggregationMethodSerialized
     }
 };
 
+template <typename TData>
+using AggregationMethodNullableSerialized = AggregationMethodSerialized<TData, true>;
+
+template <typename TData>
+using AggregationMethodPreallocSerialized = AggregationMethodSerialized<TData, false, true>;
+
+template <typename TData>
+using AggregationMethodNullablePreallocSerialized = AggregationMethodSerialized<TData, true, true>;
 
 class Aggregator;
 
@@ -655,7 +663,10 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt64Key>>                   keys64;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>>                   keys128;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>>                   keys256;
-    std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>>                serialized;
+    std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>>                          serialized;
+    std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKey>>                  nullable_serialized;
+    std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKey>>                  prealloc_serialized;
+    std::unique_ptr<AggregationMethodNullablePreallocSerialized<AggregatedDataWithStringKey>>          nullable_prealloc_serialized;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>> key32_two_level;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>> key64_two_level;
@@ -665,14 +676,20 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyTwoLevel>>           keys64_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>>           keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>>           keys256_two_level;
-    std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>        serialized_two_level;
+    std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>                  serialized_two_level;
+    std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKeyTwoLevel>>          nullable_serialized_two_level;
+    std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKeyTwoLevel>>          prealloc_serialized_two_level;
+    std::unique_ptr<AggregationMethodNullablePreallocSerialized<AggregatedDataWithStringKeyTwoLevel>>  nullable_prealloc_serialized_two_level;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>>   key64_hash64;
     std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyHash64>>              key_string_hash64;
     std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKeyHash64>>         key_fixed_string_hash64;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64>>             keys128_hash64;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64>>             keys256_hash64;
-    std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyHash64>>          serialized_hash64;
+    std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyHash64>>                  serialized_hash64;
+    std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKeyHash64>>          nullable_serialized_hash64;
+    std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKeyHash64>>          prealloc_serialized_hash64;
+    std::unique_ptr<AggregationMethodNullablePreallocSerialized<AggregatedDataWithStringKeyHash64>>  nullable_prealloc_serialized_hash64;
 
     /// Support for nullable keys.
     std::unique_ptr<AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false, true>>         nullable_key8;
@@ -723,7 +740,10 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys64,                    false) \
         M(keys128,                    false) \
         M(keys256,                    false) \
-        M(serialized,                 false) \
+        M(serialized,                   false) \
+        M(nullable_serialized,          false) \
+        M(prealloc_serialized,          false) \
+        M(nullable_prealloc_serialized, false) \
         M(key32_two_level,            true) \
         M(key64_two_level,            true) \
         M(key_string_two_level,       true) \
@@ -732,13 +752,19 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys64_two_level,          true) \
         M(keys128_two_level,          true) \
         M(keys256_two_level,          true) \
-        M(serialized_two_level,       true) \
+        M(serialized_two_level,                   true) \
+        M(nullable_serialized_two_level,          true) \
+        M(prealloc_serialized_two_level,          true) \
+        M(nullable_prealloc_serialized_two_level, true) \
         M(key64_hash64,               false) \
         M(key_string_hash64,          false) \
         M(key_fixed_string_hash64,    false) \
         M(keys128_hash64,             false) \
         M(keys256_hash64,             false) \
-        M(serialized_hash64,          false) \
+        M(serialized_hash64,                   false) \
+        M(nullable_serialized_hash64,          false) \
+        M(prealloc_serialized_hash64,          false) \
+        M(nullable_prealloc_serialized_hash64, false) \
         M(nullable_key8,             false) \
         M(nullable_key16,             false) \
         M(nullable_key32,             false) \
@@ -863,6 +889,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128)          \
         M(keys256)          \
         M(serialized)       \
+        M(nullable_serialized) \
+        M(prealloc_serialized) \
+        M(nullable_prealloc_serialized) \
         M(nullable_key32) \
         M(nullable_key64) \
         M(nullable_key_string) \
@@ -889,6 +918,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128_hash64)   \
         M(keys256_hash64)   \
         M(serialized_hash64) \
+        M(nullable_serialized_hash64) \
+        M(prealloc_serialized_hash64) \
+        M(nullable_prealloc_serialized_hash64) \
         M(low_cardinality_key8) \
         M(low_cardinality_key16) \
 
@@ -925,6 +957,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128_two_level)          \
         M(keys256_two_level)          \
         M(serialized_two_level)       \
+        M(nullable_serialized_two_level)       \
+        M(prealloc_serialized_two_level)       \
+        M(nullable_prealloc_serialized_two_level)       \
         M(nullable_key32_two_level) \
         M(nullable_key64_two_level) \
         M(nullable_key_string_two_level) \
@@ -1293,7 +1328,7 @@ private:
     /// How many RAM were used to process the query before processing the first block.
     Int64 memory_usage_before_aggregation = 0;
 
-    Poco::Logger * log = &Poco::Logger::get("Aggregator");
+    LoggerPtr log = getLogger("Aggregator");
 
     /// For external aggregation.
     TemporaryDataOnDiskPtr tmp_data;

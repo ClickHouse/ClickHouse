@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int LOGICAL_ERROR;
     extern const int CLUSTER_DOESNT_EXIST;
+    extern const int UNEXPECTED_CLUSTER;
 }
 
 namespace ClusterProxy
@@ -42,7 +43,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     const Settings & settings,
     const StorageID & main_table,
     ASTPtr additional_filter_ast,
-    Poco::Logger * log,
+    LoggerPtr log,
     const DistributedSettings * distributed_settings)
 {
     Settings new_settings = settings;
@@ -147,7 +148,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
             }
         }
         if (disable_parallel_replicas)
-            new_settings.allow_experimental_parallel_reading_from_replicas = false;
+            new_settings.allow_experimental_parallel_reading_from_replicas = 0;
     }
 
     if (settings.max_execution_time_leaf.value > 0)
@@ -202,7 +203,7 @@ void executeQuery(
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
-    Poco::Logger * log,
+    LoggerPtr log,
     const ASTPtr & query_ast,
     ContextPtr context,
     const SelectQueryInfo & query_info,
@@ -347,14 +348,14 @@ void executeQueryWithParallelReplicas(
         if (settings.use_hedged_requests.changed)
         {
             LOG_WARNING(
-                &Poco::Logger::get("executeQueryWithParallelReplicas"),
+                getLogger("executeQueryWithParallelReplicas"),
                 "Setting 'use_hedged_requests' explicitly with enabled 'allow_experimental_parallel_reading_from_replicas' has no effect. "
                 "Hedged connections are not used for parallel reading from replicas");
         }
         else
         {
             LOG_INFO(
-                &Poco::Logger::get("executeQueryWithParallelReplicas"),
+                getLogger("executeQueryWithParallelReplicas"),
                 "Disabling 'use_hedged_requests' in favor of 'allow_experimental_parallel_reading_from_replicas'. Hedged connections are "
                 "not used for parallel reading from replicas");
         }
@@ -374,12 +375,12 @@ void executeQueryWithParallelReplicas(
         shard_num = column->getUInt(0);
     }
 
-    ClusterPtr new_cluster;
+    const auto shard_count = not_optimized_cluster->getShardCount();
+    ClusterPtr new_cluster = not_optimized_cluster;
     /// if got valid shard_num from query initiator, then parallel replicas scope is the specified shard
     /// shards are numbered in order of appearance in the cluster config
     if (shard_num > 0)
     {
-        const auto shard_count = not_optimized_cluster->getShardCount();
         if (shard_num > shard_count)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -390,22 +391,23 @@ void executeQueryWithParallelReplicas(
 
         chassert(shard_count == not_optimized_cluster->getShardsAddresses().size());
 
-        LOG_DEBUG(&Poco::Logger::get("executeQueryWithParallelReplicas"), "Parallel replicas query in shard scope: shard_num={} cluster={}",
+        LOG_DEBUG(getLogger("executeQueryWithParallelReplicas"), "Parallel replicas query in shard scope: shard_num={} cluster={}",
                   shard_num, not_optimized_cluster->getName());
 
         // get cluster for shard specified by shard_num
         // shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
-        auto single_shard_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
-        // convert cluster to representation expected by parallel replicas
-        new_cluster = single_shard_cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
+        new_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
     }
     else
     {
-        new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
+        if (not_optimized_cluster->getShardCount() > 1)
+            throw DB::Exception(
+                ErrorCodes::UNEXPECTED_CLUSTER,
+                "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
     }
 
-    auto coordinator
-        = std::make_shared<ParallelReplicasReadingCoordinator>(new_cluster->getShardCount(), settings.parallel_replicas_mark_segment_size);
+    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(
+        new_cluster->getShardsInfo().begin()->getAllNodeCount(), settings.parallel_replicas_mark_segment_size);
     auto external_tables = new_context->getExternalTables();
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,
@@ -417,7 +419,7 @@ void executeQueryWithParallelReplicas(
         getThrottler(new_context),
         std::move(scalars),
         std::move(external_tables),
-        &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
+        getLogger("ReadFromParallelRemoteReplicasStep"),
         std::move(storage_limits));
 
     query_plan.addStep(std::move(read_from_remote));

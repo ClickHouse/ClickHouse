@@ -419,9 +419,11 @@ static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffe
 }
 
 
-template <typename Reader>
-static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && read_nested, bool allow_unenclosed)
+template <typename ReturnType = void, typename Reader>
+static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && read_nested, bool allow_unenclosed)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
     ColumnArray & column_array = assert_cast<ColumnArray &>(column);
     ColumnArray::Offsets & offsets = column_array.getOffsets();
 
@@ -433,7 +435,18 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
     if (checkChar('[', istr))
         has_braces = true;
     else if (!allow_unenclosed)
-        throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Array does not start with '[' character");
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Array does not start with '[' character");
+        return ReturnType(false);
+    }
+
+    auto on_error_no_throw = [&]()
+    {
+        if (size)
+            nested_column.popBack(size);
+        return ReturnType(false);
+    };
 
     try
     {
@@ -443,11 +456,17 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
             if (!first)
             {
                 if (*istr.position() == ',')
+                {
                     ++istr.position();
+                }
                 else
-                    throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT,
-                        "Cannot read array from text, expected comma or end of array, found '{}'",
-                        *istr.position());
+                {
+                    if constexpr (throw_exception)
+                        throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT,
+                            "Cannot read array from text, expected comma or end of array, found '{}'",
+                            *istr.position());
+                    return on_error_no_throw();
+                }
             }
 
             first = false;
@@ -457,25 +476,42 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
             if (*istr.position() == ']')
                 break;
 
-            read_nested(nested_column);
+            if constexpr (throw_exception)
+                read_nested(nested_column);
+            else if (!read_nested(nested_column))
+                return on_error_no_throw();
+
             ++size;
 
             skipWhitespaceIfAny(istr);
         }
 
         if (has_braces)
-            assertChar(']', istr);
+        {
+            if constexpr (throw_exception)
+                assertChar(']', istr);
+            else if (!checkChar(']', istr))
+                return on_error_no_throw();
+        }
         else /// If array is not enclosed in braces, we read until EOF.
-            assertEOF(istr);
+        {
+            if constexpr (throw_exception)
+                assertEOF(istr);
+            else if (!istr.eof())
+                return on_error_no_throw();
+        }
     }
     catch (...)
     {
         if (size)
             nested_column.popBack(size);
-        throw;
+        if constexpr (throw_exception)
+            throw;
+        return ReturnType(false);
     }
 
     offsets.push_back(offsets.back() + size);
+    return ReturnType(true);
 }
 
 
@@ -494,14 +530,37 @@ void SerializationArray::deserializeText(IColumn & column, ReadBuffer & istr, co
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            if (settings.null_as_default)
-                SerializationNullable::deserializeTextQuotedImpl(nested_column, istr, settings, nested);
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(nested_column, istr, settings, nested);
             else
                 nested->deserializeTextQuoted(nested_column, istr, settings);
         }, false);
 
     if (whole && !istr.eof())
         throwUnexpectedDataAfterParsedValue(column, istr, settings, "Array");
+}
+
+bool SerializationArray::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
+{
+    auto read_nested = [&](IColumn & nested_column)
+    {
+        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(nested_column, istr, settings, nested);
+        return nested->tryDeserializeTextQuoted(nested_column, istr, settings);
+    };
+
+    bool ok = deserializeTextImpl<bool>(column, istr, std::move(read_nested), false);
+
+    if (!ok)
+        return false;
+
+    if (whole && !istr.eof())
+    {
+        column.popBack(1);
+        return false;
+    }
+
+    return true;
 }
 
 void SerializationArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -559,11 +618,23 @@ void SerializationArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            if (settings.null_as_default)
-                SerializationNullable::deserializeTextJSONImpl(nested_column, istr, settings, nested);
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, istr, settings, nested);
             else
                 nested->deserializeTextJSON(nested_column, istr, settings);
         }, false);
+}
+
+bool SerializationArray::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    auto read_nested = [&](IColumn & nested_column)
+    {
+        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, istr, settings, nested);
+        return nested->tryDeserializeTextJSON(nested_column, istr, settings);
+    };
+
+    return deserializeTextImpl<bool>(column, istr, std::move(read_nested), false);
 }
 
 
@@ -608,8 +679,8 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
         deserializeTextImpl(column, rb,
             [&](IColumn & nested_column)
             {
-                if (settings.null_as_default)
-                    SerializationNullable::deserializeTextCSVImpl(nested_column, rb, settings, nested);
+                if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                    SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(nested_column, rb, settings, nested);
                 else
                     nested->deserializeTextCSV(nested_column, rb, settings);
             }, true);
@@ -619,11 +690,42 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
         deserializeTextImpl(column, rb,
             [&](IColumn & nested_column)
             {
-                if (settings.null_as_default)
-                    SerializationNullable::deserializeTextQuotedImpl(nested_column, rb, settings, nested);
+                if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                    SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(nested_column, rb, settings, nested);
                 else
                     nested->deserializeTextQuoted(nested_column, rb, settings);
             }, true);
+    }
+}
+
+bool SerializationArray::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String s;
+    if (!tryReadCSV(s, istr, settings.csv))
+        return false;
+    ReadBufferFromString rb(s);
+
+    if (settings.csv.arrays_as_nested_csv)
+    {
+        auto read_nested = [&](IColumn & nested_column)
+        {
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(nested_column, rb, settings, nested);
+            return nested->tryDeserializeTextCSV(nested_column, rb, settings);
+        };
+
+        return deserializeTextImpl<bool>(column, rb, read_nested, true);
+    }
+    else
+    {
+        auto read_nested = [&](IColumn & nested_column)
+        {
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(nested_column, rb, settings, nested);
+            return nested->tryDeserializeTextQuoted(nested_column, rb, settings);
+        };
+
+        return deserializeTextImpl<bool>(column, rb, read_nested, true);
     }
 }
 

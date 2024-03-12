@@ -46,7 +46,6 @@
 #include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
-#include <Storages/BlockNumberColumn.h>
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
@@ -69,12 +68,11 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int TOO_MANY_PARTITIONS;
     extern const int DUPLICATED_PART_UUIDS;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 
 MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
-    : data(data_), log(&Poco::Logger::get(data.getLogName() + " (SelectExecutor)"))
+    : data(data_), log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
 }
 
@@ -83,7 +81,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     const StorageMetadataPtr & metadata_snapshot,
     const KeyCondition & key_condition,
     const Settings & settings,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     size_t rows_count = 0;
 
@@ -166,8 +164,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     const MergeTreeData & data,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
-    bool sample_factor_column_queried,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     const Settings & settings = context->getSettingsRef();
     /// Sampling.
@@ -296,7 +293,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
     if (sampling.use_sampling)
     {
-        if (sample_factor_column_queried && relative_sample_size != RelativeSize(0))
+        if (relative_sample_size != RelativeSize(0))
             sampling.used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
@@ -483,12 +480,13 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 {
     if (!filter_dag)
         return {};
-    auto sample = data.getSampleBlockWithVirtualColumns();
+
+    auto sample = data.getHeaderWithVirtualsForFilter();
     auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), &sample);
     if (!dag)
         return {};
 
-    auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
+    auto virtual_columns_block = data.getBlockWithVirtualsForFilter(parts);
     VirtualColumnUtils::filterBlockWithDAG(dag, virtual_columns_block, context);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
@@ -503,7 +501,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     const MergeTreeData & data,
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
-    Poco::Logger * log,
+    LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats)
 {
     chassert(alter_conversions.empty() || parts.size() == alter_conversions.size());
@@ -590,7 +588,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const std::optional<KeyCondition> & part_offset_condition,
     const UsefulSkipIndexes & skip_indexes,
     const MergeTreeReaderSettings & reader_settings,
-    Poco::Logger * log,
+    LoggerPtr log,
     size_t num_streams,
     ReadFromMergeTree::IndexStats & index_stats,
     bool use_skip_indexes)
@@ -868,76 +866,11 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     return nullptr;
 }
 
-static void selectColumnNames(
-    const Names & column_names_to_return,
-    const MergeTreeData & data,
-    Names & real_column_names,
-    Names & virt_column_names,
-    bool & sample_factor_column_queried)
-{
-    sample_factor_column_queried = false;
-
-    for (const String & name : column_names_to_return)
-    {
-        if (name == "_part")
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == "_part_index")
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == "_partition_id")
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == "_part_offset")
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == LightweightDeleteDescription::FILTER_COLUMN.name)
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == BlockNumberColumn::name)
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == "_part_uuid")
-        {
-            virt_column_names.push_back(name);
-        }
-        else if (name == "_partition_value")
-        {
-            if (!typeid_cast<const DataTypeTuple *>(data.getPartitionValueType().get()))
-            {
-                throw Exception(
-                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                    "Missing column `_partition_value` because there is no partition column in table {}",
-                    data.getStorageID().getTableName());
-            }
-
-            virt_column_names.push_back(name);
-        }
-        else if (name == "_sample_factor")
-        {
-            sample_factor_column_queried = true;
-            virt_column_names.push_back(name);
-        }
-        else
-        {
-            real_column_names.push_back(name);
-        }
-    }
-}
-
 ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     MergeTreeData::DataPartsVector parts,
-    const PrewhereInfoPtr & prewhere_info,
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
-    const ActionDAGNodes & added_filter_nodes,
     ContextPtr context,
     size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
@@ -946,30 +879,19 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     if (total_parts == 0)
         return std::make_shared<ReadFromMergeTree::AnalysisResult>();
 
-    Names real_column_names;
-    Names virt_column_names;
-    /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
-    /// The virtual column `_sample_factor` (which is equal to 1 / used sample rate) can be requested in the query.
-    bool sample_factor_column_queried = false;
-
-    selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
-
     std::optional<ReadFromMergeTree::Indexes> indexes;
     /// NOTE: We don't need alter_conversions because the returned analysis_result is only used for:
     /// 1. estimate the number of rows to read; 2. projection reading, which doesn't have alter_conversions.
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         /*alter_conversions=*/ {},
-        prewhere_info,
-        added_filter_nodes,
         metadata_snapshot,
         query_info,
         context,
         num_streams,
         max_block_numbers_to_read,
         data,
-        real_column_names,
-        sample_factor_column_queried,
+        column_names_to_return,
         log,
         indexes);
 }
@@ -996,30 +918,16 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     else if (parts.empty())
         return {};
 
-    Names real_column_names;
-    Names virt_column_names;
-    /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
-    /// The virtual column `_sample_factor` (which is equal to 1 / used sample rate) can be requested in the query.
-    bool sample_factor_column_queried = false;
-
-    selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
-
-    /// Do not keep data parts in snapshot.
-    /// They are stored separately, and some could be released after PK analysis.
-    auto storage_snapshot_copy = storage_snapshot->clone(std::make_unique<MergeTreeData::SnapshotData>());
-
     return std::make_unique<ReadFromMergeTree>(
         std::move(parts),
         std::move(alter_conversions),
-        real_column_names,
-        virt_column_names,
+        column_names_to_return,
         data,
         query_info,
-        storage_snapshot_copy,
+        storage_snapshot,
         context,
         max_block_size,
         num_streams,
-        sample_factor_column_queried,
         max_block_numbers_to_read,
         log,
         merge_tree_select_result_ptr,
@@ -1082,12 +990,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
     const Settings & settings,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     MarkRanges res;
 
     size_t marks_count = part->index_granularity.getMarksCount();
-    const auto & index = part->index;
+    const auto & index = part->getIndex();
     if (marks_count == 0)
         return res;
 
@@ -1322,7 +1230,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
     {
@@ -1440,7 +1348,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     for (const auto & index_helper : indices)
     {
@@ -1596,7 +1504,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context,
     PartFilterCounters & counters,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met

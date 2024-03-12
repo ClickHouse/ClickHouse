@@ -26,9 +26,11 @@ namespace
 class NumbersSource : public ISource
 {
 public:
-    NumbersSource(UInt64 block_size_, UInt64 offset_, UInt64 step_)
+    NumbersSource(UInt64 block_size_, UInt64 offset_, std::optional<UInt64> limit_, UInt64 step_)
         : ISource(createHeader()), block_size(block_size_), next(offset_), step(step_)
     {
+        if (limit_.has_value())
+            end = limit_.value() + offset_;
     }
 
     String getName() const override { return "Numbers"; }
@@ -38,24 +40,32 @@ public:
 protected:
     Chunk generate() override
     {
-        auto column = ColumnUInt64::create(block_size);
+        UInt64 real_block_size = block_size;
+        if (end.has_value())
+        {
+            if (end.value() <= next)
+                return {};
+            real_block_size = std::min(block_size, end.value() - next);
+        }
+        auto column = ColumnUInt64::create(real_block_size);
         ColumnUInt64::Container & vec = column->getData();
 
         UInt64 curr = next; /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 * pos = vec.data(); /// This also accelerates the code.
-        UInt64 * end = &vec[block_size];
-        iota(pos, static_cast<size_t>(end - pos), curr);
+        UInt64 * end_ = &vec[real_block_size];
+        iota(pos, static_cast<size_t>(end_ - pos), curr);
 
         next += step;
 
         progress(column->size(), column->byteSize());
 
-        return {Columns{std::move(column)}, block_size};
+        return {Columns{std::move(column)}, real_block_size};
     }
 
 private:
     UInt64 block_size;
     UInt64 next;
+    std::optional<UInt64> end; /// not included
     UInt64 step;
 };
 
@@ -321,21 +331,24 @@ void shrinkRanges(Ranges & ranges, size_t size)
 
 ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     const Names & column_names_,
-    StoragePtr storage_,
+    const SelectQueryInfo & query_info_,
     const StorageSnapshotPtr & storage_snapshot_,
-    SelectQueryInfo & query_info,
-    ContextPtr context_,
+    const ContextPtr & context_,
+    StoragePtr storage_,
     size_t max_block_size_,
     size_t num_streams_)
-    : SourceStepWithFilter{DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)}}
+    : SourceStepWithFilter(
+        DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)},
+        column_names_,
+        query_info_,
+        storage_snapshot_,
+        context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , storage_snapshot{storage_snapshot_}
-    , context{std::move(context_)}
     , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
-    , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery&>(), context))
+    , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context))
     , should_pushdown_limit(shouldPushdownLimit(query_info, limit_length_and_offset.first))
     , limit(query_info.limit)
     , storage_limits(query_info.storage_limits)
@@ -375,7 +388,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         num_streams = 1;
 
     /// Build rpn of query filters
-    KeyCondition condition(buildFilterDAG(), context, column_names, key_expression);
+    KeyCondition condition(filter_actions_dag, context, column_names, key_expression);
 
     Pipe pipe;
     Ranges ranges;
@@ -475,7 +488,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source
-            = std::make_shared<NumbersSource>(max_block_size, numbers_storage.offset + i * max_block_size, num_streams * max_block_size);
+            = std::make_shared<NumbersSource>(max_block_size, numbers_storage.offset + i * max_block_size, numbers_storage.limit, num_streams * max_block_size);
 
         if (numbers_storage.limit && i == 0)
         {
@@ -502,12 +515,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     }
 
     return pipe;
-}
-
-ActionsDAGPtr ReadFromSystemNumbersStep::buildFilterDAG()
-{
-    std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
-    return ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, node_name_to_input_node_column, context);
 }
 
 void ReadFromSystemNumbersStep::checkLimits(size_t rows)

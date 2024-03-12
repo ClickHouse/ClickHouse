@@ -5,16 +5,14 @@
 #include <Coordination/ACLMap.h>
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
-#include <IO/WriteBufferFromString.h>
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Coordination/KeeperContext.h>
 
 #include <absl/container/flat_hash_set.h>
 
 namespace DB
 {
+
+class KeeperContext;
+using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
 struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
@@ -30,28 +28,127 @@ struct KeeperStorageSnapshot;
 class KeeperStorage
 {
 public:
+    /// Node should have as minimal size as possible to reduce memory footprint
+    /// of stored nodes
+    /// New fields should be added to the struct only if it's really necessary
     struct Node
     {
+        int64_t czxid{0};
+        int64_t mzxid{0};
+        int64_t pzxid{0};
         uint64_t acl_id = 0; /// 0 -- no ACL by default
-        bool is_sequental = false;
-        Coordination::Stat stat{};
-        int32_t seq_num = 0;
-        uint64_t size_bytes; // save size to avoid calculate every time
 
-        Node() : size_bytes(sizeof(Node)) { }
+        int64_t mtime{0};
+
+        std::unique_ptr<char[]> data{nullptr};
+        uint32_t data_size{0};
+
+        int32_t version{0};
+        int32_t cversion{0};
+        int32_t aversion{0};
+
+        mutable uint64_t cached_digest = 0;
+
+        Node() = default;
+
+        Node & operator=(const Node & other);
+        Node(const Node & other);
+
+        Node & operator=(Node && other) noexcept;
+        Node(Node && other) noexcept;
+
+        bool empty() const;
+
+        bool isEphemeral() const
+        {
+            return is_ephemeral_and_ctime.is_ephemeral;
+        }
+
+        int64_t ephemeralOwner() const
+        {
+            if (isEphemeral())
+                return ephemeral_or_children_data.ephemeral_owner;
+
+            return 0;
+        }
+
+        void setEphemeralOwner(int64_t ephemeral_owner)
+        {
+            is_ephemeral_and_ctime.is_ephemeral = ephemeral_owner != 0;
+            ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
+        }
+
+        int32_t numChildren() const
+        {
+            if (isEphemeral())
+                return 0;
+
+            return ephemeral_or_children_data.children_info.num_children;
+        }
+
+        void setNumChildren(int32_t num_children)
+        {
+            ephemeral_or_children_data.children_info.num_children = num_children;
+        }
+
+        void increaseNumChildren()
+        {
+            chassert(!isEphemeral());
+            ++ephemeral_or_children_data.children_info.num_children;
+        }
+
+        void decreaseNumChildren()
+        {
+            chassert(!isEphemeral());
+            --ephemeral_or_children_data.children_info.num_children;
+        }
+
+        int32_t seqNum() const
+        {
+            if (isEphemeral())
+                return 0;
+
+            return ephemeral_or_children_data.children_info.seq_num;
+        }
+
+        void setSeqNum(int32_t seq_num)
+        {
+            ephemeral_or_children_data.children_info.seq_num = seq_num;
+        }
+
+        void increaseSeqNum()
+        {
+            chassert(!isEphemeral());
+            ++ephemeral_or_children_data.children_info.seq_num;
+        }
+
+        int64_t ctime() const
+        {
+            return is_ephemeral_and_ctime.ctime;
+        }
+
+        void setCtime(uint64_t ctime)
+        {
+            is_ephemeral_and_ctime.ctime = ctime;
+        }
+
+        void copyStats(const Coordination::Stat & stat);
+
+        void setResponseStat(Coordination::Stat & response_stat) const;
 
         /// Object memory size
-        uint64_t sizeInBytes() const { return size_bytes; }
+        uint64_t sizeInBytes() const;
 
-        void setData(String new_data);
+        void setData(const String & new_data);
 
-        const auto & getData() const noexcept { return data; }
+        std::string_view getData() const noexcept { return {data.get(), data_size}; }
 
-        void addChild(StringRef child_path, bool update_size = true);
+        void addChild(StringRef child_path);
 
         void removeChild(StringRef child_path);
 
         const auto & getChildren() const noexcept { return children; }
+        auto & getChildren() { return children; }
 
         // Invalidate the calculated digest so it's recalculated again on the next
         // getDigest call
@@ -63,23 +160,47 @@ public:
         // copy only necessary information for preprocessing and digest calculation
         // (e.g. we don't need to copy list of children)
         void shallowCopy(const Node & other);
-
-        void recalculateSize();
-
     private:
-        String data;
+        /// as ctime can't be negative because it stores the timestamp when the
+        /// node was created, we can use the MSB for a bool
+        struct
+        {
+            bool is_ephemeral : 1;
+            int64_t ctime : 63;
+        } is_ephemeral_and_ctime{false, 0};
+
+        /// ephemeral notes cannot have children so a node can set either
+        /// ephemeral_owner OR seq_num + num_children
+        union
+        {
+            int64_t ephemeral_owner;
+            struct
+            {
+                int32_t seq_num;
+                int32_t num_children;
+            } children_info;
+        } ephemeral_or_children_data{0};
+
         ChildrenSet children{};
-        mutable std::optional<UInt64> cached_digest;
     };
+
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
+    static_assert(
+        sizeof(ListNode<Node>) <= 144,
+        "std::list node containing ListNode<Node> is > 160 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
+        "memory consumption");
+#endif
 
     enum DigestVersion : uint8_t
     {
         NO_DIGEST = 0,
         V1 = 1,
-        V2 = 2  // added system nodes that modify the digest on startup so digest from V0 is invalid
+        V2 = 2, // added system nodes that modify the digest on startup so digest from V0 is invalid
+        V3 = 3, // fixed bug with casting, removed duplicate czxid usage
+        V4 = 4  // 0 is not a valid digest value
     };
 
-    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V2;
+    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V4;
 
     struct ResponseForSession
     {
@@ -94,16 +215,7 @@ public:
         uint64_t value{0};
     };
 
-    static bool checkDigest(const Digest & first, const Digest & second)
-    {
-        if (first.version != second.version)
-            return true;
-
-        if (first.version == DigestVersion::NO_DIGEST)
-            return true;
-
-        return first.value == second.value;
-    }
+    static bool checkDigest(const Digest & first, const Digest & second);
 
     static String generateDigest(const String & userdata);
 
@@ -159,7 +271,6 @@ public:
     struct CreateNodeDelta
     {
         Coordination::Stat stat;
-        bool is_sequental;
         Coordination::ACLs acls;
         String data;
     };
@@ -233,39 +344,7 @@ public:
 
         void applyDelta(const Delta & delta);
 
-        bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate)
-        {
-            const auto check_auth = [&](const auto & auth_ids)
-            {
-                for (const auto & auth : auth_ids)
-                {
-                    using TAuth = std::remove_reference_t<decltype(auth)>;
-
-                    const AuthID * auth_ptr = nullptr;
-                    if constexpr (std::is_pointer_v<TAuth>)
-                        auth_ptr = auth;
-                    else
-                        auth_ptr = &auth;
-
-                    if (predicate(*auth_ptr))
-                        return true;
-                }
-                return false;
-            };
-
-            if (is_local)
-                return check_auth(storage.session_and_auth[session_id]);
-
-            if (check_auth(storage.session_and_auth[session_id]))
-                return true;
-
-            // check if there are uncommitted
-            const auto auth_it = session_and_auth.find(session_id);
-            if (auth_it == session_and_auth.end())
-                return false;
-
-            return check_auth(auth_it->second);
-        }
+        bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate) const;
 
         void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
 
@@ -325,7 +404,6 @@ public:
         const std::string & path,
         String data,
         const Coordination::Stat & stat,
-        bool is_sequental,
         Coordination::ACLs node_acls);
 
     // Remove node in the storage

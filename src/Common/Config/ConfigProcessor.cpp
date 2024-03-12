@@ -77,21 +77,15 @@ ConfigProcessor::ConfigProcessor(
     , name_pool(new Poco::XML::NamePool(65521))
     , dom_parser(name_pool)
 {
-    if (log_to_console && !Poco::Logger::has("ConfigProcessor"))
+    if (log_to_console && !hasLogger("ConfigProcessor"))
     {
         channel_ptr = new Poco::ConsoleChannel;
-        log = &Poco::Logger::create("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
+        log = createLogger("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
     }
     else
     {
-        log = &Poco::Logger::get("ConfigProcessor");
+        log = getLogger("ConfigProcessor");
     }
-}
-
-ConfigProcessor::~ConfigProcessor()
-{
-    if (channel_ptr) /// This means we have created a new console logger in the constructor.
-        Poco::Logger::destroy("ConfigProcessor");
 }
 
 static std::unordered_map<std::string, std::string_view> embedded_configs;

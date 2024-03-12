@@ -67,7 +67,7 @@ DiskObjectStorage::DiskObjectStorage(
     const String & config_prefix)
     : IDisk(name_, config, config_prefix)
     , object_key_prefix(object_key_prefix_)
-    , log (&Poco::Logger::get("DiskObjectStorage(" + name + ")"))
+    , log(getLogger("DiskObjectStorage(" + name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
@@ -389,6 +389,7 @@ void DiskObjectStorage::shutdown()
 {
     LOG_INFO(log, "Shutting down disk {}", name);
     object_storage->shutdown();
+    metadata_storage->shutdown();
     LOG_INFO(log, "Disk {} shut down", name);
 }
 
@@ -526,12 +527,11 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    auto storage_objects = metadata_storage->getStorageObjects(path);
+    const auto storage_objects = metadata_storage->getStorageObjects(path);
 
     const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
-
     if (storage_objects.empty() && file_can_be_empty)
-        return std::make_unique<ReadBufferFromEmptyFile>(path);
+        return std::make_unique<ReadBufferFromEmptyFile>();
 
     return object_storage->readObjects(
         storage_objects,

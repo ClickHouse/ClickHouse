@@ -65,7 +65,7 @@ public:
             const std::string & connection_string_,
             bool use_connection_pooling_)
         : IXDBCBridgeHelper(context_->getGlobalContext())
-        , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
+        , log(getLogger(BridgeHelperMixin::getName() + "BridgeHelper"))
         , connection_string(connection_string_)
         , use_connection_pooling(use_connection_pooling_)
         , http_timeout(http_timeout_)
@@ -97,8 +97,12 @@ protected:
     {
         try
         {
-            ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, getHTTPTimeouts(), credentials);
-            return checkString(PING_OK_ANSWER, buf);
+            auto buf = BuilderRWBufferFromHTTP(getPingURI())
+                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                           .withTimeouts(getHTTPTimeouts())
+                           .create(credentials);
+
+            return checkString(PING_OK_ANSWER, *buf);
         }
         catch (...)
         {
@@ -123,7 +127,7 @@ protected:
 
     const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
 
-    Poco::Logger * getLog() const override { return log; }
+    LoggerPtr getLog() const override { return log; }
 
     bool startBridgeManually() const override { return BridgeHelperMixin::startBridgeManually(); }
 
@@ -146,7 +150,7 @@ protected:
 private:
     using Configuration = Poco::Util::AbstractConfiguration;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     std::string connection_string;
     bool use_connection_pooling;
     Poco::Timespan http_timeout;
@@ -198,10 +202,14 @@ protected:
             uri.addQueryParameter("connection_string", getConnectionString());
             uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, getHTTPTimeouts(), credentials);
+            auto buf = BuilderRWBufferFromHTTP(uri)
+                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                           .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                           .withTimeouts(getHTTPTimeouts())
+                           .create(credentials);
 
-            bool res;
-            readBoolText(res, buf);
+            bool res = false;
+            readBoolText(res, *buf);
             is_schema_allowed = res;
         }
 
@@ -220,10 +228,14 @@ protected:
             uri.addQueryParameter("connection_string", getConnectionString());
             uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, getHTTPTimeouts(), credentials);
+            auto buf = BuilderRWBufferFromHTTP(uri)
+                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                           .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                           .withTimeouts(getHTTPTimeouts())
+                           .create(credentials);
 
             std::string character;
-            readStringBinary(character, buf);
+            readStringBinary(character, *buf);
             if (character.length() > 1)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Failed to parse quoting style from '{}' for service {}",
                     character, BridgeHelperMixin::serviceAlias());

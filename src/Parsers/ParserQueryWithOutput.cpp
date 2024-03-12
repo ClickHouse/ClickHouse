@@ -2,6 +2,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ParserCheckQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDescribeTableQuery.h>
@@ -65,6 +66,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserShowGrantsQuery show_grants_p;
     ParserShowPrivilegesQuery show_privileges_p;
     ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
+    ParserBackupQuery backup_p;
 
     ASTPtr query;
 
@@ -94,7 +96,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || show_access_p.parse(pos, query, expected)
         || show_access_entities_p.parse(pos, query, expected)
         || show_grants_p.parse(pos, query, expected)
-        || show_privileges_p.parse(pos, query, expected);
+        || show_privileges_p.parse(pos, query, expected)
+        || backup_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;
@@ -133,6 +136,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             ParserStringLiteral compression;
             if (!compression.parse(pos, query_with_output.compression, expected))
                 return false;
+            query_with_output.children.push_back(query_with_output.compression);
 
             ParserKeyword s_compression_level("LEVEL");
             if (s_compression_level.ignore(pos, expected))
@@ -140,6 +144,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 ParserNumber compression_level;
                 if (!compression_level.parse(pos, query_with_output.compression_level, expected))
                     return false;
+                query_with_output.children.push_back(query_with_output.compression_level);
             }
         }
 

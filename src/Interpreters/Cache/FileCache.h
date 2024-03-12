@@ -173,6 +173,7 @@ public:
     void deactivateBackgroundOperations();
 
     CacheGuard::Lock lockCache() const;
+    CacheGuard::Lock tryLockCache() const;
 
     std::vector<FileSegment::Info> sync();
 
@@ -193,7 +194,7 @@ private:
     size_t load_metadata_threads;
     const bool write_cache_per_user_directory;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::exception_ptr init_exception;
     std::atomic<bool> is_initialized = false;

@@ -22,10 +22,8 @@
 #include <linux/taskstats.h>
 #include <linux/capability.h>
 
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-    #pragma clang diagnostic ignored "-Wnested-anon-types"
-#endif
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#pragma clang diagnostic ignored "-Wnested-anon-types"
 
 /// Basic idea is motivated by "iotop" tool.
 /// More info: https://www.kernel.org/doc/Documentation/accounting/taskstats.txt
@@ -216,7 +214,7 @@ bool checkPermissionsImpl()
         {
             /// This error happens all the time when running inside Docker - consider it ok,
             /// don't create noise with this error.
-            LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
+            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
         }
         else
         {

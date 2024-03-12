@@ -4,8 +4,6 @@
 
 TU_EXCLUDES=(
     CastOverloadResolver
-    AggregateFunctionMax
-    AggregateFunctionMin
     AggregateFunctionUniq
     FunctionsConversion
 

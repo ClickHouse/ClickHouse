@@ -8,7 +8,7 @@ namespace DB
 
 RegionsHierarchies::RegionsHierarchies(IRegionsHierarchiesDataProviderPtr data_provider)
 {
-    Poco::Logger * log = &Poco::Logger::get("RegionsHierarchies");
+    LoggerPtr log = getLogger("RegionsHierarchies");
 
     LOG_DEBUG(log, "Adding default regions hierarchy");
     data.emplace("", data_provider->getDefaultHierarchySource());

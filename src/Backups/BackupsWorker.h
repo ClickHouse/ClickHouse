@@ -38,20 +38,15 @@ class ProcessList;
 class BackupsWorker
 {
 public:
-    BackupsWorker(
-        ContextMutablePtr global_context,
-        size_t num_backup_threads,
-        size_t num_restore_threads,
-        bool allow_concurrent_backups_,
-        bool allow_concurrent_restores_,
-        bool test_inject_sleep_);
-
+    BackupsWorker(ContextMutablePtr global_context, size_t num_backup_threads, size_t num_restore_threads);
     ~BackupsWorker();
 
     /// Waits until all tasks have been completed.
     void shutdown();
 
     /// Starts executing a BACKUP or RESTORE query. Returns ID of the operation.
+    /// For asynchronous operations the function throws no exceptions on failure usually,
+    /// call getInfo() on a returned operation id to check for errors.
     BackupOperationID start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context);
 
     /// Waits until the specified backup or restore operation finishes or stops.
@@ -75,6 +70,7 @@ private:
     BackupOperationID startMakingBackup(const ASTPtr & query, const ContextPtr & context);
 
     void doBackup(
+        BackupMutablePtr & backup,
         const std::shared_ptr<ASTBackupQuery> & backup_query,
         const BackupOperationID & backup_id,
         const String & backup_name_for_logging,
@@ -82,9 +78,7 @@ private:
         BackupSettings backup_settings,
         std::shared_ptr<IBackupCoordination> backup_coordination,
         const ContextPtr & context,
-        ContextMutablePtr mutable_context,
-        ThreadGroupPtr thread_group,
-        bool called_async);
+        ContextMutablePtr mutable_context);
 
     /// Builds file infos for specified backup entries.
     void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, QueryStatusPtr process_list_element);
@@ -101,14 +95,13 @@ private:
         const BackupInfo & backup_info,
         RestoreSettings restore_settings,
         std::shared_ptr<IRestoreCoordination> restore_coordination,
-        ContextMutablePtr context,
-        ThreadGroupPtr thread_group,
-        bool called_async);
+        ContextMutablePtr context);
 
     /// Run data restoring tasks which insert data to tables.
     void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
 
-    void addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, bool internal, QueryStatusPtr process_list_element, BackupStatus status);
+    void addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, const String & query_id,
+                bool internal, QueryStatusPtr process_list_element, BackupStatus status);
     void setStatus(const BackupOperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
     void setNumFilesAndSize(const BackupOperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
@@ -125,9 +118,10 @@ private:
 
     const bool allow_concurrent_backups;
     const bool allow_concurrent_restores;
+    const bool remove_backup_files_after_failure;
     const bool test_inject_sleep;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     struct ExtendedOperationInfo
     {

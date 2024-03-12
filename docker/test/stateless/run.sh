@@ -57,8 +57,20 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     sudo mv /etc/clickhouse-server/config.d/zookeeper.xml.tmp /etc/clickhouse-server/config.d/zookeeper.xml
 
     # it contains some new settings, but we can safely remove it
+    rm /etc/clickhouse-server/config.d/handlers.yaml
     rm /etc/clickhouse-server/users.d/s3_cache_new.xml
     rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
+
+    function remove_keeper_config()
+    {
+        sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+          | sed "/<$1>$2<\/$1>/d" \
+          > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+        sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+    }
+    # commit_logs_cache_size_threshold setting doesn't exist on some older versions
+    remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
+    remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
 fi
 
 # For flaky check we also enable thread fuzzer
@@ -185,11 +197,15 @@ function run_tests()
 
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
+        # Too many tests fail for DatabaseReplicated in parallel.
         ADDITIONAL_OPTIONS+=('--jobs')
         ADDITIONAL_OPTIONS+=('2')
+    elif [[ 1 == $(clickhouse-client --query "SELECT value LIKE '%SANITIZE_COVERAGE%' FROM system.build_options WHERE name = 'CXX_FLAGS'") ]]; then
+        # Coverage on a per-test basis could only be collected sequentially.
+        # Do not set the --jobs parameter.
+        echo "Running tests with coverage collection."
     else
-        # Too many tests fail for DatabaseReplicated in parallel. All other
-        # configurations are OK.
+        # All other configurations are OK.
         ADDITIONAL_OPTIONS+=('--jobs')
         ADDITIONAL_OPTIONS+=('8')
     fi
@@ -246,16 +262,19 @@ clickhouse-client -q "system flush logs" ||:
 stop_logs_replication
 
 # Try to get logs while server is running
-successfuly_saved=0
-for table in query_log zookeeper_log trace_log transactions_info_log
+failed_to_save_logs=0
+for table in query_log zookeeper_log trace_log transactions_info_log metric_log
 do
-    clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst
-    successfuly_saved=$?
+    err=$( { clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst; } 2>&1 )
+    echo "$err"
+    [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst
-        successfuly_saved=$((successfuly_saved | $?))
-        clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst
-        successfuly_saved=$((successfuly_saved | $?))
+        err=$( { clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
+        echo "$err"
+        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+        err=$( { clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst; } 2>&1 )
+        echo "$err"
+        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
     fi
 done
 
@@ -280,7 +299,7 @@ fi
 
 
 # If server crashed dump system logs with clickhouse-local
-if [ $successfuly_saved -ne 0 ]; then
+if [ $failed_to_save_logs -ne 0 ]; then
     # Compress tables.
     #
     # NOTE:
@@ -288,12 +307,12 @@ if [ $successfuly_saved -ne 0 ]; then
     #   directly
     # - even though ci auto-compress some files (but not *.tsv) it does this only
     #   for files >64MB, we want this files to be compressed explicitly
-    for table in query_log zookeeper_log trace_log transactions_info_log
+    for table in query_log zookeeper_log trace_log transactions_info_log metric_log
     do
-        clickhouse-local "$data_path_config" --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
+        clickhouse-local "$data_path_config" --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
         if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-            clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
-            clickhouse-local --path /var/lib/clickhouse2/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
+            clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
+            clickhouse-local --path /var/lib/clickhouse2/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
         fi
     done
 fi

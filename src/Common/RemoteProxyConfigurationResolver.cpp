@@ -27,7 +27,7 @@ RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
 
 ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 {
-    auto * logger = &Poco::Logger::get("RemoteProxyConfigurationResolver");
+    auto logger = getLogger("RemoteProxyConfigurationResolver");
 
     auto & [endpoint, proxy_protocol, proxy_port, cache_ttl_] = remote_server_configuration;
 
@@ -69,7 +69,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
         {
             auto resolved_endpoint = endpoint;
             resolved_endpoint.setHost(resolved_hosts[i].toString());
-            session = makeHTTPSession(resolved_endpoint, timeouts);
+            session = makeHTTPSession(HTTPConnectionGroupType::HTTP, resolved_endpoint, timeouts);
 
             try
             {
