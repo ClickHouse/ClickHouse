@@ -21,7 +21,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ALL_CONNECTION_TRIES_FAILED;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -192,20 +191,11 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         max_entries = nested_pools.size();
     }
     else if (pool_mode == PoolMode::GET_ONE)
-    {
         max_entries = 1;
-    }
     else if (pool_mode == PoolMode::GET_MANY)
-    {
-        if (settings.max_parallel_replicas == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the setting max_parallel_replicas must be greater than 0");
-
         max_entries = settings.max_parallel_replicas;
-    }
     else
-    {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown pool allocation mode");
-    }
 
     if (!priority_func)
         priority_func = makeGetPriorityFunc(settings);
