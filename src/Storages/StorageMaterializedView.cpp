@@ -465,8 +465,8 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     if (!from_atomic_to_atomic_database && has_inner_table && tryGetTargetTable())
     {
         auto new_target_table_name = generateInnerTableName(new_table_id);
-        auto rename = std::make_shared<ASTRenameQuery>();
 
+        ASTRenameQuery::Elements rename_elements;
         assert(inner_table_id.database_name == old_table_id.database_name);
 
         ASTRenameQuery::Element elem
@@ -482,8 +482,9 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
                 std::make_shared<ASTIdentifier>(new_target_table_name)
             }
         };
-        rename->elements.emplace_back(std::move(elem));
+        rename_elements.emplace_back(std::move(elem));
 
+        auto rename = std::make_shared<ASTRenameQuery>(std::move(rename_elements));
         InterpreterRenameQuery(rename, getContext()).execute();
         updateTargetTableId(new_table_id.database_name, new_target_table_name);
     }
