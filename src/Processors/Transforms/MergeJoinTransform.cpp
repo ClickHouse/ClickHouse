@@ -440,15 +440,15 @@ template <template<JoinKind> class Impl, typename ... Args>
 void dispatchKind(JoinKind kind, Args && ... args)
 {
     if (Impl<JoinKind::Inner>::enabled && kind == JoinKind::Inner)
-            return Impl<JoinKind::Inner>::join(std::forward<Args>(args)...);
-        else if (Impl<JoinKind::Left>::enabled && kind == JoinKind::Left)
-            return Impl<JoinKind::Left>::join(std::forward<Args>(args)...);
-        else if (Impl<JoinKind::Right>::enabled && kind == JoinKind::Right)
-            return Impl<JoinKind::Right>::join(std::forward<Args>(args)...);
-        else if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
-            return Impl<JoinKind::Full>::join(std::forward<Args>(args)...);
-        else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
+        return Impl<JoinKind::Inner>::join(std::forward<Args>(args)...);
+    else if (Impl<JoinKind::Left>::enabled && kind == JoinKind::Left)
+        return Impl<JoinKind::Left>::join(std::forward<Args>(args)...);
+    else if (Impl<JoinKind::Right>::enabled && kind == JoinKind::Right)
+        return Impl<JoinKind::Right>::join(std::forward<Args>(args)...);
+    else if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
+        return Impl<JoinKind::Full>::join(std::forward<Args>(args)...);
+    else
+         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
 }
 
 std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState()
