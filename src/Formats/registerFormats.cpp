@@ -76,6 +76,8 @@ void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
+void registerInputFormatCBOR(FormatFactory & factory);
+void registerOutputFormatCBOR(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
