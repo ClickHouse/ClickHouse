@@ -241,6 +241,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
       * 2. TODO: Support building equivalent sets for JOINs with more than 1 clause.
       * 3. TODO: For LEFT/RIGHT join support optimization, we can assume that RIGHT/LEFT columns used in filter will be default/NULL constants and
       * check if filter will always be false, in those scenario we can transform LEFT/RIGHT JOIN into INNER JOIN and push conditions to both tables.
+      * 4. TODO: It is possible to pull up filter conditions from LEFT/RIGHT stream and push conditions that use only columns from equivalent sets
+      * to RIGHT/LEFT stream.
       */
 
     const auto & left_stream_input_header = child->getInputStreams().front().header;
@@ -311,20 +313,27 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
         for (const auto & name : input_columns_names)
         {
-            /// Skip columns that does not have equivalent column in other stream
-            if (!filter_push_down_all_input_columns_available && !equivalent_columns_for_filter.contains(name))
-                continue;
+            auto input_name = name;
 
-            /// Skip key if it is renamed.
-            /// I don't know if it is possible. Just in case.
-            if (!input_header.has(name) || !join_header.has(name))
+            /// Skip columns that does not have equivalent column in other stream
+            if (!filter_push_down_all_input_columns_available)
+            {
+                auto it = equivalent_columns_for_filter.find(name);
+                if (it == equivalent_columns_for_filter.end())
+                    continue;
+
+                if (!join_header.has(input_name))
+                    input_name = it->second.name;
+            }
+
+            if (!join_header.has(input_name))
                 continue;
 
             /// Skip if type is changed. Push down expression expect equal types.
-            if (!input_header.getByName(name).type->equals(*join_header.getByName(name).type))
+            if (!input_header.getByName(input_name).type->equals(*join_header.getByName(input_name).type))
                 continue;
 
-            available_input_columns_for_filter.push_back(name);
+            available_input_columns_for_filter.push_back(input_name);
         }
 
         if (available_input_columns_for_filter.empty())
