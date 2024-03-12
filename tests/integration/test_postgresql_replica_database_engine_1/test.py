@@ -65,18 +65,23 @@ pg_hostnames = {
 def started_cluster():
     try:
         cluster.start()
+
+        # postgresql 16 node
         pg_manager1.init(
             instance1,
             cluster.postgres_ip,
             cluster.postgres_port,
             default_database="postgres_database",
         )
+
+        # postgresql 11 node
         pg_manager2.init(
             instance2,
             cluster.postgres_ip,
             cluster.postgres_port,
             default_database="postgres_database",
         )
+
         yield cluster
 
     finally:

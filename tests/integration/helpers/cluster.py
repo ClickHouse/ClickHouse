@@ -640,8 +640,11 @@ class ClickHouseCluster:
         self.postgres4_logs_dir = os.path.join(self.postgres_dir, "postgres4")
         self.postgres_id = self.get_instance_docker_id(self.postgres_host)
 
-        # available when with_postgres == True
+        # available when with_postgres11 == True
         self.postgres11_host = "postgres11"
+        self.postgres11_ip = None
+        self.postgres11_conn = None
+        self.postgres11_logs_dir = os.path.join(self.postgres_dir, "postgres11")
 
         # available when with_postgresql_java_client = True
         self.postgresql_java_client_host = "java"
@@ -1148,7 +1151,7 @@ class ClickHouseCluster:
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_postgres_11.yml")]
         )
         env_variables["POSTGRES_PORT"] = str(self.postgres_port)
-        env_variables["POSTGRES_DIR"] = self.postgres_logs_dir
+        env_variables["POSTGRES_DIR"] = self.postgres11_logs_dir
         env_variables["POSTGRES_LOGS_FS"] = "bind"
 
         self.with_postgres11 = True
@@ -2286,20 +2289,20 @@ class ClickHouseCluster:
         raise Exception("Cannot wait Postgres container")
 
     def wait_postgres11_to_start(self, timeout=260):
-        self.postgres_ip = self.get_instance_ip(self.postgres11_host)
+        self.postgres11_ip = self.get_instance_ip(self.postgres11_host)
         start = time.time()
         while time.time() - start < timeout:
             try:
-                self.postgres_conn = psycopg2.connect(
-                    host=self.postgres_ip,
+                self.postgres11_conn = psycopg2.connect(
+                    host=self.postgres11_ip,
                     port=self.postgres_port,
                     database=pg_db,
                     user=pg_user,
                     password=pg_pass,
                 )
-                self.postgres_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-                self.postgres_conn.autocommit = True
-                logging.debug("Postgres Started")
+                self.postgres11_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                self.postgres11_conn.autocommit = True
+                logging.debug("Postgres 11 Started")
                 return
             except Exception as ex:
                 logging.debug("Can't connect to Postgres " + str(ex))
@@ -2861,11 +2864,11 @@ class ClickHouseCluster:
                 self.wait_postgres_to_start()
 
             if self.with_postgres11 and self.base_postgres_cmd:
-                logging.debug("Setup Postgres")
+                logging.debug("Setup Postgres 11")
                 if os.path.exists(self.postgres_dir):
                     shutil.rmtree(self.postgres_dir)
-                os.makedirs(self.postgres_logs_dir)
-                os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                os.makedirs(self.postgres11_logs_dir)
+                os.chmod(self.postgres11_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
                 self.up_called = True
