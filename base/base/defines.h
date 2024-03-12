@@ -120,9 +120,9 @@
         #define chassert_2(x, comment, ...) (void)sizeof(!(x))
         #define UNREACHABLE() __builtin_unreachable()
     #endif
-        #define CHASSERT_IMPL(_1,_2, N,...) N(_1, _2)
-        #define CHASSERT_IMPL_(tuple) CHASSERT_IMPL tuple
-        #define chassert(...) CHASSERT_IMPL_((__VA_ARGS__, chassert_2, chassert_1))
+        #define CHASSERT_DISPATCH(_1,_2, N,...) N(_1, _2)
+        #define CHASSERT_INVOKE(tuple) CHASSERT_DISPATCH tuple
+        #define chassert(...) CHASSERT_INVOKE((__VA_ARGS__, chassert_2, chassert_1))
 
 #endif
 
