@@ -300,11 +300,97 @@ The argument is internally still evaluated. Useful e.g. for benchmarks.
 
 ## sleep(seconds)
 
-Sleeps ‘seconds’ seconds for each data block. The sleep time can be specified as integer or as floating-point number.
+Used to introduce a delay or pause in the execution of a query. It is primarily used for testing and debugging purposes.
 
-## sleepEachRow(seconds)
+**Syntax**
 
-Sleeps ‘seconds’ seconds for each row. The sleep time can be specified as integer or as floating-point number.
+```sql
+sleep(seconds)
+```
+
+**Arguments**
+
+- `seconds`: [Int](../../sql-reference/data-types/int-uint.md) The number of seconds to pause the query execution to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.
+
+**Returned value**
+
+This function does not return any value.
+
+**Example**
+
+```sql
+SELECT sleep(2);
+```
+
+This function does not return any value. However, if you run the function with `clickhouse client` you will see something similar to:
+
+```response
+SELECT sleep(2)
+
+Query id: 8aa9943e-a686-45e1-8317-6e8e3a5596ac
+
+┌─sleep(2)─┐
+│        0 │
+└──────────┘
+
+1 row in set. Elapsed: 2.012 sec.
+```
+
+This query will pause for 2 seconds before completing. During this time, no results will be returned, and the query will appear to be hanging or unresponsive.
+
+**Implementation details**
+
+The `sleep()` function is generally not used in production environments, as it can negatively impact query performance and system responsiveness. However, it can be useful in the following scenarios:
+
+1. **Testing**: When testing or benchmarking ClickHouse, you may want to simulate delays or introduce pauses to observe how the system behaves under certain conditions.
+2. **Debugging**: If you need to examine the state of the system or the execution of a query at a specific point in time, you can use `sleep()` to introduce a pause, allowing you to inspect or collect relevant information.
+3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur, such as network latency or external system dependencies.
+
+It's important to use the `sleep()` function judiciously and only when necessary, as it can potentially impact the overall performance and responsiveness of your ClickHouse system.
+
+## sleepEachRow
+
+Pauses the execution of a query for a specified number of seconds for each row in the result set.
+
+**Syntax**
+
+```sql
+sleepEachRow(seconds)
+```
+
+**Arguments**
+
+- `seconds`: [Int](../../sql-reference/data-types/int-uint.md) The number of seconds to pause the query execution for each row in the result set. It can be a floating-point value to specify fractional seconds.
+
+**Returned value**
+
+This function returns the same input values as it receives, without modifying them.
+
+**Example**
+
+```sql
+SELECT number, sleepEachRow(0.5) FROM system.numbers LIMIT 5;
+```
+
+```response
+┌─number─┬─sleepEachRow(0.5)─┐
+│      0 │                 0 │
+│      1 │                 0 │
+│      2 │                 0 │
+│      3 │                 0 │
+│      4 │                 0 │
+└────────┴───────────────────┘
+```
+
+But the output will be delayed, with a 0.5-second pause between each row.
+
+The `sleepEachRow()` function is primarily used for testing and debugging purposes, similar to the `sleep()` function. It allows you to simulate delays or introduce pauses in the processing of each row, which can be useful in scenarios such as:
+
+1. **Testing**: When testing or benchmarking ClickHouse's performance under specific conditions, you can use `sleepEachRow()` to simulate delays or introduce pauses for each row processed.
+2. **Debugging**: If you need to examine the state of the system or the execution of a query for each row processed, you can use `sleepEachRow()` to introduce pauses, allowing you to inspect or collect relevant information.
+3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur for each row processed, such as when dealing with external systems or network latencies.
+
+Like the [`sleep()` function](#sleep), it's important to use `sleepEachRow()` judiciously and only when necessary, as it can significantly impact the overall performance and responsiveness of your ClickHouse system, especially when dealing with large result sets.
 
 ## currentDatabase()
 
