@@ -109,7 +109,7 @@ private:
         const String & tmp_prefix_,
         DiskPtr disk,
         RemoteDiskFeature feature,
-        PooledReadWriteBufferFromHTTP & in,
+        ReadWriteBufferFromHTTP & in,
         OutputBufferGetter output_buffer_getter,
         size_t projections,
         ThrottlerPtr throttler,

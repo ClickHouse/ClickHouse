@@ -841,7 +841,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const String & tmp_prefix,
     DiskPtr disk,
     RemoteDiskFeature feature,
-    PooledReadWriteBufferFromHTTP & in,
+    ReadWriteBufferFromHTTP & in,
     OutputBufferGetter output_buffer_getter,
     size_t projections,
     ThrottlerPtr throttler,
