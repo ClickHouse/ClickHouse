@@ -50,6 +50,8 @@ def test_different_types(cluster):
             assert (
                 fields[encrypted_col_ix] == "0"
             ), f"{fields[name_col_ix]} expected to be non-encrypted!"
+
+
 def test_different_types(cluster):
     node = cluster.instances["node"]
     response = TSV.toMat(node.query("SELECT * FROM system.disks FORMAT TSVWithNames"))
