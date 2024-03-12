@@ -310,12 +310,12 @@ public:
         {
             for (Field & element : values)
             {
-                bool has_value = 0;
+                /// We must initialize the Field type since some internal functions (like operator=) use them
+                new (&element) Field;
+                bool has_value = false;
                 readBinary(has_value, buf);
                 if (has_value)
                     serialization->deserializeBinary(element, buf, {});
-                else
-                    element = Field{};
             }
         }
         else
