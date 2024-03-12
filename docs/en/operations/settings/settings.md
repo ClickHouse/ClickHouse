@@ -4349,6 +4349,17 @@ Possible values:
 
 Default value: `ignore`.
 
+## first_day_of_week
+
+The first day of the week (Monday or Sunday) used by `toStartOfInterval` and `date_diff` functions when using weeks as units.
+
+Possible values:
+
+- Monday - Week starts on Monday
+- Sunday - Week starts on Sunday
+
+Default value: 'Monday'.
+
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
 Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
@@ -5430,9 +5441,3 @@ Enabling this setting can lead to incorrect result as in case of evolved schema 
 :::
 
 Default value: 'false'.
-
-## first_day_of_week
-
-The first day of the week (Monday or Sunday) used by `toStartOfInterval` and `date_diff` functions when using weeks as units.
-
-Default value: 'Monday'.
