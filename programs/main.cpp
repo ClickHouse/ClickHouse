@@ -37,14 +37,6 @@ int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 int mainEntryClickHouseSU(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv);
 
-int mainEntryClickHouseHashBinary(int, char **)
-{
-    /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
-    std::cout << getHashOfLoadedBinaryHex();
-    return 0;
-}
-
 #if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeper(int argc, char ** argv);
 #endif
