@@ -1693,10 +1693,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
                     {
                         SortDescription order_descr;
-                        int nulls_direction = settings.nulls_biggest_in_smj ? 1 : -1;
                         order_descr.reserve(key_names.size());
                         for (const auto & key_name : key_names)
-                            order_descr.emplace_back(key_name, 1, nulls_direction);
+                            order_descr.emplace_back(key_name);
 
                         SortingStep::Settings sort_settings(*context);
 
@@ -1762,15 +1761,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         add_sorting(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
                     }
 
-                    int null_direct_hint = settings.nulls_biggest_in_smj ? 1 : -1;
                     QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
                         query_plan.getCurrentDataStream(),
                         joined_plan->getCurrentDataStream(),
                         expressions.join,
                         settings.max_block_size,
                         max_streams,
-                        analysis_result.optimize_read_in_order,
-                        null_direct_hint);
+                        analysis_result.optimize_read_in_order);
 
                     join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()));
                     std::vector<QueryPlanPtr> plans;

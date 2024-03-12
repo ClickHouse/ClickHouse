@@ -359,7 +359,7 @@ void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
     cursors[source_num]->setChunk(std::move(input.chunk));
 }
 
-template <JoinKind kind, NullOrder nullOrder>
+template <JoinKind kind>
 struct AllJoinImpl
 {
     constexpr static bool enabled = isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind);
@@ -369,7 +369,8 @@ struct AllJoinImpl
                      size_t max_block_size,
                      PaddedPODArray<UInt64> & left_map,
                      PaddedPODArray<UInt64> & right_map,
-                     std::unique_ptr<AllJoinState> & state)
+                     std::unique_ptr<AllJoinState> & state,
+                     int null_direction_hint)
     {
         right_map.clear();
         right_map.reserve(max_block_size);
@@ -385,7 +386,7 @@ struct AllJoinImpl
             lpos = left_cursor->getRow();
             rpos = right_cursor->getRow();
 
-            cmp = compareCursors(left_cursor.cursor, right_cursor.cursor, nullDirection(nullOrder));
+            cmp = compareCursors(left_cursor.cursor, right_cursor.cursor, null_direction_hint);
             if (cmp == 0)
             {
                 size_t lnum = nextDistinct(left_cursor.cursor);
@@ -435,37 +436,19 @@ struct AllJoinImpl
     }
 };
 
-template <template<JoinKind, NullOrder> class Impl, typename ... Args>
-void dispatchKind(JoinKind kind, int null_direction_hint,  Args && ... args)
+template <template<JoinKind> class Impl, typename ... Args>
+void dispatchKind(JoinKind kind, Args && ... args)
 {
-    if (isSmall(null_direction_hint))
-    {
-        if (Impl<JoinKind::Inner, NullOrder::SMALLEST>::enabled && kind == JoinKind::Inner)
-            return Impl<JoinKind::Inner, NullOrder::SMALLEST>::join(std::forward<Args>(args)...);
-        else if (Impl<JoinKind::Left, NullOrder::SMALLEST>::enabled && kind == JoinKind::Left)
-            return Impl<JoinKind::Left, NullOrder::SMALLEST>::join(std::forward<Args>(args)...);
-        else if (Impl<JoinKind::Right, NullOrder::SMALLEST>::enabled && kind == JoinKind::Right)
-            return Impl<JoinKind::Right, NullOrder::SMALLEST>::join(std::forward<Args>(args)...);
-        else if (Impl<JoinKind::Full, NullOrder::SMALLEST>::enabled && kind == JoinKind::Full)
-            return Impl<JoinKind::Full, NullOrder::SMALLEST>::join(std::forward<Args>(args)...);
+    if (Impl<JoinKind::Inner>::enabled && kind == JoinKind::Inner)
+            return Impl<JoinKind::Inner>::join(std::forward<Args>(args)...);
+        else if (Impl<JoinKind::Left>::enabled && kind == JoinKind::Left)
+            return Impl<JoinKind::Left>::join(std::forward<Args>(args)...);
+        else if (Impl<JoinKind::Right>::enabled && kind == JoinKind::Right)
+            return Impl<JoinKind::Right>::join(std::forward<Args>(args)...);
+        else if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
+            return Impl<JoinKind::Full>::join(std::forward<Args>(args)...);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
-
-    }
-    else
-    {
-        if (Impl<JoinKind::Inner, NullOrder::BIGGEST>::enabled && kind == JoinKind::Inner)
-            return Impl<JoinKind::Inner, NullOrder::BIGGEST>::join(std::forward<Args>(args)...);
-        else if (Impl<JoinKind::Left, NullOrder::BIGGEST>::enabled && kind == JoinKind::Left)
-            return Impl<JoinKind::Left, NullOrder::BIGGEST>::join(std::forward<Args>(args)...);
-        else if (Impl<JoinKind::Right, NullOrder::BIGGEST>::enabled && kind == JoinKind::Right)
-            return Impl<JoinKind::Right, NullOrder::BIGGEST>::join(std::forward<Args>(args)...);
-        else if (Impl<JoinKind::Full, NullOrder::BIGGEST>::enabled && kind == JoinKind::Full)
-            return Impl<JoinKind::Full, NullOrder::BIGGEST>::join(std::forward<Args>(args)...);
-        else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
-
-    }
 }
 
 std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState()
@@ -538,7 +521,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin(JoinKind kind)
 {
     PaddedPODArray<UInt64> idx_map[2];
 
-    dispatchKind<AllJoinImpl>(kind, null_direction_hint, *cursors[0], *cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state);
+    dispatchKind<AllJoinImpl>(kind, *cursors[0], *cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint);
     assert(idx_map[0].size() == idx_map[1].size());
 
     Chunk result;
@@ -588,7 +571,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin(JoinKind kind)
 }
 
 
-template <JoinKind kind, NullOrder order>
+template <JoinKind kind>
 struct AnyJoinImpl
 {
     constexpr static bool enabled = isInner(kind) || isLeft(kind) || isRight(kind);
@@ -597,7 +580,8 @@ struct AnyJoinImpl
                      FullMergeJoinCursor & right_cursor,
                      PaddedPODArray<UInt64> & left_map,
                      PaddedPODArray<UInt64> & right_map,
-                     AnyJoinState & state)
+                     AnyJoinState & state,
+                     int null_direction_hint)
     {
         assert(enabled);
 
@@ -620,7 +604,7 @@ struct AnyJoinImpl
             lpos = left_cursor->getRow();
             rpos = right_cursor->getRow();
 
-            cmp = compareCursors(left_cursor.cursor, right_cursor.cursor, nullDirection(order));
+            cmp = compareCursors(left_cursor.cursor, right_cursor.cursor, null_direction_hint);
             if (cmp == 0)
             {
                 if constexpr (isLeftOrFull(kind))
@@ -744,7 +728,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin(JoinKind kind)
     PaddedPODArray<UInt64> idx_map[2];
     size_t prev_pos[] = {current_left.getRow(), current_right.getRow()};
 
-    dispatchKind<AnyJoinImpl>(kind, null_direction_hint, *cursors[0], *cursors[1], idx_map[0], idx_map[1], any_join_state);
+    dispatchKind<AnyJoinImpl>(kind, *cursors[0], *cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint);
 
     assert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
     size_t num_result_rows = std::max(idx_map[0].size(), idx_map[1].size());

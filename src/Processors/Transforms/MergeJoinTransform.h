@@ -220,17 +220,6 @@ private:
     bool recieved_all_blocks = false;
 };
 
-/// Join method.
-enum class NullOrder
-{
-    SMALLEST, /// null is treated as smallest
-    BIGGEST ///  null is treated as biggest
-};
-
-inline constexpr bool isSmall(int null_direction)        { return null_direction == 1; }
-
-inline constexpr int nullDirection(NullOrder order) {return order == NullOrder::SMALLEST ? 1 : -1;}
-
 /*
  * This class is used to join chunks from two sorted streams.
  * It is used in MergeJoinTransform.
