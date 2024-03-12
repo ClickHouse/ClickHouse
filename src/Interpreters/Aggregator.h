@@ -1221,6 +1221,7 @@ public:
         const IColumn ** batch_arguments{};
         const UInt64 * offsets{};
         bool has_sparse_arguments = false;
+        bool can_optimize_equal_keys_ranges = true;
     };
 
     /// Used for optimize_aggregation_in_order:
