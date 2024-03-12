@@ -3391,9 +3391,9 @@ arguments, result_type, input_rows_count); \
             case IntervalKind::Kind::INTERVAL_KIND: \
                 return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::create(), from_type);
 
-    static WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind::Kind kind)
+    static WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind)
     {
-        switch (kind)
+        switch (kind.kind)
         {
             GENERATE_INTERVAL_CASE(Nanosecond)
             GENERATE_INTERVAL_CASE(Microsecond)
