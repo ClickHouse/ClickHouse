@@ -12,6 +12,8 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+
 namespace DB
 {
 namespace ErrorCodes
@@ -140,6 +142,13 @@ void signalHandler(int sig, siginfo_t * info, void * context)
 }
 
 #if defined(SANITIZER)
+extern "C" void __sanitizer_set_death_callback(void (*)());
+
+/// Sanitizers may not expect some function calls from death callback.
+/// Let's try to disable instrumentation to avoid possible issues.
+/// However, this callback may call other functions that are still instrumented.
+/// We can try [[clang::always_inline]] attribute for statements in future (available in clang-15)
+/// See https://github.com/google/sanitizers/issues/1543 and https://github.com/google/sanitizers/issues/1549.
 static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 {
     DENY_ALLOCATIONS_IN_SCOPE;

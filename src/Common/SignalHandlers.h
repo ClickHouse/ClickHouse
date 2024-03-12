@@ -46,18 +46,6 @@ void signalHandler(int sig, siginfo_t * info, void * context);
   */
 [[noreturn]] void terminate_handler();
 
-#if defined(SANITIZER)
-extern "C" void __sanitizer_set_death_callback(void (*)());
-
-/// Sanitizers may not expect some function calls from death callback.
-/// Let's try to disable instrumentation to avoid possible issues.
-/// However, this callback may call other functions that are still instrumented.
-/// We can try [[clang::always_inline]] attribute for statements in future (available in clang-15)
-/// See https://github.com/google/sanitizers/issues/1543 and https://github.com/google/sanitizers/issues/1549.
-DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback();
-#endif
-
-
 /// Avoid link time dependency on DB/Interpreters - will use this function only when linked.
 __attribute__((__weak__)) void collectCrashLog(
     Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
