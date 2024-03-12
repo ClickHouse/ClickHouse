@@ -256,7 +256,7 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
     operations_to_execute.emplace_back(std::make_unique<PureMetadataObjectStorageOperation>(
         object_storage,
         metadata_storage,
-        [from_path, to_path, this](MetadataTransactionPtr tx)
+        [from_path, to_path](MetadataTransactionPtr tx)
         {
             tx->moveFile(from_path, to_path);
         }));
