@@ -1748,7 +1748,7 @@ class TestSuite:
             extreme_fuzz_tests = list(
                 self.get_selected_tests(lambda x: True, args.extreme_fuzz_tests)
             )
-            new_all_tests = list()
+            new_all_tests = []
             for test in self.all_tests:
                 new_all_tests += extreme_fuzz_tests + [test]
             self.all_tests = new_all_tests
