@@ -2083,7 +2083,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
-
         bool on_same_disk = false;
         for (const DiskPtr & disk : this->getStoragePolicy()->getDisks())
             if (disk->getName() == src_part->getDataPartStorage().getDiskName())
