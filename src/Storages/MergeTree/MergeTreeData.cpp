@@ -7174,7 +7174,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             }
         }
         if (!copy_successful)
-            LOG_ERROR(&Poco::Logger::get("MergeTreeData"), "Hard link fail, clone fail");
+            LOG_ERROR(&Poco::Logger::get("MergeTreeData"), "Hard link fail, clone fail.");
     }
 
 
