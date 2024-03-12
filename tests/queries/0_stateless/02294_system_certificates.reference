@@ -1,10 +1,10 @@
-version	Int32					
-serial_number	Nullable(String)					
-signature_algo	Nullable(String)					
-issuer	Nullable(String)					
-not_before	Nullable(String)					
-not_after	Nullable(String)					
-subject	Nullable(String)					
-pkey_algo	Nullable(String)					
-path	String					
-default	UInt8					
+version	Int32			Version of the certificate. Values are 0 for v1, 1 for v2, 2 for v3.		
+serial_number	Nullable(String)			Serial Number of the certificate assigned by the issuer.		
+signature_algo	Nullable(String)			Signature Algorithm - an algorithm used by the issuer to sign this certificate.		
+issuer	Nullable(String)			Issuer - an unique identifier for the Certificate Authority issuing this certificate.		
+not_before	Nullable(String)			The beginning of the time window when this certificate is valid.		
+not_after	Nullable(String)			The end of the time window when this certificate is valid.		
+subject	Nullable(String)			Subject - identifies the owner of the public key.		
+pkey_algo	Nullable(String)			Public Key Algorithm defines the algorithm the public key can be used with.		
+path	String			Path to the file or directory containing this certificate.		
+default	UInt8			Certificate is in the default certificate location.		
