@@ -31,9 +31,6 @@
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/LightweightDeleteDescription.h>
-#include <Storages/BlockNumberColumn.h>
-#include <Storages/QueueModeColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
@@ -966,8 +963,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 
     /// Drop alias is metadata alter, in other case mutation is required.
     if (type == DROP_COLUMN)
-        return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name) ||
-            column_name == LightweightDeleteDescription::FILTER_COLUMN.name || column_name == BlockNumberColumn::name;
+        return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name);
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;
@@ -1257,7 +1253,9 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 
 void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
-    const StorageInMemoryMetadata & metadata = table->getInMemoryMetadata();
+    const auto & metadata = table->getInMemoryMetadata();
+    auto virtuals = table->getVirtualsPtr();
+
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
@@ -1269,14 +1267,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
-
-        if (isQueueModeColumn(column_name) && std::dynamic_pointer_cast<MergeTreeData>(table))
-        {
-            auto casted_table = std::dynamic_pointer_cast<MergeTreeData>(table);
-
-            if (const auto& settings = casted_table->getSettings(); settings && settings->queue)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot alter column {}: this column is essential for queue mode", backQuote(column_name));
-        }
 
         if (command.type == AlterCommand::ADD_COLUMN)
         {
@@ -1301,16 +1291,20 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (command.data_type->hasDynamicSubcolumns())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
 
-            if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
-                                "this column name is reserved for lightweight delete feature", backQuote(column_name));
-
-            if (column_name == BlockNumberColumn::name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
-                                                            "this column name is reserved for _block_number persisting feature", backQuote(column_name));
+            if (virtuals->tryGet(column_name, VirtualsKind::Persistent))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot add column {}: this column name is reserved for persistent virtual column", backQuote(column_name));
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
+            {
+                const auto & settings = context->getSettingsRef();
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                    command.codec, command.data_type,
+                    !settings.allow_suspicious_codecs,
+                    settings.allow_experimental_codecs,
+                    settings.enable_deflate_qpl_codec,
+                    settings.enable_zstd_qat_codec);
+            }
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
@@ -1424,9 +1418,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (all_columns.has(command.column_name) ||
-                all_columns.hasNested(command.column_name) ||
-                (command.clear && column_name == LightweightDeleteDescription::FILTER_COLUMN.name))
+            if (all_columns.has(command.column_name) || all_columns.hasNested(command.column_name))
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
@@ -1510,16 +1502,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
 
             if (all_columns.has(command.rename_to))
-                throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Cannot rename to {}: "
-                                "column with this name already exists", backQuote(command.rename_to));
+                throw Exception(ErrorCodes::DUPLICATE_COLUMN,
+                    "Cannot rename to {}: column with this name already exists", backQuote(command.rename_to));
 
-            if (command.rename_to == LightweightDeleteDescription::FILTER_COLUMN.name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot rename to {}: "
-                                "this column name is reserved for lightweight delete feature", backQuote(command.rename_to));
-
-            if (command.rename_to == BlockNumberColumn::name && std::dynamic_pointer_cast<MergeTreeData>(table))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot rename to {}: "
-                                                            "this column name is reserved for _block_number persisting feature", backQuote(command.rename_to));
+            if (virtuals->tryGet(command.rename_to, VirtualsKind::Persistent))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot rename to {}: this column name is reserved for persistent virtual column", backQuote(command.rename_to));
 
             if (modified_columns.contains(column_name))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "

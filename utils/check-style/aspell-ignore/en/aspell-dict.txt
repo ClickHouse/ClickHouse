@@ -260,6 +260,7 @@ ExactEdgeLengthRads
 ExecutablePool
 ExtType
 ExternalDistributed
+FFFFFFFF
 FFFD
 FIPS
 FOSDEM
@@ -546,6 +547,8 @@ MinIO
 MinMax
 MindsDB
 Mongodb
+mortonDecode
+mortonEncode
 MsgPack
 MultiPolygon
 Multiline
@@ -685,7 +688,6 @@ PartsCommitted
 PartsCompact
 PartsDeleteOnDestroy
 PartsDeleting
-PartsInMemory
 PartsOutdated
 PartsPreActive
 PartsPreCommitted
@@ -773,7 +775,6 @@ ReferenceKeyed
 Refreshable
 RegexpTree
 RemoteRead
-SharedMergeTree
 ReplacingMergeTree
 ReplicasMaxAbsoluteDelay
 ReplicasMaxInsertsInQueue
@@ -842,6 +843,8 @@ Sematext
 SendExternalTables
 SendScalars
 ShareAlike
+SharedMergeTree
+Shortkeys
 Shortkeys
 SimHash
 Simhash
@@ -1079,6 +1082,8 @@ anyheavy
 anylast
 appendTrailingCharIfAbsent
 approximative
+approxtopk
+approxtopsum
 argMax
 argMin
 argmax
@@ -1239,6 +1244,7 @@ buildable
 builtins
 byteHammingDistance
 byteSize
+byteSlice
 byteSwap
 bytebase
 bytesToCutForIPv
@@ -1617,7 +1623,6 @@ greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
-grouparrayintersect
 groupArrayIntersect
 groupArrayLast
 groupArrayMovingAvg
@@ -1634,6 +1639,7 @@ groupBitmapXor
 groupUniqArray
 grouparray
 grouparrayinsertat
+grouparrayintersect
 grouparraylast
 grouparraymovingavg
 grouparraymovingsum
@@ -1699,6 +1705,7 @@ hyperscan
 hypot
 hyvor
 iTerm
+iTerm
 icosahedron
 icudata
 idempotency
@@ -1746,7 +1753,6 @@ isValidJSON
 isValidUTF
 isZeroOrNull
 iteratively
-iTerm
 jaccard
 jaccardIndex
 jaroSimilarity
@@ -1842,6 +1848,7 @@ linearized
 lineasstring
 linefeeds
 lineorder
+linestring
 linux
 llvm
 loadDefaultCAFile
@@ -2200,7 +2207,9 @@ rankCorr
 rapidjson
 rawblob
 readWKTMultiPolygon
+readWKTPoint
 readWKTPolygon
+readWKTRing
 readahead
 readline
 readme
@@ -2320,7 +2329,6 @@ shardNum
 sharded
 sharding
 shortcircuit
-Shortkeys
 shortkeys
 shoutout
 simdjson
@@ -2490,6 +2498,7 @@ theilsu
 themself
 threadpool
 throwIf
+timeDiff
 timeSlot
 timeSlots
 timeZone
@@ -2541,6 +2550,7 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
+toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2738,6 +2748,7 @@ xz
 yaml
 yandex
 youtube
+ZCurve
 zLib
 zLinux
 zabbix

@@ -8,8 +8,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
-#include <Storages/LightweightDeleteDescription.h>
-#include <Storages/QueueModeColumns.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
 #include <DataTypes/ObjectUtils.h>
@@ -298,7 +296,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     switch (global_ctx->chosen_merge_algorithm)
     {
-        case MergeAlgorithm::Horizontal :
+        case MergeAlgorithm::Horizontal:
         {
             global_ctx->merging_columns = global_ctx->storage_columns;
             global_ctx->merging_column_names = global_ctx->all_column_names;
@@ -306,12 +304,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             global_ctx->gathering_column_names.clear();
             break;
         }
-        case MergeAlgorithm::Vertical :
+        case MergeAlgorithm::Vertical:
         {
             ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->createRawStream();
             ctx->rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*ctx->rows_sources_uncompressed_write_buf);
 
-            MergeTreeDataPartInMemory::ColumnToSize local_merged_column_to_size;
+            std::map<String, UInt64> local_merged_column_to_size;
             for (const MergeTreeData::DataPartPtr & part : global_ctx->future_part->parts)
                 part->accumulateColumnSizes(local_merged_column_to_size);
 
@@ -1076,14 +1074,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     if (global_ctx->deduplicate)
     {
-        /// We don't want to deduplicate by block number or queue mode columns
-        /// so if deduplicate_by_columns is empty, add all columns except this ones
-        if ((supportsBlockNumberColumn(global_ctx) || isInQueueMode(global_ctx)) && global_ctx->deduplicate_by_columns.empty())
+        const auto & virtuals = *global_ctx->data->getVirtualsPtr();
+
+        /// We don't want to deduplicate by virtual persistent column.
+        /// If deduplicate_by_columns is empty, add all columns except virtuals.
+        if (global_ctx->deduplicate_by_columns.empty())
         {
-            for (const auto & col : global_ctx->merging_column_names)
+            for (const auto & column_name : global_ctx->merging_column_names)
             {
-                if (col != BlockNumberColumn::name && !isQueueModeColumn(col))
-                    global_ctx->deduplicate_by_columns.emplace_back(col);
+                if (virtuals.tryGet(column_name, VirtualsKind::Persistent))
+                    continue;
+
+                global_ctx->deduplicate_by_columns.emplace_back(column_name);
             }
         }
 
