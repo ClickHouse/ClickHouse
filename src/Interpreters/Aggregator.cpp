@@ -48,7 +48,6 @@ namespace ProfileEvents
     extern const Event ExternalAggregationUncompressedBytes;
     extern const Event ExternalProcessingCompressedBytesTotal;
     extern const Event ExternalProcessingUncompressedBytesTotal;
-    extern const Event AggregationPreallocatedElementsInHashTables;
     extern const Event AggregationHashTablesInitializedAsTwoLevel;
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
@@ -269,50 +268,6 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
 }
 
-// The std::is_constructible trait isn't suitable here because some classes have template constructors with semantics different from providing size hints.
-// Also string hash table variants are not supported due to the fact that both local perf tests and tests in CI showed slowdowns for them.
-template <typename...>
-struct HasConstructorOfNumberOfElements : std::false_type
-{
-};
-
-template <typename... Ts>
-struct HasConstructorOfNumberOfElements<HashMapTable<Ts...>> : std::true_type
-{
-};
-
-template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator, template <typename...> typename ImplTable>
-struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable>> : std::true_type
-{
-};
-
-template <typename... Ts>
-struct HasConstructorOfNumberOfElements<HashTable<Ts...>> : std::true_type
-{
-};
-
-template <typename... Ts>
-struct HasConstructorOfNumberOfElements<TwoLevelHashTable<Ts...>> : std::true_type
-{
-};
-
-template <template <typename> typename Method, typename Base>
-struct HasConstructorOfNumberOfElements<Method<Base>> : HasConstructorOfNumberOfElements<Base>
-{
-};
-
-template <typename Method>
-auto constructWithReserveIfPossible(size_t size_hint)
-{
-    if constexpr (HasConstructorOfNumberOfElements<typename Method::Data>::value)
-    {
-        ProfileEvents::increment(ProfileEvents::AggregationPreallocatedElementsInHashTables, size_hint);
-        return std::make_unique<Method>(size_hint);
-    }
-    else
-        return std::make_unique<Method>();
-}
-
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
 {
     DB::ColumnNumbers keys_positions(params.keys_size);
@@ -345,69 +300,9 @@ size_t getMinBytesForPrefetch()
 namespace DB
 {
 
-AggregatedDataVariants::~AggregatedDataVariants()
-{
-    if (aggregator && !aggregator->all_aggregates_has_trivial_destructor)
-    {
-        try
-        {
-            aggregator->destroyAllAggregateStates(*this);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-}
-
 std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
 {
     return getHashTablesStatistics().getCacheStats();
-}
-
-void AggregatedDataVariants::convertToTwoLevel()
-{
-    if (aggregator)
-        LOG_TRACE(aggregator->log, "Converting aggregation data to two-level.");
-
-    switch (type)
-    {
-#define M(NAME) \
-        case Type::NAME: \
-            NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*(NAME)); \
-            (NAME).reset(); \
-            type = Type::NAME ## _two_level; \
-            break;
-
-        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
-
-    #undef M
-
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong data variant passed.");
-    }
-}
-
-void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
-{
-    switch (type_)
-    {
-        case Type::EMPTY:
-        case Type::without_key:
-            break;
-
-#define M(NAME, IS_TWO_LEVEL) \
-    case Type::NAME: \
-        if (size_hint) \
-            (NAME) = constructWithReserveIfPossible<decltype(NAME)::element_type>(*size_hint); \
-        else \
-            (NAME) = std::make_unique<decltype(NAME)::element_type>(); \
-        break;
-            APPLY_FOR_AGGREGATED_VARIANTS(M)
-#undef M
-    }
-
-    type = type_;
 }
 
 Aggregator::Params::StatsCollectingParams::StatsCollectingParams() = default;
@@ -1121,30 +1016,30 @@ void NO_INLINE Aggregator::executeImpl(
         if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
         {
             if (prefetch)
-                executeImplBatch<false, true, true>(
-                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, all_keys_are_const, overflow_row);
+                executeImplBatch<true>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, false, all_keys_are_const, true, overflow_row);
             else
-                executeImplBatch<false, true, false>(
-                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, all_keys_are_const, overflow_row);
+                executeImplBatch<false>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, false, all_keys_are_const, true, overflow_row);
         }
         else
 #endif
         {
             if (prefetch)
-                executeImplBatch<false, false, true>(
-                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, all_keys_are_const, overflow_row);
+                executeImplBatch<true>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, false, all_keys_are_const, false, overflow_row);
             else
-                executeImplBatch<false, false, false>(
-                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, all_keys_are_const, overflow_row);
+                executeImplBatch<false>(
+                    method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, false, all_keys_are_const, false, overflow_row);
         }
     }
     else
     {
-        executeImplBatch<true, false, false>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, all_keys_are_const, overflow_row);
+        executeImplBatch<false>(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, true, all_keys_are_const, false, overflow_row);
     }
 }
 
-template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method, typename State>
+template <bool prefetch, typename Method, typename State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
     State & state,
@@ -1152,7 +1047,9 @@ void NO_INLINE Aggregator::executeImplBatch(
     size_t row_begin,
     size_t row_end,
     AggregateFunctionInstruction * aggregate_instructions,
+    bool no_more_keys,
     bool all_keys_are_const,
+    bool use_compiled_functions,
     AggregateDataPtr overflow_row) const
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
@@ -1164,7 +1061,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
     {
-        if constexpr (no_more_keys)
+        if (no_more_keys)
             return;
 
         /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
@@ -1197,39 +1094,42 @@ void NO_INLINE Aggregator::executeImplBatch(
     }
 
     /// Optimization for special case when aggregating by 8bit key.
-    if constexpr (!no_more_keys && std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
+    if (!no_more_keys)
     {
-        /// We use another method if there are aggregate functions with -Array combinator.
-        bool has_arrays = false;
-        for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+        if constexpr (std::is_same_v<Method, typename decltype(AggregatedDataVariants::key8)::element_type>)
         {
-            if (inst->offsets)
-            {
-                has_arrays = true;
-                break;
-            }
-        }
-
-        if (!has_arrays && !hasSparseArguments(aggregate_instructions) && !all_keys_are_const)
-        {
+            /// We use another method if there are aggregate functions with -Array combinator.
+            bool has_arrays = false;
             for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
             {
-                inst->batch_that->addBatchLookupTable8(
-                    row_begin,
-                    row_end,
-                    reinterpret_cast<AggregateDataPtr *>(method.data.data()),
-                    inst->state_offset,
-                    [&](AggregateDataPtr & aggregate_data)
-                    {
-                        AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                        createAggregateStates(place);
-                        aggregate_data = place;
-                    },
-                    state.getKeyData(),
-                    inst->batch_arguments,
-                    aggregates_pool);
+                if (inst->offsets)
+                {
+                    has_arrays = true;
+                    break;
+                }
             }
-            return;
+
+            if (!has_arrays && !hasSparseArguments(aggregate_instructions) && !all_keys_are_const)
+            {
+                for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+                {
+                    inst->batch_that->addBatchLookupTable8(
+                        row_begin,
+                        row_end,
+                        reinterpret_cast<AggregateDataPtr *>(method.data.data()),
+                        inst->state_offset,
+                        [&](AggregateDataPtr & aggregate_data)
+                        {
+                            AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                            createAggregateStates(place);
+                            aggregate_data = place;
+                        },
+                        state.getKeyData(),
+                        inst->batch_arguments,
+                        aggregates_pool);
+                }
+                return;
+            }
         }
     }
 
@@ -1255,12 +1155,12 @@ void NO_INLINE Aggregator::executeImplBatch(
     state.resetCache();
 
     /// For all rows.
-    for (size_t i = key_start; i < key_end; ++i)
+    if (!no_more_keys)
     {
-        AggregateDataPtr aggregate_data = nullptr;
-
-        if constexpr (!no_more_keys)
+        for (size_t i = key_start; i < key_end; ++i)
         {
+            AggregateDataPtr aggregate_data = nullptr;
+
             if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
                 if (i == key_start + prefetching.iterationsToMeasure())
@@ -1284,7 +1184,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
 
 #if USE_EMBEDDED_COMPILER
-                if constexpr (use_compiled_functions)
+                if (use_compiled_functions)
                 {
                     const auto & compiled_aggregate_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
                     compiled_aggregate_functions.create_aggregate_states_function(aggregate_data);
@@ -1297,7 +1197,8 @@ void NO_INLINE Aggregator::executeImplBatch(
 #if defined(MEMORY_SANITIZER)
 
                     /// We compile only functions that do not allocate some data in Arena. Only store necessary state in AggregateData place.
-                    for (size_t aggregate_function_index = 0; aggregate_function_index < aggregate_functions.size(); ++aggregate_function_index)
+                    for (size_t aggregate_function_index = 0; aggregate_function_index < aggregate_functions.size();
+                         ++aggregate_function_index)
                     {
                         if (!is_aggregate_function_compiled[aggregate_function_index])
                             continue;
@@ -1320,26 +1221,51 @@ void NO_INLINE Aggregator::executeImplBatch(
                 aggregate_data = emplace_result.getMapped();
 
             assert(aggregate_data != nullptr);
+            places[i] = aggregate_data;
         }
-        else
+    }
+    else
+    {
+        for (size_t i = key_start; i < key_end; ++i)
         {
+            AggregateDataPtr aggregate_data = nullptr;
             /// Add only if the key already exists.
             auto find_result = state.findKey(method.data, i, *aggregates_pool);
             if (find_result.isFound())
-            {
                 aggregate_data = find_result.getMapped();
-            }
             else
-            {
                 aggregate_data = overflow_row;
-            }
+            places[i] = aggregate_data;
         }
-
-        places[i] = aggregate_data;
     }
 
+    executeAggregateInstructions(
+        aggregates_pool,
+        row_begin,
+        row_end,
+        aggregate_instructions,
+        places,
+        key_start,
+        state.hasOnlyOneValueSinceLastReset(),
+        no_more_keys,
+        all_keys_are_const,
+        use_compiled_functions);
+}
+
+void Aggregator::executeAggregateInstructions(
+    Arena * aggregates_pool,
+    size_t row_begin,
+    size_t row_end,
+    AggregateFunctionInstruction * aggregate_instructions,
+    const std::unique_ptr<AggregateDataPtr[]> &places,
+    size_t key_start,
+    bool has_only_one_value_since_last_reset,
+    bool no_more_keys,
+    bool all_keys_are_const,
+    bool use_compiled_functions) const
+{
 #if USE_EMBEDDED_COMPILER
-    if constexpr (use_compiled_functions)
+    if (use_compiled_functions)
     {
         std::vector<ColumnData> columns_data;
 
@@ -1355,7 +1281,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 columns_data.emplace_back(getColumnData(inst->batch_arguments[argument_index]));
         }
 
-        if (all_keys_are_const || (!no_more_keys && state.hasOnlyOneValueSinceLastReset()))
+        if (all_keys_are_const || (!no_more_keys && has_only_one_value_since_last_reset))
         {
             auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
             add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[key_start]);
@@ -1372,33 +1298,34 @@ void NO_INLINE Aggregator::executeImplBatch(
     for (size_t i = 0; i < aggregate_functions.size(); ++i)
     {
 #if USE_EMBEDDED_COMPILER
-        if constexpr (use_compiled_functions)
+        if (use_compiled_functions)
             if (is_aggregate_function_compiled[i])
                 continue;
 #endif
 
         AggregateFunctionInstruction * inst = aggregate_instructions + i;
 
-        if (all_keys_are_const || (!no_more_keys && state.hasOnlyOneValueSinceLastReset()))
+        if (all_keys_are_const || (!no_more_keys && has_only_one_value_since_last_reset))
             addBatchSinglePlace(row_begin, row_end, inst, places[key_start] + inst->state_offset, aggregates_pool);
         else
             addBatch(row_begin, row_end, inst, places.get(), aggregates_pool);
     }
+
 }
 
 
-template <bool use_compiled_functions>
 void NO_INLINE Aggregator::executeWithoutKeyImpl(
     AggregatedDataWithoutKey & res,
     size_t row_begin, size_t row_end,
     AggregateFunctionInstruction * aggregate_instructions,
-    Arena * arena) const
+    Arena * arena,
+    bool use_compiled_functions) const
 {
     if (row_begin == row_end)
         return;
 
 #if USE_EMBEDDED_COMPILER
-    if constexpr (use_compiled_functions)
+    if (use_compiled_functions)
     {
         std::vector<ColumnData> columns_data;
 
@@ -1441,7 +1368,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         AggregateFunctionInstruction * inst = aggregate_instructions + i;
 
 #if USE_EMBEDDED_COMPILER
-        if constexpr (use_compiled_functions)
+        if (use_compiled_functions)
             if (is_aggregate_function_compiled[i])
                 continue;
 #endif
@@ -1707,12 +1634,12 @@ bool Aggregator::executeOnBlock(Columns columns,
 // #if USE_EMBEDDED_COMPILER
 //         if (compiled_aggregate_functions_holder)
 //         {
-//             executeWithoutKeyImpl<true>(result.without_key, row_begin, row_end, aggregate_functions_instructions.data(), result.aggregates_pool);
+//             executeWithoutKeyImpl(result.without_key, row_begin, row_end, aggregate_functions_instructions.data(), result.aggregates_pool,true);
 //         }
 //         else
 // #endif
         {
-            executeWithoutKeyImpl<false>(result.without_key, row_begin, row_end, aggregate_functions_instructions.data(), result.aggregates_pool);
+            executeWithoutKeyImpl(result.without_key, row_begin, row_end, aggregate_functions_instructions.data(), result.aggregates_pool, false);
         }
     }
     else
@@ -1832,8 +1759,14 @@ Block Aggregator::convertOneBucketToBlock(
 {
     // Used in ConvertingAggregatedToChunksSource -> ConvertingAggregatedToChunksTransform (expects single chunk for each bucket_id).
     constexpr bool return_single_block = true;
-    Block block = convertToBlockImpl<return_single_block>(
-        method, method.data.impls[bucket], arena, data_variants.aggregates_pools, final, method.data.impls[bucket].size());
+    Block block = std::get<Block>(convertToBlockImpl(
+        method,
+        method.data.impls[bucket],
+        arena,
+        data_variants.aggregates_pools,
+        final,
+        method.data.impls[bucket].size(),
+        return_single_block));
 
     block.info.bucket_num = static_cast<int>(bucket);
     return block;
@@ -1953,35 +1886,33 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 }
 
 
-template <bool return_single_block, typename Method, typename Table>
-Aggregator::ConvertToBlockRes<return_single_block>
-Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows) const
+template <typename Method, typename Table>
+Aggregator::ConvertToBlockResVariant
+Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final,size_t rows, bool return_single_block) const
 {
     if (data.empty())
     {
         auto && out_cols = prepareOutputBlockColumns(params, aggregate_functions, getHeader(final), aggregates_pools, final, rows);
         return {finalizeBlock(params, getHeader(final), std::move(out_cols), final, rows)};
     }
-
-    ConvertToBlockRes<return_single_block> res;
-
+    ConvertToBlockResVariant res;
     if (final)
     {
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
         {
             static constexpr bool use_compiled_functions = !Method::low_cardinality_optimization;
-            res = convertToBlockImplFinal<Method, use_compiled_functions, return_single_block>(method, data, arena, aggregates_pools, rows);
+            res = convertToBlockImplFinal<Method>(method, data, arena, aggregates_pools, use_compiled_functions, true);
         }
         else
 #endif
         {
-            res = convertToBlockImplFinal<Method, false, return_single_block>(method, data, arena, aggregates_pools, rows);
+            res = convertToBlockImplFinal<Method>(method, data, arena, aggregates_pools, false, return_single_block);
         }
     }
     else
     {
-        res = convertToBlockImplNotFinal<return_single_block>(method, data, aggregates_pools, rows);
+        res = convertToBlockImplNotFinal(method, data, aggregates_pools, rows, return_single_block);
     }
 
     /// In order to release memory early.
@@ -2146,19 +2077,27 @@ Block Aggregator::insertResultsIntoColumns(PaddedPODArray<AggregateDataPtr> & pl
     return finalizeBlock(params, getHeader(/* final */ true), std::move(out_cols), /* final */ true, places.size());
 }
 
-template <typename Method, bool use_compiled_functions, bool return_single_block, typename Table>
-Aggregator::ConvertToBlockRes<return_single_block> NO_INLINE
-Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t) const
+// template <typename Method, bool use_compiled_functions, bool return_single_block, typename Table>
+// Aggregator::ConvertToBlockRes<return_single_block> NO_INLINE
+// Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t) const
+template <typename Method, typename Table>
+Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
+    Method & method,
+    Table & data,
+    Arena * arena,
+    Arenas & aggregates_pools,
+    bool use_compiled_functions,
+    bool return_single_block) const
 {
     /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
     const size_t max_block_size = (return_single_block ? data.size() : std::min(params.max_block_size, data.size())) + 1;
     const bool final = true;
-    ConvertToBlockRes<return_single_block> res;
 
     std::optional<OutputBlockColumns> out_cols;
     std::optional<Sizes> shuffled_key_sizes;
     PaddedPODArray<AggregateDataPtr> places;
     bool has_null_key_data = false;
+    BlocksList blocks;
 
     auto init_out_cols = [&]()
     {
@@ -2187,51 +2126,78 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
     // should be invoked at least once, because null data might be the only content of the `data`
     init_out_cols();
 
-    data.forEachValue(
-        [&](const auto & key, auto & mapped)
-        {
-            if (!out_cols.has_value())
-                init_out_cols();
-
-            const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
-            places.emplace_back(mapped);
-
-            /// Mark the cell as destroyed so it will not be destroyed in destructor.
-            mapped = nullptr;
-
-            if constexpr (!return_single_block)
+    if (return_single_block)
+    {
+        data.forEachValue(
+            [&](const auto & key, auto & mapped)
             {
+                if (!out_cols.has_value())
+                    init_out_cols();
+
+                const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+                method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+                places.emplace_back(mapped);
+
+                /// Mark the cell as destroyed so it will not be destroyed in destructor.
+                mapped = nullptr;
+            });
+    }
+    else
+    {
+        data.forEachValue(
+            [&](const auto & key, auto & mapped)
+            {
+                if (!out_cols.has_value())
+                    init_out_cols();
+
+                const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+                method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+                places.emplace_back(mapped);
+
+                /// Mark the cell as destroyed so it will not be destroyed in destructor.
+                mapped = nullptr;
+
                 if (places.size() >= max_block_size)
                 {
-                    res.emplace_back(insertResultsIntoColumns<use_compiled_functions>(places, std::move(out_cols.value()), arena, has_null_key_data));
+                    if (use_compiled_functions)
+                        blocks.emplace_back(insertResultsIntoColumns<true>(places, std::move(out_cols.value()), arena, has_null_key_data));
+                    else
+                        blocks.emplace_back(insertResultsIntoColumns<false>(places, std::move(out_cols.value()), arena, has_null_key_data));
                     places.clear();
                     out_cols.reset();
                     has_null_key_data = false;
                 }
-            }
-        });
+            });
+    }
 
-    if constexpr (return_single_block)
+    if (return_single_block)
     {
-        return insertResultsIntoColumns<use_compiled_functions>(places, std::move(out_cols.value()), arena, has_null_key_data);
+        if (use_compiled_functions)
+            return insertResultsIntoColumns<true>(places, std::move(out_cols.value()), arena, has_null_key_data);
+        else
+            return insertResultsIntoColumns<false>(places, std::move(out_cols.value()), arena, has_null_key_data);
     }
     else
     {
         if (out_cols.has_value())
-            res.emplace_back(insertResultsIntoColumns<use_compiled_functions>(places, std::move(out_cols.value()), arena, has_null_key_data));
-        return res;
+        {
+            if (use_compiled_functions)
+                blocks.emplace_back(insertResultsIntoColumns<true>(places, std::move(out_cols.value()), arena, has_null_key_data));
+            else
+                blocks.emplace_back(insertResultsIntoColumns<false>(places, std::move(out_cols.value()), arena, has_null_key_data));
+        }
+        return blocks;
     }
 }
 
-template <bool return_single_block, typename Method, typename Table>
-Aggregator::ConvertToBlockRes<return_single_block> NO_INLINE
-Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t) const
+template <typename Method, typename Table>
+Aggregator::ConvertToBlockResVariant NO_INLINE
+Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t, bool return_single_block) const
 {
     /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
     const size_t max_block_size = (return_single_block ? data.size() : std::min(params.max_block_size, data.size())) + 1;
     const bool final = false;
-    ConvertToBlockRes<return_single_block> res;
+    BlocksList res_blocks;
 
     std::optional<OutputBlockColumns> out_cols;
     std::optional<Sizes> shuffled_key_sizes;
@@ -2261,46 +2227,65 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
 
     // should be invoked at least once, because null data might be the only content of the `data`
     init_out_cols();
-
-    data.forEachValue(
-        [&](const auto & key, auto & mapped)
-        {
-            if (!out_cols.has_value())
-                init_out_cols();
-
-            const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
-
-            /// reserved, so push_back does not throw exceptions
-            for (size_t i = 0; i < params.aggregates_size; ++i)
-                out_cols->aggregate_columns_data[i]->push_back(mapped + offsets_of_aggregate_states[i]);
-
-            mapped = nullptr;
-
-            ++rows_in_current_block;
-
-            if constexpr (!return_single_block)
+    if (return_single_block)
+    {
+        data.forEachValue(
+            [&](const auto & key, auto & mapped)
             {
+                if (!out_cols.has_value())
+                    init_out_cols();
+
+                const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+                method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+
+                /// reserved, so push_back does not throw exceptions
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                    out_cols->aggregate_columns_data[i]->push_back(mapped + offsets_of_aggregate_states[i]);
+
+                mapped = nullptr;
+
+                ++rows_in_current_block;
+            });
+    }
+    else
+    {
+        data.forEachValue(
+            [&](const auto & key, auto & mapped)
+            {
+                if (!out_cols.has_value())
+                    init_out_cols();
+
+                const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+                method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+
+                /// reserved, so push_back does not throw exceptions
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                    out_cols->aggregate_columns_data[i]->push_back(mapped + offsets_of_aggregate_states[i]);
+
+                mapped = nullptr;
+
+                ++rows_in_current_block;
+
                 if (rows_in_current_block >= max_block_size)
                 {
-                    res.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols.value()), final, rows_in_current_block));
+                    res_blocks.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols.value()), final, rows_in_current_block));
                     out_cols.reset();
                     rows_in_current_block = 0;
                 }
-            }
-        });
+            });
+    }
 
-    if constexpr (return_single_block)
+    if (return_single_block)
     {
         return finalizeBlock(params, getHeader(final), std::move(out_cols).value(), final, rows_in_current_block);
     }
     else
     {
         if (rows_in_current_block)
-            res.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols).value(), final, rows_in_current_block));
-        return res;
+            res_blocks.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols).value(), final, rows_in_current_block));
+        return res_blocks;
     }
-    return res;
+    return res_blocks;
 }
 
 void Aggregator::addSingleKeyToAggregateColumns(
@@ -2406,18 +2391,23 @@ template <bool return_single_block>
 Aggregator::ConvertToBlockRes<return_single_block>
 Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
 {
+    ConvertToBlockResVariant res_variant;
     const size_t rows = data_variants.sizeWithoutOverflowRow();
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
     { \
-        return convertToBlockImpl<return_single_block>( \
-            *data_variants.NAME, data_variants.NAME->data, data_variants.aggregates_pool, data_variants.aggregates_pools, final, rows); \
+        res_variant = convertToBlockImpl( \
+            *data_variants.NAME, data_variants.NAME->data, data_variants.aggregates_pool, data_variants.aggregates_pools, final, rows, return_single_block); \
     }
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
     else throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+    if constexpr (return_single_block)
+        return std::get<Block>(res_variant);
+    else
+        return std::get<BlocksList>(res_variant);
 }
 
 
@@ -2543,7 +2533,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     if (data_variants.type != AggregatedDataVariants::Type::without_key)
     {
         if (!data_variants.isTwoLevel())
-            blocks.splice(blocks.end(), prepareBlockAndFillSingleLevel</* return_single_block */ false>(data_variants, final));
+            blocks.splice(blocks.end(), prepareBlockAndFillSingleLevel<false>(data_variants, final));
         else
             blocks.splice(blocks.end(), prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get()));
     }
@@ -2609,8 +2599,8 @@ void NO_INLINE Aggregator::mergeDataNullKey(
     }
 }
 
-template <typename Method, bool use_compiled_functions, bool prefetch, typename Table>
-void NO_INLINE Aggregator::mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena) const
+template <typename Method, typename Table>
+void NO_INLINE Aggregator::mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch) const
 {
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
@@ -2633,11 +2623,14 @@ void NO_INLINE Aggregator::mergeDataImpl(Table & table_dst, Table & table_src, A
         src = nullptr;
     };
 
-    table_src.template mergeToViaEmplace<decltype(merge), prefetch>(table_dst, std::move(merge));
+    if (prefetch)
+        table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
+    else
+        table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
     table_src.clearAndShrink();
 
 #if USE_EMBEDDED_COMPILER
-    if constexpr (use_compiled_functions)
+    if (use_compiled_functions)
     {
         const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
         compiled_functions.merge_aggregate_states_function(dst_places.data(), src_places.data(), dst_places.size());
@@ -2790,22 +2783,14 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder)
             {
-                if (prefetch)
-                    mergeDataImpl<Method, true, true>(
-                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
-                else
-                    mergeDataImpl<Method, true, false>(
-                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
+                mergeDataImpl<Method>(
+                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, true, prefetch);
             }
             else
 #endif
             {
-                if (prefetch)
-                    mergeDataImpl<Method, false, true>(
-                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
-                else
-                    mergeDataImpl<Method, false, false>(
-                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool);
+                mergeDataImpl<Method>(
+                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, prefetch);
             }
         }
         else if (res->without_key)
@@ -2854,22 +2839,18 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
         {
-            if (prefetch)
-                mergeDataImpl<Method, true, true>(
-                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
-            else
-                mergeDataImpl<Method, true, false>(
-                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
+            mergeDataImpl<Method>(
+                getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena, true, prefetch);
         }
         else
 #endif
         {
-            if (prefetch)
-                mergeDataImpl<Method, false, true>(
-                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
-            else
-                mergeDataImpl<Method, false, false>(
-                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena);
+            mergeDataImpl<Method>(
+                getDataVariant<Method>(*res).data.impls[bucket],
+                getDataVariant<Method>(current).data.impls[bucket],
+                arena,
+                false,
+                prefetch);
         }
     }
 }
@@ -3589,7 +3570,4 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result) cons
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 }
 
-
-template Aggregator::ConvertToBlockRes<false>
-Aggregator::prepareBlockAndFillSingleLevel<false>(AggregatedDataVariants & data_variants, bool final) const;
 }
