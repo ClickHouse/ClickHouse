@@ -8,8 +8,9 @@ import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
+import magic
 from docker_images_helper import get_docker_image, pull_image
 from env_helper import CI, REPO_COPY, TEMP_PATH
 from git_helper import GIT_PREFIX, git_runner
@@ -95,6 +96,24 @@ def commit_push_staged(pr_info: PRInfo) -> None:
     git_runner(push_cmd)
 
 
+def is_python(file: Union[Path, str]) -> bool:
+    """returns if the changed file in the repository is python script"""
+    # WARNING: python-magic v2:0.4.24-2 is used in ubuntu 22.04,
+    # and `Support os.PathLike values in magic.from_file` is only from 0.4.25
+    return bool(
+        magic.from_file(os.path.join(REPO_COPY, file), mime=True)
+        == "text/x-script.python"
+    )
+
+
+def is_shell(file: Union[Path, str]) -> bool:
+    """returns if the changed file in the repository is shell script"""
+    # WARNING: python-magic v2:0.4.24-2 is used in ubuntu 22.04,
+    # and `Support os.PathLike values in magic.from_file` is only from 0.4.25
+    return bool(
+        magic.from_file(os.path.join(REPO_COPY, file), mime=True)
+        == "text/x-shellscript"
+    )
 
 
 def main():
@@ -111,29 +130,28 @@ def main():
     temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
+    run_cpp_check = True
+    run_shell_check = True
+    run_python_check = True
+    if CI and pr_info.number > 0:
+        pr_info.fetch_changed_files()
+        run_cpp_check = not any(
+            is_python(file) or is_shell(file) for file in pr_info.changed_files
+        )
+        run_shell_check = any(is_shell(file) for file in pr_info.changed_files)
+        run_python_check = any(is_python(file) for file in pr_info.changed_files)
 
     IMAGE_NAME = "clickhouse/style-test"
     image = pull_image(get_docker_image(IMAGE_NAME))
-    cmd_cpp = (
+    docker_command = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
         f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"--entrypoint= -w/ClickHouse/utils/check-style "
-        f"{image} ./check_cpp.sh"
+        f"--entrypoint= -w/ClickHouse/utils/check-style {image}"
     )
-
-    cmd_py = (
-        f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
-        f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"--entrypoint= -w/ClickHouse/utils/check-style "
-        f"{image} ./check_py.sh"
-    )
-
-    cmd_docs = (
-        f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
-        f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"--entrypoint= -w/ClickHouse/utils/check-style "
-        f"{image} ./check_docs.sh"
-    )
+    cmd_docs = f"{docker_command} ./check_docs.sh"
+    cmd_cpp = f"{docker_command} ./check_cpp.sh"
+    cmd_py = f"{docker_command} ./check_py.sh"
+    cmd_shell = f"{docker_command} ./check_shell.sh"
 
     with ProcessPoolExecutor(max_workers=2) as executor:
         logging.info("Run docs files check: %s", cmd_docs)
@@ -141,26 +159,22 @@ def main():
         # Parallelization  does not make it faster - run subsequently
         _ = future.result()
 
-        run_cppcheck = True
-        run_pycheck = True
-        if CI and pr_info.number > 0:
-            pr_info.fetch_changed_files()
-            if not any(file.endswith(".py") for file in pr_info.changed_files):
-                run_pycheck = False
-            if all(file.endswith(".py") for file in pr_info.changed_files):
-                run_cppcheck = False
-
-        if run_cppcheck:
+        if run_cpp_check:
             logging.info("Run source files check: %s", cmd_cpp)
-            future1 = executor.submit(subprocess.run, cmd_cpp, shell=True)
-            _ = future1.result()
+            future = executor.submit(subprocess.run, cmd_cpp, shell=True)
+            _ = future.result()
 
-        if run_pycheck:
+        if run_python_check:
             logging.info("Run py files check: %s", cmd_py)
-            future2 = executor.submit(subprocess.run, cmd_py, shell=True)
-            _ = future2.result()
-            if args.push:
-                commit_push_staged(pr_info)
+            future = executor.submit(subprocess.run, cmd_py, shell=True)
+            _ = future.result()
+        if run_shell_check:
+            logging.info("Run shellcheck check: %s", cmd_shell)
+            future = executor.submit(subprocess.run, cmd_shell, shell=True)
+            _ = future.result()
+
+    if args.push:
+        commit_push_staged(pr_info)
 
     subprocess.check_call(
         f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
