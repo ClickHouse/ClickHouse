@@ -1163,7 +1163,9 @@ class ClickHouseCluster:
         ]
         return self.base_postgres_cmd
 
-    def setup_postgres_and_postgres11_cmd(self, instance, env_variables, docker_compose_yml_dir):
+    def setup_postgres_and_postgres11_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
         self.base_cmd.extend(
             [
                 "--file",
@@ -1843,7 +1845,12 @@ class ClickHouseCluster:
                 )
             )
 
-        if with_postgres and not self.with_postgres and with_postgres11 and not self.with_postgres11:
+        if (
+            with_postgres
+            and not self.with_postgres
+            and with_postgres11
+            and not self.with_postgres11
+        ):
             cmds.append(
                 self.setup_postgres_and_postgres11_cmd(
                     instance, env_variables, docker_compose_yml_dir
