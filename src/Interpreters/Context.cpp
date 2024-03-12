@@ -909,7 +909,12 @@ String Context::getFilesystemCacheUser() const
 StoragePtr Context::getOrCacheStorage(const String & name, std::function<StoragePtr()> f) const
 {
     if (auto storage = storage_cache.find(name); storage != storage_cache.end())
-        return storage->second;
+    {
+        if (auto storage_ptr = storage->second.lock(); storage_ptr)
+            return storage_ptr;
+        else
+            storage_cache.erase(storage);
+    }
     auto storage = f();
     if (storage)
         storage_cache.insert({name, storage});
