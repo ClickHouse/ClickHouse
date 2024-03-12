@@ -142,7 +142,7 @@ def set_capacity(
 
         logging.info(
             "The ASG %s capacity will be increased to %s, current capacity=%s, "
-            "effective capacity=%sm maximum capacity=%s, running jobs=%s, queue size=%s",
+            "effective capacity=%s, maximum capacity=%s, running jobs=%s, queue size=%s",
             asg["AutoScalingGroupName"],
             desired_capacity,
             effective_capacity,
