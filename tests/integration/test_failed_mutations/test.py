@@ -116,17 +116,24 @@ def test_exponential_backoff_create_dependent_table(started_cluster):
     )
 
     # Creating dependent table for mutation.
-    node_with_backoff.query("CREATE TABLE dep_table(x UInt32) ENGINE MergeTree() ORDER BY x")
+    node_with_backoff.query(
+        "CREATE TABLE dep_table(x UInt32) ENGINE MergeTree() ORDER BY x"
+    )
 
     retry_count = 100
     no_unfinished_mutation = False
     for _ in range(0, retry_count):
-        if node_with_backoff.query("SELECT count() FROM system.mutations WHERE is_done=0") == "0\n":
+        if (
+            node_with_backoff.query(
+                "SELECT count() FROM system.mutations WHERE is_done=0"
+            )
+            == "0\n"
+        ):
             no_unfinished_mutation = True
             break
 
     assert no_unfinished_mutation
-    node_with_backoff   .query("DROP TABLE IF EXISTS dep_table SYNC")
+    node_with_backoff.query("DROP TABLE IF EXISTS dep_table SYNC")
 
 
 def test_exponential_backoff_setting_override(started_cluster):
