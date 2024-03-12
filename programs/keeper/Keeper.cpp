@@ -625,15 +625,23 @@ try
     main_config_reloader->start();
 
     std::optional<CgroupsMemoryUsageObserver> observer;
-    auto cgroups_memory_observer_wait_time = config().getUInt64("keeper_server.cgroups_memory_observer_wait_time", 1);
-    if (cgroups_memory_observer_wait_time > 0)
+    auto cgroups_memory_observer_wait_time = config().getUInt64("keeper_server.cgroups_memory_observer_wait_time", 15);
+    if (cgroups_memory_observer_wait_time != 0)
     {
-        observer.emplace(std::chrono::seconds(cgroups_memory_observer_wait_time));
-        observer->startThread();
-        observer->setOnMemoryLimitUpdate([&]()
+        try
         {
-            main_config_reloader->reload();
-        });
+            observer.emplace(std::chrono::seconds(cgroups_memory_observer_wait_time));
+            observer->setOnMemoryLimitUpdate([&]()
+            {
+                main_config_reloader->reload();
+            });
+            observer->startThread();
+        }
+        catch (Exception &)
+        {
+            tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
+        }
+
     }
 
 

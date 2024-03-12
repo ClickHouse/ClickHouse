@@ -27,10 +27,8 @@ public:
     ~CgroupsMemoryUsageObserver();
 
     void setLimits(uint64_t hard_limit_, uint64_t soft_limit_);
-    void setOnMemoryLimitUpdate(std::function<void()> on_memory_limit_update_)
-    {
-        on_memory_limit_update = on_memory_limit_update_;
-    }
+    using UpdateMemLimitCallbackFn = std::function<void()>;
+    void setOnMemoryLimitUpdate(UpdateMemLimitCallbackFn on_memory_limit_update_);
     void startThread();
 
     size_t getHardLimit() const { return hard_limit; }
@@ -49,7 +47,7 @@ private:
     using CallbackFn = std::function<void(bool)>;
     CallbackFn on_hard_limit;
     CallbackFn on_soft_limit;
-    std::function<void()> on_memory_limit_update;
+    UpdateMemLimitCallbackFn on_memory_limit_update;
 
     uint64_t last_usage = 0;
 
@@ -80,7 +78,7 @@ private:
     std::condition_variable cond;
     ThreadFromGlobalPool thread;
     bool quit = false;
-    uint64_t last_memory_amount;
+    uint64_t last_process_memory_amount;
 };
 
 #else

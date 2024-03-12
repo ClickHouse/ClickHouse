@@ -97,6 +97,12 @@ void CgroupsMemoryUsageObserver::setLimits(uint64_t hard_limit_, uint64_t soft_l
     LOG_INFO(log, "Set new limits, soft limit: {}, hard limit: {}", ReadableSize(soft_limit_), ReadableSize(hard_limit_));
 }
 
+void CgroupsMemoryUsageObserver::setOnMemoryLimitUpdate(UpdateMemLimitCallbackFn on_memory_limit_update_)
+{
+    std::lock_guard<std::mutex> set_limit_lock(set_limit_mutex);
+    on_memory_limit_update = on_memory_limit_update_;
+}
+
 uint64_t CgroupsMemoryUsageObserver::readMemoryUsage() const
 {
     return file.readMemoryUsage();
@@ -275,7 +281,10 @@ void CgroupsMemoryUsageObserver::stopThread()
 void CgroupsMemoryUsageObserver::runThread()
 {
     setThreadName("CgrpMemUsgObsr");
-    last_memory_amount = getMemoryAmount();
+
+    last_process_memory_amount = getMemoryAmount();
+    LOG_INFO(log, "Init memory amount is {} bytes", last_process_memory_amount);
+
     std::unique_lock lock(thread_mutex);
     while (true)
     {
@@ -284,10 +293,11 @@ void CgroupsMemoryUsageObserver::runThread()
 
         try
         {
-            uint64_t memory_limit = getMemoryAmount();
-            if (memory_limit != last_memory_amount)
+            uint64_t process_memory_limit = getMemoryAmount();
+            if (process_memory_limit != last_process_memory_amount)
             {
-                last_memory_amount = memory_limit;
+                LOG_INFO(log, "Find memory amount change, old limit is {} bytes, new limit is {} bytes", last_process_memory_amount, process_memory_limit);
+                last_process_memory_amount = process_memory_limit;
                 /// if we find memory amount changes, we just reload config.
                 /// Reloading config will check the memory amount again and calculate soft/hard limit again.
                 on_memory_limit_update();

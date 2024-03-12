@@ -1362,7 +1362,6 @@ try
                 cgroups_memory_usage_observer->setLimits(
                     static_cast<uint64_t>(max_server_memory_usage * hard_limit_ratio),
                     static_cast<uint64_t>(max_server_memory_usage * soft_limit_ratio));
-                cgroups_memory_usage_observer->startThread();
             }
 
             size_t merges_mutations_memory_usage_soft_limit = new_server_settings.merges_mutations_memory_usage_soft_limit;
@@ -1707,6 +1706,7 @@ try
         {
             main_config_reloader->reload();
         });
+        cgroups_memory_usage_observer->startThread();
     }
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
