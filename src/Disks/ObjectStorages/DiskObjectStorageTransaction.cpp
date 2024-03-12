@@ -24,7 +24,6 @@ extern const int CANNOT_READ_ALL_DATA;
 extern const int CANNOT_OPEN_FILE;
 extern const int FILE_DOESNT_EXIST;
 extern const int BAD_FILE_TYPE;
-extern const int FILE_ALREADY_EXISTS;
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(

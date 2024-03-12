@@ -23,9 +23,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
-#include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/MergeTree/TemporaryParts.h>
@@ -752,7 +750,6 @@ public:
       */
     PartitionCommandsResultInfo freezePartition(
         const ASTPtr & partition,
-        const StorageMetadataPtr & metadata_snapshot,
         const String & with_name,
         ContextPtr context,
         TableLockHolder & table_lock_holder);
@@ -760,7 +757,6 @@ public:
     /// Freezes all parts.
     PartitionCommandsResultInfo freezeAll(
         const String & with_name,
-        const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
@@ -1313,7 +1309,7 @@ protected:
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Common part for |freezePartition()| and |freezeAll()|.
-    PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, ContextPtr context);
+    PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, ContextPtr context);
     PartitionCommandsResultInfo unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr context);
 
     // Partition helpers
