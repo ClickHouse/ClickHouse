@@ -67,22 +67,29 @@ def test_different_types(cluster):
 
 def test_select_by_type(cluster):
     node = cluster.instances["node"]
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
-
     for name, disk_type in list(disk_types.items()):
-        if disk_type != "S3":
+        if disk_type == "Local":
             assert (
                 node.query(
                     "SELECT name FROM system.disks WHERE type='" + disk_type + "'"
                 )
                 == name + "\n"
             )
-        else:
+        elif disk_type == "S3":
             assert (
                 node.query(
-                    "SELECT name FROM system.disks WHERE type='"
+                    "SELECT name FROM system.disks WHERE object_storage_type='"
                     + disk_type
                     + "' ORDER BY name"
                 )
                 == "disk_encrypted\ndisk_s3\n"
+            )
+        else:
+            assert (
+                node.query(
+                    "SELECT name FROM system.disks WHERE object_storage_type='"
+                    + disk_type
+                    + "'"
+                )
+                == name + "\n"
             )
