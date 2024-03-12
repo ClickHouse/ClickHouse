@@ -349,7 +349,7 @@ SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_
 After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands. The following modifiers are supported:
 
  - If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
- - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.  
+ - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
    Additionally, the LIGHTWEIGHT modifier supports an optional FROM 'srcReplicas' clause, where 'srcReplicas' is a comma-separated list of source replica names. This extension allows for more targeted synchronization by focusing only on replication tasks originating from the specified source replicas.
  - If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
 
@@ -489,6 +489,10 @@ Trigger an immediate out-of-schedule refresh of a given view.
 SYSTEM REFRESH VIEW [db.]name
 ```
 
+### SYSTEM REFRESH VIEW
+
+Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
+
 ### SYSTEM STOP VIEW, SYSTEM STOP VIEWS
 
 Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too.
@@ -517,4 +521,14 @@ If there's a refresh in progress for the given view, interrupt and cancel it. Ot
 
 ```sql
 SYSTEM CANCEL VIEW [db.]name
+```
+
+### SYSTEM WAIT VIEW
+
+Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
+
+Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
+
+```sql
+SYSTEM WAIT VIEW [db.]name
 ```

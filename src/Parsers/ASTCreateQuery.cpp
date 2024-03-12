@@ -252,6 +252,8 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->dictionary, dictionary->clone());
     }
 
+    if (refresh_strategy)
+        res->set(res->refresh_strategy, refresh_strategy->clone());
     if (as_table_function)
         res->set(res->as_table_function, as_table_function->clone());
     if (comment)
@@ -546,7 +548,8 @@ ASTCreateQuery::UUIDs ASTCreateQuery::generateRandomUUID(bool always_generate_ne
 
     /// If destination table (to_table_id) is not specified for materialized view,
     /// then MV will create inner table. We should generate UUID of inner table here.
-    bool need_uuid_for_inner_table = !attach && is_materialized_view && !to_table_id;
+    /// An exception is refreshable MV that replaces inner table by renaming, changing UUID on each refresh.
+    bool need_uuid_for_inner_table = !attach && is_materialized_view && !to_table_id && !(refresh_strategy && !refresh_strategy->append);
     if (need_uuid_for_inner_table && (to_inner_uuid == UUIDHelpers::Nil))
         to_inner_uuid = UUIDHelpers::generateV4();
 

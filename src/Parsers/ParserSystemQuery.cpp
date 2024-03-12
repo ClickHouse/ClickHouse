@@ -403,6 +403,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
 
         case Type::REFRESH_VIEW:
+        case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::STOP_VIEW:
         case Type::CANCEL_VIEW:

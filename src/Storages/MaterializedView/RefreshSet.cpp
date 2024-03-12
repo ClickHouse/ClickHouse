@@ -73,7 +73,7 @@ void RefreshSet::Handle::reset()
 
 RefreshSet::RefreshSet() = default;
 
-RefreshSet::Handle RefreshSet::emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskHolder task)
+RefreshSet::Handle RefreshSet::emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task)
 {
     std::lock_guard guard(mutex);
     auto [it, is_inserted] = tasks.emplace(id, task);
@@ -101,7 +101,7 @@ void RefreshSet::removeDependenciesLocked(const StorageID & id, const std::vecto
     }
 }
 
-RefreshTaskHolder RefreshSet::getTask(const StorageID & id) const
+RefreshTaskPtr RefreshSet::getTask(const StorageID & id) const
 {
     std::lock_guard lock(mutex);
     if (auto task = tasks.find(id); task != tasks.end())
@@ -109,29 +109,29 @@ RefreshTaskHolder RefreshSet::getTask(const StorageID & id) const
     return nullptr;
 }
 
-RefreshSet::InfoContainer RefreshSet::getInfo() const
+std::vector<RefreshTaskPtr> RefreshSet::getTasks() const
 {
     std::unique_lock lock(mutex);
-    auto tasks_copy = tasks;
-    lock.unlock();
-
-    InfoContainer res;
-    for (auto [id, task] : tasks_copy)
-        res.push_back(task->getInfo());
+    std::vector<RefreshTaskPtr> res;
+    for (const auto & [_, t] : tasks)
+        res.push_back(t);
     return res;
 }
 
-std::vector<RefreshTaskHolder> RefreshSet::getDependents(const StorageID & id) const
+void RefreshSet::notifyDependents(const StorageID & id) const
 {
-    std::lock_guard lock(mutex);
-    std::vector<RefreshTaskHolder> res;
-    auto it = dependents.find(id);
-    if (it == dependents.end())
-        return {};
-    for (const StorageID & dep_id : it->second)
-        if (auto task = tasks.find(dep_id); task != tasks.end())
-            res.push_back(task->second);
-    return res;
+    std::vector<RefreshTaskPtr> res;
+    {
+        std::lock_guard lock(mutex);
+        auto it = dependents.find(id);
+        if (it == dependents.end())
+            return;
+        for (const StorageID & dep_id : it->second)
+            if (auto task = tasks.find(dep_id); task != tasks.end())
+                res.push_back(task->second);
+    }
+    for (const RefreshTaskPtr & t : res)
+        t->notifyDependencyProgress();
 }
 
 RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, std::vector<StorageID> dependencies_)

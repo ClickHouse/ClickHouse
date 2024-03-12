@@ -1421,6 +1421,8 @@ KeeperMultiException::KeeperMultiException(Coordination::Error exception_code, s
           requests(requests_), responses(responses_), failed_op_index(failed_op_index_)
 {
     addMessage(getPathForFirstFailedOp());
+    if (failed_op_index < responses.size())
+        addMessage(Coordination::errorMessage(responses[failed_op_index]->error));
 }
 
 KeeperMultiException::KeeperMultiException(Coordination::Error exception_code, const Coordination::Requests & requests_, const Coordination::Responses & responses_)

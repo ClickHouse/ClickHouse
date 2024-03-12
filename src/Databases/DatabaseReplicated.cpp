@@ -1341,7 +1341,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
+    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id.") || startsWith(table_name, ".tmp.inner_id."));
     if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
