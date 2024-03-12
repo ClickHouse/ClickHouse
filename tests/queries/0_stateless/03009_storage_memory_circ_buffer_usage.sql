@@ -1,6 +1,5 @@
 DROP TABLE IF EXISTS memory;
-CREATE TABLE memory (i UInt32) ENGINE = Memory;
-SET min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;
 
 /* TESTING BYTES */
 /* 1. testing oldest block doesn't get deleted because of min-threshold */
@@ -19,9 +18,8 @@ SELECT total_bytes FROM system.tables WHERE name = 'memory' and database = curre
 INSERT INTO memory SELECT * FROM numbers(9000, 10000);
 SELECT total_bytes FROM system.tables WHERE name = 'memory' and database = currentDatabase();
 
-
-truncate memory;
-SET min_rows_to_keep = 100, max_rows_to_keep = 1000;
+DROP TABLE IF EXISTS memory;
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100, max_rows_to_keep = 1000;
 
 /* TESTING ROWS */
 /* 1. add normal number of rows */
@@ -40,8 +38,24 @@ SELECT total_rows FROM system.tables WHERE name = 'memory' and database = curren
 INSERT INTO memory SELECT * FROM numbers(3000, 1100);
 SELECT total_rows FROM system.tables WHERE name = 'memory' and database = currentDatabase();
 
-/* test invalid settings */
-SET min_bytes_to_keep = 4096, max_bytes_to_keep = 0;
-INSERT INTO memory SELECT * FROM numbers(3000, 1100); -- { serverError 452 }
+/* TESTING NO CIRCULAR-BUFFER */
+DROP TABLE IF EXISTS memory;
+CREATE TABLE memory (i UInt32) ENGINE = Memory;
+
+INSERT INTO memory SELECT * FROM numbers(0, 1600);
+SELECT total_bytes FROM system.tables WHERE name = 'memory' and database = currentDatabase();
+
+INSERT INTO memory SELECT * FROM numbers(1000, 100);
+SELECT total_bytes FROM system.tables WHERE name = 'memory' and database = currentDatabase();
+
+INSERT INTO memory SELECT * FROM numbers(9000, 1000);
+SELECT total_bytes FROM system.tables WHERE name = 'memory' and database = currentDatabase();
+
+INSERT INTO memory SELECT * FROM numbers(9000, 10000);
+SELECT total_bytes FROM system.tables WHERE name = 'memory' and database = currentDatabase();
+
+/* TESTING INVALID SETTINGS */
+CREATE TABLE faulty_memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100;  -- { serverError 452 }
+CREATE TABLE faulty_memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 100; -- { serverError 452 }
 
 DROP TABLE memory;

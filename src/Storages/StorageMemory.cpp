@@ -55,11 +55,10 @@ public:
     MemorySink(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        ContextPtr context_)
+        ContextPtr context)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
-        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context_))
-        , context(context_)
+        , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
     {
     }
 
@@ -102,25 +101,20 @@ public:
             inserted_rows += block.rows();
         }
 
-        Settings settings = context->getSettings();
-        if ((settings.min_bytes_to_keep && settings.min_bytes_to_keep > settings.max_bytes_to_keep)
-            || (settings.min_rows_to_keep && settings.min_rows_to_keep > settings.max_rows_to_keep))
-            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Min. bytes / rows must be set with a max.");
-
         std::lock_guard lock(storage.mutex);
 
         auto new_data = std::make_unique<Blocks>(*(storage.data.get()));
         UInt64 new_total_rows = storage.total_size_rows.load(std::memory_order_relaxed) + inserted_rows;
         UInt64 new_total_bytes = storage.total_size_bytes.load(std::memory_order_relaxed) + inserted_bytes;
         while (!new_data->empty()
-               && ((settings.max_bytes_to_keep && new_total_bytes > settings.max_bytes_to_keep)
-                   || (settings.max_rows_to_keep && new_total_rows > settings.max_rows_to_keep)))
+               && ((storage.max_bytes_to_keep && new_total_bytes > storage.max_bytes_to_keep)
+                   || (storage.max_rows_to_keep && new_total_rows > storage.max_rows_to_keep)))
         {
             Block oldest_block = new_data->front();
             UInt64 rows_to_remove = oldest_block.rows();
             UInt64 bytes_to_remove = oldest_block.allocatedBytes();
-            if (new_total_bytes - bytes_to_remove < settings.min_bytes_to_keep
-                || new_total_rows - rows_to_remove < settings.min_rows_to_keep)
+            if (new_total_bytes - bytes_to_remove < storage.min_bytes_to_keep
+                || new_total_rows - rows_to_remove < storage.min_rows_to_keep)
             {
                 break; // stop - removing next block will put us under min_bytes / min_rows threshold
             }
@@ -143,7 +137,6 @@ private:
     Blocks new_blocks;
     StorageMemory & storage;
     StorageSnapshotPtr storage_snapshot;
-    ContextPtr context;
 };
 
 
@@ -152,8 +145,10 @@ StorageMemory::StorageMemory(
     ColumnsDescription columns_description_,
     ConstraintsDescription constraints_,
     const String & comment,
-    bool compress_)
-    : IStorage(table_id_), data(std::make_unique<const Blocks>()), compress(compress_)
+    const MemorySettings & settings)
+    : IStorage(table_id_), data(std::make_unique<const Blocks>()), compress(settings.compress),
+    min_rows_to_keep(settings.min_rows_to_keep), max_rows_to_keep(settings.max_rows_to_keep),
+    min_bytes_to_keep(settings.min_bytes_to_keep), max_bytes_to_keep(settings.max_bytes_to_keep)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
@@ -571,7 +566,11 @@ void registerStorageMemory(StorageFactory & factory)
         if (has_settings)
             settings.loadFromQuery(*args.storage_def);
 
-        return std::make_shared<StorageMemory>(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
+        if (settings.min_bytes_to_keep > settings.max_bytes_to_keep
+            || settings.min_rows_to_keep > settings.max_rows_to_keep)
+            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Min. bytes / rows must be set with a max.");
+
+        return std::make_shared<StorageMemory>(args.table_id, args.columns, args.constraints, args.comment, settings);
     },
     {
         .supports_settings = true,
