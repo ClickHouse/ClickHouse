@@ -25,7 +25,7 @@ alter table forget_partition drop partition '20240101';
 alter table forget_partition drop partition '20240102';
 """
 
-# DROP PARTITION do not wait for a part to be removed from memory due to possible concurrent SELECTs, so we have to do waitg manually here
+# DROP PARTITION do not wait for a part to be removed from memory due to possible concurrent SELECTs, so we have to do wait manually here
 #${CLICKHOUSE_CLIENT} -q "select * from system.parts where database=currentDatabase() and table='forget_partition' and (partition='20240101' or partition='20240102') FORMAT Vertical"
 while [[ $(${CLICKHOUSE_CLIENT} -q "select count() from system.parts where database=currentDatabase() and table='forget_partition' and partition='20240101'") != 0 ]]; do sleep 0.1; done
 
