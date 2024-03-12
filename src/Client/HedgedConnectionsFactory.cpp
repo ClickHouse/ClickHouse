@@ -19,7 +19,6 @@ namespace ErrorCodes
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ALL_REPLICAS_ARE_STALE;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 HedgedConnectionsFactory::HedgedConnectionsFactory(
