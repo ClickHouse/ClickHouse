@@ -51,7 +51,7 @@ class Queue:
     label: str
 
 
-def get_scales() -> Tuple[int, int]:
+def get_scales(runner_type: str) -> Tuple[int, int]:
     "returns the multipliers for scaling down and up ASG by types"
     # Scaling down is quicker on the lack of running jobs than scaling up on
     # queue
@@ -63,8 +63,12 @@ def get_scales() -> Tuple[int, int]:
     # 10. I am trying 7 now.
     # 7 still looks a bit slow, so I try 6
     # Let's have it the same as the other ASG
+    #
+    # All type of style-checkers should be added very quickly to not block the workflows
     # UPDATE THE COMMENT ON CHANGES
     scale_up = 3
+    if "style" in runner_type:
+        scale_up = 1
     return scale_down, scale_up
 
 
@@ -95,7 +99,7 @@ def set_capacity(
             continue
         raise ValueError("Queue status is not in ['in_progress', 'queued']")
 
-    scale_down, scale_up = get_scales()
+    scale_down, scale_up = get_scales(runner_type)
     # With lyfecycle hooks some instances are actually free because some of
     # them are in 'Terminating:Wait' state
     effective_capacity = max(
