@@ -18,19 +18,19 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
     {
-        {"name", std::make_shared<DataTypeString>()},
-        {"path", std::make_shared<DataTypeString>()},
-        {"free_space", std::make_shared<DataTypeUInt64>()},
-        {"total_space", std::make_shared<DataTypeUInt64>()},
-        {"unreserved_space", std::make_shared<DataTypeUInt64>()},
-        {"keep_free_space", std::make_shared<DataTypeUInt64>()},
-        {"type", std::make_shared<DataTypeString>()},
-        {"is_encrypted", std::make_shared<DataTypeUInt8>()},
-        {"is_read_only", std::make_shared<DataTypeUInt8>()},
-        {"is_write_once", std::make_shared<DataTypeUInt8>()},
-        {"is_remote", std::make_shared<DataTypeUInt8>()},
-        {"is_broken", std::make_shared<DataTypeUInt8>()},
-        {"cache_path", std::make_shared<DataTypeString>()},
+        {"name", std::make_shared<DataTypeString>(), "Name of a disk in the server configuration."},
+        {"path", std::make_shared<DataTypeString>(), "Path to the mount point in the file system."},
+        {"free_space", std::make_shared<DataTypeUInt64>(), "Free space on disk in bytes."},
+        {"total_space", std::make_shared<DataTypeUInt64>(), "Disk volume in bytes."},
+        {"unreserved_space", std::make_shared<DataTypeUInt64>(), "Free space which is not taken by reservations (free_space minus the size of reservations taken by merges, inserts, and other disk write operations currently running)."},
+        {"keep_free_space", std::make_shared<DataTypeUInt64>(), "Amount of disk space that should stay free on disk in bytes. Defined in the keep_free_space_bytes parameter of disk configuration."},
+        {"type", std::make_shared<DataTypeString>(), "The disk type which tells where this disk stores the data - RAM, local drive or remote storage."},
+        {"is_encrypted", std::make_shared<DataTypeUInt8>(), "Flag which shows whether this disk ecrypts the underlying data. "},
+        {"is_read_only", std::make_shared<DataTypeUInt8>(), "Flag which indicates that you can only perform read operations with this disk."},
+        {"is_write_once", std::make_shared<DataTypeUInt8>(), "Flag which indicates if disk is write-once. Which means that it does support BACKUP to this disk, but does not support INSERT into MergeTree table on this disk."},
+        {"is_remote", std::make_shared<DataTypeUInt8>(), "Flag which indicated what operations with this disk involve network interaction."},
+        {"is_broken", std::make_shared<DataTypeUInt8>(), "Flag which indicates if disk is broken. Broken disks will have 0 space and cannot be used."},
+        {"cache_path", std::make_shared<DataTypeString>(), "The path to the cache directory on local drive in case when the disk supports caching."},
     }));
     setInMemoryMetadata(storage_metadata);
 }

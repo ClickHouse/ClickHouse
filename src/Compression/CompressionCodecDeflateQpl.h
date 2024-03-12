@@ -65,10 +65,8 @@ class HardwareCodecDeflateQpl
 public:
     /// RET_ERROR stands for hardware codec fail, needs fallback to software codec.
     static constexpr Int32 RET_ERROR = -1;
-    /// Maximum times to check if hardware job complete, otherwise fallback to software codec.
-    static constexpr UInt32 MAX_CHECKS = UINT16_MAX;
 
-    HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl & sw_codec_);
+    explicit HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl & sw_codec_);
     ~HardwareCodecDeflateQpl();
 
     Int32 doCompressData(const char * source, UInt32 source_size, char * dest, UInt32 dest_size) const;

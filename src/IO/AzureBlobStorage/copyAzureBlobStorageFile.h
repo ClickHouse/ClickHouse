@@ -6,7 +6,7 @@
 
 #include <Storages/StorageAzureBlobCluster.h>
 #include <Storages/StorageAzureBlob.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <base/types.h>
 #include <functional>
 #include <memory>
