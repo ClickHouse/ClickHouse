@@ -374,6 +374,7 @@ void LRUFileCachePriority::LRUIterator::invalidate()
         "Invalidating entry in LRU queue. Key: {}, offset: {}, previous size: {}",
         entry->key, entry->offset, entry->size);
 
+    chassert(entry->size != 0);
     cache_priority->updateSize(-entry->size);
     cache_priority->updateElementsCount(-1);
     entry->size = 0;
