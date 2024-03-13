@@ -116,6 +116,8 @@ XML substitution example:
 
 Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node, and it will be fully inserted into the source element.
 
+If you want to merge substitution content with existing configuration instead of append you can use attribute `merge="true`, for example: `<include from_zk="/some_path" merge="true">`. In this case existing configuration will be merged with content from substituion and existing configuration settings will be replaced with values from substituion.
+
 ## Encrypting and Hiding Configuration {#encryption}
 
 You can use symmetric encryption to encrypt a configuration element, for example, a plaintext password or private key. To do so, first configure the [encryption codec](../sql-reference/statements/create/table.md#encryption-codecs), then add attribute `encrypted_by` with the name of the encryption codec as value to the element to encrypt.
