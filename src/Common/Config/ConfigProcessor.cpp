@@ -427,6 +427,7 @@ void ConfigProcessor::doIncludesRecursive(
 
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
+    /// Merge with the original contents
     bool merge = attributes->getNamedItem("merge");
 
     bool included_something = false;
