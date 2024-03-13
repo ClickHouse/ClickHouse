@@ -3,7 +3,9 @@ from helpers.cluster import ClickHouseCluster
 import logging
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", main_configs=["configs/overrides.xml", "configs/clusters.xml"])
+node = cluster.add_instance(
+    "node", main_configs=["configs/overrides.xml", "configs/clusters.xml"]
+)
 
 
 @pytest.fixture(scope="module")
