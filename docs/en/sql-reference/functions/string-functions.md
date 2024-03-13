@@ -688,7 +688,7 @@ SELECT substringIndexUTF8('www.straßen-in-europa.de', '.', 2)
 ```
 
 ```response
-www.clickhouse
+www.straßen-in-europa
 ```
 
 ## appendTrailingCharIfAbsent
