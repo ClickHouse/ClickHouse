@@ -1309,14 +1309,14 @@ struct ConvertImpl
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::execute(
-                arguments, result_type, input_rows_count);
+                arguments, result_type, input_rows_count, additions);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
             && std::is_same_v<ToDataType, DataTypeDateTime64>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::execute(
-                arguments, result_type, input_rows_count);
+                arguments, result_type, input_rows_count, additions);
         }
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeFloat32>
@@ -1325,7 +1325,7 @@ struct ConvertImpl
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::execute(
-                arguments, result_type, input_rows_count);
+                arguments, result_type, input_rows_count, additions);
         }
         /// Conversion of DateTime64 to Date or DateTime: discards fractional part.
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
@@ -1351,7 +1351,7 @@ struct ConvertImpl
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::execute(
-                arguments, result_type, input_rows_count);
+                arguments, result_type, input_rows_count, additions);
         }
         else if constexpr (IsDataTypeDateOrDateTime<FromDataType>
             && std::is_same_v<ToDataType, DataTypeString>)
