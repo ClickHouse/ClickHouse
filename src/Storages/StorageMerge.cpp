@@ -1063,7 +1063,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             get_column_options.withSubcolumns();
 
         LOG_DEBUG(&Poco::Logger::get("createSources"), "Processed:{}\nStorage:{}", toString(processed_stage), toString(storage_stage));
-        
+
         String table_alias;
         if (allow_experimental_analyzer)
             table_alias = modified_query_info.query_tree->as<QueryNode>()->getJoinTree()->as<TableNode>()->getAlias();
