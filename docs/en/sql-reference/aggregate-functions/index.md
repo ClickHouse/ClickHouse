@@ -18,6 +18,10 @@ ClickHouse also supports:
 
 During aggregation, all `NULL`s are skipped. If the aggregation has several parameters it will ignore any row in which one or more of the parameters are NULL.
 
+There are a few exceptions to this rule:
+  - Both [`first_value`](../../sql-reference/aggregate-functions/reference/first_value.md) and [`last_value`](../../sql-reference/aggregate-functions/reference/last_value.md) support modifiers that respect NULLs (`first_value(b) ignore nulls`).
+  - [`count`](../../sql-reference/aggregate-functions/reference/count.md) without parameters (`count()`) or with constant ones (`count(1)`) will count NULL rows too. With a column as parameter, it will count only not null values.
+
 **Examples:**
 
 Consider this table:
