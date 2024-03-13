@@ -66,13 +66,13 @@ protected:
         UInt64 * pos = vec.data(); /// This also accelerates the code.
 
         UInt64 * current_end = &vec[real_block_size];
-        if (step > 1)
+        if (step == 1)
         {
-            iota_with_step(pos, static_cast<size_t>(current_end - pos), curr, step);
+            iota(pos, static_cast<size_t>(current_end - pos), curr);
         }
         else
         {
-            iota(pos, static_cast<size_t>(current_end - pos), curr);
+            iota_with_step(pos, static_cast<size_t>(current_end - pos), curr, step);
         }
 
         next += chunk_step;
@@ -286,7 +286,14 @@ protected:
                     auto start_value_64 = static_cast<UInt64>(start_value);
                     auto end_value_64 = static_cast<UInt64>(end_value);
                     auto size = (end_value_64 - start_value_64) / this->step;
-                    iota_with_step(pos, static_cast<size_t>(size), start_value_64, step);
+                    if (step == 1)
+                    {
+                        iota(pos, static_cast<size_t>(size), start_value_64);
+                    }
+                    else
+                    {
+                        iota_with_step(pos, static_cast<size_t>(size), start_value_64, step);
+                    }
                     pos += size;
                 }
             };
@@ -295,9 +302,15 @@ protected:
             {
                 UInt64 start_value = range.left + cursor.offset_in_range * step;
                 /// end_value will never overflow
-                iota_with_step(pos, static_cast<size_t>(need), start_value, step);
+                if (step == 1)
+                {
+                    iota(pos, static_cast<size_t>(need), start_value);
+                }
+                else
+                {
+                    iota_with_step(pos, static_cast<size_t>(need), start_value, step);
+                }
                 pos += need;
-
                 provided += need;
                 cursor.offset_in_range += need;
             }
