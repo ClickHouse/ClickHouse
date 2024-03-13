@@ -1862,19 +1862,13 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
         return {finalizeBlock(params, getHeader(final), std::move(out_cols), final, rows)};
     }
     ConvertToBlockResVariant res;
+    bool use_compiled_functions = false;
     if (final)
     {
 #if USE_EMBEDDED_COMPILER
-        if (compiled_aggregate_functions_holder)
-        {
-            static constexpr bool use_compiled_functions = !Method::low_cardinality_optimization;
-            res = convertToBlockImplFinal<Method>(method, data, arena, aggregates_pools, use_compiled_functions, true);
-        }
-        else
+        use_compiled_functions = compiled_aggregate_functions_holder != nullptr && !Method::low_cardinality_optimization;
 #endif
-        {
-            res = convertToBlockImplFinal<Method>(method, data, arena, aggregates_pools, false, return_single_block);
-        }
+        res = convertToBlockImplFinal<Method>(method, data, arena, aggregates_pools, use_compiled_functions, return_single_block);
     }
     else
     {
