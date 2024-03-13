@@ -1451,7 +1451,9 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
             auth_settings.expiration_window_seconds.value_or(
                 context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
             auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
-        });
+        },
+        "",
+        context->getSettingsRef().max_execution_time.totalMilliseconds());
 }
 
 void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)
