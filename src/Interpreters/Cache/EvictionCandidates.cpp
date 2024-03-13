@@ -59,7 +59,7 @@ void EvictionCandidates::evict()
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
 
             locked_key->removeFileSegment(segment->offset(), segment->lock());
-            queue_it->invalidate();
+            chassert(queue_it->getEntry()->size == 0);
 
             to_evict.pop_back();
         }
