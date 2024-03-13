@@ -1569,15 +1569,20 @@ struct ConvertImpl
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                         arguments[0].column->getName(), Name::name);
         }
+        else if constexpr (std::is_same_v<Name, NameToUnixTimestamp>
+            && std::is_same_v<FromDataType, DataTypeString>
+            && std::is_same_v<ToDataType, DataTypeUInt32>)
+        {
+            return ConvertImpl<FromDataType, DataTypeDateTime, Name, SpecialTag, date_time_overflow_behavior>::execute(
+                arguments, result_type, input_rows_count, additions);
+        }
         else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>)
-            && !std::is_same_v<ToDataType, DataTypeString>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal>::execute(
                 arguments, result_type, input_rows_count, additions);
         }
         else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>)
-            && !std::is_same_v<ToDataType, DataTypeString>
             && std::is_same_v<SpecialTag, ConvertReturnNullOnErrorTag>)
         {
             return ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal>::execute(
@@ -1589,12 +1594,6 @@ struct ConvertImpl
         {
             return ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::Normal>::execute(
                 arguments, result_type, input_rows_count, additions);
-        }
-        else if constexpr (std::is_same_v<Name, NameToUnixTimestamp>
-            && std::is_same_v<FromDataType, DataTypeString>
-            && std::is_same_v<ToDataType, DataTypeUInt32>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
-        {
         }
         else
         {
