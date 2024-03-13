@@ -39,10 +39,11 @@ def get_latest_mem_limit():
             time.sleep(1)
     raise Exception("Cannot get memory limit")
 
+
 def test_observe_memory_limit(started_cluster):
     original_max_mem = get_latest_mem_limit()
     logging.debug(f"get original memory limit {original_max_mem}")
-    run_and_check(['docker', 'update', '--memory=10g', node1.docker_id])
+    run_and_check(["docker", "update", "--memory=10g", node1.docker_id])
     for _ in range(30):
         time.sleep(10)
         new_max_mem = get_latest_mem_limit()
