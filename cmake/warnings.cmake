@@ -50,6 +50,8 @@ if (COMPILER_CLANG)
     no_warning(deprecated-declarations)
     no_warning(switch-default)
     no_warning(shadow-uncaptured-local)
+    no_warning(missing-field-initializers)
+    no_warning(shadow)
 elseif (COMPILER_GCC)
     # Add compiler options only to c++ compiler
     function(add_cxx_compile_options option)
