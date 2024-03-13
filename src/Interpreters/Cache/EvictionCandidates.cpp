@@ -70,11 +70,14 @@ void EvictionCandidates::finalize(FileCacheQueryLimit::QueryContext * query_cont
 {
     for (const auto & it : invalidated_queue_entries)
     {
+        /// Remove entry from per query priority queue.
         if (query_context)
         {
             const auto & entry = it->getEntry();
             query_context->remove(entry->key, entry->offset, lock);
         }
+
+        /// Remove entry from main priority queue.
         it->remove(lock);
     }
 

@@ -218,6 +218,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         }
         /// Make space for "downgrade" candidates.
         eviction_candidates.evict();
+        eviction_candidates.finalize(nullptr, lock);
     }
 
     /// All checks passed, now we can move downgrade candidates to
