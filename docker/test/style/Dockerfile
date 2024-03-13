@@ -60,5 +60,4 @@ RUN arch=${TARGETARCH:-amd64} \
 
 
 COPY run.sh /
-COPY process_style_check_result.py /
 CMD ["/bin/bash", "/run.sh"]
