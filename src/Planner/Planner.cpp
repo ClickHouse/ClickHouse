@@ -1081,7 +1081,9 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     for (auto & subquery : subqueries)
     {
         auto query_tree = subquery->detachQueryTree();
-        auto subquery_options = select_query_options.subquery();
+        /// I suppose it should be better to use all flags from select_query_options,
+        /// But for now it is done in the same way as in old analyzer.
+        auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, select_query_options.subquery_depth).subquery();
         Planner subquery_planner(
             query_tree,
             subquery_options,
