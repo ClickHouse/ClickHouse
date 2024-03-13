@@ -1,6 +1,7 @@
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Context.h>
 #include <IO/SwapHelper.h>
 #include <IO/ReadBufferFromFile.h>
 
@@ -32,6 +33,11 @@ WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment
     , file_segment(&segment_holder_->front())
     , segment_holder(std::move(segment_holder_))
 {
+    auto query_context = CurrentThread::getQueryContext();
+    if (query_context)
+        reserve_space_lock_wait_timeout_milliseconds = query_context->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    else
+        reserve_space_lock_wait_timeout_milliseconds = Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 }
 
 /// If it throws an exception, the file segment will be incomplete, so you should not use it in the future.
@@ -49,7 +55,7 @@ void WriteBufferToFileSegment::nextImpl()
     FileCacheReserveStat reserve_stat;
     /// In case of an error, we don't need to finalize the file segment
     /// because it will be deleted soon and completed in the holder's destructor.
-    bool ok = file_segment->reserve(bytes_to_write, &reserve_stat);
+    bool ok = file_segment->reserve(bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, &reserve_stat);
 
     if (!ok)
     {

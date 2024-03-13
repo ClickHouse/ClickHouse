@@ -777,12 +777,13 @@ bool FileCache::tryReserve(
     FileSegment & file_segment,
     const size_t size,
     FileCacheReserveStat & reserve_stat,
-    const UserInfo & user)
+    const UserInfo & user,
+    size_t lock_wait_timeout_milliseconds)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
 
     assertInitialized();
-    auto cache_lock = tryLockCache(std::chrono::milliseconds(FILECACHE_TRY_RESERVE_LOCK_TIMEOUT_MILLISECONDS));
+    auto cache_lock = tryLockCache(std::chrono::milliseconds(lock_wait_timeout_milliseconds));
     if (!cache_lock)
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
