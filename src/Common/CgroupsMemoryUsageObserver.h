@@ -44,10 +44,11 @@ private:
 
     const std::chrono::seconds wait_time;
 
+    std::mutex limit_mutex;
     using CallbackFn = std::function<void(bool)>;
     CallbackFn on_hard_limit;
     CallbackFn on_soft_limit;
-    UpdateMemLimitCallbackFn on_memory_limit_update;
+    UpdateMemLimitCallbackFn on_memory_limit_update TSA_GUARDED_BY(limit_mutex);
 
     uint64_t last_usage = 0;
 
@@ -74,7 +75,6 @@ private:
     void processMemoryUsage(uint64_t usage);
 
     std::mutex thread_mutex;
-    std::mutex set_limit_mutex;
     std::condition_variable cond;
     ThreadFromGlobalPool thread;
     bool quit = false;

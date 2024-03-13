@@ -49,7 +49,7 @@ CgroupsMemoryUsageObserver::~CgroupsMemoryUsageObserver()
 
 void CgroupsMemoryUsageObserver::setLimits(uint64_t hard_limit_, uint64_t soft_limit_)
 {
-    std::lock_guard<std::mutex> lock(set_limit_mutex);
+    std::lock_guard<std::mutex> lock(limit_mutex);
     if (hard_limit_ == hard_limit && soft_limit_ == soft_limit)
         return;
 
@@ -99,7 +99,7 @@ void CgroupsMemoryUsageObserver::setLimits(uint64_t hard_limit_, uint64_t soft_l
 
 void CgroupsMemoryUsageObserver::setOnMemoryLimitUpdate(UpdateMemLimitCallbackFn on_memory_limit_update_)
 {
-    std::lock_guard<std::mutex> set_limit_lock(set_limit_mutex);
+    std::lock_guard<std::mutex> set_limit_lock(limit_mutex);
     on_memory_limit_update = on_memory_limit_update_;
 }
 
@@ -298,11 +298,12 @@ void CgroupsMemoryUsageObserver::runThread()
             {
                 LOG_INFO(log, "Find memory amount change, old limit is {} bytes, new limit is {} bytes", last_process_memory_amount, process_memory_limit);
                 last_process_memory_amount = process_memory_limit;
-                /// if we find memory amount changes, we just reload config.
+                /// If the available memory for the process changes (typically because the limit was adjusted via cgroups), then we just reload the config.
                 /// Reloading config will check the memory amount again and calculate soft/hard limit again.
+                std::lock_guard<std::mutex> set_limit_lock(limit_mutex);
                 on_memory_limit_update();
             }
-            std::lock_guard<std::mutex> set_limit_lock(set_limit_mutex);
+            std::lock_guard<std::mutex> set_limit_lock(limit_mutex);
             if (soft_limit > 0 && hard_limit > 0)
             {
                 uint64_t memory_usage = file.readMemoryUsage();
