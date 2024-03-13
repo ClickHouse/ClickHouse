@@ -3,8 +3,9 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
+#include <Common/HashTable/HashMap.h>
 
-namespace  DB 
+namespace DB
 {
 
 class ReadBuffer;
@@ -24,11 +25,10 @@ private:
     void readField(size_t index, MutableColumns & columns);
     void skipUnknownFormField(StringRef name_ref);
     const String & columnName(size_t i) const;
-    size_t columnIndex(StringRef name);
 
     /// recursively split names separated by '.' into own columns
     void checkAndSplitIfNested(StringRef column_name);
-    
+
     String name_buf;
 
     /// holds common prefix of nested column names
@@ -40,7 +40,8 @@ private:
     size_t nested_prefix_length = 0;
 
     /// Hash table matches field name to position in the block
-    Block::NameMap name_map;
+    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
+    NameMap name_map;
 
 protected:
     const FormatSettings format_settings;
