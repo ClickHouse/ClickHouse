@@ -1,23 +1,21 @@
-54975576145920
+cold read	54975576145920
 PageCacheBytesUnpinnedRoundedToHugePages	1
 PageCacheBytesUnpinnedRoundedToPages	1
 PageCacheChunkMisses	1
 ReadBufferFromS3Bytes	1
-54975576145920
+repeat read 1	54975576145920
 PageCacheBytesUnpinnedRoundedToHugePages	1
 PageCacheBytesUnpinnedRoundedToPages	1
 PageCacheChunkDataHits	1
-54975576145920
+dropped and bypassed cache	54975576145920
+PageCacheChunkMisses	1
+ReadBufferFromS3Bytes	1
+repeat read 2	54975576145920
 PageCacheBytesUnpinnedRoundedToHugePages	1
 PageCacheBytesUnpinnedRoundedToPages	1
 PageCacheChunkMisses	1
 ReadBufferFromS3Bytes	1
-54975576145920
-PageCacheBytesUnpinnedRoundedToHugePages	1
-PageCacheBytesUnpinnedRoundedToPages	1
-PageCacheChunkMisses	1
-ReadBufferFromS3Bytes	1
-54975576145920
+repeat read 3	54975576145920
 PageCacheBytesUnpinnedRoundedToHugePages	1
 PageCacheBytesUnpinnedRoundedToPages	1
 PageCacheChunkDataHits	1
