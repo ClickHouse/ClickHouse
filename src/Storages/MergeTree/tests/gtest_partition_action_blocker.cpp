@@ -6,6 +6,8 @@
 
 #include <Storages/MergeTree/PartitionActionBlocker.h>
 
+#include <iomanip>
+
 using namespace DB;
 
 TEST(PartitionActionBlocker, TestDefaultConstructor)
@@ -347,11 +349,11 @@ TEST(PartitionActionBlocker, DISABLED_TestMultiThreadLocks)
         }
     };
 
-    std::atomic<size_t> successfull_partition_actions = 0;
+    std::atomic<size_t> successful_partition_actions = 0;
 
-    auto print_partition_id = [&successfull_partition_actions](const std::string & /*partition_id*/)
+    auto print_partition_id = [&successful_partition_actions](const std::string & /*partition_id*/)
     {
-        ++successfull_partition_actions;
+        ++successful_partition_actions;
         //LOG_PRINT(stderr, "Got UNLOCKED partition {} on {}\n", partition_id, std::this_thread::get_id());
     };
 
@@ -399,7 +401,7 @@ TEST(PartitionActionBlocker, DISABLED_TestMultiThreadLocks)
 
     }
     LOG_PRINT(stderr, "!!! Joined all {} threads", workers.size());
-    std::cerr << successfull_partition_actions << " times seen unlocked partition" << std::endl;
+    std::cerr << successful_partition_actions << " times seen unlocked partition" << std::endl;
 
     print_debug(1, std::chrono::microseconds{0}, "POST-JOIN");
 }

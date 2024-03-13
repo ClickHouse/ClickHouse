@@ -52,13 +52,13 @@ namespace ErrorCodes
 namespace MutationHelpers
 {
 
-static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeListEntry * mutate_entry)
-{
-    if (merges_blocker.isCancelled() || (*mutate_entry)->is_cancelled)
-        throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+// static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeListEntry * mutate_entry)
+// {
+//     if (merges_blocker.isCancelled() || (*mutate_entry)->is_cancelled)
+//         throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
 
-    return true;
-}
+//     return true;
+// }
 
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
