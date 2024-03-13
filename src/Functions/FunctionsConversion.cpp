@@ -433,7 +433,7 @@ struct ToDateTime64TransformFloat
 };
 
 /** Conversion of DateTime64 to Date or DateTime: discards fractional part.
- */
+  */
 template <typename Transform>
 struct FromDateTime64Transform
 {
@@ -477,6 +477,98 @@ struct ToDateTime64Transform
     DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
     {
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
+    }
+};
+
+/** Transformation of numbers, dates, datetimes to strings: through formatting.
+  */
+template <typename DataType>
+struct FormatImpl
+{
+    template <typename ReturnType = void>
+    static ReturnType execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType *, const DateLUTImpl *)
+    {
+        writeText(x, wb);
+        return ReturnType(true);
+    }
+};
+
+template <>
+struct FormatImpl<DataTypeDate>
+{
+    template <typename ReturnType = void>
+    static ReturnType execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl * time_zone)
+    {
+        writeDateText(DayNum(x), wb, *time_zone);
+        return ReturnType(true);
+    }
+};
+
+template <>
+struct FormatImpl<DataTypeDate32>
+{
+    template <typename ReturnType = void>
+    static ReturnType execute(const DataTypeDate32::FieldType x, WriteBuffer & wb, const DataTypeDate32 *, const DateLUTImpl * time_zone)
+    {
+        writeDateText(ExtendedDayNum(x), wb, *time_zone);
+        return ReturnType(true);
+    }
+};
+
+template <>
+struct FormatImpl<DataTypeDateTime>
+{
+    template <typename ReturnType = void>
+    static ReturnType execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime *, const DateLUTImpl * time_zone)
+    {
+        writeDateTimeText(x, wb, *time_zone);
+        return ReturnType(true);
+    }
+};
+
+template <>
+struct FormatImpl<DataTypeDateTime64>
+{
+    template <typename ReturnType = void>
+    static ReturnType execute(const DataTypeDateTime64::FieldType x, WriteBuffer & wb, const DataTypeDateTime64 * type, const DateLUTImpl * time_zone)
+    {
+        writeDateTimeText(DateTime64(x), type->getScale(), wb, *time_zone);
+        return ReturnType(true);
+    }
+};
+
+
+template <typename FieldType>
+struct FormatImpl<DataTypeEnum<FieldType>>
+{
+    template <typename ReturnType = void>
+    static ReturnType execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl *)
+    {
+        static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+        if constexpr (throw_exception)
+        {
+            writeString(type->getNameForValue(x), wb);
+        }
+        else
+        {
+            StringRef res;
+            bool is_ok = type->getNameForValue(x, res);
+            if (is_ok)
+                writeString(res, wb);
+            return ReturnType(is_ok);
+        }
+    }
+};
+
+template <typename FieldType>
+struct FormatImpl<DataTypeDecimal<FieldType>>
+{
+    template <typename ReturnType = void>
+    static ReturnType execute(const FieldType x, WriteBuffer & wb, const DataTypeDecimal<FieldType> * type, const DateLUTImpl *)
+    {
+        writeText(x, type->getScale(), wb, false);
+        return ReturnType(true);
     }
 };
 
@@ -669,6 +761,32 @@ struct ConvertImpl
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::execute(
+                arguments, result_type, input_rows_count);
+        }
+        /// Conversion of DateTime64 to Date or DateTime: discards fractional part.
+        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
+            && std::is_same_v<ToDataType, DataTypeDate>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateImpl<date_time_overflow_behavior>>, false>::execute(
+                arguments, result_type, input_rows_count, TransformDateTime64<ToDateImpl<date_time_overflow_behavior>>(assert_cast<const DataTypeDateTime64 &>(*named_from.type).getScale()));
+        }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
+            && std::is_same_v<ToDataType, DataTypeDateTime>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>, false>::execute(
+                arguments, result_type, input_rows_count, TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>(assert_cast<const DataTypeDateTime64 &>(*named_from.type).getScale()));
+        }
+        /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeDate>
+                || std::is_same_v<FromDataType, DataTypeDate32>
+                || std::is_same_v<FromDataType, DataTypeDateTime>)
+            && std::is_same_v<ToDataType, DataTypeDateTime64>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::execute(
                 arguments, result_type, input_rows_count);
         }
         else
@@ -916,125 +1034,6 @@ struct ConvertImpl
             else
                 return col_to;
         }
-    }
-};
-
-
-/** Conversion of DateTime64 to Date or DateTime: discards fractional part.
- */
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, TransformDateTime64<ToDateImpl<date_time_overflow_behavior>>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeDateTime64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDateTime, TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>, false> {};
-
-
-/** Conversion of Date or DateTime to DateTime64: add zero sub-second part.
-  */
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime64, ToDateTime64Transform> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeDate32, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeDate32, DataTypeDateTime64, ToDateTime64Transform> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeDateTime, DataTypeDateTime64, ToDateTime64Transform> {};
-
-
-/** Transformation of numbers, dates, datetimes to strings: through formatting.
-  */
-template <typename DataType>
-struct FormatImpl
-{
-    template <typename ReturnType = void>
-    static ReturnType execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType *, const DateLUTImpl *)
-    {
-        writeText(x, wb);
-        return ReturnType(true);
-    }
-};
-
-template <>
-struct FormatImpl<DataTypeDate>
-{
-    template <typename ReturnType = void>
-    static ReturnType execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl * time_zone)
-    {
-        writeDateText(DayNum(x), wb, *time_zone);
-        return ReturnType(true);
-    }
-};
-
-template <>
-struct FormatImpl<DataTypeDate32>
-{
-    template <typename ReturnType = void>
-    static ReturnType execute(const DataTypeDate32::FieldType x, WriteBuffer & wb, const DataTypeDate32 *, const DateLUTImpl * time_zone)
-    {
-        writeDateText(ExtendedDayNum(x), wb, *time_zone);
-        return ReturnType(true);
-    }
-};
-
-template <>
-struct FormatImpl<DataTypeDateTime>
-{
-    template <typename ReturnType = void>
-    static ReturnType execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime *, const DateLUTImpl * time_zone)
-    {
-        writeDateTimeText(x, wb, *time_zone);
-        return ReturnType(true);
-    }
-};
-
-template <>
-struct FormatImpl<DataTypeDateTime64>
-{
-    template <typename ReturnType = void>
-    static ReturnType execute(const DataTypeDateTime64::FieldType x, WriteBuffer & wb, const DataTypeDateTime64 * type, const DateLUTImpl * time_zone)
-    {
-        writeDateTimeText(DateTime64(x), type->getScale(), wb, *time_zone);
-        return ReturnType(true);
-    }
-};
-
-
-template <typename FieldType>
-struct FormatImpl<DataTypeEnum<FieldType>>
-{
-    template <typename ReturnType = void>
-    static ReturnType execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl *)
-    {
-        static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-        if constexpr (throw_exception)
-        {
-            writeString(type->getNameForValue(x), wb);
-        }
-        else
-        {
-            StringRef res;
-            bool is_ok = type->getNameForValue(x, res);
-            if (is_ok)
-                writeString(res, wb);
-            return ReturnType(is_ok);
-        }
-    }
-};
-
-template <typename FieldType>
-struct FormatImpl<DataTypeDecimal<FieldType>>
-{
-    template <typename ReturnType = void>
-    static ReturnType execute(const FieldType x, WriteBuffer & wb, const DataTypeDecimal<FieldType> * type, const DateLUTImpl *)
-    {
-        writeText(x, type->getScale(), wb, false);
-        return ReturnType(true);
     }
 };
 
