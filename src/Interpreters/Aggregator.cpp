@@ -1247,7 +1247,7 @@ void Aggregator::executeAggregateInstructions(
     bool has_only_one_value_since_last_reset,
     bool no_more_keys,
     bool all_keys_are_const,
-    bool use_compiled_functions) const
+    bool use_compiled_functions [[maybe_unused]]) const
 {
 #if USE_EMBEDDED_COMPILER
     if (use_compiled_functions)
@@ -2513,7 +2513,8 @@ void NO_INLINE Aggregator::mergeDataNullKey(
 }
 
 template <typename Method, typename Table>
-void NO_INLINE Aggregator::mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch) const
+void NO_INLINE Aggregator::mergeDataImpl(
+    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], bool prefetch) const
 {
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
