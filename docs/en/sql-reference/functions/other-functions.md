@@ -360,7 +360,7 @@ sleepEachRow(seconds)
 
 **Arguments**
 
-- `seconds`: [Int](../../sql-reference/data-types/int-uint.md) The number of seconds to pause the query execution for each row in the result set. It can be a floating-point value to specify fractional seconds.
+- `seconds`: [Int](../../sql-reference/data-types/int-uint.md) The number of seconds to pause the query execution for each row in the result set to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.
 
 **Returned value**
 
