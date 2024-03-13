@@ -173,10 +173,12 @@ static void deleteAttributesRecursive(Node * root)
 static void mergeAttributes(Element & config_element, Element & with_element)
 {
     auto * with_element_attributes = with_element.attributes();
+    //std::cerr << "MERGE ATTRIBUTES:" << with_element_attributes->length() << "\n";
 
     for (size_t i = 0; i < with_element_attributes->length(); ++i)
     {
         auto * attr = with_element_attributes->item(i);
+        //std::cerr << "ATTR NAME:" << attr->nodeName() << std::endl;
         config_element.setAttribute(attr->nodeName(), attr->getNodeValue());
     }
 
@@ -276,6 +278,8 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
     for (Node * node = config_root->firstChild(); node;)
     {
         Node * next_node = node->nextSibling();
+        //if (next_node)
+        //    std::cerr << "NEXT NODE:"  << next_node->nodeName() << std::endl;
         /// Remove text from the original config node.
         if (node->nodeType() == Node::TEXT_NODE && !allWhitespace(node->getNodeValue()))
         {
@@ -283,6 +287,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         }
         else if (node->nodeType() == Node::ELEMENT_NODE)
         {
+            std::cerr << "NODES IN SOURCE: " << node->nodeName() << std::endl;
             config_element_by_id.insert(ElementsByIdentifier::value_type(getElementIdentifier(node), node));
         }
         node = next_node;
@@ -296,6 +301,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         bool remove = false;
         if (with_node->nodeType() == Node::ELEMENT_NODE)
         {
+            //std::cerr << "WITH NODE: " << with_node->nodeName() << std::endl;
             Element & with_element = dynamic_cast<Element &>(*with_node);
             remove = with_element.hasAttribute("remove");
             bool replace = with_element.hasAttribute("replace");
@@ -303,11 +309,13 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
             if (remove && replace)
                 throw Poco::Exception("both remove and replace attributes set for element <" + with_node->nodeName() + ">");
 
+
             ElementsByIdentifier::iterator it = config_element_by_id.find(getElementIdentifier(with_node));
 
             if (it != config_element_by_id.end())
             {
                 Node * config_node = it->second;
+                //std::cerr << "SUBNODE NODE: " << config_node->nodeName() << std::endl;
                 config_element_by_id.erase(it);
 
                 if (remove)
@@ -316,12 +324,14 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                 }
                 else if (replace)
                 {
+                    //std::cerr << "REPLACE!!!" << std::endl;
                     with_element.removeAttribute("replace");
                     NodePtr new_node = config->importNode(with_node, true);
                     config_root->replaceChild(new_node, config_node);
                 }
                 else
                 {
+                    //std::cerr << "SUBNODE NODE HERE: " << config_node->nodeName() << std::endl;
                     Element & config_element = dynamic_cast<Element &>(*config_node);
 
                     /// Remove substitution attributes from the merge target node if source node already has a value
@@ -333,11 +343,17 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                     mergeAttributes(config_element, with_element);
                     mergeRecursive(config, config_node, with_node);
                 }
+                //std::cerr << "DONE\n";
                 merged = true;
             }
         }
+        else
+        {
+            //std::cerr << "ELEMENT NOT FOUND\n";
+        }
         if (!merged && !remove)
         {
+            //std::cerr << "NOTHING hAPPENED\n";
             /// Since we didn't find a pair to this node in default config, we will paste it as is.
             /// But it may have some child nodes which have attributes like "replace" or "remove".
             /// They are useless in preprocessed configuration.
@@ -433,6 +449,7 @@ void ConfigProcessor::doIncludesRecursive(
     auto process_include = [&](const Node * include_attr, const std::function<const Node * (const std::string &)> & get_node, const char * error_msg)
     {
         const std::string & name = include_attr->getNodeValue();
+        LOG_DEBUG(log, "PROCESS INCLUDE {}", name);
         const Node * node_to_include = get_node(name);
         if (!node_to_include)
         {
@@ -453,13 +470,15 @@ void ConfigProcessor::doIncludesRecursive(
             /// Replace the whole node not just contents.
             if (node->nodeName() == "include")
             {
+                LOG_DEBUG(log, "Include here for node {}", name);
                 const NodeListPtr children = node_to_include->childNodes();
                 Node * next_child = nullptr;
                 for (Node * child = children->item(0); child; child = next_child)
                 {
                     next_child = child->nextSibling();
                     NodePtr new_node = config->importNode(child, true);
-                    node->parentNode()->insertBefore(new_node, node);
+                    //node->parentNode()->insertBefore(new_node, node);
+                    mergeRecursive(config, node->parentNode(), new_node);
                 }
 
                 node->parentNode()->removeChild(node);

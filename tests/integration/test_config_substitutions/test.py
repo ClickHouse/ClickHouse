@@ -13,7 +13,7 @@ node2 = cluster.add_instance(
     env_variables={"MAX_QUERY_SIZE": "55555"},
 )
 node3 = cluster.add_instance(
-    "node3", user_configs=["configs/config_zk.xml"], with_zookeeper=True
+    "node3", user_configs=["configs/config_zk.xml",], main_configs=["configs/config_zk_include_test.xml"], with_zookeeper=True
 )
 node4 = cluster.add_instance(
     "node4",
@@ -60,6 +60,11 @@ def start_cluster():
             zk.create(
                 path="/users_from_zk_2",
                 value=b"<user_2><password></password><profile>default</profile></user_2>",
+                makepath=True,
+            )
+            zk.create(
+                path="/min_bytes_for_wide_part",
+                value=b"<merge_tree><min_bytes_for_wide_part>33</min_bytes_for_wide_part></merge_tree>",
                 makepath=True,
             )
 
@@ -237,3 +242,7 @@ def test_allow_databases(start_cluster):
         ).strip()
         == ""
     )
+
+def test_config_multiple_zk_substitutions(start_cluster):
+    #print(node3.query("SELECT * FROM system.merge_tree_settings"))
+    print(node3.query("SELECT * FROM system.merge_tree_settings WHERE changed=1"))

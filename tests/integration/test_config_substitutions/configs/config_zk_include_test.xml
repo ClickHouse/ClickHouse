@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<clickhouse>
+  <merge_tree>
+    <min_bytes_for_wide_part>1</min_bytes_for_wide_part>
+  </merge_tree>
+
+  <include from_zk="/min_bytes_for_wide_part"/>
+ </clickhouse>
