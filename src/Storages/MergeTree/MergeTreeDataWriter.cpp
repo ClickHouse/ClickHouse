@@ -384,13 +384,13 @@ Block MergeTreeDataWriter::mergeBlock(
 
     /// Check that after first merge merging_algorithm is waiting for data from input 0.
     if (status.required_source != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: required source after the first merge is not 0. Chunk rows: {}, is_finished: {}, required_source: {}, algorithm: {}", status.chunk.getNumRows(), status.is_finished, status.required_source, merging_algorithm->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Required source after the first merge is not 0. Chunk rows: {}, is_finished: {}, required_source: {}, algorithm: {}", status.chunk.getNumRows(), status.is_finished, status.required_source, merging_algorithm->getName());
 
     status = merging_algorithm->merge();
 
     /// Check that merge is finished.
     if (!status.is_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: merge is not finished after the second merge.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge is not finished after the second merge.");
 
     /// Merged Block is sorted and we don't need to use permutation anymore
     permutation = nullptr;
@@ -439,7 +439,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         auto max_month = date_lut.toNumYYYYMM(max_date);
 
         if (min_month != max_month)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: part spans more than one month.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part spans more than one month.");
 
         part_name = new_part_info.getPartNameV0(min_date, max_date);
     }
@@ -648,18 +648,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     const auto & metadata_snapshot = projection.metadata;
 
     MergeTreeDataPartType part_type;
-    if (parent_part->getType() == MergeTreeDataPartType::InMemory)
-    {
-        part_type = MergeTreeDataPartType::InMemory;
-    }
-    else
-    {
-        /// Size of part would not be greater than block.bytes() + epsilon
-        size_t expected_size = block.bytes();
-        // just check if there is enough space on parent volume
-        data.reserveSpace(expected_size, parent_part->getDataPartStorage());
-        part_type = data.choosePartFormatOnDisk(expected_size, block.rows()).part_type;
-    }
+    /// Size of part would not be greater than block.bytes() + epsilon
+    size_t expected_size = block.bytes();
+    // just check if there is enough space on parent volume
+    data.reserveSpace(expected_size, parent_part->getDataPartStorage());
+    part_type = data.choosePartFormatOnDisk(expected_size, block.rows()).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();

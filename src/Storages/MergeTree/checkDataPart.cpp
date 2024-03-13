@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
@@ -43,7 +42,6 @@ namespace ErrorCodes
     extern const int NO_FILE_IN_DATA_PART;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
-    extern const int BROKEN_PROJECTION;
 }
 
 
@@ -118,9 +116,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     const NameSet & files_without_checksums,
     const ReadSettings & read_settings,
     bool require_checksums,
-    std::function<bool()> is_cancelled,
-    bool & is_broken_projection,
-    bool throw_on_broken_projection)
+    std::function<bool()> is_cancelled)
 {
     /** Responsibility:
       * - read list of columns from columns.txt;
@@ -129,7 +125,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
       */
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
-    Poco::Logger * log = &Poco::Logger::get("checkDataPart");
 
     NamesAndTypesList columns_txt;
 
@@ -258,7 +253,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
-        if (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"))
+        if (isGinFile(file_name))
             continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
@@ -279,66 +274,23 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
     }
 
-    std::string broken_projections_message;
     for (const auto & [name, projection] : data_part->getProjectionParts())
     {
         if (is_cancelled())
             return {};
 
         auto projection_file = name + ".proj";
-        if (!throw_on_broken_projection && projection->is_broken)
-        {
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
-        }
-
-        IMergeTreeDataPart::Checksums projection_checksums;
-        try
-        {
-            bool noop;
-            projection_checksums = checkDataPart(
-                projection, *data_part_storage.getProjection(projection_file),
-                projection->getColumns(), projection->getType(),
-                projection->getFileNamesWithoutChecksums(),
-                read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false);
-        }
-        catch (...)
-        {
-            if (isRetryableException(std::current_exception()))
-                throw;
-
-            if (!projection->is_broken)
-            {
-                LOG_TEST(log, "Marking projection {} as broken ({})", name, projection_file);
-                projection->setBrokenReason(getCurrentExceptionMessage(false), getCurrentExceptionCode());
-            }
-
-            is_broken_projection = true;
-            if (throw_on_broken_projection)
-            {
-                if (!broken_projections_message.empty())
-                    broken_projections_message += "\n";
-
-                broken_projections_message += fmt::format(
-                    "Part {} has a broken projection {} (error: {})",
-                    data_part->name, name, getCurrentExceptionMessage(false));
-                continue;
-            }
-
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
-        }
+        auto projection_checksums = checkDataPart(
+            projection, *data_part_storage.getProjection(projection_file),
+            projection->getColumns(), projection->getType(),
+            projection->getFileNamesWithoutChecksums(),
+            read_settings, require_checksums, is_cancelled);
 
         checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
             projection_checksums.getTotalSizeOnDisk(),
             projection_checksums.getTotalChecksumUInt128());
 
         projections_on_disk.erase(projection_file);
-    }
-
-    if (throw_on_broken_projection && !broken_projections_message.empty())
-    {
-        throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
     }
 
     if (require_checksums && !projections_on_disk.empty())
@@ -357,24 +309,11 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     return checksums_data;
 }
 
-IMergeTreeDataPart::Checksums checkDataPartInMemory(const DataPartInMemoryPtr & data_part)
-{
-    IMergeTreeDataPart::Checksums data_checksums;
-    data_checksums.files["data.bin"] = data_part->calculateBlockChecksum();
-    data_part->checksums.checkEqual(data_checksums, true);
-    return data_checksums;
-}
-
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
-    bool & is_broken_projection,
-    std::function<bool()> is_cancelled,
-    bool throw_on_broken_projection)
+    std::function<bool()> is_cancelled)
 {
-    if (auto part_in_memory = asInMemoryPart(data_part))
-        return checkDataPartInMemory(part_in_memory);
-
     /// If check of part has failed and it is stored on disk with cache
     /// try to drop cache and check it once again because maybe the cache
     /// is broken not the part itself.
@@ -412,9 +351,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             data_part->getFileNamesWithoutChecksums(),
             read_settings,
             require_checksums,
-            is_cancelled,
-            is_broken_projection,
-            throw_on_broken_projection);
+            is_cancelled);
     };
 
     try
@@ -428,9 +365,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             data_part->getFileNamesWithoutChecksums(),
             read_settings,
             require_checksums,
-            is_cancelled,
-            is_broken_projection,
-            throw_on_broken_projection);
+            is_cancelled);
     }
     catch (...)
     {

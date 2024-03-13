@@ -44,6 +44,11 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
     {
         return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
     }
+    catch (const DB::NetException &)
+    {
+        /// Avoid "Host not found" exceptions
+        return false;
+    }
     catch (const Poco::Net::NetException &)
     {
         /// Avoid "Host not found" exceptions
@@ -555,7 +560,7 @@ void ZooKeeperMetadataTransaction::commit()
     if (state != CREATED)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state ({}), it's a bug", state);
     state = FAILED;
-    current_zookeeper->multi(ops);
+    current_zookeeper->multi(ops, /* check_session_valid */ true);
     state = COMMITTED;
 }
 
