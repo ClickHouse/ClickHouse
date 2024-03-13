@@ -1354,8 +1354,7 @@ struct ConvertImpl
                 arguments, result_type, input_rows_count);
         }
         else if constexpr (IsDataTypeDateOrDateTime<FromDataType>
-            && std::is_same_v<ToDataType, DataTypeString>
-            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+            && std::is_same_v<ToDataType, DataTypeString>)
         {
             /// Date or DateTime to String
 
@@ -1464,6 +1463,54 @@ struct ConvertImpl
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                         arguments[0].column->getName(), Name::name);
         }
+        /// Conversion from FixedString to String.
+        /// Cutting sequences of zero bytes from end of strings.
+        else if constexpr (std::is_same_v<ToDataType, DataTypeString>
+            && std::is_same_v<FromDataType, DataTypeFixedString>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
+            ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
+            const auto & nested =  columnGetNested(arguments[0]);
+            if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(nested.column.get()))
+            {
+                auto col_to = ColumnString::create();
+
+                const ColumnFixedString::Chars & data_from = col_from->getChars();
+                ColumnString::Chars & data_to = col_to->getChars();
+                ColumnString::Offsets & offsets_to = col_to->getOffsets();
+                size_t size = col_from->size();
+                size_t n = col_from->getN();
+                data_to.resize(size * (n + 1)); /// + 1 - zero terminator
+                offsets_to.resize(size);
+
+                size_t offset_from = 0;
+                size_t offset_to = 0;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    if (!null_map || !null_map->getData()[i])
+                    {
+                        size_t bytes_to_copy = n;
+                        while (bytes_to_copy > 0 && data_from[offset_from + bytes_to_copy - 1] == 0)
+                            --bytes_to_copy;
+
+                        memcpy(&data_to[offset_to], &data_from[offset_from], bytes_to_copy);
+                        offset_to += bytes_to_copy;
+                    }
+                    data_to[offset_to] = 0;
+                    ++offset_to;
+                    offsets_to[i] = offset_to;
+                    offset_from += n;
+                }
+
+                data_to.resize(offset_to);
+                if (result_type->isNullable() && null_map)
+                    return ColumnNullable::create(std::move(col_to), std::move(null_map));
+                return col_to;
+            }
+            else
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                        arguments[0].column->getName(), Name::name);
+        }
         else if constexpr (std::is_same_v<ToDataType, DataTypeString>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
@@ -1542,6 +1589,12 @@ struct ConvertImpl
         {
             return ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::Normal>::execute(
                 arguments, result_type, input_rows_count, additions);
+        }
+        else if constexpr (std::is_same_v<Name, NameToUnixTimestamp>
+            && std::is_same_v<FromDataType, DataTypeString>
+            && std::is_same_v<ToDataType, DataTypeUInt32>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
         }
         else
         {
@@ -1859,68 +1912,6 @@ struct ConvertImplGenericFromString
                         "Cannot parse string to column {}. Expected eof", column_to.getName());
             }
         }
-    }
-};
-
-
-template <>
-struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp, ConvertDefaultBehaviorTag>
-    : ConvertImpl<DataTypeString, DataTypeDateTime, NameToUnixTimestamp, ConvertDefaultBehaviorTag> {};
-
-template <>
-struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp, ConvertReturnNullOnErrorTag>
-    : ConvertImpl<DataTypeString, DataTypeDateTime, NameToUnixTimestamp, ConvertReturnNullOnErrorTag> {};
-
-
-/** Conversion from FixedString to String.
-  * Cutting sequences of zero bytes from end of strings.
-  */
-template <typename Name>
-struct ConvertImpl<DataTypeFixedString, DataTypeString, Name, ConvertDefaultBehaviorTag>
-{
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t /*input_rows_count*/)
-    {
-        ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
-        const auto & nested =  columnGetNested(arguments[0]);
-        if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(nested.column.get()))
-        {
-            auto col_to = ColumnString::create();
-
-            const ColumnFixedString::Chars & data_from = col_from->getChars();
-            ColumnString::Chars & data_to = col_to->getChars();
-            ColumnString::Offsets & offsets_to = col_to->getOffsets();
-            size_t size = col_from->size();
-            size_t n = col_from->getN();
-            data_to.resize(size * (n + 1)); /// + 1 - zero terminator
-            offsets_to.resize(size);
-
-            size_t offset_from = 0;
-            size_t offset_to = 0;
-            for (size_t i = 0; i < size; ++i)
-            {
-                if (!null_map || !null_map->getData()[i])
-                {
-                    size_t bytes_to_copy = n;
-                    while (bytes_to_copy > 0 && data_from[offset_from + bytes_to_copy - 1] == 0)
-                        --bytes_to_copy;
-
-                    memcpy(&data_to[offset_to], &data_from[offset_from], bytes_to_copy);
-                    offset_to += bytes_to_copy;
-                }
-                data_to[offset_to] = 0;
-                ++offset_to;
-                offsets_to[i] = offset_to;
-                offset_from += n;
-            }
-
-            data_to.resize(offset_to);
-            if (return_type->isNullable() && null_map)
-                return ColumnNullable::create(std::move(col_to), std::move(null_map));
-            return col_to;
-        }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    arguments[0].column->getName(), Name::name);
     }
 };
 
