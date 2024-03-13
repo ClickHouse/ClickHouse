@@ -173,12 +173,10 @@ static void deleteAttributesRecursive(Node * root)
 static void mergeAttributes(Element & config_element, Element & with_element)
 {
     auto * with_element_attributes = with_element.attributes();
-    //std::cerr << "MERGE ATTRIBUTES:" << with_element_attributes->length() << "\n";
 
     for (size_t i = 0; i < with_element_attributes->length(); ++i)
     {
         auto * attr = with_element_attributes->item(i);
-        //std::cerr << "ATTR NAME:" << attr->nodeName() << std::endl;
         config_element.setAttribute(attr->nodeName(), attr->getNodeValue());
     }
 
@@ -279,8 +277,6 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
     for (Node * node = config_root->firstChild(); node;)
     {
         Node * next_node = node->nextSibling();
-        //if (next_node)
-        //    std::cerr << "NEXT NODE:"  << next_node->nodeName() << std::endl;
         /// Remove text from the original config node.
         if (node->nodeType() == Node::TEXT_NODE && !allWhitespace(node->getNodeValue()))
         {
@@ -288,7 +284,6 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         }
         else if (node->nodeType() == Node::ELEMENT_NODE)
         {
-            //LOG_DEBUG(log, "NODES IN SOURCE: {}", node->nodeName());
             config_element_by_id.insert(ElementsByIdentifier::value_type(getElementIdentifier(node), node));
         }
         node = next_node;
@@ -302,8 +297,6 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         bool remove = false;
         if (with_node->nodeType() == Node::ELEMENT_NODE)
         {
-            //LOG_DEBUG(log, "WITH NODE: {}", with_node->nodeName());
-            //std::cerr << "WITH NODE: " << with_node->nodeName() << std::endl;
             Element & with_element = dynamic_cast<Element &>(*with_node);
             remove = with_element.hasAttribute("remove");
             bool replace = with_element.hasAttribute("replace");
@@ -317,8 +310,6 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
             if (it != config_element_by_id.end())
             {
                 Node * config_node = it->second;
-                //LOG_DEBUG(log, "SUBNODE NODE: {}", config_node->nodeName());
-                //std::cerr << "SUBNODE NODE: " << config_node->nodeName() << std::endl;
                 config_element_by_id.erase(it);
 
                 if (remove)
@@ -327,16 +318,12 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                 }
                 else if (replace)
                 {
-                    //LOG_DEBUG(log, "REPLACE: {}", config_node->nodeName());
-                    //std::cerr << "REPLACE!!!" << std::endl;
                     with_element.removeAttribute("replace");
                     NodePtr new_node = config->importNode(with_node, true);
                     config_root->replaceChild(new_node, config_node);
                 }
                 else
                 {
-                    //LOG_DEBUG(log, "SUBNODE NODE HERE: {}", config_node->nodeName());
-                    //std::cerr << "SUBNODE NODE HERE: " << config_node->nodeName() << std::endl;
                     Element & config_element = dynamic_cast<Element &>(*config_node);
 
                     /// Remove substitution attributes from the merge target node if source node already has a value
@@ -348,19 +335,11 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                     mergeAttributes(config_element, with_element);
                     mergeRecursive(config, config_node, with_node);
                 }
-                //std::cerr << "DONE\n";
                 merged = true;
             }
-            //else
-            //{
-            //    LOG_DEBUG(log, "ELEMENT NOT FOUND");
-            //    //std::cerr << "ELEMENT NOT FOUND\n";
-            //}
         }
         if (!merged && !remove)
         {
-            //LOG_DEBUG(log, "NOTHING HAPPENED");
-            //std::cerr << "NOTHING hAPPENED\n";
             /// Since we didn't find a pair to this node in default config, we will paste it as is.
             /// But it may have some child nodes which have attributes like "replace" or "remove".
             /// They are useless in preprocessed configuration.
