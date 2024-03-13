@@ -1041,11 +1041,15 @@ struct ConvertImpl
 };
 
 
-inline ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
+ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 {
+    ColumnUInt8::MutablePtr null_map = nullptr;
     if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(col.get()))
-        return col_nullable->getNullMapColumn().mutate();
-    return nullptr;
+    {
+        null_map = ColumnUInt8::create();
+        null_map->insertRangeFrom(col_nullable->getNullMapColumn(), 0, col_nullable->size());
+    }
+    return null_map;
 }
 
 template <typename FromDataType, typename Name>
