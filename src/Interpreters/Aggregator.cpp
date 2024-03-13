@@ -2051,7 +2051,7 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
     Table & data,
     Arena * arena,
     Arenas & aggregates_pools,
-    bool use_compiled_functions,
+    bool use_compiled_functions [[maybe_unused]],
     bool return_single_block) const
 {
     /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
@@ -2091,46 +2091,28 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
     // should be invoked at least once, because null data might be the only content of the `data`
     init_out_cols();
 
-    if (return_single_block)
-    {
-        data.forEachValue(
-            [&](const auto & key, auto & mapped)
+    data.forEachValue(
+        [&](const auto & key, auto & mapped)
+        {
+            if (!out_cols.has_value())
+                init_out_cols();
+
+            const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+            places.emplace_back(mapped);
+
+            /// Mark the cell as destroyed so it will not be destroyed in destructor.
+            mapped = nullptr;
+
+            if (return_single_block && places.size() >= max_block_size)
             {
-                if (!out_cols.has_value())
-                    init_out_cols();
-
-                const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-                method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
-                places.emplace_back(mapped);
-
-                /// Mark the cell as destroyed so it will not be destroyed in destructor.
-                mapped = nullptr;
-            });
-    }
-    else
-    {
-        data.forEachValue(
-            [&](const auto & key, auto & mapped)
-            {
-                if (!out_cols.has_value())
-                    init_out_cols();
-
-                const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-                method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
-                places.emplace_back(mapped);
-
-                /// Mark the cell as destroyed so it will not be destroyed in destructor.
-                mapped = nullptr;
-
-                if (places.size() >= max_block_size)
-                {
-                    blocks.emplace_back(insertResultsIntoColumns(places, std::move(out_cols.value()), arena, has_null_key_data, use_compiled_functions));
-                    places.clear();
-                    out_cols.reset();
-                    has_null_key_data = false;
-                }
-            });
-    }
+                blocks.emplace_back(
+                    insertResultsIntoColumns(places, std::move(out_cols.value()), arena, has_null_key_data, use_compiled_functions));
+                places.clear();
+                out_cols.reset();
+                has_null_key_data = false;
+            }
+        });
 
     if (return_single_block)
     {
@@ -2183,53 +2165,29 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
 
     // should be invoked at least once, because null data might be the only content of the `data`
     init_out_cols();
-    if (return_single_block)
-    {
-        data.forEachValue(
-            [&](const auto & key, auto & mapped)
+    data.forEachValue(
+        [&](const auto & key, auto & mapped)
+        {
+            if (!out_cols.has_value())
+                init_out_cols();
+
+            const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
+
+            /// reserved, so push_back does not throw exceptions
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+                out_cols->aggregate_columns_data[i]->push_back(mapped + offsets_of_aggregate_states[i]);
+
+            mapped = nullptr;
+
+            ++rows_in_current_block;
+            if (return_single_block && rows_in_current_block >= max_block_size)
             {
-                if (!out_cols.has_value())
-                    init_out_cols();
-
-                const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-                method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
-
-                /// reserved, so push_back does not throw exceptions
-                for (size_t i = 0; i < params.aggregates_size; ++i)
-                    out_cols->aggregate_columns_data[i]->push_back(mapped + offsets_of_aggregate_states[i]);
-
-                mapped = nullptr;
-
-                ++rows_in_current_block;
-            });
-    }
-    else
-    {
-        data.forEachValue(
-            [&](const auto & key, auto & mapped)
-            {
-                if (!out_cols.has_value())
-                    init_out_cols();
-
-                const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-                method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
-
-                /// reserved, so push_back does not throw exceptions
-                for (size_t i = 0; i < params.aggregates_size; ++i)
-                    out_cols->aggregate_columns_data[i]->push_back(mapped + offsets_of_aggregate_states[i]);
-
-                mapped = nullptr;
-
-                ++rows_in_current_block;
-
-                if (rows_in_current_block >= max_block_size)
-                {
-                    res_blocks.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols.value()), final, rows_in_current_block));
-                    out_cols.reset();
-                    rows_in_current_block = 0;
-                }
-            });
-    }
+                res_blocks.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols.value()), final, rows_in_current_block));
+                out_cols.reset();
+                rows_in_current_block = 0;
+            }
+        });
 
     if (return_single_block)
     {
