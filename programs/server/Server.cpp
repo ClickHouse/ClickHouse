@@ -910,7 +910,7 @@ try
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
 
-    /// NOTE: Do sanity checks after we loaded all possible substituions from ZK
+    /// NOTE: Do sanity checks after we loaded all possible substitutions from ZK
     sanityChecks(*this);
 
 #if defined(OS_LINUX)
