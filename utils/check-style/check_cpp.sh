@@ -6,11 +6,9 @@ cd /ClickHouse/utils/check-style || echo -e "failure\tRepo not found" > /test_ou
 
 start_total=`date +%s`
 
-# 40 sec - too much
-# start=`date +%s`
+# FIXME: 30 sec to wait
+# echo "Check duplicates" | ts
 # ./check-duplicate-includes.sh |& tee /test_output/duplicate_includes_output.txt
-# runtime=$((`date +%s`-start))
-# echo "Duplicates check. Done. $runtime seconds."
 
 start=`date +%s`
 ./check-style -n              |& tee /test_output/style_output.txt
@@ -32,20 +30,9 @@ start=`date +%s`
 runtime=$((`date +%s`-start))
 echo "Check submodules. Done. $runtime seconds."
 
-start=`date +%s`
-./check-typos                 |& tee /test_output/typos_output.txt
-runtime=$((`date +%s`-start))
-echo "Check typos. Done. $runtime seconds."
-
-start=`date +%s`
-./check-doc-aspell            |& tee /test_output/docs_spelling_output.txt
-runtime=$((`date +%s`-start))
-echo "Check docs spelling. Done. $runtime seconds."
-
-runtime=$((`date +%s`-start_total))
-echo "Check style, total. Done. $runtime seconds."
-
-
 # FIXME: 6 min to wait
 # echo "Check shell scripts with shellcheck" | ts
 # ./shellcheck-run.sh           |& tee /test_output/shellcheck_output.txt
+
+runtime=$((`date +%s`-start_total))
+echo "Check style total. Done. $runtime seconds."

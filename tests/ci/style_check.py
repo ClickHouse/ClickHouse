@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import argparse
-from concurrent.futures import ProcessPoolExecutor
 import csv
 import logging
 import os
+import shutil
 import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import List, Tuple
 
@@ -120,12 +121,14 @@ def checkout_last_ref(pr_info: PRInfo) -> None:
 def main():
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("git_helper").setLevel(logging.DEBUG)
-    # args = parse_args()
+    args = parse_args()
 
     stopwatch = Stopwatch()
 
     repo_path = Path(REPO_COPY)
     temp_path = Path(TEMP_PATH)
+    if temp_path.is_dir():
+        shutil.rmtree(temp_path)
     temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
@@ -138,6 +141,7 @@ def main():
         f"--entrypoint= -w/ClickHouse/utils/check-style "
         f"{image} ./check_cpp.sh"
     )
+
     cmd_py = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
         f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
@@ -145,26 +149,42 @@ def main():
         f"{image} ./check_py.sh"
     )
 
-    with ProcessPoolExecutor(max_workers=2) as executor:
-        logging.info("Is going to run the command: %s", cmd_cpp)
-        future1 = executor.submit(subprocess.run, cmd_cpp, shell=True)
-        # Parallelization  does not make it faster - run subsequently
-        _ = future1.result()
+    cmd_docs = (
+        f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
+        f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
+        f"--entrypoint= -w/ClickHouse/utils/check-style "
+        f"{image} ./check_docs.sh"
+    )
 
+    with ProcessPoolExecutor(max_workers=2) as executor:
+        logging.info("Run docs files check: %s", cmd_docs)
+        future = executor.submit(subprocess.run, cmd_docs, shell=True)
+        # Parallelization  does not make it faster - run subsequently
+        _ = future.result()
+
+        run_cppcheck = True
         run_pycheck = True
         if CI and pr_info.number > 0:
-            # skip py check if PR and no changed py files
             pr_info.fetch_changed_files()
             if not any(file.endswith(".py") for file in pr_info.changed_files):
                 run_pycheck = False
+            if all(file.endswith(".py") for file in pr_info.changed_files):
+                run_cppcheck = False
+
+        if run_cppcheck:
+            logging.info("Run source files check: %s", cmd_cpp)
+            future1 = executor.submit(subprocess.run, cmd_cpp, shell=True)
+            _ = future1.result()
 
         if run_pycheck:
-            logging.info("Is going to run the command: %s", cmd_py)
+            if args.push:
+                checkout_head(pr_info)
+            logging.info("Run py files check: %s", cmd_py)
             future2 = executor.submit(subprocess.run, cmd_py, shell=True)
             _ = future2.result()
-
-    # if args.push:
-    #     checkout_head(pr_info)
+            if args.push:
+                commit_push_staged(pr_info)
+                checkout_last_ref(pr_info)
 
     subprocess.check_call(
         f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
@@ -172,10 +192,6 @@ def main():
         f'echo -e "failure\tCannot parse results" > {temp_path}/check_status.tsv',
         shell=True,
     )
-
-    # if args.push:
-    #     commit_push_staged(pr_info)
-    #     checkout_last_ref(pr_info)
 
     state, description, test_results, additional_files = process_result(temp_path)
 
