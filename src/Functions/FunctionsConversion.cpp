@@ -366,6 +366,12 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeImpl<date_time_overflow_behavior>, false>::execute(
                 arguments, result_type, input_rows_count);
         }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64> && std::is_same_v<ToDataType, DataTypeDate32>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
+            return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>, false>::execute(
+                arguments, result_type, input_rows_count, TransformDateTime64<ToDate32Impl>(assert_cast<const DataTypeDateTime64 &>(*named_from.type).getScale()));
+        }
         /** Special case of converting Int8, Int16, (U)Int32 or (U)Int64 (and also, for convenience,
           * Float32, Float64) to Date. If the
           * number is less than 65536, then it is treated as DayNum, and if it's greater or equals to 65536,
@@ -680,11 +686,6 @@ struct ConvertImpl
         }
     }
 };
-
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeDateTime64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-        : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>, false> {};
 
 
 template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
