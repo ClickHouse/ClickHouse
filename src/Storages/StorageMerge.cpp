@@ -1058,47 +1058,74 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         Block pipe_header = builder->getHeader();
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
-        if (storage_snapshot_->storage.supportsSubcolumns())
-            get_column_options.withSubcolumns();
-
         LOG_DEBUG(&Poco::Logger::get("createSources"), "Processed:{}\nStorage:{}", toString(processed_stage), toString(storage_stage));
 
-        String table_alias;
         if (allow_experimental_analyzer)
-            table_alias = modified_query_info.query_tree->as<QueryNode>()->getJoinTree()->as<TableNode>()->getAlias();
-
-        String database_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_database" : table_alias + "._database";
-        String table_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_table" : table_alias + "._table";
-
-        if (has_database_virtual_column && common_header.has(database_column) && (storage_stage == QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&storage_snapshot_->storage) != nullptr))
         {
-            ColumnWithTypeAndName column;
-            column.name = database_column;
-            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-            column.column = column.type->createColumnConst(0, Field(database_name));
+            String table_alias = modified_query_info.query_tree->as<QueryNode>()->getJoinTree()->as<TableNode>()->getAlias();
 
-            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-            auto adding_column_actions = std::make_shared<ExpressionActions>(
-                std::move(adding_column_dag), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
+            String database_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_database" : table_alias + "._database";
+            String table_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_table" : table_alias + "._table";
 
-            builder->addSimpleTransform([&](const Block & stream_header)
-                                        { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
+            if (has_database_virtual_column && common_header.has(database_column) && (storage_stage == QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&storage_snapshot_->storage) != nullptr))
+            {
+                ColumnWithTypeAndName column;
+                column.name = database_column;
+                column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+                column.column = column.type->createColumnConst(0, Field(database_name));
+
+                auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+                auto adding_column_actions = std::make_shared<ExpressionActions>(
+                    std::move(adding_column_dag), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
+
+                builder->addSimpleTransform([&](const Block & stream_header)
+                                            { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
+            }
+
+            if (has_table_virtual_column && common_header.has(table_column) && (storage_stage == QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&storage_snapshot_->storage) != nullptr))
+            {
+                ColumnWithTypeAndName column;
+                column.name = table_column;
+                column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+                column.column = column.type->createColumnConst(0, Field(table_name));
+
+                auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+                auto adding_column_actions = std::make_shared<ExpressionActions>(
+                    std::move(adding_column_dag), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
+
+                builder->addSimpleTransform([&](const Block & stream_header)
+                                            { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
+            }
         }
-
-        if (has_table_virtual_column && common_header.has(table_column) && (storage_stage == QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&storage_snapshot_->storage) != nullptr))
+        else
         {
-            ColumnWithTypeAndName column;
-            column.name = table_column;
-            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-            column.column = column.type->createColumnConst(0, Field(table_name));
+            if (has_database_virtual_column && common_header.has("_database") && !pipe_header.has("_database"))
+            {
+                ColumnWithTypeAndName column;
+                column.name = "_database";
+                column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+                column.column = column.type->createColumnConst(0, Field(database_name));
 
-            auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-            auto adding_column_actions = std::make_shared<ExpressionActions>(
-                std::move(adding_column_dag), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
+                auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+                auto adding_column_actions = std::make_shared<ExpressionActions>(
+                    std::move(adding_column_dag), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
+                builder->addSimpleTransform([&](const Block & stream_header)
+                                            { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
+            }
 
-            builder->addSimpleTransform([&](const Block & stream_header)
-                                        { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
+            if (has_table_virtual_column && common_header.has("_table") && !pipe_header.has("_table"))
+            {
+                ColumnWithTypeAndName column;
+                column.name = "_table";
+                column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+                column.column = column.type->createColumnConst(0, Field(table_name));
+
+                auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
+                auto adding_column_actions = std::make_shared<ExpressionActions>(
+                    std::move(adding_column_dag), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
+                builder->addSimpleTransform([&](const Block & stream_header)
+                                            { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
+            }
         }
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
