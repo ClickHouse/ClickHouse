@@ -452,9 +452,6 @@ void ConfigProcessor::doIncludesRecursive(
         }
         else
         {
-
-            Element & element = dynamic_cast<Element &>(*node);
-            /// Replace the whole node not just contents.
             if (node->nodeName() == "include")
             {
                 const NodeListPtr children = node_to_include->childNodes();
@@ -789,7 +786,9 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 }
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
-    zkutil::ZooKeeperNodeCache & zk_node_cache, const zkutil::EventPtr & zk_changed_event, bool fallback_to_preprocessed)
+    zkutil::ZooKeeperNodeCache & zk_node_cache,
+    const zkutil::EventPtr & zk_changed_event,
+    bool fallback_to_preprocessed)
 {
     XMLDocumentPtr config_xml;
     bool has_zk_includes;
@@ -808,11 +807,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
         if (!zk_exception)
             throw;
 
-        LOG_WARNING(
-            log,
-            "Error while processing from_zk config includes: {}. Config will be loaded from preprocessed file: {}",
-            zk_exception->message(),
-            preprocessed_path);
+        LOG_WARNING(log, "Error while processing from_zk config includes: {}. Config will be loaded from preprocessed file: {}", zk_exception->message(), preprocessed_path);
 
         config_xml = dom_parser.parse(preprocessed_path);
     }
