@@ -303,7 +303,6 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
             if (remove && replace)
                 throw Poco::Exception("both remove and replace attributes set for element <" + with_node->nodeName() + ">");
 
-
             ElementsByIdentifier::iterator it = config_element_by_id.find(getElementIdentifier(with_node));
 
             if (it != config_element_by_id.end())
@@ -456,17 +455,17 @@ void ConfigProcessor::doIncludesRecursive(
             {
                 const NodeListPtr children = node_to_include->childNodes();
                 Node * next_child = nullptr;
-
                 for (Node * child = children->item(0); child; child = next_child)
                 {
                     next_child = child->nextSibling();
 
+                    /// Recursively replace existing nodes in merge mode
                     if (merge)
                     {
                         NodePtr new_node = config->importNode(child->parentNode(), true);
                         mergeRecursive(config, node->parentNode(), new_node);
                     }
-                    else
+                    else  /// Append to existing node by default
                     {
                         NodePtr new_node = config->importNode(child, true);
                         node->parentNode()->insertBefore(new_node, node);
@@ -478,6 +477,7 @@ void ConfigProcessor::doIncludesRecursive(
             else
             {
                 Element & element = dynamic_cast<Element &>(*node);
+
                 for (const auto & attr_name : SUBSTITUTION_ATTRS)
                     element.removeAttribute(attr_name);
 
