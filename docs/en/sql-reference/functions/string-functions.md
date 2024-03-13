@@ -621,9 +621,7 @@ SELECT 'Täglich grüßt das Murmeltier.' AS str,
 ```
 
 ```response
-┌─string───┬─substringUTF8('database', 5)─┬─substringUTF8('database', 5, 1)─┐
-│ database │ base                         │ b                               │
-└──────────┴──────────────────────────────┴─────────────────────────────────┘
+Täglich grüßt das Murmeltier.	grüßt das Murmeltier.	grüßt
 ```
 
 ## substringIndex
