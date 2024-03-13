@@ -272,6 +272,7 @@ void ConfigProcessor::hideRecursive(Poco::XML::Node * config_root)
 
 void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
 {
+    //LOG_DEBUG(log, "WITH ROOT {}", with_root->nodeName());
     const NodeListPtr with_nodes = with_root->childNodes();
     using ElementsByIdentifier = std::multimap<ElementIdentifier, Node *>;
     ElementsByIdentifier config_element_by_id;
@@ -287,7 +288,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         }
         else if (node->nodeType() == Node::ELEMENT_NODE)
         {
-            std::cerr << "NODES IN SOURCE: " << node->nodeName() << std::endl;
+            //LOG_DEBUG(log, "NODES IN SOURCE: {}", node->nodeName());
             config_element_by_id.insert(ElementsByIdentifier::value_type(getElementIdentifier(node), node));
         }
         node = next_node;
@@ -301,6 +302,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         bool remove = false;
         if (with_node->nodeType() == Node::ELEMENT_NODE)
         {
+            //LOG_DEBUG(log, "WITH NODE: {}", with_node->nodeName());
             //std::cerr << "WITH NODE: " << with_node->nodeName() << std::endl;
             Element & with_element = dynamic_cast<Element &>(*with_node);
             remove = with_element.hasAttribute("remove");
@@ -315,6 +317,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
             if (it != config_element_by_id.end())
             {
                 Node * config_node = it->second;
+                //LOG_DEBUG(log, "SUBNODE NODE: {}", config_node->nodeName());
                 //std::cerr << "SUBNODE NODE: " << config_node->nodeName() << std::endl;
                 config_element_by_id.erase(it);
 
@@ -324,6 +327,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                 }
                 else if (replace)
                 {
+                    //LOG_DEBUG(log, "REPLACE: {}", config_node->nodeName());
                     //std::cerr << "REPLACE!!!" << std::endl;
                     with_element.removeAttribute("replace");
                     NodePtr new_node = config->importNode(with_node, true);
@@ -331,6 +335,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                 }
                 else
                 {
+                    //LOG_DEBUG(log, "SUBNODE NODE HERE: {}", config_node->nodeName());
                     //std::cerr << "SUBNODE NODE HERE: " << config_node->nodeName() << std::endl;
                     Element & config_element = dynamic_cast<Element &>(*config_node);
 
@@ -346,13 +351,15 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                 //std::cerr << "DONE\n";
                 merged = true;
             }
-        }
-        else
-        {
-            //std::cerr << "ELEMENT NOT FOUND\n";
+            //else
+            //{
+            //    LOG_DEBUG(log, "ELEMENT NOT FOUND");
+            //    //std::cerr << "ELEMENT NOT FOUND\n";
+            //}
         }
         if (!merged && !remove)
         {
+            //LOG_DEBUG(log, "NOTHING HAPPENED");
             //std::cerr << "NOTHING hAPPENED\n";
             /// Since we didn't find a pair to this node in default config, we will paste it as is.
             /// But it may have some child nodes which have attributes like "replace" or "remove".
@@ -443,13 +450,14 @@ void ConfigProcessor::doIncludesRecursive(
 
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
+    bool merge = attributes->getNamedItem("merge");
 
     bool included_something = false;
 
     auto process_include = [&](const Node * include_attr, const std::function<const Node * (const std::string &)> & get_node, const char * error_msg)
     {
         const std::string & name = include_attr->getNodeValue();
-        LOG_DEBUG(log, "PROCESS INCLUDE {}", name);
+        //LOG_DEBUG(log, "PROCESS INCLUDE {}", name);
         const Node * node_to_include = get_node(name);
         if (!node_to_include)
         {
@@ -467,26 +475,38 @@ void ConfigProcessor::doIncludesRecursive(
         }
         else
         {
+
+            Element & element = dynamic_cast<Element &>(*node);
             /// Replace the whole node not just contents.
             if (node->nodeName() == "include")
             {
-                LOG_DEBUG(log, "Include here for node {}", name);
+                //LOG_DEBUG(log, "Include here for node {}", name);
                 const NodeListPtr children = node_to_include->childNodes();
                 Node * next_child = nullptr;
+
                 for (Node * child = children->item(0); child; child = next_child)
                 {
                     next_child = child->nextSibling();
-                    NodePtr new_node = config->importNode(child, true);
-                    //node->parentNode()->insertBefore(new_node, node);
-                    mergeRecursive(config, node->parentNode(), new_node);
+
+                    //LOG_DEBUG(log, "MERGEEEE {} PARENT NODE {} NODE {}", merge, node->parentNode()->nodeName(), node->nodeName());
+                    if (merge)
+                    {
+                        //LOG_DEBUG(log, "MERGEEEE");
+                        NodePtr new_node = config->importNode(child->parentNode(), true);
+                        //LOG_DEBUG(log, "CHILD {} NEW NODE NAME {}", child->nodeName(), new_node->nodeName());
+                        mergeRecursive(config, node->parentNode(), new_node);
+                    }
+                    else
+                    {
+                        NodePtr new_node = config->importNode(child, true);
+                        node->parentNode()->insertBefore(new_node, node);
+                    }
                 }
 
                 node->parentNode()->removeChild(node);
             }
             else
             {
-                Element & element = dynamic_cast<Element &>(*node);
-
                 for (const auto & attr_name : SUBSTITUTION_ATTRS)
                     element.removeAttribute(attr_name);
 
@@ -792,13 +812,19 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
+    //LOG_DEBUG(log, "MIN BYTES FOR WIDE PART {}", configuration->getUInt64("merge_tree.min_bytes_for_wide_part"));
+    //Poco::Util::AbstractConfiguration::Keys config_keys;
+    //configuration->keys("merge_tree", config_keys);
+    //for (const String & key : config_keys)
+    //{
+    //    LOG_DEBUG(log, "CONFIG KEY {} LEFT in merge_tree before ZK", key);
+    //}
+
     return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, config_xml, path};
 }
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
-        zkutil::ZooKeeperNodeCache & zk_node_cache,
-        const zkutil::EventPtr & zk_changed_event,
-        bool fallback_to_preprocessed)
+    zkutil::ZooKeeperNodeCache & zk_node_cache, const zkutil::EventPtr & zk_changed_event, bool fallback_to_preprocessed)
 {
     XMLDocumentPtr config_xml;
     bool has_zk_includes;
@@ -817,12 +843,25 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
         if (!zk_exception)
             throw;
 
-        LOG_WARNING(log, "Error while processing from_zk config includes: {}. Config will be loaded from preprocessed file: {}", zk_exception->message(), preprocessed_path);
+        LOG_WARNING(
+            log,
+            "Error while processing from_zk config includes: {}. Config will be loaded from preprocessed file: {}",
+            zk_exception->message(),
+            preprocessed_path);
 
         config_xml = dom_parser.parse(preprocessed_path);
     }
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
+
+    //LOG_DEBUG(log, "MIN BYTES FOR WIDE PART {} WITH ZK INCLUDE", configuration->getUInt64("merge_tree.min_bytes_for_wide_part"));
+
+    //Poco::Util::AbstractConfiguration::Keys config_keys;
+    //configuration->keys("merge_tree", config_keys);
+    //for (const String & key : config_keys)
+    //{
+    //    LOG_DEBUG(log, "CONFIG KEY {} LEFT in merge_tree after ZK", key);
+    //}
 
     return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
 }
