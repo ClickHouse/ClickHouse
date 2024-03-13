@@ -16,7 +16,7 @@ See also operator [`IS NULL`](../operators/index.md#is_null).
 isNull(x)
 ```
 
-Alias: `ISNULL`
+Alias: `ISNULL`.
 
 **Arguments**
 
