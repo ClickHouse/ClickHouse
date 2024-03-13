@@ -1163,13 +1163,10 @@ template <typename FromDataType, typename ToDataType, typename Name,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ConvertImpl
 {
-    using FromFieldType = typename FromDataType::FieldType;
-    using ToFieldType = typename ToDataType::FieldType;
-
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
-        Additions additions [[maybe_unused]] = Additions())
+        Additions additions = Additions())
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
 
@@ -1206,7 +1203,7 @@ struct ConvertImpl
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>, false>::execute(
-                arguments, result_type, input_rows_count, TransformDateTime64<ToDate32Impl>(assert_cast<const DataTypeDateTime64 &>(*named_from.type).getScale()));
+                arguments, result_type, input_rows_count, additions);
         }
         /** Special case of converting Int8, Int16, (U)Int32 or (U)Int64 (and also, for convenience,
           * Float32, Float64) to Date. If the
@@ -1336,14 +1333,14 @@ struct ConvertImpl
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateImpl<date_time_overflow_behavior>>, false>::execute(
-                arguments, result_type, input_rows_count, TransformDateTime64<ToDateImpl<date_time_overflow_behavior>>(assert_cast<const DataTypeDateTime64 &>(*named_from.type).getScale()));
+                arguments, result_type, input_rows_count, additions);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
             && std::is_same_v<ToDataType, DataTypeDateTime>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>, false>::execute(
-                arguments, result_type, input_rows_count, TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>(assert_cast<const DataTypeDateTime64 &>(*named_from.type).getScale()));
+                arguments, result_type, input_rows_count, additions);
         }
         /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
         else if constexpr ((
@@ -1362,6 +1359,7 @@ struct ConvertImpl
         {
             /// Date or DateTime to String
 
+            using FromFieldType = typename FromDataType::FieldType;
             using ColVecType = ColumnVectorOrDecimal<FromFieldType>;
 
             auto datetime_arg = arguments[0];
@@ -1471,6 +1469,7 @@ struct ConvertImpl
         {
             /// Anything else to String.
 
+            using FromFieldType = typename FromDataType::FieldType;
             using ColVecType = ColumnVectorOrDecimal<FromFieldType>;
 
             ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
@@ -1523,8 +1522,31 @@ struct ConvertImpl
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                         arguments[0].column->getName(), Name::name);
         }
+        else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>)
+            && !std::is_same_v<ToDataType, DataTypeString>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
+            return ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal>::execute(
+                arguments, result_type, input_rows_count, additions);
+        }
+        else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>)
+            && !std::is_same_v<ToDataType, DataTypeString>
+            && std::is_same_v<SpecialTag, ConvertReturnNullOnErrorTag>)
+        {
+            return ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal>::execute(
+                arguments, result_type, input_rows_count, additions);
+        }
+        else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>)
+            && is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>
+            && std::is_same_v<SpecialTag, ConvertReturnZeroOnErrorTag>)
+        {
+            return ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::Normal>::execute(
+                arguments, result_type, input_rows_count, additions);
+        }
         else
         {
+            using FromFieldType = typename FromDataType::FieldType;
+            using ToFieldType = typename ToDataType::FieldType;
             using ColVecFrom = typename FromDataType::ColumnType;
             using ColVecTo = typename ToDataType::ColumnType;
 
@@ -1771,31 +1793,6 @@ struct ConvertImpl
     }
 };
 
-
-template <typename ToDataType, typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-requires (!std::is_same_v<ToDataType, DataTypeString>)
-struct ConvertImpl<DataTypeString, ToDataType, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
-
-template <typename ToDataType, typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-requires (!std::is_same_v<ToDataType, DataTypeFixedString>)
-struct ConvertImpl<DataTypeFixedString, ToDataType, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
-
-template <typename ToDataType, typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-requires (!std::is_same_v<ToDataType, DataTypeString>)
-struct ConvertImpl<DataTypeString, ToDataType, Name, ConvertReturnNullOnErrorTag, date_time_overflow_behavior>
-    : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
-
-template <typename ToDataType, typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-requires (!std::is_same_v<ToDataType, DataTypeFixedString>)
-struct ConvertImpl<DataTypeFixedString, ToDataType, Name, ConvertReturnNullOnErrorTag, date_time_overflow_behavior>
-    : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
-
-template <typename FromDataType, typename ToDataType, typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-requires (is_any_of<FromDataType, DataTypeString, DataTypeFixedString> && is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>)
-struct ConvertImpl<FromDataType, ToDataType, Name, ConvertReturnZeroOnErrorTag, date_time_overflow_behavior>
-    : ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::Normal> {};
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple or types with custom serialization.
 struct ConvertImplGenericFromString
