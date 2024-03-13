@@ -609,9 +609,12 @@ struct ConvertImpl
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
 
-        if constexpr (std::is_same_v<FromDataType, ToDataType> && !FromDataType::is_parametric)
+        if constexpr ((std::is_same_v<FromDataType, ToDataType> && !FromDataType::is_parametric)
+            || (std::is_same_v<FromDataType, DataTypeEnum8> && std::is_same_v<ToDataType, DataTypeInt8>)
+            || (std::is_same_v<FromDataType, DataTypeEnum16> && std::is_same_v<ToDataType, DataTypeInt16>))
         {
             /// If types are the same, reuse the columns.
+            /// Conversions between Enum and the underlying type are also free.
             return named_from.column;
         }
         else if constexpr ((std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDate32>)
@@ -1038,25 +1041,11 @@ struct ConvertImpl
 };
 
 
-/// DataTypeEnum<T> to DataType<T> free conversion
-template <typename FieldType, typename Name>
-struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name, ConvertDefaultBehaviorTag>
-{
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
-    {
-        return arguments[0].column;
-    }
-};
-
 inline ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 {
-    ColumnUInt8::MutablePtr null_map = nullptr;
-    if (const auto * col_null = checkAndGetColumn<ColumnNullable>(col.get()))
-    {
-        null_map = ColumnUInt8::create();
-        null_map->insertRangeFrom(col_null->getNullMapColumn(), 0, col_null->size());
-    }
-    return null_map;
+    if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(col.get()))
+        return col_nullable->getNullMapColumn().mutate();
+    return nullptr;
 }
 
 template <typename FromDataType, typename Name>
