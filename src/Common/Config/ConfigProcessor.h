@@ -119,11 +119,6 @@ public:
 
     static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env"};
 
-    /// If config root node name is not 'clickhouse' and merging config's root node names doesn't match, bypasses merging and returns false.
-    /// For compatibility root node 'yandex' considered equal to 'clickhouse'.
-    bool merge(XMLDocumentPtr config, XMLDocumentPtr with);
-    void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
-
 private:
     const std::string path;
     std::string preprocessed_path;
@@ -150,7 +145,11 @@ private:
     void hideRecursive(Poco::XML::Node * config_root);
     XMLDocumentPtr hideElements(XMLDocumentPtr xml_tree);
 
-    //void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
+    void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
+
+    /// If config root node name is not 'clickhouse' and merging config's root node names doesn't match, bypasses merging and returns false.
+    /// For compatibility root node 'yandex' considered equal to 'clickhouse'.
+    bool merge(XMLDocumentPtr config, XMLDocumentPtr with);
 
     void doIncludesRecursive(
             XMLDocumentPtr config,
