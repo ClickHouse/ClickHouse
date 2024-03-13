@@ -686,7 +686,7 @@ Assumes that the string contains valid UTF-8 encoded text. If this assumption is
 **Example**
 
 ```sql
-SELECT substringIndexUTF8('www.clickhouse.com', '.', 2)
+SELECT substringIndexUTF8('www.straßen-in-europa.de', '.', 2)
 ```
 
 ```response
