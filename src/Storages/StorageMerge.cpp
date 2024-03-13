@@ -1135,13 +1135,15 @@ QueryPlan ReadFromMerge::createPlanForTable(
     bool allow_experimental_analyzer = modified_context->getSettingsRef().allow_experimental_analyzer;
 
     auto storage_stage = storage->getQueryProcessingStage(modified_context,
-        QueryProcessingStage::Complete,
+        processed_stage,
         storage_snapshot_,
         modified_query_info);
 
+    LOG_DEBUG(&Poco::Logger::get("createPlanForTable"), "Storage: {}", toString(storage_stage));
+
     QueryPlan plan;
 
-    if (processed_stage <= storage_stage || (allow_experimental_analyzer && processed_stage == QueryProcessingStage::FetchColumns))
+    if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
@@ -1186,7 +1188,7 @@ QueryPlan ReadFromMerge::createPlanForTable(
                 row_policy_data_opt->addStorageFilter(source_step_with_filter);
         }
     }
-    else if (processed_stage > storage_stage || (allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns))
+    else if (processed_stage > storage_stage || allow_experimental_analyzer)
     {
         /// Maximum permissible parallelism is streams_num
         modified_context->setSetting("max_threads", streams_num);
