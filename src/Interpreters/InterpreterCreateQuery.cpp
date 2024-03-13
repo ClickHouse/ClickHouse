@@ -1612,7 +1612,6 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         executeTrivialBlockIO(fill_io, getContext());
 
         /// Replace target table with created one
-        auto ast_rename = std::make_shared<ASTRenameQuery>();
         ASTRenameQuery::Element elem
         {
             ASTRenameQuery::Table
@@ -1627,7 +1626,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             }
         };
 
-        ast_rename->elements.push_back(std::move(elem));
+        auto ast_rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
         ast_rename->dictionary = create.is_dictionary;
         if (create.create_or_replace)
         {

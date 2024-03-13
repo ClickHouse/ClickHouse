@@ -467,7 +467,6 @@ private:
             Arena * arena) const;
 
     /// Merge data from hash table `src` into `dst`.
-    // template <typename Method, bool use_compiled_functions, booal prefetch, typename Table>
     template <typename Method, typename Table>
     void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch) const;
 
@@ -507,8 +506,12 @@ private:
         MutableColumns & final_aggregate_columns,
         Arena * arena) const;
 
-    template <bool use_compiled_functions>
-    Block insertResultsIntoColumns(PaddedPODArray<AggregateDataPtr> & places, OutputBlockColumns && out_cols, Arena * arena, bool has_null_key_data) const;
+    Block insertResultsIntoColumns(
+        PaddedPODArray<AggregateDataPtr> & places,
+        OutputBlockColumns && out_cols,
+        Arena * arena,
+        bool has_null_key_data,
+        bool use_compiled_functions) const;
 
     template <typename Method, typename Table>
     ConvertToBlockResVariant convertToBlockImplFinal(
@@ -553,11 +556,12 @@ private:
         bool final,
         ThreadPool * thread_pool) const;
 
-    template <bool no_more_keys, typename State, typename Table>
+    template <typename State, typename Table>
     void mergeStreamsImplCase(
         Arena * aggregates_pool,
         State & state,
         Table & data,
+        bool no_more_keys,
         AggregateDataPtr overflow_row,
         size_t row_begin,
         size_t row_end,

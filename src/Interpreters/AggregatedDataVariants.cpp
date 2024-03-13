@@ -1,5 +1,7 @@
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Interpreters/Aggregator.h>
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {
