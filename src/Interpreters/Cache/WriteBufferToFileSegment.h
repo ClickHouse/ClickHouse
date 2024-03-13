@@ -29,7 +29,7 @@ private:
     /// Empty if file_segment is not owned by this WriteBufferToFileSegment
     FileSegmentsHolderPtr segment_holder;
 
-    size_t reserve_space_lock_wait_timeout_milliseconds;
+    const size_t reserve_space_lock_wait_timeout_milliseconds;
 };
 
 

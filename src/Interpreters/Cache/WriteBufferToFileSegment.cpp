@@ -19,9 +19,22 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
 }
 
+namespace
+{
+    size_t getCacheLockWaitTimeout()
+    {
+        auto query_context = CurrentThread::getQueryContext();
+        if (query_context)
+            return query_context->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+        else
+            return Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    }
+}
+
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
     : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_segment_->getPath()))
     , file_segment(file_segment_)
+    , reserve_space_lock_wait_timeout_milliseconds(getCacheLockWaitTimeout())
 {
 }
 
@@ -32,12 +45,8 @@ WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment
         : throw Exception(ErrorCodes::LOGICAL_ERROR, "WriteBufferToFileSegment can be created only from single segment"))
     , file_segment(&segment_holder_->front())
     , segment_holder(std::move(segment_holder_))
+    , reserve_space_lock_wait_timeout_milliseconds(getCacheLockWaitTimeout())
 {
-    auto query_context = CurrentThread::getQueryContext();
-    if (query_context)
-        reserve_space_lock_wait_timeout_milliseconds = query_context->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
-    else
-        reserve_space_lock_wait_timeout_milliseconds = Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 }
 
 /// If it throws an exception, the file segment will be incomplete, so you should not use it in the future.
