@@ -7233,27 +7233,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     scope_guard src_flushed_tmp_dir_lock;
     MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
 
-    /// If source part is in memory, flush it to disk and clone it already in on-disk format
-    /// Protect tmp dir from removing by cleanup thread with src_flushed_tmp_dir_lock
-    /// Construct src_flushed_tmp_part in order to delete part with its directory at destructor
-    if (auto src_part_in_memory = asInMemoryPart(src_part))
-    {
-        auto flushed_part_path = *src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
-
-        auto tmp_src_part_file_name = fs::path(tmp_dst_part_name).filename();
-        src_flushed_tmp_dir_lock = src_part->storage.getTemporaryPartDirectoryHolder(tmp_src_part_file_name);
-
-        auto flushed_part_storage = src_part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
-
-        src_flushed_tmp_part = MergeTreeDataPartBuilder(*this, src_part->name, flushed_part_storage)
-            .withPartInfo(src_part->info)
-            .withPartFormatFromDisk()
-            .build();
-
-        src_flushed_tmp_part->is_temp = true;
-        src_part_storage = flushed_part_storage;
-    }
-
     String with_copy;
     if (params.copy_instead_of_hardlink)
         with_copy = " (copying data)";
