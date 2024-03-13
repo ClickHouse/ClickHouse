@@ -13,7 +13,12 @@ node2 = cluster.add_instance(
     env_variables={"MAX_QUERY_SIZE": "55555"},
 )
 node3 = cluster.add_instance(
-    "node3", user_configs=["configs/config_zk.xml",], main_configs=["configs/config_zk_include_test.xml"], with_zookeeper=True
+    "node3",
+    user_configs=[
+        "configs/config_zk.xml",
+    ],
+    main_configs=["configs/config_zk_include_test.xml"],
+    with_zookeeper=True,
 )
 node4 = cluster.add_instance(
     "node4",
@@ -72,7 +77,6 @@ def start_cluster():
                 value=b"<merge_max_block_size>8888</merge_max_block_size>",
                 makepath=True,
             )
-
 
         cluster.add_zookeeper_startup_command(create_zk_roots)
 
@@ -249,11 +253,32 @@ def test_allow_databases(start_cluster):
         == ""
     )
 
+
 def test_config_multiple_zk_substitutions(start_cluster):
-    assert node3.query("SELECT value FROM system.merge_tree_settings WHERE name='min_bytes_for_wide_part'") == "33\n"
-    assert node3.query("SELECT value FROM system.merge_tree_settings WHERE name='min_rows_for_wide_part'") == "1111\n"
-    assert node3.query("SELECT value FROM system.merge_tree_settings WHERE name='merge_max_block_size'") == "8888\n"
-    assert node3.query("SELECT value FROM system.server_settings WHERE name='background_pool_size'") == "44\n"
+    assert (
+        node3.query(
+            "SELECT value FROM system.merge_tree_settings WHERE name='min_bytes_for_wide_part'"
+        )
+        == "33\n"
+    )
+    assert (
+        node3.query(
+            "SELECT value FROM system.merge_tree_settings WHERE name='min_rows_for_wide_part'"
+        )
+        == "1111\n"
+    )
+    assert (
+        node3.query(
+            "SELECT value FROM system.merge_tree_settings WHERE name='merge_max_block_size'"
+        )
+        == "8888\n"
+    )
+    assert (
+        node3.query(
+            "SELECT value FROM system.server_settings WHERE name='background_pool_size'"
+        )
+        == "44\n"
+    )
 
     zk = cluster.get_kazoo_client("zoo1")
     zk.create(
@@ -281,4 +306,9 @@ def test_config_multiple_zk_substitutions(start_cluster):
 
     node3.query("SYSTEM RELOAD CONFIG")
 
-    assert node3.query("SELECT value FROM system.server_settings WHERE name='background_pool_size'") == "72\n"
+    assert (
+        node3.query(
+            "SELECT value FROM system.server_settings WHERE name='background_pool_size'"
+        )
+        == "72\n"
+    )
