@@ -6,8 +6,8 @@ drop table if exists mt2;
 create table mt1 (n Int64) engine=MergeTree order by n;
 create table mt2 (n Int64) engine=MergeTree order by n;
 
-commit;
-rollback;
+commit; -- { serverError INVALID_TRANSACTION } -- no transaction
+rollback; -- { serverError INVALID_TRANSACTION }
 
 begin transaction;
 insert into mt1 values (1);
