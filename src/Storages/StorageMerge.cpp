@@ -1517,7 +1517,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
     if (local_context->getSettingsRef().allow_experimental_analyzer
-        && (processed_stage != QueryProcessingStage::FetchColumns))
+        && (processed_stage == QueryProcessingStage::FetchColumns && dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 
     if (row_policy_data_opt)
