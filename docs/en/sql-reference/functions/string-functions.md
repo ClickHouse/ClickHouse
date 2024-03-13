@@ -615,7 +615,9 @@ Assumes that the string contains valid UTF-8 encoded text. If this assumption is
 **Example**
 
 ```sql
-SELECT 'database' AS string, substringUTF8(string, 5), substringUTF8(string, 5, 1)
+SELECT 'Täglich grüßt das Murmeltier.' AS str,
+       substringUTF8(str, 9),
+       substringUTF8(str, 9, 5)
 ```
 
 ```response
