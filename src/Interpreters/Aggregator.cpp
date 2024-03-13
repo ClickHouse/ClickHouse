@@ -2104,7 +2104,7 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
             /// Mark the cell as destroyed so it will not be destroyed in destructor.
             mapped = nullptr;
 
-            if (return_single_block && places.size() >= max_block_size)
+            if (!return_single_block && places.size() >= max_block_size)
             {
                 blocks.emplace_back(
                     insertResultsIntoColumns(places, std::move(out_cols.value()), arena, has_null_key_data, use_compiled_functions));
@@ -2181,7 +2181,7 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
             mapped = nullptr;
 
             ++rows_in_current_block;
-            if (return_single_block && rows_in_current_block >= max_block_size)
+            if (!return_single_block && rows_in_current_block >= max_block_size)
             {
                 res_blocks.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols.value()), final, rows_in_current_block));
                 out_cols.reset();
@@ -2199,7 +2199,6 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
             res_blocks.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols).value(), final, rows_in_current_block));
         return res_blocks;
     }
-    return res_blocks;
 }
 
 void Aggregator::addSingleKeyToAggregateColumns(
