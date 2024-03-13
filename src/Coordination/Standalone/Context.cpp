@@ -315,7 +315,7 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
     if (!shared->keeper_dispatcher)
         return;
 
-    shared->keeper_dispatcher->updateConfiguration(getConfigRef(), getMacros());
+    shared->keeper_dispatcher->updateConfiguration(config_, getMacros());
 }
 
 }
