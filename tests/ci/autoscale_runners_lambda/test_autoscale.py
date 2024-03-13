@@ -80,7 +80,7 @@ class TestSetCapacity(unittest.TestCase):
             ),
             TestCase("increase-1", 1, 13, 20, [Queue("queued", 23, "increase-1")], 17),
             TestCase(
-                "style-checker", 1, 13, 20, [Queue("queued", 33, "style-checker")], 20
+                "style-checker", 1, 13, 20, [Queue("queued", 19, "style-checker")], 19
             ),
             TestCase("increase-2", 1, 13, 20, [Queue("queued", 18, "increase-2")], 15),
             TestCase("increase-3", 1, 13, 20, [Queue("queued", 183, "increase-3")], 20),

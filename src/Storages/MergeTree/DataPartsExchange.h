@@ -40,10 +40,6 @@ public:
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
-    void sendPartFromMemory(
-        const MergeTreeData::DataPartPtr & part,
-        WriteBuffer & out,
-        bool send_projections);
 
     MergeTreeData::DataPart::Checksums sendPartFromDisk(
         const MergeTreeData::DataPartPtr & part,
@@ -112,18 +108,6 @@ private:
         size_t projections,
         ThrottlerPtr throttler,
         bool sync);
-
-    MergeTreeData::MutableDataPartPtr downloadPartToMemory(
-       MutableDataPartStoragePtr data_part_storage,
-       const String & part_name,
-       const MergeTreePartInfo & part_info,
-       const UUID & part_uuid,
-       const StorageMetadataPtr & metadata_snapshot,
-       ContextPtr context,
-       ReadWriteBufferFromHTTP & in,
-       size_t projections,
-       bool is_projection,
-       ThrottlerPtr throttler);
 
     MergeTreeData::MutableDataPartPtr downloadPartToDiskRemoteMeta(
        const String & part_name,

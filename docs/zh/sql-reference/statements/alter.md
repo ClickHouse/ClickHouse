@@ -150,7 +150,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 不支持对primary key或者sampling key中的列（在 `ENGINE` 表达式中用到的列）进行删除操作。改变包含在primary key中的列的类型时，如果操作不会导致数据的变化（例如，往Enum中添加一个值，或者将`DateTime` 类型改成 `UInt32`），那么这种操作是可行的。
 
-如果 `ALTER` 操作不足以完成你想要的表变动操作，你可以创建一张新的表，通过 [INSERT SELECT](../../sql-reference/statements/insert-into.md#inserting-the-results-of-select)将数据拷贝进去，然后通过  [RENAME](../../sql-reference/statements/misc.md#misc_operations-rename)将新的表改成和原有表一样的名称，并删除原有的表。你可以使用 [clickhouse-copier](../../operations/utilities/clickhouse-copier.md) 代替 `INSERT SELECT`。
+如果 `ALTER` 操作不足以完成你想要的表变动操作，你可以创建一张新的表，通过 [INSERT SELECT](../../sql-reference/statements/insert-into.md#inserting-the-results-of-select)将数据拷贝进去，然后通过  [RENAME](../../sql-reference/statements/misc.md#misc_operations-rename)将新的表改成和原有表一样的名称，并删除原有的表。
 
  `ALTER` 操作会阻塞对表的所有读写操作。换句话说，当一个大的 `SELECT` 语句和 `ALTER`同时执行时，`ALTER`会等待，直到 `SELECT` 执行结束。与此同时，当 `ALTER` 运行时，新的 sql 语句将会等待。
 

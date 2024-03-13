@@ -1,21 +1,18 @@
+#include <Compression/CompressedWriteBuffer.h>
+#include <Formats/NativeWriter.h>
+#include <Formats/formatBlock.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/TableJoin.h>
-
-#include <Formats/NativeWriter.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-
-#include <Compression/CompressedWriteBuffer.h>
+#include <base/FnTraits.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
-#include <base/FnTraits.h>
-#include <fmt/format.h>
-
-#include <Formats/formatBlock.h>
-
 #include <numeric>
+#include <fmt/format.h>
 
 
 namespace CurrentMetrics

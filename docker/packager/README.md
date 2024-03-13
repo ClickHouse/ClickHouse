@@ -28,7 +28,6 @@ lrwxrwxrwx 1 root root        10  clickhouse-benchmark -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-clang -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-client -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-compressor -> clickhouse
-lrwxrwxrwx 1 root root        10  clickhouse-copier -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-extract-from-config -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-format -> clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-lld -> clickhouse
