@@ -56,12 +56,17 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <base/defines.h>
 #include <base/range.h>
+#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
+#include "Analyzer/QueryNode.h"
+#include "Core/QueryProcessingStage.h"
+#include "IO/WriteHelpers.h"
 #include <Core/NamesAndTypes.h>
 #include <Functions/FunctionFactory.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -798,9 +803,12 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     const ContextPtr & context,
     const Names & required_column_names)
 {
+    LOG_DEBUG(&Poco::Logger::get("replaceTableExpressionAndRemoveJoin"), "BEFORE:\n{}", query->dumpTree());
     auto * query_node = query->as<QueryNode>();
     auto join_tree_type = query_node->getJoinTree()->getNodeType();
     auto modified_query = query_node->cloneAndReplace(original_table_expression, replacement_table_expression);
+
+    LOG_DEBUG(&Poco::Logger::get("replaceTableExpressionAndRemoveJoin"), "AFTER:\n{}", modified_query->dumpTree());
 
     // For the case when join tree is just a table or a table function we don't need to do anything more.
     if (join_tree_type == QueryTreeNodeType::TABLE || join_tree_type == QueryTreeNodeType::TABLE_FUNCTION)
@@ -880,6 +888,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
     if (modified_query_info.table_expression)
     {
         auto replacement_table_expression = std::make_shared<TableNode>(storage, storage_lock, storage_snapshot_);
+        replacement_table_expression->setAlias(modified_query_info.table_expression->getAlias());
         if (query_info.table_expression_modifiers)
             replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
 
@@ -960,6 +969,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
                 column_name_to_node);
         }
 
+        LOG_DEBUG(&Poco::Logger::get("getModifiedQueryInfo"), "{}", modified_query_info.query_tree->dumpTree());
+
         modified_query_info.query = queryNodeToSelectQuery(modified_query_info.query_tree);
     }
     else
@@ -1020,7 +1031,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
     const auto & [database_name, storage, _, table_name] = storage_with_lock;
     bool allow_experimental_analyzer = context->getSettingsRef().allow_experimental_analyzer;
     auto storage_stage
-        = storage->getQueryProcessingStage(context, QueryProcessingStage::Complete, storage_snapshot_, modified_query_info);
+        = storage->getQueryProcessingStage(context, processed_stage, storage_snapshot_, modified_query_info);
 
     builder = plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
@@ -1047,10 +1058,23 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         Block pipe_header = builder->getHeader();
 
-        if (has_database_virtual_column && common_header.has("_database") && !pipe_header.has("_database"))
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+        if (storage_snapshot_->storage.supportsSubcolumns())
+            get_column_options.withSubcolumns();
+
+        LOG_DEBUG(&Poco::Logger::get("createSources"), "Processed:{}\nStorage:{}", toString(processed_stage), toString(storage_stage));
+        
+        String table_alias;
+        if (allow_experimental_analyzer)
+            table_alias = modified_query_info.query_tree->as<QueryNode>()->getJoinTree()->as<TableNode>()->getAlias();
+
+        String database_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_database" : table_alias + "._database";
+        String table_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_table" : table_alias + "._table";
+
+        if (has_database_virtual_column && common_header.has(database_column) && (storage_stage == QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&storage_snapshot_->storage) != nullptr))
         {
             ColumnWithTypeAndName column;
-            column.name = "_database";
+            column.name = database_column;
             column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
             column.column = column.type->createColumnConst(0, Field(database_name));
 
@@ -1062,10 +1086,10 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                                         { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
         }
 
-        if (has_table_virtual_column && common_header.has("_table") && !pipe_header.has("_table"))
+        if (has_table_virtual_column && common_header.has(table_column) && (storage_stage == QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&storage_snapshot_->storage) != nullptr))
         {
             ColumnWithTypeAndName column;
-            column.name = "_table";
+            column.name = table_column;
             column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
             column.column = column.type->createColumnConst(0, Field(table_name));
 
@@ -1080,7 +1104,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
         convertAndFilterSourceStream(
-            header, modified_query_info, storage_snapshot_, aliases, row_policy_data_opt, context, *builder, processed_stage);
+            header, modified_query_info, storage_snapshot_, aliases, row_policy_data_opt, context, *builder, storage_stage);
     }
 
     return builder;
@@ -1433,7 +1457,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
     QueryPipelineBuilder & builder,
-    QueryProcessingStage::Enum processed_stage)
+    QueryProcessingStage::Enum processed_stage [[maybe_unused]])
 {
     Block before_block_header = builder.getHeader();
 
@@ -1493,13 +1517,15 @@ void ReadFromMerge::convertAndFilterSourceStream(
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
     if (local_context->getSettingsRef().allow_experimental_analyzer
-        && (processed_stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
+        && (processed_stage != QueryProcessingStage::FetchColumns))
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 
     if (row_policy_data_opt)
     {
         row_policy_data_opt->addFilterTransform(builder);
     }
+
+    LOG_DEBUG(&Poco::Logger::get("convertAndFilterSourceStream"), "SOURCE:\n{}\nRESULT:\n{}", builder.getHeader().dumpStructure(), header.dumpStructure());
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(builder.getHeader().getColumnsWithTypeAndName(),
                                                                 header.getColumnsWithTypeAndName(),
