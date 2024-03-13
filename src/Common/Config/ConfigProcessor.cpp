@@ -477,6 +477,7 @@ void ConfigProcessor::doIncludesRecursive(
             }
             else
             {
+                Element & element = dynamic_cast<Element &>(*node);
                 for (const auto & attr_name : SUBSTITUTION_ATTRS)
                     element.removeAttribute(attr_name);
 
