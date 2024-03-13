@@ -14,7 +14,7 @@ Returns whether the argument is [NULL](../../sql-reference/syntax.md#null).
 isNull(x)
 ```
 
-Alias: `ISNULL`.
+Alias: `IS NULL`.
 
 **Arguments**
 
@@ -58,6 +58,8 @@ Returns whether the argument is not [NULL](../../sql-reference/syntax.md#null-li
 isNotNull(x)
 ```
 
+Alias: `IS NOT NULL`.
+
 **Arguments:**
 
 - `x` — A value of non-compound data type.
@@ -99,6 +101,8 @@ Returns whether the argument is 0 (zero) or [NULL](../../sql-reference/syntax.md
 ``` sql
 isZeroOrNull(x)
 ```
+
+Alias: `x = 0 OR x IS NULL`.
 
 **Arguments:**
 
