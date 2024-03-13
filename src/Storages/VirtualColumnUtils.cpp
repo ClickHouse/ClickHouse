@@ -109,23 +109,28 @@ void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
     }
 }
 
-NamesAndTypesList getPathFileAndSizeVirtualsForStorage(NamesAndTypesList storage_columns)
+NameSet getVirtualNamesForFileLikeStorage()
 {
-    auto default_virtuals = NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_size", makeNullable(std::make_shared<DataTypeUInt64>())}};
+    return {"_path", "_file", "_size"};
+}
 
-    default_virtuals.sort();
-    storage_columns.sort();
+VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns)
+{
+    VirtualColumnsDescription desc;
 
-    NamesAndTypesList result_virtuals;
-    std::set_difference(
-        default_virtuals.begin(), default_virtuals.end(), storage_columns.begin(), storage_columns.end(),
-        std::back_inserter(result_virtuals),
-        [](const NameAndTypePair & lhs, const NameAndTypePair & rhs){ return lhs.name < rhs.name; });
+    auto add_virtual = [&](const auto & name, const auto & type)
+    {
+        if (storage_columns.has(name))
+            return;
 
-    return result_virtuals;
+        desc.addEphemeral(name, type, "");
+    };
+
+    add_virtual("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+    add_virtual("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+    add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
+
+    return desc;
 }
 
 static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx)
