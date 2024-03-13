@@ -7357,48 +7357,70 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
             join_using_identifiers.insert(identifier_full_name);
 
-            IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
-            auto result_left_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope);
-            if (!result_left_table_expression)
+            const auto & settings = scope.context->getSettingsRef();
+
+            /** While resolving JOIN USING identifier, try to resolve identifier from parent subquery projection.
+              * Example: SELECT a + 1 AS b FROM (SELECT 1 AS a) t1 JOIN (SELECT 2 AS b) USING b
+              * In this case `b` is not in the left table expression, but it is in the parent subquery projection.
+              */
+            auto try_resolve_identifier_from_query_projection = [this](const String & identifier_full_name_,
+                                                                       const QueryTreeNodePtr & left_table_expression,
+                                                                       const IdentifierResolveScope & scope_) -> QueryTreeNodePtr
             {
-                /** Try to resolve identifier from parent subquery projection.
-                  * Example: SELECT a + 1 AS v FROM (SELECT 1 AS a) t1 JOIN (SELECT 2 AS b) USING b
-                  * In this case `b` is not in the left table expression, but it is in the parent subquery projection.
-                  */
-                QueryNode * query_node = scope.scope_node ? scope.scope_node->as<QueryNode>() : nullptr;
-                if (query_node)
+                const QueryNode * query_node = scope_.scope_node ? scope_.scope_node->as<QueryNode>() : nullptr;
+                if (!query_node)
+                    return nullptr;
+
+                const auto & projection_list = query_node->getProjection();
+                for (const auto & projection_node : projection_list.getNodes())
                 {
-                    const auto & projection_list = query_node->getProjection();
-                    for (const auto & projection_node : projection_list.getNodes())
+                    if (projection_node->hasAlias() && identifier_full_name_ == projection_node->getAlias())
                     {
-                        if (projection_node->hasAlias() && identifier_full_name == projection_node->getAlias())
+                        auto left_subquery = std::make_shared<QueryNode>(query_node->getMutableContext());
+                        left_subquery->getProjection().getNodes().push_back(projection_node->clone());
+                        left_subquery->getJoinTree() = left_table_expression;
+
+                        IdentifierResolveScope left_subquery_scope(left_subquery, nullptr /*parent_scope*/);
+                        resolveQuery(left_subquery, left_subquery_scope);
+
+                        const auto & resolved_nodes = left_subquery->getProjection().getNodes();
+                        if (resolved_nodes.size() == 1)
                         {
-                            auto left_subquery = std::make_shared<QueryNode>(query_node->getMutableContext());
-                            left_subquery->getProjection().getNodes().push_back(projection_node->clone());
-                            left_subquery->getJoinTree() = join_node_typed.getLeftTableExpression();
-
-                            IdentifierResolveScope left_subquery_scope(left_subquery, nullptr /*parent_scope*/);
-                            resolveQuery(left_subquery, left_subquery_scope);
-
-                            const auto & resolved_nodes = left_subquery->getProjection().getNodes();
-                            if (resolved_nodes.size() == 1)
-                            {
-                                /// Create ColumnNode with expression from parent projection
-                                result_left_table_expression = std::make_shared<ColumnNode>(
-                                    NameAndTypePair{identifier_full_name, resolved_nodes.at(0)->getResultType()}, resolved_nodes.at(0), join_node_typed.getLeftTableExpression());
-                                break;
-                            }
+                            /// Create ColumnNode with expression from parent projection
+                            return std::make_shared<ColumnNode>(
+                                NameAndTypePair{identifier_full_name_, resolved_nodes.front()->getResultType()},
+                                resolved_nodes.front(), left_table_expression);
                         }
                     }
                 }
+                return nullptr;
+            };
 
-                if (!result_left_table_expression)
-                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                        "JOIN {} using identifier '{}' cannot be resolved from left table expression. In scope {}",
-                        join_node_typed.formatASTForErrorMessage(),
-                        identifier_full_name,
-                        scope.scope_node->formatASTForErrorMessage());
-            }
+            QueryTreeNodePtr result_left_table_expression = nullptr;
+            /** With `analyzer_compatibility_join_using_top_level_identifier` alias in projection has higher priority than column from left table.
+              * But if aliased expression cannot be resolved from left table, we get UNKNOW_IDENTIFIER error,
+              * despite the fact that column from USING could be resolved from left table.
+              * It's compatibility with a default behavior for old analyzer.
+              */
+            if (settings.analyzer_compatibility_join_using_top_level_identifier)
+                result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpression(), scope);
+
+            IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
+            if (!result_left_table_expression)
+                result_left_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope);
+
+            /// Here we may try to resolve identifier from projection in case it's not resolved from left table expression
+            /// and analyzer_compatibility_join_using_top_level_identifier is disabled.
+            /// For now we do not do this, because not all corner cases are clear.
+            /// if (!settings.analyzer_compatibility_join_using_top_level_identifier && !result_left_table_expression)
+            ///     result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpression(), scope);
+
+            if (!result_left_table_expression)
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    "JOIN {} using identifier '{}' cannot be resolved from left table expression. In scope {}",
+                    join_node_typed.formatASTForErrorMessage(),
+                    identifier_full_name,
+                    scope.scope_node->formatASTForErrorMessage());
 
             if (result_left_table_expression->getNodeType() != QueryTreeNodeType::COLUMN)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
