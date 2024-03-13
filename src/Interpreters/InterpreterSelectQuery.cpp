@@ -800,7 +800,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             != parallel_replicas_before_analysis)
         {
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            context->setSetting("max_parallel_replicas", UInt64{0});
+            context->setSetting("max_parallel_replicas", UInt64{1});
             need_analyze_again = true;
         }
 
