@@ -9,55 +9,59 @@
 namespace DB
 {
 
-/// Periodically reads the current memory usage from Linux cgroups.
-/// You can specify soft or hard memory limits:
-/// - When the soft memory limit is hit, drop jemalloc cache.
-/// - When the hard memory limit is hit, update MemoryTracking metric to throw memory exceptions faster.
+/// Does two things:
+/// 1. Periodically reads the memory usage of the process from Linux cgroups.
+///    You can specify soft or hard memory limits:
+///    - When the soft memory limit is hit, drop jemalloc cache.
+///    - When the hard memory limit is hit, update MemoryTracking metric to throw memory exceptions faster.
+/// 2. Periodically reads the the maximum memory available to the process (which can change due to cgroups settings).
+///    You can specify a callback to react on changes. The callback typically performs circular logic: It reloads the
+///    configuration (e.g. server configuration file), which will check the memory amount again and re-calculate
+///    soft/hard limits (see 1.).
 #if defined(OS_LINUX)
 class CgroupsMemoryUsageObserver
 {
 public:
+    using OnMemoryLimitFn = std::function<void(bool)>;
+    using OnMemoryAmountAvailableChangedFn = std::function<void()>;
+
     enum class CgroupsVersion
     {
         V1,
         V2
-
     };
+
     explicit CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_);
     ~CgroupsMemoryUsageObserver();
 
-    void setLimits(uint64_t hard_limit_, uint64_t soft_limit_);
-    using UpdateMemLimitCallbackFn = std::function<void()>;
-    void setOnMemoryLimitUpdate(UpdateMemLimitCallbackFn on_memory_limit_update_);
-    void startThread();
+    void setMemoryUsageLimits(uint64_t hard_limit_, uint64_t soft_limit_);
+    void setOnMemoryAmountAvailableChanged(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed);
 
-    size_t getHardLimit() const { return hard_limit; }
-    size_t getSoftLimit() const { return soft_limit; }
+    void startThread();
 
     uint64_t readMemoryUsage() const;
 
 private:
     LoggerPtr log;
 
-    std::atomic<size_t> hard_limit = 0;
-    std::atomic<size_t> soft_limit = 0;
-
     const std::chrono::seconds wait_time;
 
     std::mutex limit_mutex;
-    using CallbackFn = std::function<void(bool)>;
-    CallbackFn on_hard_limit;
-    CallbackFn on_soft_limit;
-    UpdateMemLimitCallbackFn on_memory_limit_update TSA_GUARDED_BY(limit_mutex);
+    size_t hard_limit TSA_GUARDED_BY(limit_mutex) = 0;
+    size_t soft_limit TSA_GUARDED_BY(limit_mutex) = 0;
+    OnMemoryLimitFn on_hard_limit TSA_GUARDED_BY(limit_mutex);
+    OnMemoryLimitFn on_soft_limit TSA_GUARDED_BY(limit_mutex);
+    OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed TSA_GUARDED_BY(limit_mutex);
 
-    uint64_t last_usage = 0;
+    uint64_t last_memory_usage = 0;        /// how much memory does the process use
+    uint64_t last_available_memory_amount; /// how much memory can the process use
 
     /// Represents the cgroup virtual file that shows the memory consumption of the process's cgroup.
-    struct File
+    struct MemoryUsageFile
     {
     public:
-        explicit File(LoggerPtr log_);
-        ~File();
+        explicit MemoryUsageFile(LoggerPtr log_);
+        ~MemoryUsageFile();
         uint64_t readMemoryUsage() const;
     private:
         LoggerPtr log;
@@ -67,18 +71,16 @@ private:
         std::string file_name;
     };
 
-    File file;
+    MemoryUsageFile memory_usage_file;
 
     void stopThread();
 
     void runThread();
-    void processMemoryUsage(uint64_t usage);
 
     std::mutex thread_mutex;
     std::condition_variable cond;
     ThreadFromGlobalPool thread;
     bool quit = false;
-    uint64_t last_process_memory_amount;
 };
 
 #else
@@ -87,12 +89,10 @@ class CgroupsMemoryUsageObserver
 public:
     explicit CgroupsMemoryUsageObserver(std::chrono::seconds) {}
 
-    void setLimits(uint64_t, uint64_t) {}
-    size_t readMemoryUsage() { return 0; }
+    void setMemoryUsageLimits(uint64_t, uint64_t) {}
+    void setOnMemoryAmountAvailableChanged(OnMemoryAmountAvailableChangedFn) {}
     void startThread() {}
-    size_t getHardLimit() { return 0; }
-    size_t getSoftLimit() { return 0; }
-    void setOnMemoryLimitUpdate(std::function<void()>) {}
+    size_t readMemoryUsage() { return 0; }
 };
 #endif
 

@@ -1293,7 +1293,7 @@ try
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
     try
     {
-        UInt64 wait_time = server_settings.cgroups_memory_usage_observer_wait_time;
+        auto wait_time = server_settings.cgroups_memory_usage_observer_wait_time;
         if (wait_time != 0)
             cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
     }
@@ -1359,7 +1359,7 @@ try
             {
                 double hard_limit_ratio = new_server_settings.cgroup_memory_watcher_hard_limit_ratio;
                 double soft_limit_ratio = new_server_settings.cgroup_memory_watcher_soft_limit_ratio;
-                cgroups_memory_usage_observer->setLimits(
+                cgroups_memory_usage_observer->setMemoryUsageLimits(
                     static_cast<uint64_t>(max_server_memory_usage * hard_limit_ratio),
                     static_cast<uint64_t>(max_server_memory_usage * soft_limit_ratio));
             }
@@ -1702,7 +1702,7 @@ try
 
     if (cgroups_memory_usage_observer)
     {
-        cgroups_memory_usage_observer->setOnMemoryLimitUpdate([&]()
+        cgroups_memory_usage_observer->setOnMemoryAmountAvailableChanged([&]()
         {
             main_config_reloader->reload();
         });

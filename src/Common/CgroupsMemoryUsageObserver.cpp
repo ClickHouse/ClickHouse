@@ -37,7 +37,7 @@ namespace ErrorCodes
 CgroupsMemoryUsageObserver::CgroupsMemoryUsageObserver(std::chrono::seconds wait_time_)
     : log(getLogger("CgroupsMemoryUsageObserver"))
     , wait_time(wait_time_)
-    , file(log)
+    , memory_usage_file(log)
 {
     LOG_INFO(log, "Initialized cgroups memory limit observer, wait time is {} sec", wait_time.count());
 }
@@ -47,9 +47,10 @@ CgroupsMemoryUsageObserver::~CgroupsMemoryUsageObserver()
     stopThread();
 }
 
-void CgroupsMemoryUsageObserver::setLimits(uint64_t hard_limit_, uint64_t soft_limit_)
+void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint64_t soft_limit_)
 {
-    std::lock_guard<std::mutex> lock(limit_mutex);
+    std::lock_guard<std::mutex> limit_lock(limit_mutex);
+
     if (hard_limit_ == hard_limit && soft_limit_ == soft_limit)
         return;
 
@@ -83,10 +84,10 @@ void CgroupsMemoryUsageObserver::setLimits(uint64_t hard_limit_, uint64_t soft_l
             mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
 #endif
             /// Reset current usage in memory tracker. Expect zero for free_memory_in_allocator_arenas as we just purged them.
-            uint64_t current_usage = readMemoryUsage();
-            MemoryTracker::setRSS(current_usage, 0);
+            uint64_t memory_usage = readMemoryUsage();
+            MemoryTracker::setRSS(memory_usage, 0);
 
-            LOG_INFO(log, "Purged jemalloc arenas. Current memory usage is {}", ReadableSize(current_usage));
+            LOG_INFO(log, "Purged jemalloc arenas. Current memory usage is {}", ReadableSize(memory_usage));
         }
         else
         {
@@ -97,15 +98,15 @@ void CgroupsMemoryUsageObserver::setLimits(uint64_t hard_limit_, uint64_t soft_l
     LOG_INFO(log, "Set new limits, soft limit: {}, hard limit: {}", ReadableSize(soft_limit_), ReadableSize(hard_limit_));
 }
 
-void CgroupsMemoryUsageObserver::setOnMemoryLimitUpdate(UpdateMemLimitCallbackFn on_memory_limit_update_)
+void CgroupsMemoryUsageObserver::setOnMemoryAmountAvailableChanged(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed_)
 {
-    std::lock_guard<std::mutex> set_limit_lock(limit_mutex);
-    on_memory_limit_update = on_memory_limit_update_;
+    std::lock_guard<std::mutex> limit_lock(limit_mutex);
+    on_memory_amount_available_changed = on_memory_amount_available_changed_;
 }
 
 uint64_t CgroupsMemoryUsageObserver::readMemoryUsage() const
 {
-    return file.readMemoryUsage();
+    return memory_usage_file.readMemoryUsage();
 }
 
 namespace
@@ -167,7 +168,7 @@ std::pair<std::string, CgroupsMemoryUsageObserver::CgroupsVersion> getCgroupsFil
 
 }
 
-CgroupsMemoryUsageObserver::File::File(LoggerPtr log_)
+CgroupsMemoryUsageObserver::MemoryUsageFile::MemoryUsageFile(LoggerPtr log_)
     : log(log_)
 {
     std::tie(file_name, version) = getCgroupsFileName();
@@ -181,7 +182,7 @@ CgroupsMemoryUsageObserver::File::File(LoggerPtr log_)
             file_name, "Cannot open file '{}'", file_name);
 }
 
-CgroupsMemoryUsageObserver::File::~File()
+CgroupsMemoryUsageObserver::MemoryUsageFile::~MemoryUsageFile()
 {
     assert(fd != -1);
     if (::close(fd) != 0)
@@ -199,7 +200,7 @@ CgroupsMemoryUsageObserver::File::~File()
     }
 }
 
-uint64_t CgroupsMemoryUsageObserver::File::readMemoryUsage() const
+uint64_t CgroupsMemoryUsageObserver::MemoryUsageFile::readMemoryUsage() const
 {
     /// File read is probably not read is thread-safe, just to be sure
     std::lock_guard lock(mutex);
@@ -282,8 +283,8 @@ void CgroupsMemoryUsageObserver::runThread()
 {
     setThreadName("CgrpMemUsgObsr");
 
-    last_process_memory_amount = getMemoryAmount();
-    LOG_INFO(log, "Init memory amount is {} bytes", last_process_memory_amount);
+    last_available_memory_amount = getMemoryAmount();
+    LOG_INFO(log, "Memory amount initially available to the process is {}", ReadableSize(last_available_memory_amount));
 
     std::unique_lock lock(thread_mutex);
     while (true)
@@ -293,21 +294,41 @@ void CgroupsMemoryUsageObserver::runThread()
 
         try
         {
-            uint64_t process_memory_limit = getMemoryAmount();
-            if (process_memory_limit != last_process_memory_amount)
+            uint64_t available_memory_amount = getMemoryAmount();
+            if (available_memory_amount != last_available_memory_amount)
             {
-                LOG_INFO(log, "Find memory amount change, old limit is {} bytes, new limit is {} bytes", last_process_memory_amount, process_memory_limit);
-                last_process_memory_amount = process_memory_limit;
-                /// If the available memory for the process changes (typically because the limit was adjusted via cgroups), then we just reload the config.
-                /// Reloading config will check the memory amount again and calculate soft/hard limit again.
-                std::lock_guard<std::mutex> set_limit_lock(limit_mutex);
-                on_memory_limit_update();
+                LOG_INFO(log, "Memory amount available to the process changed from {} to {}", ReadableSize(last_available_memory_amount), ReadableSize(available_memory_amount));
+                last_available_memory_amount = available_memory_amount;
+                std::lock_guard<std::mutex> limit_lock(limit_mutex);
+                on_memory_amount_available_changed();
             }
-            std::lock_guard<std::mutex> set_limit_lock(limit_mutex);
+
+            std::lock_guard<std::mutex> limit_lock(limit_mutex);
             if (soft_limit > 0 && hard_limit > 0)
             {
-                uint64_t memory_usage = file.readMemoryUsage();
-                processMemoryUsage(memory_usage);
+                uint64_t memory_usage = memory_usage_file.readMemoryUsage();
+                if (memory_usage > hard_limit)
+                {
+                    if (last_memory_usage <= hard_limit)
+                        on_hard_limit(true);
+                }
+                else
+                {
+                    if (last_memory_usage > hard_limit)
+                        on_hard_limit(false);
+                }
+
+                if (memory_usage > soft_limit)
+                {
+                    if (last_memory_usage <= soft_limit)
+                        on_soft_limit(true);
+                }
+                else
+                {
+                    if (last_memory_usage > soft_limit)
+                        on_soft_limit(false);
+                }
+                last_memory_usage = memory_usage;
             }
         }
         catch (...)
@@ -315,33 +336,6 @@ void CgroupsMemoryUsageObserver::runThread()
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
     }
-}
-
-void CgroupsMemoryUsageObserver::processMemoryUsage(uint64_t current_usage)
-{
-    if (current_usage > hard_limit)
-    {
-        if (last_usage <= hard_limit)
-            on_hard_limit(true);
-    }
-    else
-    {
-        if (last_usage > hard_limit)
-            on_hard_limit(false);
-    }
-
-    if (current_usage > soft_limit)
-    {
-        if (last_usage <= soft_limit)
-            on_soft_limit(true);
-    }
-    else
-    {
-        if (last_usage > soft_limit)
-            on_soft_limit(false);
-    }
-
-    last_usage = current_usage;
 }
 
 }
