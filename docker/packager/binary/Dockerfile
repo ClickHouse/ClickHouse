@@ -1,42 +1,5 @@
 # docker build -t clickhouse/binary-builder .
 ARG FROM_TAG=latest
-FROM clickhouse/test-util:latest AS cctools
-# The cctools are built always from the clickhouse/test-util:latest and cached inline
-# Theoretically, it should improve rebuild speed significantly
-ENV CC=clang-${LLVM_VERSION}
-ENV CXX=clang++-${LLVM_VERSION}
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-# DO NOT PUT ANYTHING BEFORE THE NEXT TWO `RUN` DIRECTIVES
-# THE MOST HEAVY OPERATION MUST BE THE FIRST IN THE CACHE
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-# libtapi is required to support .tbh format from recent MacOS SDKs
-RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
-    && cd apple-libtapi \
-    && git checkout 15dfc2a8c9a2a89d06ff227560a69f5265b692f9 \
-    && INSTALLPREFIX=/cctools ./build.sh \
-    && ./install.sh \
-    && cd .. \
-    && rm -rf apple-libtapi
-
-# Build and install tools for cross-linking to Darwin (x86-64)
-# Build and install tools for cross-linking to Darwin (aarch64)
-RUN git clone https://github.com/tpoechtrager/cctools-port.git \
-    && cd cctools-port/cctools \
-    && git checkout 2a3e1c2a6ff54a30f898b70cfb9ba1692a55fad7 \
-    && ./configure --prefix=/cctools --with-libtapi=/cctools \
-        --target=x86_64-apple-darwin \
-    && make install -j$(nproc) \
-    && make clean \
-    && ./configure --prefix=/cctools --with-libtapi=/cctools \
-        --target=aarch64-apple-darwin \
-    && make install -j$(nproc) \
-    && cd ../.. \
-    && rm -rf cctools-port
-
-# !!!!!!!!!!!
-# END COMPILE
-# !!!!!!!!!!!
-
 FROM clickhouse/test-util:$FROM_TAG
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
@@ -112,7 +75,8 @@ RUN curl -Lo /usr/bin/clang-tidy-cache \
         "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/clang-tidy-cache" \
     && chmod +x /usr/bin/clang-tidy-cache
 
-COPY --from=cctools /cctools /cctools
+# If the cctools is updated, then first build it in the CI, then update here in a different commit
+COPY --from=clickhouse/cctools:5a908f73878a /cctools /cctools
 
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir
