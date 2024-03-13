@@ -7680,9 +7680,13 @@ void StorageReplicatedMergeTree::forcefullyRemoveBrokenOutdatedPartFromZooKeeper
     /// It could became Outdated because it was merged/mutated (so we have a covering part) or because it was dropped.
     /// But DROP [PART]ITION waits for all Outdated parts to be loaded, so it's not the case.
 
-    auto zookeeper = getZooKeeper();
+    bool exists = false;
     String part_path = replica_path + "/parts/" + part_name;
-    if (!zookeeper->exists(part_path))
+    ZooKeeperRetriesInfo retries_info{/* max_retries */5, /* initial_backoff_ms */100, /* max_backoff_ms */100};
+    ZooKeeperRetriesControl retries_ctl("outdatedPartExists", log.load(), retries_info, nullptr);
+
+    retries_ctl.retryLoop([&]() { exists = getZooKeeper()->exists(part_path); });
+    if (!exists)
         return;
 
     auto part = getActiveContainingPart(part_name);
