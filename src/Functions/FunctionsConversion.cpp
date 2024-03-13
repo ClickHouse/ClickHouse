@@ -179,6 +179,131 @@ struct ToDateTimeImpl
 };
 
 
+/// Implementation of toDate function.
+
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDateTransform32Or64
+{
+    static constexpr auto name = "toDate";
+
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    {
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
+        }
+        /// if value is smaller (or equal) than maximum day value for Date, than treat it as day num,
+        /// otherwise treat it as unix timestamp. This is a bit weird, but we leave this behavior.
+        if (from <= DATE_LUT_MAX_DAY_NUM)
+            return from;
+        else
+            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+    }
+};
+
+
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDateTransform32Or64Signed
+{
+    static constexpr auto name = "toDate";
+
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    {
+        // TODO: decide narrow or extended range based on FromType
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (from < 0 || from > MAX_DATE_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
+        }
+        else
+        {
+            if (from < 0)
+                return 0;
+        }
+        return (from <= DATE_LUT_MAX_DAY_NUM)
+            ? static_cast<ToType>(from)
+            : time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATE_TIMESTAMP)));
+    }
+};
+
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDateTransform8Or16Signed
+{
+    static constexpr auto name = "toDate";
+
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    {
+        if (from < 0)
+        {
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
+            else
+                return 0;
+        }
+        return from;
+    }
+};
+
+/// Implementation of toDate32 function.
+
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDate32Transform32Or64
+{
+    static constexpr auto name = "toDate32";
+
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    {
+        if (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
+            return static_cast<ToType>(from);
+        else
+        {
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            {
+                if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
+            }
+            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME64_TIMESTAMP)));
+        }
+    }
+};
+
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDate32Transform32Or64Signed
+{
+    static constexpr auto name = "toDate32";
+
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    {
+        static const Int32 daynum_min_offset = -static_cast<Int32>(time_zone.getDayNumOffsetEpoch());
+
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (from < daynum_min_offset || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
+        }
+
+        if (from < daynum_min_offset)
+            return daynum_min_offset;
+
+        return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
+            ? static_cast<ToType>(from)
+            : time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
+    }
+};
+
+template <typename FromType, typename ToType>
+struct ToDate32Transform8Or16Signed
+{
+    static constexpr auto name = "toDate32";
+
+    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    {
+        return from;
+    }
+};
+
+
 /// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
 struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
 
@@ -239,6 +364,73 @@ struct ConvertImpl
         {
             /// Conversion from Date/Date32 to DateTime.
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeImpl<date_time_overflow_behavior>, false>::execute(
+                arguments, result_type, input_rows_count);
+        }
+        /** Special case of converting Int8, Int16, (U)Int32 or (U)Int64 (and also, for convenience,
+          * Float32, Float64) to Date. If the
+          * number is less than 65536, then it is treated as DayNum, and if it's greater or equals to 65536,
+          * then treated as unix timestamp. If the number exceeds UInt32, saturate to MAX_UINT32 then as DayNum.
+          * It's a bit illogical, as we actually have two functions in one.
+          * But allows to support frequent case,
+          *  when user write toDate(UInt32), expecting conversion of unix timestamp to Date.
+          *  (otherwise such usage would be frequent mistake).
+          */
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeUInt32>
+                || std::is_same_v<FromDataType, DataTypeUInt64>)
+            && std::is_same_v<ToDataType, DataTypeDate>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::execute(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeInt8>
+                || std::is_same_v<FromDataType, DataTypeInt16>)
+            && std::is_same_v<ToDataType, DataTypeDate>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform8Or16Signed<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::execute(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeInt32>
+                || std::is_same_v<FromDataType, DataTypeInt64>
+                || std::is_same_v<FromDataType, DataTypeFloat32>
+                || std::is_same_v<FromDataType, DataTypeFloat64>)
+            && std::is_same_v<ToDataType, DataTypeDate>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64Signed<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::execute(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeUInt32>
+                || std::is_same_v<FromDataType, DataTypeUInt64>)
+            && std::is_same_v<ToDataType, DataTypeDate32>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::execute(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeInt8>
+                || std::is_same_v<FromDataType, DataTypeInt16>)
+            && std::is_same_v<ToDataType, DataTypeDate32>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform8Or16Signed<typename FromDataType::FieldType, UInt16>, false>::execute(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeInt32>
+                || std::is_same_v<FromDataType, DataTypeInt64>
+                || std::is_same_v<FromDataType, DataTypeFloat32>
+                || std::is_same_v<FromDataType, DataTypeFloat64>)
+            && std::is_same_v<ToDataType, DataTypeDate32>
+            && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64Signed<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::execute(
                 arguments, result_type, input_rows_count);
         }
         else
@@ -490,207 +682,9 @@ struct ConvertImpl
 };
 
 
-/// Implementation of toDate function.
-
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToDateTransform32Or64
-{
-    static constexpr auto name = "toDate";
-
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
-    {
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
-        }
-        /// if value is smaller (or equal) than maximum day value for Date, than treat it as day num,
-        /// otherwise treat it as unix timestamp. This is a bit weird, but we leave this behavior.
-        if (from <= DATE_LUT_MAX_DAY_NUM)
-            return from;
-        else
-            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
-    }
-};
-
-
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToDateTransform32Or64Signed
-{
-    static constexpr auto name = "toDate";
-
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
-    {
-        // TODO: decide narrow or extended range based on FromType
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (from < 0 || from > MAX_DATE_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
-        }
-        else
-        {
-            if (from < 0)
-                return 0;
-        }
-        return (from <= DATE_LUT_MAX_DAY_NUM)
-            ? static_cast<ToType>(from)
-            : time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATE_TIMESTAMP)));
-    }
-};
-
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToDateTransform8Or16Signed
-{
-    static constexpr auto name = "toDate";
-
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
-    {
-        if (from < 0)
-        {
-            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
-            else
-                return 0;
-        }
-        return from;
-    }
-};
-
 template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ConvertImpl<DataTypeDateTime64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
         : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>, false> {};
-
-/// Implementation of toDate32 function.
-
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToDate32Transform32Or64
-{
-    static constexpr auto name = "toDate32";
-
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
-    {
-        if (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
-            return static_cast<ToType>(from);
-        else
-        {
-            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-            {
-                if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
-            }
-            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME64_TIMESTAMP)));
-        }
-    }
-};
-
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ToDate32Transform32Or64Signed
-{
-    static constexpr auto name = "toDate32";
-
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
-    {
-        static const Int32 daynum_min_offset = -static_cast<Int32>(time_zone.getDayNumOffsetEpoch());
-
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-        {
-            if (from < daynum_min_offset || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
-        }
-
-        if (from < daynum_min_offset)
-            return daynum_min_offset;
-
-        return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
-            ? static_cast<ToType>(from)
-            : time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
-    }
-};
-
-template <typename FromType, typename ToType>
-struct ToDate32Transform8Or16Signed
-{
-    static constexpr auto name = "toDate32";
-
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
-    {
-        return from;
-    }
-};
-
-/** Special case of converting Int8, Int16, (U)Int32 or (U)Int64 (and also, for convenience,
-  * Float32, Float64) to Date. If the
-  * number is less than 65536, then it is treated as DayNum, and if it's greater or equals to 65536,
-  * then treated as unix timestamp. If the number exceeds UInt32, saturate to MAX_UINT32 then as DayNum.
-  * It's a bit illogical, as we actually have two functions in one.
-  * But allows to support frequent case,
-  *  when user write toDate(UInt32), expecting conversion of unix timestamp to Date.
-  *  (otherwise such usage would be frequent mistake).
-  */
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate, ToDateTransform32Or64<UInt32, UInt16, default_date_time_overflow_behavior>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate, ToDateTransform32Or64<UInt64, UInt16, default_date_time_overflow_behavior>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeInt8, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeInt8, DataTypeDate, ToDateTransform8Or16Signed<Int8, UInt16, default_date_time_overflow_behavior>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeInt16, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeInt16, DataTypeDate, ToDateTransform8Or16Signed<Int16, UInt16, default_date_time_overflow_behavior>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeInt32, DataTypeDate, ToDateTransform32Or64Signed<Int32, UInt16, default_date_time_overflow_behavior>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeInt64, DataTypeDate, ToDateTransform32Or64Signed<Int64, UInt16, default_date_time_overflow_behavior>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate, ToDateTransform32Or64Signed<Float32, UInt16, default_date_time_overflow_behavior>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate, ToDateTransform32Or64Signed<Float64, UInt16, default_date_time_overflow_behavior>, false> {};
-
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeUInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate32, ToDate32Transform32Or64<UInt32, Int32, default_date_time_overflow_behavior>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeUInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate32, ToDate32Transform32Or64<UInt64, Int32, default_date_time_overflow_behavior>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeInt8, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeInt8, DataTypeDate32, ToDate32Transform8Or16Signed<Int8, Int32>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeInt16, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeInt16, DataTypeDate32, ToDate32Transform8Or16Signed<Int16, Int32>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeInt32, DataTypeDate32, ToDate32Transform32Or64Signed<Int32, Int32, default_date_time_overflow_behavior>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeInt64, DataTypeDate32, ToDate32Transform32Or64Signed<Int64, Int32, default_date_time_overflow_behavior>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeFloat32, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate32, ToDate32Transform32Or64Signed<Float32, Int32, default_date_time_overflow_behavior>, false> {};
-
-template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct ConvertImpl<DataTypeFloat64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
-    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate32, ToDate32Transform32Or64Signed<Float64, Int32, default_date_time_overflow_behavior>, false> {};
 
 
 template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
