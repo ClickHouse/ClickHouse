@@ -4386,7 +4386,7 @@ Default value: `ignore`.
 
 ## first_day_of_week
 
-The first day of the week (Monday or Sunday) used by `toStartOfInterval` and `date_diff` functions when using weeks as units.
+The first day of the week assumed by functions [`toStartOfInterval`](../../sql-reference/functions/date-time-functions.md#toStartOfInterval) and [`dateDiff`](../../sql-reference/functions/date-time-functions.md#dateDiff) functions when using weeks as unit.
 
 Possible values:
 

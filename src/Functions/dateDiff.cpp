@@ -1,23 +1,25 @@
-
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Common/IntervalKind.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnDecimal.h>
+#include <Common/IntervalKind.h>
 #include <Core/SettingsEnums.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <Functions/DateTimeTransforms.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Functions/TransformDateTime64.h>
-
-#include <Interpreters/Context.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <base/find_symbols.h>
 
@@ -173,10 +175,10 @@ public:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-        UInt8 week_mode = first_day_of_week == FirstDayOfWeek::Monday ? 0 : 3;
-
         if constexpr (is_diff)
         {
+            const UInt8 week_mode = (first_day_of_week == FirstDayOfWeek::Monday) ? 0 : 3;
+
             return static_cast<Int64>(transform_y.execute(y, timezone_y, week_mode))
                 - static_cast<Int64>(transform_x.execute(x, timezone_x, week_mode));
         }
@@ -322,7 +324,7 @@ public:
     }
 private:
     String name;
-    FirstDayOfWeek first_day_of_week;
+    const FirstDayOfWeek first_day_of_week;
 };
 
 
@@ -344,7 +346,7 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateDiff>(context); }
 
     explicit FunctionDateDiff(ContextPtr context)
-        : first_day_of_week(context->getSettingsRef().first_day_of_week)
+        : impl(name, context->getSettingsRef().first_day_of_week)
     {
     }
 
@@ -439,8 +441,7 @@ public:
         return res;
     }
 private:
-    FirstDayOfWeek first_day_of_week;
-    DateDiffImpl<is_relative> impl{name, first_day_of_week};
+    DateDiffImpl<is_relative> impl;
 };
 
 

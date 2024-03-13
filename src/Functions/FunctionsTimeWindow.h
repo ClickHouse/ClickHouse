@@ -46,7 +46,7 @@ struct ToStartOfTransform;
     {
         static auto execute(UInt32 t, UInt64 delta, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), delta, /*week_mode*/1);
+            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), delta, /*week_mode*/ 1);
         }
     };
 
