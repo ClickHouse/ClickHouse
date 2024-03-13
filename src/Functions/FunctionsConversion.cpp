@@ -2389,7 +2389,6 @@ public:
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertFromString>(); }
-    static FunctionPtr create() { return std::make_shared<FunctionConvertFromString>(); }
 
     String getName() const override
     {
@@ -2516,27 +2515,28 @@ public:
         ColumnPtr result_column;
 
         if constexpr (to_decimal)
+        {
             result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count,
                 assert_cast<const ToDataType &>(*removeNullable(result_type)).getScale());
-        else
+        }
+        else if (isDateTime64<Name, ToDataType>(arguments))
         {
-            if (isDateTime64<Name, ToDataType>(arguments))
-            {
-                UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
-                if (arguments.size() > 1)
-                    scale = extractToDecimalScale(arguments[1]);
+            UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
+            if (arguments.size() > 1)
+                scale = extractToDecimalScale(arguments[1]);
 
-                if (scale == 0)
-                    result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count);
-                else
-                {
-                    result_column = executeInternal<DataTypeDateTime64>(arguments, result_type, input_rows_count, static_cast<UInt32>(scale));
-                }
+            if (scale == 0)
+            {
+                result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count);
             }
             else
             {
-                result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count);
+                result_column = executeInternal<DataTypeDateTime64>(arguments, result_type, input_rows_count, static_cast<UInt32>(scale));
             }
+        }
+        else
+        {
+            result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count);
         }
 
         if (!result_column)
@@ -3204,7 +3204,7 @@ private:
         {
             /// In case when converting to Nullable type, we apply different parsing rule,
             /// that will not throw an exception but return NULL in case of malformed input.
-            FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionCastName, ConvertFromStringExceptionMode::Null>::create();
+            FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionCastName, ConvertFromStringExceptionMode::Null>::create(context);
             return createFunctionAdaptor(function, from_type);
         }
         else if (!can_apply_accurate_cast)
