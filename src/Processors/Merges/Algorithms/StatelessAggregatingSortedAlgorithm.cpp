@@ -308,7 +308,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
         }
     }
 
-    // TODO: get rid of this, brought from SummingMT
+    // TODO: refactor this
     /// select actual nested Maps from list of candidates
     for (const auto & map : discovered_maps)
     {
