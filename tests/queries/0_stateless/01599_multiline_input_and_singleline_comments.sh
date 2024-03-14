@@ -2,7 +2,7 @@
 
 log_user 0
 
-# In some places `-timeout 1`` is used to avoid expect to always wait for the whole timeout
+# In some places `-timeout 1` is used to avoid expect to always wait for the whole timeout
 set timeout 60
 
 match_max 100000
