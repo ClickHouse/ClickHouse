@@ -92,7 +92,6 @@ public:
 
     void alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder &) override;
 
-    Poco::Timestamp getUpdateTime() const;
     LoadablesConfigurationPtr getConfiguration() const;
 
     String getDictionaryName() const { return dictionary_name; }
@@ -102,7 +101,6 @@ private:
     const Location location;
 
     mutable std::mutex dictionary_config_mutex;
-    Poco::Timestamp update_time;
     LoadablesConfigurationPtr configuration;
 
     scope_guard remove_repository_callback;

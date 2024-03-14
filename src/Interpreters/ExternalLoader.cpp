@@ -169,7 +169,7 @@ public:
 private:
     struct FileInfo
     {
-        Poco::Timestamp last_update_time = 0;
+        std::optional<Poco::Timestamp> last_update_time;
         bool in_use = true; // Whether the `FileInfo` should be destroyed because the correspondent file is deleted.
         Poco::AutoPtr<Poco::Util::AbstractConfiguration> file_contents; // Parsed contents of the file.
         std::unordered_map<String /* object name */, String /* key in file_contents */> objects;
@@ -268,7 +268,7 @@ private:
             // is updated, but in the same second).
             // The solution to this is probably switching to std::filesystem
             // -- the work is underway to do so.
-            if (update_time_from_repository == file_info.last_update_time)
+            if (update_time_from_repository && (update_time_from_repository == file_info.last_update_time))
             {
                 file_info.in_use = true;
                 return false;

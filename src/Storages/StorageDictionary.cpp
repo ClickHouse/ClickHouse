@@ -194,12 +194,6 @@ void StorageDictionary::removeDictionaryConfigurationFromRepository()
     remove_repository_callback.reset();
 }
 
-Poco::Timestamp StorageDictionary::getUpdateTime() const
-{
-    std::lock_guard lock(dictionary_config_mutex);
-    return update_time;
-}
-
 LoadablesConfigurationPtr StorageDictionary::getConfiguration() const
 {
     std::lock_guard lock(dictionary_config_mutex);
