@@ -7682,7 +7682,8 @@ void StorageReplicatedMergeTree::forcefullyRemoveBrokenOutdatedPartFromZooKeeper
 
     bool exists = false;
     String part_path = replica_path + "/parts/" + part_name;
-    ZooKeeperRetriesInfo retries_info{/* max_retries */5, /* initial_backoff_ms */100, /* max_backoff_ms */100};
+    const auto & settings = getContext()->getSettingsRef();
+    ZooKeeperRetriesInfo retries_info{settings.keeper_max_retries, settings.keeper_retry_initial_backoff_ms, settings.keeper_retry_max_backoff_ms};
     ZooKeeperRetriesControl retries_ctl("outdatedPartExists", log.load(), retries_info, nullptr);
 
     retries_ctl.retryLoop([&]() { exists = getZooKeeper()->exists(part_path); });
