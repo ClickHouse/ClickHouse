@@ -23,7 +23,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeIndexInverted.h>
-#include <Storages/BlockNumberColumn.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -73,6 +73,7 @@ static void splitAndModifyMutationCommands(
     LoggerPtr log)
 {
     auto part_columns = part->getColumnsDescription();
+    const auto & table_columns = metadata_snapshot->getColumns();
 
     if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
@@ -81,9 +82,19 @@ static void splitAndModifyMutationCommands(
 
         for (const auto & command : commands)
         {
+            if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
+            {
+                /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
+                /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
+                auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
+                if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                {
+                    for_interpreter.push_back(command);
+                    mutated_columns.emplace(command.column_name);
+                }
+            }
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
-                || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
@@ -93,9 +104,6 @@ static void splitAndModifyMutationCommands(
                 for_interpreter.push_back(command);
                 for (const auto & [column_name, expr] : command.column_to_update_expression)
                     mutated_columns.emplace(column_name);
-
-                if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
-                    mutated_columns.emplace(command.column_name);
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
@@ -160,7 +168,7 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
-                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtuals().contains(column.name))
+                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
                     /// It's okay if the column was dropped. It may also absent in dropped_columns
@@ -205,8 +213,15 @@ static void splitAndModifyMutationCommands(
     {
         for (const auto & command : commands)
         {
-            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
-                || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
+            if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
+            {
+                /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
+                /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
+                auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
+                if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                    for_interpreter.push_back(command);
+            }
+            else if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
@@ -268,7 +283,6 @@ getColumnsForNewDataPart(
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
 
-    const auto & deleted_mask_column = LightweightDeleteDescription::FILTER_COLUMN;
     bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
 
     bool deleted_mask_updated = false;
@@ -284,9 +298,9 @@ getColumnsForNewDataPart(
         {
             for (const auto & [column_name, _] : command.column_to_update_expression)
             {
-                if (column_name == deleted_mask_column.name
+                if (column_name == RowExistsColumn::name
                     && supports_lightweight_deletes
-                    && !storage_columns_set.contains(deleted_mask_column.name))
+                    && !storage_columns_set.contains(RowExistsColumn::name))
                     deleted_mask_updated = true;
             }
         }
@@ -308,12 +322,12 @@ getColumnsForNewDataPart(
         }
     }
 
-    if (!storage_columns_set.contains(deleted_mask_column.name))
+    if (!storage_columns_set.contains(RowExistsColumn::name))
     {
-        if (deleted_mask_updated || (part_columns.has(deleted_mask_column.name) && !has_delete_command))
+        if (deleted_mask_updated || (part_columns.has(RowExistsColumn::name) && !has_delete_command))
         {
-            storage_columns.push_back(deleted_mask_column);
-            storage_columns_set.insert(deleted_mask_column.name);
+            storage_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
+            storage_columns_set.insert(RowExistsColumn::name);
         }
     }
 
@@ -558,9 +572,7 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     {
         bool need_recalculate =
             materialized_projections.contains(projection.name)
-            || (!is_full_part_storage
-                && source_part->hasProjection(projection.name)
-                && !source_part->hasBrokenProjection(projection.name));
+            || (!is_full_part_storage && source_part->hasProjection(projection.name));
 
         if (need_recalculate)
             projections_to_recalc.insert(&projection);
@@ -899,13 +911,12 @@ void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->index = source_part->index;
+    new_data_part->setIndex(source_part->getIndex());
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
 
     /// Load rest projections which are hardlinked
-    bool noop;
-    new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
+    new_data_part->loadProjections(false, false, true /* if_not_loaded */);
 
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
@@ -1224,14 +1235,8 @@ void PartMergerWriter::prepare()
 
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
-        // If the parent part is an in-memory part, squash projection output into one block and
-        // build in-memory projection because we don't support merging into a new in-memory part.
-        // Otherwise we split the materialization into multiple stages similar to the process of
-        // INSERT SELECT query.
-        if (ctx->new_data_part->getType() == MergeTreeDataPartType::InMemory)
-            projection_squashes.emplace_back(0, 0);
-        else
-            projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
+        // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
+        projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
     }
 }
 
@@ -1488,9 +1493,7 @@ private:
 
             bool need_recalculate =
                 ctx->materialized_projections.contains(projection.name)
-                || (!is_full_part_storage
-                    && ctx->source_part->hasProjection(projection.name)
-                    && !ctx->source_part->hasBrokenProjection(projection.name));
+                || (!is_full_part_storage && ctx->source_part->hasProjection(projection.name));
 
             if (need_recalculate)
             {
@@ -1627,9 +1630,8 @@ private:
 
     void finalize()
     {
-        bool noop;
         ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
-        ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
+        ctx->new_data_part->loadProjections(false, false, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 

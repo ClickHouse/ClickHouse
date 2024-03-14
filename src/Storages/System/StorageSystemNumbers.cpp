@@ -19,6 +19,8 @@ StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool mult
     : IStorage(table_id), multithreaded(multithreaded_), limit(limit_), offset(offset_)
 {
     StorageInMemoryMetadata storage_metadata;
+    /// This column doesn't have a comment, because otherwise it will be added to all the tables which were created via
+    /// CREATE TABLE test as numbers(5)
     storage_metadata.setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
     setInMemoryMetadata(storage_metadata);
 }
@@ -34,7 +36,7 @@ void StorageSystemNumbers::read(
     size_t num_streams)
 {
     query_plan.addStep(std::make_unique<ReadFromSystemNumbersStep>(
-        column_names, shared_from_this(), storage_snapshot, query_info, std::move(context), max_block_size, num_streams));
+        column_names, query_info, storage_snapshot, context, shared_from_this(), max_block_size, num_streams));
 }
 
 }

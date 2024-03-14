@@ -3,6 +3,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/NamePrompter.h>
 #include <Common/ProfileEvents.h>
+#include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -79,12 +80,13 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
+
+#include <boost/algorithm/string.hpp>
 
 namespace ProfileEvents
 {
     extern const Event ScalarSubqueriesGlobalCacheHit;
+    extern const Event ScalarSubqueriesLocalCacheHit;
     extern const Event ScalarSubqueriesCacheMiss;
 }
 
@@ -706,7 +708,10 @@ struct IdentifierResolveScope
         {
             subquery_depth = parent_scope->subquery_depth;
             context = parent_scope->context;
+            projection_mask_map = parent_scope->projection_mask_map;
         }
+        else
+            projection_mask_map = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>();
 
         if (auto * union_node = scope_node->as<UnionNode>())
         {
@@ -718,6 +723,11 @@ struct IdentifierResolveScope
             group_by_use_nulls = context->getSettingsRef().group_by_use_nulls &&
                 (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
         }
+
+        if (context)
+            join_use_nulls = context->getSettingsRef().join_use_nulls;
+        else if (parent_scope)
+            join_use_nulls = parent_scope->join_use_nulls;
     }
 
     QueryTreeNodePtr scope_node;
@@ -772,6 +782,8 @@ struct IdentifierResolveScope
 
     /// Apply nullability to aggregation keys
     bool group_by_use_nulls = false;
+    /// Join retutns NULLs instead of default values
+    bool join_use_nulls = false;
 
     /// JOINs count
     size_t joins_count = 0;
@@ -783,6 +795,9 @@ struct IdentifierResolveScope
       * Valid only during analysis construction for single expression.
       */
     QueryTreeNodePtr expression_join_tree_node;
+
+    /// Node hash to mask id map
+    std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const
     {
@@ -1068,6 +1083,8 @@ private:
 class QueryAnalyzer
 {
 public:
+    explicit QueryAnalyzer(bool only_analyze_) : only_analyze(only_analyze_) {}
+
     void resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
     {
         IdentifierResolveScope scope(node, nullptr /*parent_scope*/);
@@ -1428,8 +1445,10 @@ private:
     std::unordered_map<QueryTreeNodePtr, size_t> node_to_tree_size;
 
     /// Global scalar subquery to scalar value map
-    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value;
+    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_local;
+    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_global;
 
+    const bool only_analyze;
 };
 
 /// Utility functions implementation
@@ -1934,6 +1953,24 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedFunctions(const st
     return result_node;
 }
 
+bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
+{
+    if (!node)
+        return false;
+
+    if (const auto * table_node = node->as<TableNode>())
+    {
+        if (table_node->getStorageID().getFullNameNotQuoted() == context.getViewSource()->getStorageID().getFullNameNotQuoted())
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (subtreeHasViewSource(child.get(), context))
+            return true;
+
+    return false;
+}
+
 /// Evaluate scalar subquery and perform constant folding if scalar subquery does not have constant value
 void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
@@ -1953,12 +1990,26 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     node_without_alias->removeAlias();
 
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
-    auto scalar_value_it = scalar_subquery_to_scalar_value.find(node_with_hash);
+    auto str_hash = DB::toString(node_with_hash.hash);
 
-    if (scalar_value_it != scalar_subquery_to_scalar_value.end())
+    bool can_use_global_scalars = !only_analyze && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
+
+    auto & scalars_cache = can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local;
+
+    if (scalars_cache.contains(node_with_hash))
     {
+        if (can_use_global_scalars)
+            ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+        else
+            ProfileEvents::increment(ProfileEvents::ScalarSubqueriesLocalCacheHit);
+
+        scalar_block = scalars_cache.at(node_with_hash);
+    }
+    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
+    {
+        scalar_block = context->getQueryContext()->getScalar(str_hash);
+        scalar_subquery_to_scalar_value_global.emplace(node_with_hash, scalar_block);
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
-        scalar_block = scalar_value_it->second;
     }
     else
     {
@@ -1977,84 +2028,102 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, subquery_context->getViewSource(), options);
 
         auto io = interpreter->execute();
-
         PullingAsyncPipelineExecutor executor(io.pipeline);
         io.pipeline.setProgressCallback(context->getProgressCallback());
         io.pipeline.setProcessListElement(context->getProcessListElement());
 
-        Block block;
-
-        while (block.rows() == 0 && executor.pull(block))
+        if (only_analyze)
         {
-        }
-
-        if (block.rows() == 0)
-        {
-            auto types = interpreter->getSampleBlock().getDataTypes();
-            if (types.size() != 1)
-                types = {std::make_shared<DataTypeTuple>(types)};
-
-            auto & type = types[0];
-            if (!type->isNullable())
+            /// If query is only analyzed, then constants are not correct.
+            scalar_block = interpreter->getSampleBlock();
+            for (auto & column : scalar_block)
             {
-                if (!type->canBeInsideNullable())
-                    throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
-                        "Scalar subquery returned empty result of type {} which cannot be Nullable",
-                        type->getName());
-
-                type = makeNullable(type);
+                if (column.column->empty())
+                {
+                    auto mut_col = column.column->cloneEmpty();
+                    mut_col->insertDefault();
+                    column.column = std::move(mut_col);
+                }
             }
-
-            auto scalar_column = type->createColumn();
-            scalar_column->insert(Null());
-            scalar_block.insert({std::move(scalar_column), type, "null"});
         }
         else
         {
-            if (block.rows() != 1)
-                throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+            Block block;
 
-            Block tmp_block;
-            while (tmp_block.rows() == 0 && executor.pull(tmp_block))
+            while (block.rows() == 0 && executor.pull(block))
             {
             }
 
-            if (tmp_block.rows() != 0)
-                throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
-
-            block = materializeBlock(block);
-            size_t columns = block.columns();
-
-            if (columns == 1)
+            if (block.rows() == 0)
             {
-                auto & column = block.getByPosition(0);
-                /// Here we wrap type to nullable if we can.
-                /// It is needed cause if subquery return no rows, it's result will be Null.
-                /// In case of many columns, do not check it cause tuple can't be nullable.
-                if (!column.type->isNullable() && column.type->canBeInsideNullable())
+                auto types = interpreter->getSampleBlock().getDataTypes();
+                if (types.size() != 1)
+                    types = {std::make_shared<DataTypeTuple>(types)};
+
+                auto & type = types[0];
+                if (!type->isNullable())
                 {
-                    column.type = makeNullable(column.type);
-                    column.column = makeNullable(column.column);
+                    if (!type->canBeInsideNullable())
+                        throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
+                            "Scalar subquery returned empty result of type {} which cannot be Nullable",
+                            type->getName());
+
+                    type = makeNullable(type);
                 }
 
-                scalar_block = block;
+                auto scalar_column = type->createColumn();
+                scalar_column->insert(Null());
+                scalar_block.insert({std::move(scalar_column), type, "null"});
             }
             else
             {
-                /** Make unique column names for tuple.
-                  *
-                  * Example: SELECT (SELECT 2 AS x, x)
-                  */
-                makeUniqueColumnNamesInBlock(block);
+                if (block.rows() != 1)
+                    throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
-                scalar_block.insert({
-                    ColumnTuple::create(block.getColumns()),
-                    std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
-                    "tuple"});
+                Block tmp_block;
+                while (tmp_block.rows() == 0 && executor.pull(tmp_block))
+                {
+                }
+
+                if (tmp_block.rows() != 0)
+                    throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+
+                block = materializeBlock(block);
+                size_t columns = block.columns();
+
+                if (columns == 1)
+                {
+                    auto & column = block.getByPosition(0);
+                    /// Here we wrap type to nullable if we can.
+                    /// It is needed cause if subquery return no rows, it's result will be Null.
+                    /// In case of many columns, do not check it cause tuple can't be nullable.
+                    if (!column.type->isNullable() && column.type->canBeInsideNullable())
+                    {
+                        column.type = makeNullable(column.type);
+                        column.column = makeNullable(column.column);
+                    }
+
+                    scalar_block = block;
+                }
+                else
+                {
+                    /** Make unique column names for tuple.
+                    *
+                    * Example: SELECT (SELECT 2 AS x, x)
+                    */
+                    makeUniqueColumnNamesInBlock(block);
+
+                    scalar_block.insert({
+                        ColumnTuple::create(block.getColumns()),
+                        std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
+                        "tuple"});
+                }
             }
         }
 
-        scalar_subquery_to_scalar_value.emplace(node_with_hash, scalar_block);
+        scalars_cache.emplace(node_with_hash, scalar_block);
+        if (can_use_global_scalars && context->hasQueryContext())
+            context->getQueryContext()->addScalar(str_hash, scalar_block);
     }
 
     const auto & scalar_column_with_type = scalar_block.safeGetByPosition(0);
@@ -2384,6 +2453,13 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
 
     for (auto & node : projection_nodes)
     {
+        /// Detect and reject ambiguous statements:
+        /// E.g. for a table with columns "all", "a", "b":
+        /// - SELECT all, a, b ORDER BY all;        -- should we sort by all columns in SELECT or by column "all"?
+        /// - SELECT a, b AS all ORDER BY all;      -- like before but "all" as alias
+        /// - SELECT func(...) AS all ORDER BY all; -- like before but "all" as function
+        /// - SELECT a, b ORDER BY all;             -- tricky in other way: does the user want to sort by columns in SELECT clause or by not SELECTed column "all"?
+
         auto resolved_expression_it = resolved_expressions.find(node);
         if (resolved_expression_it != resolved_expressions.end())
         {
@@ -2392,7 +2468,7 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Expression nodes list expected 1 projection names. Actual {}",
                                 projection_names.size());
-            if (Poco::toUpper(projection_names[0]) == "ALL")
+            if (boost::iequals(projection_names[0], "all"))
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
                                 "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
         }
@@ -3279,7 +3355,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     QueryTreeNodePtr resolved_identifier;
 
     JoinKind join_kind = from_join_node.getKind();
-    bool join_use_nulls = scope.context->getSettingsRef().join_use_nulls;
 
     /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
     /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
@@ -3444,7 +3519,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     if (join_node_in_resolve_process || !resolved_identifier)
         return resolved_identifier;
 
-    if (join_use_nulls)
+    if (scope.join_use_nulls)
     {
         resolved_identifier = resolved_identifier->clone();
         convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side);
@@ -4432,7 +4507,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     else
         matched_expression_nodes_with_names = resolveUnqualifiedMatcher(matcher_node, scope);
 
-    if (scope.context->getSettingsRef().join_use_nulls)
+    if (scope.join_use_nulls)
     {
         /** If we are resolving matcher came from the result of JOIN and `join_use_nulls` is set,
           * we need to convert joined column type to Nullable.
@@ -5117,12 +5192,30 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// Resolve function arguments
-
     bool allow_table_expressions = is_special_function_in;
     auto arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
         scope,
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/);
+
+    /// Mask arguments if needed
+    if (!scope.context->getSettingsRef().format_display_secrets_in_show_and_select)
+    {
+        if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.count)
+        {
+            auto & argument_nodes = function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
+
+            for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
+            {
+                if (auto * constant = argument_nodes[n]->as<ConstantNode>())
+                {
+                    auto mask = scope.projection_mask_map->insert({constant->getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
+                    constant->setMaskId(mask);
+                    arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(mask) + "]";
+                }
+            }
+        }
+    }
 
     auto & function_node = *function_node_ptr;
 
@@ -6635,7 +6728,6 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             if (column_default && column_default->kind == ColumnDefaultKind::Alias)
             {
                 auto alias_expression = buildQueryTree(column_default->expression, scope.context);
-                alias_expression = buildCastFunction(alias_expression, column_name_and_type.type, scope.context, false /*resolve*/);
                 auto column_node = std::make_shared<ColumnNode>(column_name_and_type, std::move(alias_expression), table_expression_node);
                 column_name_to_column_node.emplace(column_name_and_type.name, column_node);
                 alias_columns_to_resolve.emplace_back(column_name_and_type.name, column_node);
@@ -6668,7 +6760,9 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
                 alias_column_resolve_scope,
                 false /*allow_lambda_expression*/,
                 false /*allow_table_expression*/);
-
+            auto & resolved_expression = alias_column_to_resolve->getExpression();
+            if (!resolved_expression->getResultType()->equals(*alias_column_to_resolve->getResultType()))
+                resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
             column_name_to_column_node = std::move(alias_column_resolve_scope.column_name_to_column_node);
             column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
         }
@@ -6737,6 +6831,28 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
+        String database_name = scope_context->getCurrentDatabase();
+        String table_name;
+
+        auto function_ast = table_function_node->toAST();
+        Identifier table_identifier{table_function_name};
+        if (table_identifier.getPartsSize() == 1)
+        {
+            table_name = table_identifier[0];
+        }
+        else if (table_identifier.getPartsSize() == 2)
+        {
+            database_name = table_identifier[0];
+            table_name = table_identifier[1];
+        }
+
+        auto parametrized_view_storage = scope_context->getQueryContext()->buildParametrizedViewStorage(function_ast, database_name, table_name);
+        if (parametrized_view_storage)
+        {
+            table_function_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
+            return;
+        }
+
         auto hints = TableFunctionFactory::instance().getHints(table_function_name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
@@ -7520,7 +7636,21 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.getPrewhere())
+    {
+        /** Expression in PREWHERE with JOIN should not be modified by join_use_nulls.
+          * Example: SELECT * FROM t1 JOIN t2 USING (id) PREWHERE a = 1
+          * Column `a` should be resolved from table and should not change its type to Nullable.
+          */
+        bool join_use_nulls = scope.join_use_nulls;
+        bool use_identifier_lookup_to_result_cache = scope.use_identifier_lookup_to_result_cache;
+        scope.join_use_nulls = false;
+        scope.use_identifier_lookup_to_result_cache = false;
+
         resolveExpressionNode(query_node_typed.getPrewhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        scope.join_use_nulls = join_use_nulls;
+        scope.use_identifier_lookup_to_result_cache = use_identifier_lookup_to_result_cache;
+    }
 
     if (query_node_typed.getWhere())
         resolveExpressionNode(query_node_typed.getWhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -7711,13 +7841,16 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
 }
 
-QueryAnalysisPass::QueryAnalysisPass(QueryTreeNodePtr table_expression_)
+QueryAnalysisPass::QueryAnalysisPass(QueryTreeNodePtr table_expression_, bool only_analyze_)
     : table_expression(std::move(table_expression_))
+    , only_analyze(only_analyze_)
 {}
+
+QueryAnalysisPass::QueryAnalysisPass(bool only_analyze_) : only_analyze(only_analyze_) {}
 
 void QueryAnalysisPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    QueryAnalyzer analyzer;
+    QueryAnalyzer analyzer(only_analyze);
     analyzer.resolve(query_tree_node, table_expression, context);
     createUniqueTableAliases(query_tree_node, table_expression, context);
 }

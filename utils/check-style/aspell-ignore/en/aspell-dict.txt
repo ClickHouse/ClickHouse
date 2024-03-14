@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2724
+personal_ws-1.1 en 2758 
 AArch
 ACLs
 ALTERs
@@ -112,6 +112,7 @@ CDMA
 CESU
 CIDR
 CIDRToRange
+CKMAN
 CLOB
 CLion
 CMPLNT
@@ -259,6 +260,7 @@ ExactEdgeLengthRads
 ExecutablePool
 ExtType
 ExternalDistributed
+FFFFFFFF
 FFFD
 FIPS
 FOSDEM
@@ -545,6 +547,8 @@ MinIO
 MinMax
 MindsDB
 Mongodb
+mortonDecode
+mortonEncode
 MsgPack
 MultiPolygon
 Multiline
@@ -684,7 +688,6 @@ PartsCommitted
 PartsCompact
 PartsDeleteOnDestroy
 PartsDeleting
-PartsInMemory
 PartsOutdated
 PartsPreActive
 PartsPreCommitted
@@ -840,6 +843,7 @@ Sematext
 SendExternalTables
 SendScalars
 ShareAlike
+SharedMergeTree
 Shortkeys
 SimHash
 Simhash
@@ -991,6 +995,7 @@ VIEWs
 Vadim
 Valgrind
 Vectorized
+VersionBadge
 VersionInteger
 VersionedCollapsingMergeTree
 VideoContainer
@@ -1076,6 +1081,8 @@ anyheavy
 anylast
 appendTrailingCharIfAbsent
 approximative
+approxtopk
+approxtopsum
 argMax
 argMin
 argmax
@@ -1236,6 +1243,7 @@ buildable
 builtins
 byteHammingDistance
 byteSize
+byteSlice
 byteSwap
 bytebase
 bytesToCutForIPv
@@ -1265,6 +1273,8 @@ centroid
 certificateFile
 cetera
 cfg
+cgroup
+cgroups
 chadmin
 changelog
 changelogs
@@ -1284,6 +1294,7 @@ cipherList
 ciphertext
 cityHash
 cityhash
+ckman
 clangd
 cli
 clickcache
@@ -1611,6 +1622,7 @@ greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
+groupArrayIntersect
 groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
@@ -1626,6 +1638,7 @@ groupBitmapXor
 groupUniqArray
 grouparray
 grouparrayinsertat
+grouparrayintersect
 grouparraylast
 grouparraymovingavg
 grouparraymovingsum
@@ -1833,6 +1846,7 @@ linearized
 lineasstring
 linefeeds
 lineorder
+linestring
 linux
 llvm
 loadDefaultCAFile
@@ -1888,6 +1902,7 @@ mdadm
 meanZTest
 meanztest
 mebibytes
+mergeTreeIndex
 mergeable
 mergetree
 messageID
@@ -2190,7 +2205,9 @@ rankCorr
 rapidjson
 rawblob
 readWKTMultiPolygon
+readWKTPoint
 readWKTPolygon
+readWKTRing
 readahead
 readline
 readme
@@ -2313,6 +2330,14 @@ shortcircuit
 shortkeys
 shoutout
 simdjson
+simpleJSON
+simpleJSONExtractBool
+simpleJSONExtractFloat
+simpleJSONExtractInt
+simpleJSONExtractRaw
+simpleJSONExtractString
+simpleJSONExtractUInt
+simpleJSONHas
 simpleLinearRegression
 simpleaggregatefunction
 simplelinearregression
@@ -2415,6 +2440,7 @@ subranges
 subreddits
 subseconds
 subsequence
+substreams
 substring
 substringIndex
 substringIndexUTF
@@ -2478,6 +2504,7 @@ theilsu
 themself
 threadpool
 throwIf
+timeDiff
 timeSlot
 timeSlots
 timeZone
@@ -2529,6 +2556,7 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
+toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2664,7 +2692,9 @@ userver
 utils
 uuid
 varPop
+varPopStable
 varSamp
+varSampStable
 variadic
 variantElement
 variantType
@@ -2714,6 +2744,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+writability
 wrt
 xcode
 xeus
@@ -2725,6 +2756,7 @@ xz
 yaml
 yandex
 youtube
+ZCurve
 zLib
 zLinux
 zabbix

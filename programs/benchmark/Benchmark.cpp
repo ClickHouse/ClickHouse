@@ -2,7 +2,6 @@
 #include <cstdlib>
 #include <csignal>
 #include <iostream>
-#include <fstream>
 #include <iomanip>
 #include <optional>
 #include <random>
@@ -567,10 +566,6 @@ public:
 
 }
 
-
-#ifndef __clang__
-#pragma GCC optimize("-fno-var-tracking-assignments")
-#endif
 
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
