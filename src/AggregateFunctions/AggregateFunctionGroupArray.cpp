@@ -182,11 +182,14 @@ public:
 
         if constexpr (Trait::sampler == Sampler::NONE)
         {
-            if (limit_num_elems && cur_elems.value.size() >= max_elems)
+            if constexpr (limit_num_elems)
             {
-                if constexpr (Trait::last)
-                    cur_elems.value[(cur_elems.total_values - 1) % max_elems] = row_value;
-                return;
+                if (cur_elems.value.size() >= max_elems)
+                {
+                    if constexpr (Trait::last)
+                        cur_elems.value[(cur_elems.total_values - 1) % max_elems] = row_value;
+                    return;
+                }
             }
 
             cur_elems.value.push_back(row_value, arena);
@@ -236,7 +239,7 @@ public:
 
     void mergeNoSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
     {
-        if (!limit_num_elems)
+        if constexpr (!limit_num_elems)
         {
             if (rhs_elems.value.size())
                 cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
