@@ -2761,17 +2761,17 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
     if (!type->equals(*std::make_shared<DataTypeUInt8>()))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Unexpected expression in JOIN ON section. Expected boolean (UInt8), got '{}'",
-            expression_sample_block.getByPosition(0).type->getName());
+            "Unexpected expression in JOIN ON section. Expected boolean (UInt8), got '{}'. expression:\n{}",
+            expression_sample_block.getByPosition(0).type->getName(),
+            additional_filter_expression->dumpActions());
     }
 
     bool is_supported = (strictness == JoinStrictness::All) && (isInnerOrLeft(kind) || isRightOrFull(kind));
     if (!is_supported)
     {
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-            "Non equi condition '{}' from JOIN ON section is supported only for ALL INNER/LEFT/FULL/RIGHT JOINs. filter condition:\n{}",
-            expression_sample_block.getByPosition(0).name,
-            additional_filter_expression->dumpActions());
+            "Non equi condition '{}' from JOIN ON section is supported only for ALL INNER/LEFT/FULL/RIGHT JOINs.",
+            expression_sample_block.getByPosition(0).name);
     }
 }
 

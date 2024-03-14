@@ -667,18 +667,12 @@ JoinClausesAndActions buildJoinClausesAndActions(//const ColumnsWithTypeAndName 
         }
         auto output_type = removeNullable(outputs[0]->result_type);
         WhichDataType which_type(output_type);
-        if (!which_type.isNumber())
-        {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Only numeric type is expected. but got:\n{}", result.full_join_expressions_actions->dumpDAG());
-        }
         if (!which_type.isUInt8())
         {
             DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
             auto true_col = ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true");
             const auto * true_node = &result.full_join_expressions_actions->addColumn(true_col);
-            const auto * final_node
-                = &result.full_join_expressions_actions->addFunction(and_function, {true_node, outputs[0]}, outputs[0]->result_name);
-            result.full_join_expressions_actions->addOrReplaceInOutputs(*final_node);
+            result.full_join_expressions_actions = ActionsDAG::buildFilterActionsDAG({outputs[0], true_node});
         }
     }
 

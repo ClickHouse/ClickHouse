@@ -53,6 +53,7 @@ public:
         const bool is_asof{false};
         ASTPtr asof_left_key{};
         ASTPtr asof_right_key{};
+        bool has_asof{false};
 
         void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos, bool null_safe_comparison);
         void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos,
@@ -91,9 +92,8 @@ private:
     static void visit(const ASTIdentifier & ident, const ASTPtr & ast, Data & data);
 
     static void getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out);
-    static JoinIdentifierPosPair getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
     static const ASTIdentifier * unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases);
-    static JoinIdentifierPos getTableForIdentifiers(const ASTPtr & ast, bool throw_on_table_mix, const Data & data);
+    static std::set<JoinIdentifierPos> getTableForIdentifiers(const ASTPtr & ast, const Data & data);
 };
 
 /// Parse JOIN ON expression and collect ASTs for joined columns.
