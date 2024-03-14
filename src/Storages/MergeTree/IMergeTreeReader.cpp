@@ -1,12 +1,12 @@
-#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -25,7 +25,7 @@ namespace ErrorCodes
 IMergeTreeReader::IMergeTreeReader(
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
     const NamesAndTypesList & columns_,
-    const StorageSnapshotPtr & storage_snapshot_,
+    const StorageMetadataPtr & metadata_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     const MarkRanges & all_mark_ranges_,
@@ -36,7 +36,7 @@ IMergeTreeReader::IMergeTreeReader(
     , uncompressed_cache(uncompressed_cache_)
     , mark_cache(mark_cache_)
     , settings(settings_)
-    , storage_snapshot(storage_snapshot_)
+    , metadata_snapshot(metadata_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(data_part_info_for_read->getAlterConversions())
     /// For wide parts convert plain arrays of Nested to subcolumns
@@ -63,7 +63,7 @@ const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() 
     return avg_value_size_hints;
 }
 
-void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows, size_t block_number) const
+void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const
 {
     try
     {
@@ -72,7 +72,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
             res_columns, num_rows,
             Nested::convertToSubcolumns(requested_columns),
             Nested::convertToSubcolumns(available_columns),
-            partially_read_columns, storage_snapshot->metadata, block_number);
+            partially_read_columns, metadata_snapshot);
 
         should_evaluate_missing_defaults = std::any_of(
             res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
@@ -80,11 +80,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
     catch (Exception & e)
     {
         /// Better diagnostics.
-        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
-        e.addMessage(
-            "(while reading from part " + part_storage->getFullPath()
-            + " located on disk " + part_storage->getDiskName()
-            + " of type " + part_storage->getDiskType() + ")");
+        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
         throw;
     }
 }
@@ -111,10 +107,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         }
 
         auto dag = DB::evaluateMissingDefaults(
-            additional_columns, requested_columns,
-            storage_snapshot->metadata->getColumns(),
-            data_part_info_for_read->getContext());
-
+                additional_columns, requested_columns, metadata_snapshot->getColumns(), data_part_info_for_read->getContext());
         if (dag)
         {
             dag->addMaterializingOutputActions();
@@ -132,38 +125,21 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     catch (Exception & e)
     {
         /// Better diagnostics.
-        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
-        e.addMessage(
-            "(while reading from part " + part_storage->getFullPath()
-            + " located on disk " + part_storage->getDiskName()
-            + " of type " + part_storage->getDiskType() + ")");
+        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
         throw;
     }
-}
-
-bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const
-{
-    /// We cannot read separate subcolumn with offsets from compact parts.
-    if (!data_part_info_for_read->isWidePart() || subcolumn_name != "size0")
-        return false;
-
-    return Nested::isSubcolumnOfNested(name_in_storage, part_columns);
 }
 
 String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
 {
     auto name_in_storage = required_column.getNameInStorage();
-    auto subcolumn_name = required_column.getSubcolumnName();
+    if (alter_conversions.isColumnRenamed(name_in_storage))
+    {
+        name_in_storage = alter_conversions.getColumnOldName(name_in_storage);
+        return Nested::concatenateName(name_in_storage, required_column.getSubcolumnName());
+    }
 
-    if (alter_conversions->isColumnRenamed(name_in_storage))
-        name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
-
-    /// A special case when we read subcolumn of shared offsets of Nested.
-    /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
-    if (isSubcolumnOffsetsOfNested(name_in_storage, subcolumn_name))
-        name_in_storage = Nested::splitName(name_in_storage).first;
-
-    return Nested::concatenateName(name_in_storage, subcolumn_name);
+    return required_column.name;
 }
 
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
@@ -224,16 +200,12 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
     catch (Exception & e)
     {
         /// Better diagnostics.
-        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
-        e.addMessage(
-            "(while reading from part " + part_storage->getFullPath()
-            + " located on disk " + part_storage->getDiskName()
-            + " of type " + part_storage->getDiskType() + ")");
+        e.addMessage("(while reading from part " + data_part_info_for_read->getDataPartStorage()->getFullPath() + ")");
         throw;
     }
 }
 
-IMergeTreeReader::ColumnNameLevel IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
+IMergeTreeReader::ColumnPositionLevel IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
 {
     auto get_offsets_streams = [](const auto & serialization, const auto & name_in_storage)
     {
@@ -255,11 +227,11 @@ IMergeTreeReader::ColumnNameLevel IMergeTreeReader::findColumnForOffsets(const N
     auto required_offsets_streams = get_offsets_streams(getSerializationInPart(required_column), required_name_in_storage);
 
     size_t max_matched_streams = 0;
-    ColumnNameLevel name_level;
+    ColumnPositionLevel position_level;
 
     /// Find column that has maximal number of matching
     /// offsets columns with required_column.
-    for (const auto & part_column : Nested::convertToSubcolumns(data_part_info_for_read->getColumns()))
+    for (const auto & part_column : data_part_info_for_read->getColumns())
     {
         auto name_in_storage = Nested::extractTableName(part_column.name);
         if (name_in_storage != required_name_in_storage)
@@ -278,14 +250,14 @@ IMergeTreeReader::ColumnNameLevel IMergeTreeReader::findColumnForOffsets(const N
             it = current_it;
         }
 
-        if (i && (!name_level || i > max_matched_streams))
+        if (i && (!position_level || i > max_matched_streams))
         {
             max_matched_streams = i;
-            name_level.emplace(part_column.name, it->second);
+            position_level.emplace(*data_part_info_for_read->getColumnPosition(part_column.name), it->second);
         }
     }
 
-    return name_level;
+    return position_level;
 }
 
 void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
@@ -293,19 +265,6 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
     if (num_columns_to_read != requested_columns.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid number of columns passed to MergeTreeReader::readRows. "
                         "Expected {}, got {}", requested_columns.size(), num_columns_to_read);
-}
-
-String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const
-{
-    const auto & data_part_storage = data_part_info_for_read->getDataPartStorage();
-    return fmt::format(
-        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {})",
-        data_part_storage->getFullPath(),
-        data_part_info_for_read->getTableName(),
-        data_part_storage->getDiskName(),
-        data_part_storage->getDiskType(),
-        from_mark,
-        max_rows_to_read);
 }
 
 }

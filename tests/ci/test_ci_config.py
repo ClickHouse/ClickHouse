@@ -3,7 +3,7 @@
 import unittest
 
 
-class TestCIConfig(unittest.TestCase):
+class TestCiConfig(unittest.TestCase):
     def test_no_errors_in_ci_config(self):
         raised = None
         try:

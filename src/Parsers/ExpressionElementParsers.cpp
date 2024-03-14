@@ -43,6 +43,7 @@
 
 #include <Interpreters/StorageID.h>
 
+
 namespace DB
 {
 
@@ -123,7 +124,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
 
         /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
-        /// with `(SELECT * FROM viewExplain('<kind>', '<explain_settings>', (SELECT ...)))`
+        /// with `(SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...))`
 
         String kind_str = ASTExplainQuery::toString(explain_query.getKind());
 
@@ -141,7 +142,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             auto view_explain = makeASTFunction("viewExplain",
                 std::make_shared<ASTLiteral>(kind_str),
                 std::make_shared<ASTLiteral>(settings_str),
-                std::make_shared<ASTSubquery>(explained_ast));
+                explained_ast);
             result_node = buildSelectFromTableFunction(view_explain);
         }
         else
@@ -161,7 +162,8 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    node = std::make_shared<ASTSubquery>(std::move(result_node));
+    node = std::make_shared<ASTSubquery>();
+    node->children.push_back(result_node);
     return true;
 }
 
@@ -238,38 +240,6 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     }
     return false;
-}
-
-
-bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (pos->type != TokenType::StringLiteral)
-        return false;
-
-    ReadBufferFromMemory in(pos->begin, pos->size());
-    String s;
-
-    if (!tryReadQuotedString(s, in))
-    {
-        expected.add(pos, "string literal");
-        return false;
-    }
-
-    if (in.count() != pos->size())
-    {
-        expected.add(pos, "string literal");
-        return false;
-    }
-
-    if (s.empty())
-    {
-        expected.add(pos, "non-empty string literal");
-        return false;
-    }
-
-    node = std::make_shared<ASTTableIdentifier>(s);
-    ++pos;
-    return true;
 }
 
 
@@ -683,33 +653,6 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool ParserStatisticType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserList stat_type_parser(std::make_unique<ParserIdentifierWithOptionalParameters>(),
-        std::make_unique<ParserToken>(TokenType::Comma), false);
-
-    if (pos->type != TokenType::OpeningRoundBracket)
-        return false;
-    ASTPtr stat_type;
-
-    ++pos;
-
-    if (!stat_type_parser.parse(pos, stat_type, expected))
-        return false;
-
-    if (pos->type != TokenType::ClosingRoundBracket)
-        return false;
-    ++pos;
-
-    auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = "STATISTIC";
-    function_node->arguments = stat_type;
-    function_node->children.push_back(function_node->arguments);
-
-    node = function_node;
-    return true;
-}
-
 bool ParserCollation::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr collation;
@@ -934,7 +877,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (float_value < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Token number cannot begin with minus, "
+                                "Logical error: token number cannot begin with minus, "
                                 "but parsed float number is less than zero.");
 
             if (negative)
@@ -1450,7 +1393,6 @@ const char * ParserAlias::restricted_keywords[] =
     "ASOF",
     "BETWEEN",
     "CROSS",
-    "PASTE",
     "FINAL",
     "FORMAT",
     "FROM",
@@ -1495,12 +1437,10 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!allow_alias_without_as_keyword && !has_as_word)
         return false;
 
-    bool is_quoted = pos->type == TokenType::QuotedIdentifier;
-
     if (!id_p.parse(pos, node, expected))
         return false;
 
-    if (!has_as_word && !is_quoted)
+    if (!has_as_word)
     {
         /** In this case, the alias can not match the keyword -
           *  so that in the query "SELECT x FROM t", the word FROM was not considered an alias,

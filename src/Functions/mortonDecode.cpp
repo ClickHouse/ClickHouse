@@ -22,8 +22,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-// NOLINTBEGIN(bugprone-switch-missing-default-case)
-
 #define EXTRACT_VECTOR(INDEX) \
         auto col##INDEX = ColumnUInt64::create(); \
         auto & vec##INDEX = col##INDEX->getData(); \
@@ -264,7 +262,7 @@ public:
 
     static UInt64 shrink(UInt64 ratio, UInt64 value)
     {
-        switch (ratio) // NOLINT(bugprone-switch-missing-default-case)
+        switch (ratio)
         {
             case 1:
                 return value;
@@ -380,12 +378,10 @@ private:
     ImplementationSelector<IFunction> selector;
 };
 
-// NOLINTEND(bugprone-switch-missing-default-case)
-
 REGISTER_FUNCTION(MortonDecode)
 {
-    factory.registerFunction<FunctionMortonDecode>(FunctionDocumentation{
-        .description=R"(
+    factory.registerFunction<FunctionMortonDecode>({
+        R"(
 Decodes a Morton encoding (ZCurve) into the corresponding unsigned integer tuple
 
 The function has two modes of operation:
@@ -422,15 +418,15 @@ The function accepts a column of codes as a second argument:
 The range tuple must be a constant:
 [example:from_table_range]
 )",
-        .examples{
-            {"simple", "SELECT mortonDecode(4, 2149)", ""},
-            {"range_shrank", "SELECT mortonDecode((1,2), 1572864)", ""},
-            {"identity", "SELECT mortonDecode(1, 1)", ""},
-            {"identity_shrank", "SELECT mortonDecode(tuple(2), 32768)", ""},
-            {"from_table", "SELECT mortonDecode(2, code) FROM table", ""},
-            {"from_table_range", "SELECT mortonDecode((1,2), code) FROM table", ""},
+        Documentation::Examples{
+            {"simple", "SELECT mortonDecode(4, 2149)"},
+            {"range_shrank", "SELECT mortonDecode((1,2), 1572864)"},
+            {"identity", "SELECT mortonDecode(1, 1)"},
+            {"identity_shrank", "SELECT mortonDecode(tuple(2), 32768)"},
+            {"from_table", "SELECT mortonDecode(2, code) FROM table"},
+            {"from_table_range", "SELECT mortonDecode((1,2), code) FROM table"},
             },
-        .categories {"ZCurve", "Morton coding"}
+        Documentation::Categories {"ZCurve", "Morton coding"}
     });
 }
 

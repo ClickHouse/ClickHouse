@@ -22,7 +22,7 @@ public:
 
     void consume(Chunk chunk) override;
 
-    void onException(std::exception_ptr exception) override;
+    void onException() override;
 
     void onFinish() override;
 
@@ -45,6 +45,7 @@ private:
     Arena partition_keys_arena;
 
     SinkPtr getSinkForPartitionKey(StringRef partition_key);
+
 };
 
 }

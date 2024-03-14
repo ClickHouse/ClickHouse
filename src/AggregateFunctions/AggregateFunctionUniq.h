@@ -29,10 +29,6 @@
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <AggregateFunctions/UniquesHashSet.h>
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 namespace DB
 {
@@ -46,7 +42,6 @@ struct AggregateFunctionUniqUniquesHashSetData
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = false;
-    constexpr static bool is_parallelize_merge_prepare_needed = false;
     constexpr static bool is_variadic = false;
 
     static String getName() { return "uniq"; }
@@ -60,7 +55,6 @@ struct AggregateFunctionUniqUniquesHashSetDataForVariadic
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = false;
-    constexpr static bool is_parallelize_merge_prepare_needed = false;
     constexpr static bool is_variadic = true;
     constexpr static bool is_exact = is_exact_;
     constexpr static bool argument_is_tuple = argument_is_tuple_;
@@ -78,7 +72,6 @@ struct AggregateFunctionUniqHLL12Data
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = is_able_to_parallelize_merge_;
-    constexpr static bool is_parallelize_merge_prepare_needed = false;
     constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqHLL12"; }
@@ -91,7 +84,6 @@ struct AggregateFunctionUniqHLL12Data<String, false>
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = false;
-    constexpr static bool is_parallelize_merge_prepare_needed = false;
     constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqHLL12"; }
@@ -104,7 +96,6 @@ struct AggregateFunctionUniqHLL12Data<UUID, false>
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = false;
-    constexpr static bool is_parallelize_merge_prepare_needed = false;
     constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqHLL12"; }
@@ -117,7 +108,6 @@ struct AggregateFunctionUniqHLL12Data<IPv6, false>
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = false;
-    constexpr static bool is_parallelize_merge_prepare_needed = false;
     constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqHLL12"; }
@@ -130,7 +120,6 @@ struct AggregateFunctionUniqHLL12DataForVariadic
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = is_able_to_parallelize_merge_;
-    constexpr static bool is_parallelize_merge_prepare_needed = false;
     constexpr static bool is_variadic = true;
     constexpr static bool is_exact = is_exact_;
     constexpr static bool argument_is_tuple = argument_is_tuple_;
@@ -154,7 +143,6 @@ struct AggregateFunctionUniqExactData
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = is_able_to_parallelize_merge_;
-    constexpr static bool is_parallelize_merge_prepare_needed = true;
     constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqExact"; }
@@ -174,7 +162,6 @@ struct AggregateFunctionUniqExactData<String, is_able_to_parallelize_merge_>
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = is_able_to_parallelize_merge_;
-    constexpr static bool is_parallelize_merge_prepare_needed = true;
     constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqExact"; }
@@ -194,7 +181,6 @@ struct AggregateFunctionUniqExactData<IPv6, is_able_to_parallelize_merge_>
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = is_able_to_parallelize_merge_;
-    constexpr static bool is_parallelize_merge_prepare_needed = true;
     constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqExact"; }
@@ -204,7 +190,6 @@ template <bool is_exact_, bool argument_is_tuple_, bool is_able_to_parallelize_m
 struct AggregateFunctionUniqExactDataForVariadic : AggregateFunctionUniqExactData<String, is_able_to_parallelize_merge_>
 {
     constexpr static bool is_able_to_parallelize_merge = is_able_to_parallelize_merge_;
-    constexpr static bool is_parallelize_merge_prepare_needed = true;
     constexpr static bool is_variadic = true;
     constexpr static bool is_exact = is_exact_;
     constexpr static bool argument_is_tuple = argument_is_tuple_;
@@ -219,7 +204,6 @@ struct AggregateFunctionUniqThetaData
     Set set;
 
     constexpr static bool is_able_to_parallelize_merge = false;
-    constexpr static bool is_parallelize_merge_prepare_needed = false;
     constexpr static bool is_variadic = false;
 
     static String getName() { return "uniqTheta"; }
@@ -229,7 +213,6 @@ template <bool is_exact_, bool argument_is_tuple_>
 struct AggregateFunctionUniqThetaDataForVariadic : AggregateFunctionUniqThetaData
 {
     constexpr static bool is_able_to_parallelize_merge = false;
-    constexpr static bool is_parallelize_merge_prepare_needed = false;
     constexpr static bool is_variadic = true;
     constexpr static bool is_exact = is_exact_;
     constexpr static bool argument_is_tuple = argument_is_tuple_;
@@ -315,9 +298,10 @@ struct Adder
             {
                 StringRef value = column.getDataAt(row_num);
 
+                UInt128 key;
                 SipHash hash;
                 hash.update(value.data, value.size);
-                const auto key = hash.get128();
+                hash.get128(key);
 
                 data.set.template insert<const UInt128 &, use_single_level_hash_table>(key);
             }
@@ -350,7 +334,7 @@ struct Adder
 
         if constexpr (Data::is_able_to_parallelize_merge)
         {
-            if (data.set.isSingleLevel() && data.set.worthConvertingToTwoLevel(data.set.size()))
+            if (data.set.isSingleLevel() && data.set.size() > 100'000)
                 data.set.convertToTwoLevel();
         }
     }
@@ -400,10 +384,8 @@ template <typename T, typename Data>
 class AggregateFunctionUniq final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>
 {
 private:
-    using DataSet = typename Data::Set;
     static constexpr size_t num_args = 1;
     static constexpr bool is_able_to_parallelize_merge = Data::is_able_to_parallelize_merge;
-    static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
 
 public:
     explicit AggregateFunctionUniq(const DataTypes & argument_types_)
@@ -455,26 +437,6 @@ public:
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
         detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
-    }
-
-    bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed;}
-
-    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool) const override
-    {
-        if constexpr (is_parallelize_merge_prepare_needed)
-        {
-            std::vector<DataSet *> data_vec;
-            data_vec.resize(places.size());
-
-            for (size_t i = 0; i < data_vec.size(); ++i)
-                data_vec[i] = &this->data(places[i]).set;
-
-            DataSet::parallelizeMergePrepare(data_vec, thread_pool);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() is only implemented when is_parallelize_merge_prepare_needed is true for {} ", getName());
-        }
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

@@ -13,22 +13,7 @@ function random {
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q "
 drop table if exists ttt;
-
-CREATE TABLE ttt (id Int32, value String)
-Engine=MergeTree()
-ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0,
-         disk = disk(
-            type = cache,
-            max_size = '128Mi',
-            max_file_segment_size = '10Ki',
-            boundary_alignment = '5Ki',
-            path = '${CLICKHOUSE_TEST_UNIQUE_NAME}',
-            cache_on_write_operations = 1,
-            enable_filesystem_query_cache_limit = 1,
-            delayed_cleanup_interval_ms = 100,
-            disk = 's3_disk');
-
+create table ttt (id Int32, value String) engine=MergeTree() order by tuple()  settings storage_policy='s3_cache_small_segment_size', min_bytes_for_wide_part=0;
 insert into ttt select number, toString(number) from numbers(100000) settings throw_on_error_from_cache_on_write_operations = 1;
 "
 
@@ -48,5 +33,5 @@ select count() from system.filesystem_cache_log where query_id = '$query_id' AND
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery -q "
 select count() from ttt;
-drop table ttt sync;
+drop table ttt no delay;
 "

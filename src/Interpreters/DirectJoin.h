@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/logger_useful.h>
 
 #include <Core/Block.h>
 
@@ -30,13 +31,12 @@ public:
         std::shared_ptr<const IKeyValueEntity> storage_,
         const Block & right_sample_block_with_storage_column_names_);
 
-    std::string getName() const override { return "DirectKeyValueJoin"; }
     virtual const TableJoin & getTableJoin() const override { return *table_join; }
 
-    virtual bool addBlockToJoin(const Block &, bool) override;
+    virtual bool addJoinedBlock(const Block &, bool) override;
     virtual void checkTypesOfKeys(const Block &) const override;
 
-    /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
+    /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addJoinedBlock).
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> &) override;
 
@@ -60,7 +60,7 @@ private:
     Block right_sample_block;
     Block right_sample_block_with_storage_column_names;
     Block sample_block_with_columns_to_add;
-    LoggerPtr log;
+    Poco::Logger * log;
 
 };
 

@@ -12,7 +12,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True)
 node2 = cluster.add_instance("node2", with_zookeeper=True)
 node3 = cluster.add_instance(
-    "node3", main_configs=["configs/limit_replication_config.xml"], with_zookeeper=True
+    "node3", user_configs=["configs/limit_replication_config.xml"], with_zookeeper=True
 )
 
 
@@ -129,7 +129,7 @@ def test_limited_fetches_for_server(start_cluster):
             node3.query(f"SYSTEM STOP FETCHES limited_fetches{j}")
             for i in range(5):
                 node1.query(
-                    "INSERT INTO limited_fetches{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(150)".format(
+                    "INSERT INTO limited_fetches{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(50)".format(
                         j, i
                     )
                 )
@@ -175,7 +175,7 @@ def test_limited_sends_for_server(start_cluster):
             node1.query(f"SYSTEM STOP FETCHES limited_sends{j}")
             for i in range(5):
                 node3.query(
-                    "INSERT INTO limited_sends{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(150)".format(
+                    "INSERT INTO limited_sends{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(50)".format(
                         j, i
                     )
                 )

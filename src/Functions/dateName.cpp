@@ -170,7 +170,7 @@ public:
 
         auto * begin = reinterpret_cast<char *>(result_column_data.data());
 
-        WriteBufferFromPointer buffer(begin, result_column_data.size());
+        WriteBuffer buffer(begin, result_column_data.size());
 
         using TimeType = DateTypeToTimeType<DataType>;
         callOnDatePartWriter<TimeType>(date_part, [&](const auto & writer)
@@ -194,8 +194,6 @@ public:
         });
 
         result_column_data.resize(buffer.position() - begin);
-
-        buffer.finalize();
 
         return result_column;
     }

@@ -1,23 +1,18 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SYSTEM DROP QUERY CACHE;
-
-SELECT '-- query_cache_nondeterministic_function_handling = throw';
-SELECT count(now()) SETTINGS use_query_cache = true; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
-SELECT count(now()) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
-SELECT count(*) FROM system.query_cache;
+SET allow_experimental_query_cache = true;
 
 SYSTEM DROP QUERY CACHE;
 
-SELECT '-- query_cache_nondeterministic_function_handling = save';
-SELECT count(now()) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save';
-SELECT count(*) FROM system.query_cache;
+-- rand() is non-deterministic, with default settings no entry in the query cache should be created
+SELECT COUNT(rand(1)) SETTINGS use_query_cache = true;
+SELECT COUNT(*) FROM system.query_cache;
 
-SYSTEM DROP QUERY CACHE;
+SELECT '---';
 
-SELECT '-- query_cache_nondeterministic_function_handling = ignore';
-SELECT count(now()) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore';
-SELECT count(*) FROM system.query_cache;
+-- But an entry can be forced using a setting
+SELECT COUNT(RAND(1)) SETTINGS use_query_cache = true, query_cache_store_results_of_queries_with_nondeterministic_functions = true;
+SELECT COUNT(*) FROM system.query_cache;
 
 SYSTEM DROP QUERY CACHE;

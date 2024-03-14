@@ -39,11 +39,11 @@ ClickHouse не удаляет данные из таблицы автомати
     -   0 — запрос был инициирован другим запросом при распределенном запросе.
 -   `user` ([String](../../sql-reference/data-types/string.md)) — пользователь, запустивший текущий запрос.
 -   `query_id` ([String](../../sql-reference/data-types/string.md)) — ID запроса.
--   `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP адрес, с которого пришел запрос.
+-   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP адрес, с которого пришел запрос.
 -   `port` ([UInt16](../../sql-reference/data-types/int-uint.md#uint-ranges)) — порт, с которого пришел запрос.
 -   `initial_user` ([String](../../sql-reference/data-types/string.md)) — пользователь, запустивший первоначальный запрос (для распределенных запросов).
 -   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID родительского запроса.
--   `initial_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP адрес, с которого пришел родительский запрос.
+-   `initial_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP адрес, с которого пришел родительский запрос.
 -   `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md#uint-ranges)) — порт, пришел родительский запрос.
 -   `interface` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — интерфейс, с которого ушёл запрос. Возможные значения:
     -   1 — TCP.

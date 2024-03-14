@@ -1,5 +1,3 @@
-DROP TABLE IF EXISTS events;
-
 create table events (
     `organisation_id` UUID,
     `session_id` UUID,

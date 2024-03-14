@@ -248,7 +248,7 @@ void ColumnFunction::appendArguments(const ColumnsWithTypeAndName & columns)
     auto wanna_capture = columns.size();
 
     if (were_captured + wanna_capture > args)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture {} column(s) because function {} has {} arguments{}.",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture {} columns because function {} has {} arguments{}.",
                         wanna_capture, function->getName(), args,
                         (were_captured ? " and " + toString(were_captured) + " columns have already been captured" : ""));
 
@@ -258,15 +258,14 @@ void ColumnFunction::appendArguments(const ColumnsWithTypeAndName & columns)
 
 void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
 {
-    const auto & argument_types = function->getArgumentTypes();
-    auto index = captured_columns.size();
-    if (!is_short_circuit_argument && !column.type->equals(*argument_types[index]))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture column {} because it has incompatible type: "
-                        "got {}, but {} is expected.", argument_types.size(), column.type->getName(), argument_types[index]->getName());
+    const auto & argumnet_types = function->getArgumentTypes();
 
-    auto captured_column = column;
-    captured_column.column = captured_column.column->convertToFullColumnIfSparse();
-    captured_columns.push_back(std::move(captured_column));
+    auto index = captured_columns.size();
+    if (!is_short_circuit_argument && !column.type->equals(*argumnet_types[index]))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture column {} because it has incompatible type: "
+                        "got {}, but {} is expected.", argumnet_types.size(), column.type->getName(), argumnet_types[index]->getName());
+
+    captured_columns.push_back(column);
 }
 
 DataTypePtr ColumnFunction::getResultType() const
@@ -308,13 +307,6 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, elements_size);
-    if (res.column->getDataType() != res.type->getColumnType())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Unexpected return type from {}. Expected {}. Got {}",
-            function->getName(),
-            res.type->getColumnType(),
-            res.column->getDataType());
     if (recursively_convert_result_to_full_column_if_low_cardinality)
     {
         res.column = recursiveRemoveLowCardinality(res.column);

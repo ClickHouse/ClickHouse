@@ -33,7 +33,7 @@ static String generateActiveNodeIdentifier()
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeRestartingThread)")
-    , log(getLogger(log_name))
+    , log(&Poco::Logger::get(log_name))
     , active_node_identifier(generateActiveNodeIdentifier())
 {
     const auto storage_settings = storage.getSettings();
@@ -79,10 +79,11 @@ void ReplicatedMergeTreeRestartingThread::run()
 
     if (first_time)
     {
-        if (storage.is_readonly && !std::exchange(storage.is_readonly_metric_set, true))
+        if (storage.is_readonly)
+        {
             /// We failed to start replication, table is still readonly, so we should increment the metric. See also setNotReadonly().
             CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-
+        }
         /// It does not matter if replication is actually started or not, just notify after the first attempt.
         storage.startup_event.set();
         first_time = false;
@@ -290,7 +291,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
     String is_active_path = fs::path(storage.replica_path) / "is_active";
-    zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
+    zookeeper->handleEphemeralNodeExistence(is_active_path, active_node_identifier);
 
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;
@@ -328,7 +329,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 
 void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shutdown)
 {
-    setReadonly(/* on_shutdown = */ part_of_full_shutdown);
+    setReadonly(part_of_full_shutdown);
     storage.partialShutdown();
 }
 
@@ -338,15 +339,10 @@ void ReplicatedMergeTreeRestartingThread::shutdown(bool part_of_full_shutdown)
     /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
     need_stop = true;
     task->deactivate();
-
-    /// Explicitly set the event, because the restarting thread will not set it again
-    if (part_of_full_shutdown)
-        storage.startup_event.set();
-
     LOG_TRACE(log, "Restarting thread finished");
 
-    setReadonly(part_of_full_shutdown);
-
+    /// Stop other tasks.
+    partialShutdown(part_of_full_shutdown);
 }
 
 void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
@@ -359,19 +355,15 @@ void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
         return;
 
     if (became_readonly)
-    {
-        chassert(!storage.is_readonly_metric_set);
-        storage.is_readonly_metric_set = true;
         CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-        return;
-    }
 
-    /// Replica was already readonly, but we should decrement the metric if it was set because we are detaching/dropping table.
+    /// Replica was already readonly, but we should decrement the metric, because we are detaching/dropping table.
+    /// if first pass wasn't done we don't have to decrement because it wasn't incremented in the first place
     /// the task should be deactivated if it's full shutdown so no race is present
-    if (on_shutdown && std::exchange(storage.is_readonly_metric_set, false))
+    if (!first_time && on_shutdown)
     {
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-        chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
     }
 }
 
@@ -381,10 +373,10 @@ void ReplicatedMergeTreeRestartingThread::setNotReadonly()
     /// is_readonly is true on startup, but ReadonlyReplica metric is not incremented,
     /// because we don't want to change this metric if replication is started successfully.
     /// So we should not decrement it when replica stopped being readonly on startup.
-    if (storage.is_readonly.compare_exchange_strong(old_val, false) && std::exchange(storage.is_readonly_metric_set, false))
+    if (storage.is_readonly.compare_exchange_strong(old_val, false) && !first_time)
     {
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-        chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
+        assert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
     }
 }
 

@@ -1,10 +1,5 @@
 #include <Databases/DDLLoadingDependencyVisitor.h>
-#include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
-#include "config.h"
-#if USE_LIBPQXX
-#include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
-#endif
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -12,7 +7,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Poco/String.h>
 
 
@@ -28,7 +22,6 @@ TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, c
     data.default_database = global_context->getCurrentDatabase();
     data.create_query = ast;
     data.global_context = global_context;
-    data.table_name = table;
     TableLoadingDependenciesVisitor visitor{data};
     visitor.visit(ast);
     data.dependencies.erase(table);
@@ -110,7 +103,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments &
     auto config = getDictionaryConfigurationFromAST(data.create_query->as<ASTCreateQuery &>(), data.global_context);
     auto info = getInfoIfClickHouseDictionarySource(config, data.global_context);
 
-    if (!info || !info->is_local || info->table_name.table.empty())
+    if (!info || !info->is_local)
         return;
 
     if (info->table_name.database.empty())
@@ -120,12 +113,6 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments &
 
 void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
-    if (storage.ttl_table)
-    {
-        auto ttl_dependensies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.ttl_table->ptr());
-        data.dependencies.merge(ttl_dependensies);
-    }
-
     if (!storage.engine)
         return;
 
@@ -135,14 +122,6 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
         extractTableNameFromArgument(*storage.engine, data, 3);
     else if (storage.engine->name == "Dictionary")
         extractTableNameFromArgument(*storage.engine, data, 0);
-#if USE_LIBPQXX
-    else if (storage.engine->name == "MaterializedPostgreSQL")
-    {
-        const auto * create_query = data.create_query->as<ASTCreateQuery>();
-        auto nested_table = toString(create_query->uuid) + StorageMaterializedPostgreSQL::NESTED_TABLE_SUFFIX;
-        data.dependencies.emplace(QualifiedTableName{ .database = create_query->getDatabase(), .table = nested_table });
-    }
-#endif
 }
 
 
@@ -156,22 +135,22 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
 
     const auto * arg = function.arguments->as<ASTExpressionList>()->children[arg_idx].get();
 
-    if (const auto * function_arg = arg->as<ASTFunction>())
+    if (const auto * dict_function = arg->as<ASTFunction>())
     {
-        if (!functionIsJoinGet(function_arg->name) && !functionIsDictGet(function_arg->name))
+        if (!functionIsDictGet(dict_function->name))
             return;
 
-        /// Get the dictionary name from `dict*` function or the table name from 'joinGet' function.
-        const auto * literal_arg = function_arg->arguments->as<ASTExpressionList>()->children[0].get();
-        const auto * name = literal_arg->as<ASTLiteral>();
+        /// Get the dictionary name from `dict*` function.
+        const auto * literal_arg = dict_function->arguments->as<ASTExpressionList>()->children[0].get();
+        const auto * dictionary_name = literal_arg->as<ASTLiteral>();
 
-        if (!name)
+        if (!dictionary_name)
             return;
 
-        if (name->value.getType() != Field::Types::String)
+        if (dictionary_name->value.getType() != Field::Types::String)
             return;
 
-        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(name->value.get<String>());
+        auto maybe_qualified_name = QualifiedTableName::tryParseFromString(dictionary_name->value.get<String>());
         if (!maybe_qualified_name)
             return;
 

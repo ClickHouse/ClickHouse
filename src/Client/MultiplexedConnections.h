@@ -64,9 +64,6 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
-
-    void setAsyncCallback(AsyncCallback async_callback) override;
-
 private:
     Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 
@@ -105,7 +102,8 @@ private:
     /// std::nullopt if parallel reading from replicas is not used
     std::optional<ReplicaInfo> replica_info;
 
-    /// A mutex for the sendCancel function to execute safely in separate thread.
+    /// A mutex for the sendCancel function to execute safely
+    /// in separate thread.
     mutable std::mutex cancel_mutex;
 
     friend struct RemoteQueryExecutorRoutine;
