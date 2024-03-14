@@ -12,7 +12,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node", with_zookeeper=True, main_configs=["configs/remote_servers.xml"]
 )
-node_1 = cluster.add_instance("node_1", with_zookeeper=True)
+node_1 = cluster.add_instance("node_1", with_zookeeper=True, stay_alive=True)
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +37,7 @@ def started_cluster():
 
 
 def test(started_cluster):
-    cluster.pause_container("node_1")
+    node_1.stop_clickhouse()
 
     node.query("SYSTEM RELOAD CONFIG")
     error = node.query_and_get_error(
@@ -68,4 +68,4 @@ def test(started_cluster):
     assert recovery_time == 0
     assert errors_count == 0
 
-    cluster.unpause_container("node_1")
+    node_1.start_clickhouse()
