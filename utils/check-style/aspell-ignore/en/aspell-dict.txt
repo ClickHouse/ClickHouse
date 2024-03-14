@@ -2687,7 +2687,9 @@ userver
 utils
 uuid
 varPop
+varPopStable
 varSamp
+varSampStable
 variadic
 variantElement
 variantType
