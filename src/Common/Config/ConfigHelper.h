@@ -1,17 +1,20 @@
 #pragma once
 
+#include <Poco/AutoPtr.h>
 #include <string>
 
-namespace Poco
+
+namespace Poco::Util
 {
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
+    class AbstractConfiguration;
 }
+
 
 namespace DB::ConfigHelper
 {
+
+/// Clones a configuration.
+Poco::AutoPtr<Poco::Util::AbstractConfiguration> clone(const Poco::Util::AbstractConfiguration & src);
 
 /// The behavior is like `config.getBool(key, default_)`,
 /// except when the tag is empty (aka. self-closing), `empty_as` will be used instead of throwing Poco::Exception.

@@ -101,7 +101,7 @@ private:
     const Location location;
 
     mutable std::mutex dictionary_config_mutex;
-    LoadablesConfigurationPtr configuration;
+    LoadablesConfigurationPtr configuration TSA_GUARDED_BY(dictionary_config_mutex);
 
     scope_guard remove_repository_callback;
 

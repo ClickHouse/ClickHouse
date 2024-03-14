@@ -7,6 +7,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Common/quoteString.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/Operators.h>
@@ -221,13 +222,17 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 
     {
         std::lock_guard lock(dictionary_config_mutex);
+        auto new_configuration = ConfigHelper::clone(*configuration);
 
-        configuration->setString("dictionary.database", new_table_id.database_name);
-        configuration->setString("dictionary.name", new_table_id.table_name);
+        new_configuration->setString("dictionary.database", new_table_id.database_name);
+        new_configuration->setString("dictionary.name", new_table_id.table_name);
+
         if (move_to_atomic)
-            configuration->setString("dictionary.uuid", toString(new_table_id.uuid));
+            new_configuration->setString("dictionary.uuid", toString(new_table_id.uuid));
         else if (move_to_ordinary)
-            configuration->remove("dictionary.uuid");
+            new_configuration->remove("dictionary.uuid");
+
+        configuration = new_configuration;
     }
 
     const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
