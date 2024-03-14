@@ -1670,7 +1670,7 @@ Like [fromDaysSinceYearZero](#fromDaysSinceYearZero) but returns a [Date32](../.
 
 ## age
 
-Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 microsecond.
+Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 nanosecond.
 E.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
 
 For an alternative to `age`, see function `date\_diff`.
@@ -1686,6 +1686,7 @@ age('unit', startdate, enddate, [timezone])
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
+    - `nanosecond` `nanoseconds` `ns`
     - `microsecond` `microseconds` `us` `u`
     - `millisecond` `milliseconds` `ms`
     - `second` `seconds` `ss` `s`
@@ -1763,6 +1764,7 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
+    - `nanosecond` `nanoseconds` `ns`
     - `microsecond` `microseconds` `us` `u`
     - `millisecond` `milliseconds` `ms`
     - `second` `seconds` `ss` `s`
