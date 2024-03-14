@@ -10,7 +10,11 @@ Data, processed in ClickHouse, is usually stored in the local file system — on
 2. The Hadoop Distributed File System ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html))
 3. [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
 
-Note: to work with data stored on `Amazon S3` disks use [S3](/docs/en/engines/table-engines/integrations/s3.md) table engine, to work with data in the Hadoop Distributed File System — [HDFS](/docs/en/engines/table-engines/integrations/hdfs.md) table engine, and to work with data stored in Azure Blob Storage use [AzureBlobStorage](/docs/en/engines/table-engines/integrations/azureBlobStorage.md) table engine. They are different from external storage described on this page as they allow to read data stored in some general file format (like Parquet), while on this page we are describing storage configuration for ClickHouse `MergeTree` family or `Log` family tables.
+:::note ClickHouse also has support for external table engines, which are different from external storage option described on this page as they allow to read data stored in some general file format (like Parquet), while on this page we are describing storage configuration for ClickHouse `MergeTree` family or `Log` family tables.
+1. to work with data stored on `Amazon S3` disks, use [S3](/docs/en/engines/table-engines/integrations/s3.md) table engine.
+2. to work with data in the Hadoop Distributed File System — [HDFS](/docs/en/engines/table-engines/integrations/hdfs.md) table engine.
+3. to work with data stored in Azure Blob Storage use [AzureBlobStorage](/docs/en/engines/table-engines/integrations/azureBlobStorage.md) table engine.
+:::
 
 ## Configuring external storage {#configuring-external-storage}
 
@@ -23,8 +27,9 @@ Disk configuration requires:
 Starting from 24.1 clickhouse version, it is possible to use a new configuration option.
 It requires to specify:
 1. `type` equal to `object_storage`
-2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage`, `hdfs`, `local_blob_storage`, `web`.
+2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs`, `local_blob_storage` (or just `local` from `24.3`), `web`.
 Optionally, `metadata_type` can be specified (it is equal to `local` by default), but it can also be set to `plain`, `web`.
+Usage of `plain` metadata type is described in [plain storage section](/docs/en/operations/storing-data.md/#storing-data-on-webserver), `web` metadata type can be used only with `web` object storage type, `local` metadata type stores metadata files locally (each metadata files contains mapping to files in object storage and some additional meta information about them).
 
 E.g. configuration option
 ``` xml
@@ -143,7 +148,7 @@ SETTINGS disk = 's3';
 
 ## Dynamic Configuration {#dynamic-configuration}
 
-There is also a possibility to specify storage configuration without a predefined disk in configuration in a configuration file, but can be configured in the CREATE/ATTACH query settings.
+There is also a possibility to specify storage configuration without a predefined disk in configuration in a configuration file, but can be configured in the `CREATE`/`ATTACH` query settings.
 
 The following example query builds on the above dynamic disk configuration and shows how to use a local disk to cache data from a table stored at a URL.
 
@@ -306,10 +311,35 @@ Optional parameters:
 Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/docs/en/integrations/gcs).
 :::
 
-### Using Plain Storage {#s3-storage}
+### Using Plain Storage {#plain-storage}
 
-There is a disk type `s3_plain`, which provides a write-once storage. Unlike `s3` disk type, it stores data as is, e.g. instead of randomly-generated blob names, it uses normal file names as clickhouse stores files on local disk. So this disk type allows to keeper a static version of the table and can also be used to create backups on it.
-Configuration parameters are the same as for `s3` disk type.
+In `22.10` a new disk type `s3_plain` was introduced, which provides a write-once storage. Configuration parameters are the same as for `s3` disk type.
+Unlike `s3` disk type, it stores data as is, e.g. instead of randomly-generated blob names, it uses normal file names (the same way as clickhouse stores files on local disk) and does not store any metadata locally, e.g. it is derived from data on `s3`.
+
+This disk type allows to keep a static version of the table, as it does not allow executing merges on the existing data and does not allow inserting of new data.
+A use case for this disk type is to create backups on it, which can be done via `BACKUP TABLE data TO Disk('plain_disk_name', 'backup_name')`. Afterwards you can do `RESTORE TABLE data AS data_restored FROM Disk('plain_disk_name', 'backup_name')` or using `ATTACH TABLE data (...) ENGINE = MergeTree() SETTINGS disk = 'plain_disk_name'`.
+
+Configuration:
+``` xml
+<s3_plain>
+    <type>s3_plain</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_invironment_credentials>1</use_invironment_credentials>
+</s3_plain>
+```
+
+Starting from `24.1` it is possible configure any object storage disk (`s3`, `azure`, `hdfs`, `local`) using `plain` metadata type.
+
+Configuration:
+``` xml
+<s3_plain>
+    <type>object_storage</type>
+    <object_storage_type>azure</object_storage_type>
+    <metadata_type>plain</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_invironment_credentials>1</use_invironment_credentials>
+</s3_plain>
+```
 
 ### Using Azure Blob Storage {#azure-blob-storage}
 
