@@ -100,6 +100,7 @@ struct ReadSettings
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
     bool enable_filesystem_cache_log = false;
     size_t filesystem_cache_segments_batch_size = 20;
+    size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     bool use_page_cache_for_disks_without_file_cache = false;
     bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;

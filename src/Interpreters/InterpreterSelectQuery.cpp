@@ -2552,7 +2552,12 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_sync_remote)
-            max_streams = static_cast<size_t>(max_streams * settings.max_streams_to_max_threads_ratio);
+        {
+            if (auto streams_with_ratio = max_streams * settings.max_streams_to_max_threads_ratio; streams_with_ratio < SIZE_MAX)
+                max_streams = static_cast<size_t>(streams_with_ratio);
+            else
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Exceeded limit for `max_streams` with `max_streams_to_max_threads_ratio`. Make sure that `max_streams * max_streams_to_max_threads_ratio` not exceeds {}, current value: {}", SIZE_MAX, streams_with_ratio);
+        }
 
         auto & prewhere_info = analysis_result.prewhere_info;
 
