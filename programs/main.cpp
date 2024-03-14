@@ -31,7 +31,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv);
 int mainEntryClickHouseFormat(int argc, char ** argv);
-int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
@@ -80,7 +79,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
     {"compressor", mainEntryClickHouseCompressor},
     {"format", mainEntryClickHouseFormat},
-    {"copier", mainEntryClickHouseClusterCopier},
     {"obfuscator", mainEntryClickHouseObfuscator},
     {"git-import", mainEntryClickHouseGitImport},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},

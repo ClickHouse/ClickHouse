@@ -121,7 +121,8 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
                 auth_settings.use_insecure_imds_request.value_or(false),
                 auth_settings.expiration_window_seconds.value_or(S3::DEFAULT_EXPIRATION_WINDOW_SECONDS),
                 auth_settings.no_sign_request.value_or(false),
-            });
+            },
+            credentials.GetSessionToken());
 
         auto new_client = std::make_shared<KeeperSnapshotManagerS3::S3Configuration>(std::move(new_uri), std::move(auth_settings), std::move(client));
 
@@ -217,6 +218,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
         }
 
         /// To avoid reference to binding
+
         const auto & snapshot_path_ref = snapshot_path;
 
         SCOPE_EXIT(

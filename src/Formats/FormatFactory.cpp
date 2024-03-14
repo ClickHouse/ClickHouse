@@ -122,6 +122,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.write_named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
     format_settings.json.skip_null_value_in_named_tuples = settings.output_format_json_skip_null_value_in_named_tuples;
     format_settings.json.read_named_tuples_as_objects = settings.input_format_json_named_tuples_as_objects;
+    format_settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = settings.input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects;
     format_settings.json.defaults_for_missing_elements_in_named_tuple = settings.input_format_json_defaults_for_missing_elements_in_named_tuple;
     format_settings.json.ignore_unknown_keys_in_named_tuple = settings.input_format_json_ignore_unknown_keys_in_named_tuple;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;

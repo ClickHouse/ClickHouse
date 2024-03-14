@@ -171,6 +171,12 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
 }
 
+StorageSnapshotPtr StorageMaterializedView::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
+{
+    /// We cannot set virtuals at table creation because target table may not exist at that time.
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, getTargetTable()->getVirtualsPtr());
+}
+
 void StorageMaterializedView::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -459,8 +465,8 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     if (!from_atomic_to_atomic_database && has_inner_table && tryGetTargetTable())
     {
         auto new_target_table_name = generateInnerTableName(new_table_id);
-        auto rename = std::make_shared<ASTRenameQuery>();
 
+        ASTRenameQuery::Elements rename_elements;
         assert(inner_table_id.database_name == old_table_id.database_name);
 
         ASTRenameQuery::Element elem
@@ -476,8 +482,9 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
                 std::make_shared<ASTIdentifier>(new_target_table_name)
             }
         };
-        rename->elements.emplace_back(std::move(elem));
+        rename_elements.emplace_back(std::move(elem));
 
+        auto rename = std::make_shared<ASTRenameQuery>(std::move(rename_elements));
         InterpreterRenameQuery(rename, getContext()).execute();
         updateTargetTableId(new_table_id.database_name, new_target_table_name);
     }
@@ -534,11 +541,6 @@ StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
     checkStackSize();
     return DatabaseCatalog::instance().tryGetTable(getTargetTableId(), getContext());
-}
-
-NamesAndTypesList StorageMaterializedView::getVirtuals() const
-{
-    return getTargetTable()->getVirtuals();
 }
 
 Strings StorageMaterializedView::getDataPaths() const

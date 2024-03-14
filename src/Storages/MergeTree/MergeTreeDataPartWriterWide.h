@@ -1,5 +1,8 @@
 #pragma once
+
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Formats/MarkInCompressedFile.h>
+
 
 namespace DB
 {

@@ -374,12 +374,17 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
     if (!shared->keeper_dispatcher)
         return;
 
-    shared->keeper_dispatcher->updateConfiguration(getConfigRef(), getMacros());
+    shared->keeper_dispatcher->updateConfiguration(config_, getMacros());
 }
 
 std::shared_ptr<zkutil::ZooKeeper> Context::getZooKeeper() const
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot connect to ZooKeeper from Keeper");
+}
+
+const ServerSettings & Context::getServerSettings() const
+{
+    return shared->server_settings;
 }
 
 }

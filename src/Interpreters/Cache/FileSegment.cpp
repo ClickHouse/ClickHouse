@@ -10,6 +10,7 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/setThreadName.h>
 
 #include <magic_enum.hpp>
 
@@ -23,6 +24,7 @@ namespace ProfileEvents
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentUseMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
+    extern const Event FileSegmentFailToIncreasePriority;
     extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
 }
@@ -194,7 +196,7 @@ bool FileSegment::isDownloaded() const
 String FileSegment::getCallerId()
 {
     if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
-        return "None:" + toString(getThreadId());
+        return fmt::format("None:{}:{}", getThreadName(), toString(getThreadId()));
 
     return std::string(CurrentThread::getQueryId()) + ":" + toString(getThreadId());
 }
@@ -965,8 +967,10 @@ void FileSegment::increasePriority()
     auto it = getQueueIterator();
     if (it)
     {
-        auto cache_lock = cache->lockCache();
-        hits_count = it->increasePriority(cache_lock);
+        if (auto cache_lock = cache->tryLockCache())
+            hits_count = it->increasePriority(cache_lock);
+        else
+            ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
     }
 }
 
