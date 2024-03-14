@@ -203,41 +203,50 @@ Chunk ParallelParsingInputFormat::generate()
 
     if (!next_block_in_current_unit.has_value())
     {
-        // We have read out all the Blocks from the previous Processing Unit,
-        // wait for the current one to become ready.
-        std::unique_lock<std::mutex> lock(mutex);
-        reader_condvar.wait(lock, [&](){ return unit.status == READY_TO_READ || parsing_finished; });
-
-        if (parsing_finished)
+        while (true)
         {
-            /**
-              * Check for background exception and rethrow it before we return.
-              */
-            if (background_exception)
+            // We have read out all the Blocks from the previous Processing Unit,
+            // wait for the current one to become ready.
+            std::unique_lock<std::mutex> lock(mutex);
+            reader_condvar.wait(lock, [&]() { return unit->status == READY_TO_READ || parsing_finished; });
+
+            if (parsing_finished)
             {
-                lock.unlock();
-                cancel();
-                std::rethrow_exception(background_exception);
+                /// Check for background exception and rethrow it before we return.
+                if (background_exception)
+                {
+                    lock.unlock();
+                    cancel();
+                    std::rethrow_exception(background_exception);
+                }
+
+                return {};
             }
 
-            return {};
+            assert(unit->status == READY_TO_READ);
+
+            if (!unit->chunk_ext.chunk.empty())
+                break;
+
+            /// If this uint is last, parsing is finished.
+            if (unit->is_last)
+            {
+                parsing_finished = true;
+                return {};
+            }
+
+            /// We can get zero blocks for an entire segment if format parser
+            /// skipped all rows. For example, it can happen while using settings
+            /// input_format_allow_errors_num/input_format_allow_errors_ratio
+            /// and this segment contained only rows with errors.
+            /// Process the next unit.
+            ++reader_ticket_number;
+            unit->status = READY_TO_INSERT;
+            segmentator_condvar.notify_all();
+            unit = &processing_units[reader_ticket_number % processing_units.size()];
         }
 
-        assert(unit.status == READY_TO_READ);
         next_block_in_current_unit = 0;
-    }
-
-    if (unit.chunk_ext.chunk.empty())
-    {
-        /*
-         * Can we get zero blocks for an entire segment, when the format parser
-         * skips it entire content and does not create any blocks? Probably not,
-         * but if we ever do, we should add a loop around the above if, to skip
-         * these. Also see a matching assert in the parser thread.
-         */
-        assert(unit.is_last);
-        parsing_finished = true;
-        return {};
     }
 
     assert(next_block_in_current_unit.value() < unit.chunk_ext.chunk.size());
