@@ -3,30 +3,25 @@
 namespace DB
 {
 
-
-template <DictionaryKeyType dictionary_key_type>
-template <typename ValueType, bool is_nullable>
-size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
-    const Attribute & attribute,
-    const Columns & key_columns,
-    typename RangeHashedDictionary<dictionary_key_type>::ValueSetterFunc<ValueType> && set_value,
-    IColumn::Filter & default_mask) const
+namespace
 {
-    const auto & attribute_container = std::get<AttributeContainerType<ValueType>>(attribute.container);
-
-    size_t keys_found = 0;
-
-    const ColumnPtr & range_column = key_columns.back();
-    auto key_columns_copy = key_columns;
-    key_columns_copy.pop_back();
-
-    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-    DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns_copy, arena_holder.getComplexKeyArena());
-    const size_t keys_size = keys_extractor.getKeysSize();
-    default_mask.resize(keys_size);
-
+template <bool is_nullable, DictionaryKeyType dictionary_key_type>
+void callOnRange(
+    auto type,
+    const ColumnPtr & range_column,
+    const DictionaryStructure dict_struct,
+    auto keys_extractor,
+    const RangeHashedDictionaryConfiguration & configuration,
+    IColumn::Filter & default_mask,
+    const size_t keys_size,
+    size_t & keys_found,
+    const auto & attribute_container,
+    const auto & attribute,
+    const auto & key_attribute_container_,
+    const auto & set_value)
+{
     callOnRangeType(
-        dict_struct.range_min->type,
+        type,
         [&](const auto & types)
         {
             using Types = std::decay_t<decltype(types)>;
@@ -39,12 +34,16 @@ size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
                 throw Exception(
                     ErrorCodes::TYPE_MISMATCH,
                     "Dictionary {} range column type should be equal to {}",
-                    getFullName(),
+                    "getFullName",
                     dict_struct.range_min->type->getName());
 
             const auto & range_column_data = range_column_typed->getData();
 
-            const auto & key_attribute_container = std::get<KeyAttributeContainerType<RangeStorageType>>(key_attribute.container);
+            using KeyAttributeContainerType = std::conditional_t<
+                dictionary_key_type == DictionaryKeyType::Simple,
+                HashMap<UInt64, IntervalMap<Interval<RangeStorageType>, size_t>, DefaultHash<UInt64>>,
+                HashMapWithSavedHash<StringRef, IntervalMap<Interval<RangeStorageType>, size_t>, DefaultHash<StringRef>>>;
+            const auto & key_attribute_container = std::get<KeyAttributeContainerType>(key_attribute_container_);
 
             for (size_t key_index = 0; key_index < keys_size; ++key_index)
             {
@@ -90,7 +89,7 @@ size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
                         default_mask[key_index] = 0;
                         ++keys_found;
 
-                        ValueType value = attribute_container[value_index];
+                        auto value = attribute_container[value_index];
 
                         if constexpr (is_nullable)
                         {
@@ -112,7 +111,44 @@ size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
                 keys_extractor.rollbackCurrentKey();
             }
         });
+    }
+}
 
+template <DictionaryKeyType dictionary_key_type>
+template <typename ValueType, bool is_nullable>
+size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
+    const Attribute & attribute,
+    const Columns & key_columns,
+    typename RangeHashedDictionary<dictionary_key_type>::ValueSetterFunc<ValueType> && set_value,
+    IColumn::Filter & default_mask) const
+{
+    const auto & attribute_container = std::get<AttributeContainerType<ValueType>>(attribute.container);
+
+    size_t keys_found = 0;
+
+    const ColumnPtr & range_column = key_columns.back();
+    auto key_columns_copy = key_columns;
+    key_columns_copy.pop_back();
+
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+    DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns_copy, arena_holder.getComplexKeyArena());
+    const size_t keys_size = keys_extractor.getKeysSize();
+    default_mask.resize(keys_size);
+    callOnRange<is_nullable, dictionary_key_type>
+    (
+        dict_struct.range_min->type,
+        range_column,
+        dict_struct,
+        keys_extractor,
+        configuration,
+        default_mask,
+        keys_size,
+        keys_found,
+        attribute_container,
+        attribute,
+        key_attribute.container,
+        set_value
+    );
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
     return keys_found;
