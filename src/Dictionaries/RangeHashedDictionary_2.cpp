@@ -3,6 +3,120 @@
 namespace DB
 {
 
+namespace
+{
+
+template <
+    DictionaryKeyType dictionary_key_type,
+    bool is_nullable,
+    typename ValueType,
+    typename DictionaryKeysExtractor,
+    typename KeyAttribute,
+    typename ValueSetter,
+    typename Attribute,
+    typename AttributeContainerType>
+struct HelperStruct
+{
+    IColumn::Filter & default_mask;
+    DictionaryKeysExtractor & keys_extractor;
+    const DictionaryStructure & dict_struct;
+    const KeyAttribute & key_attribute;
+    const size_t keys_size;
+    size_t & keys_found;
+    const RangeHashedDictionaryConfiguration & configuration;
+    const Attribute & attribute;
+    const ColumnPtr range_column;
+    const AttributeContainerType & attribute_container;
+    ValueSetter & set_value;
+
+    template <typename T>
+    void operator()(T types)
+    {
+        using Types = std::decay_t<decltype(types)>;
+        using RangeColumnType = typename Types::LeftType;
+        using RangeStorageType = typename RangeColumnType::ValueType;
+        using RangeInterval = Interval<RangeStorageType>;
+        using KeyAttributeContainerType = RangeHashedDictionary<dictionary_key_type>::template KeyAttributeContainerType<RangeStorageType>;
+
+        const auto * range_column_typed = typeid_cast<const RangeColumnType *>(range_column.get());
+        if (!range_column_typed)
+            throw Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "Dictionary TODO(antaljanosbenjamin) range column type should be equal to {}",
+                dict_struct.range_min->type->getName());
+
+        const auto & range_column_data = range_column_typed->getData();
+
+        const auto & key_attribute_container = std::get<KeyAttributeContainerType>(key_attribute.container);
+
+        for (size_t key_index = 0; key_index < keys_size; ++key_index)
+        {
+            auto key = keys_extractor.extractCurrentKey();
+            const auto it = key_attribute_container.find(key);
+
+            if (it)
+            {
+                const auto date = range_column_data[key_index];
+                const auto & interval_tree = it->getMapped();
+
+                size_t value_index = 0;
+                std::optional<RangeInterval> range;
+
+                interval_tree.find(
+                    date,
+                    [&](auto & interval, auto & interval_value_index)
+                    {
+                        if (range)
+                        {
+                            if (likely(configuration.lookup_strategy == RangeHashedDictionaryLookupStrategy::min) && interval < *range)
+                            {
+                                range = interval;
+                                value_index = interval_value_index;
+                            }
+                            else if (configuration.lookup_strategy == RangeHashedDictionaryLookupStrategy::max && interval > *range)
+                            {
+                                range = interval;
+                                value_index = interval_value_index;
+                            }
+                        }
+                        else
+                        {
+                            range = interval;
+                            value_index = interval_value_index;
+                        }
+
+                        return true;
+                    });
+
+                if (range.has_value())
+                {
+                    default_mask[key_index] = 0;
+                    ++keys_found;
+
+                    ValueType value = attribute_container[value_index];
+
+                    if constexpr (is_nullable)
+                    {
+                        bool is_null = (*attribute.is_value_nullable)[value_index];
+                        set_value(key_index, value, is_null);
+                    }
+                    else
+                    {
+                        set_value(key_index, value, false);
+                    }
+
+                    keys_extractor.rollbackCurrentKey();
+                    continue;
+                }
+            }
+
+            default_mask[key_index] = 1;
+
+            keys_extractor.rollbackCurrentKey();
+        }
+    }
+};
+}
 
 template <DictionaryKeyType dictionary_key_type>
 template <typename ValueType, bool is_nullable>
@@ -25,211 +139,34 @@ size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
     const size_t keys_size = keys_extractor.getKeysSize();
     default_mask.resize(keys_size);
 
+    auto func_obj = HelperStruct<
+        dictionary_key_type,
+        is_nullable,
+        ValueType,
+        DictionaryKeysExtractor<dictionary_key_type>,
+        KeyAttribute,
+        ValueSetterFunc<ValueType>,
+        Attribute,
+        AttributeContainerType<ValueType>>{
+        default_mask,
+        keys_extractor,
+        dict_struct,
+        key_attribute,
+        keys_size,
+        keys_found,
+        configuration,
+        attribute,
+        range_column,
+        attribute_container,
+        set_value};
+
     callOnRangeType(
         dict_struct.range_min->type,
-        [&](const auto & types)
-        {
-            using Types = std::decay_t<decltype(types)>;
-            using RangeColumnType = typename Types::LeftType;
-            using RangeStorageType = typename RangeColumnType::ValueType;
-            using RangeInterval = Interval<RangeStorageType>;
-
-            const auto * range_column_typed = typeid_cast<const RangeColumnType *>(range_column.get());
-            if (!range_column_typed)
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "Dictionary {} range column type should be equal to {}",
-                    getFullName(),
-                    dict_struct.range_min->type->getName());
-
-            const auto & range_column_data = range_column_typed->getData();
-
-            const auto & key_attribute_container = std::get<KeyAttributeContainerType<RangeStorageType>>(key_attribute.container);
-
-            for (size_t key_index = 0; key_index < keys_size; ++key_index)
-            {
-                auto key = keys_extractor.extractCurrentKey();
-                const auto it = key_attribute_container.find(key);
-
-                if (it)
-                {
-                    const auto date = range_column_data[key_index];
-                    const auto & interval_tree = it->getMapped();
-
-                    size_t value_index = 0;
-                    std::optional<RangeInterval> range;
-
-                    interval_tree.find(
-                        date,
-                        [&](auto & interval, auto & interval_value_index)
-                        {
-                            if (range)
-                            {
-                                if (likely(configuration.lookup_strategy == RangeHashedDictionaryLookupStrategy::min) && interval < *range)
-                                {
-                                    range = interval;
-                                    value_index = interval_value_index;
-                                }
-                                else if (configuration.lookup_strategy == RangeHashedDictionaryLookupStrategy::max && interval > *range)
-                                {
-                                    range = interval;
-                                    value_index = interval_value_index;
-                                }
-                            }
-                            else
-                            {
-                                range = interval;
-                                value_index = interval_value_index;
-                            }
-
-                            return true;
-                        });
-
-                    if (range.has_value())
-                    {
-                        default_mask[key_index] = 0;
-                        ++keys_found;
-
-                        ValueType value = attribute_container[value_index];
-
-                        if constexpr (is_nullable)
-                        {
-                            bool is_null = (*attribute.is_value_nullable)[value_index];
-                            set_value(key_index, value, is_null);
-                        }
-                        else
-                        {
-                            set_value(key_index, value, false);
-                        }
-
-                        keys_extractor.rollbackCurrentKey();
-                        continue;
-                    }
-                }
-
-                default_mask[key_index] = 1;
-
-                keys_extractor.rollbackCurrentKey();
-            }
-        });
+        func_obj);
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
     return keys_found;
-}
-
-template <DictionaryKeyType dictionary_key_type>
-template <typename ValueType, bool is_nullable, typename DefaultValueExtractor>
-void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
-    const Attribute & attribute,
-    const Columns & key_columns,
-    typename RangeHashedDictionary<dictionary_key_type>::ValueSetterFunc<ValueType> && set_value,
-    DefaultValueExtractor & default_value_extractor) const
-{
-    const auto & attribute_container = std::get<AttributeContainerType<ValueType>>(attribute.container);
-
-    size_t keys_found = 0;
-
-    const ColumnPtr & range_column = key_columns.back();
-    auto key_columns_copy = key_columns;
-    key_columns_copy.pop_back();
-
-    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-    DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns_copy, arena_holder.getComplexKeyArena());
-    const size_t keys_size = keys_extractor.getKeysSize();
-
-    callOnRangeType(
-        dict_struct.range_min->type,
-        [&](const auto & types)
-        {
-            using Types = std::decay_t<decltype(types)>;
-            using RangeColumnType = typename Types::LeftType;
-            using RangeStorageType = typename RangeColumnType::ValueType;
-            using RangeInterval = Interval<RangeStorageType>;
-
-            const auto * range_column_typed = typeid_cast<const RangeColumnType *>(range_column.get());
-            if (!range_column_typed)
-                throw Exception(
-                    ErrorCodes::TYPE_MISMATCH,
-                    "Dictionary {} range column type should be equal to {}",
-                    getFullName(),
-                    dict_struct.range_min->type->getName());
-
-            const auto & range_column_data = range_column_typed->getData();
-
-            const auto & key_attribute_container = std::get<KeyAttributeContainerType<RangeStorageType>>(key_attribute.container);
-
-            for (size_t key_index = 0; key_index < keys_size; ++key_index)
-            {
-                auto key = keys_extractor.extractCurrentKey();
-                const auto it = key_attribute_container.find(key);
-
-                if (it)
-                {
-                    const auto date = range_column_data[key_index];
-                    const auto & interval_tree = it->getMapped();
-
-                    size_t value_index = 0;
-                    std::optional<RangeInterval> range;
-
-                    interval_tree.find(
-                        date,
-                        [&](auto & interval, auto & interval_value_index)
-                        {
-                            if (range)
-                            {
-                                if (likely(configuration.lookup_strategy == RangeHashedDictionaryLookupStrategy::min) && interval < *range)
-                                {
-                                    range = interval;
-                                    value_index = interval_value_index;
-                                }
-                                else if (configuration.lookup_strategy == RangeHashedDictionaryLookupStrategy::max && interval > *range)
-                                {
-                                    range = interval;
-                                    value_index = interval_value_index;
-                                }
-                            }
-                            else
-                            {
-                                range = interval;
-                                value_index = interval_value_index;
-                            }
-
-                            return true;
-                        });
-
-                    if (range.has_value())
-                    {
-                        ++keys_found;
-
-                        ValueType value = attribute_container[value_index];
-
-                        if constexpr (is_nullable)
-                        {
-                            bool is_null = (*attribute.is_value_nullable)[value_index];
-                            set_value(key_index, value, is_null);
-                        }
-                        else
-                        {
-                            set_value(key_index, value, false);
-                        }
-
-                        keys_extractor.rollbackCurrentKey();
-                        continue;
-                    }
-                }
-
-                if constexpr (is_nullable)
-                    set_value(key_index, default_value_extractor[key_index], default_value_extractor.isNullAt(key_index));
-                else
-                    set_value(key_index, default_value_extractor[key_index], false);
-
-                keys_extractor.rollbackCurrentKey();
-            }
-        });
-
-    query_count.fetch_add(keys_size, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 #define INSTANTIATE_GET_ITEMS_SHORT_CIRCUIT_IMPL(DictionaryKeyType, IsNullable, ValueType) \

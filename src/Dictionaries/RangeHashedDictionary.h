@@ -138,8 +138,6 @@ public:
 
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
-private:
-
     template <typename RangeStorageType>
     using IntervalMap = IntervalMap<Interval<RangeStorageType>, size_t>;
 
@@ -149,6 +147,7 @@ private:
         HashMap<UInt64, IntervalMap<RangeStorageType>, DefaultHash<UInt64>>,
         HashMapWithSavedHash<StringRef, IntervalMap<RangeStorageType>, DefaultHash<StringRef>>>;
 
+private:
     template <typename Value>
     using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
 
