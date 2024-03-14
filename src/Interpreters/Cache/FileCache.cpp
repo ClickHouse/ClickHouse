@@ -841,14 +841,23 @@ bool FileCache::tryReserve(
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
         return false;
 
-    /// Remove eviction candidates from filesystem.
-    eviction_candidates.evict();
+    try
+    {
+        /// Remove eviction candidates from filesystem.
+        eviction_candidates.evict();
+    }
+    catch (...)
+    {
+        /// Invalidate queue entries if some successed to be removed.
+        eviction_candidates.finalize(query_context.get(), cache_lock);
+        throw;
+    }
 
     /// Take cache lock again.
     if (release_lock)
         cache_lock.lock();
 
-    /// Remove invalidated queue entries and execute (only for SLRU) finalize func.
+    /// Invalidate and remove queue entries and execute (only for SLRU) finalize func.
     eviction_candidates.finalize(query_context.get(), cache_lock);
 
     /// Space reservation is incremental, so file_segment_metadata is created first (with state Empty),

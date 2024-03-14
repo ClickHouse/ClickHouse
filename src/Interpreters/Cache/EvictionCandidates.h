@@ -33,8 +33,8 @@ private:
 
     std::unordered_map<FileCacheKey, KeyCandidates> candidates;
     size_t candidates_size = 0;
-    std::vector<IFileCachePriority::IteratorPtr> invalidated_queue_entries;
     FinalizeEvictionFunc finalize_eviction_func;
+    std::vector<IFileCachePriority::IteratorPtr> queue_entries_to_invalidate;
 };
 
 using EvictionCandidatesPtr = std::unique_ptr<EvictionCandidates>;

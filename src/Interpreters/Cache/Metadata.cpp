@@ -895,32 +895,34 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
     return removed_all;
 }
 
-KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken)
+KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken, bool invalidate_queue_entry)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {}", offset);
 
     auto file_segment = it->second->file_segment;
-    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken);
+    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken, invalidate_queue_entry);
 }
 
 KeyMetadata::iterator LockedKey::removeFileSegment(
     size_t offset,
     const FileSegmentGuard::Lock & segment_lock,
-    bool can_be_broken)
+    bool can_be_broken,
+    bool invalidate_queue_entry)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {} in key {}", offset, getKey());
 
-    return removeFileSegmentImpl(it, segment_lock, can_be_broken);
+    return removeFileSegmentImpl(it, segment_lock, can_be_broken, invalidate_queue_entry);
 }
 
 KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     KeyMetadata::iterator it,
     const FileSegmentGuard::Lock & segment_lock,
-    bool can_be_broken)
+    bool can_be_broken,
+    bool invalidate_queue_entry)
 {
     auto file_segment = it->second->file_segment;
 
@@ -930,7 +932,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
     chassert(can_be_broken || file_segment->assertCorrectnessUnlocked(segment_lock));
 
-    if (file_segment->queue_iterator)
+    if (file_segment->queue_iterator && invalidate_queue_entry)
         file_segment->queue_iterator->invalidate();
 
     file_segment->detach(segment_lock, *this);
