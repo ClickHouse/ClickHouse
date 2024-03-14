@@ -4561,7 +4561,7 @@ arguments, result_type, input_rows_count); \
 
                 if (from_low_cardinality)
                 {
-                    const auto * col_low_cardinality = typeid_cast<const ColumnLowCardinality *>(arguments[0].column.get());
+                    const auto * col_low_cardinality = assert_cast<const ColumnLowCardinality *>(arguments[0].column.get());
 
                     if (skip_not_null_check && col_low_cardinality->containsNull())
                         throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type");
@@ -4586,7 +4586,7 @@ arguments, result_type, input_rows_count); \
             if (to_low_cardinality)
             {
                 auto res_column = to_low_cardinality->createColumn();
-                auto * col_low_cardinality = typeid_cast<ColumnLowCardinality *>(res_column.get());
+                auto * col_low_cardinality = assert_cast<ColumnLowCardinality *>(res_column.get());
 
                 if (from_low_cardinality && !src_converted_to_full_column)
                 {
