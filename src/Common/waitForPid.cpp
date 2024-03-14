@@ -132,7 +132,7 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     if (kq == -1)
         return PollPidResult::FAILED;
 
-    struct kevent change = {.ident = 0};
+    struct kevent change{};
     EV_SET(&change, pid, EVFILT_PROC, EV_ADD, NOTE_EXIT, 0, NULL);
 
     int event_add_result = HANDLE_EINTR(kevent(kq, &change, 1, NULL, 0, NULL));
