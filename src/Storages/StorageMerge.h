@@ -277,7 +277,8 @@ private:
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
-        QueryPipelineBuilder & builder);
+        QueryPipelineBuilder & builder,
+        QueryProcessingStage::Enum processed_stage);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context,

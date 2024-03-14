@@ -1121,7 +1121,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
         convertAndFilterSourceStream(
-            header, modified_query_info, storage_snapshot_, aliases, row_policy_data_opt, context, *builder);
+            header, modified_query_info, storage_snapshot_, aliases, row_policy_data_opt, context, *builder, processed_stage);
     }
 
     return builder;
@@ -1473,7 +1473,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const Aliases & aliases,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
-    QueryPipelineBuilder & builder)
+    QueryPipelineBuilder & builder,
+    QueryProcessingStage::Enum processed_stage)
 {
     Block before_block_header = builder.getHeader();
 
@@ -1532,7 +1533,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
-    if (local_context->getSettingsRef().allow_experimental_analyzer && dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr)
+    if (local_context->getSettingsRef().allow_experimental_analyzer
+        && (processed_stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 
     if (row_policy_data_opt)
