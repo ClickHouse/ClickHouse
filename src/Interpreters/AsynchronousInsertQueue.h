@@ -282,7 +282,7 @@ private:
 public:
     auto getQueueLocked(size_t shard_num) const
     {
-        auto & shard = queue_shards[shard_num];
+        const auto & shard = queue_shards[shard_num];
         std::unique_lock lock(shard.mutex);
         return std::make_pair(std::ref(shard.queue), std::move(lock));
     }

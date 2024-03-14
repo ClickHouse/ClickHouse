@@ -5,9 +5,7 @@
 # a) the new check is not controversial (this includes many checks in readability-* and google-*) or
 # b) too noisy (checks with > 100 new warnings are considered noisy, this includes e.g. cppcoreguidelines-*).
 
-# TODO Let clang-tidy check headers in further directories
-#      --> HeaderFilterRegex: '^.*/(src|base|programs|utils)/.*(h|hpp)$'
-HeaderFilterRegex: '^.*/(base|programs|utils)/.*(h|hpp)$'
+HeaderFilterRegex: '^.*/(base|src|programs|utils)/.*(h|hpp)$'
 
 Checks: [
   '*',
@@ -36,6 +34,8 @@ Checks: [
   '-cert-msc51-cpp',
   '-cert-oop54-cpp',
   '-cert-oop57-cpp',
+
+  '-clang-analyzer-optin.performance.Padding',
 
   '-clang-analyzer-unix.Malloc',
 
