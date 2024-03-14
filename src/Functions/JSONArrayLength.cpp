@@ -45,7 +45,7 @@ namespace
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             auto args = FunctionArgumentDescriptors{
-                {"json", &isString<IDataType>, nullptr, "String"},
+                {"json", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
             };
 
             validateFunctionArgumentTypes(*this, arguments, args);

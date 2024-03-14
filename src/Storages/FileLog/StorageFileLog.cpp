@@ -147,6 +147,7 @@ StorageFileLog::StorageFileLog(
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals(filelog_settings->handle_error_mode));
 
     if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
@@ -201,6 +202,22 @@ StorageFileLog::StorageFileLog(
 
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+VirtualColumnsDescription StorageFileLog::createVirtuals(StreamingHandleErrorMode handle_error_mode)
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
+
+    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        desc.addEphemeral("_raw_record", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+    }
+
+    return desc;
 }
 
 void StorageFileLog::loadMetaFiles(bool attach)
@@ -1007,21 +1024,6 @@ bool StorageFileLog::updateFileInfos()
     assert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     return events.empty() || file_infos.file_names.empty();
-}
-
-NamesAndTypesList StorageFileLog::getVirtuals() const
-{
-    auto virtuals = NamesAndTypesList{
-        {"_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_offset", std::make_shared<DataTypeUInt64>()}};
-
-    if (filelog_settings->handle_error_mode == StreamingHandleErrorMode::STREAM)
-    {
-        virtuals.push_back({"_raw_record", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-    }
-
-    return virtuals;
 }
 
 }
