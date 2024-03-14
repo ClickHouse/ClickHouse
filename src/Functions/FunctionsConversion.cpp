@@ -4471,20 +4471,20 @@ arguments, result_type, input_rows_count); \
 
                 if (from_low_cardinality)
                 {
-                    const auto * col_low_cardinality = typeid_cast<const ColumnLowCardinality *>(arguments[0].column.get());
+                    const auto & col_low_cardinality = typeid_cast<const ColumnLowCardinality &>(*arguments[0].column);
 
-                    if (skip_not_null_check && col_low_cardinality->containsNull())
+                    if (skip_not_null_check && col_low_cardinality.containsNull())
                         throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type");
 
-                    arg.column = col_low_cardinality->getDictionary().getNestedColumn();
+                    arg.column = col_low_cardinality.getDictionary().getNestedColumn();
                     arg.type = from_low_cardinality->getDictionaryType();
 
                     /// TODO: Make map with defaults conversion.
                     src_converted_to_full_column = !removeNullable(arg.type)->equals(*removeNullable(res_type));
                     if (src_converted_to_full_column)
-                        arg.column = arg.column->index(col_low_cardinality->getIndexes(), 0);
+                        arg.column = arg.column->index(col_low_cardinality.getIndexes(), 0);
                     else
-                        res_indexes = col_low_cardinality->getIndexesPtr();
+                        res_indexes = col_low_cardinality.getIndexesPtr();
 
                     tmp_rows_count = arg.column->size();
                 }
@@ -4496,14 +4496,12 @@ arguments, result_type, input_rows_count); \
             if (to_low_cardinality)
             {
                 auto res_column = to_low_cardinality->createColumn();
-                auto * col_low_cardinality = typeid_cast<ColumnLowCardinality *>(res_column.get());
+                auto & col_low_cardinality = typeid_cast<ColumnLowCardinality &>(*res_column);
 
                 if (from_low_cardinality && !src_converted_to_full_column)
-                {
-                    col_low_cardinality->insertRangeFromDictionaryEncodedColumn(*converted_column, *res_indexes);
-                }
+                    col_low_cardinality.insertRangeFromDictionaryEncodedColumn(*converted_column, *res_indexes);
                 else
-                    col_low_cardinality->insertRangeFromFullColumn(*converted_column, 0, converted_column->size());
+                    col_low_cardinality.insertRangeFromFullColumn(*converted_column, 0, converted_column->size());
 
                 return res_column;
             }
