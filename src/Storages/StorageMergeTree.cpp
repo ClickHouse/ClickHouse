@@ -66,7 +66,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_DATA_PART;
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int TABLE_IS_READ_ONLY;
     extern const int UNSUPPORTED_METHOD;
 }
 
