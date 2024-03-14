@@ -13,6 +13,7 @@ node = cluster.add_instance(
     "node", with_zookeeper=True, main_configs=["configs/remote_servers.xml"]
 )
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
