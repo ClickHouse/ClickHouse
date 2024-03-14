@@ -13,6 +13,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Interpreters/Context.h>
@@ -30,6 +31,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int NO_REPLICA_NAME_GIVEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
 }
 
 
@@ -110,6 +112,16 @@ static ColumnsDescription getColumnsDescriptionFromZookeeper(const String & raw_
     return ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns", &columns_stat));
 }
 
+static void verifySortingKey(const KeyDescription & sorting_key)
+{
+    /// Aggregate functions already forbidden, but SimpleAggregateFunction are not
+    for (const auto & data_type : sorting_key.data_types)
+    {
+        if (dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(data_type->getCustomName()))
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type {} is not allowed in key expression", data_type->getCustomName()->getName());
+    }
+}
+
 
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
@@ -147,6 +159,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     bool is_extended_storage_def = args.storage_def->isExtendedStorageDefinition()
         || (args.query.columns_list->indices && !args.query.columns_list->indices->children.empty())
         || (args.query.columns_list->projections && !args.query.columns_list->projections->children.empty());
+
+    const Settings & local_settings = args.getLocalContext()->getSettingsRef();
 
     String name_part = args.engine_name.substr(0, args.engine_name.size() - strlen("MergeTree"));
 
@@ -293,7 +307,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             arg_idx, e.message(), verbose_help_message);
         }
     }
-    else if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
+    else if (args.mode <= LoadingStrictnessLevel::CREATE && !local_settings.allow_deprecated_syntax_for_merge_tree)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
                                                    "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause. "
@@ -532,7 +546,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (!args.storage_def->order_by)
         {
-            if (args.getLocalContext()->getSettingsRef().create_table_empty_primary_key_by_default)
+            if (local_settings.create_table_empty_primary_key_by_default)
             {
                 args.storage_def->set(args.storage_def->order_by, makeASTFunction("tuple"));
             }
@@ -553,6 +567,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
             args.storage_def->order_by->ptr(), metadata.columns, context, merging_param_key_arg);
+        if (!local_settings.allow_suspicious_primary_key)
+            verifySortingKey(metadata.sorting_key);
 
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
@@ -577,7 +593,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
 
-        bool allow_suspicious_ttl = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || args.getLocalContext()->getSettingsRef().allow_suspicious_ttl_expressions;
+        bool allow_suspicious_ttl = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || local_settings.allow_suspicious_ttl_expressions;
 
         if (args.storage_def->ttl_table)
         {
@@ -665,6 +681,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key
             = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, context, merging_param_key_arg);
+        if (!local_settings.allow_suspicious_primary_key)
+            verifySortingKey(metadata.sorting_key);
 
         /// In old syntax primary_key always equals to sorting key.
         metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, context);
