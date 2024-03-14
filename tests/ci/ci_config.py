@@ -11,6 +11,14 @@ from ci_utils import WithIter
 from integration_test_images import IMAGES
 
 
+class WorkFlows(metaclass=WithIter):
+    PULL_REQUEST = "PULL_REQUEST"
+    MASTER = "MASTER"
+    BACKPORT = "BACKPORT"
+    RELEASE = "RELEASE"
+    SYNC = "SYNC"
+
+
 class CIStages(metaclass=WithIter):
     NA = "UNKNOWN"
     BUILDS_1 = "Builds_1"
@@ -621,7 +629,9 @@ class CIConfig:
 
         assert result, f"BUG, no runner for [{check_name}]"
 
-        if ("aarch" in check_name or "arm" in check_name) and "aarch" not in result:
+        if (
+            "aarch" in check_name.lower() or "arm64" in check_name.lower()
+        ) and "aarch" not in result:
             if result == Runners.STRESS_TESTER:
                 # FIXME: no arm stress tester group atm
                 result = Runners.FUNC_TESTER_ARM
@@ -694,10 +704,11 @@ class CIConfig:
         ), f"Invalid check_name or CI_CONFIG outdated, config not found for [{check_name}]"
         return res  # type: ignore
 
-    def job_generator(self) -> Iterable[str]:
+    def job_generator(self, branch: str) -> Iterable[str]:
         """
         traverses all check names in CI pipeline
         """
+        assert branch
         for config in (
             self.other_jobs_configs,
             self.build_config,

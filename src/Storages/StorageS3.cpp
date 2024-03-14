@@ -1420,8 +1420,10 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
         url.uri.getScheme());
 
     client_configuration.endpointOverride = url.endpoint;
+    /// seems as we don't use it
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);
-    client_configuration.http_connection_pool_size = global_settings.s3_http_connection_pool_size;
+    client_configuration.connectTimeoutMs = local_settings.s3_connect_timeout_ms;
+
     auto headers = auth_settings.headers;
     if (!headers_from_ast.empty())
         headers.insert(headers.end(), headers_from_ast.begin(), headers_from_ast.end());
