@@ -31,7 +31,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
-
 namespace DB
 {
 
@@ -43,7 +42,6 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int TYPE_MISMATCH;
 }
-
 
 enum class RangeHashedDictionaryLookupStrategy : uint8_t
 {
@@ -235,8 +233,6 @@ private:
     void calculateBytesAllocated();
 
     static Attribute createAttribute(const DictionaryAttribute & dictionary_attribute);
-
-
 
     template <typename ValueType>
     using ValueSetterFunc = std::function<void(size_t, const ValueType &, bool)>;
