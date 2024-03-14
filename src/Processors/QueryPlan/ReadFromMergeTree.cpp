@@ -44,8 +44,6 @@
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <algorithm>
