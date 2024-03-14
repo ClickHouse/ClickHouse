@@ -974,7 +974,7 @@ ASTPtr QueryFuzzer::reverseLiteralFuzzing(ASTPtr child)
             "toFixedString", /// Same as toDecimal
             "toInt128",
             "toInt256",
-            "toLowCardinality"
+            "toLowCardinality",
             "toNullable",
             "toUInt128",
             "toUInt256"};
