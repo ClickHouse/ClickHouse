@@ -3,12 +3,12 @@
 #include <base/DayNum.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <Core/DecimalFunctions.h>
 
 #include <ctime>
 #include <cassert>
 #include <string>
 #include <type_traits>
-
 
 #define DATE_SECONDS_PER_DAY 86400 /// Number of seconds in a day, 60 * 60 * 24
 
@@ -280,9 +280,9 @@ private:
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
         assert(divisor > 0);
 
-        if (likely(offset_is_whole_number_of_hours_during_epoch))
+        if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
         {
-            if (likely(x >= 0))
+            if (x >= 0) [[likely]]
                 return static_cast<DateOrTime>(x / divisor * divisor);
 
             /// Integer division for negative numbers rounds them towards zero (up).
@@ -576,10 +576,10 @@ public:
 
     unsigned toSecond(Time t) const
     {
-        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
         {
             Time res = t % 60;
-            if (likely(res >= 0))
+            if (res >= 0) [[likely]]
                 return static_cast<unsigned>(res);
             return static_cast<unsigned>(res) + 60;
         }
@@ -591,6 +591,30 @@ public:
             time += lut[index].amount_of_offset_change();
 
         return time % 60;
+    }
+
+    template <typename DateOrTime>
+    unsigned toMillisecond(const DateOrTime & datetime, Int64 scale_multiplier) const
+    {
+        constexpr Int64 millisecond_multiplier = 1'000;
+        constexpr Int64 microsecond_multiplier = 1'000 * millisecond_multiplier;
+        constexpr Int64 divider = microsecond_multiplier / millisecond_multiplier;
+
+        auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
+
+        if (datetime.value < 0 && components.fractional)
+        {
+            components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+            --components.whole;
+        }
+        Int64 fractional = components.fractional;
+        if (scale_multiplier > microsecond_multiplier)
+            fractional = fractional / (scale_multiplier / microsecond_multiplier);
+        else if (scale_multiplier < microsecond_multiplier)
+            fractional = fractional * (microsecond_multiplier / scale_multiplier);
+
+        UInt16 millisecond = static_cast<UInt16>(fractional / divider);
+        return millisecond;
     }
 
     unsigned toMinute(Time t) const
@@ -1122,9 +1146,9 @@ public:
     DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
         Int64 divisor = 60 * minutes;
-        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
         {
-            if (likely(t >= 0))
+            if (t >= 0) [[likely]]
                 return static_cast<DateOrTime>(t / divisor * divisor);
             return static_cast<DateOrTime>((t + 1 - divisor) / divisor * divisor);
         }
@@ -1339,7 +1363,7 @@ public:
 
     UInt8 saturateDayOfMonth(Int16 year, UInt8 month, UInt8 day_of_month) const
     {
-        if (likely(day_of_month <= 28))
+        if (day_of_month <= 28) [[likely]]
             return day_of_month;
 
         UInt8 days_in_month = daysInMonth(year, month);
