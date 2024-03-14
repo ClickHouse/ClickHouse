@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 
@@ -12,6 +14,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Common/WeakHash.h>
+#include <base/hex.h>
 
 #include <unordered_map>
 #include <iostream>

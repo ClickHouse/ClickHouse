@@ -26,7 +26,7 @@ try
     auto config = processor.loadConfig().configuration;
     String root_path = argv[2];
 
-    auto zk = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(*config, zkutil::getZooKeeperConfigName(*config), nullptr);
+    zkutil::ZooKeeper zk(*config, zkutil::getZooKeeperConfigName(*config), nullptr);
 
     String temp_path = root_path + "/temp";
     String blocks_path = root_path + "/block_numbers";
@@ -34,7 +34,7 @@ try
     Stopwatch total_timer;
     Stopwatch timer;
 
-    EphemeralLocksInAllPartitions locks(blocks_path, "test_lock-", temp_path, *zk);
+    EphemeralLocksInAllPartitions locks(blocks_path, "test_lock-", temp_path, zk);
 
     std::cerr << "Locked, elapsed: " << timer.elapsedSeconds() << std::endl;
     for (const auto & lock : locks.getLocks())

@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 template <typename T>
-void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted, T default_value)
+void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted)
 {
     if (mask.size() < data.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
@@ -38,7 +38,7 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
             --from;
         }
         else
-            data[index] = default_value;
+            data[index] = T();
 
         --index;
     }
@@ -49,7 +49,7 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
 
 /// Explicit instantiations - not to place the implementation of the function above in the header file.
 #define INSTANTIATE(TYPE) \
-template void expandDataByMask<TYPE>(PaddedPODArray<TYPE> &, const PaddedPODArray<UInt8> &, bool, TYPE);
+template void expandDataByMask<TYPE>(PaddedPODArray<TYPE> &, const PaddedPODArray<UInt8> &, bool);
 
 INSTANTIATE(UInt8)
 INSTANTIATE(UInt16)
@@ -78,7 +78,7 @@ INSTANTIATE(IPv6)
 #undef INSTANTIATE
 
 template <bool inverted, bool column_is_short, typename Container>
-static size_t extractMaskNumericImpl(
+size_t extractMaskNumericImpl(
     PaddedPODArray<UInt8> & mask,
     const Container & data,
     UInt8 null_value,
@@ -97,7 +97,8 @@ static size_t extractMaskNumericImpl(
     size_t mask_size = mask.size();
     size_t data_size = data.size();
 
-    for (size_t i = 0; i != mask_size && data_index != data_size; ++i)
+    size_t i = 0;
+    for (; i != mask_size && data_index != data_size; ++i)
     {
         // Change mask only where value is 1.
         if (!mask[i])
@@ -141,7 +142,7 @@ static size_t extractMaskNumericImpl(
 }
 
 template <bool inverted, typename NumericType>
-static bool extractMaskNumeric(
+bool extractMaskNumeric(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
     UInt8 null_value,
@@ -166,7 +167,7 @@ static bool extractMaskNumeric(
 }
 
 template <bool inverted>
-static MaskInfo extractMaskFromConstOrNull(
+MaskInfo extractMaskFromConstOrNull(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
     UInt8 null_value,
@@ -195,7 +196,7 @@ static MaskInfo extractMaskFromConstOrNull(
 }
 
 template <bool inverted>
-static MaskInfo extractMaskImpl(
+MaskInfo extractMaskImpl(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & col,
     UInt8 null_value,

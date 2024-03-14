@@ -1,5 +1,4 @@
 #include "Common/ZooKeeper/IKeeper.h"
-#include "Common/ZooKeeper/ZooKeeperConstants.h"
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
@@ -27,6 +26,7 @@ void ZooKeeperResponse::write(WriteBuffer & out) const
     if (error == Error::ZOK)
         writeImpl(buf);
     Coordination::write(buf.str(), out);
+    out.next();
 }
 
 std::string ZooKeeperRequest::toString() const
@@ -48,6 +48,7 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
     Coordination::write(getOpNum(), buf);
     writeImpl(buf);
     Coordination::write(buf.str(), out);
+    out.next();
 }
 
 void ZooKeeperSyncRequest::writeImpl(WriteBuffer & out) const
@@ -156,12 +157,6 @@ std::string ZooKeeperAuthRequest::toStringImpl() const
 
 void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
 {
-    /// See https://github.com/ClickHouse/clickhouse-private/issues/3029
-    if (path.starts_with("/clickhouse/tables/") && path.find("/parts/") != std::string::npos)
-    {
-        LOG_TRACE(getLogger(__PRETTY_FUNCTION__), "Creating part at path {}", path);
-    }
-
     Coordination::write(path, out);
     Coordination::write(data, out);
     Coordination::write(acls, out);
@@ -486,10 +481,6 @@ OpNum ZooKeeperMultiRequest::getOpNum() const
 }
 
 ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls)
-    : ZooKeeperMultiRequest(std::span{generic_requests}, default_acls)
-{}
-
-ZooKeeperMultiRequest::ZooKeeperMultiRequest(std::span<const Coordination::RequestPtr> generic_requests, const ACLs & default_acls)
 {
     /// Convert nested Requests to ZooKeeperRequests.
     /// Note that deep copy is required to avoid modifying path in presence of chroot prefix.
@@ -704,6 +695,7 @@ void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
 ZooKeeperResponsePtr ZooKeeperHeartbeatRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperHeartbeatResponse>()); }
 ZooKeeperResponsePtr ZooKeeperSyncRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSyncResponse>()); }
 ZooKeeperResponsePtr ZooKeeperAuthRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperAuthResponse>()); }
+ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperCreateResponse>()); }
 ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperRemoveResponse>()); }
 ZooKeeperResponsePtr ZooKeeperExistsRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperExistsResponse>()); }
 ZooKeeperResponsePtr ZooKeeperGetRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperGetResponse>()); }
@@ -711,13 +703,6 @@ ZooKeeperResponsePtr ZooKeeperSetRequest::makeResponse() const { return setTime(
 ZooKeeperResponsePtr ZooKeeperReconfigRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperReconfigResponse>()); }
 ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperListResponse>()); }
 ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return setTime(std::make_shared<ZooKeeperSimpleListResponse>()); }
-
-ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
-{
-    if (not_exists)
-        return setTime(std::make_shared<ZooKeeperCreateIfNotExistsResponse>());
-    return setTime(std::make_shared<ZooKeeperCreateResponse>());
-}
 
 ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const
 {
@@ -939,7 +924,7 @@ ZooKeeperRequest::~ZooKeeperRequest()
     constexpr UInt64 max_request_time_ns = 1000000000ULL; /// 1 sec
     if (max_request_time_ns < elapsed_ns)
     {
-        LOG_TEST(getLogger(__PRETTY_FUNCTION__), "Processing of request xid={} took {} ms", xid, elapsed_ns / 1000000UL);
+        LOG_TEST(&Poco::Logger::get(__PRETTY_FUNCTION__), "Processing of request xid={} took {} ms", xid, elapsed_ns / 1000000UL);
     }
 }
 
@@ -960,7 +945,7 @@ ZooKeeperResponse::~ZooKeeperResponse()
     constexpr UInt64 max_request_time_ns = 1000000000ULL; /// 1 sec
     if (max_request_time_ns < elapsed_ns)
     {
-        LOG_TEST(getLogger(__PRETTY_FUNCTION__), "Processing of response xid={} took {} ms", xid, elapsed_ns / 1000000UL);
+        LOG_TEST(&Poco::Logger::get(__PRETTY_FUNCTION__), "Processing of response xid={} took {} ms", xid, elapsed_ns / 1000000UL);
     }
 }
 
@@ -992,7 +977,7 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Read;
         else if constexpr (num == OpNum::Multi)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
-        else if constexpr (num == OpNum::CheckNotExists || num == OpNum::CreateIfNotExists)
+        else if constexpr (num == OpNum::CheckNotExists)
             res->not_exists = true;
 
         return res;
@@ -1016,7 +1001,6 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Reconfig, ZooKeeperReconfigRequest>(*this);
     registerZooKeeperRequest<OpNum::Multi, ZooKeeperMultiRequest>(*this);
     registerZooKeeperRequest<OpNum::MultiRead, ZooKeeperMultiRequest>(*this);
-    registerZooKeeperRequest<OpNum::CreateIfNotExists, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::SessionID, ZooKeeperSessionIDRequest>(*this);
     registerZooKeeperRequest<OpNum::GetACL, ZooKeeperGetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::SetACL, ZooKeeperSetACLRequest>(*this);

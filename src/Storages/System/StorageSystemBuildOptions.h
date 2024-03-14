@@ -11,10 +11,10 @@ class Context;
 
 /** System table "build_options" with many params used for clickhouse building
   */
-class StorageSystemBuildOptions final : public IStorageSystemOneBlock
+class StorageSystemBuildOptions final : public IStorageSystemOneBlock<StorageSystemBuildOptions>
 {
 protected:
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
@@ -22,7 +22,7 @@ public:
 
     std::string getName() const override { return "SystemBuildOptions"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 };
 
 }

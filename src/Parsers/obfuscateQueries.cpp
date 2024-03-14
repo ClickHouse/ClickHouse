@@ -1095,11 +1095,7 @@ void obfuscateIdentifier(std::string_view src, WriteBuffer & result, WordMap & o
 }
 
 
-void obfuscateLiteral(
-    std::string_view src,
-    WriteBuffer & result,
-    SipHash hash_func,
-    KnownIdentifierFunc known_identifier_func)
+void obfuscateLiteral(std::string_view src, WriteBuffer & result, SipHash hash_func)
 {
     const char * src_pos = src.data();
     const char * src_end = src_pos + src.size();
@@ -1212,15 +1208,15 @@ void obfuscateLiteral(
         }
         else if (isAlphaASCII(src_pos[0]))
         {
-            /// Alphabetical characters
+            /// Alphabetial characters
 
             const char * alpha_end = src_pos + 1;
             while (alpha_end < src_end && isAlphaASCII(*alpha_end))
                 ++alpha_end;
 
-            String word(src_pos, alpha_end);
-            String wordcopy = Poco::toUpper(word);
-            if (keep_words.contains(wordcopy) || known_identifier_func(word))
+            String wordcopy(src_pos, alpha_end);
+            Poco::toUpperInPlace(wordcopy);
+            if (keep_words.contains(wordcopy))
             {
                 result.write(src_pos, alpha_end - src_pos);
                 src_pos = alpha_end;
@@ -1341,14 +1337,14 @@ void obfuscateQueries(
         }
         else if (token.type == TokenType::Number)
         {
-            obfuscateLiteral(whole_token, result, hash_func, known_identifier_func);
+            obfuscateLiteral(whole_token, result, hash_func);
         }
         else if (token.type == TokenType::StringLiteral)
         {
             assert(token.size() >= 2);
 
             result.write(*token.begin);
-            obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func, known_identifier_func);
+            obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func);
             result.write(token.end[-1]);
         }
         else if (token.type == TokenType::Comment)
@@ -1364,3 +1360,4 @@ void obfuscateQueries(
 }
 
 }
+

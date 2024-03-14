@@ -18,13 +18,12 @@ public:
         String raw_data;
     };
 
-    explicit InputFormatErrorsLogger(const ContextPtr & context);
+    InputFormatErrorsLogger(const ContextPtr & context);
 
     virtual ~InputFormatErrorsLogger();
 
     virtual void logError(ErrorEntry entry);
     void logErrorImpl(ErrorEntry entry);
-    void writeErrors();
 
 private:
     Block header;
@@ -35,9 +34,6 @@ private:
 
     String database;
     String table;
-
-    MutableColumns errors_columns;
-    size_t max_block_size;
 };
 
 using InputFormatErrorsLoggerPtr = std::shared_ptr<InputFormatErrorsLogger>;
@@ -45,7 +41,7 @@ using InputFormatErrorsLoggerPtr = std::shared_ptr<InputFormatErrorsLogger>;
 class ParallelInputFormatErrorsLogger : public InputFormatErrorsLogger
 {
 public:
-    explicit ParallelInputFormatErrorsLogger(const ContextPtr & context) : InputFormatErrorsLogger(context) { }
+    ParallelInputFormatErrorsLogger(const ContextPtr & context) : InputFormatErrorsLogger(context) { }
 
     ~ParallelInputFormatErrorsLogger() override;
 
