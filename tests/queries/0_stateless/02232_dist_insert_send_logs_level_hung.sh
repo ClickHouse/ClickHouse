@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
-# Tag: no-parallel - to heavy
+# Tags: long
 # Tag: long        - to heavy
 
 # This is the regression test when remote peer send some logs for INSERT,

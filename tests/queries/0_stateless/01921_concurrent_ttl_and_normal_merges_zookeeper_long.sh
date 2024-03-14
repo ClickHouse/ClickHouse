@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-parallel
+# Tags: long, zookeeper
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 

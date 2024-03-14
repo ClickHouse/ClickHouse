@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel, no-replicated-database
+# Tags: race, zookeeper, no-replicated-database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,7 +21,7 @@ function thread2()
 {
     while true; do
         REPLICA=$(($RANDOM % 10))
-        $CLICKHOUSE_CLIENT -n --query "ALTER TABLE alter_table_$REPLICA ADD COLUMN h String '0'; ALTER TABLE alter_table_$REPLICA MODIFY COLUMN h UInt64; ALTER TABLE alter_table_$REPLICA DROP COLUMN h;"; 
+        $CLICKHOUSE_CLIENT -n --query "ALTER TABLE alter_table_$REPLICA ADD COLUMN h String '0'; ALTER TABLE alter_table_$REPLICA MODIFY COLUMN h UInt64; ALTER TABLE alter_table_$REPLICA DROP COLUMN h;";
     done
 }
 
@@ -29,7 +29,7 @@ function thread3()
 {
     while true; do
         REPLICA=$(($RANDOM % 10))
-        $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table_$REPLICA SELECT rand(1), rand(2), 1 / rand(3), toString(rand(4)), [rand(5), rand(6)], rand(7) % 2 ? NULL : generateUUIDv4(), (rand(8), rand(9)) FROM numbers(100000)"; 
+        $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table_$REPLICA SELECT rand(1), rand(2), 1 / rand(3), toString(rand(4)), [rand(5), rand(6)], rand(7) % 2 ? NULL : generateUUIDv4(), (rand(8), rand(9)) FROM numbers(100000)";
     done
 }
 
@@ -37,7 +37,7 @@ function thread4()
 {
     while true; do
         REPLICA=$(($RANDOM % 10))
-        $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE alter_table_$REPLICA FINAL"; 
+        $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE alter_table_$REPLICA FINAL";
         sleep 0.$RANDOM;
     done
 }
