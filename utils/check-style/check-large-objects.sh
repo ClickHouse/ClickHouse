@@ -6,7 +6,6 @@ TU_EXCLUDES=(
     CastOverloadResolver
     AggregateFunctionUniq
     FunctionsConversion
-    RangeHashedDictionary_
 
     Aggregator
 )
