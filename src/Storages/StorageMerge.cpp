@@ -1121,7 +1121,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
         convertAndFilterSourceStream(
-            header, modified_query_info, storage_snapshot_, aliases, row_policy_data_opt, context, *builder, storage_stage);
+            header, modified_query_info, storage_snapshot_, aliases, row_policy_data_opt, context, *builder);
     }
 
     return builder;
@@ -1473,8 +1473,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const Aliases & aliases,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
-    QueryPipelineBuilder & builder,
-    QueryProcessingStage::Enum processed_stage [[maybe_unused]])
+    QueryPipelineBuilder & builder)
 {
     Block before_block_header = builder.getHeader();
 
