@@ -372,7 +372,9 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     SCOPE_EXIT_SAFE(
         if (!finished_flag)
         {
-            finish();
+            /// If finished_flag is not set, there was an exception.
+            /// Cancel execution in this case.
+            cancel();
             joinThreads();
         }
     );
