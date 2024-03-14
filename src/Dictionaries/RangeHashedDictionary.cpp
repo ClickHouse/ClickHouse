@@ -3,11 +3,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TYPE_MISMATCH;
-}
-
 template <DictionaryKeyType dictionary_key_type>
 ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
     const std::string & attribute_name,
