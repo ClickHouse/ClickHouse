@@ -1,19 +1,17 @@
-#include <memory>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
-#include "Analyzer/ColumnNode.h"
-#include "Analyzer/ConstantNode.h"
-#include "Analyzer/FunctionNode.h"
-#include "Analyzer/IQueryTreeNode.h"
-#include "Analyzer/InDepthQueryTreeVisitor.h"
-#include "Analyzer/Utils.h"
-#include "DataTypes/IDataType.h"
-#include "Interpreters/Context_fwd.h"
+
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Utils.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace
 {

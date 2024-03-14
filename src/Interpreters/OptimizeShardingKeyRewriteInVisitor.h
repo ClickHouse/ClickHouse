@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Cluster.h>
-#include "Analyzer/IQueryTreeNode.h"
 
 namespace DB
 {

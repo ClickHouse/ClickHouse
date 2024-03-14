@@ -1,6 +1,5 @@
 #pragma once
 
-#include <vector>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Client/ConnectionPool.h>
 #include <Core/QueryProcessingStage.h>
@@ -43,8 +42,6 @@ ASTPtr rewriteSelectQuery(
 
 using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
-
-using MissingObjectList = std::vector<std::pair<String, String>>;
 
 class SelectStreamFactory
 {
