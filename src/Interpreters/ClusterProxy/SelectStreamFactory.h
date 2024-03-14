@@ -54,11 +54,13 @@ public:
     {
         /// Query and header may be changed depending on shard.
         ASTPtr query;
+        QueryTreeNodePtr query_tree;
+
         /// Used to check the table existence on remote node
         StorageID main_table;
         Block header;
 
-        MissingObjectList missing_object_list;
+        bool has_missing_objects = false;
 
         Cluster::ShardInfo shard_info;
 
@@ -110,6 +112,7 @@ private:
     void createForShardImpl(
         const Cluster::ShardInfo & shard_info,
         const ASTPtr & query_ast,
+        const QueryTreeNodePtr & query_tree,
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
@@ -118,7 +121,7 @@ private:
         UInt32 shard_count,
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator,
-        MissingObjectList missed_list = {});
+        bool has_missing_objects = false);
 };
 
 }

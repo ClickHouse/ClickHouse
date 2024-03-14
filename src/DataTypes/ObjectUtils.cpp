@@ -959,24 +959,22 @@ void replaceMissedSubcolumnsByConstants(
 
 /// @expected_columns and @available_columns contain descriptions
 /// of extended Object columns.
-MissingObjectList replaceMissedSubcolumnsByConstants(
+bool replaceMissedSubcolumnsByConstants(
     const ColumnsDescription & expected_columns,
     const ColumnsDescription & available_columns,
     QueryTreeNodePtr & query,
     const ContextPtr & context [[maybe_unused]])
 {
-    MissingObjectList missed_list;
+    bool has_missing_objects = false;
 
     NamesAndTypes missed_names_types = calculateMissedSubcolumns(expected_columns, available_columns);
 
     if (missed_names_types.empty())
-        return missed_list;
+        return has_missing_objects;
 
     auto * query_node = query->as<QueryNode>();
     if (!query_node)
-        return missed_list;
-
-    missed_list.reserve(missed_names_types.size());
+        return has_missing_objects;
 
     auto table_expression = extractLeftTableExpression(query_node->getJoinTree());
 
@@ -987,12 +985,12 @@ MissingObjectList replaceMissedSubcolumnsByConstants(
         constant->setAlias(table_expression->getAlias() + "." + name);
 
         column_name_to_node[name] = buildCastFunction(constant, type, context);
-        missed_list.push_back({ constant->getValueStringRepresentation() + "_" + constant->getResultType()->getName(), table_expression->getAlias() + "." + name });
+        has_missing_objects = true;
     }
 
     replaceColumns(query, table_expression, column_name_to_node);
 
-    return missed_list;
+    return has_missing_objects;
 }
 
 Field FieldVisitorReplaceScalars::operator()(const Array & x) const

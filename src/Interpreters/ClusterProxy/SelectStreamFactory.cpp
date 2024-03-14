@@ -130,6 +130,7 @@ void SelectStreamFactory::createForShard(
     createForShardImpl(
         shard_info,
         query_ast,
+        {},
         main_table,
         table_func_ptr,
         std::move(context),
@@ -143,6 +144,7 @@ void SelectStreamFactory::createForShard(
 void SelectStreamFactory::createForShardImpl(
     const Cluster::ShardInfo & shard_info,
     const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     ContextPtr context,
@@ -151,13 +153,13 @@ void SelectStreamFactory::createForShardImpl(
     UInt32 shard_count,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
-    MissingObjectList missed_list)
+    bool has_missing_objects)
 {
     auto emplace_local_stream = [&]()
     {
         Block shard_header;
         if (context->getSettingsRef().allow_experimental_analyzer)
-            shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_ast, context, SelectQueryOptions(processed_stage).analyze());
+            shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree, context, SelectQueryOptions(processed_stage).analyze());
         else
             shard_header = header;
 
@@ -169,15 +171,16 @@ void SelectStreamFactory::createForShardImpl(
     {
         Block shard_header;
         if (context->getSettingsRef().allow_experimental_analyzer)
-            shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_ast, context, SelectQueryOptions(processed_stage).analyze());
+            shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree, context, SelectQueryOptions(processed_stage).analyze());
         else
             shard_header = header;
 
         remote_shards.emplace_back(Shard{
             .query = query_ast,
+            .query_tree = query_tree,
             .main_table = main_table,
             .header = shard_header,
-            .missing_object_list = std::move(missed_list),
+            .has_missing_objects = has_missing_objects,
             .shard_info = shard_info,
             .lazy = lazy,
             .local_delay = local_delay,
@@ -300,15 +303,17 @@ void SelectStreamFactory::createForShard(
 
     auto it = objects_by_shard.find(shard_info.shard_num);
     QueryTreeNodePtr modified_query = query_tree;
-    MissingObjectList missed_list;
+
+    bool has_missing_objects = false;
     if (it != objects_by_shard.end())
-        missed_list = replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, modified_query, context);
+        has_missing_objects = replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, modified_query, context);
 
     auto query_ast = queryNodeToDistributedSelectQuery(modified_query);
 
     createForShardImpl(
         shard_info,
         query_ast,
+        modified_query,
         main_table,
         table_func_ptr,
         std::move(context),
@@ -317,7 +322,7 @@ void SelectStreamFactory::createForShard(
         shard_count,
         parallel_replicas_enabled,
         std::move(shard_filter_generator),
-        std::move(missed_list));
+        has_missing_objects);
 
 }
 
