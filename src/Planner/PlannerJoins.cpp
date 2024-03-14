@@ -10,6 +10,7 @@
 
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
@@ -658,6 +659,26 @@ JoinClausesAndActions buildJoinClausesAndActions(//const ColumnsWithTypeAndName 
             const auto & mixed_filter_condition_nodes = join_clause.getMixedFilterConditionNodes();
             auto full_join_expressions_actions = ActionsDAG::buildFilterActionsDAG(mixed_filter_condition_nodes, {}, true);
             result.full_join_expressions_actions = full_join_expressions_actions;
+        }
+        auto outputs = result.full_join_expressions_actions->getOutputs();
+        if (outputs.size() != 1)
+        {
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Only one output is expected. but got:\n{}", result.full_join_expressions_actions->dumpDAG());
+        }
+        auto output_type = removeNullable(outputs[0]->result_type);
+        WhichDataType which_type(output_type);
+        if (!which_type.isNumber())
+        {
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Only numeric type is expected. but got:\n{}", result.full_join_expressions_actions->dumpDAG());
+        }
+        if (!which_type.isUInt8())
+        {
+            DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
+            auto true_col = ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true");
+            const auto * true_node = &result.full_join_expressions_actions->addColumn(true_col);
+            const auto * final_node
+                = &result.full_join_expressions_actions->addFunction(and_function, {true_node, outputs[0]}, outputs[0]->result_name);
+            result.full_join_expressions_actions->addOrReplaceInOutputs(*final_node);
         }
     }
 
