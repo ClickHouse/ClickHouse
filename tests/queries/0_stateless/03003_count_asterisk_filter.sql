@@ -5,3 +5,5 @@ INSERT INTO users VALUES (6666, 'Ksenia', 48);
 INSERT INTO users VALUES (8888, 'Alice', 50);
 
 SELECT count(*) FILTER (WHERE uid > 2000) FROM users;
+
+DROP TABLE users;
