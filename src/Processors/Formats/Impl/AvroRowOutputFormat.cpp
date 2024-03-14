@@ -27,12 +27,13 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 
+#include <Common/re2.h>
+
 #include <DataFile.hh>
 #include <Encoder.hh>
 #include <Node.hh>
 #include <Schema.hh>
 
-#include <re2/re2.h>
 #include <boost/algorithm/string.hpp>
 
 namespace DB
@@ -519,8 +520,11 @@ static avro::Codec getCodec(const std::string & codec_name)
 
     if (codec_name == "null")    return avro::Codec::NULL_CODEC;
     if (codec_name == "deflate") return avro::Codec::DEFLATE_CODEC;
+    if (codec_name == "zstd")
+        return avro::Codec::ZSTD_CODEC;
 #ifdef SNAPPY_CODEC_AVAILABLE
-    if (codec_name == "snappy")  return avro::Codec::SNAPPY_CODEC;
+    if (codec_name == "snappy")
+        return avro::Codec::SNAPPY_CODEC;
 #endif
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Avro codec {} is not available", codec_name);

@@ -6,22 +6,27 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemTableEngines::getNamesAndTypes()
+ColumnsDescription StorageSystemTableEngines::getColumnsDescription()
 {
-    return {
-        {"name", std::make_shared<DataTypeString>()},
-        {"supports_settings", std::make_shared<DataTypeUInt8>()},
-        {"supports_skipping_indices", std::make_shared<DataTypeUInt8>()},
-        {"supports_projections", std::make_shared<DataTypeUInt8>()},
-        {"supports_sort_order", std::make_shared<DataTypeUInt8>()},
-        {"supports_ttl", std::make_shared<DataTypeUInt8>()},
-        {"supports_replication", std::make_shared<DataTypeUInt8>()},
-        {"supports_deduplication", std::make_shared<DataTypeUInt8>()},
-        {"supports_parallel_insert", std::make_shared<DataTypeUInt8>()},
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "The name of table engine."},
+        {"supports_settings", std::make_shared<DataTypeUInt8>(), "Flag that indicates if table engine supports SETTINGS clause."},
+        {"supports_skipping_indices", std::make_shared<DataTypeUInt8>(), "Flag that indicates if table engine supports skipping indices."},
+        {"supports_projections", std::make_shared<DataTypeUInt8>(), "Flag that indicated if table engine supports projections."},
+        {"supports_sort_order", std::make_shared<DataTypeUInt8>(),
+            "Flag that indicates if table engine supports clauses PARTITION_BY, PRIMARY_KEY, ORDER_BY and SAMPLE_BY."
+        },
+        {"supports_ttl", std::make_shared<DataTypeUInt8>(), "Flag that indicates if table engine supports TTL."},
+        {"supports_replication", std::make_shared<DataTypeUInt8>(), "Flag that indicates if table engine supports data replication."},
+        {"supports_deduplication", std::make_shared<DataTypeUInt8>(), "Flag that indicates if table engine supports data deduplication."},
+        {"supports_parallel_insert", std::make_shared<DataTypeUInt8>(),
+            "Flag that indicates if table engine supports parallel insert (see max_insert_threads setting)."
+        },
     };
 }
 
-void StorageSystemTableEngines::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemTableEngines::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (const auto & pair : StorageFactory::instance().getAllStorages())
     {

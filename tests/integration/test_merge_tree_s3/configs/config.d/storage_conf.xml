@@ -49,6 +49,10 @@
                 <type>local</type>
                 <path>/</path>
             </hdd>
+            <hdd_blob>
+                <type>local_blob_storage</type>
+                <path>/</path>
+            </hdd_blob>
             <s3_with_cache>
                 <type>cache</type>
                 <disk>s3</disk>
@@ -74,7 +78,6 @@
                 <disk>s3_r</disk>
                 <path>/s3_cache_r/</path>
                 <max_size>1000000000</max_size>
-                <do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>
             </s3_cache_r>
         </disks>
         <policies>
@@ -153,6 +156,10 @@
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
         <ratio_of_defaults_for_sparse_serialization>1.0</ratio_of_defaults_for_sparse_serialization>
+        <min_bytes_for_full_part_storage>0</min_bytes_for_full_part_storage>
+        <disable_freeze_partition_for_zero_copy_replication>0</disable_freeze_partition_for_zero_copy_replication>
+        <disable_detach_partition_for_zero_copy_replication>0</disable_detach_partition_for_zero_copy_replication>
+        <disable_fetch_partition_for_zero_copy_replication>0</disable_fetch_partition_for_zero_copy_replication>
     </merge_tree>
 
     <database_catalog_unused_dir_hide_timeout_sec>0</database_catalog_unused_dir_hide_timeout_sec>

@@ -67,13 +67,14 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
 
 void TabSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
 }
 
-void TabSeparatedRowInputFormat::resetParser()
+void TabSeparatedRowInputFormat::resetReadBuffer()
 {
-    RowInputFormatWithNamesAndTypes::resetParser();
-    buf->reset();
+    buf.reset();
+    RowInputFormatWithNamesAndTypes::resetReadBuffer();
 }
 
 TabSeparatedFormatReader::TabSeparatedFormatReader(PeekableReadBuffer & in_, const FormatSettings & format_settings_, bool is_raw_)
@@ -167,7 +168,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
     if (is_raw)
     {
         if (as_nullable)
-            return SerializationNullable::deserializeTextRawImpl(column, *buf, format_settings, serialization);
+            return SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, *buf, format_settings, serialization);
 
         serialization->deserializeTextRaw(column, *buf, format_settings);
         return true;
@@ -175,7 +176,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
 
 
     if (as_nullable)
-        return SerializationNullable::deserializeTextEscapedImpl(column, *buf, format_settings, serialization);
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, *buf, format_settings, serialization);
 
     serialization->deserializeTextEscaped(column, *buf, format_settings);
     return true;
@@ -300,6 +301,51 @@ bool TabSeparatedFormatReader::checkForSuffix()
     return false;
 }
 
+void TabSeparatedFormatReader::skipRow()
+{
+    ReadBuffer & istr = *buf;
+    while (!istr.eof())
+    {
+        char * pos;
+        if (is_raw)
+            pos = find_first_symbols<'\r', '\n'>(istr.position(), istr.buffer().end());
+        else
+            pos = find_first_symbols<'\\', '\r', '\n'>(istr.position(), istr.buffer().end());
+
+        istr.position() = pos;
+
+        if (istr.position() > istr.buffer().end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+        else if (pos == istr.buffer().end())
+            continue;
+
+        if (!is_raw && *istr.position() == '\\')
+        {
+            ++istr.position();
+            if (!istr.eof())
+                ++istr.position();
+            continue;
+        }
+
+        if (*istr.position() == '\n')
+        {
+            ++istr.position();
+            if (!istr.eof() && *istr.position() == '\r')
+                ++istr.position();
+            return;
+        }
+        else if (*istr.position() == '\r')
+        {
+            ++istr.position();
+            if (!istr.eof() && *istr.position() == '\n')
+            {
+                ++istr.position();
+                return;
+            }
+        }
+    }
+}
+
 bool TabSeparatedFormatReader::checkForEndOfRow()
 {
     return buf->eof() || *buf->position() == '\n';
@@ -419,11 +465,6 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
             continue;
         }
 
-        ++number_of_rows;
-        if ((number_of_rows >= min_rows)
-            && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
-            need_more_data = false;
-
         if (*pos == '\n')
         {
             ++pos;
@@ -435,7 +476,14 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
             ++pos;
             if (loadAtPosition(in, memory, pos) && *pos == '\n')
                 ++pos;
+            else
+                continue;
         }
+
+        ++number_of_rows;
+        if ((number_of_rows >= min_rows)
+            && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
+            need_more_data = false;
     }
 
     saveUpToPosition(in, memory, pos);

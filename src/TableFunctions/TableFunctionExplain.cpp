@@ -1,26 +1,55 @@
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/StorageValues.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionExplain.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/Context.h>
+
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int UNEXPECTED_AST_STRUCTURE;
 }
+
+namespace
+{
+
+class TableFunctionExplain : public ITableFunction
+{
+public:
+    static constexpr auto name = "viewExplain";
+
+    std::string getName() const override { return name; }
+
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+
+    const char * getStorageTypeName() const override { return "Explain"; }
+
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+
+    InterpreterExplainQuery getInterpreter(ContextPtr context) const;
+
+    ASTPtr query = nullptr;
+};
 
 std::vector<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
 {
@@ -76,11 +105,25 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
 
     if (function->arguments->children.size() > 2)
     {
-        const auto & query_arg = function->arguments->children[2];
+        const auto & subquery_arg = function->arguments->children[2];
+        const auto * subquery = subquery_arg->as<ASTSubquery>();
+
+        if (!subquery)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table function '{}' requires a subquery argument, got '{}'",
+                getName(), queryToString(subquery_arg));
+
+        if (subquery->children.empty())
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                "A subquery AST element must have a child");
+
+        const auto & query_arg = subquery->children[0];
+
         if (!query_arg->as<ASTSelectWithUnionQuery>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Table function '{}' requires a EXPLAIN SELECT query argument, got EXPLAIN '{}'",
+                "Table function '{}' requires a EXPLAIN's SELECT query argument, got '{}'",
                 getName(), queryToString(query_arg));
+
         explain_query->setExplainedQuery(query_arg);
     }
     else if (kind != ASTExplainQuery::ExplainKind::CurrentTransaction)
@@ -100,7 +143,7 @@ ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr cont
     return columns_description;
 }
 
-static Block executeMonoBlock(QueryPipeline & pipeline)
+Block executeMonoBlock(QueryPipeline & pipeline)
 {
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected pulling pipeline");
@@ -143,6 +186,8 @@ InterpreterExplainQuery TableFunctionExplain::getInterpreter(ContextPtr context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' requires a explain query argument", getName());
 
     return InterpreterExplainQuery(query, context);
+}
+
 }
 
 void registerTableFunctionExplain(TableFunctionFactory & factory)

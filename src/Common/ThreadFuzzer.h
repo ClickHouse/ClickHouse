@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <atomic>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -56,7 +57,7 @@ public:
 
     static void stop();
     static void start();
-    static bool isStarted();
+    static bool ALWAYS_INLINE isStarted();
 
     static void maybeInjectSleep();
     static void maybeInjectMemoryLimitException();

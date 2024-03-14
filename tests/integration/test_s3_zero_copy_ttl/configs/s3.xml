@@ -7,6 +7,13 @@
             <access_key_id>minio</access_key_id>
             <secret_access_key>minio123</secret_access_key>
         </s3_disk>
+        <s3_cache_disk>
+            <!-- used as a temporary data storage -->
+            <type>cache</type>
+            <disk>s3_disk</disk>
+            <path>./s3_cache_disk/</path>
+            <max_size>10Gi</max_size>
+        </s3_cache_disk>
     </disks>
 
     <policies>
@@ -34,6 +41,8 @@
     <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
     <ratio_of_defaults_for_sparse_serialization>1.0</ratio_of_defaults_for_sparse_serialization>
   </merge_tree>
+
+  <temporary_data_in_cache>s3_cache_disk</temporary_data_in_cache>
 
   <allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 </clickhouse>

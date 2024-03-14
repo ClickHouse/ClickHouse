@@ -4,28 +4,28 @@
 import argparse
 import json
 import logging
-import subprocess
 import sys
 import time
+from os import makedirs
+from os import path as p
 from pathlib import Path
-from os import path as p, makedirs
-from typing import List
-
-from github import Github
+from typing import Dict, List
 
 from build_check import get_release_or_pr
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import format_description, get_commit, post_commit_status
-from docker_images_check import DockerImage
-from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET, S3_DOWNLOAD
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from build_download_helper import read_build_urls
+from docker_images_helper import DockerImageData, docker_login
+from env_helper import (
+    GITHUB_RUN_URL,
+    REPORT_PATH,
+    S3_BUILDS_BUCKET,
+    S3_DOWNLOAD,
+    TEMP_PATH,
+)
 from git_helper import Git
 from pr_info import PRInfo
-from report import TestResults, TestResult
-from s3_helper import S3Helper
+from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
 from version_helper import (
     ClickHouseVersion,
     get_tagged_versions,
@@ -33,9 +33,9 @@ from version_helper import (
     version_arg,
 )
 
-TEMP_PATH = p.join(RUNNER_TEMP, "docker_images_check")
-BUCKETS = {"amd64": "package_release", "arm64": "package_aarch64"}
 git = Git(ignore_no_tags=True)
+
+ARCH = ("amd64", "arm64")
 
 
 class DelOS(argparse.Action):
@@ -51,7 +51,11 @@ def parse_args() -> argparse.Namespace:
         description="A program to build clickhouse-server image, both alpine and "
         "ubuntu versions",
     )
-
+    parser.add_argument(
+        "--check-name",
+        required=False,
+        default="",
+    )
     parser.add_argument(
         "--version",
         type=version_arg,
@@ -71,13 +75,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--image-path",
         type=str,
-        default="docker/server",
+        default="",
         help="a path to docker context directory",
     )
     parser.add_argument(
         "--image-repo",
         type=str,
-        default="clickhouse/clickhouse-server",
+        default="",
         help="image name on docker hub",
     )
     parser.add_argument(
@@ -92,14 +96,7 @@ def parse_args() -> argparse.Namespace:
         default=argparse.SUPPRESS,
         help="don't push reports to S3 and github",
     )
-    parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--no-push-images",
-        action="store_false",
-        dest="push",
-        default=argparse.SUPPRESS,
-        help="don't push images to docker hub",
-    )
+    parser.add_argument("--push", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--os", default=["ubuntu", "alpine"], help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-ubuntu",
@@ -114,6 +111,11 @@ def parse_args() -> argparse.Namespace:
         nargs=0,
         default=argparse.SUPPRESS,
         help="don't build alpine image",
+    )
+    parser.add_argument(
+        "--allow-build-reuse",
+        action="store_true",
+        help="allows binaries built on different branch if source digest matches current repo state",
     )
 
     return parser.parse_args()
@@ -214,26 +216,29 @@ def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
     return tags
 
 
-def buildx_args(bucket_prefix: str, arch: str) -> List[str]:
+def buildx_args(urls: Dict[str, str], arch: str, direct_urls: List[str]) -> List[str]:
     args = [
         f"--platform=linux/{arch}",
         f"--label=build-url={GITHUB_RUN_URL}",
         f"--label=com.clickhouse.build.githash={git.sha}",
     ]
-    if bucket_prefix:
-        url = p.join(bucket_prefix, BUCKETS[arch])  # to prevent a double //
+    if direct_urls:
+        args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
+    elif urls:
+        url = urls[arch]
         args.append(f"--build-arg=REPOSITORY='{url}'")
         args.append(f"--build-arg=deb_location_url='{url}'")
     return args
 
 
 def build_and_push_image(
-    image: DockerImage,
+    image: DockerImageData,
     push: bool,
-    bucket_prefix: str,
+    repo_urls: dict[str, str],
     os: str,
     tag: str,
     version: ClickHouseVersion,
+    direct_urls: Dict[str, List[str]],
 ) -> TestResults:
     result = []  # type: TestResults
     if os != "ubuntu":
@@ -250,13 +255,19 @@ def build_and_push_image(
     # images must be built separately and merged together with `docker manifest`
     digests = []
     multiplatform_sw = Stopwatch()
-    for arch in BUCKETS:
+    for arch in ARCH:
         single_sw = Stopwatch()
         arch_tag = f"{tag}-{arch}"
         metadata_path = p.join(TEMP_PATH, arch_tag)
-        dockerfile = p.join(image.full_path, f"Dockerfile.{os}")
+        dockerfile = p.join(image.path, f"Dockerfile.{os}")
         cmd_args = list(init_args)
-        cmd_args.extend(buildx_args(bucket_prefix, arch))
+        urls = []
+        if direct_urls:
+            if os == "ubuntu" and "clickhouse-server" in image.repo:
+                urls = [url for url in direct_urls[arch] if ".deb" in url]
+            else:
+                urls = [url for url in direct_urls[arch] if ".tgz" in url]
+        cmd_args.extend(buildx_args(repo_urls, arch, direct_urls=urls))
         if not push:
             cmd_args.append(f"--tag={image.repo}:{arch_tag}")
         cmd_args.extend(
@@ -265,7 +276,7 @@ def build_and_push_image(
                 f"--build-arg=VERSION='{version.string}'",
                 "--progress=plain",
                 f"--file={dockerfile}",
-                image.full_path,
+                image.path.as_posix(),
             ]
         )
         cmd = " ".join(cmd_args)
@@ -323,70 +334,96 @@ def main():
     makedirs(TEMP_PATH, exist_ok=True)
 
     args = parse_args()
-    image = DockerImage(args.image_path, args.image_repo, False)
+
+    pr_info = PRInfo()
+
+    if args.check_name:
+        assert not args.image_path and not args.image_repo
+        if "server image" in args.check_name:
+            image_path = "docker/server"
+            image_repo = "clickhouse/clickhouse-server"
+        elif "keeper image" in args.check_name:
+            image_path = "docker/keeper"
+            image_repo = "clickhouse/clickhouse-keeper"
+        else:
+            assert False, "Invalid --check-name"
+    else:
+        assert args.image_path and args.image_repo
+        image_path = args.image_path
+        image_repo = args.image_repo
+
+    push = args.push
+    del args.image_path
+    del args.image_repo
+    del args.push
+
+    if pr_info.is_master():
+        push = True
+
+    image = DockerImageData(image_path, image_repo, False)
     args.release_type = auto_release_type(args.version, args.release_type)
     tags = gen_tags(args.version, args.release_type)
-    NAME = f"Docker image {image.repo} building check"
-    pr_info = None
-    if CI:
-        pr_info = PRInfo()
-        release_or_pr, _ = get_release_or_pr(pr_info, args.version)
-        args.bucket_prefix = (
-            f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}"
-        )
+    repo_urls = {}
+    direct_urls: Dict[str, List[str]] = {}
+    release_or_pr, _ = get_release_or_pr(pr_info, args.version)
 
-    if args.push:
-        subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
-            "docker login --username 'robotclickhouse' --password-stdin",
-            input=get_parameter_from_ssm("dockerhub_robot_password"),
-            encoding="utf-8",
-            shell=True,
-        )
-        NAME = f"Docker image {image.repo} build and push"
+    for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):
+        if not args.bucket_prefix:
+            repo_urls[
+                arch
+            ] = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}/{build_name}"
+        else:
+            repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
+        if args.allow_build_reuse:
+            # read s3 urls from pre-downloaded build reports
+            if "clickhouse-server" in image_repo:
+                PACKAGES = [
+                    "clickhouse-client",
+                    "clickhouse-server",
+                    "clickhouse-common-static",
+                ]
+            elif "clickhouse-keeper" in image_repo:
+                PACKAGES = ["clickhouse-keeper"]
+            else:
+                assert False, "BUG"
+            urls = read_build_urls(build_name, Path(REPORT_PATH))
+            assert (
+                urls
+            ), f"URLS has not been read from build report, report path[{REPORT_PATH}], build [{build_name}]"
+            direct_urls[arch] = [
+                url
+                for url in urls
+                if any(package in url for package in PACKAGES) and "-dbg" not in url
+            ]
+
+    if push:
+        docker_login()
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
-    status = "success"
+    status = SUCCESS
     test_results = []  # type: TestResults
     for os in args.os:
         for tag in tags:
             test_results.extend(
                 build_and_push_image(
-                    image, args.push, args.bucket_prefix, os, tag, args.version
+                    image, push, repo_urls, os, tag, args.version, direct_urls
                 )
             )
             if test_results[-1].status != "OK":
-                status = "failure"
-
+                status = FAILURE
     pr_info = pr_info or PRInfo()
-    s3_helper = S3Helper()
-
-    url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
-
-    print(f"::notice ::Report url: {url}")
-
-    if not args.reports:
-        return
 
     description = f"Processed tags: {', '.join(tags)}"
+    JobReport(
+        description=description,
+        test_results=test_results,
+        status=status,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=[],
+    ).dump()
 
-    description = format_description(description)
-
-    gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
-    post_commit_status(commit, status, url, description, NAME, pr_info)
-
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_results,
-        status,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        url,
-        NAME,
-    )
-    ch_helper = ClickHouseHelper()
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-    if status != "success":
+    if status != SUCCESS:
         sys.exit(1)
 
 

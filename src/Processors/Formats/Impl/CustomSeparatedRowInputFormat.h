@@ -18,9 +18,9 @@ public:
         const Params & params_,
         bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_settings_);
 
-    void resetParser() override;
     String getName() const override { return "CustomSeparatedRowInputFormat"; }
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
 private:
     CustomSeparatedRowInputFormat(
@@ -32,6 +32,8 @@ private:
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
     void readPrefix() override;
+
+    bool supportsCountRows() const override { return true; }
 
     std::unique_ptr<PeekableReadBuffer> buf;
     bool ignore_spaces;
@@ -48,9 +50,9 @@ public:
 
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
-    void skipNames() override { skipHeaderRow(); }
-    void skipTypes() override { skipHeaderRow(); }
-    void skipHeaderRow();
+    void skipNames() override { skipRow(); }
+    void skipTypes() override { skipRow(); }
+    void skipRow() override;
 
     void skipPrefixBeforeHeader() override;
     void skipRowStartDelimiter() override;

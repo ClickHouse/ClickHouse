@@ -24,7 +24,7 @@ public:
         StorageNATS & storage_,
         std::vector<String> & subjects_,
         const String & subscribe_queue_name,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         uint32_t queue_size_,
         const std::atomic<bool> & stopped_);
 
@@ -45,6 +45,7 @@ public:
     size_t queueSize() { return received.size(); }
 
     auto getSubject() const { return current.subject; }
+    const String & getCurrentMessage() const { return current.message; }
 
     /// Return read buffer containing next available message
     /// or nullptr if there are no messages to process.
@@ -57,7 +58,7 @@ private:
     StorageNATS & storage;
     std::vector<SubscriptionPtr> subscriptions;
     std::vector<String> subjects;
-    Poco::Logger * log;
+    LoggerPtr log;
     const std::atomic<bool> & stopped;
 
     bool subscribed = false;

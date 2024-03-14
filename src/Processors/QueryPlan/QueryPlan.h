@@ -82,7 +82,7 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
+    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
     void explainEstimate(MutableColumns & columns);
 
@@ -97,6 +97,9 @@ public:
     /// TODO: make it in a better way.
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
     size_t getMaxThreads() const { return max_threads; }
+
+    void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
+    bool getConcurrencyControl() const { return concurrency_control; }
 
     /// Tree node. Step and it's children.
     struct Node
@@ -120,6 +123,7 @@ private:
 
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
+    bool concurrency_control = false;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

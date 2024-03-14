@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/localBackup.h>
 #include <Backups/BackupEntryFromSmallFile.h>
@@ -56,7 +57,7 @@ std::string DataPartStorageOnDiskBase::getRelativePath() const
     return fs::path(root_path) / part_dir / "";
 }
 
-std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const
+std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken) const
 {
     assert(!broken || detached);
     String res;
@@ -194,7 +195,7 @@ std::string DataPartStorageOnDiskBase::getDiskName() const
 
 std::string DataPartStorageOnDiskBase::getDiskType() const
 {
-    return toString(volume->getDisk()->getDataSourceDescription().type);
+    return volume->getDisk()->getDataSourceDescription().toString();
 }
 
 bool DataPartStorageOnDiskBase::isStoredOnRemoteDisk() const
@@ -416,6 +417,8 @@ void DataPartStorageOnDiskBase::backup(
 MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     const std::string & to,
     const std::string & dir_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
     std::function<void(const DiskPtr &)> save_metadata_callback,
     const ClonePartParams & params) const
 {
@@ -425,8 +428,17 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     else
         disk->createDirectories(to);
 
-    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, params.make_source_readonly, {}, params.copy_instead_of_hardlink,
-                params.files_to_copy_instead_of_hardlinks, params.external_transaction);
+    localBackup(
+        disk,
+        getRelativePath(),
+        fs::path(to) / dir_path,
+        read_settings,
+        write_settings,
+        params.make_source_readonly,
+        /* max_level= */ {},
+        params.copy_instead_of_hardlink,
+        params.files_to_copy_instead_of_hardlinks,
+        params.external_transaction);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
@@ -457,7 +469,10 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     const std::string & to,
     const std::string & dir_path,
     const DiskPtr & dst_disk,
-    Poco::Logger * log) const
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    LoggerPtr log,
+    const std::function<void()> & cancellation_hook) const
 {
     String path_to_clone = fs::path(to) / dir_path / "";
     auto src_disk = volume->getDisk();
@@ -472,7 +487,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     try
     {
         dst_disk->createDirectories(to);
-        src_disk->copyDirectoryContent(getRelativePath(), dst_disk, path_to_clone);
+        src_disk->copyDirectoryContent(getRelativePath(), dst_disk, path_to_clone, read_settings, write_settings, cancellation_hook);
     }
     catch (...)
     {
@@ -490,7 +505,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
 void DataPartStorageOnDiskBase::rename(
     std::string new_root_path,
     std::string new_part_dir,
-    Poco::Logger * log,
+    LoggerPtr log,
     bool remove_new_dir_if_exists,
     bool fsync_part_dir)
 {
@@ -549,7 +564,7 @@ void DataPartStorageOnDiskBase::remove(
     const MergeTreeDataPartChecksums & checksums,
     std::list<ProjectionChecksums> projections,
     bool is_temp,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
     /// when we try to remove two parts with the same name, but different relative paths,
@@ -608,6 +623,15 @@ void DataPartStorageOnDiskBase::remove(
             }
         }
 
+        if (!disk->exists(from))
+        {
+            LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+            /// We will never touch this part again, so unlocking it from zero-copy
+            if (!can_remove_description)
+                can_remove_description.emplace(can_remove_callback());
+            return;
+        }
+
         try
         {
             disk->moveDirectory(from, to);
@@ -657,7 +681,9 @@ void DataPartStorageOnDiskBase::remove(
             if (file_name.starts_with(proj_dir_name))
                 files_not_to_remove_for_projection.emplace(fs::path(file_name).filename());
 
-        LOG_DEBUG(log, "Will not remove files [{}] for projection {}", fmt::join(files_not_to_remove_for_projection, ", "), projection.name);
+        if (!files_not_to_remove_for_projection.empty())
+            LOG_DEBUG(
+                log, "Will not remove files [{}] for projection {}", fmt::join(files_not_to_remove_for_projection, ", "), projection.name);
 
         CanRemoveDescription proj_description
         {
@@ -707,7 +733,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
     const CanRemoveDescription & can_remove_description,
     const MergeTreeDataPartChecksums & checksums,
     bool is_temp,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     auto disk = volume->getDisk();
     auto [can_remove_shared_data, names_not_to_remove] = can_remove_description;
@@ -736,8 +762,12 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
-            request.emplace_back(fs::path(dir) / file);
+        {
+            if (isGinFile(file) && (!disk->isFile(fs::path(dir) / file)))
+                continue;
 
+            request.emplace_back(fs::path(dir) / file);
+        }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / "txn_version.txt", true);

@@ -853,7 +853,7 @@ public:
 
     private:
         DB::ReadBuffer & in;
-        Cell cell;
+        Cell cell{};
         size_t read_count = 0;
         size_t size = 0;
         bool is_eof = false;
@@ -997,6 +997,7 @@ protected:
                 --m_size;
                 buf[place_value].setZero();
                 inserted = false;
+                keyHolderDiscardKey(key_holder);
                 throw;
             }
 
@@ -1273,6 +1274,10 @@ public:
         return !buf[place_value].isZero(*this);
     }
 
+    bool ALWAYS_INLINE contains(const Key & x) const
+    {
+        return has(x);
+    }
 
     void write(DB::WriteBuffer & wb) const
     {

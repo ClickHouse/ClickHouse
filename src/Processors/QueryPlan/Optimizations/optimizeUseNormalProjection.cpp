@@ -7,8 +7,10 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Common/logger_useful.h>
+#include <Storages/ProjectionsDescription.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <stack>
+#include <algorithm>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -107,6 +109,19 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     if (normal_projections.empty())
         return false;
 
+    ContextPtr context = reading->getContext();
+    auto it = std::find_if(normal_projections.begin(), normal_projections.end(), [&](const auto * projection)
+    {
+        return projection->name == context->getSettings().preferred_optimize_projection_name.value;
+    });
+
+    if (it != normal_projections.end())
+    {
+        const ProjectionDescription * preferred_projection = *it;
+        normal_projections.clear();
+        normal_projections.push_back(preferred_projection);
+    }
+
     QueryDAG query;
     {
         auto & child = iter->node->children[iter->next_child - 1];
@@ -120,14 +135,23 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     std::list<NormalProjectionCandidate> candidates;
     NormalProjectionCandidate * best_candidate = nullptr;
 
-    const Names & required_columns = reading->getRealColumnNames();
+    const Names & required_columns = reading->getAllColumnNames();
     const auto & parts = reading->getParts();
+    const auto & alter_conversions = reading->getAlterConvertionsForParts();
     const auto & query_info = reading->getQueryInfo();
-    ContextPtr context = reading->getContext();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
-    auto ordinary_reading_select_result = reading->selectRangesToRead(parts, /* alter_conversions = */ {});
-    size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
+    auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
+    size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
+
+    /// Nothing to read. Ignore projections.
+    if (ordinary_reading_marks == 0)
+    {
+        reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
+        return false;
+    }
+
+    const auto & parts_with_ranges = ordinary_reading_select_result->parts_with_ranges;
 
     std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
 
@@ -139,13 +163,16 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         auto & candidate = candidates.emplace_back();
         candidate.projection = projection;
 
-        ActionDAGNodes added_filter_nodes;
-        if (query.filter_node)
-            added_filter_nodes.nodes.push_back(query.filter_node);
-
         bool analyzed = analyzeProjectionCandidate(
-            candidate, *reading, reader, required_columns, parts,
-            metadata, query_info, context, max_added_blocks, added_filter_nodes);
+            candidate,
+            *reading,
+            reader,
+            required_columns,
+            parts_with_ranges,
+            query_info,
+            context,
+            max_added_blocks,
+            query.filter_node ? query.dag : nullptr);
 
         if (!analyzed)
             continue;
@@ -164,8 +191,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     }
 
     auto storage_snapshot = reading->getStorageSnapshot();
-    auto proj_snapshot = std::make_shared<StorageSnapshot>(
-        storage_snapshot->storage, storage_snapshot->metadata, storage_snapshot->object_columns); //, storage_snapshot->data);
+    auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->metadata);
     proj_snapshot->addProjection(best_candidate->projection);
 
     auto query_info_copy = query_info;
@@ -187,16 +213,16 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     if (!projection_reading)
     {
         Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(required_columns)));
-        projection_reading = std::make_unique<ReadFromPreparedSource>(
-            std::move(pipe),
-            context,
-            query_info.is_internal
-                ? Context::QualifiedProjectionName{}
-                : Context::QualifiedProjectionName
-                  {
-                      .storage_id = reading->getMergeTreeData().getStorageID(),
-                      .projection_name = best_candidate->projection->name,
-                  });
+        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+    }
+
+    if (!query_info.is_internal && context->hasQueryContext())
+    {
+        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
+        {
+            .storage_id = reading->getMergeTreeData().getStorageID(),
+            .projection_name = best_candidate->projection->name,
+        });
     }
 
     bool has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;
@@ -236,7 +262,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     }
     else
     {
-        const auto & main_stream = iter->node->children.front()->step->getOutputStream();
+        const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputStream();
         const auto * proj_stream = &next_node->step->getOutputStream();
 
         if (auto materializing = makeMaterializingDAG(proj_stream->header, main_stream.header))
@@ -252,7 +278,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         auto & union_node = nodes.emplace_back();
         DataStreams input_streams = {main_stream, *proj_stream};
         union_node.step = std::make_unique<UnionStep>(std::move(input_streams));
-        union_node.children = {iter->node->children.front(), next_node};
+        union_node.children = {iter->node->children[iter->next_child - 1], next_node};
         iter->node->children[iter->next_child - 1] = &union_node;
     }
 

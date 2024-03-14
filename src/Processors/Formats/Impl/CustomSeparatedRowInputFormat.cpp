@@ -91,19 +91,20 @@ void CustomSeparatedRowInputFormat::syncAfterError()
 
 void CustomSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
+}
+
+void CustomSeparatedRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    RowInputFormatWithNamesAndTypes::resetReadBuffer();
 }
 
 CustomSeparatedFormatReader::CustomSeparatedFormatReader(
     PeekableReadBuffer & buf_, bool ignore_spaces_, const FormatSettings & format_settings_)
     : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_)
 {
-}
-
-void CustomSeparatedRowInputFormat::resetParser()
-{
-    RowInputFormatWithNamesAndTypes::resetParser();
-    buf->reset();
 }
 
 void CustomSeparatedFormatReader::skipPrefixBeforeHeader()
@@ -221,19 +222,34 @@ std::vector<String> CustomSeparatedFormatReader::readRowImpl()
     return values;
 }
 
-void CustomSeparatedFormatReader::skipHeaderRow()
+void CustomSeparatedFormatReader::skipRow()
 {
     skipRowStartDelimiter();
-    bool first = true;
-    do
-    {
-        if (!first)
-            skipFieldDelimiter();
-        first = false;
 
-        skipField();
+    /// If the number of columns in row is unknown,
+    /// we should check for end of row after each field.
+    if (columns == 0 || allowVariableNumberOfColumns())
+    {
+        bool first = true;
+        do
+        {
+            if (!first)
+                skipFieldDelimiter();
+            first = false;
+
+            skipField();
+        }
+        while (!checkForEndOfRow());
     }
-    while (!checkForEndOfRow());
+    else
+    {
+        for (size_t i = 0; i != columns; ++i)
+        {
+            if (i != 0)
+                skipFieldDelimiter();
+            skipField();
+        }
+    }
 
     skipRowEndDelimiter();
 }

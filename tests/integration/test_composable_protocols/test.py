@@ -84,7 +84,7 @@ def test_connections():
 
     assert execute_query_https(server.ip_address, 8444, "SELECT 1") == "1\n"
 
-    data = "PROXY TCP4 255.255.255.255 255.255.255.255 65535 65535\r\n\0\021ClickHouse client\024\r\253\251\003\0\007default\0\004\001\0\001\0\0\t0.0.0.0:0\001\tmilovidov\021milovidov-desktop\vClickHouse \024\r\253\251\003\0\001\0\0\0\002\001\025SELECT 'Hello, world'\002\0\247\203\254l\325\\z|\265\254F\275\333\206\342\024\202\024\0\0\0\n\0\0\0\240\01\0\02\377\377\377\377\0\0\0"
+    data = "PROXY TCP4 255.255.255.255 255.255.255.255 65535 65535\r\n\0\021ClickHouse client\024\r\253\251\003\0\007default\0\004\001\0\001\0\0\t0.0.0.0:0\001\tmilovidov\021milovidov-desktop\21ClickHouse client\024\r\253\251\003\0\001\0\0\0\002\001\025SELECT 'Hello, world'\002\0\247\203\254l\325\\z|\265\254F\275\333\206\342\024\202\024\0\0\0\n\0\0\0\240\01\0\02\377\377\377\377\0\0\0"
     assert (
         netcat(server.ip_address, 9100, bytearray(data, "latin-1")).find(
             bytearray("Hello, world", "latin-1")
@@ -92,7 +92,7 @@ def test_connections():
         >= 0
     )
 
-    data_user_allowed = "PROXY TCP4 123.123.123.123 255.255.255.255 65535 65535\r\n\0\021ClickHouse client\024\r\253\251\003\0\007user123\0\004\001\0\001\0\0\t0.0.0.0:0\001\tmilovidov\021milovidov-desktop\vClickHouse \024\r\253\251\003\0\001\0\0\0\002\001\025SELECT 'Hello, world'\002\0\247\203\254l\325\\z|\265\254F\275\333\206\342\024\202\024\0\0\0\n\0\0\0\240\01\0\02\377\377\377\377\0\0\0"
+    data_user_allowed = "PROXY TCP4 123.123.123.123 255.255.255.255 65535 65535\r\n\0\021ClickHouse client\024\r\253\251\003\0\007user123\0\004\001\0\001\0\0\t0.0.0.0:0\001\tmilovidov\021milovidov-desktop\21ClickHouse client\024\r\253\251\003\0\001\0\0\0\002\001\025SELECT 'Hello, world'\002\0\247\203\254l\325\\z|\265\254F\275\333\206\342\024\202\024\0\0\0\n\0\0\0\240\01\0\02\377\377\377\377\0\0\0"
     assert (
         netcat(server.ip_address, 9100, bytearray(data_user_allowed, "latin-1")).find(
             bytearray("Hello, world", "latin-1")
@@ -100,7 +100,7 @@ def test_connections():
         >= 0
     )
 
-    data_user_restricted = "PROXY TCP4 127.0.0.1 255.255.255.255 65535 65535\r\n\0\021ClickHouse client\024\r\253\251\003\0\007user123\0\004\001\0\001\0\0\t0.0.0.0:0\001\tmilovidov\021milovidov-desktop\vClickHouse \024\r\253\251\003\0\001\0\0\0\002\001\025SELECT 'Hello, world'\002\0\247\203\254l\325\\z|\265\254F\275\333\206\342\024\202\024\0\0\0\n\0\0\0\240\01\0\02\377\377\377\377\0\0\0"
+    data_user_restricted = "PROXY TCP4 127.0.0.1 255.255.255.255 65535 65535\r\n\0\021ClickHouse client\024\r\253\251\003\0\007user123\0\004\001\0\001\0\0\t0.0.0.0:0\001\tmilovidov\021milovidov-desktop\21ClickHouse client\024\r\253\251\003\0\001\0\0\0\002\001\025SELECT 'Hello, world'\002\0\247\203\254l\325\\z|\265\254F\275\333\206\342\024\202\024\0\0\0\n\0\0\0\240\01\0\02\377\377\377\377\0\0\0"
     assert (
         netcat(
             server.ip_address, 9100, bytearray(data_user_restricted, "latin-1")

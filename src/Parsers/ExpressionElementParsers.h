@@ -39,7 +39,7 @@ protected:
 class ParserTableAsStringLiteralIdentifier : public IParserBase
 {
 public:
-    explicit ParserTableAsStringLiteralIdentifier() {}
+    explicit ParserTableAsStringLiteralIdentifier() = default;
 
 protected:
     const char * getName() const override { return "string literal table identifier"; }
@@ -194,6 +194,14 @@ class ParserCodec : public IParserBase
 {
 protected:
     const char * getName() const override { return "codec"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/// STATISTIC(tdigest(200))
+class ParserStatisticType : public IParserBase
+{
+protected:
+    const char * getName() const override { return "statistic"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -376,21 +384,6 @@ class ParserSubstitution : public IParserBase
 {
 protected:
     const char * getName() const override { return "substitution"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/** MySQL comment:
-  *  CREATE TABLE t (
-  *  i INT PRIMARY KEY,
-  *  first_name VARCHAR(255) COMMENT 'FIRST_NAME',
-  *  last_name VARCHAR(255) COMMENT "LAST_NAME"
-  *  )
-  */
-class ParserMySQLComment : public IParserBase
-{
-protected:
-    const char * getName() const override { return "MySQL comment parser"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

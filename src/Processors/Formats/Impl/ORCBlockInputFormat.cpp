@@ -27,7 +27,7 @@ ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_, const 
 {
 }
 
-Chunk ORCBlockInputFormat::generate()
+Chunk ORCBlockInputFormat::read()
 {
     block_missing_values.clear();
 
@@ -43,9 +43,12 @@ Chunk ORCBlockInputFormat::generate()
     if (stripe_current >= stripe_total)
         return {};
 
+    if (need_only_count)
+        return getChunkForCount(file_reader->GetRawORCReader()->getStripe(stripe_current++)->getNumberOfRows());
+
     auto batch_result = file_reader->ReadStripe(stripe_current, include_indices);
     if (!batch_result.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", batch_result.status().ToString());
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", batch_result.status().ToString());
 
     auto batch = batch_result.ValueOrDie();
     if (!batch)
@@ -53,7 +56,7 @@ Chunk ORCBlockInputFormat::generate()
 
     auto table_result = arrow::Table::FromRecordBatches({batch});
     if (!table_result.ok())
-        throw ParsingException(
+        throw Exception(
             ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data: {}", table_result.status().ToString());
 
     /// We should extract the number of rows directly from the stripe, because in case when
@@ -128,6 +131,7 @@ void ORCBlockInputFormat::prepareReader()
         "ORC",
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
+        format_settings.date_time_overflow_behavior,
         format_settings.orc.case_insensitive_column_matching);
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
@@ -145,12 +149,18 @@ ORCSchemaReader::ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format
 {
 }
 
-NamesAndTypesList ORCSchemaReader::readSchema()
+void ORCSchemaReader::initializeIfNeeded()
 {
-    std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
-    std::shared_ptr<arrow::Schema> schema;
+    if (file_reader)
+        return;
+
     std::atomic<int> is_stopped = 0;
     getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
+}
+
+NamesAndTypesList ORCSchemaReader::readSchema()
+{
+    initializeIfNeeded();
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema, "ORC", format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference);
     if (format_settings.schema_inference_make_columns_nullable)
@@ -158,6 +168,11 @@ NamesAndTypesList ORCSchemaReader::readSchema()
     return header.getNamesAndTypesList();
 }
 
+std::optional<size_t> ORCSchemaReader::readNumberOrRows()
+{
+    initializeIfNeeded();
+    return file_reader->NumberOfRows();
+}
 
 void registerInputFormatORC(FormatFactory & factory)
 {

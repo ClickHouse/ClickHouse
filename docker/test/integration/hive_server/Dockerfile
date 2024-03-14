@@ -1,31 +1,27 @@
 FROM ubuntu:20.04
 MAINTAINER lgbo-ustc <lgbo.ustc@gmail.com>
 
-RUN apt-get update 
-RUN apt-get install -y wget openjdk-8-jre
-
-RUN wget https://archive.apache.org/dist/hadoop/common/hadoop-3.1.0/hadoop-3.1.0.tar.gz && \
-        tar -xf hadoop-3.1.0.tar.gz && rm -rf hadoop-3.1.0.tar.gz
-RUN wget https://dlcdn.apache.org/hive/hive-2.3.9/apache-hive-2.3.9-bin.tar.gz && \
-        tar -xf apache-hive-2.3.9-bin.tar.gz && rm -rf apache-hive-2.3.9-bin.tar.gz
-RUN apt install -y vim
-
-RUN apt install -y openssh-server openssh-client
-
-RUN apt install -y mysql-server
-
-RUN mkdir -p /root/.ssh && \
-        ssh-keygen -t rsa -b 2048 -P '' -f /root/.ssh/id_rsa && \
-        cat /root/.ssh/id_rsa.pub > /root/.ssh/authorized_keys && \
-        cp /root/.ssh/id_rsa /etc/ssh/ssh_host_rsa_key && \
-        cp /root/.ssh/id_rsa.pub /etc/ssh/ssh_host_rsa_key.pub
-
-RUN wget https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-8.0.27.tar.gz &&\
-        tar -xf mysql-connector-java-8.0.27.tar.gz && \
-        mv mysql-connector-java-8.0.27/mysql-connector-java-8.0.27.jar /apache-hive-2.3.9-bin/lib/ && \
-        rm -rf mysql-connector-java-8.0.27.tar.gz mysql-connector-java-8.0.27
-
-RUN apt install -y iputils-ping net-tools
+RUN apt-get update \
+  && apt-get install -y wget openjdk-8-jre \
+  && wget https://archive.apache.org/dist/hadoop/common/hadoop-3.1.0/hadoop-3.1.0.tar.gz \
+  && tar -xf hadoop-3.1.0.tar.gz && rm -rf hadoop-3.1.0.tar.gz \
+  && wget https://apache.apache.org/dist/hive/hive-2.3.9/apache-hive-2.3.9-bin.tar.gz \
+  && tar -xf apache-hive-2.3.9-bin.tar.gz && rm -rf apache-hive-2.3.9-bin.tar.gz \
+  && apt install -y vim \
+  && apt install -y openssh-server openssh-client \
+  && apt install -y mysql-server \
+  && mkdir -p /root/.ssh \
+  && ssh-keygen -t rsa -b 2048 -P '' -f /root/.ssh/id_rsa \
+  && cat /root/.ssh/id_rsa.pub > /root/.ssh/authorized_keys \
+  && cp /root/.ssh/id_rsa /etc/ssh/ssh_host_rsa_key \
+  && cp /root/.ssh/id_rsa.pub /etc/ssh/ssh_host_rsa_key.pub \
+  && wget https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-8.0.27.tar.gz \
+  && tar -xf mysql-connector-java-8.0.27.tar.gz \
+  && mv mysql-connector-java-8.0.27/mysql-connector-java-8.0.27.jar /apache-hive-2.3.9-bin/lib/ \
+  && rm -rf mysql-connector-java-8.0.27.tar.gz mysql-connector-java-8.0.27 \
+  && apt install -y iputils-ping net-tools \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 ENV JAVA_HOME=/usr
 ENV HADOOP_HOME=/hadoop-3.1.0
@@ -44,4 +40,3 @@ COPY demo_data.txt /
 ENV PATH=/apache-hive-2.3.9-bin/bin:/hadoop-3.1.0/bin:/hadoop-3.1.0/sbin:$PATH
 RUN service ssh start && sed s/HOSTNAME/$HOSTNAME/ /hadoop-3.1.0/etc/hadoop/core-site.xml.template > /hadoop-3.1.0/etc/hadoop/core-site.xml && hdfs namenode -format
 COPY start.sh /
-

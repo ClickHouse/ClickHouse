@@ -289,3 +289,13 @@ inline void writeBinByte(UInt8 byte, void * out)
 {
     memcpy(out, &impl::bin_byte_to_char_table[static_cast<size_t>(byte) * 8], 8);
 }
+
+/// Converts byte array to a hex string. Useful for debug logging.
+inline std::string hexString(const void * data, size_t size)
+{
+    const char * p = reinterpret_cast<const char *>(data);
+    std::string s(size * 2, '\0');
+    for (size_t i = 0; i < size; ++i)
+        writeHexByteLowercase(p[i], s.data() + i * 2);
+    return s;
+}

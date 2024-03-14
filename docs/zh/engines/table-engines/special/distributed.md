@@ -43,7 +43,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 **详见**
 
- - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) 设置
+ - [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) 设置
  - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) 查看示例
 
  **分布式设置**
@@ -58,24 +58,24 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 - `max_delay_to_insert` - 最大延迟多少秒插入数据到分布式表，如果有很多挂起字节异步发送。默认值60。
 
-- `monitor_batch_inserts` - 等同于 [distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts)
+- `background_insert_batch` - 等同于 [distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch)
 
-- `monitor_split_batch_on_failure` - 等同于[distributed_directory_monitor_split_batch_on_failure](../../../operations/settings/settings.md#distributed_directory_monitor_split_batch_on_failure)
+- `background_insert_split_batch_on_failure` - 等同于[distributed_background_insert_split_batch_on_failure](../../../operations/settings/settings.md#distributed_background_insert_split_batch_on_failure)
 
-- `monitor_sleep_time_ms` - 等同于 [distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms)
+- `background_insert_sleep_time_ms` - 等同于 [distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms)
 
-- `monitor_max_sleep_time_ms` - 等同于 [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms)
+- `background_insert_max_sleep_time_ms` - 等同于 [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)
 
 ::note
 **稳定性设置** (`fsync_...`):
 
-- 只影响异步插入(例如:`insert_distributed_sync=false`), 当数据首先存储在启动节点磁盘上，然后再异步发送到shard。
+- 只影响异步插入(例如:`distributed_foreground_insert=false`), 当数据首先存储在启动节点磁盘上，然后再异步发送到shard。
 — 可能会显著降低`insert`的性能
 - 影响将存储在分布式表文件夹中的数据写入 **接受您插入的节点** 。如果你需要保证写入数据到底层的MergeTree表中，请参阅 `system.merge_tree_settings` 中的持久性设置(`...fsync...`)
 
 **插入限制设置** (`..._insert`) 请见:
 
-- [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) 设置
+- [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) 设置
 - [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) 设置
 - `bytes_to_throw_insert` 在 `bytes_to_delay_insert` 之前处理，所以你不应该设置它的值小于 `bytes_to_delay_insert`
 :::
@@ -209,7 +209,7 @@ SELECT 查询会被发送到所有分片，并且无论数据在分片中如何�
 -   使用需要特定键连接数据（ IN 或 JOIN ）的查询。如果数据是用该键进行分片，则应使用本地 IN 或 JOIN 而不是 GLOBAL IN 或 GLOBAL JOIN，这样效率更高。
 -   使用大量服务器（上百或更多），但有大量小查询（个别客户的查询 - 网站，广告商或合作伙伴）。为了使小查询不影响整个集群，让单个客户的数据处于单个分片上是有意义的。或者 你可以配置两级分片：将整个集群划分为«层»，一个层可以包含多个分片。单个客户的数据位于单个层上，根据需要将分片添加到层中，层中的数据随机分布。然后给每层创建分布式表，再创建一个全局的分布式表用于全局的查询。
 
-数据是异步写入的。对于分布式表的 INSERT，数据块只写本地文件系统。之后会尽快地在后台发送到远程服务器。发送数据的周期性是由[distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms)和[distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms)设置。分布式引擎会分别发送每个插入数据的文件，但是你可以使用[distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts)设置启用批量发送文件。该设置通过更好地利用本地服务器和网络资源来提高集群性能。你应该检查表目录`/var/lib/clickhouse/data/database/table/`中的文件列表(等待发送的数据)来检查数据是否发送成功。执行后台任务的线程数可以通过[background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size)设置。
+数据是异步写入的。对于分布式表的 INSERT，数据块只写本地文件系统。之后会尽快地在后台发送到远程服务器。发送数据的周期性是由[distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms)和[distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)设置。分布式引擎会分别发送每个插入数据的文件，但是你可以使用[distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch)设置启用批量发送文件。该设置通过更好地利用本地服务器和网络资源来提高集群性能。你应该检查表目录`/var/lib/clickhouse/data/database/table/`中的文件列表(等待发送的数据)来检查数据是否发送成功。执行后台任务的线程数可以通过[background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size)设置。
 
 如果在 INSERT 到分布式表时服务器节点丢失或重启（如，设备故障），则插入的数据可能会丢失。如果在表目录中检测到损坏的数据分片，则会将其转移到«broken»子目录，并不再使用。
 

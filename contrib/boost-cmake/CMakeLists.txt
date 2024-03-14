@@ -25,18 +25,16 @@ if (OS_LINUX)
     )
 endif ()
 
-# headers-only
 
+# headers-only
 add_library (_boost_headers_only INTERFACE)
 add_library (boost::headers_only ALIAS _boost_headers_only)
 target_include_directories (_boost_headers_only SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
 
-# asio
-
 target_compile_definitions (_boost_headers_only INTERFACE
   BOOST_ASIO_STANDALONE=1
-  # Avoid using of deprecated in c++ > 17 std::result_of
-  BOOST_ASIO_HAS_STD_INVOKE_RESULT=1
+  BOOST_ASIO_HAS_STD_INVOKE_RESULT=1 # Avoid using of deprecated in c++ > 17 std::result_of
+  BOOST_TIMER_ENABLE_DEPRECATED=1 # wordnet-blast (enabled via USE_NLP) uses Boost legacy timer classes
 )
 
 # iostreams
@@ -46,12 +44,14 @@ set (SRCS_IOSTREAMS
     "${LIBRARY_DIR}/libs/iostreams/src/gzip.cpp"
     "${LIBRARY_DIR}/libs/iostreams/src/mapped_file.cpp"
     "${LIBRARY_DIR}/libs/iostreams/src/zlib.cpp"
+    "${LIBRARY_DIR}/libs/iostreams/src/zstd.cpp"
 )
 
 add_library (_boost_iostreams ${SRCS_IOSTREAMS})
 add_library (boost::iostreams ALIAS _boost_iostreams)
 target_include_directories (_boost_iostreams PRIVATE ${LIBRARY_DIR})
 target_link_libraries (_boost_iostreams PRIVATE ch_contrib::zlib)
+target_link_libraries (_boost_iostreams PRIVATE ch_contrib::zstd)
 
 # program_options
 

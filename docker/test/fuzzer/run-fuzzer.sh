@@ -1,6 +1,8 @@
 #!/bin/bash
 # shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031,SC2010,SC2015
 
+# shellcheck disable=SC1091
+source /setup_export_logs.sh
 set -x
 
 # core.COMM.PID-TID
@@ -15,7 +17,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-16_debug_none_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-17_debug_none_unsplitted_disable_False_binary"}
 BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function git_clone_with_retry
@@ -84,7 +86,7 @@ function download
 
     chmod +x clickhouse
     # clickhouse may be compressed - run once to decompress
-    ./clickhouse ||:
+    ./clickhouse --query "SELECT 1" ||:
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
     ln -s ./clickhouse ./clickhouse-local
@@ -123,22 +125,7 @@ EOL
 </clickhouse>
 EOL
 
-    # Setup a cluster for logs export to ClickHouse Cloud
-    # Note: these variables are provided to the Docker run command by the Python script in tests/ci
-    if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
-    then
-        echo "
-remote_servers:
-    system_logs_export:
-        shard:
-            replica:
-                secure: 1
-                user: ci
-                host: '${CLICKHOUSE_CI_LOGS_HOST}'
-                port: 9440
-                password: '${CLICKHOUSE_CI_LOGS_PASSWORD}'
-" > db/config.d/system_logs_export.yaml
-    fi
+    config_logs_export_cluster db/config.d/system_logs_export.yaml
 }
 
 function filter_exists_and_template
@@ -223,44 +210,31 @@ detach
 quit
 " > script.gdb
 
-    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" &
+    gdb -batch -command script.gdb -p $server_pid &
     sleep 5
-    # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
+    # gdb will send SIGSTOP, spend some time loading debug info, and then send SIGCONT, wait for it (up to send_timeout, 300s)
     time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 
     # Check connectivity after we attach gdb, because it might cause the server
-    # to freeze and the fuzzer will fail. In debug build it can take a lot of time.
+    # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
     for _ in {1..180}
     do
-        sleep 1
         if clickhouse-client --query "select 1"
         then
             break
         fi
+        sleep 1
     done
-    clickhouse-client --query "select 1" # This checks that the server is responding
     kill -0 $server_pid # This checks that it is our server that is started and not some other one
-    echo 'Server started and responded'
+    echo 'Server started and responded.'
 
-    # Initialize export of system logs to ClickHouse Cloud
-    if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
-    then
-        export EXTRA_COLUMNS_EXPRESSION="$PR_TO_TEST AS pull_request_number, '$SHA_TO_TEST' AS commit_sha, '$CHECK_START_TIME' AS check_start_time, '$CHECK_NAME' AS check_name, '$INSTANCE_TYPE' AS instance_type"
-        # TODO: Check if the password will appear in the logs.
-        export CONNECTION_PARAMETERS="--secure --user ci --host ${CLICKHOUSE_CI_LOGS_HOST} --password ${CLICKHOUSE_CI_LOGS_PASSWORD}"
-
-        /setup_export_logs.sh
-
-        # Unset variables after use
-        export CONNECTION_PARAMETERS=''
-        export CLICKHOUSE_CI_LOGS_HOST=''
-        export CLICKHOUSE_CI_LOGS_PASSWORD=''
-    fi
+    setup_logs_replication
 
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
-    # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
+    # SC2046: Quote this to prevent word splitting. Actually, I need word splitting.
     # shellcheck disable=SC2012,SC2046
     timeout -s TERM --preserve-status 30m clickhouse-client \
+        --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
         --stacktrace \
@@ -268,10 +242,16 @@ quit
         --create-query-fuzzer-runs=50 \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         $NEW_TESTS_OPT \
-        > >(tail -n 100000 > fuzzer.log) \
+        > fuzzer.log \
         2>&1 &
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
+
+    # The fuzzer_pid belongs to the timeout process.
+    actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
+
+    echo "Attaching gdb to the fuzzer itself"
+    gdb -batch -command script.gdb -p $actual_fuzzer_pid &
 
     # Wait for the fuzzer to complete.
     # Note that the 'wait || ...' thing is required so that the script doesn't
@@ -280,10 +260,10 @@ quit
     wait "$fuzzer_pid" || fuzzer_exit_code=$?
     echo "Fuzzer exit code is $fuzzer_exit_code"
 
-    # If the server dies, most often the fuzzer returns code 210: connetion
+    # If the server dies, most often the fuzzer returns Code 210: Connetion
     # refused, and sometimes also code 32: attempt to read after eof. For
-    # simplicity, check again whether the server is accepting connections, using
-    # clickhouse-client. We don't check for existence of server process, because
+    # simplicity, check again whether the server is accepting connections using
+    # clickhouse-client. We don't check for the existence of the server process, because
     # the process is still present while the server is terminating and not
     # accepting the connections anymore.
 
@@ -363,10 +343,9 @@ quit
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        { rg --text -o "Found error:.*" fuzzer.log \
-            || rg --text -ao "Exception:.*" fuzzer.log \
-            || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
-            | tail -1 > description.txt
+        echo "Let op!" > description.txt
+        echo "Fuzzer went wrong with error code: ($fuzzer_exit_code). Its process died somehow when the server stayed alive. The server log probably won't tell you much so try to find information in other files." >>description.txt
+        { rg -ao "Found error:.*" fuzzer.log || rg -ao "Exception:.*" fuzzer.log; } | tail -1 >>description.txt
     fi
 
     if test -f core.*; then
@@ -412,10 +391,17 @@ if [ -f core.zst ]; then
     CORE_LINK='<a href="core.zst">core.zst</a>'
 fi
 
-rg --text -F '<Fatal>' server.log > fatal.log ||:
+# Keep all the lines in the paragraphs containing <Fatal> that either contain <Fatal> or don't start with 20... (year)
+sed -n '/<Fatal>/,/^$/p' server.log | awk '/<Fatal>/ || !/^20/' > fatal.log ||:
+FATAL_LINK=''
+if [ -s fatal.log ]; then
+    FATAL_LINK='<a href="fatal.log">fatal.log</a>'
+fi
+
 dmesg -T > dmesg.log ||:
 
-zstd --threads=0 server.log
+zstd --threads=0 --rm server.log
+zstd --threads=0 --rm fuzzer.log
 
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
@@ -439,11 +425,12 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
 <h1>AST Fuzzer for PR <a href="https://github.com/ClickHouse/ClickHouse/pull/${PR_TO_TEST}">#${PR_TO_TEST}</a> @ ${SHA_TO_TEST}</h1>
 <p class="links">
   <a href="run.log">run.log</a>
-  <a href="fuzzer.log">fuzzer.log</a>
+  <a href="fuzzer.log.zst">fuzzer.log.zst</a>
   <a href="server.log.zst">server.log.zst</a>
   <a href="main.log">main.log</a>
   <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}
+  ${FATAL_LINK}
 </p>
 <table>
 <tr>

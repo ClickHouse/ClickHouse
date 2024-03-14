@@ -9,9 +9,11 @@
 #include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/printPipeline.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromChunks.h>
@@ -52,13 +54,19 @@ static void checkInput(const InputPort & input, const ProcessorPtr & processor)
             processor->getName());
 }
 
-static void checkOutput(const OutputPort & output, const ProcessorPtr & processor)
+static void checkOutput(const OutputPort & output, const ProcessorPtr & processor, const Processors & processors = {})
 {
     if (!output.isConnected())
+    {
+        WriteBufferFromOwnString out;
+        if (!processors.empty())
+            printPipeline(processors, out);
+
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot create QueryPipeline because {} has disconnected output",
-            processor->getName());
+            "Cannot create QueryPipeline because {} {} has disconnected output: {}",
+            processor->getName(), processor->getDescription(), out.str());
+    }
 }
 
 static void checkPulling(
@@ -99,7 +107,7 @@ static void checkPulling(
             else if (extremes && &out == extremes)
                 found_extremes = true;
             else
-                checkOutput(out, processor);
+                checkOutput(out, processor, processors);
         }
     }
 
@@ -164,7 +172,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         ///   5. Limit ... : Set counter on the input port of Limit
 
         /// Case 1.
-        if (typeid_cast<RemoteSource *>(processor) && !limit_processor)
+        if ((typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor)) && !limit_processor)
         {
             processors.emplace_back(processor);
             continue;
@@ -199,7 +207,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             }
 
             /// Case 4.
-            if (typeid_cast<RemoteSource *>(processor))
+            if (typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor))
             {
                 processors.emplace_back(processor);
                 limit_candidates[limit_processor].push_back(limit_input_port);
@@ -335,7 +343,6 @@ QueryPipeline::QueryPipeline(Pipe pipe)
         output = pipe.getOutputPort(0);
         totals = pipe.getTotalsPort();
         extremes = pipe.getExtremesPort();
-
         processors = std::move(pipe.processors);
         checkPulling(*processors, output, totals, extremes);
     }

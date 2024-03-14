@@ -1,6 +1,9 @@
 #include <Backups/BackupUtils.h>
+#include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/DDLRenamingVisitor.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/setThreadName.h>
 
@@ -93,6 +96,28 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
         }
     }
     return required_access;
+}
+
+bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
+{
+    auto adjust_before_comparison = [&](const IAST & query) -> ASTPtr
+    {
+        auto new_query = query.clone();
+        adjustCreateQueryForBackup(new_query, global_context, nullptr);
+        ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*new_query);
+        create.setUUID({});
+        create.if_not_exists = false;
+        return new_query;
+    };
+
+    ASTPtr query1 = adjust_before_comparison(restored_table_create_query);
+    ASTPtr query2 = adjust_before_comparison(create_query_from_backup);
+    return serializeAST(*query1) == serializeAST(*query2);
+}
+
+bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
+{
+    return compareRestoredTableDef(restored_database_create_query, create_query_from_backup, global_context);
 }
 
 }

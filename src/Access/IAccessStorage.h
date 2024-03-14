@@ -5,10 +5,13 @@
 #include <Core/UUID.h>
 #include <Parsers/IParser.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Common/SettingsChanges.h>
+#include <Common/callOnce.h>
+
+#include <atomic>
 #include <functional>
 #include <optional>
 #include <vector>
-#include <atomic>
 
 
 namespace Poco { class Logger; }
@@ -22,6 +25,14 @@ class ExternalAuthenticators;
 enum class AuthenticationType;
 class BackupEntriesCollector;
 class RestorerFromBackup;
+
+/// Result of authentication
+struct AuthResult
+{
+    UUID user_id;
+    /// Session settings received from authentication server (if any)
+    SettingsChanges settings{};
+};
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
 /// The implementations of this class MUST be thread-safe.
@@ -171,8 +182,19 @@ public:
 
     /// Finds a user, check the provided credentials and returns the ID of the user if they are valid.
     /// Throws an exception if no such user or credentials are invalid.
-    UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool allow_no_password, bool allow_plaintext_password) const;
-    std::optional<UUID> authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
+    AuthResult authenticate(
+        const Credentials & credentials,
+        const Poco::Net::IPAddress & address,
+        const ExternalAuthenticators & external_authenticators,
+        bool allow_no_password,
+        bool allow_plaintext_password) const;
+    std::optional<AuthResult> authenticate(
+        const Credentials & credentials,
+        const Poco::Net::IPAddress & address,
+        const ExternalAuthenticators & external_authenticators,
+        bool throw_if_user_not_exists,
+        bool allow_no_password,
+        bool allow_plaintext_password) const;
 
     /// Returns true if this storage can be stored to or restored from a backup.
     virtual bool isBackupAllowed() const { return false; }
@@ -190,13 +212,23 @@ protected:
     virtual bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
-    virtual std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
-    virtual bool areCredentialsValid(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
+    virtual std::optional<AuthResult> authenticateImpl(
+        const Credentials & credentials,
+        const Poco::Net::IPAddress & address,
+        const ExternalAuthenticators & external_authenticators,
+        bool throw_if_user_not_exists,
+        bool allow_no_password,
+        bool allow_plaintext_password) const;
+    virtual bool areCredentialsValid(
+        const User & user,
+        const Credentials & credentials,
+        const ExternalAuthenticators & external_authenticators,
+        SettingsChanges & settings) const;
     virtual bool isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const;
     static UUID generateRandomID();
-    Poco::Logger * getLogger() const;
+    LoggerPtr getLogger() const;
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
-    static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const Poco::Logger * log_);
+    static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const LoggerPtr log_);
     [[noreturn]] void throwNotFound(const UUID & id) const;
     [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);
@@ -215,7 +247,9 @@ protected:
 
 private:
     const String storage_name;
-    mutable std::atomic<Poco::Logger *> log = nullptr;
+
+    mutable OnceFlag log_initialized;
+    mutable LoggerPtr log = nullptr;
 };
 
 

@@ -27,6 +27,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_dictionaries(Keyword::DICTIONARIES);
     ParserKeyword s_caches(Keyword::FILESYSTEM_CACHES);
     ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_merges(Keyword::MERGES);
     ParserKeyword s_changed(Keyword::CHANGED);
     ParserKeyword s_from(Keyword::FROM);
     ParserKeyword s_in(Keyword::IN);
@@ -78,6 +79,29 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     else if (s_clusters.ignore(pos, expected))
     {
         query->clusters = true;
+
+        if (s_not.ignore(pos, expected))
+            query->not_like = true;
+
+        if (bool insensitive = s_ilike.ignore(pos, expected); insensitive || s_like.ignore(pos, expected))
+        {
+            if (insensitive)
+                query->case_insensitive_like = true;
+
+            if (!like_p.parse(pos, like, expected))
+                return false;
+        }
+        else if (query->not_like)
+            return false;
+        if (s_limit.ignore(pos, expected))
+        {
+            if (!exp_elem.parse(pos, query->limit_length, expected))
+                return false;
+        }
+    }
+    else if (s_merges.ignore(pos, expected))
+    {
+        query->merges = true;
 
         if (s_not.ignore(pos, expected))
             query->not_like = true;

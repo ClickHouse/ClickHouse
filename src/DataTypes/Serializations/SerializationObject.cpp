@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
+    extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
 template <typename Parser>
@@ -177,7 +177,7 @@ void SerializationObject<Parser>::serializeBinaryBulkStatePrefix(
     auto * stream = settings.getter(settings.path);
 
     if (!stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for kind of binary serialization");
+        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Missing stream for kind of binary serialization");
 
     auto [tuple_column, tuple_type] = unflattenObjectToTuple(column_object);
 
@@ -288,7 +288,7 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
 
     if (!state_object->nested_type->equals(*tuple_type))
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
             "Types of internal column of Object mismatched. Expected: {}, Got: {}",
             state_object->nested_type->getName(), tuple_type->getName());
     }
@@ -511,6 +511,22 @@ void SerializationObject<Parser>::serializeTextCSV(const IColumn & column, size_
     WriteBufferFromOwnString ostr_str;
     serializeTextImpl(column, row_num, ostr_str, settings);
     writeCSVString(ostr_str.str(), ostr);
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::serializeTextMarkdown(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (settings.markdown.escape_special_characters)
+    {
+        WriteBufferFromOwnString ostr_str;
+        serializeTextImpl(column, row_num, ostr_str, settings);
+        writeMarkdownEscapedString(ostr_str.str(), ostr);
+    }
+    else
+    {
+        serializeTextEscaped(column, row_num, ostr, settings);
+    }
 }
 
 template <typename Parser>

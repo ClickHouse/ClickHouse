@@ -32,7 +32,7 @@ ASTPtr ASTDropQuery::clone() const
     return res;
 }
 
-void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "");
     if (kind == ASTDropQuery::Kind::Drop)
@@ -47,7 +47,6 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     if (temporary)
         settings.ostr << "TEMPORARY ";
 
-
     if (!table && database)
         settings.ostr << "DATABASE ";
     else if (is_dictionary)
@@ -60,12 +59,26 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     if (if_exists)
         settings.ostr << "IF EXISTS ";
 
+    if (if_empty)
+        settings.ostr << "IF EMPTY ";
+
     settings.ostr << (settings.hilite ? hilite_none : "");
 
     if (!table && database)
-        settings.ostr << backQuoteIfNeed(getDatabase());
+    {
+        database->formatImpl(settings, state, frame);
+    }
     else
-        settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+    {
+        if (database)
+        {
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
+        }
+
+        chassert(table);
+        table->formatImpl(settings, state, frame);
+    }
 
     formatOnCluster(settings);
 

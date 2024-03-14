@@ -62,12 +62,14 @@ __bitBoolMaskOr
 __bitSwapLastTwo
 __bitWrapperFunc
 __getScalar
+__scalarSubqueryResult
 abs
 accurateCast
 accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
+addDate
 addDays
 addHours
 addMicroseconds
@@ -125,6 +127,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -229,6 +232,7 @@ dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
 dateTrunc
+decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent
@@ -428,10 +432,9 @@ mapUpdate
 match
 materialize
 max2
-meiliMatch
 metroHash64
 min2
-minSampleSizeContinous
+minSampleSizeContinuous
 minSampleSizeConversion
 minus
 modulo
@@ -641,14 +644,6 @@ shardNum
 showCertificate
 sigmoid
 sign
-simpleJSONExtractBool
-simpleJSONExtractFloat
-simpleJSONExtractInt
-simpleJSONExtractRaw
-simpleJSONExtractString
-simpleJSONExtractUInt
-simpleJSONHas
-sin
 sinh
 sipHash128
 sipHash128Keyed
@@ -667,6 +662,7 @@ splitByWhitespace
 sqrt
 startsWith
 subBitmap
+subDate
 substring
 substringIndex
 substringIndexUTF8

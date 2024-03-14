@@ -27,6 +27,9 @@
 #include <Common/logger_useful.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/Kusto/ParserKQLStatement.h>
+
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 using namespace std::literals;
 
@@ -222,8 +225,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
-    auto new_subquery = std::make_shared<ASTSubquery>();
-    new_subquery->children.push_back(select_with_union_query);
+    auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
     ast->children[0]->children.back() = std::move(new_subquery);
 
     return true;
@@ -465,7 +467,8 @@ enum class OperatorType
     StartIf,
     FinishIf,
     Cast,
-    Lambda
+    Lambda,
+    Not
 };
 
 /** Operator struct stores parameters of the operator:
@@ -662,6 +665,26 @@ public:
             }
             else
             {
+                /// enable using subscript operator for kql_array_sort
+                if (cur_op.function_name == "arrayElement" && !operands.empty())
+                {
+                    auto* first_arg_as_node = operands.front()->as<ASTFunction>();
+                    if (first_arg_as_node)
+                    {
+                        if (first_arg_as_node->name == "kql_array_sort_asc" || first_arg_as_node->name == "kql_array_sort_desc")
+                        {
+                            cur_op.function_name = "tupleElement";
+                            cur_op.type = OperatorType::TupleElement;
+                        }
+                        else if (first_arg_as_node->name == "arrayElement" && !first_arg_as_node->arguments->children.empty())
+                        {
+                            auto *arg_inside = first_arg_as_node->arguments->children[0]->as<ASTFunction>();
+                            if (arg_inside && (arg_inside->name == "kql_array_sort_asc" || arg_inside->name == "kql_array_sort_desc"))
+                                first_arg_as_node->name = "tupleElement";
+                        }
+                    }
+                }
+
                 function = makeASTFunction(cur_op);
 
                 if (!popLastNOperands(function->children[0]->children, cur_op.arity))
@@ -862,6 +885,10 @@ public:
             {
                 /// If we can't parse FROM then return
                 if (!ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
+                    return true;
+
+                // If there is a comma after 'from' then the first one was a name of a column
+                if (test_pos->type == TokenType::Comma)
                     return true;
 
                 /// If we parse a second FROM then the first one was a name of a column
@@ -1103,16 +1130,10 @@ public:
                     return false;
             }
 
-            NullsAction nulls_action = NullsAction::EMPTY;
             if (respect_nulls.ignore(pos, expected))
-            {
-                nulls_action = NullsAction::RESPECT_NULLS;
-            }
-            if (ignore_nulls.ignore(pos, expected))
-            {
-                nulls_action = NullsAction::IGNORE_NULLS;
-            }
-            function_node->name = transformFunctionNameForRepectNulls(function_node->name, nulls_action);
+                function_node->nulls_action = NullsAction::RESPECT_NULLS;
+            else if (ignore_nulls.ignore(pos, expected))
+                function_node->nulls_action = NullsAction::IGNORE_NULLS;
 
             if (over.ignore(pos, expected))
             {
@@ -1146,30 +1167,6 @@ private:
 
     bool allow_function_parameters;
     bool is_compound_name;
-
-    enum NullsAction
-    {
-        EMPTY = 0,
-        RESPECT_NULLS = 1,
-        IGNORE_NULLS = 2,
-    };
-    static String transformFunctionNameForRepectNulls(const String & original_function_name, NullsAction nulls_action)
-    {
-        static std::unordered_map<String, std::vector<String>> renamed_functions_with_nulls = {
-            {"first_value", {"first_value", "first_value_respect_nulls", "first_value"}},
-            {"last_value", {"last_value", "last_value_respect_nulls", "last_value"}},
-        };
-        auto it = renamed_functions_with_nulls.find(original_function_name);
-        if (it == renamed_functions_with_nulls.end())
-        {
-            if (nulls_action == NullsAction::EMPTY)
-                return original_function_name;
-            else
-                throw Exception(
-                    ErrorCodes::SYNTAX_ERROR, "Function {} does not support RESPECT NULLS or IGNORE NULLS", original_function_name);
-        }
-        return it->second[nulls_action];
-    }
 };
 
 /// Layer for priority brackets and tuple function
@@ -1583,8 +1580,7 @@ public:
         if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             return false;
 
-        auto subquery = std::make_shared<ASTSubquery>();
-        subquery->children.push_back(std::move(node));
+        auto subquery = std::make_shared<ASTSubquery>(std::move(node));
         elements = {makeASTFunction("exists", subquery)};
 
         finished = true;
@@ -2158,6 +2154,56 @@ private:
     bool if_permitted;
 };
 
+/// Layer for table function 'kql'
+class KustoLayer : public Layer
+{
+public:
+
+    KustoLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
+
+    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
+    {
+        /// kql(table|project ...)
+        /// 0. Parse the kql query
+        /// 1. Parse closing token
+        if (state == 0)
+        {
+            ASTPtr query;
+            --pos;
+            if (!ParserKQLTableFunction().parse(pos, query, expected))
+                return false;
+            --pos;
+            pushResult(query);
+
+            if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                return false;
+
+            finished = true;
+            state = 1;
+            return true;
+        }
+
+        if (state == 1)
+        {
+            if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!mergeElement())
+                    return false;
+
+                finished = true;
+            }
+        }
+
+        return true;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction("view", std::move(elements)); // reuse view function for kql
+        return true;
+    }
+};
 
 std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_function, bool allow_function_parameters_ = true)
 {
@@ -2194,6 +2240,8 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
             return std::make_unique<ViewLayer>(false);
         else if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
+        else if (function_name_lowercase == "kql")
+            return std::make_unique<KustoLayer>();
     }
 
     if (function_name == "tuple")
@@ -2331,12 +2379,14 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
     {toStringRef(Keyword::OR),            Operator("or",              3,  2, OperatorType::Mergeable)},
     {toStringRef(Keyword::AND),           Operator("and",             4,  2, OperatorType::Mergeable)},
+    {toStringRef(Keyword::IS_NOT_DISTINCT_FROM), Operator("isNotDistinctFrom", 6, 2)},
     {toStringRef(Keyword::IS_NULL),       Operator("isNull",          6,  1, OperatorType::IsNull)},
     {toStringRef(Keyword::IS_NOT_NULL),   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
     {toStringRef(Keyword::BETWEEN),       Operator("",                7,  0, OperatorType::StartBetween)},
     {toStringRef(Keyword::NOT_BETWEEN),   Operator("",                7,  0, OperatorType::StartNotBetween)},
     {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
     {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
+    {"<=>",           Operator("isNotDistinctFrom", 9, 2, OperatorType::Comparison)},
     {"<>",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
     {"<=",            Operator("lessOrEquals",    9,  2, OperatorType::Comparison)},
     {">=",            Operator("greaterOrEquals", 9,  2, OperatorType::Comparison)},
@@ -2355,6 +2405,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
+    {"−",             Operator("minus",           11, 2)},
     {"*",             Operator("multiply",        12, 2)},
     {"/",             Operator("divide",          12, 2)},
     {"%",             Operator("modulo",          12, 2)},
@@ -2367,8 +2418,9 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
 
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
-    {toStringRef(Keyword::NOT), Operator("not", 5, 1)},
-    {"-", Operator("negate", 13, 1)}
+    {toStringRef(Keyword::NOT), Operator("not", 5, 1, OperatorType::Not)},
+    {"-", Operator("negate", 13, 1)},
+    {"−", Operator("negate", 13, 1)},
 };
 
 const Operator ParserExpressionImpl::finish_between_operator("", 8, 0, OperatorType::FinishBetween);
@@ -2443,7 +2495,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (layers.front()->is_table_function)
     {
-        if (typeid_cast<ViewLayer *>(layers.back().get()))
+        if (typeid_cast<ViewLayer *>(layers.back().get()) || typeid_cast<KustoLayer *>(layers.back().get()))
         {
             if (identifier_parser.parse(pos, tmp, expected)
                 && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
@@ -2518,6 +2570,12 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         }
     }
 
+    /// ignore all leading plus
+    while (pos->type == TokenType::Plus)
+    {
+        ++pos;
+    }
+
     /// Try to find any unary operators
     auto cur_op = unary_operators_table.begin();
     for (; cur_op != unary_operators_table.end(); ++cur_op)
@@ -2528,7 +2586,16 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (cur_op != unary_operators_table.end())
     {
-        layers.back()->pushOperator(cur_op->second);
+        if (cur_op->second.type == OperatorType::Not && pos->type == TokenType::OpeningRoundBracket)
+        {
+            ++pos;
+            auto identifier = std::make_shared<ASTIdentifier>(cur_op->second.function_name);
+            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function));
+        }
+        else
+        {
+            layers.back()->pushOperator(cur_op->second);
+        }
         return Action::OPERAND;
     }
 
@@ -2581,6 +2648,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     }
     else if (pos->type == TokenType::OpeningRoundBracket)
     {
+
         if (subquery_parser.parse(pos, tmp, expected))
         {
             layers.back()->pushOperand(std::move(tmp));

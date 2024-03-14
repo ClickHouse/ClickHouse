@@ -5,6 +5,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
@@ -18,6 +19,8 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 
 #include <Common/FileChecker.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -42,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class MemorySink : public SinkToStorage
@@ -77,11 +81,11 @@ public:
             for (const auto & elem : block)
                 compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
 
-            new_blocks.emplace_back(compressed_block);
+            new_blocks.push_back(std::move(compressed_block));
         }
         else
         {
-            new_blocks.emplace_back(block);
+            new_blocks.push_back(std::move(block));
         }
     }
 
@@ -150,13 +154,14 @@ void StorageMemory::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     size_t num_streams)
 {
-    query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(column_names, shared_from_this(), storage_snapshot, num_streams, delay_read_for_global_subqueries));
+    query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(
+        column_names, query_info, storage_snapshot, context, shared_from_this(), num_streams, delay_read_for_global_subqueries));
 }
 
 
@@ -470,9 +475,21 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
 
         while (auto block = block_in.read())
         {
-            new_bytes += block.bytes();
-            new_rows += block.rows();
-            new_blocks.push_back(std::move(block));
+            if (compress)
+            {
+                Block compressed_block;
+                for (const auto & elem : block)
+                    compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
+
+                new_blocks.push_back(std::move(compressed_block));
+            }
+            else
+            {
+                new_blocks.push_back(std::move(block));
+            }
+
+            new_bytes += new_blocks.back().bytes();
+            new_rows += new_blocks.back().rows();
         }
     }
 
@@ -487,6 +504,17 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     total_size_rows += new_rows;
 }
 
+void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, ContextPtr) const
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN
+            && command.type != AlterCommand::Type::COMMENT_TABLE && command.type != AlterCommand::Type::RENAME_COLUMN)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
+    }
+}
 
 std::optional<UInt64> StorageMemory::totalRows(const Settings &) const
 {

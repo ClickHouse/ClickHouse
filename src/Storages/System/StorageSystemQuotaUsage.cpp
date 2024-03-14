@@ -40,24 +40,37 @@ namespace
 }
 
 
-NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypes()
+ColumnsDescription StorageSystemQuotaUsage::getColumnsDescription()
 {
-    return getNamesAndTypesImpl(/* add_column_is_current = */ false);
+    return getColumnsDescriptionImpl(/* add_column_is_current = */ false);
 }
 
-NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypesImpl(bool add_column_is_current)
+ColumnsDescription StorageSystemQuotaUsage::getColumnsDescriptionImpl(bool add_column_is_current)
 {
-    NamesAndTypesList names_and_types{
-        {"quota_name", std::make_shared<DataTypeString>()},
-        {"quota_key", std::make_shared<DataTypeString>()}
+    ColumnsDescription description
+    {
+        {"quota_name", std::make_shared<DataTypeString>(), "Quota name."},
+        {"quota_key", std::make_shared<DataTypeString>(), "Key value."}
     };
 
     if (add_column_is_current)
-        names_and_types.push_back({"is_current", std::make_shared<DataTypeUInt8>()});
+        description.add({"is_current", std::make_shared<DataTypeUInt8>(), "Quota usage for current user."});
 
-    names_and_types.push_back({"start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())});
-    names_and_types.push_back({"end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())});
-    names_and_types.push_back({"duration", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())});
+    description.add({
+        "start_time",
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
+        "Start time for calculating resource consumption."
+    });
+    description.add({
+        "end_time",
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
+        "End time for calculating resource consumption."
+    });
+    description.add({
+        "duration",
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()),
+        "Length of the time interval for calculating resource consumption, in seconds."
+    });
 
     for (auto quota_type : collections::range(QuotaType::MAX))
     {
@@ -68,15 +81,15 @@ NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypesImpl(bool add_column_
             data_type = std::make_shared<DataTypeFloat64>();
         else
             data_type = std::make_shared<DataTypeUInt64>();
-        names_and_types.push_back({column_name, std::make_shared<DataTypeNullable>(data_type)});
-        names_and_types.push_back({String("max_") + column_name, std::make_shared<DataTypeNullable>(data_type)});
+        description.add({column_name, std::make_shared<DataTypeNullable>(data_type), type_info.current_usage_description});
+        description.add({String("max_") + column_name, std::make_shared<DataTypeNullable>(data_type), type_info.max_allowed_usage_description});
     }
 
-    return names_and_types;
+    return description;
 }
 
 
-void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();

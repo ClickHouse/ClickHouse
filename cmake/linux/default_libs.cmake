@@ -35,10 +35,6 @@ find_package(Threads REQUIRED)
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
 
-# Delay the call to link the global interface after the libc++ libraries are included to avoid circular dependencies
-# which are ok with static libraries but not with dynamic ones
-link_libraries(global-group)
-
 if (NOT OS_ANDROID)
     if (NOT USE_MUSL)
         # Our compatibility layer doesn't build under Android, many errors in musl.
@@ -47,14 +43,10 @@ if (NOT OS_ANDROID)
     add_subdirectory(base/harmful)
 endif ()
 
+link_libraries(global-group)
+
 target_link_libraries(global-group INTERFACE
     -Wl,--start-group
     $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
     -Wl,--end-group
-)
-
-# FIXME: remove when all contribs will get custom cmake lists
-install(
-    TARGETS global-group global-libs
-    EXPORT global
 )

@@ -6,6 +6,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
 #include <Common/ShellCommandSettings.h>
+#include <Parsers/ASTSQLSecurity.h>
 
 
 namespace DB
@@ -16,8 +17,10 @@ enum class LoadBalancing
     /// among replicas with a minimum number of errors selected randomly
     RANDOM = 0,
     /// a replica is selected among the replicas with the minimum number of errors
-    /// with the minimum number of distinguished characters in the replica name and local hostname
+    /// with the minimum number of distinguished characters in the replica name prefix and local hostname prefix
     NEAREST_HOSTNAME,
+    /// just like NEAREST_HOSTNAME, but it count distinguished characters in a levenshtein distance manner
+    HOSTNAME_LEVENSHTEIN_DISTANCE,
     // replicas with the same number of errors are accessed in the same order
     // as they are specified in the configuration.
     IN_ORDER,
@@ -67,6 +70,16 @@ enum class DistributedProductMode
 };
 
 DECLARE_SETTING_ENUM(DistributedProductMode)
+
+/// How the query cache handles queries with non-deterministic functions, e.g. now()
+enum class QueryCacheNondeterministicFunctionHandling
+{
+    Throw,
+    Save,
+    Ignore
+};
+
+DECLARE_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling)
 
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
@@ -121,10 +134,13 @@ enum class DefaultTableEngine
     ReplacingMergeTree,
     ReplicatedMergeTree,
     ReplicatedReplacingMergeTree,
+    SharedMergeTree,
+    SharedReplacingMergeTree,
     Memory,
 };
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
+
 
 enum class CleanDeletedRows
 {
@@ -159,11 +175,14 @@ enum class DistributedDDLOutputMode
     THROW,
     NULL_STATUS_ON_TIMEOUT,
     NEVER_THROW,
+    THROW_ONLY_ACTIVE,
+    NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE,
+    NONE_ONLY_ACTIVE,
 };
 
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
 
-enum class HandleKafkaErrorMode
+enum class StreamingHandleErrorMode
 {
     DEFAULT = 0, // Ignore errors with threshold.
     STREAM, // Put errors to stream in the virtual column named ``_error.
@@ -171,7 +190,7 @@ enum class HandleKafkaErrorMode
     /*CUSTOM_SYSTEM_TABLE, Put errors to in a custom system table. This is not implemented now.  */
 };
 
-DECLARE_SETTING_ENUM(HandleKafkaErrorMode)
+DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
 
 enum class ShortCircuitFunctionEvaluation
 {
@@ -207,7 +226,6 @@ enum class Dialect
 {
     clickhouse,
     kusto,
-    kusto_auto,
     prql,
 };
 
@@ -241,4 +259,15 @@ DECLARE_SETTING_ENUM(S3QueueAction)
 
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
+enum class SchemaInferenceMode
+{
+    DEFAULT,
+    UNION,
+};
+
+DECLARE_SETTING_ENUM(SchemaInferenceMode)
+
+DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
+
+DECLARE_SETTING_ENUM(SQLSecurityType)
 }

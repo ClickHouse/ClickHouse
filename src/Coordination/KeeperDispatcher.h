@@ -39,8 +39,6 @@ private:
     /// More than 1k updates is definitely misconfiguration.
     ClusterUpdateQueue cluster_update_queue{1000};
 
-    std::atomic<bool> shutdown_called{false};
-
     mutable std::mutex session_to_response_callback_mutex;
     /// These two maps looks similar, but serves different purposes.
     /// The first map is subscription map for normal responses like
@@ -72,7 +70,7 @@ private:
 
     KeeperConfigurationAndSettingsPtr configuration_and_settings;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
@@ -102,7 +100,8 @@ private:
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
-    void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
+    nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
+        RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
 
 public:
     std::mutex read_request_queue_mutex;
@@ -177,6 +176,11 @@ public:
         return server->isObserver();
     }
 
+    bool isExceedingMemorySoftLimit() const
+    {
+        return server->isExceedingMemorySoftLimit();
+    }
+
     uint64_t getLogDirSize() const;
 
     uint64_t getSnapDirSize() const;
@@ -235,6 +239,12 @@ public:
     bool requestLeader()
     {
         return server->requestLeader();
+    }
+
+    /// Yield leadership and become follower.
+    void yieldLeadership()
+    {
+        return server->yieldLeadership();
     }
 
     void recalculateStorageStats()

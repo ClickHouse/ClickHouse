@@ -25,6 +25,7 @@ public:
         size_t max_block_size_rows,
         size_t max_block_size_bytes);
 
+    const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;

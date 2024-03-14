@@ -13,6 +13,7 @@ namespace CurrentMetrics
 {
     extern const Metric ParquetEncoderThreads;
     extern const Metric ParquetEncoderThreadsActive;
+    extern const Metric ParquetEncoderThreadsScheduled;
 }
 
 namespace DB
@@ -79,7 +80,9 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
     {
         if (format_settings.parquet.parallel_encoding && format_settings.max_threads > 1)
             pool = std::make_unique<ThreadPool>(
-                CurrentMetrics::ParquetEncoderThreads, CurrentMetrics::ParquetEncoderThreadsActive,
+                CurrentMetrics::ParquetEncoderThreads,
+                CurrentMetrics::ParquetEncoderThreadsActive,
+                CurrentMetrics::ParquetEncoderThreadsScheduled,
                 format_settings.max_threads);
 
         using C = FormatSettings::ParquetCompression;
@@ -299,9 +302,11 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
         ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(
             header,
             "Parquet",
-            false,
-            format_settings.parquet.output_string_as_string,
-            format_settings.parquet.output_fixed_string_as_fixed_byte_array);
+            CHColumnToArrowColumn::Settings
+            {
+                .output_string_as_string = format_settings.parquet.output_string_as_string,
+                .output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array
+            });
     }
 
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num);

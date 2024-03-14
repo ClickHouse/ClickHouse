@@ -51,7 +51,11 @@ ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
     if (!isEffective())
+    {
+        /// It has no effect - disable it
+        stop();
         return;
+    }
     setup();
 }
 
@@ -172,6 +176,8 @@ void ThreadFuzzer::stop()
 
 void ThreadFuzzer::start()
 {
+    if (!instance().isEffective())
+        return;
     started.store(true, std::memory_order_relaxed);
 }
 
@@ -180,11 +186,11 @@ bool ThreadFuzzer::isStarted()
     return started.load(std::memory_order_relaxed);
 }
 
-static void injection(
+static void injectionImpl(
     double yield_probability,
     double migrate_probability,
     double sleep_probability,
-    double sleep_time_us [[maybe_unused]])
+    double sleep_time_us)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     if (!ThreadFuzzer::isStarted())
@@ -220,6 +226,19 @@ static void injection(
     {
         sleepForNanoseconds(static_cast<uint64_t>(sleep_time_us * 1000));
     }
+}
+
+static ALWAYS_INLINE void injection(
+    double yield_probability,
+    double migrate_probability,
+    double sleep_probability,
+    double sleep_time_us)
+{
+    DENY_ALLOCATIONS_IN_SCOPE;
+    if (!ThreadFuzzer::isStarted())
+        return;
+
+    injectionImpl(yield_probability, migrate_probability, sleep_probability, sleep_time_us);
 }
 
 void ThreadFuzzer::maybeInjectSleep()
@@ -258,10 +277,10 @@ void ThreadFuzzer::setup() const
 
 #if defined(OS_LINUX)
     if (sigemptyset(&sa.sa_mask))
-        throwFromErrno("Failed to clean signal mask for thread fuzzer", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to clean signal mask for thread fuzzer");
 
     if (sigaddset(&sa.sa_mask, SIGPROF))
-        throwFromErrno("Failed to add signal to mask for thread fuzzer", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add signal to mask for thread fuzzer");
 #else
     // the two following functions always return 0 under mac
     sigemptyset(&sa.sa_mask);
@@ -269,7 +288,7 @@ void ThreadFuzzer::setup() const
 #endif
 
     if (sigaction(SIGPROF, &sa, nullptr))
-        throwFromErrno("Failed to setup signal handler for thread fuzzer", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for thread fuzzer");
 
     static constexpr UInt32 timer_precision = 1000000;
 
@@ -280,19 +299,19 @@ void ThreadFuzzer::setup() const
     struct itimerval timer = {.it_interval = interval, .it_value = interval};
 
     if (0 != setitimer(ITIMER_PROF, &timer, nullptr))
-        throwFromErrno("Failed to create profiling timer", ErrorCodes::CANNOT_CREATE_TIMER);
+        throw ErrnoException(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create profiling timer");
 }
 
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #define INJECTION_BEFORE(NAME) \
-    injection(                                                             \
+    injectionImpl(                                                         \
         NAME##_before_yield_probability.load(std::memory_order_relaxed),   \
         NAME##_before_migrate_probability.load(std::memory_order_relaxed), \
         NAME##_before_sleep_probability.load(std::memory_order_relaxed),   \
         NAME##_before_sleep_time_us.load(std::memory_order_relaxed));
 #define INJECTION_AFTER(NAME) \
-    injection(                                                             \
+    injectionImpl(                                                         \
         NAME##_after_yield_probability.load(std::memory_order_relaxed),    \
         NAME##_after_migrate_probability.load(std::memory_order_relaxed),  \
         NAME##_after_sleep_probability.load(std::memory_order_relaxed),    \
@@ -383,13 +402,16 @@ static void * getFunctionAddress(const char * name)
     static constinit RET(*real_##NAME)(__VA_ARGS__) = nullptr;                    \
     extern "C" RET NAME(__VA_ARGS__)                                              \
     {                                                                             \
-        INJECTION_BEFORE(NAME);                                                   \
+        bool thread_fuzzer_enabled = ThreadFuzzer::isStarted();                   \
+        if (thread_fuzzer_enabled)                                                \
+            INJECTION_BEFORE(NAME);                                               \
         if (unlikely(!real_##NAME)) {                                             \
             real_##NAME =                                                         \
                 reinterpret_cast<RET(*)(__VA_ARGS__)>(getFunctionAddress(#NAME)); \
         }                                                                         \
         auto && ret{real_##NAME(arg)};                                            \
-        INJECTION_AFTER(NAME);                                                    \
+        if (thread_fuzzer_enabled)                                                \
+            INJECTION_AFTER(NAME);                                                \
         return ret;                                                               \
     }
 FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_DLSYM)
@@ -399,10 +421,17 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_DLSYM)
     extern "C" RET __##NAME(__VA_ARGS__);                   \
     extern "C" RET NAME(__VA_ARGS__)                        \
     {                                                       \
-        INJECTION_BEFORE(NAME);                             \
-        auto && ret{__##NAME(arg)};                         \
-        INJECTION_AFTER(NAME);                              \
-        return ret;                                         \
+        if (!ThreadFuzzer::isStarted())                     \
+        {                                                   \
+            return __##NAME(arg);                           \
+        }                                                   \
+        else                                                \
+        {                                                   \
+            INJECTION_BEFORE(NAME);                         \
+            auto && ret{__##NAME(arg)};                     \
+            INJECTION_AFTER(NAME);                          \
+            return ret;                                     \
+        }                                                   \
     }
 FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_INTERNAL_SYMBOLS)
 #undef MAKE_WRAPPER_USING_INTERNAL_SYMBOLS

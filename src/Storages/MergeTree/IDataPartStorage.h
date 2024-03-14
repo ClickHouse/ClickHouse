@@ -12,6 +12,7 @@
 #include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Disks/IDiskTransaction.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
 namespace DB
 {
@@ -54,8 +55,6 @@ struct MergeTreeDataPartChecksums;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
-
-class IStoragePolicy;
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -152,12 +151,12 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
-        Poco::Logger * log) = 0;
+        LoggerPtr log) = 0;
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
     virtual std::optional<String> getRelativePathForPrefix(
-        Poco::Logger * log, const String & prefix, bool detached, bool broken) const = 0;
+        LoggerPtr log, const String & prefix, bool detached, bool broken) const = 0;
 
     /// Reset part directory, used for in-memory parts.
     /// TODO: remove it.
@@ -242,7 +241,7 @@ public:
         MergeTreeTransactionPtr txn = NO_TRANSACTION_PTR;
         HardlinkedFiles * hardlinked_files = nullptr;
         bool copy_instead_of_hardlink = false;
-        NameSet files_to_copy_instead_of_hardlinks;
+        NameSet files_to_copy_instead_of_hardlinks = {};
         bool keep_metadata_version = false;
         bool make_source_readonly = false;
         DiskTransactionPtr external_transaction = nullptr;
@@ -252,6 +251,8 @@ public:
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const = 0;
 
@@ -260,7 +261,11 @@ public:
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & disk,
-        Poco::Logger * log) const = 0;
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        LoggerPtr log,
+        const std::function<void()> & cancellation_hook
+        ) const = 0;
 
     /// Change part's root. from_root should be a prefix path of current root path.
     /// Right now, this is needed for rename table query.
@@ -300,6 +305,7 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard() const { return nullptr; }
 
     virtual void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
+    virtual void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
 
     /// Rename part.
     /// Ideally, new_root_path should be the same as current root (but it is not true).
@@ -308,7 +314,7 @@ public:
     virtual void rename(
         std::string new_root_path,
         std::string new_part_dir,
-        Poco::Logger * log,
+        LoggerPtr log,
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) = 0;
 

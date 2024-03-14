@@ -17,9 +17,16 @@ namespace
 {
 
 void localBackupImpl(
-    const DiskPtr & disk, IDiskTransaction * transaction, const String & source_path,
-    const String & destination_path, bool make_source_readonly, size_t level,
-    std::optional<size_t> max_level, bool copy_instead_of_hardlinks,
+    const DiskPtr & disk,
+    IDiskTransaction * transaction,
+    const String & source_path,
+    const String & destination_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    bool make_source_readonly,
+    size_t level,
+    std::optional<size_t> max_level,
+    bool copy_instead_of_hardlinks,
     const NameSet & files_to_copy_instead_of_hardlinks)
 {
     if (max_level && level > *max_level)
@@ -50,13 +57,9 @@ void localBackupImpl(
             if (copy_instead_of_hardlinks || files_to_copy_instead_of_hardlinks.contains(it->name()))
             {
                 if (transaction)
-                {
-                    transaction->copyFile(source, destination);
-                }
+                    transaction->copyFile(source, destination, read_settings, write_settings);
                 else
-                {
-                    disk->copyFile(source, *disk, destination);
-                }
+                    disk->copyFile(source, *disk, destination, read_settings, write_settings);
             }
             else
             {
@@ -69,8 +72,17 @@ void localBackupImpl(
         else
         {
             localBackupImpl(
-                disk, transaction, source, destination, make_source_readonly, level + 1, max_level,
-                copy_instead_of_hardlinks, files_to_copy_instead_of_hardlinks);
+                disk,
+                transaction,
+                source,
+                destination,
+                read_settings,
+                write_settings,
+                make_source_readonly,
+                level + 1,
+                max_level,
+                copy_instead_of_hardlinks,
+                files_to_copy_instead_of_hardlinks);
         }
     }
 }
@@ -112,9 +124,16 @@ private:
 }
 
 void localBackup(
-    const DiskPtr & disk, const String & source_path,
-    const String & destination_path, bool make_source_readonly,
-    std::optional<size_t> max_level, bool copy_instead_of_hardlinks, const NameSet & files_to_copy_intead_of_hardlinks, DiskTransactionPtr disk_transaction)
+    const DiskPtr & disk,
+    const String & source_path,
+    const String & destination_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    bool make_source_readonly,
+    std::optional<size_t> max_level,
+    bool copy_instead_of_hardlinks,
+    const NameSet & files_to_copy_intead_of_hardlinks,
+    DiskTransactionPtr disk_transaction)
 {
     if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
     {
@@ -135,12 +154,23 @@ void localBackup(
         {
             if (disk_transaction)
             {
-                localBackupImpl(disk, disk_transaction.get(), source_path, destination_path, make_source_readonly, 0, max_level, copy_instead_of_hardlinks, files_to_copy_intead_of_hardlinks);
+                localBackupImpl(
+                    disk,
+                    disk_transaction.get(),
+                    source_path,
+                    destination_path,
+                    read_settings,
+                    write_settings,
+                    make_source_readonly,
+                    /* level= */ 0,
+                    max_level,
+                    copy_instead_of_hardlinks,
+                    files_to_copy_intead_of_hardlinks);
             }
             else if (copy_instead_of_hardlinks)
             {
                 CleanupOnFail cleanup([disk, destination_path]() { disk->removeRecursive(destination_path); });
-                disk->copyDirectoryContent(source_path, disk, destination_path);
+                disk->copyDirectoryContent(source_path, disk, destination_path, read_settings, write_settings, /*cancellation_hook=*/{});
                 cleanup.success();
             }
             else
@@ -154,7 +184,18 @@ void localBackup(
                     cleaner = [disk, destination_path]() { disk->removeRecursive(destination_path); };
 
                 CleanupOnFail cleanup(std::move(cleaner));
-                localBackupImpl(disk, disk_transaction.get(), source_path, destination_path, make_source_readonly, 0, max_level, false, files_to_copy_intead_of_hardlinks);
+                localBackupImpl(
+                    disk,
+                    disk_transaction.get(),
+                    source_path,
+                    destination_path,
+                    read_settings,
+                    write_settings,
+                    make_source_readonly,
+                    /* level= */ 0,
+                    max_level,
+                    /* copy_instead_of_hardlinks= */ false,
+                    files_to_copy_intead_of_hardlinks);
                 cleanup.success();
             }
         }

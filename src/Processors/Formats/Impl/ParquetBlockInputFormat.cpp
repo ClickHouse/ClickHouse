@@ -28,6 +28,7 @@ namespace CurrentMetrics
 {
     extern const Metric ParquetDecoderThreads;
     extern const Metric ParquetDecoderThreadsActive;
+    extern const Metric ParquetDecoderThreadsScheduled;
 }
 
 namespace DB
@@ -377,7 +378,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
 {
     if (max_decoding_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, max_decoding_threads);
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, CurrentMetrics::ParquetDecoderThreadsScheduled, max_decoding_threads);
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat()
@@ -385,16 +386,6 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
     is_stopped = true;
     if (pool)
         pool->wait();
-}
-
-void ParquetBlockInputFormat::setQueryInfo(const SelectQueryInfo & query_info, ContextPtr context)
-{
-    /// When analyzer is enabled, query_info.filter_asts is missing sets and maybe some type casts,
-    /// so don't use it. I'm not sure how to support analyzer here: https://github.com/ClickHouse/ClickHouse/issues/53536
-    if (format_settings.parquet.filter_push_down && !context->getSettingsRef().allow_experimental_analyzer)
-        key_condition.emplace(query_info, context, getPort().getHeader().getNames(),
-            std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(
-                getPort().getHeader().getColumnsWithTypeAndName())));
 }
 
 void ParquetBlockInputFormat::initializeIfNeeded()
@@ -428,10 +419,12 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         if (skip_row_groups.contains(row_group))
             continue;
 
-        if (key_condition.has_value() &&
-            !key_condition->checkInHyperrectangle(
-                getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings),
-                getPort().getHeader().getDataTypes()).can_be_true)
+        if (format_settings.parquet.filter_push_down && key_condition
+            && !key_condition
+                    ->checkInHyperrectangle(
+                        getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings),
+                        getPort().getHeader().getDataTypes())
+                    .can_be_true)
             continue;
 
         if (row_group_batches.empty() || row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek)
@@ -501,6 +494,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
         "Parquet",
         format_settings.parquet.allow_missing_columns,
         format_settings.null_as_default,
+        format_settings.date_time_overflow_behavior,
         format_settings.parquet.case_insensitive_column_matching);
 }
 
@@ -576,7 +570,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
         // We may be able to schedule more work now, but can't call scheduleMoreWorkIfNeeded() right
         // here because we're running on the same thread pool, so it'll deadlock if thread limit is
-        // reached. Wake up generate() instead.
+        // reached. Wake up read() instead.
         condvar.notify_all();
     };
 
@@ -585,7 +579,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
     auto batch = row_group_batch.record_batch_reader->Next();
     if (!batch.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
 
     if (!*batch)
     {
@@ -596,7 +590,13 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
     auto tmp_table = arrow::Table::FromRecordBatches({*batch});
 
     size_t approx_chunk_original_size = static_cast<size_t>(std::ceil(static_cast<double>(row_group_batch.total_bytes_compressed) / row_group_batch.total_rows * (*tmp_table)->num_rows()));
-    PendingChunk res = {.chunk_idx = row_group_batch.next_chunk_idx, .row_group_batch_idx = row_group_batch_idx, .approx_original_chunk_size = approx_chunk_original_size};
+    PendingChunk res = {
+            .chunk = {},
+            .block_missing_values = {},
+            .chunk_idx = row_group_batch.next_chunk_idx,
+            .row_group_batch_idx = row_group_batch_idx,
+            .approx_original_chunk_size = approx_chunk_original_size
+    };
 
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
@@ -637,9 +637,15 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
     }
 }
 
-Chunk ParquetBlockInputFormat::generate()
+Chunk ParquetBlockInputFormat::read()
 {
     initializeIfNeeded();
+
+    if (is_stopped || row_group_batches_completed == row_group_batches.size())
+        return {};
+
+    if (need_only_count)
+        return getChunkForCount(row_group_batches[row_group_batches_completed++].total_rows);
 
     std::unique_lock lock(mutex);
 
@@ -717,12 +723,19 @@ ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings 
 {
 }
 
+void ParquetSchemaReader::initializeIfNeeded()
+{
+    if (arrow_file)
+        return;
+
+    std::atomic<int> is_stopped{0};
+    arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
+    metadata = parquet::ReadMetaData(arrow_file);
+}
+
 NamesAndTypesList ParquetSchemaReader::readSchema()
 {
-    std::atomic<int> is_stopped{0};
-    auto file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
-
-    auto metadata = parquet::ReadMetaData(file);
+    initializeIfNeeded();
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
@@ -734,6 +747,12 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     return header.getNamesAndTypesList();
 }
 
+std::optional<size_t> ParquetSchemaReader::readNumberOrRows()
+{
+    initializeIfNeeded();
+    return metadata->num_rows();
+}
+
 void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
@@ -741,7 +760,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             [](ReadBuffer & buf,
                const Block & sample,
                const FormatSettings & settings,
-               const ReadSettings& read_settings,
+               const ReadSettings & read_settings,
                bool is_remote_fs,
                size_t /* max_download_threads */,
                size_t max_parsing_threads)

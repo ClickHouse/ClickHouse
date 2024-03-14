@@ -20,6 +20,7 @@ echo '/boost/context/*' >> $FILES_TO_CHECKOUT
 echo '/boost/convert/*' >> $FILES_TO_CHECKOUT
 echo '/boost/coroutine/*' >> $FILES_TO_CHECKOUT
 echo '/boost/core/*' >> $FILES_TO_CHECKOUT
+echo '/boost/describe/*' >> $FILES_TO_CHECKOUT
 echo '/boost/detail/*' >> $FILES_TO_CHECKOUT
 echo '/boost/dynamic_bitset/*' >> $FILES_TO_CHECKOUT
 echo '/boost/exception/*' >> $FILES_TO_CHECKOUT

@@ -4,12 +4,13 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <re2/re2.h>
+#include <Common/re2.h>
 #include <Storages/IStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/StorageConfiguration.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/SelectQueryInfo.h>
@@ -30,9 +31,9 @@ public:
 
         String getPath() const { return blob_path; }
 
-        bool update(ContextPtr context);
+        bool update(const ContextPtr & context);
 
-        void connect(ContextPtr context);
+        void connect(const ContextPtr & context);
 
         bool withGlobs() const { return blob_path.find_first_of("*?{") != std::string::npos; }
 
@@ -58,7 +59,7 @@ public:
     StorageAzureBlob(
         const Configuration & configuration_,
         std::unique_ptr<AzureObjectStorage> && object_storage_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -67,10 +68,10 @@ public:
         bool distributed_processing_,
         ASTPtr partition_by_);
 
-    static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
+    static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context);
     static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only);
 
-    static AzureObjectStorage::SettingsPtr createSettings(ContextPtr local_context);
+    static AzureObjectStorage::SettingsPtr createSettings(const ContextPtr & local_context);
 
     static void processNamedCollectionResult(StorageAzureBlob::Configuration & configuration, const NamedCollection & collection);
 
@@ -79,7 +80,8 @@ public:
         return name;
     }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names &,
         const StorageSnapshotPtr &,
         SelectQueryInfo &,
@@ -92,13 +94,13 @@ public:
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
-    NamesAndTypesList getVirtuals() const override;
-
     bool supportsPartitionBy() const override;
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr & context) const;
+
+    bool supportsTrivialCountOptimization() const override { return true; }
 
     bool prefersLargeBlocks() const override;
 
@@ -110,36 +112,31 @@ public:
         AzureObjectStorage * object_storage,
         const Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx,
-        bool distributed_processing = false);
+        const ContextPtr & ctx);
+
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromData(
+        AzureObjectStorage * object_storage,
+        const Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
 
 private:
+    static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
+        std::optional<String> format,
+        AzureObjectStorage * object_storage,
+        const Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx);
+
+    friend class ReadFromAzureBlob;
+
     std::string name;
     Configuration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    NamesAndTypesList virtual_columns;
-    Block virtual_block;
 
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
-
-
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const RelativePathsWithMetadata::const_iterator & begin,
-        const RelativePathsWithMetadata::const_iterator & end,
-        const StorageAzureBlob::Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & ctx);
-
-    static void addColumnsToCache(
-        const RelativePathsWithMetadata & keys,
-        const ColumnsDescription & columns,
-        const Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        const String & format_name,
-        const ContextPtr & ctx);
-
 };
 
 class StorageAzureBlobSource : public ISource, WithContext
@@ -148,7 +145,7 @@ public:
     class IIterator : public WithContext
     {
     public:
-        IIterator(ContextPtr context_):WithContext(context_) {}
+        explicit IIterator(const ContextPtr & context_):WithContext(context_) {}
         virtual ~IIterator() = default;
         virtual RelativePathWithMetadata next() = 0;
 
@@ -162,9 +159,9 @@ public:
             AzureObjectStorage * object_storage_,
             const std::string & container_,
             String blob_path_with_globs_,
-            ASTPtr query_,
-            const Block & virtual_header_,
-            ContextPtr context_,
+            const ActionsDAG::Node * predicate,
+            const NamesAndTypesList & virtual_columns_,
+            const ContextPtr & context_,
             RelativePathsWithMetadata * outer_blobs_,
             std::function<void(FileProgress)> file_progress_callback_ = {});
 
@@ -175,9 +172,8 @@ public:
         AzureObjectStorage * object_storage;
         std::string container;
         String blob_path_with_globs;
-        ASTPtr query;
-        ASTPtr filter_ast;
-        Block virtual_header;
+        ActionsDAGPtr filter_dag;
+        NamesAndTypesList virtual_columns;
 
         size_t index = 0;
 
@@ -190,7 +186,6 @@ public:
 
         void createFilterAST(const String & any_key);
         bool is_finished = false;
-        bool is_initialized = false;
         std::mutex next_mutex;
 
         std::function<void(FileProgress)> file_progress_callback;
@@ -199,7 +194,7 @@ public:
     class ReadIterator : public IIterator
     {
     public:
-        explicit ReadIterator(ContextPtr context_,
+        explicit ReadIterator(const ContextPtr & context_,
                               const ReadTaskCallback & callback_)
             : IIterator(context_), callback(callback_) { }
         RelativePathWithMetadata next() override
@@ -218,9 +213,9 @@ public:
             AzureObjectStorage * object_storage_,
             const std::string & container_,
             const Strings & keys_,
-            ASTPtr query_,
-            const Block & virtual_header_,
-            ContextPtr context_,
+            const ActionsDAG::Node * predicate,
+            const NamesAndTypesList & virtual_columns_,
+            const ContextPtr & context_,
             RelativePathsWithMetadata * outer_blobs,
             std::function<void(FileProgress)> file_progress_callback = {});
 
@@ -232,9 +227,8 @@ public:
         std::string container;
         RelativePathsWithMetadata keys;
 
-        ASTPtr query;
-        ASTPtr filter_ast;
-        Block virtual_header;
+        ActionsDAGPtr filter_dag;
+        NamesAndTypesList virtual_columns;
 
         std::atomic<size_t> index = 0;
     };
@@ -243,15 +237,15 @@ public:
         const ReadFromFormatInfo & info,
         const String & format_,
         String name_,
-        ContextPtr context_,
+        const ContextPtr & context_,
         std::optional<FormatSettings> format_settings_,
         UInt64 max_block_size_,
         String compression_hint_,
         AzureObjectStorage * object_storage_,
         const String & container_,
+        const String & connection_url_,
         std::shared_ptr<IIterator> file_iterator_,
-        const SelectQueryInfo & query_info_);
-
+        bool need_only_count_);
     ~StorageAzureBlobSource() override;
 
     Chunk generate() override;
@@ -259,6 +253,9 @@ public:
     String getName() const override;
 
 private:
+    void addNumRowsToCache(const String & path, size_t num_rows);
+    std::optional<size_t> tryGetNumRowsFromCache(const RelativePathWithMetadata & path_with_metadata);
+
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
     String format;
@@ -270,21 +267,23 @@ private:
     String compression_hint;
     AzureObjectStorage * object_storage;
     String container;
+    String connection_url;
     std::shared_ptr<IIterator> file_iterator;
-    SelectQueryInfo query_info;
+    bool need_only_count;
+    size_t total_rows_in_file = 0;
 
     struct ReaderHolder
     {
     public:
         ReaderHolder(
-            String path_,
+            RelativePathWithMetadata relative_path_with_metadata_,
             std::unique_ptr<ReadBuffer> read_buf_,
-            std::shared_ptr<IInputFormat> input_format_,
+            std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_)
-            : path(std::move(path_))
+            : relative_path_with_metadata(std::move(relative_path_with_metadata_))
             , read_buf(std::move(read_buf_))
-            , input_format(std::move(input_format_))
+            , source(std::move(source_))
             , pipeline(std::move(pipeline_))
             , reader(std::move(reader_))
         {
@@ -305,29 +304,30 @@ private:
             /// reader uses pipeline, pipeline uses read_buf.
             reader = std::move(other.reader);
             pipeline = std::move(other.pipeline);
-            input_format = std::move(other.input_format);
+            source = std::move(other.source);
             read_buf = std::move(other.read_buf);
-            path = std::move(other.path);
+            relative_path_with_metadata = std::move(other.relative_path_with_metadata);
             return *this;
         }
 
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
-        const String & getPath() const { return path; }
-        const IInputFormat * getInputFormat() const { return input_format.get(); }
+        const String & getRelativePath() const { return relative_path_with_metadata.relative_path; }
+        const RelativePathWithMetadata & getRelativePathWithMetadata() const { return relative_path_with_metadata; }
+        const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
     private:
-        String path;
+        RelativePathWithMetadata relative_path_with_metadata;
         std::unique_ptr<ReadBuffer> read_buf;
-        std::shared_ptr<IInputFormat> input_format;
+        std::shared_ptr<ISource> source;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
     };
 
     ReaderHolder reader;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageAzureBlobSource");
+    LoggerPtr log = getLogger("StorageAzureBlobSource");
 
     ThreadPool create_reader_pool;
     ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;

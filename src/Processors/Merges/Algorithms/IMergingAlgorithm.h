@@ -47,6 +47,7 @@ public:
 
     using Inputs = std::vector<Input>;
 
+    virtual const char * getName() const = 0;
     virtual void initialize(Inputs inputs) = 0;
     virtual void consume(Input & input, size_t source_num) = 0;
     virtual Status merge() = 0;

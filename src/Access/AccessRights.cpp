@@ -54,7 +54,7 @@ namespace
             res.access_flags = access_flags;
             res.grant_option = grant_option;
             res.is_partial_revoke = is_partial_revoke;
-            switch (full_name.size())
+            switch (full_name.size()) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case 0:
                 {
@@ -443,7 +443,7 @@ public:
             optimizeTree();
     }
 
-    void logTree(Poco::Logger * log, const String & title) const
+    void logTree(LoggerPtr log, const String & title) const
     {
         LOG_TRACE(log, "Tree({}): level={}, name={}, flags={}, min_flags={}, max_flags={}, num_children={}",
             title, level, node_name ? *node_name : "NULL", flags.toString(),
@@ -1158,7 +1158,7 @@ AccessRights AccessRights::getFullAccess()
 
 void AccessRights::logTree() const
 {
-    auto * log = &Poco::Logger::get("AccessRights");
+    auto log = getLogger("AccessRights");
     if (root)
     {
         root->logTree(log, "");

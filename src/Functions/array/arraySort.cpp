@@ -1,5 +1,6 @@
-#include <Functions/array/arraySort.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/array/arraySort.h>
+#include <Common/iota.h>
 
 namespace DB
 {
@@ -55,9 +56,7 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     size_t size = offsets.size();
     size_t nested_size = array.getData().size();
     IColumn::Permutation permutation(nested_size);
-
-    for (size_t i = 0; i < nested_size; ++i)
-        permutation[i] = i;
+    iota(permutation.data(), nested_size, IColumn::Permutation::value_type(0));
 
     ColumnArray::Offset current_offset = 0;
     for (size_t i = 0; i < size; ++i)

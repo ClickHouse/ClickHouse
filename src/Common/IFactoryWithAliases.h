@@ -20,7 +20,7 @@ namespace ErrorCodes
   * template parameter is available as Value
   */
 template <typename ValueType>
-class IFactoryWithAliases : public IHints<2, IFactoryWithAliases<ValueType>>
+class IFactoryWithAliases : public IHints<2>
 {
 protected:
     using Value = ValueType;

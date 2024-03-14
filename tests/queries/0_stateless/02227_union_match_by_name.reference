@@ -4,49 +4,42 @@ EXPLAIN header = 1, optimize = 0 SELECT avgWeighted(x, y) FROM (SELECT NULL, 255
 Expression (Project names)
 Header: avgWeighted(x, y) Nullable(Float64)
   Expression (Projection)
-  Header: avgWeighted(x_0, y_1) Nullable(Float64)
+  Header: avgWeighted(__table1.x, __table1.y) Nullable(Float64)
     Aggregating
-    Header: avgWeighted(x_0, y_1) Nullable(Float64)
+    Header: avgWeighted(__table1.x, __table1.y) Nullable(Float64)
       Expression (Before GROUP BY)
-      Header: x_0 Nullable(UInt8)
-              y_1 UInt8
+      Header: __table1.x Nullable(UInt8)
+              __table1.y UInt8
         Expression (Change column names to column identifiers)
-        Header: x_0 Nullable(UInt8)
-                y_1 UInt8
+        Header: __table1.x Nullable(UInt8)
+                __table1.y UInt8
           Union
-          Header: NULL Nullable(UInt8)
-                  x Nullable(UInt8)
+          Header: x Nullable(UInt8)
                   y UInt8
             Expression (Conversion before UNION)
-            Header: NULL Nullable(UInt8)
-                    x Nullable(UInt8)
+            Header: x Nullable(UInt8)
                     y UInt8
               Expression (Project names)
-              Header: NULL Nullable(Nothing)
-                      x UInt8
+              Header: x UInt8
                       y UInt8
                 Expression (Projection)
-                Header: NULL_Nullable(Nothing) Nullable(Nothing)
-                        255_UInt8 UInt8
+                Header: 255_UInt8 UInt8
                         1_UInt8 UInt8
                   Expression (Change column names to column identifiers)
-                  Header: dummy_0 UInt8
+                  Header: __table3.dummy UInt8
                     ReadFromStorage (SystemOne)
                     Header: dummy UInt8
             Expression (Conversion before UNION)
-            Header: NULL Nullable(UInt8)
-                    x Nullable(UInt8)
+            Header: x Nullable(UInt8)
                     y UInt8
               Expression (Project names)
-              Header: y UInt8
-                      x Nullable(Nothing)
+              Header: x Nullable(Nothing)
                       y UInt8
                 Expression (Projection)
-                Header: 1_UInt8 UInt8
-                        NULL_Nullable(Nothing) Nullable(Nothing)
+                Header: _CAST(NULL_Nullable(Nothing), \'Nullable(Nothing)\'_String) Nullable(Nothing)
                         1_UInt8 UInt8
                   Expression (Change column names to column identifiers)
-                  Header: dummy_0 UInt8
+                  Header: __table5.dummy UInt8
                     ReadFromStorage (SystemOne)
                     Header: dummy UInt8
 SELECT avgWeighted(x, y) FROM (SELECT NULL, 255 AS x, 1 AS y UNION ALL SELECT y, NULL AS x, 1 AS y);

@@ -5,7 +5,7 @@ sidebar_label: OPTIMIZE
 title: "OPTIMIZE Statement"
 ---
 
-This query tries to initialize an unscheduled merge of data parts for tables.
+This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/docs/en/optimize/avoidoptimizefinal)) as its use case is meant for administration, not for daily operations.
 
 :::note
 `OPTIMIZE` can’t fix the `Too many parts` error.
@@ -17,7 +17,7 @@ This query tries to initialize an unscheduled merge of data parts for tables.
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE [BY expression]]
 ```
 
-The `OPTIMIZE` query is supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family, the [MaterializedView](../../engines/table-engines/special/materializedview.md) and the [Buffer](../../engines/table-engines/special/buffer.md) engines. Other table engines aren’t supported.
+The `OPTIMIZE` query is supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family (including [materialized views](../../sql-reference/statements/create/view.md#materialized-view)) and the [Buffer](../../engines/table-engines/special/buffer.md) engines. Other table engines aren’t supported.
 
 When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all replicas (if the [alter_sync](../../operations/settings/settings.md#alter-sync) setting is set to `2`) or on current replica (if the [alter_sync](../../operations/settings/settings.md#alter-sync) setting is set to `1`).
 
@@ -94,8 +94,10 @@ Result:
 │           1 │             1 │     3 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
+All following examples are executed against this state with 5 rows.
 
-When columns for deduplication are not specified, all of them are taken into account. Row is removed only if all values in all columns are equal to corresponding values in previous row:
+#### `DEDUPLICATE`
+When columns for deduplication are not specified, all of them are taken into account. The row is removed only if all values in all columns are equal to corresponding values in the previous row:
 
 ``` sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE;
@@ -116,7 +118,7 @@ Result:
 │           1 │             1 │     3 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
-
+#### `DEDUPLICATE BY *`
 When columns are specified implicitly, the table is deduplicated by all columns that are not `ALIAS` or `MATERIALIZED`. Considering the table above, these are `primary_key`, `secondary_key`, `value`, and `partition_key` columns:
 ```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
@@ -137,7 +139,7 @@ Result:
 │           1 │             1 │     3 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
-
+#### `DEDUPLICATE BY * EXCEPT`
 Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED` and explicitly not `value`: `primary_key`, `secondary_key`, and `partition_key` columns.
 
 ``` sql
@@ -158,7 +160,7 @@ Result:
 │           1 │             1 │     2 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
-
+#### `DEDUPLICATE BY <list of columns>`
 Deduplicate explicitly by `primary_key`, `secondary_key`, and `partition_key` columns:
 ```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
@@ -178,8 +180,8 @@ Result:
 │           1 │             1 │     2 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
-
-Deduplicate by any column matching a regex: `primary_key`, `secondary_key`, and `partition_key` columns:
+#### `DEDUPLICATE BY COLUMNS(<regex>)`
+Deduplicate by all columns matching a regex: `primary_key`, `secondary_key`, and `partition_key` columns:
 ```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
 ```

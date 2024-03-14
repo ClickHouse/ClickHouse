@@ -31,8 +31,6 @@ try:
     import pymysql
     import nats
     import ssl
-    import meilisearch
-    import pyspark
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
@@ -72,6 +70,11 @@ CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
 
 CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
 
+# Minimum version we use in integration tests to check compatibility with old releases
+# Keep in mind that we only support upgrading between releases that are at most 1 year different.
+# This means that this minimum need to be, at least, 1 year older than the current release
+CLICKHOUSE_CI_MIN_TESTED_VERSION = "22.8"
+
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -106,8 +109,8 @@ def run_and_check(
     res = subprocess.run(
         args, stdout=stdout, stderr=stderr, env=env, shell=shell, timeout=timeout
     )
-    out = res.stdout.decode("utf-8")
-    err = res.stderr.decode("utf-8")
+    out = res.stdout.decode("utf-8", "ignore")
+    err = res.stderr.decode("utf-8", "ignore")
     # check_call(...) from subprocess does not print stderr, so we do it manually
     for outline in out.splitlines():
         logging.debug(f"Stdout:{outline}")
@@ -240,13 +243,69 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     return p.returncode == 0
 
 
-def check_rabbitmq_is_available(rabbitmq_id):
+def check_rabbitmq_is_available(rabbitmq_id, cookie):
     p = subprocess.Popen(
-        ("docker", "exec", "-i", rabbitmq_id, "rabbitmqctl", "await_startup"),
+        (
+            "docker",
+            "exec",
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
+            "-i",
+            rabbitmq_id,
+            "rabbitmqctl",
+            "await_startup",
+        ),
         stdout=subprocess.PIPE,
     )
     p.communicate()
     return p.returncode == 0
+
+
+def rabbitmq_debuginfo(rabbitmq_id, cookie):
+    p = subprocess.Popen(
+        (
+            "docker",
+            "exec",
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
+            "-i",
+            rabbitmq_id,
+            "rabbitmq-diagnostics",
+            "status",
+        ),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+
+    p = subprocess.Popen(
+        (
+            "docker",
+            "exec",
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
+            "-i",
+            rabbitmq_id,
+            "rabbitmq-diagnostics",
+            "listeners",
+        ),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+
+    p = subprocess.Popen(
+        (
+            "docker",
+            "exec",
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
+            "-i",
+            rabbitmq_id,
+            "rabbitmq-diagnostics",
+            "environment",
+        ),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
 
 
 async def check_nats_is_available(nats_port, ssl_ctx=None):
@@ -272,11 +331,13 @@ async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
     return nc
 
 
-def enable_consistent_hash_plugin(rabbitmq_id):
+def enable_consistent_hash_plugin(rabbitmq_id, cookie):
     p = subprocess.Popen(
         (
             "docker",
             "exec",
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
             "-i",
             rabbitmq_id,
             "rabbitmq-plugins",
@@ -334,6 +395,7 @@ class ClickHouseCluster:
         odbc_bridge_bin_path=None,
         library_bridge_bin_path=None,
         zookeeper_config_path=None,
+        keeper_config_dir=None,
         custom_dockerd_host=None,
         zookeeper_keyfile=None,
         zookeeper_certfile=None,
@@ -370,6 +432,12 @@ class ClickHouseCluster:
             else p.join(HELPERS_DIR, "zookeeper_config.xml")
         )
 
+        self.keeper_config_dir = (
+            p.join(self.base_dir, keeper_config_dir)
+            if keeper_config_dir
+            else HELPERS_DIR
+        )
+
         project_name = (
             pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
         )
@@ -402,7 +470,7 @@ class ClickHouseCluster:
         self.base_cmd += ["--project-name", self.project_name]
 
         self.base_zookeeper_cmd = None
-        self.base_mysql_cmd = []
+        self.base_mysql57_cmd = []
         self.base_kafka_cmd = []
         self.base_kerberized_kafka_cmd = []
         self.base_kerberos_kdc_cmd = []
@@ -416,7 +484,7 @@ class ClickHouseCluster:
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
-        self.with_mysql = False
+        self.with_mysql57 = False
         self.with_mysql8 = False
         self.with_mysql_cluster = False
         self.with_postgres = False
@@ -432,10 +500,10 @@ class ClickHouseCluster:
         self.with_kerberized_hdfs = False
         self.with_mongo = False
         self.with_mongo_secure = False
-        self.with_meili = False
         self.with_net_trics = False
         self.with_redis = False
         self.with_cassandra = False
+        self.with_ldap = False
         self.with_jdbc_bridge = False
         self.with_nginx = False
         self.with_hive = False
@@ -459,6 +527,7 @@ class ClickHouseCluster:
         self.spark_session = None
 
         self.with_azurite = False
+        self._azurite_port = 0
 
         # available when with_hdfs == True
         self.hdfs_host = "hdfs1"
@@ -510,24 +579,27 @@ class ClickHouseCluster:
         self.mongo_no_cred_host = "mongo2"
         self._mongo_no_cred_port = 0
 
-        # available when with_meili == True
-        self.meili_host = "meili1"
-        self._meili_port = 0
-        self.meili_secure_host = "meili_secure"
-        self._meili_secure_port = 0
-
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
         self.cassandra_port = 9042
         self.cassandra_ip = None
         self.cassandra_id = self.get_instance_docker_id(self.cassandra_host)
 
+        # available when with_ldap == True
+        self.ldap_host = "openldap"
+        self.ldap_container = None
+        self.ldap_port = 1389
+        self.ldap_id = self.get_instance_docker_id(self.ldap_host)
+
         # available when with_rabbitmq == True
         self.rabbitmq_host = "rabbitmq1"
         self.rabbitmq_ip = None
         self.rabbitmq_port = 5672
+        self.rabbitmq_secure_port = 5671
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
+        self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
+        self.rabbitmq_cookie = self.get_instance_docker_id(self.rabbitmq_host)
 
         self.nats_host = "nats1"
         self.nats_port = 4444
@@ -577,12 +649,19 @@ class ClickHouseCluster:
         self.mysql_client_host = "mysql_client"
         self.mysql_client_container = None
 
-        # available when with_mysql == True
-        self.mysql_host = "mysql57"
-        self.mysql_port = 3306
-        self.mysql_ip = None
-        self.mysql_dir = p.abspath(p.join(self.instances_dir, "mysql"))
-        self.mysql_logs_dir = os.path.join(self.mysql_dir, "logs")
+        # available when with_mysql57 == True
+        self.mysql57_host = "mysql57"
+        self.mysql57_port = 3306
+        self.mysql57_ip = None
+        self.mysql57_dir = p.abspath(p.join(self.instances_dir, "mysql"))
+        self.mysql57_logs_dir = os.path.join(self.mysql57_dir, "logs")
+
+        # available when with_mysql8 == True
+        self.mysql8_host = "mysql80"
+        self.mysql8_port = 3306
+        self.mysql8_ip = None
+        self.mysql8_dir = p.abspath(p.join(self.instances_dir, "mysql8"))
+        self.mysql8_logs_dir = os.path.join(self.mysql8_dir, "logs")
 
         # available when with_mysql_cluster == True
         self.mysql2_host = "mysql2"
@@ -592,14 +671,7 @@ class ClickHouseCluster:
         self.mysql3_ip = None
         self.mysql4_ip = None
         self.mysql_cluster_dir = p.abspath(p.join(self.instances_dir, "mysql"))
-        self.mysql_cluster_logs_dir = os.path.join(self.mysql_dir, "logs")
-
-        # available when with_mysql8 == True
-        self.mysql8_host = "mysql80"
-        self.mysql8_port = 3306
-        self.mysql8_ip = None
-        self.mysql8_dir = p.abspath(p.join(self.instances_dir, "mysql8"))
-        self.mysql8_logs_dir = os.path.join(self.mysql8_dir, "logs")
+        self.mysql_cluster_logs_dir = os.path.join(self.mysql8_dir, "logs")
 
         # available when with_zookeper_secure == True
         self.zookeeper_secure_port = 2281
@@ -631,6 +703,8 @@ class ClickHouseCluster:
             logging.debug(f"Removed :{self.instances_dir}")
 
         if with_spark:
+            import pyspark
+
             # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
             (
                 pyspark.sql.SparkSession.builder.appName("spark_test")
@@ -674,6 +748,13 @@ class ClickHouseCluster:
         return self._kerberized_kafka_port
 
     @property
+    def azurite_port(self):
+        if self._azurite_port:
+            return self._azurite_port
+        self._azurite_port = get_free_port()
+        return self._azurite_port
+
+    @property
     def mongo_port(self):
         if self._mongo_port:
             return self._mongo_port
@@ -686,20 +767,6 @@ class ClickHouseCluster:
             return self._mongo_no_cred_port
         self._mongo_no_cred_port = get_free_port()
         return self._mongo_no_cred_port
-
-    @property
-    def meili_port(self):
-        if self._meili_port:
-            return self._meili_port
-        self._meili_port = get_free_port()
-        return self._meili_port
-
-    @property
-    def meili_secure_port(self):
-        if self._meili_secure_port:
-            return self._meili_secure_port
-        self._meili_secure_port = get_free_port()
-        return self._meili_secure_port
 
     @property
     def redis_port(self):
@@ -983,17 +1050,17 @@ class ClickHouseCluster:
 
         return self.base_mysql_client_cmd
 
-    def setup_mysql_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_mysql = True
-        env_variables["MYSQL_HOST"] = self.mysql_host
-        env_variables["MYSQL_PORT"] = str(self.mysql_port)
+    def setup_mysql57_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_mysql57 = True
+        env_variables["MYSQL_HOST"] = self.mysql57_host
+        env_variables["MYSQL_PORT"] = str(self.mysql57_port)
         env_variables["MYSQL_ROOT_HOST"] = "%"
-        env_variables["MYSQL_LOGS"] = self.mysql_logs_dir
+        env_variables["MYSQL_LOGS"] = self.mysql57_logs_dir
         env_variables["MYSQL_LOGS_FS"] = "bind"
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql.yml")]
         )
-        self.base_mysql_cmd = [
+        self.base_mysql57_cmd = [
             "docker-compose",
             "--env-file",
             instance.env_file,
@@ -1003,7 +1070,7 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_mysql.yml"),
         ]
 
-        return self.base_mysql_cmd
+        return self.base_mysql57_cmd
 
     def setup_mysql8_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mysql8 = True
@@ -1029,7 +1096,7 @@ class ClickHouseCluster:
 
     def setup_mysql_cluster_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mysql_cluster = True
-        env_variables["MYSQL_CLUSTER_PORT"] = str(self.mysql_port)
+        env_variables["MYSQL_CLUSTER_PORT"] = str(self.mysql8_port)
         env_variables["MYSQL_CLUSTER_ROOT_HOST"] = "%"
         env_variables["MYSQL_CLUSTER_LOGS"] = self.mysql_cluster_logs_dir
         env_variables["MYSQL_CLUSTER_LOGS_FS"] = "bind"
@@ -1262,8 +1329,11 @@ class ClickHouseCluster:
         self.with_rabbitmq = True
         env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
         env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
+        env_variables["RABBITMQ_SECURE_PORT"] = str(self.rabbitmq_secure_port)
         env_variables["RABBITMQ_LOGS"] = self.rabbitmq_logs_dir
         env_variables["RABBITMQ_LOGS_FS"] = "bind"
+        env_variables["RABBITMQ_COOKIE_FILE"] = self.rabbitmq_cookie_file
+        env_variables["RABBITMQ_COOKIE_FILE_FS"] = "bind"
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_rabbitmq.yml")]
@@ -1363,30 +1433,6 @@ class ClickHouseCluster:
 
         return self.base_coredns_cmd
 
-    def setup_meili_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_meili = True
-        env_variables["MEILI_HOST"] = self.meili_host
-        env_variables["MEILI_EXTERNAL_PORT"] = str(self.meili_port)
-        env_variables["MEILI_INTERNAL_PORT"] = "7700"
-
-        env_variables["MEILI_SECURE_HOST"] = self.meili_secure_host
-        env_variables["MEILI_SECURE_EXTERNAL_PORT"] = str(self.meili_secure_port)
-        env_variables["MEILI_SECURE_INTERNAL_PORT"] = "7700"
-
-        self.base_cmd.extend(
-            ["--file", p.join(docker_compose_yml_dir, "docker_compose_meili.yml")]
-        )
-        self.base_meili_cmd = [
-            "docker-compose",
-            "--env-file",
-            instance.env_file,
-            "--project-name",
-            self.project_name,
-            "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_meili.yml"),
-        ]
-        return self.base_meili_cmd
-
     def setup_minio_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_minio = True
         cert_d = p.join(self.minio_dir, "certs")
@@ -1411,6 +1457,16 @@ class ClickHouseCluster:
 
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
+        env_variables["AZURITE_PORT"] = str(self.azurite_port)
+        env_variables[
+            "AZURITE_STORAGE_ACCOUNT_URL"
+        ] = f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        env_variables["AZURITE_CONNECTION_STRING"] = (
+            f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+            f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+            f"BlobEndpoint={env_variables['AZURITE_STORAGE_ACCOUNT_URL']};"
+        )
+
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_azurite.yml")]
         )
@@ -1441,6 +1497,23 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_cassandra.yml"),
         ]
         return self.base_cassandra_cmd
+
+    def setup_ldap_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_ldap = True
+        env_variables["LDAP_EXTERNAL_PORT"] = str(self.ldap_port)
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_ldap.yml")]
+        )
+        self.base_ldap_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_ldap.yml"),
+        ]
+        return self.base_ldap_cmd
 
     def setup_jdbc_bridge_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_jdbc_bridge = True
@@ -1504,7 +1577,7 @@ class ClickHouseCluster:
         with_zookeeper=False,
         with_zookeeper_secure=False,
         with_mysql_client=False,
-        with_mysql=False,
+        with_mysql57=False,
         with_mysql8=False,
         with_mysql_cluster=False,
         with_kafka=False,
@@ -1524,18 +1597,19 @@ class ClickHouseCluster:
         with_kerberized_hdfs=False,
         with_mongo=False,
         with_mongo_secure=False,
-        with_meili=False,
         with_nginx=False,
         with_redis=False,
         with_minio=False,
         with_azurite=False,
         with_cassandra=False,
+        with_ldap=False,
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
         allow_analyzer=True,
         hostname=None,
         env_variables=None,
+        instance_env_variables=False,
         image="clickhouse/integration-test",
         tag=None,
         stay_alive=False,
@@ -1578,7 +1652,6 @@ class ClickHouseCluster:
             tag = self.docker_base_tag
         if not env_variables:
             env_variables = {}
-
         self.use_keeper = use_keeper
 
         # Code coverage files will be placed in database directory
@@ -1608,7 +1681,7 @@ class ClickHouseCluster:
             with_zookeeper=with_zookeeper,
             zookeeper_config_path=self.zookeeper_config_path,
             with_mysql_client=with_mysql_client,
-            with_mysql=with_mysql,
+            with_mysql57=with_mysql57,
             with_mysql8=with_mysql8,
             with_mysql_cluster=with_mysql_cluster,
             with_kafka=with_kafka,
@@ -1623,7 +1696,6 @@ class ClickHouseCluster:
             or with_kerberos_kdc
             or with_kerberized_kafka,
             with_mongo=with_mongo or with_mongo_secure,
-            with_meili=with_meili,
             with_redis=with_redis,
             with_minio=with_minio,
             with_azurite=with_azurite,
@@ -1631,6 +1703,7 @@ class ClickHouseCluster:
             with_hive=with_hive,
             with_coredns=with_coredns,
             with_cassandra=with_cassandra,
+            with_ldap=with_ldap,
             allow_analyzer=allow_analyzer,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
@@ -1646,6 +1719,7 @@ class ClickHouseCluster:
             copy_common_configs=copy_common_configs,
             hostname=hostname,
             env_variables=env_variables,
+            instance_env_variables=instance_env_variables,
             image=image,
             tag=tag,
             stay_alive=stay_alive,
@@ -1698,9 +1772,9 @@ class ClickHouseCluster:
                 )
             )
 
-        if with_mysql and not self.with_mysql:
+        if with_mysql57 and not self.with_mysql57:
             cmds.append(
-                self.setup_mysql_cmd(instance, env_variables, docker_compose_yml_dir)
+                self.setup_mysql57_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_mysql8 and not self.with_mysql8:
@@ -1736,9 +1810,9 @@ class ClickHouseCluster:
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
-            if not self.with_mysql:
+            if not self.with_mysql8:
                 cmds.append(
-                    self.setup_mysql_cmd(
+                    self.setup_mysql8_cmd(
                         instance, env_variables, docker_compose_yml_dir
                     )
                 )
@@ -1815,11 +1889,6 @@ class ClickHouseCluster:
                 self.setup_coredns_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
-        if with_meili and not self.with_meili:
-            cmds.append(
-                self.setup_meili_cmd(instance, env_variables, docker_compose_yml_dir)
-            )
-
         if self.with_net_trics:
             for cmd in cmds:
                 cmd.extend(
@@ -1858,6 +1927,11 @@ class ClickHouseCluster:
                 self.setup_cassandra_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
+            )
+
+        if with_ldap and not self.with_ldap:
+            cmds.append(
+                self.setup_ldap_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_jdbc_bridge and not self.with_jdbc_bridge:
@@ -2079,8 +2153,8 @@ class ClickHouseCluster:
         logging.error("Can't connect to MySQL Client:{}".format(errors))
         raise Exception("Cannot wait MySQL Client container")
 
-    def wait_mysql_to_start(self, timeout=180):
-        self.mysql_ip = self.get_instance_ip("mysql57")
+    def wait_mysql57_to_start(self, timeout=180):
+        self.mysql57_ip = self.get_instance_ip("mysql57")
         start = time.time()
         errors = []
         while time.time() - start < timeout:
@@ -2088,8 +2162,8 @@ class ClickHouseCluster:
                 conn = pymysql.connect(
                     user=mysql_user,
                     password=mysql_pass,
-                    host=self.mysql_ip,
-                    port=self.mysql_port,
+                    host=self.mysql57_ip,
+                    port=self.mysql57_port,
                 )
                 conn.close()
                 logging.debug("Mysql Started")
@@ -2136,7 +2210,7 @@ class ClickHouseCluster:
                         user=mysql_user,
                         password=mysql_pass,
                         host=ip,
-                        port=self.mysql_port,
+                        port=self.mysql8_port,
                     )
                     conn.close()
                     logging.debug(f"Mysql Started {ip}")
@@ -2242,25 +2316,36 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=180, throw=True):
+    def wait_rabbitmq_to_start(self, timeout=30):
+        self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
         start = time.time()
         while time.time() - start < timeout:
             try:
-                if check_rabbitmq_is_available(self.rabbitmq_docker_id):
+                if check_rabbitmq_is_available(
+                    self.rabbitmq_docker_id, self.rabbitmq_cookie
+                ):
                     logging.debug("RabbitMQ is available")
-                    if enable_consistent_hash_plugin(self.rabbitmq_docker_id):
+                    if enable_consistent_hash_plugin(
+                        self.rabbitmq_docker_id, self.rabbitmq_cookie
+                    ):
                         logging.debug("RabbitMQ consistent hash plugin is available")
-                        return True
+                    return True
                 time.sleep(0.5)
             except Exception as ex:
                 logging.debug("Can't connect to RabbitMQ " + str(ex))
                 time.sleep(0.5)
 
-        if throw:
-            raise Exception("Cannot wait RabbitMQ container")
-        return False
+        try:
+            with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
+                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                    self.base_rabbitmq_cmd + ["logs"], stdout=f
+                )
+            rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
+        except Exception as e:
+            logging.debug("Unable to get logs from docker.")
+        raise Exception("Cannot wait RabbitMQ container")
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
@@ -2415,30 +2500,6 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
 
-    def wait_meili_to_start(self, timeout=30):
-        connection_str = "http://{host}:{port}".format(
-            host="localhost", port=self.meili_port
-        )
-        client = meilisearch.Client(connection_str)
-
-        connection_str_secure = "http://{host}:{port}".format(
-            host="localhost", port=self.meili_secure_port
-        )
-        client_secure = meilisearch.Client(connection_str_secure, "password")
-
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                client.get_all_stats()
-                client_secure.get_all_stats()
-                logging.debug(
-                    f"Connected to MeiliSearch dbs: {client.get_all_stats()}\n{client_secure.get_all_stats()}"
-                )
-                return
-            except Exception as ex:
-                logging.debug("Can't connect to MeiliSearch " + str(ex))
-                time.sleep(1)
-
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
         self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
@@ -2494,7 +2555,11 @@ class ClickHouseCluster:
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
 
-        connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+        connection_string = (
+            f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+            f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+            f"BlobEndpoint=http://127.0.0.1:{self.env_variables['AZURITE_PORT']}/devstoreaccount1;"
+        )
         time.sleep(1)
         start = time.time()
         while time.time() - start < timeout:
@@ -2565,6 +2630,29 @@ class ClickHouseCluster:
                 time.sleep(1)
 
         raise Exception("Can't wait Cassandra to start")
+
+    def wait_ldap_to_start(self, timeout=180):
+        self.ldap_container = self.get_docker_handle(self.ldap_id)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                logging.info(f"Check LDAP Online {self.ldap_host} {self.ldap_port}")
+                self.exec_in_container(
+                    self.ldap_id,
+                    [
+                        "bash",
+                        "-c",
+                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org",
+                    ],
+                    user="root",
+                )
+                logging.info("LDAP Online")
+                return
+            except Exception as ex:
+                logging.warning("Can't connect to LDAP: %s", str(ex))
+                time.sleep(1)
+
+        raise Exception("Can't wait LDAP to start")
 
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
@@ -2649,7 +2737,9 @@ class ClickHouseCluster:
                 if self.use_keeper:  # TODO: remove hardcoded paths from here
                     for i in range(1, 4):
                         shutil.copy(
-                            os.path.join(HELPERS_DIR, f"keeper_config{i}.xml"),
+                            os.path.join(
+                                self.keeper_config_dir, f"keeper_config{i}.xml"
+                            ),
                             os.path.join(
                                 self.keeper_instance_dir_prefix + f"{i}", "config"
                             ),
@@ -2667,15 +2757,15 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_mysql_client_cmd + common_opts)
                 self.wait_mysql_client_to_start()
 
-            if self.with_mysql and self.base_mysql_cmd:
+            if self.with_mysql57 and self.base_mysql57_cmd:
                 logging.debug("Setup MySQL")
-                if os.path.exists(self.mysql_dir):
-                    shutil.rmtree(self.mysql_dir)
-                os.makedirs(self.mysql_logs_dir)
-                os.chmod(self.mysql_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                subprocess_check_call(self.base_mysql_cmd + common_opts)
+                if os.path.exists(self.mysql57_dir):
+                    shutil.rmtree(self.mysql57_dir)
+                os.makedirs(self.mysql57_logs_dir)
+                os.chmod(self.mysql57_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_mysql57_cmd + common_opts)
                 self.up_called = True
-                self.wait_mysql_to_start()
+                self.wait_mysql57_to_start()
 
             if self.with_mysql8 and self.base_mysql8_cmd:
                 logging.debug("Setup MySQL 8")
@@ -2690,7 +2780,7 @@ class ClickHouseCluster:
                 print("Setup MySQL")
                 if os.path.exists(self.mysql_cluster_dir):
                     shutil.rmtree(self.mysql_cluster_dir)
-                os.makedirs(self.mysql_cluster_logs_dir)
+                os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
                 os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
@@ -2767,15 +2857,18 @@ class ClickHouseCluster:
                 os.makedirs(self.rabbitmq_logs_dir)
                 os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
-                for i in range(5):
-                    subprocess_check_call(
-                        self.base_rabbitmq_cmd + common_opts + ["--renew-anon-volumes"]
-                    )
-                    self.up_called = True
-                    self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
-                    logging.debug(f"RabbitMQ checking container try: {i}")
-                    if self.wait_rabbitmq_to_start(throw=(i == 4)):
-                        break
+                with open(self.rabbitmq_cookie_file, "w") as f:
+                    f.write(self.rabbitmq_cookie)
+                os.chmod(self.rabbitmq_cookie_file, stat.S_IRUSR)
+
+                subprocess_check_call(
+                    self.base_rabbitmq_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+                self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
+                time.sleep(2)
+                logging.debug(f"RabbitMQ checking container try")
+                self.wait_rabbitmq_to_start()
 
             if self.with_nats and self.base_nats_cmd:
                 logging.debug("Setup NATS")
@@ -2836,12 +2929,6 @@ class ClickHouseCluster:
                 self.up_called = True
                 time.sleep(10)
 
-            if self.with_meili and self.base_meili_cmd:
-                logging.debug("Setup MeiliSearch")
-                run_and_check(self.base_meili_cmd + common_opts)
-                self.up_called = True
-                self.wait_meili_to_start()
-
             if self.with_redis and self.base_redis_cmd:
                 logging.debug("Setup Redis")
                 subprocess_check_call(self.base_redis_cmd + common_opts)
@@ -2893,6 +2980,12 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_cassandra_cmd + ["up", "-d"])
                 self.up_called = True
                 self.wait_cassandra_to_start()
+
+            if self.with_ldap and self.base_ldap_cmd:
+                ldap_start_cmd = self.base_ldap_cmd + common_opts
+                subprocess_check_call(ldap_start_cmd)
+                self.up_called = True
+                self.wait_ldap_to_start()
 
             if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
                 os.makedirs(self.jdbc_driver_logs_dir)
@@ -3151,7 +3244,7 @@ class ClickHouseInstance:
         with_zookeeper,
         zookeeper_config_path,
         with_mysql_client,
-        with_mysql,
+        with_mysql57,
         with_mysql8,
         with_mysql_cluster,
         with_kafka,
@@ -3163,7 +3256,6 @@ class ClickHouseInstance:
         with_kerberized_hdfs,
         with_secrets,
         with_mongo,
-        with_meili,
         with_redis,
         with_minio,
         with_azurite,
@@ -3171,6 +3263,7 @@ class ClickHouseInstance:
         with_hive,
         with_coredns,
         with_cassandra,
+        with_ldap,
         allow_analyzer,
         server_bin_path,
         odbc_bridge_bin_path,
@@ -3186,6 +3279,7 @@ class ClickHouseInstance:
         copy_common_configs=True,
         hostname=None,
         env_variables=None,
+        instance_env_variables=False,
         image="clickhouse/integration-test",
         tag="latest",
         stay_alive=False,
@@ -3235,7 +3329,7 @@ class ClickHouseInstance:
         self.library_bridge_bin_path = library_bridge_bin_path
 
         self.with_mysql_client = with_mysql_client
-        self.with_mysql = with_mysql
+        self.with_mysql57 = with_mysql57
         self.with_mysql8 = with_mysql8
         self.with_mysql_cluster = with_mysql_cluster
         self.with_postgres = with_postgres
@@ -3250,11 +3344,11 @@ class ClickHouseInstance:
         self.with_kerberized_hdfs = with_kerberized_hdfs
         self.with_secrets = with_secrets
         self.with_mongo = with_mongo
-        self.with_meili = with_meili
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_azurite = with_azurite
         self.with_cassandra = with_cassandra
+        self.with_ldap = with_ldap
         self.with_jdbc_bridge = with_jdbc_bridge
         self.with_hive = with_hive
         self.with_coredns = with_coredns
@@ -3275,10 +3369,11 @@ class ClickHouseInstance:
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, "docker-compose.yml")
         self.env_variables = env_variables or {}
+        self.instance_env_variables = instance_env_variables
         self.env_file = self.cluster.env_file
         if with_odbc_drivers:
             self.odbc_ini_path = self.path + "/odbc.ini:/etc/odbc.ini"
-            self.with_mysql = True
+            self.with_mysql8 = True
         else:
             self.odbc_ini_path = ""
 
@@ -3394,6 +3489,11 @@ class ClickHouseInstance:
                 if check_callback(result):
                     return result
                 time.sleep(sleep_time)
+            except QueryRuntimeException as ex:
+                # Container is down, this is likely due to server crash.
+                if "No route to host" in str(ex):
+                    raise
+                time.sleep(sleep_time)
             except Exception as ex:
                 # logging.debug("Retry {} got exception {}".format(i + 1, ex))
                 time.sleep(sleep_time)
@@ -3476,6 +3576,7 @@ class ClickHouseInstance:
         user=None,
         password=None,
         database=None,
+        query_id=None,
     ):
         logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_answer_with_error(
@@ -3486,6 +3587,7 @@ class ClickHouseInstance:
             user=user,
             password=password,
             database=database,
+            query_id=query_id,
         )
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
@@ -3613,6 +3715,8 @@ class ClickHouseInstance:
             method = "POST" if data else "GET"
 
         r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
+        # Force encoding to UTF-8
+        r.encoding = "UTF-8"
 
         if r.ok:
             return (r.content if content else r.text, None)
@@ -3682,7 +3786,9 @@ class ClickHouseInstance:
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
-    def start_clickhouse(self, start_wait_sec=60, retry_start=True):
+    def start_clickhouse(
+        self, start_wait_sec=60, retry_start=True, expected_to_fail=False
+    ):
         if not self.stay_alive:
             raise Exception(
                 "ClickHouse can be started again only with stay_alive=True instance"
@@ -3700,10 +3806,15 @@ class ClickHouseInstance:
                     ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
                     user=str(os.getuid()),
                 )
+                if expected_to_fail:
+                    self.wait_start_failed(start_wait_sec + start_time - time.time())
+                    return
                 time.sleep(1)
                 continue
             else:
                 logging.debug("Clickhouse process running.")
+                if expected_to_fail:
+                    raise Exception("ClickHouse was expected not to be running.")
                 try:
                     self.wait_start(start_wait_sec + start_time - time.time())
                     return
@@ -3754,6 +3865,30 @@ class ClickHouseInstance:
             )
         if last_err is not None:
             raise last_err
+
+    def wait_start_failed(self, start_wait_sec):
+        start_time = time.time()
+        while time.time() <= start_time + start_wait_sec:
+            pid = self.get_process_pid("clickhouse")
+            if pid is None:
+                return
+            time.sleep(1)
+        logging.error(
+            f"No time left to shutdown. Process is still running. Will dump threads."
+        )
+        ps_clickhouse = self.exec_in_container(
+            ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
+        )
+        logging.info(f"PS RESULT:\n{ps_clickhouse}")
+        pid = self.get_process_pid("clickhouse")
+        if pid is not None:
+            self.exec_in_container(
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                user="root",
+            )
+        raise Exception(
+            "ClickHouse server is still running, but was expected to shutdown. Check logs."
+        )
 
     def restart_clickhouse(self, stop_start_wait_sec=60, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
@@ -3916,7 +4051,11 @@ class ClickHouseInstance:
         return None
 
     def restart_with_original_version(
-        self, stop_start_wait_sec=300, callback_onstop=None, signal=15
+        self,
+        stop_start_wait_sec=300,
+        callback_onstop=None,
+        signal=15,
+        clear_data_dir=False,
     ):
         begin_time = time.time()
         if not self.stay_alive:
@@ -3944,6 +4083,17 @@ class ClickHouseInstance:
 
         if callback_onstop:
             callback_onstop(self)
+
+        if clear_data_dir:
+            self.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "rm -rf /var/lib/clickhouse/metadata && rm -rf /var/lib/clickhouse/data",
+                ],
+                user="root",
+            )
+
         self.exec_in_container(
             [
                 "bash",
@@ -4030,14 +4180,14 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql",
+                    "if [ ! -f /var/lib/clickhouse/metadata/system.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql; fi",
                 ]
             )
             self.exec_in_container(
                 [
                     "bash",
                     "-c",
-                    "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql",
+                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
         self.exec_in_container(
@@ -4154,7 +4304,7 @@ class ClickHouseInstance:
                     "Database": odbc_mysql_db,
                     "Uid": odbc_mysql_uid,
                     "Pwd": odbc_mysql_pass,
-                    "Server": self.cluster.mysql_host,
+                    "Server": self.cluster.mysql8_host,
                 },
                 "PostgreSQL": {
                     "DSN": "postgresql_odbc",
@@ -4258,6 +4408,23 @@ class ClickHouseInstance:
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
 
+        version = None
+        version_parts = self.tag.split(".")
+        if version_parts[0].isdigit() and version_parts[1].isdigit():
+            version = {"major": int(version_parts[0]), "minor": int(version_parts[1])}
+
+        # async replication is only supported in version 23.9+
+        # for tags that don't specify a version we assume it has a version of ClickHouse
+        # that supports async replication if a test for it is present
+        if (
+            version == None
+            or version["major"] > 23
+            or (version["major"] == 23 and version["minor"] >= 9)
+        ):
+            write_embedded_config(
+                "0_common_enable_keeper_async_replication.xml", self.config_d_dir
+            )
+
         logging.debug("Generate and write macros file")
         macros = self.macros.copy()
         macros["instance"] = self.name
@@ -4325,14 +4492,14 @@ class ClickHouseInstance:
         if self.with_mysql_client:
             depends_on.append(self.cluster.mysql_client_host)
 
-        if self.with_mysql:
+        if self.with_mysql57:
             depends_on.append("mysql57")
 
         if self.with_mysql8:
             depends_on.append("mysql80")
 
         if self.with_mysql_cluster:
-            depends_on.append("mysql57")
+            depends_on.append("mysql80")
             depends_on.append("mysql2")
             depends_on.append("mysql3")
             depends_on.append("mysql4")
@@ -4372,7 +4539,16 @@ class ClickHouseInstance:
         if self.with_azurite:
             depends_on.append("azurite1")
 
-        self.cluster.env_variables.update(self.env_variables)
+        # In case the environment variables are exclusive, we don't want it to be in the cluster's env file.
+        # Instead, a separate env file will be created for the instance and needs to be filled with cluster's env variables.
+        if self.instance_env_variables is True:
+            # Create a dictionary containing cluster & instance env variables.
+            # Instance env variables will override cluster's.
+            temp_env_variables = self.cluster.env_variables.copy()
+            temp_env_variables.update(self.env_variables)
+            self.env_variables = temp_env_variables
+        else:
+            self.cluster.env_variables.update(self.env_variables)
 
         odbc_ini_path = ""
         if self.odbc_ini_path:
@@ -4444,6 +4620,14 @@ class ClickHouseInstance:
                 external_dirs_volumes += (
                     "- " + external_dir_abs_path + ":" + external_dir + "\n"
                 )
+
+        # The current implementation of `self.env_variables` is not exclusive. Meaning the variables
+        # are shared with all nodes within the same cluster, even if it is specified for a single node.
+        # In order not to break the existing tests, the `self.instance_env_variables` option was added as a workaround.
+        # IMHO, it would be better to make `self.env_variables` exclusive by default and remove the `self.instance_env_variables` option.
+        if self.instance_env_variables:
+            self.env_file = p.abspath(p.join(self.path, ".env"))
+            _create_env_file(self.env_file, self.env_variables)
 
         with open(self.docker_compose_path, "w") as docker_compose:
             docker_compose.write(

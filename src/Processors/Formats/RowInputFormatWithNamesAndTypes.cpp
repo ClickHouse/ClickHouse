@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/PeekableReadBuffer.h>
 #include <Formats/EscapingRuleUtils.h>
 
 
@@ -58,19 +59,14 @@ RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
     , is_binary(is_binary_)
     , with_names(with_names_)
     , with_types(with_types_)
-    , format_reader(std::move(format_reader_))
     , try_detect_header(try_detect_header_)
+    , format_reader(std::move(format_reader_))
 {
     column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
 }
 
 void RowInputFormatWithNamesAndTypes::readPrefix()
 {
-    /// This is a bit of abstraction leakage, but we need it in parallel parsing:
-    /// we check if this InputFormat is working with the "real" beginning of the data.
-    if (getCurrentUnitNumber() != 0)
-        return;
-
     /// Search and remove BOM only in textual formats (CSV, TSV etc), not in binary ones (RowBinary*).
     /// Also, we assume that column name or type cannot contain BOM, so, if format has header,
     /// then BOM at beginning of stream cannot be confused with name or type of field, and it is safe to skip it.
@@ -206,7 +202,7 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
 
     updateDiagnosticInfo();
 
-    if (likely(row_num != 1 || (getCurrentUnitNumber() == 0 && (with_names || with_types || is_header_detected))))
+    if (likely(getRowNum() != 0 || with_names || with_types || is_header_detected))
         format_reader->skipRowBetweenDelimiter();
 
     format_reader->skipRowStartDelimiter();
@@ -264,6 +260,30 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
     return true;
 }
 
+size_t RowInputFormatWithNamesAndTypes::countRows(size_t max_block_size)
+{
+    if (unlikely(end_of_stream))
+        return 0;
+
+    size_t num_rows = 0;
+    bool is_first_row = getRowNum() == 0 && !with_names && !with_types && !is_header_detected;
+    while (!format_reader->checkForSuffix() && num_rows < max_block_size)
+    {
+        if (likely(!is_first_row))
+            format_reader->skipRowBetweenDelimiter();
+        else
+            is_first_row = false;
+
+        format_reader->skipRow();
+        ++num_rows;
+    }
+
+    if (num_rows == 0 || num_rows < max_block_size)
+        end_of_stream = true;
+
+    return num_rows;
+}
+
 void RowInputFormatWithNamesAndTypes::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
@@ -299,7 +319,7 @@ bool RowInputFormatWithNamesAndTypes::parseRowAndPrintDiagnosticInfo(MutableColu
     if (!format_reader->tryParseSuffixWithDiagnosticInfo(out))
         return false;
 
-    if (likely(row_num != 1) && !format_reader->parseRowBetweenDelimiterWithDiagnosticInfo(out))
+    if (likely(getRowNum() != 0) && !format_reader->parseRowBetweenDelimiterWithDiagnosticInfo(out))
         return false;
 
     if (!format_reader->parseRowStartWithDiagnosticInfo(out))
@@ -535,6 +555,11 @@ std::vector<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(con
         names.emplace_back(readStringByEscapingRule(field_buf, escaping_rule, format_settings));
     }
     return names;
+}
+
+void FormatWithNamesAndTypesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 }

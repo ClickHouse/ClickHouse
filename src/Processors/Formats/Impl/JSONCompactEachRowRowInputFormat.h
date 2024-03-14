@@ -37,6 +37,7 @@ public:
 private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+    bool supportsCountRows() const override { return true; }
 };
 
 class JSONCompactEachRowFormatReader : public FormatWithNamesAndTypesReader
@@ -63,6 +64,11 @@ public:
     void skipRowStartDelimiter() override;
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
+    void skipRowBetweenDelimiter() override;
+
+    void skipRow() override;
+
+    bool checkForSuffix() override;
 
     std::vector<String> readHeaderRow();
     std::vector<String> readNames() override { return readHeaderRow(); }
@@ -87,6 +93,7 @@ private:
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     JSONCompactEachRowFormatReader reader;

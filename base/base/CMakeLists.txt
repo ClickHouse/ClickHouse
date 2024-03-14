@@ -1,3 +1,5 @@
+add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
+
 if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
@@ -8,13 +10,16 @@ set (CMAKE_CXX_STANDARD 20)
 
 set (SRCS
     argsToConfig.cpp
+    cgroupsv2.cpp
     coverage.cpp
     demangle.cpp
+    Decimal.cpp
     getAvailableMemoryAmount.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
     getPageSize.cpp
     getThreadId.cpp
+    int8_to_string.cpp
     JSON.cpp
     mremap.cpp
     phdr_cache.cpp
@@ -44,6 +49,10 @@ if (WITH_COVERAGE)
 else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()
+
+if (TARGET ch_contrib::crc32_s390x)
+    target_link_libraries(common PUBLIC ch_contrib::crc32_s390x)
+endif()
 
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")
 

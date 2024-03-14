@@ -2,7 +2,6 @@
 
 #include <base/types.h>
 
-#include <memory>
 #include <vector>
 #include <Core/Field.h>
 #include <Interpreters/ExpressionActions.h>
@@ -62,7 +61,7 @@ struct IndexDescription
 };
 
 /// All secondary indices in storage
-struct IndicesDescription : public std::vector<IndexDescription>, IHints<1, IndicesDescription>
+struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
 {
     /// Index with name exists
     bool has(const String & name) const;

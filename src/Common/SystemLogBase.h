@@ -27,9 +27,12 @@
     M(ZooKeeperLogElement) \
     M(ProcessorProfileLogElement) \
     M(TextLogElement) \
+    M(S3QueueLogElement) \
     M(FilesystemCacheLogElement) \
     M(FilesystemReadPrefetchesLogElement) \
-    M(AsynchronousInsertLogElement)
+    M(AsynchronousInsertLogElement) \
+    M(BackupLogElement) \
+    M(BlobStorageLogElement)
 
 namespace Poco
 {
@@ -98,7 +101,7 @@ class SystemLogQueue
     using Index = uint64_t;
 
 public:
-    SystemLogQueue(const SystemLogQueueSettings & settings_);
+    explicit SystemLogQueue(const SystemLogQueueSettings & settings_);
 
     void shutdown();
 
@@ -118,7 +121,7 @@ private:
     /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
     std::mutex mutex;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     // Queue is bounded. But its size is quite large to not block in all normal cases.
     std::vector<LogElement> queue;
@@ -150,7 +153,7 @@ class SystemLogBase : public ISystemLog
 public:
     using Self = SystemLogBase;
 
-    SystemLogBase(
+    explicit SystemLogBase(
         const SystemLogQueueSettings & settings_,
         std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
 

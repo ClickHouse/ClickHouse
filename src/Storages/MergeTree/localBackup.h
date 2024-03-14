@@ -7,6 +7,8 @@
 namespace DB
 {
 
+struct WriteSettings;
+
 /** Creates a local (at the same mount point) backup (snapshot) directory.
   *
   * In the specified destination directory, it creates hard links on all source-directory files
@@ -22,6 +24,16 @@ namespace DB
   *
   * If `transaction` is provided, the changes will be added to it instead of performend on disk.
   */
-    void localBackup(const DiskPtr & disk, const String & source_path, const String & destination_path, bool make_source_readonly = true, std::optional<size_t> max_level = {}, bool copy_instead_of_hardlinks = false, const NameSet & files_to_copy_intead_of_hardlinks = {}, DiskTransactionPtr disk_transaction = nullptr);
+    void localBackup(
+        const DiskPtr & disk,
+        const String & source_path,
+        const String & destination_path,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        bool make_source_readonly = true,
+        std::optional<size_t> max_level = {},
+        bool copy_instead_of_hardlinks = false,
+        const NameSet & files_to_copy_intead_of_hardlinks = {},
+        DiskTransactionPtr disk_transaction = nullptr);
 
 }

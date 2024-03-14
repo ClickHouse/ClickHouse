@@ -21,6 +21,7 @@ public:
     MergeTreeReaderCompact(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         NamesAndTypesList columns_,
+        const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
@@ -76,7 +77,7 @@ private:
 
     void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t from_mark,
         size_t current_task_last_mark, size_t column_position,
-        size_t rows_to_read, ColumnNameLevel name_level_for_offsets);
+        size_t rows_to_read, ColumnNameLevel name_level_for_offsets, std::unordered_map<String, ColumnPtr> & columns_cache_for_subcolumns);
 
     /// Returns maximal value of granule size in compressed file from @mark_ranges.
     /// This value is used as size of read buffer.

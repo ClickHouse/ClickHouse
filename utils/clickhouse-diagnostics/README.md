@@ -318,7 +318,7 @@ SHOW ACCESS
 ```
 **result**
 ```
-CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE default
+CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE `default`
 CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = 'random'
 CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1
 CREATE QUOTA default KEYED BY user_name FOR INTERVAL 1 hour TRACKING ONLY TO default
@@ -2574,16 +2574,43 @@ Settings:                            {}
 SELECT
     '\n' || arrayStringConcat(
        arrayMap(
-           x,
-           y -> concat(x, ': ', y),
+           x, y, z -> concat(x, ': ', y, ' @ ', z),
            arrayMap(x -> addressToLine(x), trace),
-           arrayMap(x -> demangle(addressToSymbol(x)), trace)),
+           arrayMap(x -> demangle(addressToSymbol(x)), trace),
+           arrayMap(x -> '0x' || hex(x), trace)),
        '\n') AS trace
 FROM system.stack_trace
 ```
 **result**
 ```
-ClickhouseError("Code: 446. DB::Exception: default: Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0: While processing concat('\\n', arrayStringConcat(arrayMap((x, y) -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\\n')) AS trace. (FUNCTION_NOT_ALLOWED) (version 21.11.8.4 (official build))",)
+Row 1:
+──────
+trace: 
+:  @ 0x7F6694A91117
+:  @ 0x7F6694A93A41
+./build/./contrib/llvm-project/libcxx/src/condition_variable.cpp:47: std::__1::condition_variable::wait(std::__1::unique_lock<std::__1::mutex>&) @ 0x16F4A56F
+./build/./contrib/llvm-project/libcxx/include/atomic:958: BaseDaemon::waitForTerminationRequest() @ 0x0B85564B
+./build/./contrib/llvm-project/libcxx/include/vector:434: DB::Server::main(std::__1::vector<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>>, std::__1::allocator<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>>>> const&) @ 0x0B6644CE
+./build/./base/poco/Util/src/Application.cpp:0: Poco::Util::Application::run() @ 0x1489B8A6
+./build/./programs/server/Server.cpp:402: DB::Server::run() @ 0x0B651E91
+./build/./base/poco/Util/src/ServerApplication.cpp:132: Poco::Util::ServerApplication::run(int, char**) @ 0x148AF4F1
+./build/./programs/server/Server.cpp:0: mainEntryClickHouseServer(int, char**) @ 0x0B64FA96
+./build/./programs/main.cpp:0: main @ 0x06AB8C92
+:  @ 0x7F6694A29D90
+:  @ 0x7F6694A29E40
+./build/./programs/clickhouse: _start @ 0x06AB802E
+
+Row 2:
+──────
+trace: 
+:  @ 0x7F6694B14A0C
+./build/./src/IO/ReadBufferFromFileDescriptor.cpp:0: DB::ReadBufferFromFileDescriptor::readImpl(char*, unsigned long, unsigned long, unsigned long) @ 0x0B622EAB
+./build/./src/IO/ReadBufferFromFileDescriptor.cpp:126: DB::ReadBufferFromFileDescriptor::nextImpl() @ 0x0B6231A0
+./build/./src/IO/ReadBuffer.h:70: SignalListener::run() @ 0x0B85631D
+./build/./base/poco/Foundation/include/Poco/SharedPtr.h:139: Poco::ThreadImpl::runnableEntry(void*) @ 0x149CA102
+:  @ 0x7F6694A94AC3
+:  @ 0x7F6694B26A40
+
 ```
 #### uname
 **command**

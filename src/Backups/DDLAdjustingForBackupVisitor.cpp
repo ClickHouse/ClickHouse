@@ -57,9 +57,9 @@ namespace
                 if (size_t uuid_pos = zookeeper_path_arg.find(table_uuid_str); uuid_pos != String::npos)
                     zookeeper_path_arg.replace(uuid_pos, table_uuid_str.size(), "{uuid}");
             }
-            const auto & config = data.global_context->getConfigRef();
-            if ((zookeeper_path_arg == StorageReplicatedMergeTree::getDefaultZooKeeperPath(config))
-                && (replica_name_arg == StorageReplicatedMergeTree::getDefaultReplicaName(config))
+            const auto & server_settings = data.global_context->getServerSettings();
+            if ((zookeeper_path_arg == server_settings.default_replica_path.value)
+                && (replica_name_arg == server_settings.default_replica_name.value)
                 && ((engine_args.size() == 2) || !engine_args[2]->as<ASTLiteral>()))
             {
                 engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
@@ -81,9 +81,6 @@ namespace
 
     void visitCreateQuery(ASTCreateQuery & create, const DDLAdjustingForBackupVisitor::Data & data)
     {
-        create.uuid = UUIDHelpers::Nil;
-        create.to_inner_uuid = UUIDHelpers::Nil;
-
         if (create.storage)
             visitStorage(*create.storage, data);
     }

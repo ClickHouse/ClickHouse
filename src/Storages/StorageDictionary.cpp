@@ -39,7 +39,7 @@ namespace
             {
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Not found column {} {} in dictionary {}. There are only columns {}",
                                 column.name, column.type->getName(), backQuote(dictionary_name),
-                                StorageDictionary::generateNamesAndTypesDescription(dictionary_names_and_types));
+                                dictionary_names_and_types.toNamesAndTypesDescription());
             }
         }
     }
@@ -78,20 +78,6 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
     }
 
     return dictionary_names_and_types;
-}
-
-
-String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesList & list)
-{
-    WriteBufferFromOwnString ss;
-    bool first = true;
-    for (const auto & name_and_type : list)
-    {
-        if (!std::exchange(first, false))
-            ss << ", ";
-        ss << name_and_type.name << ' ' << name_and_type.type->getName();
-    }
-    return ss.str();
 }
 
 StorageDictionary::StorageDictionary(
@@ -145,7 +131,7 @@ StorageDictionary::~StorageDictionary()
     removeDictionaryConfigurationFromRepository();
 }
 
-void StorageDictionary::checkTableCanBeDropped() const
+void StorageDictionary::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
 {
     if (location == Location::SameDatabaseAndNameAsDictionary)
         throw Exception(ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE,
@@ -159,7 +145,9 @@ void StorageDictionary::checkTableCanBeDropped() const
 
 void StorageDictionary::checkTableCanBeDetached() const
 {
-    checkTableCanBeDropped();
+    /// Actually query context (from DETACH query) should be passed here.
+    /// But we don't use it for this type of storage
+    checkTableCanBeDropped(getContext());
 }
 
 Pipe StorageDictionary::read(
@@ -182,7 +170,7 @@ std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
     return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
 }
 
-void StorageDictionary::shutdown()
+void StorageDictionary::shutdown(bool)
 {
     removeDictionaryConfigurationFromRepository();
 }
@@ -328,7 +316,7 @@ void registerStorageDictionary(StorageFactory & factory)
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
             bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
-            if (!args.attach && !lazy_load)
+            if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,
                 /// and throw an exception if the loading is failed.
@@ -347,7 +335,7 @@ void registerStorageDictionary(StorageFactory & factory)
             args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
             String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");
 
-            if (!args.attach)
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
             {
                 const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
                 const DictionaryStructure & dictionary_structure = dictionary->getStructure();

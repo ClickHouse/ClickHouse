@@ -271,33 +271,35 @@ void XMLGenerator::generate()
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
-try
 {
-    XMLGenerator generator(data, size);
+    try
+    {
+        XMLGenerator generator(data, size);
 
-    generator.generate();
-    if (generator.hasError())
-        return 0;
+        generator.generate();
+        if (generator.hasError())
+            return 0;
 
-    auto config = generator.getResult();
-    auto codec_128 = getCompressionCodecEncrypted(DB::AES_128_GCM_SIV);
-    auto codec_256 = getCompressionCodecEncrypted(DB::AES_256_GCM_SIV);
-    DB::CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "");
+        auto config = generator.getResult();
+        auto codec_128 = getCompressionCodecEncrypted(DB::AES_128_GCM_SIV);
+        auto codec_256 = getCompressionCodecEncrypted(DB::AES_256_GCM_SIV);
+        DB::CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "");
 
-    size_t data_size = size - generator.keySize();
+        size_t data_size = size - generator.keySize();
 
-    std::string input = std::string(reinterpret_cast<const char*>(data), data_size);
-    fmt::print(stderr, "Using input {} of size {}, output size is {}. \n", input, data_size, input.size() - 31);
+        std::string input = std::string(reinterpret_cast<const char*>(data), data_size);
+        fmt::print(stderr, "Using input {} of size {}, output size is {}. \n", input, data_size, input.size() - 31);
 
-    DB::Memory<> memory;
-    memory.resize(input.size() + codec_128->getAdditionalSizeAtTheEndOfBuffer());
-    codec_128->doDecompressData(input.data(), input.size(), memory.data(), input.size() - 31);
+        DB::Memory<> memory;
+        memory.resize(input.size() + codec_128->getAdditionalSizeAtTheEndOfBuffer());
+        codec_128->doDecompressData(input.data(), static_cast<UInt32>(input.size()), memory.data(), static_cast<UInt32>(input.size()) - 31);
 
-    memory.resize(input.size() + codec_128->getAdditionalSizeAtTheEndOfBuffer());
-    codec_256->doDecompressData(input.data(), input.size(), memory.data(), input.size() - 31);
+        memory.resize(input.size() + codec_128->getAdditionalSizeAtTheEndOfBuffer());
+        codec_256->doDecompressData(input.data(), static_cast<UInt32>(input.size()), memory.data(), static_cast<UInt32>(input.size()) - 31);
+    }
+    catch (...)
+    {
+    }
+
     return 0;
-}
-catch (...)
-{
-    return 1;
 }

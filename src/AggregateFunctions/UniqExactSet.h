@@ -11,10 +11,16 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
 template <typename SingleLevelSet, typename TwoLevelSet>
 class UniqExactSet
 {
     static_assert(std::is_same_v<typename SingleLevelSet::value_type, typename TwoLevelSet::value_type>);
+    static_assert(std::is_same_v<typename SingleLevelSet::Cell::State, HashTableNoState>);
 
 public:
     using value_type = typename SingleLevelSet::value_type;
@@ -34,6 +40,7 @@ public:
     static void parallelizeMergePrepare(const std::vector<UniqExactSet *> & data_vec, ThreadPool & thread_pool)
     {
         unsigned long single_level_set_num = 0;
+        unsigned long all_single_hash_size = 0;
 
         for (auto ele : data_vec)
         {
@@ -41,7 +48,17 @@ public:
                 single_level_set_num ++;
         }
 
-        if (single_level_set_num > 0 && single_level_set_num < data_vec.size())
+        if (single_level_set_num == data_vec.size())
+        {
+            for (auto ele : data_vec)
+                all_single_hash_size += ele->size();
+        }
+
+        /// If all the hashtables are mixed by singleLevel and twoLevel, or all singleLevel (larger than 6000 for average value), they could be converted into
+        /// twoLevel hashtables in parallel and then merge together. please refer to the following PR for more details.
+        /// https://github.com/ClickHouse/ClickHouse/pull/50748
+        /// https://github.com/ClickHouse/ClickHouse/pull/52973
+        if ((single_level_set_num > 0 && single_level_set_num < data_vec.size()) || ((all_single_hash_size/data_vec.size()) > 6000))
         {
             try
             {
@@ -136,7 +153,36 @@ public:
         }
     }
 
-    void read(ReadBuffer & in) { asSingleLevel().read(in); }
+    void read(ReadBuffer & in)
+    {
+        size_t new_size = 0;
+        readVarUInt(new_size, in);
+        if (new_size > 100'000'000'000)
+            throw DB::Exception(
+                DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized hash table is suspiciously large: {}", new_size);
+
+        if (worthConvertingToTwoLevel(new_size))
+        {
+            two_level_set = std::make_shared<TwoLevelSet>(new_size);
+            for (size_t i = 0; i < new_size; ++i)
+            {
+                typename SingleLevelSet::Cell x;
+                x.read(in);
+                asTwoLevel().insert(x.getValue());
+            }
+        }
+        else
+        {
+            asSingleLevel().reserve(new_size);
+
+            for (size_t i = 0; i < new_size; ++i)
+            {
+                typename SingleLevelSet::Cell x;
+                x.read(in);
+                asSingleLevel().insert(x.getValue());
+            }
+        }
+    }
 
     void write(WriteBuffer & out) const
     {
@@ -154,6 +200,8 @@ public:
     {
         return two_level_set ? two_level_set : std::make_shared<TwoLevelSet>(asSingleLevel());
     }
+
+    static bool worthConvertingToTwoLevel(size_t size) { return size > 100'000; }
 
     void convertToTwoLevel()
     {

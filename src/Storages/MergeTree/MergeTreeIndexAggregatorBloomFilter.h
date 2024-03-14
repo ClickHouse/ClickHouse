@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexGranuleBloomFilter.h>
+#include <Common/HashTable/HashSet.h>
 
 namespace DB
 {
@@ -22,8 +23,8 @@ private:
     size_t hash_functions;
     const Names index_columns_name;
 
+    std::vector<HashSet<UInt64>> column_hashes;
     size_t total_rows = 0;
-    Blocks granule_index_blocks;
 };
 
 }

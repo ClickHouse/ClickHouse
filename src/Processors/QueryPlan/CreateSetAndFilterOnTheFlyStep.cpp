@@ -201,5 +201,9 @@ void CreateSetAndFilterOnTheFlyStep::updateOutputStream()
     output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
 }
 
+bool CreateSetAndFilterOnTheFlyStep::isColumnPartOfSetKey(const String & column_name) const
+{
+    return std::find(column_names.begin(), column_names.end(), column_name) != column_names.end();
+}
 
 }

@@ -23,7 +23,6 @@ def started_cluster():
 
 def test_undrop_drop_and_undrop_loop(started_cluster):
     count = 0
-    node.query("set allow_experimental_undrop_table_query = 1;")
     while count < 10:
         random_sec = random.randint(0, 10)
         table_uuid = uuid.uuid1().__str__()
@@ -45,7 +44,7 @@ def test_undrop_drop_and_undrop_loop(started_cluster):
                 + count.__str__()
                 + " uuid '"
                 + table_uuid
-                + "' settings allow_experimental_undrop_table_query = 1;"
+                + "';"
             )
             assert "UNKNOWN_TABLE" in error
         else:
@@ -54,6 +53,6 @@ def test_undrop_drop_and_undrop_loop(started_cluster):
                 + count.__str__()
                 + " uuid '"
                 + table_uuid
-                + "' settings allow_experimental_undrop_table_query = 1;"
+                + "';"
             )
             count = count + 1

@@ -236,7 +236,7 @@ function testMySQL()
     executeQueryExpectError \
         <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', 'invalid_${username}', '${password}') LIMIT 1 \
         FORMAT Null" \
-        | grep -Eq "Code: 1000\. DB::Exception: .* invalid_${username}"
+        | grep -Eq "Code: 279\. DB::Exception: .* invalid_${username}"
 
 
     echo 'Wrong password'
@@ -247,7 +247,7 @@ function testMySQL()
     else
         executeQueryExpectError \
             <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', '${username}', 'invalid_${password}') LIMIT 1 \
-            FORMAT Null" | grep -Eq "Code: 1000\. DB::Exception: .* ${username}"
+            FORMAT Null" | grep -Eq "Code: 279\. DB::Exception: .* ${username}"
     fi
 }
 
