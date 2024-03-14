@@ -67,6 +67,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_IS_READ_ONLY;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace ActionLocks
@@ -2473,7 +2474,7 @@ PreparedSetsCachePtr StorageMergeTree::getPreparedSetsCache(Int64 mutation_id)
 void StorageMergeTree::assertNotReadonly() const
 {
     if (isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Table is in readonly mode due to static storage");
 }
 
 void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
