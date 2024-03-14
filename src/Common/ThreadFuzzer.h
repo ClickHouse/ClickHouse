@@ -33,7 +33,6 @@ namespace DB
   *
   * Notes:
   * - it can be also implemented with instrumentation (example: LLVM Xray) instead of signals.
-  * - sleep and migration obviously helps, but the effect of yield is unclear.
   *
   * In addition, we allow to inject glitches around thread synchronization functions.
   * Example:
