@@ -16,7 +16,7 @@ bool parseIntervalKind(IParser::Pos & pos, Expected & expected, IntervalKind & r
     }
 
     if (ParserKeyword(Keyword::MICROSECOND).ignore(pos, expected) || ParserKeyword(Keyword::MICROSECONDS).ignore(pos, expected)
-        || ParserKeyword(Keyword::SQL_TSI_MICROSECOND).ignore(pos, expected)
+        || ParserKeyword(Keyword::SQL_TSI_MICROSECOND).ignore(pos, expected))
     {
         result = IntervalKind::Kind::Microsecond;
         return true;

@@ -64,12 +64,12 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
         }
         case AuthenticationType::SSH_KEY:
         {
-            static const auto info = make_info("SSH_KEY");
+            static const auto info = make_info(Keyword::SSH_KEY);
             return info;
         }
         case AuthenticationType::HTTP:
         {
-            static const auto info = make_info("HTTP");
+            static const auto info = make_info(Keyword::HTTP);
             return info;
         }
         case AuthenticationType::MAX:

@@ -138,6 +138,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_auto_increment{Keyword::AUTO_INCREMENT};
     ParserKeyword s_comment{Keyword::COMMENT};
     ParserKeyword s_codec{Keyword::CODEC};
+    ParserKeyword s_stat{Keyword::STATISTIC};
     ParserKeyword s_ttl{Keyword::TTL};
     ParserKeyword s_remove{Keyword::REMOVE};
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
@@ -146,6 +147,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_type{Keyword::TYPE};
     ParserKeyword s_collate{Keyword::COLLATE};
     ParserKeyword s_primary_key{Keyword::PRIMARY_KEY};
+
+    NameParser name_parser;
+    ParserDataType type_parser;
     ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;

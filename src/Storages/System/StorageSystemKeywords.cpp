@@ -8,14 +8,15 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemKeywords::getNamesAndTypes()
+ColumnsDescription StorageSystemKeywords::getColumnsDescription()
 {
-    return {
+    return ColumnsDescription
+    {
         {"keyword", std::make_shared<DataTypeString>()},
     };
 }
 
-void StorageSystemKeywords::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemKeywords::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto macros = context->getMacros();
 

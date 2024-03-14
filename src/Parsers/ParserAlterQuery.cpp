@@ -730,13 +730,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     else if (s_codec.ignore(pos, expected))
                         command->remove_property = toStringRef(Keyword::CODEC);
                     else if (s_ttl.ignore(pos, expected))
-<<<<<<< HEAD
                         command->remove_property = toStringRef(Keyword::TTL);
-=======
-                        command->remove_property = "TTL";
                     else if (s_settings.ignore(pos, expected))
-                        command->remove_property = "SETTINGS";
->>>>>>> 0b97f3ac16507cd72ed4e33739d355d16a48a741
+                        command->remove_property = toStringRef(Keyword::SETTINGS);
                     else
                         return false;
                 }
