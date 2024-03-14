@@ -54,6 +54,7 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INVALID_JOIN_ON_EXPRESSION;
 }
 
 namespace
@@ -1512,6 +1513,7 @@ ColumnPtr buildAdditionalFilter(
     {
         required_column_names.insert(col.name);
     }
+
     Block executed_block;
     size_t right_col_pos = 0;
     for (const auto & col : sample_right_block.getColumnsWithTypeAndName())
@@ -1530,7 +1532,7 @@ ColumnPtr buildAdditionalFilter(
     }
     if (!executed_block)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least one column from right table");
+        return ColumnUInt8::create();
     }
 
     for (const auto & col_name : required_column_names)
@@ -1690,6 +1692,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
 
         size_t prev_replicated_row = 0;
         auto selected_right_row_it = selected_rows.begin();
+        size_t find_result_index = 0;
         for (size_t i = 1, n = row_replicate_offset.size(); i < n; ++i)
         {
             bool any_matched = false;
@@ -1728,11 +1731,12 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
             else
             {
                 if constexpr (!flag_per_row)
-                    used_flags.template setUsed<need_flags, false>(find_results[i - 1]);
+                    used_flags.template setUsed<need_flags, false>(find_results[find_result_index]);
                 setUsed<need_filter>(added_columns.filter, left_start_row + i - 1);
                 if constexpr (add_missing)
                     added_columns.applyLazyDefaults();
             }
+            find_result_index += (prev_replicated_row != row_replicate_offset[i]);
 
             if constexpr (need_replication)
             {
@@ -2764,9 +2768,10 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
     bool is_supported = (strictness == JoinStrictness::All) && (isInnerOrLeft(kind) || isRightOrFull(kind));
     if (!is_supported)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Non equi condition '{}' from JOIN ON section is supported only for ALL INNER/LEFT/RIGHT JOINs",
-            expression_sample_block.getByPosition(0).name);
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            "Non equi condition '{}' from JOIN ON section is supported only for ALL INNER/LEFT/FULL/RIGHT JOINs. filter condition:\n{}",
+            expression_sample_block.getByPosition(0).name,
+            additional_filter_expression->dumpActions());
     }
 }
 
