@@ -1,3 +1,5 @@
+-- Tags: no-asan, no-tsan, no-msan, no-ubsan
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY (a, b, c) SETTINGS index_granularity = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 1;
