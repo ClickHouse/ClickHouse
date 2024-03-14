@@ -223,10 +223,14 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
     std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
 
     /** Fill in the numbers of columns that will be aggregated.
-        * This can only be columns that are not part of the sorting key.
-        * If a non-empty column_names_to_aggregate is specified, then we only take these columns.
-        * Some columns from column_names_to_aggregate may not be found. This is ignored.
-        */
+    * This can only be columns that are not part of the sorting key.
+    * If a non-empty column_names_to_aggregate is specified, then we only take these columns.
+    * Some columns from column_names_to_aggregate may not be found. This is ignored.
+    */
+
+//    We don't specify aggregate function for PK column, so when matching column <-> agg. function, we need to pay attention to that.
+    size_t agg_func_num_offset = 0;
+
     for (size_t i = 0; i < num_columns; ++i)
     {
         const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
@@ -265,6 +269,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
             /// Are they inside the primary key or partition key?
             if (isInPrimaryKey(description, column.name) || isInPartitionKey(column.name, partition_key_columns))
             {
+                ++agg_func_num_offset;
                 def.columns_not_to_aggregate.push_back(i);
                 continue;
             }
@@ -291,7 +296,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
                         def.allocates_memory_in_arena = true;
                 }
                 else if (!is_agg_func)
-                    desc.init(simple_aggregate_functions[std::min(num_aggregate_functions-1, i)].c_str(), {column.type});
+                    desc.init(simple_aggregate_functions[std::min(num_aggregate_functions-1, i - agg_func_num_offset)].c_str(), {column.type});
 
                 def.columns_to_aggregate.emplace_back(std::move(desc));
             }
