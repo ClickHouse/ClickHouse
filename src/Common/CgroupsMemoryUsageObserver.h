@@ -51,7 +51,8 @@ private:
     size_t soft_limit TSA_GUARDED_BY(limit_mutex) = 0;
     OnMemoryLimitFn on_hard_limit TSA_GUARDED_BY(limit_mutex);
     OnMemoryLimitFn on_soft_limit TSA_GUARDED_BY(limit_mutex);
-    OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed TSA_GUARDED_BY(limit_mutex);
+    std::mutex memory_amount_change_mutex;
+    OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed TSA_GUARDED_BY(memory_amount_change_mutex);
 
     uint64_t last_memory_usage = 0;        /// how much memory does the process use
     uint64_t last_available_memory_amount; /// how much memory can the process use
@@ -86,6 +87,7 @@ private:
 #else
 class CgroupsMemoryUsageObserver
 {
+    using OnMemoryAmountAvailableChangedFn = std::function<void()>;
 public:
     explicit CgroupsMemoryUsageObserver(std::chrono::seconds) {}
 

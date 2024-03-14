@@ -100,7 +100,7 @@ void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint
 
 void CgroupsMemoryUsageObserver::setOnMemoryAmountAvailableChanged(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed_)
 {
-    std::lock_guard<std::mutex> limit_lock(limit_mutex);
+    std::lock_guard<std::mutex> memory_amount_change_lock(memory_amount_change_mutex);
     on_memory_amount_available_changed = on_memory_amount_available_changed_;
 }
 
@@ -299,7 +299,7 @@ void CgroupsMemoryUsageObserver::runThread()
             {
                 LOG_INFO(log, "Memory amount available to the process changed from {} to {}", ReadableSize(last_available_memory_amount), ReadableSize(available_memory_amount));
                 last_available_memory_amount = available_memory_amount;
-                std::lock_guard<std::mutex> limit_lock(limit_mutex);
+                std::lock_guard<std::mutex> memory_amount_change_lock(memory_amount_change_mutex);
                 on_memory_amount_available_changed();
             }
 
