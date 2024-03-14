@@ -1082,6 +1082,11 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     {
         auto query_tree = subquery->detachQueryTree();
         auto subquery_options = select_query_options.subquery();
+        /// I don't know if this is a good decision,
+        /// But for now it is done in the same way as in old analyzer.
+        /// This would not ignore limits for subqueries (affects mutations only).
+        /// See test_build_sets_from_multiple_threads-analyzer.
+        subquery_options.ignore_limits = false;
         Planner subquery_planner(
             query_tree,
             subquery_options,
@@ -1181,7 +1186,7 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
     if (select_query_options.is_subquery)
         updateContextForSubqueryExecution(mutable_context);
 
-    return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context));
+    return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context), select_query_options);
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,

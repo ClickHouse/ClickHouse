@@ -74,6 +74,8 @@ public:
 
     size_t getNumberOfArguments() const override { return Generator::getNumberOfArguments(); }
 
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Generator::getArgumentsThatAreAlwaysConstant(); }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         Generator::checkArguments(*this, arguments);

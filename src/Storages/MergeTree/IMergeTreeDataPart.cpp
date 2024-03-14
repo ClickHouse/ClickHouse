@@ -51,7 +51,6 @@ namespace CurrentMetrics
 
     extern const Metric PartsWide;
     extern const Metric PartsCompact;
-    extern const Metric PartsInMemory;
 }
 
 namespace DB
@@ -278,9 +277,6 @@ static void incrementTypeMetric(MergeTreeDataPartType type)
         case MergeTreeDataPartType::Compact:
             CurrentMetrics::add(CurrentMetrics::PartsCompact);
             return;
-        case MergeTreeDataPartType::InMemory:
-            CurrentMetrics::add(CurrentMetrics::PartsInMemory);
-            return;
         case MergeTreeDataPartType::Unknown:
             return;
     }
@@ -295,9 +291,6 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
             return;
         case MergeTreeDataPartType::Compact:
             CurrentMetrics::sub(CurrentMetrics::PartsCompact);
-            return;
-        case MergeTreeDataPartType::InMemory:
-            CurrentMetrics::sub(CurrentMetrics::PartsInMemory);
             return;
         case MergeTreeDataPartType::Unknown:
             return;
@@ -843,6 +836,27 @@ void IMergeTreeDataPart::loadIndex() const
         for (size_t i = 0; i < marks_count; ++i)
             for (size_t j = 0; j < key_size; ++j)
                 key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
+
+        /// Cut useless suffix columns, if necessary.
+        Float64 ratio_to_drop_suffix_columns = storage.getSettings()->primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns;
+        if (key_size > 1 && ratio_to_drop_suffix_columns > 0 && ratio_to_drop_suffix_columns < 1)
+        {
+            chassert(marks_count > 0);
+            for (size_t j = 0; j < key_size - 1; ++j)
+            {
+                size_t num_changes = 0;
+                for (size_t i = 1; i < marks_count; ++i)
+                    if (0 != loaded_index[j]->compareAt(i, i - 1, *loaded_index[j], 0))
+                        ++num_changes;
+
+                if (static_cast<Float64>(num_changes) / marks_count >= ratio_to_drop_suffix_columns)
+                {
+                    key_size = j + 1;
+                    loaded_index.resize(key_size);
+                    break;
+                }
+            }
+        }
 
         for (size_t i = 0; i < key_size; ++i)
         {
@@ -2205,11 +2219,6 @@ bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 bool isWidePart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::Wide);
-}
-
-bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
-{
-    return (data_part && data_part->getType() == MergeTreeDataPartType::InMemory);
 }
 
 std::optional<std::string> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage)

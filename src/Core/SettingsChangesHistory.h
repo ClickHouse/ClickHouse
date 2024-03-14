@@ -85,7 +85,8 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.3", {{"allow_experimental_shared_merge_tree", false, true, "The setting is obsolete"},
+    {"24.3", {{"s3_connect_timeout_ms", 1000, 1000, "Introduce new dedicated setting for s3 connection timeout"},
+              {"allow_experimental_shared_merge_tree", false, true, "The setting is obsolete"},
               {"use_page_cache_for_disks_without_file_cache", false, false, "Added userspace page cache"},
               {"read_from_page_cache_if_exists_otherwise_bypass_cache", false, false, "Added userspace page cache"},
               {"page_cache_inject_eviction", false, false, "Added userspace page cache"},
@@ -93,6 +94,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"optimize_functions_to_subcolumns", false, true, "Enable optimization by default"},
               {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", false, true, "Deduplication is dependent materialized view cannot work together with async inserts."},
               {"parallel_replicas_allow_in_with_subquery", false, true, "If true, subquery for IN will be executed on every follower replica"},
+              {"filesystem_cache_reserve_space_wait_lock_timeout_milliseconds", 1000, 1000, "Wait time to lock cache for sapce reservation in filesystem cache"},
               }},
     {"24.2", {{"allow_suspicious_variant_types", true, false, "Don't allow creating Variant type with suspicious variants by default"},
               {"validate_experimental_and_suspicious_types_inside_nested_types", false, true, "Validate usage of experimental and suspicious types inside nested types"},
