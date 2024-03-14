@@ -63,7 +63,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
 
     # -fsanitize=memory and address are too heavy
     if (SANITIZE)
-       set (RLIMIT_DATA 10000000000) # 10G
+       set (RLIMIT_DATA 15000000000) # 10G
     endif()
 
     set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
