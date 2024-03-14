@@ -1193,6 +1193,7 @@ class IColumn;
     FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
 
+/// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
 
 
@@ -1237,6 +1238,7 @@ private:
 /*
  * User-specified file format settings for File and URL engines.
  */
+/// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 DECLARE_SETTINGS_TRAITS(FormatFactorySettingsTraits, LIST_OF_ALL_FORMAT_SETTINGS)
 
 struct FormatFactorySettings : public BaseSettings<FormatFactorySettingsTraits>
