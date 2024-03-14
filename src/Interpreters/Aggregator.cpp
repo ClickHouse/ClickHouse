@@ -53,7 +53,6 @@ namespace ProfileEvents
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
     extern const Event OverflowAny;
-    extern const Event AggregationProcessedBlocks;
     extern const Event AggregationOptimizedEqualRangesOfKeys;
 }
 
@@ -987,7 +986,6 @@ void Aggregator::executeOnBlockSmall(
 {
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
-    ProfileEvents::increment(ProfileEvents::AggregationProcessedBlocks);
 
     /// How to perform the aggregation?
     if (result.empty())
@@ -1521,7 +1519,6 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
     /// `data_variants` will destroy the states of aggregate functions in the destructor
     data_variants.aggregator = this;
     data_variants.init(AggregatedDataVariants::Type::without_key);
-    ProfileEvents::increment(ProfileEvents::AggregationProcessedBlocks);
 
     AggregatedDataWithoutKey & res = data_variants.without_key;
 
@@ -1653,7 +1650,6 @@ bool Aggregator::executeOnBlock(Columns columns,
 {
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
-    ProfileEvents::increment(ProfileEvents::AggregationProcessedBlocks);
 
     /// How to perform the aggregation?
     if (result.empty())
