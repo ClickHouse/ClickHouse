@@ -440,10 +440,11 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         }
 
         ProfileEvents::increment(ProfileEvents::KeeperCommits);
-        keeper_context->setLastCommitIndex(log_idx);
 
         if (commit_callback)
             commit_callback(log_idx, *request_for_session);
+
+        keeper_context->setLastCommitIndex(log_idx);
     }
     catch (...)
     {
