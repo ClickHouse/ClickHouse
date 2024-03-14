@@ -848,7 +848,7 @@ bool FileCache::tryReserve(
     }
     catch (...)
     {
-        /// Invalidate queue entries if some successed to be removed.
+        /// Invalidate queue entries if some succeeded to be removed.
         eviction_candidates.finalize(query_context.get(), cache_lock);
         throw;
     }

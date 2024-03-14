@@ -65,6 +65,16 @@ void EvictionCandidates::evict()
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
 
+            /// We remove file segment, but do not invalidate queue entry now,
+            /// we will invalidate it after all eviction candidates are removed (in finalize() method),
+            /// because invalidation of queue entries needs to be done under cache lock.
+            /// Why?
+            /// Firstly, as long as queue entry exists, the corresponding space in cache is considered to be hold,
+            /// and once it is invalidated - the space is released.
+            /// Secondly, after evict() and finalize() stages we will also add back "reserved size"
+            /// (<= actually released size), but until we do this - we cannot allow other threads to think that
+            /// this released space is free, as it is not - it is removed in favour of some reserver
+            /// so we can make it visibly free only for that particular reserver.
             locked_key->removeFileSegment(
                 segment->offset(), segment->lock(), /* can_be_broken */false, /* invalidate_queue_entry */false);
 
