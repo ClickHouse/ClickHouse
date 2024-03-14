@@ -398,7 +398,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
 
 
 template <typename Writer>
-static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && write_nested)
+static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && write_nested, const FormatSettings & settings)
 {
     const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();

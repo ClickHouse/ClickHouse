@@ -108,7 +108,7 @@ bool SerializationCustomSimpleText::tryDeserializeTextQuoted(IColumn & column, R
 
 void SerializationCustomSimpleText::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeCSVString(serializeToString(*this, column, row_num, settings), ostr, ostr, !settings.csv.hive_style);
+    writeCSVString(serializeToString(*this, column, row_num, settings), ostr, !settings.csv.hive_style);
 }
 
 void SerializationCustomSimpleText::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
