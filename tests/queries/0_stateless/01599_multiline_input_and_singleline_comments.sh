@@ -1,9 +1,10 @@
 #!/usr/bin/expect -f
-# Tags: no-fasttest
-# Tag no-fasttest: 180 seconds running
 
 log_user 0
+
+# In some places `-timeout 1`` is used to avoid expect to always wait for the whole timeout
 set timeout 60
+
 match_max 100000
 
 if ![info exists env(CLICKHOUSE_PORT_TCP)] {set env(CLICKHOUSE_PORT_TCP) 9000}
@@ -13,11 +14,11 @@ expect ":) "
 
 # Make a query
 send -- "SELECT 1\r"
-expect ":-] "
+expect -timeout 1 ":-] "
 send -- "-- xxx\r"
-expect ":-] "
+expect -timeout 1 ":-] "
 send -- ", 2\r"
-expect ":-] "
+expect -timeout 1 ":-] "
 send -- ";\r"
 
 expect "│ 1 │ 2 │"
