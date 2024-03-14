@@ -477,6 +477,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             merging_params.columns_to_aggregate = extractColumnNames(engine_args[arg_cnt - 1]);
             --arg_cnt;
         }
+        else
+            merging_params.columns_to_aggregate = {};
 
         /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())

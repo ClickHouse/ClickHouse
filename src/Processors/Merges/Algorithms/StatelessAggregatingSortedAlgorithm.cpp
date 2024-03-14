@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 /// Stores numbers of key-columns and value-columns.
@@ -55,8 +56,13 @@ struct StatelessAggregatingSortedAlgorithm::AggregateDescription
     void init(const char * function_name, const DataTypes & argument_types)
     {
         AggregateFunctionProperties properties;
-        auto action = NullsAction::EMPTY;
-        init(AggregateFunctionFactory::instance().get(function_name, action, argument_types, {}, properties));
+        auto action = NullsAction::IGNORE_NULLS;
+        const auto & func = AggregateFunctionFactory::instance().get(function_name, action, argument_types, {}, properties);
+        DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(func);
+        for (const auto & dt : argument_types)
+            if (func->getResultType()->getTypeId() != dt->getTypeId())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} return data type cannot be stored in a column of type {}", function_name, dt->getName());
+        init(func);
     }
 
     void init(AggregateFunctionPtr function_, bool is_simple_agg_func_type_ = false)
@@ -216,8 +222,8 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
     /// name of nested structure -> the column numbers that refer to it.
     std::unordered_map<std::string, std::vector<size_t>> discovered_maps;
 
-    /** Fill in the column numbers, which must be summed.
-        * This can only be numeric columns that are not part of the sort key.
+    /** Fill in the numbers of columns that will be aggregated.
+        * This can only be columns that are not part of the sorting key.
         * If a non-empty column_names_to_aggregate is specified, then we only take these columns.
         * Some columns from column_names_to_aggregate may not be found. This is ignored.
         */
@@ -250,7 +256,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
             bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
 
             /// There are special const columns for example after prewhere sections.
-            if ((!column.type->isSummable() && !is_agg_func && !simple) || isColumnConst(*column.column))
+            if (isColumnConst(*column.column) || column.type->cannotBeStoredInTables())
             {
                 def.columns_not_to_aggregate.push_back(i);
                 continue;
@@ -285,7 +291,7 @@ static StatelessAggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
                         def.allocates_memory_in_arena = true;
                 }
                 else if (!is_agg_func)
-                    desc.init(simple_aggregate_functions[std::min(num_aggregate_functions, i)].c_str(), {column.type});
+                    desc.init(simple_aggregate_functions[std::min(num_aggregate_functions-1, i)].c_str(), {column.type});
 
                 def.columns_to_aggregate.emplace_back(std::move(desc));
             }
@@ -715,6 +721,7 @@ void StatelessAggregatingSortedAlgorithm::initialize(Inputs inputs)
 
 void StatelessAggregatingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
+    preprocessChunk(input.chunk, columns_definition);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);
 }
