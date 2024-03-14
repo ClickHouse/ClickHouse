@@ -23,15 +23,14 @@ struct BlockWithPartition
     Block block;
     Row partition;
     std::vector<size_t> offsets;
-    std::vector<String> tokens;
 
     BlockWithPartition(Block && block_, Row && partition_)
         : block(block_), partition(std::move(partition_))
     {
     }
 
-    BlockWithPartition(Block && block_, Row && partition_, std::vector<size_t> && offsets_, std::vector<String> && tokens_)
-        : block(block_), partition(std::move(partition_)), offsets(std::move(offsets_)), tokens(std::move(tokens_))
+    BlockWithPartition(Block && block_, Row && partition_, std::vector<size_t> && offsets_)
+        : block(block_), partition(std::move(partition_)), offsets(std::move(offsets_))
     {
     }
 };
@@ -45,15 +44,14 @@ class MergeTreeDataWriter
 public:
     explicit MergeTreeDataWriter(MergeTreeData & data_)
         : data(data_)
-        , log(getLogger(data.getLogName() + " (Writer)"))
-    {
-    }
+        , log(&Poco::Logger::get(data.getLogName() + " (Writer)"))
+    {}
 
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info = nullptr);
+    static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, ChunkOffsetsPtr chunk_offsets = nullptr);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
@@ -73,7 +71,6 @@ public:
 
         scope_guard temporary_directory_lock;
 
-        void cancel();
         void finalize();
     };
 
@@ -92,7 +89,7 @@ public:
     /// For insertion.
     static TemporaryPart writeProjectionPart(
         const MergeTreeData & data,
-        LoggerPtr log,
+        Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part);
@@ -100,7 +97,7 @@ public:
     /// For mutation: MATERIALIZE PROJECTION.
     static TemporaryPart writeTempProjectionPart(
         const MergeTreeData & data,
-        LoggerPtr log,
+        Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
@@ -127,12 +124,12 @@ private:
         bool is_temp,
         IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,
-        LoggerPtr log,
+        Poco::Logger * log,
         Block block,
         const ProjectionDescription & projection);
 
     MergeTreeData & data;
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

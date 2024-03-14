@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/encoding-functions
-sidebar_position: 65
+sidebar_position: 52
 sidebar_label: Encoding
 ---
 
@@ -18,11 +18,11 @@ char(number_1, [number_2, ..., number_n]);
 
 **Arguments**
 
-- `number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md).
+-   `number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md).
 
 **Returned value**
 
-- a string of given bytes.
+-   a string of given bytes.
 
 Type: `String`.
 
@@ -98,11 +98,11 @@ Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order str
 
 **Arguments**
 
-- `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
-- A string with the hexadecimal representation of the argument.
+-   A string with the hexadecimal representation of the argument.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -185,13 +185,13 @@ unhex(arg)
 
 **Arguments**
 
-- `arg` — A string containing any number of hexadecimal digits. Type: [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   `arg` — A string containing any number of hexadecimal digits. Type: [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md).
 
 Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
 
 **Returned value**
 
-- A binary string (BLOB).
+-   A binary string (BLOB).
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -247,11 +247,11 @@ Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order str
 
 **Arguments**
 
-- `arg` — A value to convert to binary. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md), or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `arg` — A value to convert to binary. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md), or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
-- A string with the binary representation of the argument.
+-   A string with the binary representation of the argument.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -338,11 +338,11 @@ Supports binary digits `0` and `1`. The number of binary digits does not have to
 
 **Arguments**
 
-- `arg` — A string containing any number of binary digits. [String](../../sql-reference/data-types/string.md).
+-   `arg` — A string containing any number of binary digits. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
-- A binary string (BLOB).
+-   A binary string (BLOB).
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -396,11 +396,11 @@ bitPositionsToArray(arg)
 
 **Arguments**
 
-- `arg` — Integer value. [Int/UInt](../../sql-reference/data-types/int-uint.md).
+-   `arg` — Integer value. [Int/UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
-- An array containing a list of positions of bits that equal `1`, in ascending order.
+-   An array containing a list of positions of bits that equal `1`, in ascending order.
 
 Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
 
@@ -433,292 +433,3 @@ Result:
 │ [0,1,2,3,4,5,6,7] │
 └───────────────────┘
 ```
-
-## mortonEncode
-
-Calculates the Morton encoding (ZCurve) for a list of unsigned integers.
-
-The function has two modes of operation:
-- Simple
-- Expanded
-
-### Simple mode
-
-Accepts up to 8 unsigned integers as arguments and produces a UInt64 code.
-
-**Syntax**
-
-```sql
-mortonEncode(args)
-```
-
-**Parameters**
-
-- `args`: up to 8 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
-
-**Returned value**
-
-- A UInt64 code
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md)
-
-**Example**
-
-Query:
-
-```sql
-SELECT mortonEncode(1, 2, 3);
-```
-Result:
-
-```response
-53
-```
-
-### Expanded mode
-
-Accepts a range mask ([tuple](../../sql-reference/data-types/tuple.md)) as a first argument and up to 8 [unsigned integers](../../sql-reference/data-types/int-uint.md) as other arguments.
-
-Each number in the mask configures the amount of range expansion:<br/>
-1 - no expansion<br/>
-2 - 2x expansion<br/>
-3 - 3x expansion<br/>
-...<br/>
-Up to 8x expansion.<br/>
-
-**Syntax**
-
-```sql
-mortonEncode(range_mask, args)
-```
-
-**Parameters**
-- `range_mask`: 1-8.
-- `args`: up to 8 [unsigned integers](../../sql-reference/data-types/int-uint.md) or columns of the aforementioned type.
-
-Note: when using columns for `args` the provided `range_mask` tuple should still be a constant. 
-
-**Returned value**
-
-- A UInt64 code
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md)
-
-
-**Example**
-
-Range expansion can be beneficial when you need a similar distribution for arguments with wildly different ranges (or cardinality)
-For example: 'IP Address' (0...FFFFFFFF) and 'Country code' (0...FF).
-
-Query:
-
-```sql
-SELECT mortonEncode((1,2), 1024, 16);
-```
-
-Result:
-
-```response
-1572864
-```
-
-Note: tuple size must be equal to the number of the other arguments.
-
-**Example**
-
-Morton encoding for one argument is always the argument itself:
-
-Query:
-
-```sql
-SELECT mortonEncode(1);
-```
-
-Result:
-
-```response
-1
-```
-
-**Example**
-
-It is also possible to expand one argument too:
-
-Query:
-
-```sql
-SELECT mortonEncode(tuple(2), 128);
-```
-
-Result:
-
-```response
-32768
-```
-
-**Example**
-
-You can also use column names in the function.
-
-Query:
-
-First create the table and insert some data.
-
-```sql
-create table morton_numbers(
-    n1 UInt32,
-    n2 UInt32,
-    n3 UInt16,
-    n4 UInt16,
-    n5 UInt8,
-    n6 UInt8,
-    n7 UInt8,
-    n8 UInt8
-)
-Engine=MergeTree()
-ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
-insert into morton_numbers (*) values(1,2,3,4,5,6,7,8);
-```
-Use column names instead of constants as function arguments to `mortonEncode`
-
-Query:
-
-```sql
-SELECT mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8) FROM morton_numbers;
-```
-
-Result:
-
-```response
-2155374165
-```
-
-**implementation details**
-
-Please note that you can fit only so many bits of information into Morton code as [UInt64](../../sql-reference/data-types/int-uint.md) has. Two arguments will have a range of maximum 2^32 (64/2) each, three arguments a range of max 2^21 (64/3) each and so on. All overflow will be clamped to zero.
-
-## mortonDecode
-
-Decodes a Morton encoding (ZCurve) into the corresponding unsigned integer tuple.
-
-As with the `mortonEncode` function, this function has two modes of operation:
-- Simple
-- Expanded
-
-### Simple mode
-
-Accepts a resulting tuple size as the first argument and the code as the second argument.
-
-**Syntax**
-
-```sql
-mortonDecode(tuple_size, code)
-```
-
-**Parameters**
-- `tuple_size`: integer value no more than 8.
-- `code`: [UInt64](../../sql-reference/data-types/int-uint.md) code.
-
-**Returned value**
-
-- [tuple](../../sql-reference/data-types/tuple.md) of the specified size.
-
-Type: [UInt64](../../sql-reference/data-types/int-uint.md)
-
-**Example**
-
-Query:
-
-```sql
-SELECT mortonDecode(3, 53);
-```
-
-Result:
-
-```response
-["1","2","3"]
-```
-
-### Expanded mode
-
-Accepts a range mask (tuple) as a first argument and the code as the second argument.
-Each number in the mask configures the amount of range shrink:<br/>
-1 - no shrink<br/>
-2 - 2x shrink<br/> 
-3 - 3x shrink<br/>
-...<br/>
-Up to 8x shrink.<br/>
-
-Range expansion can be beneficial when you need a similar distribution for arguments with wildly different ranges (or cardinality)
-For example: 'IP Address' (0...FFFFFFFF) and 'Country code' (0...FF).
-As with the encode function, this is limited to 8 numbers at most.
-
-**Example**
-
-Query:
-
-```sql
-SELECT mortonDecode(1, 1);
-```
-
-Result:
-
-```response
-["1"]
-```
-
-**Example**
-
-It is also possible to shrink one argument:
-
-Query:
-
-```sql
-SELECT mortonDecode(tuple(2), 32768);
-```
-
-Result:
-
-```response
-["128"]
-```
-
-**Example**
-
-You can also use column names in the function.
-
-First create the table and insert some data.
-
-Query:
-```sql
-create table morton_numbers(
-    n1 UInt32,
-    n2 UInt32,
-    n3 UInt16,
-    n4 UInt16,
-    n5 UInt8,
-    n6 UInt8,
-    n7 UInt8,
-    n8 UInt8
-)
-Engine=MergeTree()
-ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
-insert into morton_numbers (*) values(1,2,3,4,5,6,7,8);
-```
-Use column names instead of constants as function arguments to `mortonDecode`
-
-Query:
-
-```sql
-select untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) from morton_numbers;
-```
-
-Result:
-
-```response
-1	2	3	4	5	6	7	8
-```
-
-
-
-

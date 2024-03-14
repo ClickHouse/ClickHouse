@@ -1,3 +1,4 @@
+-- Tags: no-upgrade-check
 
 DROP TABLE IF EXISTS alter_00061;
 set allow_deprecated_syntax_for_merge_tree=1;

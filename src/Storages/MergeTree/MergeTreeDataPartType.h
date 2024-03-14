@@ -26,8 +26,10 @@ static E parseEnum(const String & str)
 
 /// It's a bug in clang with three-way comparison operator
 /// https://github.com/llvm/llvm-project/issues/55919
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#ifdef __clang__
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 
 /// Types of data part format.
 class MergeTreeDataPartType
@@ -41,6 +43,9 @@ public:
 
         /// Data of all columns is stored in one file. Marks are also stored in single file.
         Compact,
+
+        /// Format with buffering data in RAM.
+        InMemory,
 
         Unknown,
     };
@@ -81,7 +86,9 @@ private:
     Value value;
 };
 
-#pragma clang diagnostic pop
+#ifdef __clang__
+    #pragma clang diagnostic pop
+#endif
 
 struct MergeTreeDataPartFormat
 {

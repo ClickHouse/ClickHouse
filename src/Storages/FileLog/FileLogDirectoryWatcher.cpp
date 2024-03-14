@@ -1,12 +1,11 @@
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
 FileLogDirectoryWatcher::FileLogDirectoryWatcher(const std::string & path_, StorageFileLog & storage_, ContextPtr context_)
     : path(path_)
     , storage(storage_)
-    , log(getLogger("FileLogDirectoryWatcher(" + path + ")"))
+    , log(&Poco::Logger::get("FileLogDirectoryWatcher(" + path + ")"))
     , dw(std::make_unique<DirectoryWatcherBase>(*this, path, context_))
 {
 }

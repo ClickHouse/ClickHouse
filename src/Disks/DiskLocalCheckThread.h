@@ -29,7 +29,7 @@ private:
 
     DiskLocal * disk;
     size_t check_period_ms;
-    LoggerPtr log;
+    Poco::Logger * log;
     std::atomic<bool> need_stop{false};
 
     BackgroundSchedulePool::TaskHolder task;

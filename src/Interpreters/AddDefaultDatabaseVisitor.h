@@ -5,7 +5,6 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -88,12 +87,6 @@ public:
             visit(child);
     }
 
-    void visit(ASTRefreshStrategy & refresh) const
-    {
-        ASTPtr unused;
-        visit(refresh, unused);
-    }
-
 private:
 
     ContextPtr context;
@@ -155,6 +148,8 @@ private:
     {
         if (table_expression.database_and_table_name)
             tryVisit<ASTTableIdentifier>(table_expression.database_and_table_name);
+        else if (table_expression.subquery)
+            tryVisit<ASTSubquery>(table_expression.subquery);
     }
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
@@ -170,6 +165,11 @@ private:
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;
+    }
+
+    void visit(ASTSubquery & subquery, ASTPtr &) const
+    {
+        tryVisit<ASTSelectWithUnionQuery>(subquery.children[0]);
     }
 
     void visit(ASTFunction & function, ASTPtr &) const
@@ -236,13 +236,6 @@ private:
         }
     }
 
-    void visit(ASTRefreshStrategy & refresh, ASTPtr &) const
-    {
-        if (refresh.dependencies)
-            for (auto & table : refresh.dependencies->children)
-                tryVisit<ASTTableIdentifier>(table);
-    }
-
     void visitChildren(IAST & ast) const
     {
         for (auto & child : ast.children)
@@ -275,7 +268,13 @@ private:
         if (only_replace_current_database_function)
             return;
 
-        node.setDatabaseIfNotExists(database_name);
+        for (ASTRenameQuery::Element & elem : node.elements)
+        {
+            if (!elem.from.database)
+                elem.from.database = std::make_shared<ASTIdentifier>(database_name);
+            if (!elem.to.database)
+                elem.to.database = std::make_shared<ASTIdentifier>(database_name);
+        }
     }
 
     void visitDDL(ASTAlterQuery & node, ASTPtr &) const

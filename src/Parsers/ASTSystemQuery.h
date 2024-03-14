@@ -2,8 +2,6 @@
 
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
-#include <Parsers/SyncReplicaMode.h>
-#include <Server/ServerType.h>
 
 #include "config.h"
 
@@ -22,38 +20,38 @@ public:
         KILL,
         SUSPEND,
         DROP_DNS_CACHE,
-        DROP_CONNECTIONS_CACHE,
         DROP_MARK_CACHE,
         DROP_UNCOMPRESSED_CACHE,
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
         DROP_MMAP_CACHE,
         DROP_QUERY_CACHE,
+#if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
+#endif
         DROP_FILESYSTEM_CACHE,
-        DROP_DISK_METADATA_CACHE,
-        DROP_PAGE_CACHE,
         DROP_SCHEMA_CACHE,
-        DROP_FORMAT_SCHEMA_CACHE,
+#if USE_AWS_S3
         DROP_S3_CLIENT_CACHE,
-        STOP_LISTEN,
-        START_LISTEN,
+#endif
+        STOP_LISTEN_QUERIES,
+        START_LISTEN_QUERIES,
         RESTART_REPLICAS,
         RESTART_REPLICA,
         RESTORE_REPLICA,
         WAIT_LOADING_PARTS,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
+#if USE_JEMALLOC
         JEMALLOC_PURGE,
         JEMALLOC_ENABLE_PROFILE,
         JEMALLOC_DISABLE_PROFILE,
         JEMALLOC_FLUSH_PROFILE,
+#endif
         SYNC_REPLICA,
         SYNC_DATABASE_REPLICA,
         SYNC_TRANSACTION_LOG,
         SYNC_FILE_CACHE,
-        REPLICA_READY,
-        REPLICA_UNREADY,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
         RELOAD_MODEL,
@@ -63,7 +61,7 @@ public:
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_USERS,
-        RELOAD_ASYNCHRONOUS_METRICS,
+        RELOAD_SYMBOLS,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -79,27 +77,11 @@ public:
         START_REPLICATION_QUEUES,
         FLUSH_LOGS,
         FLUSH_DISTRIBUTED,
-        FLUSH_ASYNC_INSERT_QUEUE,
         STOP_DISTRIBUTED_SENDS,
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
         STOP_THREAD_FUZZER,
         UNFREEZE,
-        ENABLE_FAILPOINT,
-        DISABLE_FAILPOINT,
-        SYNC_FILESYSTEM_CACHE,
-        STOP_PULLING_REPLICATION_LOG,
-        START_PULLING_REPLICATION_LOG,
-        STOP_CLEANUP,
-        START_CLEANUP,
-        RESET_COVERAGE,
-        REFRESH_VIEW,
-        START_VIEW,
-        START_VIEWS,
-        STOP_VIEW,
-        STOP_VIEWS,
-        CANCEL_VIEW,
-        TEST_VIEW,
         END
     };
 
@@ -119,7 +101,6 @@ public:
     String target_model;
     String target_function;
     String replica;
-    String shard;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     String storage_policy;
@@ -127,27 +108,13 @@ public:
     String disk;
     UInt64 seconds{};
 
-    String filesystem_cache_name;
-    std::string key_to_drop;
-    std::optional<size_t> offset_to_drop;
+    String filesystem_cache_path;
 
     String backup_name;
 
     String schema_cache_storage;
 
-    String schema_cache_format;
-
-    String fail_point_name;
-
-    SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
-
-    std::vector<String> src_replicas;
-
-    ServerType server_type;
-
-    /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
-    /// Unix time.
-    std::optional<Int64> fake_time_for_view;
+    bool strict_sync = false;
 
     String getID(char) const override { return "SYSTEM query"; }
 

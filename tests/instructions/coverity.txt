@@ -1,0 +1,28 @@
+# Download tool at https://scan.coverity.com/download?tab=cxx
+
+tar xf cov-analysis-linux64-2017.07.tar.gz
+export PATH=$PATH:/home/milovidov/cov-analysis-linux64-2017.07/bin
+
+mkdir ClickHouse_coverity
+cd ClickHouse_coverity
+git clone --recursive git@github.com:yandex/ClickHouse.git .
+
+mkdir build
+cd build
+
+# "Debug" is for faster build
+CC=gcc-7 CXX=g++-7 cmake -D CMAKE_BUILD_TYPE=Debug -D CCACHE_FOUND=0 ..
+
+# Build all targets that we don't want to analyze.
+cd contrib && make -j24 && cd ..
+
+cov-configure --comptype gcc --compiler gcc-7 --template
+
+cov-build --dir cov-int make -j24
+
+# Build is painful slow. Some targets compile in about one hour. Total time is about 4..5 hours.
+
+tar czvf clickhouse.tgz cov-int
+
+# tarball is 1.2 GB.
+# Upload result at https://scan.coverity.com/projects/yandex-clickhouse/builds/new

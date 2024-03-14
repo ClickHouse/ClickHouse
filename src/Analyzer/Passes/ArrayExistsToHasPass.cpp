@@ -1,7 +1,6 @@
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/array/has.h>
 
 #include <Interpreters/Context.h>
 
@@ -23,7 +22,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<RewriteArrayExistsToHasVisitor>;
     using Base::Base;
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_rewrite_array_exists_to_has)
             return;
@@ -84,8 +83,7 @@ public:
             return;
         }
 
-        auto has_function = createInternalFunctionHasOverloadResolver();
-
+        auto has_function = FunctionFactory::instance().get("has", getContext());
         array_exists_function_arguments_nodes[0] = std::move(array_exists_function_arguments_nodes[1]);
         array_exists_function_arguments_nodes[1] = std::move(has_constant_element_argument);
         array_exists_function_node->resolveAsFunction(has_function->build(array_exists_function_node->getArgumentColumns()));
@@ -94,7 +92,7 @@ public:
 
 }
 
-void RewriteArrayExistsToHasPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void RewriteArrayExistsToHasPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     RewriteArrayExistsToHasVisitor visitor(context);
     visitor.visit(query_tree_node);

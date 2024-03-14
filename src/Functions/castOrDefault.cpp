@@ -85,7 +85,7 @@ public:
         {
             auto default_value_type = arguments[2].type;
 
-            if (!result_type->equals(*default_value_type))
+            if (!areTypesEqual(result_type, default_value_type))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Default value type should be same as cast type. Expected {}. Actual {}",
@@ -210,10 +210,10 @@ private:
         FunctionArgumentDescriptors optional_args;
 
         if constexpr (IsDataTypeDecimal<Type>)
-            mandatory_args.push_back({"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"});
+            mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
 
         if (std::is_same_v<Type, DataTypeDateTime> || std::is_same_v<Type, DataTypeDateTime64>)
-            optional_args.push_back({"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"});
+            optional_args.push_back({"timezone", &isString<IDataType>, isColumnConst, "const String"});
 
         optional_args.push_back({"default_value", nullptr, nullptr, nullptr});
 
@@ -245,8 +245,7 @@ private:
         {
             if (additional_argument_index < arguments.size())
             {
-                time_zone = extractTimeZoneNameFromColumn(arguments[additional_argument_index].column.get(),
-                                                          arguments[additional_argument_index].name);
+                time_zone = extractTimeZoneNameFromColumn(*arguments[additional_argument_index].column);
                 ++additional_argument_index;
             }
         }

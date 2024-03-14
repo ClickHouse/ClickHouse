@@ -2,18 +2,14 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/System/StorageSystemPartsBase.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
-#include <IO/SharedThreadPools.h>
-#include <Common/threadPoolCallbackRunner.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <IO/IOThreadPool.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <mutex>
 
@@ -85,11 +81,13 @@ struct WorkerState
 class DetachedPartsSource : public ISource
 {
 public:
-    DetachedPartsSource(Block header_, std::shared_ptr<SourceState> state_, std::vector<UInt8> columns_mask_, UInt64 block_size_)
+    DetachedPartsSource(Block header_, std::shared_ptr<SourceState> state_, std::vector<UInt8> columns_mask_, UInt64 block_size_,
+                        bool has_bytes_on_disk_column_)
         : ISource(std::move(header_))
         , state(state_)
         , columns_mask(std::move(columns_mask_))
         , block_size(block_size_)
+        , has_bytes_on_disk_column(has_bytes_on_disk_column_)
     {}
 
     String getName() const override { return "DataPartsSource"; }
@@ -129,6 +127,7 @@ private:
     std::shared_ptr<SourceState> state;
     const std::vector<UInt8> columns_mask;
     const UInt64 block_size;
+    const bool has_bytes_on_disk_column;
     const size_t support_threads = 35;
 
     StoragesInfo current_info;
@@ -150,6 +149,9 @@ private:
 
     void calculatePartSizeOnDisk(size_t begin, std::vector<std::atomic<size_t>> & parts_sizes)
     {
+        if (!has_bytes_on_disk_column)
+            return;
+
         WorkerState worker_state;
 
         for (auto p_id = begin; p_id < detached_parts.size(); ++p_id)
@@ -192,7 +194,7 @@ private:
             futures.push_back(
                         scheduleFromThreadPool<void>(
                             std::move(worker),
-                            getIOThreadPool().get(),
+                            IOThreadPool::get(),
                             "DP_BytesOnDisk"));
         }
 
@@ -209,9 +211,7 @@ private:
         auto begin = detached_parts.size() - rows;
 
         std::vector<std::atomic<size_t>> parts_sizes(rows);
-        constexpr size_t bytes_on_disk_col_idx = 4;
-        if (columns_mask[bytes_on_disk_col_idx])
-            calculatePartSizeOnDisk(begin, parts_sizes);
+        calculatePartSizeOnDisk(begin, parts_sizes);
 
         for (auto p_id = begin; p_id < detached_parts.size(); ++p_id)
         {
@@ -229,22 +229,9 @@ private:
                 new_columns[res_index++]->insert(p.dir_name);
             if (columns_mask[src_index++])
             {
-                chassert(src_index - 1 == bytes_on_disk_col_idx);
+                chassert(has_bytes_on_disk_column);
                 size_t bytes_on_disk = parts_sizes.at(p_id - begin).load();
                 new_columns[res_index++]->insert(bytes_on_disk);
-            }
-            if (columns_mask[src_index++])
-            {
-                Poco::Timestamp modification_time{};
-                try
-                {
-                    modification_time = p.disk->getLastModified(fs::path(current_info.data->getRelativeDataPath()) / MergeTreeData::DETACHED_DIR_NAME / p.dir_name);
-                }
-                catch (const fs::filesystem_error &)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                }
-                new_columns[res_index++]->insert(static_cast<UInt64>(modification_time.epochTime()));
             }
             if (columns_mask[src_index++])
                 new_columns[res_index++]->insert(p.disk->getName());
@@ -271,69 +258,22 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription{{
-        {"database",         std::make_shared<DataTypeString>(), "The name of the database this part belongs to."},
-        {"table",            std::make_shared<DataTypeString>(), "The name of the table this part belongs to."},
-        {"partition_id",     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The identifier of the partition this part belongs to."},
-        {"name",             std::make_shared<DataTypeString>(), "The name of the part."},
-        {"bytes_on_disk",    std::make_shared<DataTypeUInt64>(), "Total size of all the data part files in bytes."},
-        {"modification_time",std::make_shared<DataTypeDateTime>(), "The time the directory with the data part was modified. This usually corresponds to the time when detach happened."},
-        {"disk",             std::make_shared<DataTypeString>(), "The name of the disk that stores this data part."},
-        {"path",             std::make_shared<DataTypeString>(), "The path of the disk to the file of this data part."},
-        {"reason",           std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The explanation why this part was detached."},
-        {"min_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()), "The minimum number of data parts that make up the current part after merging."},
-        {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()), "The maximum number of data parts that make up the current part after merging."},
-        {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
+        {"database",         std::make_shared<DataTypeString>()},
+        {"table",            std::make_shared<DataTypeString>()},
+        {"partition_id",     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"name",             std::make_shared<DataTypeString>()},
+        {"bytes_on_disk",    std::make_shared<DataTypeUInt64>()},
+        {"disk",             std::make_shared<DataTypeString>()},
+        {"path",             std::make_shared<DataTypeString>()},
+        {"reason",           std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"min_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
+        {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>())},
+        {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())}
     }});
     setInMemoryMetadata(storage_metadata);
 }
 
-class ReadFromSystemDetachedParts : public SourceStepWithFilter
-{
-public:
-    ReadFromSystemDetachedParts(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
-        Block sample_block,
-        std::shared_ptr<StorageSystemDetachedParts> storage_,
-        std::vector<UInt8> columns_mask_,
-        size_t max_block_size_,
-        size_t num_streams_)
-        : SourceStepWithFilter(
-            DataStream{.header = std::move(sample_block)},
-            column_names_,
-            query_info_,
-            storage_snapshot_,
-            context_)
-        , storage(std::move(storage_))
-        , columns_mask(std::move(columns_mask_))
-        , max_block_size(max_block_size_)
-        , num_streams(num_streams_)
-    {}
-
-    std::string getName() const override { return "ReadFromSystemDetachedParts"; }
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
-
-protected:
-    std::shared_ptr<StorageSystemDetachedParts> storage;
-    std::vector<UInt8> columns_mask;
-
-    const ActionsDAG::Node * predicate = nullptr;
-    const size_t max_block_size;
-    const size_t num_streams;
-};
-
-void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes)
-{
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
-    if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
-}
-
-void StorageSystemDetachedParts::read(
-    QueryPlan & query_plan,
+Pipe StorageSystemDetachedParts::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -345,30 +285,33 @@ void StorageSystemDetachedParts::read(
     storage_snapshot->check(column_names);
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
-    auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
+    NameSet names_set(column_names.begin(), column_names.end());
 
-    auto this_ptr = std::static_pointer_cast<StorageSystemDetachedParts>(shared_from_this());
+    Block header;
+    std::vector<UInt8> columns_mask(sample_block.columns());
 
-    auto reading = std::make_unique<ReadFromSystemDetachedParts>(
-        column_names, query_info, storage_snapshot,
-        std::move(context), std::move(header), std::move(this_ptr), std::move(columns_mask), max_block_size, num_streams);
+    for (size_t i = 0; i < columns_mask.size(); ++i)
+    {
+        if (names_set.contains(sample_block.getByPosition(i).name))
+        {
+            columns_mask[i] = 1;
+            header.insert(sample_block.getByPosition(i));
+        }
+    }
 
-    query_plan.addStep(std::move(reading));
-}
+    bool has_bytes_on_disk_column = names_set.contains("bytes_on_disk");
 
-void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
-{
-    auto state = std::make_shared<SourceState>(StoragesInfoStream(predicate, context));
+    auto state = std::make_shared<SourceState>(StoragesInfoStream(query_info, context));
 
     Pipe pipe;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<DetachedPartsSource>(getOutputStream().header, state, columns_mask, max_block_size);
+        auto source = std::make_shared<DetachedPartsSource>(header.cloneEmpty(), state, columns_mask, max_block_size, has_bytes_on_disk_column);
         pipe.addSource(std::move(source));
     }
 
-    pipeline.init(std::move(pipe));
+    return pipe;
 }
 
 }

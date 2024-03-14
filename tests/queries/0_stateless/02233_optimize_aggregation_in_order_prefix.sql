@@ -1,5 +1,3 @@
--- Tags: no-s3-storage
-
 drop table if exists data_02233;
 create table data_02233 (parent_key Int, child_key Int, value Int) engine=MergeTree() order by parent_key;
 

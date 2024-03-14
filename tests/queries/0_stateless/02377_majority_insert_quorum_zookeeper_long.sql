@@ -16,7 +16,6 @@ CREATE TABLE quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/t
 
 -- insert_quorum = n/2 + 1 , so insert will be written to both replica
 SET insert_quorum = 'auto';
-SET insert_keeper_fault_injection_probability=0;
 
 INSERT INTO quorum1 VALUES (1, '2018-11-15');
 INSERT INTO quorum1 VALUES (2, '2018-11-15');
@@ -39,7 +38,7 @@ SYSTEM STOP FETCHES quorum3;
 INSERT INTO quorum1 VALUES (1, '2018-11-15');
 SELECT x FROM quorum1 ORDER BY x;
 SELECT x FROM quorum2 ORDER BY x;
-SELECT x FROM quorum3 ORDER BY x; -- {serverError REPLICA_IS_NOT_IN_QUORUM}
+SELECT x FROM quorum3 ORDER BY x; -- {serverError 289}
 
 -- Sync replica 3
 SYSTEM START FETCHES quorum3;
@@ -50,7 +49,7 @@ SELECT x FROM quorum3 ORDER BY x;
 SYSTEM STOP FETCHES quorum2;
 SYSTEM STOP FETCHES quorum3;
 SET insert_quorum_timeout = 5000;
-INSERT INTO quorum1 VALUES (2, '2018-11-15'); -- { serverError UNKNOWN_STATUS_OF_INSERT }
+INSERT INTO quorum1 VALUES (2, '2018-11-15'); -- { serverError 319 }
 SELECT x FROM quorum1 ORDER BY x;
 SELECT x FROM quorum2 ORDER BY x;
 SELECT x FROM quorum3 ORDER BY x;
@@ -61,7 +60,6 @@ SYSTEM SYNC REPLICA quorum2;
 SYSTEM START FETCHES quorum3;
 SYSTEM SYNC REPLICA quorum3;
 
-SET insert_quorum_timeout = 600000; -- set default value back
 INSERT INTO quorum1 VALUES (3, '2018-11-15');
 SELECT x FROM quorum1 ORDER BY x;
 SYSTEM SYNC REPLICA quorum2;

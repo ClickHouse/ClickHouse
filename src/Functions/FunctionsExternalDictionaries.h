@@ -14,8 +14,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/MaskOperations.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -23,8 +21,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnFunction.h>
-#include <Functions/FunctionFactory.h>
 
 #include <Access/Common/AccessFlags.h>
 
@@ -35,7 +31,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/range.h>
-#include <base/defines.h>
+
+#include <type_traits>
 
 namespace DB
 {
@@ -47,7 +44,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -66,7 +62,7 @@ namespace ErrorCodes
   */
 
 
-class FunctionDictHelper : public WithContext
+class FunctionDictHelper : WithContext
 {
 public:
     explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
@@ -300,8 +296,7 @@ private:
 enum class DictionaryGetFunctionType
 {
     get,
-    getOrDefault,
-    getAll
+    getOrDefault
 };
 
 /// This variant of function derives the result type automatically.
@@ -309,10 +304,7 @@ template <DictionaryGetFunctionType dictionary_get_function_type>
 class FunctionDictGetNoType final : public IFunction
 {
 public:
-    // Kind of gross but we need a static field called "name" for FunctionFactory::registerFunction, and this is the easiest way
-    static constexpr auto name = (dictionary_get_function_type == DictionaryGetFunctionType::get)
-        ? "dictGet"
-        : ((dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault) ? "dictGetOrDefault" : "dictGetAll");
+    static constexpr auto name = dictionary_get_function_type == DictionaryGetFunctionType::get ? "dictGet" : "dictGetOrDefault";
 
     static FunctionPtr create(ContextPtr context)
     {
@@ -324,31 +316,12 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
-    bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
-    {
-        if constexpr (dictionary_get_function_type != DictionaryGetFunctionType::getOrDefault)
-            return false;
-
-        /// We execute lazily only last argument with default expression.
-        for (size_t i = 0; i != number_of_arguments - 1; ++i)
-            settings.arguments_with_disabled_lazy_execution.insert(i);
-
-        settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
-        settings.force_enable_lazy_execution = false;
-        return true;
-    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     bool useDefaultImplementationForNulls() const final { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final
-    {
-        if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
-            return {0, 1, 3};
-        else
-            return {0, 1};
-    }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
     bool isDeterministic() const override { return false; }
 
@@ -387,15 +360,6 @@ public:
         }
 
         bool key_is_nullable = arguments[2].type->isNullable();
-        if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
-        {
-            if (key_is_nullable)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Function {} does not support nullable keys", getName());
-
-            // Wrap all the attribute types in Array()
-            for (auto it = attribute_types.begin(); it != attribute_types.end(); ++it)
-                *it = std::make_shared<DataTypeArray>(*it);
-        }
         if (attribute_types.size() > 1)
         {
             if (key_is_nullable)
@@ -460,7 +424,6 @@ public:
         }
 
         Columns default_cols;
-        size_t collect_values_limit = std::numeric_limits<size_t>::max();
 
         if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault)
         {
@@ -472,54 +435,35 @@ public:
                     arguments.size() + 1);
 
             const auto & column_before_cast = arguments[current_arguments_index];
-            const auto * column_function = checkAndGetShortCircuitArgument(column_before_cast.column);
-            /// If we have shortcircuit (column_function exists), default_cols is empty.
-            if (!column_function)
+            ColumnWithTypeAndName column_to_cast = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
+
+            auto result = castColumnAccurate(column_to_cast, result_type);
+
+            if (attribute_names.size() > 1)
             {
-                ColumnWithTypeAndName column_to_cast = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
+                const auto * tuple_column = checkAndGetColumn<ColumnTuple>(result.get());
 
-                auto result = castColumnAccurate(column_to_cast, result_type);
+                if (!tuple_column)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Wrong argument for function {} default values column must be tuple",
+                        getName());
 
-                if (attribute_names.size() > 1)
-                {
-                    const auto * tuple_column = checkAndGetColumn<ColumnTuple>(result.get());
+                if (tuple_column->tupleSize() != attribute_names.size())
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Wrong argument for function {} default values tuple column must contain same column size as requested attributes",
+                        getName());
 
-                    if (!tuple_column)
-                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Wrong argument for function {} default values column must be tuple",
-                            getName());
-
-                    if (tuple_column->tupleSize() != attribute_names.size())
-                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Wrong argument for function {} default values tuple column must contain same column size as requested attributes",
-                            getName());
-
-                    default_cols = tuple_column->getColumnsCopy();
-                }
-                else
-                {
-                    default_cols.emplace_back(result);
-                }
+                default_cols = tuple_column->getColumnsCopy();
+            }
+            else
+            {
+                default_cols.emplace_back(result);
             }
 
             ++current_arguments_index;
         }
         else
         {
-            if (dictionary_get_function_type == DictionaryGetFunctionType::getAll && current_arguments_index < arguments.size())
-            {
-                auto limit_col = arguments[current_arguments_index].column;
-                // The getUInt later attempts to cast and throws on a type mismatch, so skip actual type checking here
-                if (!limit_col || !isColumnConst(*limit_col))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of fourth argument of function {}. Expected const unsigned integer.",
-                        arguments[current_arguments_index].type->getName(),
-                        getName());
-
-                collect_values_limit = limit_col->getUInt(0);
-                ++current_arguments_index;
-            }
-
             for (size_t i = 0; i < attribute_names.size(); ++i)
                 default_cols.emplace_back(nullptr);
         }
@@ -605,9 +549,7 @@ public:
             attribute_type = attribute_types.front();
         }
 
-        auto result_column = executeDictionaryRequest(
-            dictionary, attribute_names, key_columns, key_types, attribute_type, default_cols,
-            collect_values_limit, arguments[current_arguments_index-1], result_type);
+        auto result_column = executeDictionaryRequest(dictionary, attribute_names, key_columns, key_types, attribute_type, default_cols);
 
         if (key_is_nullable)
             result_column = wrapInNullable(result_column, {arguments[2]}, result_type, input_rows_count);
@@ -617,139 +559,37 @@ public:
 
 private:
 
-    std::pair<ColumnPtr, ColumnPtr> getDefaultsShortCircuit(
-        IColumn::Filter && default_mask,
-        const DataTypePtr & result_type,
-        const ColumnWithTypeAndName & last_argument) const
-    {
-        ColumnWithTypeAndName column_before_cast = last_argument;
-        maskedExecute(column_before_cast, default_mask);
-
-        ColumnWithTypeAndName column_to_cast = {
-            column_before_cast.column->convertToFullColumnIfConst(),
-            column_before_cast.type,
-            column_before_cast.name};
-
-        auto casted = IColumn::mutate(castColumnAccurate(column_to_cast, result_type));
-
-        auto mask_col = ColumnUInt8::create();
-        mask_col->getData() = std::move(default_mask);
-        return {std::move(casted), std::move(mask_col)};
-    }
-
-    void restoreShortCircuitColumn(
-        ColumnPtr & result_column,
-        ColumnPtr defaults_column,
-        ColumnPtr mask_column,
-        const DataTypePtr & result_type) const
-    {
-        auto if_func = FunctionFactory::instance().get("if", helper.getContext());
-        ColumnsWithTypeAndName if_args =
-        {
-            {mask_column, std::make_shared<DataTypeUInt8>(), {}},
-            {defaults_column, result_type, {}},
-            {result_column, result_type, {}},
-        };
-
-        auto rows = mask_column->size();
-        result_column = if_func->build(if_args)->execute(if_args, result_type, rows);
-    }
-
-#ifdef ABORT_ON_LOGICAL_ERROR
-    void validateShortCircuitResult(const ColumnPtr & column, const IColumn::Filter & filter) const
-    {
-        size_t expected_size = filter.size() - countBytesInFilter(filter);
-        size_t col_size = column->size();
-        if (col_size != expected_size)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Invalid size of getColumnsOrDefaultShortCircuit result. Column has {} rows, but filter contains {} bytes.",
-                col_size, expected_size);
-    }
-#endif
-
     ColumnPtr executeDictionaryRequest(
         std::shared_ptr<const IDictionary> & dictionary,
         const Strings & attribute_names,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const DataTypePtr & attribute_type,
-        const Columns & default_cols,
-        size_t collect_values_limit,
-        const ColumnWithTypeAndName & last_argument,
-        const DataTypePtr & result_type) const
+        const DataTypePtr & result_type,
+        const Columns & default_cols) const
     {
         ColumnPtr result;
 
         if (attribute_names.size() > 1)
         {
-            const auto & attribute_tuple_type = assert_cast<const DataTypeTuple &>(*attribute_type);
+            const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
 
-            Columns result_columns;
-            if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
-            {
-                result_columns = dictionary->getColumnsAllValues(
-                    attribute_names, attribute_tuple_type.getElements(), key_columns, key_types, default_cols, collect_values_limit);
-            }
-            else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.empty())
-            {
-                IColumn::Filter default_mask;
-                result_columns = dictionary->getColumns(attribute_names, attribute_tuple_type.getElements(), key_columns, key_types, default_mask);
-
-#ifdef ABORT_ON_LOGICAL_ERROR
-                for (const auto & column : result_columns)
-                    validateShortCircuitResult(column, default_mask);
-#endif
-
-                auto [defaults_column, mask_column] =
-                    getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
-
-                const auto & tuple_defaults = assert_cast<const ColumnTuple &>(*defaults_column);
-                const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
-
-                for (size_t col = 0; col < result_columns.size(); ++col)
-                {
-                    restoreShortCircuitColumn(
-                        result_columns[col],
-                        tuple_defaults.getColumnPtr(col),
-                        mask_column,
-                        result_tuple_type.getElements()[col]);
-                }
-            }
-            else
-            {
-                result_columns = dictionary->getColumns(
-                    attribute_names, attribute_tuple_type.getElements(), key_columns, key_types, default_cols);
-            }
+            Columns result_columns = dictionary->getColumns(
+                attribute_names,
+                result_tuple_type.getElements(),
+                key_columns,
+                key_types,
+                default_cols);
 
             result = ColumnTuple::create(std::move(result_columns));
         }
         else
         {
-            if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
-            {
-                result = dictionary->getColumnAllValues(
-                    attribute_names[0], attribute_type, key_columns, key_types, default_cols.front(), collect_values_limit);
-            }
-            else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.empty())
-            {
-                IColumn::Filter default_mask;
-                result = dictionary->getColumn(attribute_names[0], attribute_type, key_columns, key_types, default_mask);
-
-#ifdef ABORT_ON_LOGICAL_ERROR
-                validateShortCircuitResult(result, default_mask);
-#endif
-
-                auto [defaults_column, mask_column] =
-                    getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
-
-                restoreShortCircuitColumn(result, defaults_column, mask_column, result_type);
-            }
-            else
-            {
-                result = dictionary->getColumn(
-                    attribute_names[0], attribute_type, key_columns, key_types, default_cols.front());
-            }
+            result = dictionary->getColumn(
+                attribute_names[0],
+                result_type,
+                key_columns,
+                key_types,
+                default_cols.front());
         }
 
         return result;
@@ -770,7 +610,7 @@ private:
 
             if (tuple_size < 1)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Tuple second argument of function {} must contain multiple constant string columns", getName());
+                    "Tuple second argument of function {} must contain multiple constant string columns");
 
             for (size_t i = 0; i < tuple_col.tupleSize(); ++i)
             {
@@ -1228,11 +1068,11 @@ public:
     FunctionDictGetDescendantsExecutable(
         String name_,
         size_t level_,
-        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index_,
+        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index,
         std::shared_ptr<FunctionDictHelper> dictionary_helper_)
         : name(std::move(name_))
         , level(level_)
-        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index_))
+        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index))
         , dictionary_helper(std::move(dictionary_helper_))
     {}
 
@@ -1270,13 +1110,13 @@ public:
         const DataTypes & argument_types_,
         const DataTypePtr & result_type_,
         size_t level_,
-        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index_,
+        DictionaryHierarchicalParentToChildIndexPtr hierarchical_parent_to_child_index,
         std::shared_ptr<FunctionDictHelper> helper_)
         : name(std::move(name_))
         , argument_types(argument_types_)
         , result_type(result_type_)
         , level(level_)
-        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index_))
+        , hierarchical_parent_to_child_index(std::move(hierarchical_parent_to_child_index))
         , helper(std::move(helper_))
     {}
 

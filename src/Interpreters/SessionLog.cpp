@@ -1,6 +1,5 @@
 #include <Interpreters/SessionLog.h>
 
-#include <base/getFQDNOrHostName.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
@@ -67,7 +66,7 @@ SessionLogElement::SessionLogElement(const UUID & auth_id_, Type type_)
     std::tie(event_time, event_time_microseconds) = eventTime();
 }
 
-ColumnsDescription SessionLogElement::getColumnsDescription()
+NamesAndTypesList SessionLogElement::getNamesAndTypes()
 {
     auto event_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -87,13 +86,10 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::SSH_KEY),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
-            AUTH_TYPE_NAME_AND_VALUE(AuthType::HTTP),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 10);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 7);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -119,38 +115,34 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
                 std::make_shared<DataTypeString>()
             })));
 
-    return ColumnsDescription
+    return
     {
-        {"hostname", lc_string_datatype, "Hostname of the server executing the query."},
-        {"type", std::move(event_type), "Login/logout result. Possible values: "
-            "LoginFailure — Login error. "
-            "LoginSuccess — Successful login. "
-            "Logout — Logout from the system."},
-        {"auth_id", std::make_shared<DataTypeUUID>(), "Authentication ID, which is a UUID that is automatically generated each time user logins."},
-        {"session_id", std::make_shared<DataTypeString>(), "Session ID that is passed by client via HTTP interface."},
-        {"event_date", std::make_shared<DataTypeDate>(), "Login/logout date."},
-        {"event_time", std::make_shared<DataTypeDateTime>(), "Login/logout time."},
-        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Login/logout starting time with microseconds precision."},
+        {"type", std::move(event_type)},
+        {"auth_id", std::make_shared<DataTypeUUID>()},
+        {"session_id", std::make_shared<DataTypeString>()},
+        {"event_date", std::make_shared<DataTypeDate>()},
+        {"event_time", std::make_shared<DataTypeDateTime>()},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
 
-        {"user", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "User name."},
-        {"auth_type", std::make_shared<DataTypeNullable>(std::move(identified_with_column)), "The authentication type."},
+        {"user", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"auth_type", std::make_shared<DataTypeNullable>(std::move(identified_with_column))},
 
-        {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype), "The list of profiles set for all roles and/or users."},
-        {"roles", std::make_shared<DataTypeArray>(lc_string_datatype), "The list of roles to which the profile is applied."},
-        {"settings", std::move(settings_type_column), "Settings that were changed when the client logged in/out."},
+        {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype)},
+        {"roles", std::make_shared<DataTypeArray>(lc_string_datatype)},
+        {"settings", std::move(settings_type_column)},
 
-        {"client_address", DataTypeFactory::instance().get("IPv6"), "The IP address that was used to log in/out."},
-        {"client_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to log in/out."},
-        {"interface", std::move(interface_type_column), "The interface from which the login was initiated."},
+        {"client_address", DataTypeFactory::instance().get("IPv6")},
+        {"client_port", std::make_shared<DataTypeUInt16>()},
+        {"interface", std::move(interface_type_column)},
 
-        {"client_hostname", std::make_shared<DataTypeString>(), "The hostname of the client machine where the clickhouse-client or another TCP client is run."},
-        {"client_name", std::make_shared<DataTypeString>(), "The clickhouse-client or another TCP client name."},
-        {"client_revision", std::make_shared<DataTypeUInt32>(), "Revision of the clickhouse-client or another TCP client."},
-        {"client_version_major", std::make_shared<DataTypeUInt32>(), "The major version of the clickhouse-client or another TCP client."},
-        {"client_version_minor", std::make_shared<DataTypeUInt32>(), "The minor version of the clickhouse-client or another TCP client."},
-        {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
+        {"client_hostname", std::make_shared<DataTypeString>()},
+        {"client_name", std::make_shared<DataTypeString>()},
+        {"client_revision", std::make_shared<DataTypeUInt32>()},
+        {"client_version_major", std::make_shared<DataTypeUInt32>()},
+        {"client_version_minor", std::make_shared<DataTypeUInt32>()},
+        {"client_version_patch", std::make_shared<DataTypeUInt32>()},
 
-        {"failure_reason", std::make_shared<DataTypeString>(), "The exception message containing the reason for the login/logout failure."},
+        {"failure_reason", std::make_shared<DataTypeString>()},
     };
 }
 
@@ -161,7 +153,6 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
 
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(type);
     columns[i++]->insert(auth_id);
     columns[i++]->insert(session_id);
@@ -207,13 +198,12 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(auth_failure_reason.data(), auth_failure_reason.length());
 }
 
-void SessionLog::addLoginSuccess(const UUID & auth_id,
-                                 const String & session_id,
-                                 const Settings & settings,
-                                 const ContextAccessPtr & access,
-                                 const ClientInfo & client_info,
-                                 const UserPtr & login_user)
+void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context, const UserPtr & login_user)
 {
+    const auto access = login_context.getAccess();
+    const auto & settings = login_context.getSettingsRef();
+    const auto & client_info = login_context.getClientInfo();
+
     DB::SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
 
@@ -224,7 +214,8 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
     }
     log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
 
-    log_entry.session_id = session_id;
+    if (session_id)
+        log_entry.session_id = *session_id;
 
     if (const auto roles_info = access->getRolesInfo())
         log_entry.roles = roles_info->getCurrentRolesNames();
@@ -235,7 +226,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
     for (const auto & s : settings.allChanged())
         log_entry.settings.emplace_back(s.getName(), s.getValueString());
 
-    add(std::move(log_entry));
+    add(log_entry);
 }
 
 void SessionLog::addLoginFailure(
@@ -251,7 +242,7 @@ void SessionLog::addLoginFailure(
     log_entry.client_info = info;
     log_entry.user_identified_with = AuthenticationType::NO_PASSWORD;
 
-    add(std::move(log_entry));
+    add(log_entry);
 }
 
 void SessionLog::addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info)
@@ -265,7 +256,7 @@ void SessionLog::addLogOut(const UUID & auth_id, const UserPtr & login_user, con
     log_entry.external_auth_server = login_user ? login_user->auth_data.getLDAPServerName() : "";
     log_entry.client_info = client_info;
 
-    add(std::move(log_entry));
+    add(log_entry);
 }
 
 }

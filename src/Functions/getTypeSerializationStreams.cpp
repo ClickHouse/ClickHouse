@@ -48,7 +48,7 @@ public:
         SerializationPtr serialization = type->getDefaultSerialization();
         auto col_res = ColumnArray::create(ColumnString::create());
         ColumnString & col_res_strings = typeid_cast<ColumnString &>(col_res->getData());
-        ColumnFixedSizeHelper::Offsets & col_res_offsets = typeid_cast<ColumnArray::Offsets &>(col_res->getOffsets());
+        ColumnVectorHelper::Offsets & col_res_offsets = typeid_cast<ColumnArray::Offsets &>(col_res->getOffsets());
         serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
         {
             col_res_strings.insert(substream_path.toString());
@@ -65,7 +65,15 @@ private:
         if (!arg_string)
             return argument.type;
 
-        return DataTypeFactory::instance().get(arg_string->getDataAt(0).toString());
+        try
+        {
+            DataTypePtr type = DataTypeFactory::instance().get(arg_string->getDataAt(0).toString());
+            return type;
+        }
+        catch (const DB::Exception &)
+        {
+            return argument.type;
+        }
     }
 };
 

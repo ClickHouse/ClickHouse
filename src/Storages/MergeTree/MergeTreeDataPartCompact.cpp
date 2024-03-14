@@ -30,39 +30,27 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
 
 IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     const NamesAndTypesList & columns_to_read,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     const MarkRanges & mark_ranges,
-    const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
-    const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
-    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
-    auto * load_marks_threadpool
-        = reader_settings.read_settings.load_marks_asynchronously ? &read_info->getContext()->getLoadMarksThreadpool() : nullptr;
+    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this());
+    auto * load_marks_threadpool = reader_settings.read_settings.load_marks_asynchronously ? &read_info->getContext()->getLoadMarksThreadpool() : nullptr;
 
     return std::make_unique<MergeTreeReaderCompact>(
-        read_info,
-        columns_to_read,
-        virtual_fields,
-        storage_snapshot,
-        uncompressed_cache,
-        mark_cache,
-        mark_ranges,
-        reader_settings,
-        load_marks_threadpool,
-        avg_value_size_hints,
-        profile_callback);
+        read_info, columns_to_read, metadata_snapshot, uncompressed_cache,
+        mark_cache, mark_ranges, reader_settings, load_marks_threadpool,
+        avg_value_size_hints, profile_callback);
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const Statistics & stats_to_recalc_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity)
@@ -77,7 +65,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
         shared_from_this(), ordered_columns_list, metadata_snapshot,
-        indices_to_recalc, stats_to_recalc_, getMarksFileExtension(),
+        indices_to_recalc, getMarksFileExtension(),
         default_codec_, writer_settings, computed_index_granularity);
 }
 
@@ -126,7 +114,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     {
         marks_reader->ignore(columns_count * sizeof(MarkInCompressedFile));
         size_t granularity;
-        readBinaryLittleEndian(granularity, *marks_reader);
+        readIntBinary(granularity, *marks_reader);
         index_granularity_.appendMark(granularity);
     }
 
@@ -153,11 +141,6 @@ bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) co
     auto mrk_checksum = checksums.files.find(DATA_FILE_NAME + getMarksFileExtension());
 
     return (bin_checksum != checksums.files.end() && mrk_checksum != checksums.files.end());
-}
-
-std::optional<time_t> MergeTreeDataPartCompact::getColumnModificationTime(const String & /* column_name */) const
-{
-    return getDataPartStorage().getFileLastModified(DATA_FILE_NAME_WITH_EXTENSION).epochTime();
 }
 
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) const

@@ -51,7 +51,13 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<AggregateFunctionsArithmericOperationsVisitor>;
     using Base::Base;
 
-    void leaveImpl(QueryTreeNodePtr & node)
+    /// Traverse tree bottom to top
+    static bool shouldTraverseTopToBottom()
+    {
+        return false;
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_arithmetic_operations_in_aggregate_functions)
             return;
@@ -184,9 +190,10 @@ private:
         auto function_aggregate_function = function_node.getAggregateFunction();
 
         AggregateFunctionProperties properties;
-        auto action = NullsAction::EMPTY;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(
-            aggregate_function_name, action, {argument->getResultType()}, function_aggregate_function->getParameters(), properties);
+        auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name,
+            { argument->getResultType() },
+            function_aggregate_function->getParameters(),
+            properties);
 
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
@@ -194,7 +201,7 @@ private:
 
 }
 
-void AggregateFunctionsArithmericOperationsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void AggregateFunctionsArithmericOperationsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     AggregateFunctionsArithmericOperationsVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

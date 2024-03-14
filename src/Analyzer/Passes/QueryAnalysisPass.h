@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/IQueryTreePass.h>
 
@@ -71,13 +72,13 @@ public:
     /** Construct query analysis pass for query or union analysis.
       * Available columns are extracted from query node join tree.
       */
-    explicit QueryAnalysisPass(bool only_analyze_ = false);
+    QueryAnalysisPass() = default;
 
     /** Construct query analysis pass for expression or list of expressions analysis.
       * Available expression columns are extracted from table expression.
       * Table expression node must have query, union, table, table function type.
       */
-    QueryAnalysisPass(QueryTreeNodePtr table_expression_, bool only_analyze_ = false);
+    explicit QueryAnalysisPass(QueryTreeNodePtr table_expression_);
 
     String getName() override
     {
@@ -89,11 +90,10 @@ public:
         return "Resolve type for each query expression. Replace identifiers, matchers with query expressions. Perform constant folding. Evaluate scalar subqueries.";
     }
 
-    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
 
 private:
     QueryTreeNodePtr table_expression;
-    const bool only_analyze;
 };
 
 }

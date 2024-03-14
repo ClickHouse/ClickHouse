@@ -24,8 +24,9 @@ private:
     unsigned char m_month;
     unsigned char m_day;
 
-    void init(time_t time, const DateLUTImpl & date_lut)
+    void init(time_t time)
     {
+        const auto & date_lut = DateLUT::instance();
         const auto & values = date_lut.getValues(time);
 
         m_year = values.year;
@@ -55,22 +56,22 @@ private:
     }
 
 public:
-    explicit LocalDate(time_t time, const DateLUTImpl & time_zone = DateLUT::instance())
+    explicit LocalDate(time_t time)
     {
-        init(time, time_zone);
+        init(time);
     }
 
-    LocalDate(DayNum day_num, const DateLUTImpl & time_zone = DateLUT::instance()) /// NOLINT
+    LocalDate(DayNum day_num) /// NOLINT
     {
-        const auto & values = time_zone.getValues(day_num);
+        const auto & values = DateLUT::instance().getValues(day_num);
         m_year  = values.year;
         m_month = values.month;
         m_day   = values.day_of_month;
     }
 
-    explicit LocalDate(ExtendedDayNum day_num, const DateLUTImpl & time_zone = DateLUT::instance())
+    explicit LocalDate(ExtendedDayNum day_num)
     {
-        const auto & values = time_zone.getValues(day_num);
+        const auto & values = DateLUT::instance().getValues(day_num);
         m_year  = values.year;
         m_month = values.month;
         m_day   = values.day_of_month;
@@ -98,13 +99,15 @@ public:
     LocalDate(const LocalDate &) noexcept = default;
     LocalDate & operator= (const LocalDate &) noexcept = default;
 
-    DayNum getDayNum(const DateLUTImpl & lut = DateLUT::instance()) const
+    DayNum getDayNum() const
     {
+        const auto & lut = DateLUT::instance();
         return DayNum(lut.makeDayNum(m_year, m_month, m_day).toUnderType());
     }
 
-    ExtendedDayNum getExtenedDayNum(const DateLUTImpl & lut = DateLUT::instance()) const
+    ExtendedDayNum  getExtenedDayNum() const
     {
+        const auto & lut = DateLUT::instance();
         return ExtendedDayNum (lut.makeDayNum(m_year, m_month, m_day).toUnderType());
     }
 

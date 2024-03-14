@@ -18,15 +18,13 @@ public:
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
 
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription, bool is_insert_query) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription) const override;
 
     const char * getStorageTypeName() const override { return "Dictionary"; }
 
 private:
     String dictionary_name;
     ColumnsDescription dictionary_columns;
-};
-
-}
+};}

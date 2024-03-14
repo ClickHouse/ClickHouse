@@ -9,8 +9,6 @@ namespace DB
 /// Represents the full name of a row policy, e.g. "myfilter ON mydb.mytable".
 struct RowPolicyName
 {
-    static constexpr char ANY_TABLE_MARK[] = "";
-
     String short_name;
     String database;
     String table_name;
@@ -52,7 +50,6 @@ struct RowPolicyFilterTypeInfo
     const char * const raw_name;
     const String name;    /// Lowercased with underscores, e.g. "select_filter".
     const String command; /// Uppercased without last word, e.g. "SELECT".
-    const String description;
     const bool is_check;  /// E.g. false for SELECT_FILTER.
     static const RowPolicyFilterTypeInfo & get(RowPolicyFilterType type);
 };

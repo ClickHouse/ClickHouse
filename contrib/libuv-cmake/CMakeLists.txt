@@ -1,7 +1,13 @@
+# once fixed, please remove similar places in CMakeLists of libuv users (search "ch_contrib::uv")
+if (OS_DARWIN AND COMPILER_GCC)
+    message (WARNING "libuv cannot be built with GCC in macOS due to a bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=93082")
+    return()
+endif()
+
 # This file is a modified version of contrib/libuv/CMakeLists.txt
 
-set (SOURCE_DIR "${PROJECT_SOURCE_DIR}/contrib/libuv")
-set (BINARY_DIR "${PROJECT_BINARY_DIR}/contrib/libuv")
+set (SOURCE_DIR "${CMAKE_SOURCE_DIR}/contrib/libuv")
+set (BINARY_DIR "${CMAKE_BINARY_DIR}/contrib/libuv")
 
 set(uv_sources
     src/fs-poll.c

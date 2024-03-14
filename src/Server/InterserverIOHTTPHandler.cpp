@@ -77,49 +77,35 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 }
 
 
-void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
+void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     setThreadName("IntersrvHandler");
-    ThreadStatus thread_status;
 
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
     Output used_output;
-    const auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
+    const auto & config = server.config();
+    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_event);
-
-    auto finalize_output = [&]
-    {
-        try
-        {
-            used_output.out->finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to finalize response write buffer");
-        }
-    };
+        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     auto write_response = [&](const std::string & message)
     {
         if (response.sent())
-        {
-            finalize_output();
             return;
-        }
 
+        auto & out = *used_output.out;
         try
         {
-            writeString(message, *used_output.out);
-            finalize_output();
+            writeString(message, out);
+            out.finalize();
         }
         catch (...)
         {
             tryLogCurrentException(log);
-            finalize_output();
+            out.finalize();
         }
     };
 
@@ -128,7 +114,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         if (auto [message, success] = checkAuthentication(request); success)
         {
             processQuery(request, response, used_output);
-            finalize_output();
+            used_output.out->finalize();
             LOG_DEBUG(log, "Done processing query");
         }
         else
@@ -141,10 +127,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     catch (Exception & e)
     {
         if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
-        {
-            used_output.out->finalize();
             return;
-        }
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
