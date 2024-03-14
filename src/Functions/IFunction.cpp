@@ -48,7 +48,7 @@ bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
 }
 
 ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-    ColumnsWithTypeAndName & args, bool can_be_executed_on_default_arguments, size_t input_rows_count)
+    ColumnsWithTypeAndName & args, bool can_be_executed_on_default_arguments, size_t input_rows_count, const String & function_name)
 {
     size_t num_rows = input_rows_count;
     ColumnPtr indexes;
@@ -60,7 +60,13 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
         {
             /// Single LowCardinality column is supported now.
             if (indexes)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single dictionary argument for function.");
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected single dictionary argument for function {}, got Block({}), can_be_executed_on_default_arguments: {}, input_rows_count: {}",
+                    function_name,
+                    Block(args).dumpStructure(),
+                    can_be_executed_on_default_arguments,
+                    input_rows_count);
 
             const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
 
@@ -272,7 +278,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
 
             const auto & dictionary_type = res_low_cardinality_type->getDictionaryType();
             ColumnPtr indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-                    columns_without_low_cardinality, can_be_executed_on_default_arguments, input_rows_count);
+                    columns_without_low_cardinality, can_be_executed_on_default_arguments, input_rows_count, getName());
 
             size_t new_input_rows_count = columns_without_low_cardinality.empty()
                                         ? input_rows_count
