@@ -1,6 +1,6 @@
 // Based on https://github.com/amdn/itoa and combined with our optimizations
 //
-//=== itoa.h - Fast integer to ascii conversion                   --*- C++ -*-//
+//=== itoa.cpp - Fast integer to ascii conversion                 --*- C++ -*-//
 //
 // The MIT License (MIT)
 // Copyright (c) 2016 Arturo Martin-de-Nicolas
