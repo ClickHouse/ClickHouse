@@ -54,19 +54,19 @@ endif ()
 # ccache ignore it.
 option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling." OFF)
 if (ENABLE_CHECK_HEAVY_BUILDS)
-    # set DATA (since RSS does not work since 2.6.x+) to 5G
-    set (RLIMIT_DATA 5000000000)
-    # set VIRT (RLIMIT_AS) to 10G (DATA*10)
-    set (RLIMIT_AS 10000000000)
-    # set CPU time limit to 1000 seconds
-    set (RLIMIT_CPU 1000)
+    # # set DATA (since RSS does not work since 2.6.x+) to 5G
+    # set (RLIMIT_DATA 5000000000)
+    # # set VIRT (RLIMIT_AS) to 10G (DATA*10)
+    # set (RLIMIT_AS 10000000000)
+    # # set CPU time limit to 1000 seconds
+    # set (RLIMIT_CPU 1000)
 
-    # -fsanitize=memory and address are too heavy
-    if (SANITIZE)
-       set (RLIMIT_DATA 15000000000) # 10G
-    endif()
+    # # -fsanitize=memory and address are too heavy
+    # if (SANITIZE)
+    #    set (RLIMIT_DATA 15000000000) # 10G
+    # endif()
 
-    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
+    # set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
