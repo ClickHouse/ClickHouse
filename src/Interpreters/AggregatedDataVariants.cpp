@@ -18,7 +18,6 @@ namespace ErrorCodes
 }
 using ColumnsHashing::HashMethodContext;
 using ColumnsHashing::HashMethodContextPtr;
-using ColumnsHashing::LastElementCacheStats;
 
 AggregatedDataVariants::AggregatedDataVariants() : aggregates_pools(1, std::make_shared<Arena>()), aggregates_pool(aggregates_pools.back().get()) {}
 
