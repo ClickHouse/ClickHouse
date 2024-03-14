@@ -221,6 +221,10 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     bool move_to_ordinary = old_table_id.uuid != UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil;
     assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
 
+    /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or
+    /// it can be in the process of loading or reloading right now.
+    /// The correct way is to update the dictionary's configuration first and then ask ExternalDictionariesLoader to reload our dictionary.
+
     {
         std::lock_guard lock(dictionary_config_mutex);
 
@@ -232,31 +236,28 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
             configuration->remove("dictionary.uuid");
     }
 
+    const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
+
     /// Dictionary is moving between databases of different engines or is renaming inside Ordinary database
     bool recreate_dictionary = old_table_id.uuid == UUIDHelpers::Nil || new_table_id.uuid == UUIDHelpers::Nil;
 
     if (recreate_dictionary)
     {
-        /// It's too hard to update both name and uuid, better to reload dictionary with new name
+        /// For an ordinary database the config repositories of dictionaries are identified by the full name (database name + dictionary name),
+        /// so we cannot change the dictionary name or the database name on the fly (without extra reloading) and have to recreate the config repository.
         removeDictionaryConfigurationFromRepository();
         auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
-        remove_repository_callback = getContext()->getExternalDictionariesLoader().addConfigRepository(std::move(repository));
-        /// Dictionary will be reloaded lazily to avoid exceptions in the middle of renaming
+        remove_repository_callback = external_dictionaries_loader.addConfigRepository(std::move(repository));
+        /// Dictionary will be now reloaded lazily.
     }
     else
     {
-        const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
-        auto result = external_dictionaries_loader.getLoadResult(old_table_id.getInternalDictionaryName());
-
-        if (result.object)
-        {
-            const auto dictionary = std::static_pointer_cast<const IDictionary>(result.object);
-            dictionary->updateDictionaryName(new_table_id);
-        }
-
+        /// For an atomic database dictionaries are identified inside the ExternalLoader by UUID,
+        /// so we can change the dictionary name or the database name on the fly (without extra reloading) because UUID doesn't change.
         external_dictionaries_loader.reloadConfig(old_table_id.getInternalDictionaryName());
-        dictionary_name = new_table_id.getFullNameNotQuoted();
     }
+
+    dictionary_name = new_table_id.getFullNameNotQuoted();
 }
 
 void StorageDictionary::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const

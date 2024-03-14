@@ -213,6 +213,10 @@ public:
 protected:
     virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;
 
+    /// Updates the object from the configuration without reloading as much as possible.
+    virtual void updateObjectFromConfigWithoutReloading(
+        IExternalLoadable & /* object */, const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const {}
+
 private:
     void checkLoaded(const LoadResult & result, bool check_no_errors) const;
     void checkLoaded(const LoadResults & results, bool check_no_errors) const;

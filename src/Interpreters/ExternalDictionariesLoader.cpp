@@ -41,6 +41,20 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
     return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), created_from_ddl);
 }
 
+void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const
+{
+    IDictionary & dict = static_cast<IDictionary &>(object);
+
+    auto new_dictionary_id = StorageID::fromDictionaryConfig(config, key_in_config);
+    auto old_dictionary_id = dict.getDictionaryID();
+    if ((new_dictionary_id.table_name != old_dictionary_id.table_name) || (new_dictionary_id.database_name != old_dictionary_id.database_name))
+    {
+        /// We can update the dictionary ID without reloading only if it's in the atomic database.
+        if ((new_dictionary_id.uuid == old_dictionary_id.uuid) && (new_dictionary_id.uuid != UUIDHelpers::Nil))
+            dict.updateDictionaryID(new_dictionary_id);
+    }
+}
+
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());

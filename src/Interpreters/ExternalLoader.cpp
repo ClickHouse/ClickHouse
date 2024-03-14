@@ -87,6 +87,8 @@ namespace
                 lock = std::unique_lock(mutex);
         }
     };
+
+    using UpdateObjectFromConfigWithoutReloadingFunction = std::function<void(const IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config)>;
 }
 
 
@@ -377,7 +379,7 @@ private:
     }
 
     const String type_name;
-    LoggerPtr log;
+    const LoggerPtr log;
 
     std::mutex mutex;
     ExternalLoaderConfigSettings settings;
@@ -400,9 +402,11 @@ public:
 
     LoadingDispatcher(
         const CreateObjectFunction & create_object_function_,
+        const UpdateObjectFromConfigWithoutReloadingFunction & update_object_from_config_without_reloading_,
         const String & type_name_,
         LoggerPtr log_)
         : create_object(create_object_function_)
+        , update_object_from_config_without_reloading(update_object_from_config_without_reloading_)
         , type_name(type_name_)
         , log(log_)
     {
@@ -457,10 +461,15 @@ public:
             else
             {
                 const auto & new_config = new_config_it->second;
-                bool config_is_same = isSameConfiguration(*info.config->config, info.config->key_in_config, *new_config->config, new_config->key_in_config);
+                auto previous_config = info.config;
                 info.config = new_config;
-                if (!config_is_same)
+
+                bool config_changed = !isSameConfiguration(*previous_config->config, previous_config->key_in_config, *new_config->config, new_config->key_in_config);
+                if (config_changed)
                 {
+                    if (info.object)
+                        update_object_from_config_without_reloading(*info.object, *new_config->config, new_config->key_in_config);
+
                     if (info.triedToLoad())
                     {
                         /// The object has been tried to load before, so it is currently in use or was in use
@@ -1117,7 +1126,10 @@ private:
         }
 
         if (new_object)
+        {
+            update_object_from_config_without_reloading(*new_object, *info->config->config, info->config->key_in_config);
             info->object = new_object;
+        }
 
         info->exception = new_exception;
         info->error_count = error_count;
@@ -1192,6 +1204,7 @@ private:
     }
 
     const CreateObjectFunction create_object;
+    const UpdateObjectFromConfigWithoutReloadingFunction update_object_from_config_without_reloading;
     const String type_name;
     LoggerPtr log;
 
@@ -1277,6 +1290,8 @@ ExternalLoader::ExternalLoader(const String & type_name_, LoggerPtr log_)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(
           [this](auto && a, auto && b, auto && c) { return createObject(a, b, c); },
+          [this](const IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config)
+                { return updateObjectFromConfigWithoutReloading(const_cast<IExternalLoadable &>(object), config, key_in_config); },
           type_name_,
           log_))
     , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
