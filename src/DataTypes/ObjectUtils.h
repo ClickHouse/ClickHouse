@@ -139,7 +139,7 @@ public:
 
     Field operator()(const Array & x) const;
 
-    Field operator()(const Null & x) const { return x; }
+    Field operator()(const Null & x) const;
 
     template <typename T>
     Field operator()(const T & x) const

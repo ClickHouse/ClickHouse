@@ -1001,6 +1001,11 @@ Field FieldVisitorFoldDimension::operator()(const Array & x) const
     return res;
 }
 
+Field FieldVisitorFoldDimension::operator()(const Null &) const
+{
+    return Array();
+}
+
 void setAllObjectsToDummyTupleType(NamesAndTypesList & columns)
 {
     for (auto & column : columns)
