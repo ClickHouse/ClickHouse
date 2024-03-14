@@ -423,7 +423,7 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
     const DictionaryStorageFetchRequest & request,
     const MutableColumns & fetched_columns,
     const PaddedPODArray<KeyState> & key_index_to_state,
-    IColumn::Filter * const default_mask) const
+    IColumn::Filter * default_mask) const
 {
     MutableColumns aggregated_columns = request.makeAttributesResultColumns();
 
@@ -473,7 +473,7 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
         const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
         const MutableColumns & fetched_columns_during_update,
         const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
-        IColumn::Filter * const default_mask) const
+        IColumn::Filter * default_mask) const
 {
     /**
     * Aggregation of columns fetched from storage and from source during update.
