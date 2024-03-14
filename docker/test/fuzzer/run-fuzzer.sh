@@ -128,15 +128,12 @@ EOL
     config_logs_export_cluster db/config.d/system_logs_export.yaml
 }
 
-function filter_exists_and_template
+function filter_exists
 {
     local path
     for path in "$@"; do
         if [ -e "$path" ]; then
-            # SC2001 shellcheck suggests:
-            # echo ${path//.sql.j2/.gen.sql}
-            # but it doesn't allow to use regex
-            echo "$path" | sed 's/\.sql\.j2$/.gen.sql/'
+            echo "$path"
         else
             echo "'$path' does not exists" >&2
         fi
@@ -157,16 +154,14 @@ function stop_server
 
 function fuzz
 {
-    /generate-test-j2.py --path ch/tests/queries/0_stateless
-
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
     # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
-    NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\(\.j2\)\?\)$!ch/\1!p' $repo_dir/ci-changed-files.txt | sort -R)"
+    NEW_TESTS="$(grep -e ".*\.sh" -e ".*\.sql" -e ".*\.sql.j2" $repo_dir/ci-changed-files.txt | awk -F '/' '{print $NF}' | sort -R)"
     # ci-changed-files.txt contains also files that has been deleted/renamed, filter them out.
-    NEW_TESTS="$(filter_exists_and_template $NEW_TESTS)"
+    NEW_TESTS="$(filter_exists $NEW_TESTS)"l
     if [[ -n "$NEW_TESTS" ]]
     then
-        NEW_TESTS_OPT="${NEW_TESTS_OPT:---interleave-queries-file ${NEW_TESTS}}"
+        NEW_TESTS_OPT="${NEW_TESTS_OPT:---extreme-fuzz-tests ${NEW_TESTS}}"
     else
         NEW_TESTS_OPT="${NEW_TESTS_OPT:-}"
     fi
@@ -230,20 +225,18 @@ quit
 
     setup_logs_replication
 
-    # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
-    # SC2046: Quote this to prevent word splitting. Actually, I need word splitting.
-    # shellcheck disable=SC2012,SC2046
-    timeout -s TERM --preserve-status 30m clickhouse-client \
-        --max_memory_usage_in_client=1000000000 \
-        --receive_timeout=10 \
-        --receive_data_timeout_ms=10000 \
-        --stacktrace \
+    timeout -s TERM --preserve-status 35m $repo_dir/tests/clickhouse-test \
+        --fuzz \
         --query-fuzzer-runs=1000 \
         --create-query-fuzzer-runs=50 \
-        --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
-        $NEW_TESTS_OPT \
+         $NEW_TESTS_OPT \
+        --client-option receive_timeout=10 receive_data_timeout_ms=1000 max_memory_usage_in_client=100000000 max_memory_usage=100000000 stacktrace \
+        --global_time_limit=1800 \
+        --jobs=8 \
+        --order=random \
         > fuzzer.log \
         2>&1 &
+
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
 
