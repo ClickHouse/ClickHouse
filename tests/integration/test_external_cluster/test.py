@@ -46,6 +46,12 @@ def test_ddl(started_cluster):
     control_node.query(
         "ALTER TABLE test_db.test_table ON CLUSTER 'external' add column data String"
     )
+    control_node.query("DETACH TABLE test_db.test_table ON CLUSTER 'external'")
+
+    expected = ""
+    assert_create_query(data_node, "test_db", "test_table", expected)
+
+    control_node.query("ATTACH TABLE test_db.test_table ON CLUSTER 'external'")
 
     expected = "CREATE TABLE test_db.test_table (`id` Int64, `data` String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192"
     assert_create_query(data_node, "test_db", "test_table", expected)
