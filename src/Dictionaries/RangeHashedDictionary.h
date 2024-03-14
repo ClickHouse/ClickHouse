@@ -236,18 +236,23 @@ private:
 
     static Attribute createAttribute(const DictionaryAttribute & dictionary_attribute);
 
-    template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
+
+
+    template <typename ValueType>
+    using ValueSetterFunc = std::function<void(size_t, const ValueType &, bool)>;
+
+    template <typename ValueType, bool is_nullable, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
-        ValueSetter && set_value,
+        ValueSetterFunc<ValueType> && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType, bool is_nullable, typename ValueSetter>
+    template <typename ValueType, bool is_nullable>
     size_t getItemsShortCircuitImpl(
         const Attribute & attribute,
         const Columns & key_columns,
-        ValueSetter && set_value,
+        ValueSetterFunc<ValueType> && set_value,
         IColumn::Filter & default_mask) const;
 
     ColumnPtr getColumnInternal(
