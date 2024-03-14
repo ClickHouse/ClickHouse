@@ -113,6 +113,9 @@ LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::remove(LRUQueue::
 
 void LRUFileCachePriority::updateSize(int64_t size)
 {
+    chassert(size != 0);
+    chassert(size > 0 || state->current_size >= size_t(-size));
+
     state->current_size += size;
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
 }
@@ -390,6 +393,7 @@ void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CacheGu
         "Increment size with {} in LRU queue for key: {}, offset: {}, previous size: {}",
         size, entry->key, entry->offset, entry->size);
 
+    chassert(size);
     cache_priority->updateSize(size);
     entry->size += size;
 }
@@ -403,6 +407,9 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
         cache_priority->log,
         "Decrement size with {} in LRU queue for key: {}, offset: {}, previous size: {}",
         size, entry->key, entry->offset, entry->size);
+
+    chassert(size);
+    chassert(entry->size >= size);
 
     cache_priority->updateSize(-size);
     entry->size -= size;
