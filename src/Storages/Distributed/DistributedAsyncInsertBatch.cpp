@@ -232,10 +232,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                 insert_settings.applyChanges(settings_changes);
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-                auto result = parent.pool->getManyChecked(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-                if (distributed_header.insert_settings.distributed_insert_replicas_preferences == ReplicasPreferences::PREFER_NON_READ_ONLY)
-                    sortConnectionPoolByNonReadOnlyReplicas(result);
-
+                auto result = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
                 connection = std::move(result.front().entry);
                 compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
@@ -293,10 +290,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
                 parent.storage.getContext()->getOpenTelemetrySpanLog());
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-            auto result = parent.pool->getManyChecked(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-            if (distributed_header.insert_settings.distributed_insert_replicas_preferences == ReplicasPreferences::PREFER_NON_READ_ONLY)
-                sortConnectionPoolByNonReadOnlyReplicas(result);
-
+            auto result = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
             auto connection = std::move(result.front().entry);
             bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 

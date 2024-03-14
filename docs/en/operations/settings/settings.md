@@ -2817,16 +2817,16 @@ Possible values:
 
 Default value: 0.
 
-## distributed_insert_replicas_preferences {#distributed_insert_replicas_preferences}
+## distributed_insert_skip_read_only_replicas {#distributed_insert_skip_read_only_replicas}
 
-Adds ability to change replica preferences for INSERT queries.
+Enables skipping read-only replicas for INSERT queries into Distributed.
 
 Possible values:
 
-- `no_preferences` - no preferences
-- `prefer_non_read_only` - prefer non read-only replicas for INSERT into Distributed (but note, that they will not be excluded completely, so if you have only read-only replicas it will still try to INSERT into them, with respect to `distributed_replica_max_ignored_errors`).
+- 0 — INSERT was as usual, if it will go to read-only replica it will fail
+- 1 — Initiator will skip read-only replicas before sending data to shards.
 
-Default value: `prefer_non_read_only`
+Default value: `0`
 
 ## distributed_foreground_insert {#distributed_foreground_insert}
 

@@ -30,6 +30,7 @@ namespace ProfileEvents
 {
     extern const Event DistributedConnectionFailTry;
     extern const Event DistributedConnectionFailAtAll;
+    extern const Event DistributedConnectionReadOnlyReplica;
 }
 
 /// This class provides a pool with fault tolerance. It is used for pooling of connections to replicated DB.
@@ -112,6 +113,7 @@ public:
             size_t min_entries, size_t max_entries, size_t max_tries,
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
+            bool skip_read_only_replicas,
             const TryGetEntryFunc & try_get_entry,
             const GetPriorityFunc & get_priority);
 
@@ -200,8 +202,12 @@ PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_
     const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
 {
     std::vector<TryResult> results = getMany(
-        1 /* min entries */, 1 /* max entries */, 1 /* max tries */,
-        max_ignored_errors, fallback_to_stale_replicas,
+        /* min_entries= */ 1,
+        /* max_entries= */ 1,
+        /* max_tries= */ 1,
+        max_ignored_errors,
+        fallback_to_stale_replicas,
+        /* skip_read_only_replicas= */ false,
         try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
@@ -215,6 +221,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         size_t min_entries, size_t max_entries, size_t max_tries,
         size_t max_ignored_errors,
         bool fallback_to_stale_replicas,
+        bool skip_read_only_replicas,
         const TryGetEntryFunc & try_get_entry,
         const GetPriorityFunc & get_priority)
 {
@@ -266,9 +273,14 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 ++entries_count;
                 if (result.is_usable)
                 {
-                    ++usable_count;
-                    if (result.is_up_to_date)
-                        ++up_to_date_count;
+                    if (!skip_read_only_replicas || !result.is_readonly)
+                    {
+                        ++usable_count;
+                        if (result.is_up_to_date)
+                            ++up_to_date_count;
+                    }
+                    else
+                        ProfileEvents::increment(ProfileEvents::DistributedConnectionReadOnlyReplica);
                 }
             }
             else
@@ -291,7 +303,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
                 "All connection tries failed. Log: \n\n{}\n", fail_messages);
 
-    std::erase_if(try_results, [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; });
+    std::erase_if(try_results, [&](const TryResult & r) { return r.entry.isNull() || !r.is_usable || (skip_read_only_replicas && r.is_readonly); });
 
     /// Sort so that preferred items are near the beginning.
     std::stable_sort(

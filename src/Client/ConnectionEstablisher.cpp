@@ -8,7 +8,6 @@ namespace ProfileEvents
     extern const Event DistributedConnectionUsable;
     extern const Event DistributedConnectionMissingTable;
     extern const Event DistributedConnectionStaleReplica;
-    extern const Event DistributedConnectionReadOnlyReplica;
 }
 
 namespace DB
@@ -75,7 +74,6 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         {
             result.is_readonly = true;
             LOG_TRACE(log, "Table {}.{} is readonly on server {}", table_to_check->database, table_to_check->table, result.entry->getDescription());
-            ProfileEvents::increment(ProfileEvents::DistributedConnectionReadOnlyReplica);
         }
 
         const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;

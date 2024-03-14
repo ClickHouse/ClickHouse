@@ -77,6 +77,12 @@ public:
         AsyncCallback async_callback = {},
         std::optional<bool> skip_unavailable_endpoints = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
+    /// The same as getManyChecked(), but respects distributed_insert_skip_read_only_replicas setting.
+    std::vector<TryResult> getManyCheckedForInsert(
+        const ConnectionTimeouts & timeouts,
+        const Settings & settings,
+        PoolMode pool_mode,
+        const QualifiedTableName & table_to_check);
 
     struct NestedPoolStatus
     {
@@ -107,7 +113,8 @@ private:
         PoolMode pool_mode,
         const TryGetEntryFunc & try_get_entry,
         std::optional<bool> skip_unavailable_endpoints = std::nullopt,
-        GetPriorityForLoadBalancing::Func priority_func = {});
+        GetPriorityForLoadBalancing::Func priority_func = {},
+        bool skip_read_only_replicas = false);
 
     /// Try to get a connection from the pool and check that it is good.
     /// If table_to_check is not null and the check is enabled in settings, check that replication delay
@@ -124,8 +131,6 @@ private:
 
     GetPriorityForLoadBalancing get_priority_load_balancing;
 };
-
-void sortConnectionPoolByNonReadOnlyReplicas(std::vector<ConnectionPoolWithFailover::TryResult> & results);
 
 using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
 using ConnectionPoolWithFailoverPtrs = std::vector<ConnectionPoolWithFailoverPtr>;

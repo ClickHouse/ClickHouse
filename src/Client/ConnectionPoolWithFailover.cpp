@@ -158,6 +158,21 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     return getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, priority_func);
 }
 
+std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyCheckedForInsert(
+    const ConnectionTimeouts & timeouts,
+    const Settings & settings,
+    PoolMode pool_mode,
+    const QualifiedTableName & table_to_check)
+{
+    TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
+    { return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check, /*async_callback=*/ {}); };
+
+    return getManyImpl(settings, pool_mode, try_get_entry,
+        /*skip_unavailable_endpoints=*/ std::nullopt,
+        /*priority_func=*/ {},
+        settings.distributed_insert_skip_read_only_replicas);
+}
+
 ConnectionPoolWithFailover::Base::GetPriorityFunc ConnectionPoolWithFailover::makeGetPriorityFunc(const Settings & settings)
 {
     const size_t offset = settings.load_balancing_first_offset % nested_pools.size();
@@ -171,7 +186,8 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     PoolMode pool_mode,
     const TryGetEntryFunc & try_get_entry,
     std::optional<bool> skip_unavailable_endpoints,
-    GetPriorityForLoadBalancing::Func priority_func)
+    GetPriorityForLoadBalancing::Func priority_func,
+    bool skip_read_only_replicas)
 {
     if (nested_pools.empty())
         throw DB::Exception(
@@ -203,7 +219,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
     bool fallback_to_stale_replicas = settings.fallback_to_stale_replicas_for_distributed_queries.value;
 
-    return Base::getMany(min_entries, max_entries, max_tries, max_ignored_errors, fallback_to_stale_replicas, try_get_entry, priority_func);
+    return Base::getMany(min_entries, max_entries, max_tries, max_ignored_errors, fallback_to_stale_replicas, skip_read_only_replicas, try_get_entry, priority_func);
 }
 
 ConnectionPoolWithFailover::TryResult
@@ -252,16 +268,6 @@ ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPrior
 
     UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
     return Base::getShuffledPools(max_ignored_errors, priority_func, use_slowdown_count);
-}
-
-void sortConnectionPoolByNonReadOnlyReplicas(std::vector<ConnectionPoolWithFailover::TryResult> & results)
-{
-    auto comparator = [&](const auto & left, const auto & right)
-    {
-        return std::forward_as_tuple(left.is_readonly, !left.is_up_to_date, left.delay)
-             < std::forward_as_tuple(right.is_readonly, !right.is_up_to_date, right.delay);
-    };
-    std::stable_sort(results.begin(), results.end(), comparator);
 }
 
 }

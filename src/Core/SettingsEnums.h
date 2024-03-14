@@ -174,14 +174,6 @@ enum class DistributedProductMode
 
 DECLARE_SETTING_ENUM(DistributedProductMode)
 
-enum class ReplicasPreferences
-{
-    NO_PREFERENCES = 0,
-    /// Prefer non read-only replicas (they will not be excluded completely).
-    PREFER_NON_READ_ONLY,
-};
-DECLARE_SETTING_ENUM(ReplicasPreferences)
-
 /// How the query cache handles queries with non-deterministic functions, e.g. now()
 enum class QueryCacheNondeterministicFunctionHandling
 {
