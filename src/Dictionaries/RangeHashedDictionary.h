@@ -292,6 +292,7 @@ private:
 extern template class RangeHashedDictionary<DictionaryKeyType::Simple>;
 extern template class RangeHashedDictionary<DictionaryKeyType::Complex>;
 
+
 namespace
 {
     template <typename F>

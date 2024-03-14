@@ -1,15 +1,28 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 
+#define INSTANTIATE_GET_ITEMS_SHORT_CIRCUIT_IMPL(DictionaryKeyType, IsNullable, ValueType) \
+    template size_t RangeHashedDictionary<DictionaryKeyType>::getItemsShortCircuitImpl<ValueType, IsNullable>( \
+        const Attribute & attribute, \
+        const Columns & key_columns, \
+        typename RangeHashedDictionary<DictionaryKeyType>::ValueSetterFunc<ValueType> && set_value, \
+        IColumn::Filter & default_mask) const;
+
+#define INSTANTIATE_GET_ITEMS_SHORT_CIRCUIT_IMPL_FOR_ATTRIBUTE_TYPE(AttributeType) \
+    INSTANTIATE_GET_ITEMS_SHORT_CIRCUIT_IMPL(DictionaryKeyType::Simple, true, DictionaryValueType<AttributeType>) \
+    INSTANTIATE_GET_ITEMS_SHORT_CIRCUIT_IMPL(DictionaryKeyType::Simple, false, DictionaryValueType<AttributeType>) \
+    INSTANTIATE_GET_ITEMS_SHORT_CIRCUIT_IMPL(DictionaryKeyType::Complex, true, DictionaryValueType<AttributeType>) \
+    INSTANTIATE_GET_ITEMS_SHORT_CIRCUIT_IMPL(DictionaryKeyType::Complex, false, DictionaryValueType<AttributeType>)
+
 namespace DB
 {
 
 template <DictionaryKeyType dictionary_key_type>
-template <typename ValueType, bool is_nullable, typename DefaultValueExtractor>
-void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
+template <typename ValueType, bool is_nullable>
+size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
     const Attribute & attribute,
     const Columns & key_columns,
     typename RangeHashedDictionary<dictionary_key_type>::ValueSetterFunc<ValueType> && set_value,
-    DefaultValueExtractor & default_value_extractor) const
+    IColumn::Filter & default_mask) const
 {
     const auto & attribute_container = std::get<AttributeContainerType<ValueType>>(attribute.container);
 
@@ -22,6 +35,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
     DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns_copy, arena_holder.getComplexKeyArena());
     const size_t keys_size = keys_extractor.getKeysSize();
+    default_mask.resize(keys_size);
 
     callOnRangeType(
         dict_struct.range_min->type,
@@ -85,6 +99,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
 
                     if (range.has_value())
                     {
+                        default_mask[key_index] = 0;
                         ++keys_found;
 
                         ValueType value = attribute_container[value_index];
@@ -104,10 +119,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
                     }
                 }
 
-                if constexpr (is_nullable)
-                    set_value(key_index, default_value_extractor[key_index], default_value_extractor.isNullAt(key_index));
-                else
-                    set_value(key_index, default_value_extractor[key_index], false);
+                default_mask[key_index] = 1;
 
                 keys_extractor.rollbackCurrentKey();
             }
@@ -115,21 +127,6 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
+    return keys_found;
 }
-
-#define INSTANTIATE_GET_ITEMS_IMPL(DictionaryKeyType, IsNullable, AttributeType, ValueType) \
-template void RangeHashedDictionary<DictionaryKeyType>::getItemsImpl<ValueType, IsNullable, DictionaryDefaultValueExtractor<AttributeType>>( \
-    const Attribute & attribute,\
-    const Columns & key_columns,\
-    typename RangeHashedDictionary<DictionaryKeyType>::ValueSetterFunc<ValueType> && set_value,\
-    DictionaryDefaultValueExtractor<AttributeType> & default_value_extractor) const;
-
-#define INSTANTIATE_GET_ITEMS_IMPL_FOR_ATTRIBUTE_TYPE(AttributeType) \
-    INSTANTIATE_GET_ITEMS_IMPL(DictionaryKeyType::Simple, true, AttributeType, DictionaryValueType<AttributeType>) \
-    INSTANTIATE_GET_ITEMS_IMPL(DictionaryKeyType::Simple, false, AttributeType, DictionaryValueType<AttributeType>) \
-    INSTANTIATE_GET_ITEMS_IMPL(DictionaryKeyType::Complex, true, AttributeType, DictionaryValueType<AttributeType>) \
-    INSTANTIATE_GET_ITEMS_IMPL(DictionaryKeyType::Complex, false, AttributeType, DictionaryValueType<AttributeType>)
-
-CALL_FOR_ALL_DICTIONARY_ATTRIBUTE_TYPES(INSTANTIATE_GET_ITEMS_IMPL_FOR_ATTRIBUTE_TYPE)
-
 }
