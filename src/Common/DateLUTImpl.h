@@ -712,11 +712,11 @@ public:
     /// (round down to monday and divide DayNum by 7; we made an assumption,
     ///  that in domain of the function there was no weeks with any other number of days than 7)
     template <typename DateOrTime>
-    Int32 toRelativeWeekNum(DateOrTime v) const
+    Int32 toRelativeWeekNum(DateOrTime v, UInt8 week_mode = 1) const
     {
         const LUTIndex i = toLUTIndex(v);
         /// We add 8 to avoid underflow at beginning of unix epoch.
-        return toDayNum(i + (8 - toDayOfWeek(i))) / 7;
+        return toDayNum(i + (8 - toDayOfWeek(i, week_mode))) / 7;
     }
 
     /// Get year that contains most of the current week. Week begins at monday.
@@ -1066,16 +1066,20 @@ public:
 
     template <typename Date>
     requires std::is_same_v<Date, DayNum> || std::is_same_v<Date, ExtendedDayNum>
-    auto toStartOfWeekInterval(Date d, UInt64 weeks) const
+    auto toStartOfWeekInterval(Date d, UInt64 weeks, UInt8 week_mode) const
     {
         if (weeks == 1)
-            return toFirstDayNumOfWeek(d);
+            return toFirstDayNumOfWeek(d, week_mode);
+
+        bool monday_first_mode = week_mode & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST);
+        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday, or
+        // 3 days to start on Sunday.
+        auto offset = monday_first_mode ? 4 : 3;
         UInt64 days = weeks * 7;
-        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday.
         if constexpr (std::is_same_v<Date, DayNum>)
-            return DayNum(4 + (d - 4) / days * days);
+            return DayNum(offset + (d - offset) / days * days);
         else
-            return ExtendedDayNum(static_cast<Int32>(4 + (d - 4) / days * days));
+            return ExtendedDayNum(static_cast<Int32>(offset + (d - offset) / days * days));
     }
 
     template <typename Date>
