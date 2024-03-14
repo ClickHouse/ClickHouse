@@ -12,7 +12,7 @@ ColumnsDescription StorageSystemKeywords::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"keyword", std::make_shared<DataTypeString>()},
+        {"keyword", std::make_shared<DataTypeString>(), "The keyword used in ClickHouse parser."},
     };
 }
 

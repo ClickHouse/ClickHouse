@@ -493,11 +493,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 else if (ParserKeyword{Keyword::S3}.ignore(pos, expected))
                     res->schema_cache_storage = toStringRef(Keyword::S3);
                 else if (ParserKeyword{Keyword::HDFS}.ignore(pos, expected))
-                    res->schema_cache_storage = toString(Keyword::HDFS);
+                    res->schema_cache_storage = toStringRef(Keyword::HDFS);
                 else if (ParserKeyword{Keyword::URL}.ignore(pos, expected))
-                    res->schema_cache_storage = toString(Keyword::URL);
+                    res->schema_cache_storage = toStringRef(Keyword::URL);
                 else if (ParserKeyword{Keyword::AZURE}.ignore(pos, expected))
-                    res->schema_cache_storage = toString(Keyword::AZURE);
+                    res->schema_cache_storage = toStringRef(Keyword::AZURE);
                 else
                     return false;
             }
@@ -508,7 +508,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
             {
                 if (ParserKeyword{Keyword::PROTOBUF}.ignore(pos, expected))
-                    res->schema_cache_format = toString(Keyword::PROTOBUF);
+                    res->schema_cache_format = toStringRef(Keyword::PROTOBUF);
 
                 else
                     return false;
