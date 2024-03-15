@@ -662,54 +662,11 @@ bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, Con
 
 ExpressionActionsPtr joinConditionASTToExpression(ContextPtr context, ASTPtr ast, const TablesWithColumns & tables)
 {
-    if (!ast)
+    auto actions_dag = TreeRewriter::astToActionsDAG(context, ast, tables);
+    if (!actions_dag)
         return nullptr;
 
-    /// The qualified name of a columns from the left table is removed.
-    /// So we need to be careful to build the inpput columns for a actions dag.
-    /// There may be some other better ways to solve this.
-    NamesAndTypesList all_cols;
-    NameSet left_col_names;
-    for (const auto & col : tables[0].columns)
-    {
-        left_col_names.insert(col.name);
-        all_cols.emplace_back(col.name, col.type);
-    }
-    for (const auto & col : tables[1].columns)
-    {
-        if (!left_col_names.contains(col.name))
-        {
-            // If column name is ambiguous, only add the column with qualified name.
-            all_cols.emplace_back(col.name, col.type);
-        }
-        all_cols.emplace_back(tables[1].table.table + "." + col.name, col.type);
-    }
-
-    auto actions_dag = std::make_shared<ActionsDAG>(all_cols);
-    DebugASTLog<false> log;
-    NamesAndTypesList empty_agg_keys;
-    ColumnNumbersList empty_agg_col_nums;
-    NamesAndTypesList source_col;
-    ActionsVisitor::Data visitor_data(
-        context,
-        {},
-        0,
-        source_col,
-        std::move(actions_dag),
-        {},
-        true,
-        true,
-        false,
-        {empty_agg_keys, empty_agg_col_nums, GroupByKind::NONE},
-        false,
-        false);
-    ActionsVisitor(visitor_data, log.stream()).visit(ast);
-    actions_dag = visitor_data.getActions();
-    auto outputs = actions_dag->getOutputs();
-    NameSet required_output{outputs.back()->result_name};
-    actions_dag->removeUnusedActions(required_output);
-
-    outputs = actions_dag->getOutputs();
+    const auto & outputs = actions_dag->getOutputs();
     if (outputs.size() != 1)
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Only one output is expected. but got:\n{}", actions_dag->dumpDAG());
     auto output_type = removeNullable(outputs[0]->result_type);
@@ -747,7 +704,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
 
         bool is_asof = (table_join.strictness == JoinStrictness::Asof);
 
-        CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
+        CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, context, is_asof};
         if (auto * or_func = table_join.on_expression->as<ASTFunction>(); or_func && or_func->name == "or")
         {
             for (auto & disjunct : or_func->arguments->children)
@@ -1690,6 +1647,57 @@ void TreeRewriter::normalize(
     QueryNormalizer(normalizer_data).visit(query);
 
     optimizeGroupingSets(query);
+}
+
+ActionsDAGPtr TreeRewriter::astToActionsDAG(ContextPtr context_, ASTPtr ast, const TablesWithColumns & tables)
+{
+    if (!ast)
+        return nullptr;
+
+    /// The qualified name of a columns from the left table is removed.
+    /// So we need to be careful to build the inpput columns for a actions dag.
+    /// There may be some other better ways to solve this.
+    NamesAndTypesList all_cols;
+    NameSet left_col_names;
+    for (const auto & col : tables[0].columns)
+    {
+        left_col_names.insert(col.name);
+        all_cols.emplace_back(col.name, col.type);
+    }
+    for (const auto & col : tables[1].columns)
+    {
+        if (!left_col_names.contains(col.name))
+        {
+            // If column name is ambiguous, only add the column with qualified name.
+            all_cols.emplace_back(col.name, col.type);
+        }
+        all_cols.emplace_back(tables[1].table.getQualifiedNamePrefix() + col.name, col.type);
+    }
+
+    auto actions_dag = std::make_shared<ActionsDAG>(all_cols);
+    DebugASTLog<false> log;
+    NamesAndTypesList empty_agg_keys;
+    ColumnNumbersList empty_agg_col_nums;
+    NamesAndTypesList source_col;
+    ActionsVisitor::Data visitor_data(
+        context_,
+        {},
+        0,
+        source_col,
+        std::move(actions_dag),
+        {},
+        true,
+        true,
+        false,
+        {empty_agg_keys, empty_agg_col_nums, GroupByKind::NONE},
+        false,
+        false);
+    ActionsVisitor(visitor_data, log.stream()).visit(ast);
+    actions_dag = visitor_data.getActions();
+    auto outputs = actions_dag->getOutputs();
+    NameSet required_output{outputs.back()->result_name};
+    actions_dag->removeUnusedActions(required_output);
+    return actions_dag;
 }
 
 }

@@ -364,7 +364,7 @@ void buildJoinClause(
             left_table_expressions,
             right_table_expressions,
             join_node);
-
+        // expression_sides.empty() = true, the expression is constant
         if (expression_sides.empty() || expression_sides.size() == 1)
         {
             auto expression_side = expression_sides.empty() ? JoinTableSide::Right : *expression_sides.begin();

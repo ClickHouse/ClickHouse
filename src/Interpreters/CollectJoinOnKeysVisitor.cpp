@@ -1,4 +1,5 @@
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
@@ -6,6 +7,8 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Columns/IColumn.h>
+#include <Columns/ColumnConst.h>
 
 namespace DB
 {
@@ -90,6 +93,51 @@ void CollectJoinOnKeysMatcher::visit(const ASTIdentifier & ident, const ASTPtr &
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Unexpected identifier '{}' in JOIN ON section", ident.name());
 }
 
+bool CollectJoinOnKeysMatcher::isConstExpression(const IAST & func, Data & data)
+{
+    auto ast = func.clone();
+    NamesAndTypesList all_cols;
+
+    auto actions_dag = std::make_shared<ActionsDAG>(all_cols);
+    DebugASTLog<false> log;
+    NamesAndTypesList empty_agg_keys;
+    ColumnNumbersList empty_agg_col_nums;
+    NamesAndTypesList source_col;
+    ActionsVisitor::Data visitor_data(
+        data.context,
+        {},
+        0,
+        source_col,
+        std::move(actions_dag),
+        {},
+        true,
+        true,
+        false,
+        {empty_agg_keys, empty_agg_col_nums, GroupByKind::NONE},
+        false,
+        false);
+    ActionsVisitor(visitor_data, log.stream()).visit(ast);
+    actions_dag = visitor_data.getActions();
+    auto outputs = actions_dag->getOutputs();
+    NameSet required_output{outputs.back()->result_name};
+    actions_dag->removeUnusedActions(required_output);
+
+    for (const auto & node : actions_dag->getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+        {
+            if (!node.is_deterministic)
+                return false;
+        }
+        else if (node.type == ActionsDAG::ActionType::COLUMN)
+        {
+            if (!checkColumn<ColumnConst>(*node.column))
+                return false;
+        }
+    }
+    return true;
+}
+
 void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & ast, Data & data)
 {
     if (func.name == "and")
@@ -115,10 +163,10 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
 
         if (left_tables.empty() && right_tables.empty())
         {
-            throw Exception(
-                ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "JOIN {} ON expression expected non-empty left and right table expressions",
-                func.formatForErrorMessage());
+            if (isConstExpression(func, data))
+                data.analyzed_join.addJoinCondition(ast, false);
+            else
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Invalid join expression: {}", func.formatForErrorMessage());
         }
         else if (left_tables.size() == 1 && right_tables.empty())
         {
@@ -176,6 +224,11 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
             data.analyzed_join.addJoinMixedCondition(ast);
         }
     }
+}
+
+void CollectJoinOnKeysMatcher::visit(const ASTLiteral & /*ident*/, const ASTPtr & ast, Data & data)
+{
+    data.analyzed_join.addJoinCondition(ast, false);
 }
 
 void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out)
