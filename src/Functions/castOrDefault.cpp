@@ -303,7 +303,7 @@ private:
         };
 
         ColumnsWithTypeAndName arguments_with_cast_type;
-        arguments_with_cast_type.reserve(arguments.size());
+        arguments_with_cast_type.reserve(arguments.size() + 1);
 
         arguments_with_cast_type.emplace_back(arguments[0]);
         arguments_with_cast_type.emplace_back(second_argument);

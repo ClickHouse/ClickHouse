@@ -1980,13 +1980,6 @@ public:
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
-    static constexpr bool to_string_or_fixed_string = std::is_same_v<ToDataType, DataTypeFixedString> ||
-                                                      std::is_same_v<ToDataType, DataTypeString>;
-
-    static constexpr bool to_date_or_datetime = std::is_same_v<ToDataType, DataTypeDate> ||
-                                                std::is_same_v<ToDataType, DataTypeDate32> ||
-                                                std::is_same_v<ToDataType, DataTypeDateTime>;
-
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvert>(context); }
     static FunctionPtr create() { return std::make_shared<FunctionConvert>(); }
 
@@ -2003,8 +1996,7 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
-        /// TODO: We can make more optimizations here.
-        return !(to_date_or_datetime && isNumber(*arguments[0].type));
+        return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
     }
 
     using DefaultReturnTypeGetter = std::function<DataTypePtr(const ColumnsWithTypeAndName &)>;
@@ -2327,7 +2319,7 @@ private:
         }
 
         bool done = false;
-        if constexpr (to_string_or_fixed_string)
+        if constexpr (std::is_same_v<ToDataType, DataTypeFixedString> || std::is_same_v<ToDataType, DataTypeString>)
         {
             done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
         }
@@ -3155,7 +3147,6 @@ public:
     }
 
 private:
-
     const char * cast_name;
     MonotonicityForRange monotonicity_for_range;
 
@@ -4623,26 +4614,12 @@ arguments, result_type, input_rows_count); \
             using Types = std::decay_t<decltype(types)>;
             using ToDataType = typename Types::LeftType;
 
-            if constexpr (
-                std::is_same_v<ToDataType, DataTypeUInt16> ||
-                std::is_same_v<ToDataType, DataTypeUInt32> ||
-                std::is_same_v<ToDataType, DataTypeUInt64> ||
-                std::is_same_v<ToDataType, DataTypeUInt128> ||
-                std::is_same_v<ToDataType, DataTypeUInt256> ||
-                std::is_same_v<ToDataType, DataTypeInt8> ||
-                std::is_same_v<ToDataType, DataTypeInt16> ||
-                std::is_same_v<ToDataType, DataTypeInt32> ||
-                std::is_same_v<ToDataType, DataTypeInt64> ||
-                std::is_same_v<ToDataType, DataTypeInt128> ||
-                std::is_same_v<ToDataType, DataTypeInt256> ||
-                std::is_same_v<ToDataType, DataTypeFloat32> ||
-                std::is_same_v<ToDataType, DataTypeFloat64> ||
-                std::is_same_v<ToDataType, DataTypeDate> ||
-                std::is_same_v<ToDataType, DataTypeDate32> ||
-                std::is_same_v<ToDataType, DataTypeDateTime> ||
-                std::is_same_v<ToDataType, DataTypeUUID> ||
-                std::is_same_v<ToDataType, DataTypeIPv4> ||
-                std::is_same_v<ToDataType, DataTypeIPv6>)
+            if constexpr (is_any_of<ToDataType,
+                DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
+                DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
+                DataTypeFloat32, DataTypeFloat64,
+                DataTypeDate, DataTypeDate32, DataTypeDateTime,
+                DataTypeUUID, DataTypeIPv4, DataTypeIPv6>)
             {
                 ret = createWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
                 return true;
@@ -4662,12 +4639,10 @@ arguments, result_type, input_rows_count); \
                 ret = createEnumWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
                 return true;
             }
-            if constexpr (
-                std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>> ||
-                std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
-                std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>> ||
-                std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>> ||
-                std::is_same_v<ToDataType, DataTypeDateTime64>)
+            if constexpr (is_any_of<ToDataType,
+                DataTypeDecimal<Decimal32>, DataTypeDecimal<Decimal64>,
+                DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal256>,
+                DataTypeDateTime64>)
             {
                 ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
                 return true;
