@@ -59,7 +59,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    LoadingStrictnessLevel mode)
+    bool force_restore)
 {
     ast_create_query.attach = true;
     ast_create_query.setDatabase(database_name);
@@ -83,13 +83,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     ColumnsDescription columns;
     ConstraintsDescription constraints;
 
-    bool has_columns = true;
-    if (ast_create_query.is_dictionary)
-        has_columns = false;
-    if (ast_create_query.isParameterizedView())
-        has_columns = false;
-
-    if (has_columns)
+    if (!ast_create_query.is_dictionary)
     {
         /// We do not directly use `InterpreterCreateQuery::execute`, because
         /// - the database has not been loaded yet;
@@ -121,7 +115,7 @@ std::pair<String, StoragePtr> createTableFromAST(
             context->getGlobalContext(),
             columns,
             constraints,
-            mode)
+            force_restore)
     };
 }
 
@@ -171,7 +165,7 @@ DatabaseOnDisk::DatabaseOnDisk(
 
 void DatabaseOnDisk::shutdown()
 {
-    stopLoading();
+    waitDatabaseStarted(/* no_throw = */ true);
     DatabaseWithOwnTablesBase::shutdown();
 }
 
@@ -202,7 +196,7 @@ void DatabaseOnDisk::createTable(
         throw Exception(
             ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
 
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
 
@@ -293,7 +287,7 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
 
 void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const String & table_name)
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
 
     auto table = detachTable(query_context, table_name);
 
@@ -311,7 +305,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
 
 void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop = table_metadata_path + drop_suffix;
@@ -397,7 +391,7 @@ void DatabaseOnDisk::renameTable(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
 
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
 
     auto table_data_relative_path = getTableDataPath(table_name);
     TableExclusiveLockHolder table_lock;
@@ -540,7 +534,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 
 void DatabaseOnDisk::drop(ContextPtr local_context)
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
 
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
@@ -666,7 +660,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
 }
 
 ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
-    LoggerPtr logger,
+    Poco::Logger * logger,
     ContextPtr local_context,
     const String & metadata_file_path,
     bool throw_on_error /*= true*/,

@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowColumnsQuery.h>
 
 #include <Common/quoteString.h>
@@ -107,7 +106,7 @@ SELECT
     '' AS extra )";
 
     // TODO Interpret query.extended. It is supposed to show internal/virtual columns. Need to fetch virtual column names, see
-    // IStorage::getVirtualsList(). We can't easily do that via SQL.
+    // IStorage::getVirtuals(). We can't easily do that via SQL.
 
     if (query.full)
     {
@@ -165,13 +164,5 @@ BlockIO InterpreterShowColumnsQuery::execute()
     return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
-void registerInterpreterShowColumnsQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterShowColumnsQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterShowColumnsQuery", create_fn);
-}
 
 }

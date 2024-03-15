@@ -24,7 +24,7 @@ A client application to interact with clickhouse-keeper by its native protocol.
 ## Example {#clickhouse-keeper-client-example}
 
 ```bash
-./clickhouse-keeper-client -h localhost -p 9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
+./clickhouse-keeper-client -h localhost:9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
 Connected to ZooKeeper at [::1]:9181 with session_id 137
 / :) ls
 keeper foo bar

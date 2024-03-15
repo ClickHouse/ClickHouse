@@ -117,12 +117,12 @@ void SelectStreamFactory::createForShard(
     std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
-    bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator)
+    bool parallel_replicas_enabled)
 {
     auto it = objects_by_shard.find(shard_info.shard_num);
     if (it != objects_by_shard.end())
         replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
+
 
     auto emplace_local_stream = [&]()
     {
@@ -139,7 +139,6 @@ void SelectStreamFactory::createForShard(
             .shard_info = shard_info,
             .lazy = lazy,
             .local_delay = local_delay,
-            .shard_filter_generator = std::move(shard_filter_generator),
         });
     };
 
@@ -175,7 +174,7 @@ void SelectStreamFactory::createForShard(
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             if (shard_info.hasRemoteConnections())
             {
-                LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
+                LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"),
                     "There is no table {} on local replica of shard {}, will try remote replicas.",
                     main_table.getNameForLogs(), shard_info.shard_num);
                 emplace_remote_stream();
@@ -213,7 +212,7 @@ void SelectStreamFactory::createForShard(
 
         /// If we reached this point, local replica is stale.
         ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
-        LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"), "Local replica of shard {} is stale (delay: {}s.)", shard_info.shard_num, local_delay);
+        LOG_WARNING(&Poco::Logger::get("ClusterProxy::SelectStreamFactory"), "Local replica of shard {} is stale (delay: {}s.)", shard_info.shard_num, local_delay);
 
         if (!settings.fallback_to_stale_replicas_for_distributed_queries)
         {

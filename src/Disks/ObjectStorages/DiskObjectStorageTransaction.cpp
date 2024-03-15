@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_FILE_TYPE;
+    extern const int FILE_ALREADY_EXISTS;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int LOGICAL_ERROR;
 }
@@ -241,7 +242,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
                     || e.code() == ErrorCodes::CANNOT_OPEN_FILE)
                 {
                     LOG_DEBUG(
-                        getLogger("RemoveManyObjectStorageOperation"),
+                        &Poco::Logger::get("RemoveManyObjectStorageOperation"),
                         "Can't read metadata because of an exception. Just remove it from the filesystem. Path: {}, exception: {}",
                         metadata_storage.getPath() + path,
                         e.message());
@@ -275,7 +276,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
         if (!keep_all_batch_data)
         {
             LOG_DEBUG(
-                getLogger("RemoveManyObjectStorageOperation"),
+                &Poco::Logger::get("RemoveManyObjectStorageOperation"),
                 "metadata and objects were removed for [{}], "
                 "only metadata were removed for [{}].",
                 boost::algorithm::join(paths_removed_with_objects, ", "),
@@ -344,7 +345,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                     || e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED)
                 {
                     LOG_DEBUG(
-                        getLogger("RemoveRecursiveObjectStorageOperation"),
+                        &Poco::Logger::get("RemoveRecursiveObjectStorageOperation"),
                         "Can't read metadata because of an exception. Just remove it from the filesystem. Path: {}, exception: {}",
                         metadata_storage.getPath() + path_to_remove,
                         e.message());
@@ -398,7 +399,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
             object_storage.removeObjectsIfExist(remove_from_remote);
 
             LOG_DEBUG(
-                getLogger("RemoveRecursiveObjectStorageOperation"),
+                &Poco::Logger::get("RemoveRecursiveObjectStorageOperation"),
                 "Recursively remove path {}: "
                 "metadata and objects were removed for [{}], "
                 "only metadata were removed for [{}].",
@@ -537,7 +538,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
         for (const auto & object_from : source_blobs)
         {
-            auto object_key = destination_object_storage.generateObjectKeyForPath(to_path);
+            auto object_key = object_storage.generateObjectKeyForPath(to_path);
             auto object_to = StoredObject(object_key.serialize());
 
             object_storage.copyObjectToAnotherObjectStorage(object_from, object_to,read_settings,write_settings, destination_object_storage);
@@ -592,8 +593,14 @@ void DiskObjectStorageTransaction::moveDirectory(const std::string & from_path, 
 void DiskObjectStorageTransaction::moveFile(const String & from_path, const String & to_path)
 {
      operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [from_path, to_path](MetadataTransactionPtr tx)
+        std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [from_path, to_path, this](MetadataTransactionPtr tx)
         {
+            if (metadata_storage.exists(to_path))
+                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", to_path);
+
+            if (!metadata_storage.exists(from_path))
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", from_path);
+
             tx->moveFile(from_path, to_path);
         }));
 }
@@ -898,7 +905,7 @@ void DiskObjectStorageTransaction::commit()
         catch (...)
         {
             tryLogCurrentException(
-                getLogger("DiskObjectStorageTransaction"),
+                &Poco::Logger::get("DiskObjectStorageTransaction"),
                 fmt::format("An error occurred while executing transaction's operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
 
             for (int64_t j = i; j >= 0; --j)
@@ -910,7 +917,7 @@ void DiskObjectStorageTransaction::commit()
                 catch (...)
                 {
                     tryLogCurrentException(
-                        getLogger("DiskObjectStorageTransaction"),
+                        &Poco::Logger::get("DiskObjectStorageTransaction"),
                         fmt::format("An error occurred while undoing transaction's operation #{}", i));
 
                     throw;

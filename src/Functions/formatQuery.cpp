@@ -54,7 +54,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+            {"query", &isString<IDataType>, nullptr, "String"}
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 

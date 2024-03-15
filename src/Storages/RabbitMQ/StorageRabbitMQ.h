@@ -27,7 +27,7 @@ public:
             ContextPtr context_,
             const ColumnsDescription & columns_,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-            LoadingStrictnessLevel mode);
+            bool is_attach_);
 
     std::string getName() const override { return "RabbitMQ"; }
 
@@ -68,6 +68,7 @@ public:
     RabbitMQConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
+    NamesAndTypesList getVirtuals() const override;
 
     String getExchange() const { return exchange_name; }
     void unbindExchange();
@@ -101,7 +102,7 @@ private:
     bool use_user_setup;
 
     bool hash_exchange;
-    LoggerPtr log;
+    Poco::Logger * log;
 
     RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;
@@ -157,9 +158,10 @@ private:
 
     size_t read_attempts = 0;
     mutable bool drop_table = false;
+    bool is_attach;
 
     RabbitMQConsumerPtr createConsumer();
-    std::atomic<bool> initialized = false;
+    bool initialized = false;
 
     /// Functions working in the background
     void streamingToViewsFunc();
@@ -189,8 +191,6 @@ private:
     /// Return true on successful stream attempt.
     bool tryStreamToViews();
     bool hasDependencies(const StorageID & table_id);
-
-    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
     static String getRandomName()
     {

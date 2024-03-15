@@ -109,7 +109,7 @@ void JSONColumnsBlockInputFormatBase::setReadBuffer(ReadBuffer & in_)
     IInputFormat::setReadBuffer(in_);
 }
 
-Chunk JSONColumnsBlockInputFormatBase::read()
+Chunk JSONColumnsBlockInputFormatBase::generate()
 {
     MutableColumns columns = getPort().getHeader().cloneEmptyColumns();
     block_missing_values.clear();
@@ -215,7 +215,7 @@ JSONColumnsSchemaReaderBase::JSONColumnsSchemaReaderBase(
 {
 }
 
-void JSONColumnsSchemaReaderBase::setContext(const ContextPtr & ctx)
+void JSONColumnsSchemaReaderBase::setContext(ContextPtr & ctx)
 {
     ColumnsDescription columns;
     if (tryParseColumnsListFromString(hints_str, columns, ctx, hints_parsing_error))

@@ -20,10 +20,10 @@ namespace ErrorCodes
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
   */
-class ColumnConst final : public COWHelper<IColumnHelper<ColumnConst>, ColumnConst>
+class ColumnConst final : public COWHelper<IColumn, ColumnConst>
 {
 private:
-    friend class COWHelper<IColumnHelper<ColumnConst>, ColumnConst>;
+    friend class COWHelper<IColumn, ColumnConst>;
 
     WrappedPtr data;
     size_t s;
@@ -131,15 +131,6 @@ public:
         ++s;
     }
 
-    bool tryInsert(const Field & field) override
-    {
-        auto tmp = data->cloneEmpty();
-        if (!tmp->tryInsert(field))
-            return false;
-        ++s;
-        return true;
-    }
-
     void insertData(const char *, size_t) override
     {
         ++s;
@@ -160,14 +151,9 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
+    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const UInt8 *) const override
     {
         return data->serializeValueIntoArena(0, arena, begin);
-    }
-
-    char * serializeValueIntoMemory(size_t, char * memory) const override
-    {
-        return data->serializeValueIntoMemory(0, memory);
     }
 
     const char * deserializeAndInsertFromArena(const char * pos) override
@@ -277,7 +263,7 @@ public:
         if (!data->isDefaultAt(0))
         {
             size_t to = limit && from + limit < size() ? from + limit : size();
-            indices.reserve_exact(indices.size() + to - from);
+            indices.reserve(indices.size() + to - from);
             for (size_t i = from; i < to; ++i)
                 indices.push_back(i);
         }
@@ -305,10 +291,5 @@ public:
 
     bool isCollationSupported() const override { return data->isCollationSupported(); }
 };
-
-ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value);
-ColumnConst::Ptr createColumnConst(const ColumnPtr & column, size_t const_value_index);
-ColumnConst::Ptr createColumnConstWithDefaultValue(const ColumnPtr  &column);
-
 
 }

@@ -29,7 +29,7 @@ FileChecker::FileChecker(const String & file_info_path_) : FileChecker(nullptr, 
 
 FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_)
     : disk(std::move(disk_))
-    , log(getLogger("FileChecker"))
+    , log(&Poco::Logger::get("FileChecker"))
 {
     setPath(file_info_path_);
     try

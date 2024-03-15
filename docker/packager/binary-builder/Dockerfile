@@ -1,6 +1,6 @@
 # docker build -t clickhouse/binary-builder .
 ARG FROM_TAG=latest
-FROM clickhouse/fasttest:$FROM_TAG
+FROM clickhouse/test-util:$FROM_TAG
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
@@ -38,7 +38,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         zstd \
         zip \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && rm -rf /var/lib/apt/lists
 
 # Download toolchain and SDK for Darwin
 RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz

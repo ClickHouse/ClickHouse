@@ -24,7 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -36,7 +35,7 @@ void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_colum
 
 void insertPostgreSQLValue(
         IColumn & column, std::string_view value,
-        ExternalResultDescription::ValueType type, DataTypePtr data_type,
+        const ExternalResultDescription::ValueType type, const DataTypePtr data_type,
         const std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t idx)
 {
     switch (type)
@@ -163,14 +162,12 @@ void insertPostgreSQLValue(
             assert_cast<ColumnArray &>(column).insert(Array(dimensions[1].begin(), dimensions[1].end()));
             break;
         }
-        default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
     }
 }
 
 
 void preparePostgreSQLArrayInfo(
-        std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, DataTypePtr data_type)
+        std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, const DataTypePtr data_type)
 {
     const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
     auto nested = array_type->getNestedType();

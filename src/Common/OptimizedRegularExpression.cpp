@@ -463,7 +463,7 @@ catch (...)
     is_trivial = false;
     required_substring_is_prefix = false;
     alternatives.clear();
-    LOG_ERROR(getLogger("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
+    LOG_ERROR(&Poco::Logger::get("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
 }
 
 OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regexp_, int options)
@@ -484,7 +484,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     if (!is_trivial)
     {
         /// Compile the re2 regular expression.
-        re2::RE2::Options regexp_options;
+        typename re2::RE2::Options regexp_options;
 
         /// Never write error messages to stderr. It's ignorant to do it from library code.
         regexp_options.set_log_errors(false);

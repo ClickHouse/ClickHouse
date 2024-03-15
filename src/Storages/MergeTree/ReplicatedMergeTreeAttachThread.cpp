@@ -19,7 +19,7 @@ namespace ErrorCodes
 ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeAttachThread)")
-    , log(getLogger(log_name))
+    , log(&Poco::Logger::get(log_name))
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
     const auto storage_settings = storage.getSettings();

@@ -8,10 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, List, Union
 
-# isort: off
-import requests
-
-# isort: on
+import requests  # type: ignore
 
 import get_robot_token as grt  # we need an updated ROBOT_TOKEN
 from ci_config import CI_CONFIG
@@ -33,10 +30,9 @@ def get_with_retries(
         "Getting URL with %i tries and sleep %i in between: %s", retries, sleep, url
     )
     exc = Exception("A placeholder to satisfy typing and avoid nesting")
-    timeout = kwargs.pop("timeout", 30)
     for i in range(retries):
         try:
-            response = requests.get(url, timeout=timeout, **kwargs)
+            response = requests.get(url, **kwargs)
             response.raise_for_status()
             return response
         except Exception as e:
@@ -78,11 +74,10 @@ def get_gh_api(
     token_is_set = "Authorization" in kwargs.get("headers", {})
     exc = Exception("A placeholder to satisfy typing and avoid nesting")
     try_cnt = 0
-    timeout = kwargs.pop("timeout", 30)
     while try_cnt < retries:
         try_cnt += 1
         try:
-            response = requests.get(url, timeout=timeout, **kwargs)
+            response = requests.get(url, **kwargs)
             response.raise_for_status()
             return response
         except requests.HTTPError as e:
@@ -90,8 +85,7 @@ def get_gh_api(
             ratelimit_exceeded = (
                 e.response.status_code == 403
                 and b"rate limit exceeded"
-                # pylint:disable-next=protected-access
-                in (e.response._content or b"")
+                in e.response._content  # pylint:disable=protected-access
             )
             try_auth = e.response.status_code == 404
             if (ratelimit_exceeded or try_auth) and not token_is_set:
@@ -118,12 +112,10 @@ def get_build_name_for_check(check_name: str) -> str:
 
 def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str]:
     for root, _, files in os.walk(reports_path):
-        for file in files:
-            if file.endswith(f"_{build_name}.json"):
-                logging.info("Found build report json %s", file)
-                with open(
-                    os.path.join(root, file), "r", encoding="utf-8"
-                ) as file_handler:
+        for f in files:
+            if build_name in f:
+                logging.info("Found build report json %s", f)
+                with open(os.path.join(root, f), "r", encoding="utf-8") as file_handler:
                     build_report = json.load(file_handler)
                     return build_report["build_urls"]  # type: ignore
     return []

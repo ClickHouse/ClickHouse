@@ -382,9 +382,4 @@ std::shared_ptr<zkutil::ZooKeeper> Context::getZooKeeper() const
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot connect to ZooKeeper from Keeper");
 }
 
-const ServerSettings & Context::getServerSettings() const
-{
-    return shared->server_settings;
-}
-
 }

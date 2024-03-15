@@ -1,14 +1,15 @@
 #pragma once
 
 #include <Core/UUID.h>
-#include <Databases/IDatabase.h>
-#include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Databases/TablesDependencyGraph.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Common/NamePrompter.h>
+#include "Common/NamePrompter.h"
 #include <Common/SharedMutex.h>
+#include "Storages/IStorage.h"
+#include "Databases/IDatabase.h"
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -81,8 +82,8 @@ private:
 
 using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
-class FutureSetFromSubquery;
-using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
+class FutureSet;
+using FutureSetPtr = std::shared_ptr<FutureSet>;
 
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
 /// Such table can be accessed from everywhere by its ID.
@@ -115,7 +116,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
-    FutureSetFromSubqueryPtr future_set;
+    FutureSetPtr future_set;
 };
 
 ///TODO maybe remove shared_ptr from here?
@@ -317,7 +318,7 @@ private:
     /// View dependencies between a source table and its view.
     TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     std::atomic_bool is_shutting_down = false;
 
@@ -443,7 +444,7 @@ class TemporaryLockForUUIDDirectory : private boost::noncopyable
     UUID uuid = UUIDHelpers::Nil;
 public:
     TemporaryLockForUUIDDirectory() = default;
-    explicit TemporaryLockForUUIDDirectory(UUID uuid_);
+    TemporaryLockForUUIDDirectory(UUID uuid_);
     ~TemporaryLockForUUIDDirectory();
 
     TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept;

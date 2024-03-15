@@ -76,7 +76,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("(for thread)");
-    log = getLogger("ThreadStatus");
+    log = &Poco::Logger::get("ThreadStatus");
 
     current_thread = this;
 
@@ -196,9 +196,8 @@ bool ThreadStatus::isQueryCanceled() const
     if (!thread_group)
         return false;
 
-    if (local_data.query_is_canceled_predicate)
-        return local_data.query_is_canceled_predicate();
-    return false;
+    chassert(local_data.query_is_canceled_predicate);
+    return local_data.query_is_canceled_predicate();
 }
 
 ThreadStatus::~ThreadStatus()

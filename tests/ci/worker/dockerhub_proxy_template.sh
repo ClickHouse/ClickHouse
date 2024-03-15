@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 set -xeuo pipefail
 
-bash /usr/local/share/scripts/init-network.sh
+# Add cloudflare DNS as a fallback
+# Get default gateway interface
+IFACE=$(ip --json route list | jq '.[]|select(.dst == "default").dev' --raw-output)
+# `Link 2 (eth0): 172.31.0.2`
+ETH_DNS=$(resolvectl dns "$IFACE") || :
+CLOUDFLARE_NS=1.1.1.1
+if [[ "$ETH_DNS" ]] && [[ "${ETH_DNS#*: }" != *"$CLOUDFLARE_NS"* ]]; then
+  # Cut the leading legend
+  ETH_DNS=${ETH_DNS#*: }
+  # shellcheck disable=SC2206
+  new_dns=(${ETH_DNS} "$CLOUDFLARE_NS")
+  resolvectl dns "$IFACE" "${new_dns[@]}"
+fi
 
 # tune sysctl for network performance
 cat > /etc/sysctl.d/10-network-memory.conf << EOF

@@ -36,12 +36,10 @@ void ASTDeleteQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (database)
     {
-        database->formatImpl(settings, state, frame);
-        settings.ostr << '.';
+        settings.ostr << backQuoteIfNeed(getDatabase());
+        settings.ostr << ".";
     }
-
-    chassert(table);
-    table->formatImpl(settings, state, frame);
+    settings.ostr << backQuoteIfNeed(getTable());
 
     formatOnCluster(settings);
 

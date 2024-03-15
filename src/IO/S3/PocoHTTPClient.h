@@ -13,7 +13,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
-#include <IO/SessionAwareIOStream.h>
+#include <IO/S3/SessionAwareIOStream.h>
 
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
@@ -49,7 +49,12 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     ThrottlerPtr put_request_throttler;
     HTTPHeaderEntries extra_headers;
 
+    /// Not a client parameter in terms of HTTP and we won't send it to the server. Used internally to determine when connection have to be re-established.
+    uint32_t http_keep_alive_timeout_ms = 0;
+    /// Zero means pooling will not be used.
+    size_t http_connection_pool_size = 0;
     /// See PoolBase::BehaviourOnLimit
+    bool wait_on_pool_size_limit = true;
     bool s3_use_adaptive_timeouts = true;
 
     std::function<void(const DB::ProxyConfiguration &)> error_report;
@@ -91,6 +96,12 @@ public:
         body_stream = Aws::Utils::Stream::ResponseStream(
             Aws::New<SessionAwareIOStream<SessionPtr>>("http result streambuf", session_, incoming_stream.rdbuf())
         );
+    }
+
+    void SetResponseBody(Aws::IStream & incoming_stream, PooledHTTPSessionPtr & session_) /// NOLINT
+    {
+        body_stream = Aws::Utils::Stream::ResponseStream(
+            Aws::New<SessionAwareIOStream<PooledHTTPSessionPtr>>("http result streambuf", session_, incoming_stream.rdbuf()));
     }
 
     void SetResponseBody(std::string & response_body) /// NOLINT
@@ -152,6 +163,7 @@ private:
         EnumSize,
     };
 
+    template <bool pooled>
     void makeRequestInternalImpl(
         Aws::Http::HttpRequest & request,
         const DB::ProxyConfiguration & proxy_configuration,
@@ -184,6 +196,9 @@ protected:
     ThrottlerPtr put_request_throttler;
 
     const HTTPHeaderEntries extra_headers;
+
+    size_t http_connection_pool_size = 0;
+    bool wait_on_pool_size_limit = true;
 };
 
 }

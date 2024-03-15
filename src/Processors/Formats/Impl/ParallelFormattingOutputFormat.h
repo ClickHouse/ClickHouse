@@ -84,7 +84,7 @@ public:
         , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, CurrentMetrics::ParallelFormattingOutputFormatThreadsScheduled, params.max_threads_for_parallel_formatting)
 
     {
-        LOG_TEST(getLogger("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
+        LOG_TEST(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
         NullWriteBuffer buf;
         save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();

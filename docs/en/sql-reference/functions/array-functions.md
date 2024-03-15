@@ -6,7 +6,7 @@ sidebar_label: Arrays
 
 # Array Functions
 
-## empty {#empty}
+## empty
 
 Checks whether the input array is empty.
 
@@ -19,7 +19,7 @@ empty([x])
 An array is considered empty if it does not contain any elements.
 
 :::note
-Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
 :::
 
 The function also works for [strings](string-functions.md#empty) or [UUID](uuid-functions.md#empty).
@@ -50,7 +50,7 @@ Result:
 └────────────────┘
 ```
 
-## notEmpty {#notempty}
+## notEmpty
 
 Checks whether the input array is non-empty.
 
@@ -104,416 +104,17 @@ Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operat
 
 Alias: `OCTET_LENGTH`
 
-## emptyArrayUInt8
+## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64
 
-Returns an empty UInt8 array.
+## emptyArrayInt8, emptyArrayInt16, emptyArrayInt32, emptyArrayInt64
 
-**Syntax**
+## emptyArrayFloat32, emptyArrayFloat64
 
-```sql
-emptyArrayUInt8()
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayUInt8();
-```
-
-Result:
-
-```response
-[]
-```
-
-## emptyArrayUInt16
-
-Returns an empty UInt16 array.
-
-**Syntax**
-
-```sql
-emptyArrayUInt16()
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayUInt16();
-
-```
-
-Result:
-
-```response
-[]
-```
-
-## emptyArrayUInt32
-
-Returns an empty UInt32 array.
-
-**Syntax**
-
-```sql
-emptyArrayUInt32()
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayUInt32();
-```
-
-Result:
-
-```response
-[]
-```
-
-## emptyArrayUInt64
-
-Returns an empty UInt64 array.
-
-**Syntax**
-
-```sql
-emptyArrayUInt64()
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayUInt64();
-```
-
-Result:
-
-```response
-[]
-```
-
-## emptyArrayInt8
-
-Returns an empty Int8 array.
-
-**Syntax**
-
-```sql
-emptyArrayInt8()
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayInt8();
-```
-
-Result:
-
-```response
-[]
-```
-
-## emptyArrayInt16
-
-Returns an empty Int16 array.
-
-**Syntax**
-
-```sql
-emptyArrayInt16()
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayInt16();
-```
-
-Result:
-
-```response
-[]
-```
-
-## emptyArrayInt32
-
-Returns an empty Int32 array.
-
-**Syntax**
-
-```sql
-emptyArrayInt32()
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayInt32();
-```
-
-Result:
-
-```response
-[]
-```
-
-## emptyArrayInt64
-
-Returns an empty Int64 array.
-
-**Syntax**
-
-```sql
-emptyArrayInt64()
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayInt64();
-```
-
-Result:
-
-```response
-[]
-```
-
-## emptyArrayFloat32 
-
-Returns an empty Float32 array.
-
-**Syntax**
-
-```sql
-emptyArrayFloat32()
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayFloat32();
-```
-
-Result:
-
-```response
-[]
-```
-
-## emptyArrayFloat64
-
-Returns an empty Float64 array.
-
-**Syntax**
-
-```sql
-emptyArrayFloat64()
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayFloat64();
-```
-
-Result:
-
-```response
-[]
-```
-
-## emptyArrayDate
-
-Returns an empty Date array.
-
-**Syntax**
-
-```sql
-emptyArrayDate()
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayDate();
-```
-
-## emptyArrayDateTime
-
-Returns an empty DateTime array.
-
-**Syntax**
-
-```sql
-[]
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayDateTime();
-```
-
-Result:
-
-```response
-[]
-```
+## emptyArrayDate, emptyArrayDateTime
 
 ## emptyArrayString
 
-Returns an empty String array.
-
-**Syntax**
-
-```sql
-emptyArrayString()
-```
-
-**Arguments**
-
-None.
-
-**Returned value**
-
-An empty array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT emptyArrayString();
-```
-
-Result:
-
-```response
-[]
-```
+Accepts zero arguments and returns an empty array of the appropriate type.
 
 ## emptyArrayToSingle
 
@@ -620,7 +221,7 @@ SELECT has([1, 2, NULL], NULL)
 └─────────────────────────┘
 ```
 
-## hasAll {#hasall}
+## hasAll
 
 Checks whether one array is a subset of another.
 
@@ -660,7 +261,7 @@ Raises an exception `NO_COMMON_TYPE` if the set and subset elements do not share
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` returns 0.
 
-## hasAny {#hasany}
+## hasAny
 
 Checks whether two arrays have intersection by some elements.
 
@@ -1055,43 +656,6 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 ```
 
 Array elements set to `NULL` are handled as normal values.
-
-## arrayShingles
-
-Generates an array of "shingles", i.e. consecutive sub-arrays with specified length of the input array.
-
-**Syntax**
-
-``` sql
-arrayShingles(array, length)
-```
-
-**Arguments**
-
-- `array` — Input array [Array](../../sql-reference/data-types/array.md).
-- `length` — The length of each shingle.
-
-**Returned value**
-
-- An array of generated shingles.
-
-Type: [Array](../../sql-reference/data-types/array.md).
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT arrayShingles([1,2,3,4], 3) as res;
-```
-
-Result:
-
-``` text
-┌─res───────────────┐
-│ [[1,2,3],[2,3,4]] │
-└───────────────────┘
-```
 
 ## arraySort(\[func,\] arr, …) {#sort}
 

@@ -394,7 +394,8 @@ Result:
 
 ## toYear
 
-Returns the year component (AD) of a date or date with time.
+Converts a date or date with time to the year number (AD) as `UInt16` value.
+
 
 **Syntax**
 
@@ -430,7 +431,7 @@ Result:
 
 ## toQuarter
 
-Returns the quarter (1-4) of a date or date with time.
+Converts a date or date with time to the quarter number (1-4) as `UInt8` value.
 
 **Syntax**
 
@@ -464,9 +465,10 @@ Result:
 └──────────────────────────────────────────────┘
 ```
 
+
 ## toMonth
 
-Returns the month component (1-12) of a date or date with time.
+Converts a date or date with time to the month number (1-12) as `UInt8` value.
 
 **Syntax**
 
@@ -502,7 +504,7 @@ Result:
 
 ## toDayOfYear
 
-Returns the number of the day within the year (1-366) of a date or date with time.
+Converts a date or date with time to the number of the day of the year (1-366) as `UInt16` value.
 
 **Syntax**
 
@@ -538,7 +540,7 @@ Result:
 
 ## toDayOfMonth
 
-Returns the number of the day within the month (1-31) of a date or date with time.
+Converts a date or date with time to the number of the day in the month (1-31) as `UInt8` value.
 
 **Syntax**
 
@@ -574,7 +576,7 @@ Result:
 
 ## toDayOfWeek
 
-Returns the number of the day within the week of a date or date with time.
+Converts a date or date with time to the number of the day in the week as `UInt8` value.
 
 The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is omitted, the default mode is 0. The time zone of the date can be specified as the third argument.
 
@@ -625,7 +627,7 @@ Result:
 
 ## toHour
 
-Returns the hour component (0-24) of a date with time.
+Converts a date with time to the number of the hour in 24-hour time (0-23) as `UInt8` value.
 
 Assumes that if clocks are moved ahead, it is by one hour and occurs at 2 a.m., and if clocks are moved back, it is by one hour and occurs at 3 a.m. (which is not always exactly when it occurs - it depends on the timezone).
 
@@ -639,7 +641,7 @@ Alias: `HOUR`
 
 **Arguments**
 
-- `value` - a [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
 
 **Returned value**
 
@@ -663,7 +665,7 @@ Result:
 
 ## toMinute
 
-Returns the minute component (0-59) a date with time.
+Converts a date with time to the number of the minute of the hour (0-59) as `UInt8` value.
 
 **Syntax**
 
@@ -675,7 +677,7 @@ Alias: `MINUTE`
 
 **Arguments**
 
-- `value` - a [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
 
 **Returned value**
 
@@ -699,7 +701,7 @@ Result:
 
 ## toSecond
 
-Returns the second component (0-59) of a date with time. Leap seconds are not considered.
+Converts a date with time to the second in the minute (0-59) as `UInt8` value. Leap seconds are not considered.
 
 **Syntax**
 
@@ -711,7 +713,7 @@ Alias: `SECOND`
 
 **Arguments**
 
-- `value` - a [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
+- `value` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
 
 **Returned value**
 
@@ -732,40 +734,6 @@ Result:
 │                                          30 │
 └─────────────────────────────────────────────┘
 ```
-
-## toMillisecond
-
-Returns the millisecond component (0-999) of a date with time.
-
-**Syntax**
-
-```sql
-toMillisecond(value)
-```
-
-*Arguments**
-
-- `value` - [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
-
-Alias: `MILLISECOND`
-
-```sql
-SELECT toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))
-```
-
-Result:
-
-```response
-┌──toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3))─┐
-│                                                        456 │
-└────────────────────────────────────────────────────────────┘
-```
-
-**Returned value**
-
-- The millisecond in the minute (0 - 59) of the given date/time
-
-Type: `UInt16`
 
 ## toUnixTimestamp
 
@@ -1515,9 +1483,7 @@ For mode values with a meaning of “with 4 or more days this year,” weeks are
 
 - Otherwise, it is the last week of the previous year, and the next week is week 1.
 
-For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1.
-It does not matter how many days in the new year the week contained, even if it contained only one day.
-I.e. if the last week of December contains January 1 of the next year, it will be week 1 of the next year.
+For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It does not matter how many days in the new year the week contained, even if it contained only one day.
 
 **Syntax**
 
@@ -1596,7 +1562,7 @@ Alias: `TO_DAYS`
 **Arguments**
 
 - `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-- `time_zone` — A String type const value or an expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
+- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
 
 **Returned value**
 
@@ -2250,7 +2216,7 @@ now64([scale], [timezone])
 
 **Arguments**
 
-- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).
+- `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
@@ -2319,43 +2285,10 @@ Result:
 
 ## today {#today}
 
-Returns the current date at moment of query analysis. It is the same as ‘toDate(now())’ and has aliases: `curdate`, `current_date`.
+Accepts zero arguments and returns the current date at one of the moments of query analysis.
+The same as ‘toDate(now())’.
 
-**Syntax**
-
-```sql
-today()
-```
-
-**Arguments**
-
-- None
-
-**Returned value**
-
-- Current date
-
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FORMAT Pretty
-```
-
-**Result**:
-
-Running the query above on the 3rd of March 2024 would have returned the following response:
-
-```response
-┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃      today ┃    curdate ┃ current_date ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2024-03-03 │ 2024-03-03 │   2024-03-03 │
-└────────────┴────────────┴──────────────┘
-```
+Aliases: `curdate`, `current_date`.
 
 ## yesterday {#yesterday}
 
@@ -2370,7 +2303,7 @@ Rounds the time to the half hour.
 
 Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
 
-This function is the opposite of function `YYYYMMDDToDate()`.
+This functions is the opposite of function `YYYYMMDDToDate()`.
 
 **Example**
 
@@ -2427,7 +2360,7 @@ Result:
 
 Converts a number containing the year, month and day number to a [Date](../../sql-reference/data-types/date.md).
 
-This function is the opposite of function `toYYYYMMDD()`.
+This functions is the opposite of function `toYYYYMMDD()`.
 
 The output is undefined if the input does not encode a valid Date value.
 
@@ -2471,7 +2404,7 @@ Converts a number containing the year, month, day, hours, minute and second numb
 
 The output is undefined if the input does not encode a valid DateTime value.
 
-This function is the opposite of function `toYYYYMMDDhhmmss()`.
+This functions is the opposite of function `toYYYYMMDDhhmmss()`.
 
 **Syntax**
 
@@ -3046,8 +2979,8 @@ toUTCTimestamp(time_val, time_zone)
 
 **Arguments**
 
-- `time_val` — A DateTime/DateTime64 type const value or an expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
-- `time_zone` — A String type const value or an expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
+- `time_val` — A DateTime/DateTime64 type const value or a expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
+- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
 
 **Returned value**
 
@@ -3079,8 +3012,8 @@ fromUTCTimestamp(time_val, time_zone)
 
 **Arguments**
 
-- `time_val` — A DateTime/DateTime64 type const value or an expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
-- `time_zone` — A String type const value or an expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
+- `time_val` — A DateTime/DateTime64 type const value or a expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
+- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
 
 **Returned value**
 
@@ -3098,40 +3031,6 @@ Result:
 ┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3),'Asia/Shanghai')─┐
 │                                                 2023-03-16 18:00:00.000 │
 └─────────────────────────────────────────────────────────────────────────┘
-```
-## timeDiff
-
-Returns the difference between two dates or dates with time values. The difference is calculated in units of seconds. It is same as `dateDiff` and was added only for MySQL support. `dateDiff` is preferred.
-
-**Syntax**
-
-```sql
-timeDiff(first_datetime, second_datetime)
-```
-
-*Arguments**
-
-- `first_datetime` — A DateTime/DateTime64 type const value or an expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
-- `second_datetime` — A DateTime/DateTime64 type const value or an expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
-
-**Returned value**
-
-The difference between two dates or dates with time values in seconds.
-
-**Example**
-
-Query:
-
-```sql
-timeDiff(toDateTime64('1927-01-01 00:00:00', 3), toDate32('1927-01-02'));
-```
-
-**Result**:
-
-```response
-┌─timeDiff(toDateTime64('1927-01-01 00:00:00', 3), toDate32('1927-01-02'))─┐
-│                                                                    86400 │
-└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Related content

@@ -342,7 +342,7 @@ ZooKeeper::ZooKeeper(
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
 {
-    log = getLogger("ZooKeeperClient");
+    log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
 
     if (!args.chroot.empty())
@@ -1453,13 +1453,6 @@ void ZooKeeper::reconfig(
 
 void ZooKeeper::multi(
     const Requests & requests,
-    MultiCallback callback)
-{
-    multi(std::span(requests), std::move(callback));
-}
-
-void ZooKeeper::multi(
-    std::span<const RequestPtr> requests,
     MultiCallback callback)
 {
     ZooKeeperMultiRequest request(requests, default_acls);

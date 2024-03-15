@@ -12,7 +12,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/BlockNumberColumn.h>
 
 
 namespace DB
@@ -737,9 +737,9 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
 
         {
             detail::RowRef current_key;
-            setRowRef(current_key, current);
+            current_key.set(current);
 
-            key_differs = last_key.empty() || rowsHaveDifferentSortColumns(last_key, current_key);
+            key_differs = last_key.empty() || !last_key.hasEqualSortColumnsWith(current_key);
 
             last_key = current_key;
             last_chunk_sort_columns.clear();

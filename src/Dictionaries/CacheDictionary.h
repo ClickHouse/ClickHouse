@@ -78,22 +78,22 @@ public:
 
     double getLoadFactor() const override;
 
-    size_t getQueryCount() const override { return query_count.load(); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load();
+        size_t queries = query_count.load(std::memory_order_relaxed);
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
     }
 
     double getHitRate() const override
     {
-        size_t queries = query_count.load();
+        size_t queries = query_count.load(std::memory_order_relaxed);
         if (!queries)
             return 0;
-        return static_cast<double>(hit_count.load()) / queries;
+        return static_cast<double>(hit_count.load(std::memory_order_acquire)) / queries;
     }
 
     bool supportUpdates() const override { return false; }
@@ -126,18 +126,18 @@ public:
     }
 
     ColumnPtr getColumn(
-        const std::string & attribute_name,
-        const DataTypePtr & attribute_type,
+        const std::string& attribute_name,
+        const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultOrFilter default_or_filter) const override;
+        const ColumnPtr & default_values_column) const override;
 
     Columns getColumns(
         const Strings & attribute_names,
-        const DataTypes & attribute_types,
+        const DataTypes & result_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultsOrFilter defaults_or_filter) const override;
+        const Columns & default_values_columns) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -157,21 +157,19 @@ public:
 private:
     using FetchResult = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, SimpleKeysStorageFetchResult, ComplexKeysStorageFetchResult>;
 
-    MutableColumns aggregateColumnsInOrderOfKeys(
+    static MutableColumns aggregateColumnsInOrderOfKeys(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns,
-        const PaddedPODArray<KeyState> & key_index_to_state,
-        IColumn::Filter * default_mask = nullptr) const;
+        const PaddedPODArray<KeyState> & key_index_to_state);
 
-    MutableColumns aggregateColumns(
+    static MutableColumns aggregateColumns(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns_from_storage,
         const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
         const MutableColumns & fetched_columns_during_update,
-        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
-        IColumn::Filter * const default_mask = nullptr) const;
+        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index);
 
     void update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> update_unit_ptr);
 
@@ -204,7 +202,7 @@ private:
 
     const CacheDictionaryConfiguration configuration;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     mutable pcg64 rnd_engine;
 

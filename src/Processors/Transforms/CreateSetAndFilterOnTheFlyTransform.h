@@ -67,7 +67,7 @@ private:
     /// Set to fill
     SetWithStatePtr set;
 
-    LoggerPtr log = getLogger("CreatingSetsOnTheFlyTransform");
+    Poco::Logger * log = &Poco::Logger::get("CreatingSetsOnTheFlyTransform");
 };
 
 /*
@@ -108,7 +108,7 @@ private:
         size_t result_rows = 0;
     } stat;
 
-    LoggerPtr log = getLogger("FilterBySetOnTheFlyTransform");
+    Poco::Logger * log = &Poco::Logger::get("FilterBySetOnTheFlyTransform");
 };
 
 }

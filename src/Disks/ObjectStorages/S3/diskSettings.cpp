@@ -1,5 +1,4 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
-#include "IO/S3/Client.h"
 
 #if USE_AWS_S3
 
@@ -19,6 +18,7 @@
 
 #include <Storages/StorageS3Settings.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/DiskLocal.h>
 #include <Common/Macros.h>
 
@@ -67,6 +67,10 @@ std::unique_ptr<S3::Client> getClient(
     client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", S3::DEFAULT_REQUEST_TIMEOUT_MS);
     client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", S3::DEFAULT_MAX_CONNECTIONS);
     client_configuration.endpointOverride = uri.endpoint;
+    client_configuration.http_keep_alive_timeout_ms = config.getUInt(
+        config_prefix + ".http_keep_alive_timeout_ms", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT * 1000);
+    client_configuration.http_connection_pool_size = config.getUInt(config_prefix + ".http_connection_pool_size", 1000);
+    client_configuration.wait_on_pool_size_limit = false;
     client_configuration.s3_use_adaptive_timeouts = config.getBool(
         config_prefix + ".use_adaptive_timeouts", client_configuration.s3_use_adaptive_timeouts);
 
@@ -89,15 +93,10 @@ std::unique_ptr<S3::Client> getClient(
     HTTPHeaderEntries headers = S3::getHTTPHeaders(config_prefix, config);
     S3::ServerSideEncryptionKMSConfig sse_kms_config = S3::getSSEKMSConfig(config_prefix, config);
 
-    S3::ClientSettings client_settings{
-        .use_virtual_addressing = uri.is_virtual_hosted_style,
-        .disable_checksum = local_settings.s3_disable_checksum,
-        .gcs_issue_compose_request = config.getBool("s3.gcs_issue_compose_request", false),
-    };
-
     return S3::ClientFactory::instance().create(
         client_configuration,
-        client_settings,
+        uri.is_virtual_hosted_style,
+        local_settings.s3_disable_checksum,
         config.getString(config_prefix + ".access_key_id", ""),
         config.getString(config_prefix + ".secret_access_key", ""),
         config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
