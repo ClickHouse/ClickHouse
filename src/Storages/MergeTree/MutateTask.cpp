@@ -1018,8 +1018,8 @@ struct MutationContext
 
     scope_guard temporary_directory_lock;
 
-    /// Whether this mutation contains lightweight delete
-    bool has_lightweight_delete;
+    /// Whether we need to count lightweight delete rows in this mutation
+    bool count_lightweight_deleted_rows;
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
@@ -1282,7 +1282,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 
         ctx->out->write(cur_block);
 
-        if (ctx->has_lightweight_delete)
+        /// TODO: move this calculation to DELETE FROM mutation
+        if (ctx->count_lightweight_deleted_rows)
             existing_rows_count += MutationHelpers::getExistingRowsCount(cur_block);
 
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
@@ -1376,7 +1377,7 @@ bool PartMergerWriter::iterateThroughAllProjections()
 
 void PartMergerWriter::finalize()
 {
-    if (ctx->has_lightweight_delete)
+    if (ctx->count_lightweight_deleted_rows)
         ctx->new_data_part->existing_rows_count = existing_rows_count;
 }
 
@@ -2225,17 +2226,17 @@ bool MutateTask::prepare()
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
 
-    if (ctx->updated_header.has(RowExistsColumn::name))
+    if (ctx->data->getSettings()->exclude_deleted_rows_for_part_size_in_merge && ctx->updated_header.has(RowExistsColumn::name))
     {
-        /// This mutation contains lightweight delete, reset existing_rows_count of new data part to 0
-        /// It will be updated while writing _row_exists column
-        ctx->has_lightweight_delete = true;
+        /// This mutation contains lightweight delete and we need to count the deleted rows,
+        /// Reset existing_rows_count of new data part to 0 and it will be updated while writing _row_exists column
+        ctx->count_lightweight_deleted_rows = true;
     }
     else
     {
-        ctx->has_lightweight_delete = false;
+        ctx->count_lightweight_deleted_rows = false;
 
-        /// This mutation does not contains lightweight delete, copy existing_rows_count from source part
+        /// No need to count deleted rows, copy existing_rows_count from source part
         ctx->new_data_part->existing_rows_count = ctx->source_part->existing_rows_count.value_or(ctx->source_part->rows_count);
     }
 
