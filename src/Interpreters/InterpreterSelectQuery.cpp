@@ -658,7 +658,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
-                    storage->getConditionEstimatorByPredicate(query_info, storage_snapshot, context),
+                    storage->getConditionEstimatorByPredicate(storage_snapshot, nullptr, context),
                     queried_columns,
                     supported_prewhere_columns,
                     log};

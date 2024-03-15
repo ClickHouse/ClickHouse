@@ -467,7 +467,8 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
     return storage_policy;
 }
 
-ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr local_context) const
+ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(
+    const StorageSnapshotPtr & storage_snapshot, const ActionsDAGPtr & filter_dag, ContextPtr local_context) const
 {
     if (!local_context->getSettings().allow_statistic_optimize)
         return {};
@@ -482,7 +483,7 @@ ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQ
     ASTPtr expression_ast;
 
     ConditionEstimator result;
-    PartitionPruner partition_pruner(storage_snapshot->metadata, query_info, local_context, true /* strict */);
+    PartitionPruner partition_pruner(storage_snapshot->metadata, filter_dag, local_context);
 
     if (partition_pruner.isUseless())
     {
