@@ -50,3 +50,4 @@ def test_observe_memory_limit(started_cluster):
         logging.debug(f"get new memory limit {new_max_mem}")
         if new_max_mem > original_max_mem:
             return
+    raise Exception('the memory limit does not increase as expected')
