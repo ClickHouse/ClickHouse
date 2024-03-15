@@ -918,9 +918,9 @@ void ClientBase::ignoreDropQueryOrTruncateTable(const DB::ASTDropQuery * drop_qu
     {
         String truncate_query;
         if (database.empty())
-            truncate_query = fmt::format("TRUNCATE TABLE {}", drop_query->getTable());
+            truncate_query = fmt::format("TRUNCATE TABLE {}", table);
         else
-            truncate_query = fmt::format("TRUNCATE TABLE {}.{}", drop_query->getDatabase(), drop_query->getTable());
+            truncate_query = fmt::format("TRUNCATE TABLE {}.{}", database, table);
 
         auto is_interactive_copy = is_interactive;
         is_interactive = false;
