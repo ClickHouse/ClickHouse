@@ -449,6 +449,7 @@ bool ReadWriteBufferFromHTTP::nextImpl()
                     if (http_skip_not_found_url && e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
                     {
                         next_result = false;
+                        has_not_found_url = true;
                         return;
                     }
 
@@ -740,4 +741,3 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
 }
 
 }
-
