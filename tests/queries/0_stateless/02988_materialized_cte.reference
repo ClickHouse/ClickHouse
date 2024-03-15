@@ -1,0 +1,30 @@
+(Union)
+  (Expression)
+  ExpressionTransform
+    (Filter)
+    FilterTransform
+      (ReadFromMemoryStorage)
+  (Expression)
+  ExpressionTransform
+    (Filter)
+    FilterTransform
+      (ReadFromMemoryStorage)
+(Expression)
+ExpressionTransform
+  (FilledJoin)
+  JoiningTransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromSystemNumbers)
+      NumbersRange 0 → 1
+(Expression)
+ExpressionTransform
+  (ReadFromSystemNumbers)
+  NumbersRange 0 → 1
+(Expression)
+ExpressionTransform
+  (Filter)
+  FilterTransform
+    (ReadFromSystemNumbers)
+    Limit
+      Numbers 0 → 1
