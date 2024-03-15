@@ -94,6 +94,7 @@ void registerDataTypeString(DataTypeFactory & factory)
     factory.registerAlias("BINARY VARYING", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("VARBINARY", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("GEOMETRY", "String", DataTypeFactory::CaseInsensitive); //mysql
+    factory.registerAlias("IDENTIFIER", "String", DataTypeFactory::CaseInsensitive);
 
 }
 }
