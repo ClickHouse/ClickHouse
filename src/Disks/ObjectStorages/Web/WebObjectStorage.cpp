@@ -247,18 +247,20 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObjects( /// NOLIN
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
-    std::optional<size_t>) const
+    std::optional<size_t> /*read_hint*/,
+    std::optional<size_t> file_size) const
 {
     auto read_buffer_creator =
-         [this, read_settings]
+         [this, read_settings, file_size]
          (bool /* restricted_seek */, const std::string & path_) -> std::unique_ptr<ReadBufferFromFileBase>
      {
          return std::make_unique<ReadBufferFromWebServer>(
              fs::path(url) / path_,
              getContext(),
              read_settings,
-             /* use_external_buffer */true);
+             file_size ? file_size : getFileInfo(path_)->size,
+             /*use_external_buffer=*/ true,
+             /*read_until_position=*/ 0);
      };
 
     auto global_context = Context::getGlobalContextInstance();

@@ -17,6 +17,7 @@ public:
     CachedInMemoryReadBufferFromFile(FileChunkAddress cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_);
 
     String getFileName() const override;
+
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
     size_t getFileOffsetOfBufferEnd() const override;
