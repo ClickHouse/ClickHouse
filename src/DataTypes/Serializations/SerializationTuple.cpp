@@ -542,34 +542,11 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 
 bool SerializationTuple::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    return addElementSafe<bool>(elems.size(), column, [&]
-    {
-        const size_t size = elems.size();
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (i != 0)
-            {
-               skipWhitespaceIfAny(istr);
-               if (!checkChar(settings.csv.tuple_delimiter, istr))
-                   return false;
-               skipWhitespaceIfAny(istr);
-            }
-
-            auto & element_column = extractElementColumn(column, i);
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-            {
-               if (!SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i]))
-                   return false;
-            }
-            else
-            {
-               if (!elems[i]->tryDeserializeTextCSV(element_column, istr, settings))
-                   return false;
-            }
-        }
-
-        return true;
-    });
+    String s;
+    if (!tryReadCSV(s, istr, settings.csv))
+        return false;
+    ReadBufferFromString rb(s);
+    return tryDeserializeText(column, rb, settings, true);
 }
 
 void SerializationTuple::enumerateStreams(
