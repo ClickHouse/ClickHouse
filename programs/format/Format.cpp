@@ -70,8 +70,8 @@ void skipSpacesAndComments(const char*& pos, const char* end, bool print_comment
 
 }
 
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
 extern const char * auto_time_zones[];
 

@@ -681,8 +681,9 @@ public:
         {
             if (column->hasExpression())
             {
+                auto column_name = column->getColumnName();
                 node = column->getExpressionOrThrow();
-                node->setAlias(column->getColumnName());
+                node->setAlias(column_name);
             }
             else
                 column->setColumnSource(replacement_table_expression);
