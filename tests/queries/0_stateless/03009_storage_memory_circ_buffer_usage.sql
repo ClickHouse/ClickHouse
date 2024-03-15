@@ -1,7 +1,9 @@
+SET max_block_size = 65409; -- Default value
+
 DROP TABLE IF EXISTS memory;
 CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;
 
-/* TESTING BYTES */
+SELECT 'TESTING BYTES';
 /* 1. testing oldest block doesn't get deleted because of min-threshold */
 INSERT INTO memory SELECT * FROM numbers(0, 1600);
 SELECT total_bytes FROM system.tables WHERE name = 'memory' and database = currentDatabase();
@@ -21,7 +23,7 @@ SELECT total_bytes FROM system.tables WHERE name = 'memory' and database = curre
 DROP TABLE IF EXISTS memory;
 CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100, max_rows_to_keep = 1000;
 
-/* TESTING ROWS */
+SELECT 'TESTING ROWS';
 /* 1. add normal number of rows */
 INSERT INTO memory SELECT * FROM numbers(0, 50);
 SELECT total_rows FROM system.tables WHERE name = 'memory' and database = currentDatabase();
@@ -38,7 +40,7 @@ SELECT total_rows FROM system.tables WHERE name = 'memory' and database = curren
 INSERT INTO memory SELECT * FROM numbers(3000, 1100);
 SELECT total_rows FROM system.tables WHERE name = 'memory' and database = currentDatabase();
 
-/* TESTING NO CIRCULAR-BUFFER */
+SELECT 'TESTING NO CIRCULAR-BUFFER';
 DROP TABLE IF EXISTS memory;
 CREATE TABLE memory (i UInt32) ENGINE = Memory;
 
@@ -54,7 +56,7 @@ SELECT total_bytes FROM system.tables WHERE name = 'memory' and database = curre
 INSERT INTO memory SELECT * FROM numbers(9000, 10000);
 SELECT total_bytes FROM system.tables WHERE name = 'memory' and database = currentDatabase();
 
-/* TESTING INVALID SETTINGS */
+SELECT 'TESTING INVALID SETTINGS';
 CREATE TABLE faulty_memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100;  -- { serverError 452 }
 CREATE TABLE faulty_memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 100; -- { serverError 452 }
 
