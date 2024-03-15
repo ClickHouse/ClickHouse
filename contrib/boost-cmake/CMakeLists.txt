@@ -140,6 +140,12 @@ elseif (ARCH_RISCV64)
         "${LIBRARY_DIR}/libs/context/src/asm/make_riscv64_sysv_elf_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/ontop_riscv64_sysv_elf_gas.S"
     )
+elseif (ARCH_LOONGARCH64)
+    set (SRCS_CONTEXT ${SRCS_CONTEXT}
+        "${LIBRARY_DIR}/libs/context/src/asm/jump_loongarch64_sysv_elf_gas.S"
+        "${LIBRARY_DIR}/libs/context/src/asm/make_loongarch64_sysv_elf_gas.S"
+        "${LIBRARY_DIR}/libs/context/src/asm/ontop_loongarch64_sysv_elf_gas.S"
+    )
 elseif(OS_DARWIN)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_macho_gas.S"
