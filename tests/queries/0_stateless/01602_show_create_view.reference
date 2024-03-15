@@ -3,4 +3,4 @@ CREATE MATERIALIZED VIEW test_1602.vv\n(\n    `EventDate` DateTime,\n    `Counte
 CREATE VIEW test_1602.VIEW\n(\n    `EventDate` DateTime,\n    `CounterID` UInt32,\n    `UserID` UInt32\n)\nAS SELECT *\nFROM test_1602.tbl
 CREATE VIEW test_1602.DATABASE\n(\n    `EventDate` DateTime,\n    `CounterID` UInt32,\n    `UserID` UInt32\n)\nAS SELECT *\nFROM test_1602.tbl
 CREATE VIEW test_1602.DICTIONARY\n(\n    `EventDate` DateTime,\n    `CounterID` UInt32,\n    `UserID` UInt32\n)\nAS SELECT *\nFROM test_1602.tbl
-CREATE VIEW test_1602.TABLE\n(\n    `EventDate` DateTime,\n    `CounterID` UInt32,\n    `UserID` UInt32\n)\nAS SELECT *\nFROM test_1602.tbl
+CREATE VIEW test_1602.`TABLE`\n(\n    `EventDate` DateTime,\n    `CounterID` UInt32,\n    `UserID` UInt32\n)\nAS SELECT *\nFROM test_1602.tbl
