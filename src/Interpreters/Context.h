@@ -549,6 +549,7 @@ public:
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
     boost::container::flat_set<UUID> getCurrentRoles() const;
+    std::vector<UUID> getCurrentRolesAsStdVector() const;
     boost::container::flat_set<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
