@@ -410,6 +410,9 @@ public:
 
     bool contains(const Node & other)
     {
+        if (min_flags_with_children.contains(other.max_flags_with_children))
+            return true;
+
         if (!flags.contains(other.flags))
             return false;
 
@@ -428,12 +431,10 @@ public:
         ///
         /// SELECT ON *.* TO user1;  -- checked
         /// REVOKE SELECT ON system.* FROM user1; -- checked
-        std::unordered_set<std::string_view> seen;
         if (other.children)
         {
             for (const auto & [name, node] : *other.children)
             {
-                seen.emplace(name);
                 const auto & child = tryGetChild(name);
                 if (child == nullptr)
                 {
@@ -456,7 +457,7 @@ public:
         /// REVOKE SELECT ON mydb.* FROM user1; -- check failed, returning false
         for (const auto & [name, node] : *children)
         {
-            if (seen.contains(name))
+            if (other.children && other.children->contains(name))
                 continue;
 
             if (!node.flags.contains(other.flags))
