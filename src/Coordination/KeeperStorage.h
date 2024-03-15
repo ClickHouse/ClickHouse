@@ -146,19 +146,49 @@ struct KeeperRocksNode:KeeperRocksNodeInfo
 
     uint64_t size_bytes = 0; // only for compatible, should be deprecated
 
-    uint64_t sizeInBytes() const { return data.size() + sizeof(KeeperRocksNodeInfo); }
-    void setData(String new_data) {data = new_data;}
-    const auto & getData() const noexcept { return data; }
+    uint64_t sizeInBytes() const { return data_size + sizeof(KeeperRocksNodeInfo); }
+    void setData(String new_data)
+    {
+        data_size = static_cast<uint32_t>(new_data.size());
+        if (data_size != 0)
+        {
+            data = std::unique_ptr<char[]>(new char[new_data.size()]);
+            memcpy(data.get(), new_data.data(), data_size);
+        }
+    }
+
     void shallowCopy(const KeeperRocksNode & other)
     {
-        *this = other;
+        czxid = other.czxid;
+        mzxid = other.mzxid;
+        pzxid = other.pzxid;
+        acl_id = other.acl_id; /// 0 -- no ACL by default
+
+        mtime = other.mtime;
+
+        is_ephemeral_and_ctime = other.is_ephemeral_and_ctime;
+
+        ephemeral_or_children_data = other.ephemeral_or_children_data;
+
+        data_size = other.data_size;
+        if (data_size != 0)
+        {
+            data = std::unique_ptr<char[]>(new char[data_size]);
+            memcpy(data.get(), other.data.get(), data_size);
+        }
+
+        version = other.version;
+        cversion = other.cversion;
+        aversion = other.aversion;
+
+        /// cached_digest = other.cached_digest;
     }
     void invalidateDigestCache() const;
     UInt64 getDigest(std::string_view path) const;
     String getEncodedString();
     void decodeFromString(const String & buffer_str);
     void recalculateSize() {}
-    String getData() { return data; }
+    std::string_view getData() const noexcept { return {data.get(), data_size}; }
 
     void setResponseStat(Coordination::Stat & response_stat) const
     {
@@ -170,7 +200,7 @@ struct KeeperRocksNode:KeeperRocksNodeInfo
         response_stat.cversion = cversion;
         response_stat.aversion = aversion;
         response_stat.ephemeralOwner = ephemeralOwner();
-        response_stat.dataLength = static_cast<int32_t>(data.size());
+        response_stat.dataLength = static_cast<int32_t>(data_size);
         response_stat.numChildren = numChildren();
         response_stat.pzxid = pzxid;
     }
@@ -181,11 +211,12 @@ struct KeeperRocksNode:KeeperRocksNodeInfo
     }
     bool empty() const
     {
-        return data.empty() && mzxid == 0;
+        return data_size == 0 && mzxid == 0;
     }
+    std::unique_ptr<char[]> data{nullptr};
+    uint32_t data_size{0};
 private:
     bool serialized = false;
-    String data;
 };
 
 /// KeeperMemNode should have as minimal size as possible to reduce memory footprint
@@ -212,8 +243,10 @@ struct KeeperMemNode
     KeeperMemNode() = default;
 
     KeeperMemNode & operator=(const KeeperMemNode & other);
-
     KeeperMemNode(const KeeperMemNode & other);
+
+    KeeperMemNode & operator=(KeeperMemNode && other) noexcept;
+    KeeperMemNode(KeeperMemNode && other) noexcept;
 
     bool empty() const;
 
@@ -306,6 +339,7 @@ struct KeeperMemNode
     void removeChild(StringRef child_path);
 
     const auto & getChildren() const noexcept { return children; }
+    auto & getChildren() { return children; }
 
     // Invalidate the calculated digest so it's recalculated again on the next
     // getDigest call

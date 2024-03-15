@@ -2,6 +2,9 @@
 
 #include <filesystem>
 
+#include <Access/AccessControl.h>
+#include <Access/User.h>
+
 #include "Common/Exception.h"
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
@@ -276,7 +279,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
-    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag);
+    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
 
     /// Lock uuid, so we will known it's already in use.
     /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
@@ -1095,6 +1098,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
+    if (!create.sql_security && !getContext()->getServerSettings().ignore_empty_sql_security_in_create_view_query)
+        create.sql_security = std::make_shared<ASTSQLSecurity>();
+
+    if (create.sql_security)
+        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.attach, create.is_materialized_view);
+
     DDLGuardPtr ddl_guard;
 
     // If this is a stub ATTACH query, read the query definition from the database
@@ -1327,6 +1336,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard)
 {
+    bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
+    auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query);
+
     if (create.temporary)
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
@@ -1343,7 +1355,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 getContext()->getGlobalContext(),
                 properties.columns,
                 properties.constraints,
-                false);
+                mode);
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
 
@@ -1491,7 +1503,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             getContext()->getGlobalContext(),
             properties.columns,
             properties.constraints,
-            false);
+            mode);
 
         /// If schema wes inferred while storage creation, add columns description to create query.
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
@@ -1878,6 +1890,61 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
         ASTPtr columns = std::make_shared<ASTExpressionList>(*create_query_from_storage.columns_list->columns);
         create.columns_list->set(create.columns_list->columns, columns);
     }
+}
+
+void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach, bool is_materialized_view)
+{
+    /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
+    if (!sql_security.type.has_value())
+    {
+        SQLSecurityType default_security;
+
+        if (is_materialized_view)
+            default_security = context_->getSettingsRef().default_materialized_view_sql_security;
+        else
+            default_security = context_->getSettingsRef().default_normal_view_sql_security;
+
+        if (default_security == SQLSecurityType::DEFINER)
+        {
+            String default_definer = context_->getSettingsRef().default_view_definer;
+            if (default_definer == "CURRENT_USER")
+                sql_security.is_definer_current_user = true;
+            else
+                sql_security.definer = std::make_shared<ASTUserNameWithHost>(default_definer);
+        }
+
+        sql_security.type = default_security;
+    }
+
+    /// Resolves `DEFINER = CURRENT_USER`. Can change the SQL security type if we try to resolve the user during the attachment.
+    const auto current_user_name = context_->getUserName();
+    if (sql_security.is_definer_current_user)
+    {
+        if (current_user_name.empty())
+            /// This can happen only when attaching a view for the first time after migration and with `CURRENT_USER` default.
+            if (is_materialized_view)
+                sql_security.type = SQLSecurityType::NONE;
+            else
+                sql_security.type = SQLSecurityType::INVOKER;
+        else if (sql_security.definer)
+            sql_security.definer->replace(current_user_name);
+        else
+            sql_security.definer = std::make_shared<ASTUserNameWithHost>(current_user_name);
+    }
+
+    /// Checks the permissions for the specified definer user.
+    if (sql_security.definer && !sql_security.is_definer_current_user && !is_attach)
+    {
+        const auto definer_name = sql_security.definer->toString();
+
+        /// Validate that the user exists.
+        context_->getAccessControl().getID<User>(definer_name);
+        if (definer_name != current_user_name)
+            context_->checkAccess(AccessType::SET_DEFINER, definer_name);
+    }
+
+    if (sql_security.type == SQLSecurityType::NONE && !is_attach)
+        context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory)

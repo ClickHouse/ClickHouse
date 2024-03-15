@@ -11,7 +11,6 @@
 #include <Coordination/KeeperStateManager.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/LoggerWrapper.h>
-#include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -26,12 +25,15 @@
 #include <Poco/Util/Application.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
-#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
+
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <fmt/chrono.h>
+
 #include <libnuraft/req_msg.hxx>
+
 
 namespace DB
 {

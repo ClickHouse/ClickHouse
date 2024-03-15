@@ -30,7 +30,6 @@ template <class Node_>
 struct RocksDBContainer
 {
     using Node = Node_;
-    /// using const_iterator = std::unique_ptr<rocksdb::Iterator>;
 
 private:
     UInt8 getKeyDepth(const std::string & key)
@@ -65,17 +64,18 @@ private:
 
 public:
 
+    /// This is an iterator wrapping rocksdb iterator and the kv result.
     struct const_iterator
     {
         std::shared_ptr<rocksdb::Iterator> iter;
 
-        KVPair pair;
+        std::shared_ptr<const KVPair> pair;
 
         const_iterator()
         {
         }
 
-        const_iterator(KVPair && pair_) : pair(std::move(pair_)) {}
+        const_iterator(std::shared_ptr<KVPair> pair_) : pair(std::move(pair_)) {}
 
         const_iterator(rocksdb::Iterator * iter_) : iter(iter_)
         {
@@ -84,53 +84,65 @@ public:
 
         const KVPair & operator * () const
         {
-            return pair;
+            return *pair;
         }
 
         const KVPair * operator->() const
         {
-            return &pair;
+            return pair.get();
         }
 
         bool operator != (const const_iterator & other) const
         {
-            return pair.key.toView() != other->key.toView();
+            return pair->key.toView() != other->key.toView();
+        }
+
+        bool operator == (const const_iterator & other) const
+        {
+            return pair->key.toView() == other->key.toView() && iter == other.iter;
         }
 
         bool operator == (std::nullptr_t) const
         {
-            return pair.key.empty();
+            return iter == nullptr;
         }
 
         bool operator != (std::nullptr_t) const
         {
-            return !pair.key.empty();
+            return iter != nullptr;
         }
 
         operator bool() const
         {
-            return !pair.key.empty();
+            return iter != nullptr;
         }
 
         const_iterator & operator ++()
         {
             iter->Next();
-            if (iter->Valid())
+            if (iter && iter->Valid())
             {
-                pair.key = iter->key().ToString();
-                pair.value.reset();
+                auto new_pair = std::make_shared<KVPair>();
+                new_pair->key = iter->key().ToString();
+                new_pair->value.reset();
                 ReadBufferFromOwnString buffer(iter->value().ToStringView());
-                typename Node::Meta & meta = pair.value;
+                typename Node::Meta & meta = new_pair->value;
                 readPODBinary(meta, buffer);
-                readStringBinary(pair.value.data, buffer);
+                readVarUInt(new_pair->value.data_size, buffer);
+                if (new_pair->value.data_size)
+                    buffer.readStrict(new_pair->value.data.get(), new_pair->value.data_size);
+                pair = new_pair;
             }
             else
             {
-                pair.key = StringRef{};
+                pair = nullptr;
+                iter = nullptr;
             }
             return *this;
         }
     };
+
+    const const_iterator end_ptr;
 
     void initialize(const KeeperContextPtr & context)
     {
@@ -178,8 +190,9 @@ public:
             Node node;
             ReadBufferFromOwnString buffer(iter->value().ToStringView());
             typename Node::Meta & meta = node;
+            /// We do not read data here
             readPODBinary(meta, buffer);
-            result.push_back(KVPair{iter->key().ToString(), node});
+            result.emplace_back(iter->key().ToString(), std::move(node));
         }
         return result;
     }
@@ -203,16 +216,19 @@ public:
         std::string buffer_str;
         rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), encoded_key, &buffer_str);
         if (status.IsNotFound())
-            return {};
+            return end();
         if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during find. The error message is {}.", status.ToString());
         ReadBufferFromOwnString buffer(buffer_str);
-        KVPair kv;
-        kv.key = key_;
-        typename Node::Meta & meta = kv.value;
+        auto kv = std::make_shared<KVPair>();
+        kv->key = key_;
+        typename Node::Meta & meta = kv->value;
         readPODBinary(meta, buffer);
-        readStringBinary(kv.value.data, buffer);
-        return const_iterator(std::move(kv));
+        /// TODO: Sometimes we don't need to load data.
+        readVarUInt(kv->value.data_size, buffer);
+        if (kv->value.data_size)
+            buffer.readStrict(kv->value.data.get(), kv->value.data_size);
+        return const_iterator(kv);
     }
 
     const_iterator updateValue(StringRef key_, ValueUpdater updater)
@@ -224,12 +240,13 @@ public:
         rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), encoded_key, &buffer_str);
         if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during find. The error message is {}.", status.ToString());
-        Node node;
-        node.decodeFromString(buffer_str);
+        auto kv = std::make_shared<KVPair>();
+        kv->key = key_;
+        kv->value.decodeFromString(buffer_str);
         /// storage->removeDigest(node, key);
-        updater(node);
-        insertOrReplace(key, node);
-        return const_iterator(KVPair{key_, node});
+        updater(kv->value);
+        insertOrReplace(key, kv->value);
+        return const_iterator(kv);
     }
 
     bool insert(const std::string & key, Node & value)
@@ -272,7 +289,20 @@ public:
             counter += increase_counter;
         else
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during insert. The error message is {}.", status.ToString());
+    }
 
+    using KeyPtr = std::unique_ptr<char[]>;
+
+    /// To be compatible with SnapshotableHashTable, will remove later;
+    KeyPtr allocateKey(size_t size)
+    {
+        return KeyPtr{new char[size]};
+    }
+
+    void insertOrReplace(KeyPtr key_data, size_t key_size, Node value)
+    {
+        std::string key(key_data.release(), key_size);
+        insertOrReplace(key, value);
     }
 
     bool erase(const std::string & key)
@@ -290,6 +320,7 @@ public:
     }
 
     void recalculateDataSize() {}
+    void reverse(size_t size_) {(void)size_;}
 
     uint64_t getApproximateDataSize() const
     {
@@ -332,7 +363,7 @@ public:
 
     const_iterator end() const
     {
-        return const_iterator();
+        return end_ptr;
     }
 
     size_t size() const
