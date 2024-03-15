@@ -160,6 +160,7 @@ ClickHouseNIO
 ClickHouseVapor
 ClickVisual
 ClickableSquare
+CloudAvailableBadge
 CloudDetails
 CloudNotSupportedBadge
 CodeBlock
