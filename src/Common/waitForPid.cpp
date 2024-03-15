@@ -47,6 +47,8 @@ enum PollPidResult
         #define SYS_pidfd_open 434
     #elif defined(__s390x__)
         #define SYS_pidfd_open 434
+    #elif defined(__loongarch64)
+        #define SYS_pidfd_open 434
     #else
         #error "Unsupported architecture"
     #endif

@@ -24,7 +24,7 @@
 	url = https://github.com/ClickHouse/capnproto
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
-	url = https://github.com/google/double-conversion
+	url = https://github.com/qiangxuhui/double-conversion
 [submodule "contrib/re2"]
 	path = contrib/re2
 	url = https://github.com/google/re2
