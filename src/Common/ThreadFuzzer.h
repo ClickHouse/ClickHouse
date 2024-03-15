@@ -66,7 +66,7 @@ private:
     double migrate_probability = 0;
     double sleep_probability = 0;
     double sleep_time_us_max = 0;
-    
+
     double explicit_sleep_probability = 0;
     double explicit_memory_exception_probability = 0;
 
