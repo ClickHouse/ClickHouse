@@ -1,14 +1,9 @@
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/ActionsVisitor.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Columns/IColumn.h>
-#include <Columns/ColumnConst.h>
 
 namespace DB
 {
@@ -23,6 +18,11 @@ namespace ErrorCodes
 
 namespace
 {
+
+bool isDeterminedIdentifier(JoinIdentifierPos pos)
+{
+    return pos == JoinIdentifierPos::Left || pos == JoinIdentifierPos::Right;
+}
 
 bool isLeftIdentifier(JoinIdentifierPos pos)
 {
@@ -83,59 +83,10 @@ void CollectJoinOnKeysMatcher::Data::asofToJoinKeys()
 
 void CollectJoinOnKeysMatcher::visit(const ASTIdentifier & ident, const ASTPtr & ast, CollectJoinOnKeysMatcher::Data & data)
 {
-    auto from_tables = getTableForIdentifiers(ast, data);
-    if (from_tables.size() == 1)
-    {
-        auto from_table = from_tables.empty() ? JoinIdentifierPos::Right : *from_tables.begin();
-        data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(from_table));
-    }
+    if (auto expr_from_table = getTableForIdentifiers(ast, false, data); isDeterminedIdentifier(expr_from_table))
+        data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(expr_from_table));
     else
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Unexpected identifier '{}' in JOIN ON section", ident.name());
-}
-
-bool CollectJoinOnKeysMatcher::isConstExpression(const IAST & func, Data & data)
-{
-    auto ast = func.clone();
-    NamesAndTypesList all_cols;
-
-    auto actions_dag = std::make_shared<ActionsDAG>(all_cols);
-    DebugASTLog<false> log;
-    NamesAndTypesList empty_agg_keys;
-    ColumnNumbersList empty_agg_col_nums;
-    NamesAndTypesList source_col;
-    ActionsVisitor::Data visitor_data(
-        data.context,
-        {},
-        0,
-        source_col,
-        std::move(actions_dag),
-        {},
-        true,
-        true,
-        false,
-        {empty_agg_keys, empty_agg_col_nums, GroupByKind::NONE},
-        false,
-        false);
-    ActionsVisitor(visitor_data, log.stream()).visit(ast);
-    actions_dag = visitor_data.getActions();
-    auto outputs = actions_dag->getOutputs();
-    NameSet required_output{outputs.back()->result_name};
-    actions_dag->removeUnusedActions(required_output);
-
-    for (const auto & node : actions_dag->getNodes())
-    {
-        if (node.type == ActionsDAG::ActionType::FUNCTION)
-        {
-            if (!node.is_deterministic)
-                return false;
-        }
-        else if (node.type == ActionsDAG::ActionType::COLUMN)
-        {
-            if (!checkColumn<ColumnConst>(*node.column))
-                return false;
-        }
-    }
-    return true;
 }
 
 void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & ast, Data & data)
@@ -152,83 +103,53 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
                             func.name, func.formatForErrorMessage());
     }
 
-    bool is_asof_join_inequality = data.is_asof && inequality != ASOFJoinInequality::None;
-    if (func.name == "equals" || func.name == "isNotDistinctFrom" || is_asof_join_inequality)
+    if (func.name == "equals" || func.name == "isNotDistinctFrom")
     {
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
-        // auto table_numbers = getTableNumbers(left, right, data);
-        auto left_tables = getTableForIdentifiers(left, data);
-        auto right_tables = getTableForIdentifiers(right, data);
+        auto table_numbers = getTableNumbers(left, right, data);
 
-        if (left_tables.empty() && right_tables.empty())
+        if (table_numbers.first == table_numbers.second)
         {
-            if (isConstExpression(func, data))
-                data.analyzed_join.addJoinCondition(ast, false);
-            else
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Invalid join expression: {}", func.formatForErrorMessage());
+            if (!isDeterminedIdentifier(table_numbers.first))
+                throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+                    "Ambiguous columns in expression '{}' in JOIN ON section", queryToString(ast));
+            data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(table_numbers.first));
+            return;
         }
-        else if (left_tables.size() == 1 && right_tables.empty())
+
+        if ((isLeftIdentifier(table_numbers.first) && isRightIdentifier(table_numbers.second)) ||
+            (isRightIdentifier(table_numbers.first) && isLeftIdentifier(table_numbers.second)))
         {
-            data.analyzed_join.addJoinCondition(ast, true);
-        }
-        else if (left_tables.empty() && right_tables.size() == 1)
-        {
-            data.analyzed_join.addJoinCondition(ast, false);
-        }
-        else if (left_tables.size() == 1 && right_tables.size() ==1)
-        {
-            auto left_table_pos = *left_tables.begin();
-            auto right_table_pos = *right_tables.begin();
-            if (left_table_pos != right_table_pos)
-            {
-                JoinIdentifierPosPair table_numbers = std::make_pair(left_table_pos, right_table_pos);
-                if (is_asof_join_inequality)
-                {
-                    if (data.has_asof)
-                    {
-                        throw Exception(
-                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                            "JOIN {} ASOF JOIN expects exactly one inequality in ON section",
-                            func.formatForErrorMessage());
-                    }
-                    data.has_asof = true;
-                    data.addAsofJoinKeys(left, right, table_numbers, inequality);
-                }
-                else
-                {
-                    bool null_safe_comparison = func.name == "isNotDistinctFrom";
-                    data.addJoinKeys(left, right, table_numbers, null_safe_comparison);
-                }
-            }
-            else
-            {
-                data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(left_table_pos));
-            }
-        }
-        else
-        {
-            data.analyzed_join.addJoinMixedCondition(ast);
+            bool null_safe_comparison = func.name == "isNotDistinctFrom";
+            data.addJoinKeys(left, right, table_numbers, null_safe_comparison);
+            return;
         }
     }
-    else
+
+
+    if (auto expr_from_table = getTableForIdentifiers(ast, false, data); isDeterminedIdentifier(expr_from_table))
     {
-        auto from_tables = getTableForIdentifiers(ast, data);
-        if (from_tables.empty() || from_tables.size() == 1)
-        {
-            auto from_table = from_tables.empty() ? JoinIdentifierPos::Right : *from_tables.begin();
-            data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(from_table));
-        }
-        else
-        {
-            data.analyzed_join.addJoinMixedCondition(ast);
-        }
+        data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(expr_from_table));
+        return;
     }
-}
 
-void CollectJoinOnKeysMatcher::visit(const ASTLiteral & /*ident*/, const ASTPtr & ast, Data & data)
-{
-    data.analyzed_join.addJoinCondition(ast, false);
+    if (data.is_asof && inequality != ASOFJoinInequality::None)
+    {
+        if (data.asof_left_key || data.asof_right_key)
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF JOIN expects exactly one inequality in ON section. "
+                            "Unexpected '{}'", queryToString(ast));
+
+        ASTPtr left = func.arguments->children.at(0);
+        ASTPtr right = func.arguments->children.at(1);
+        auto table_numbers = getTableNumbers(left, right, data);
+
+        data.addAsofJoinKeys(left, right, table_numbers, inequality);
+        return;
+    }
+
+    throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Unsupported JOIN ON conditions. Unexpected '{}'",
+                    queryToString(ast));
 }
 
 void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out)
@@ -248,6 +169,14 @@ void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<co
 
     for (const auto & child : ast->children)
         getIdentifiers(child, out);
+}
+
+JoinIdentifierPosPair CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data)
+{
+    auto left_idents_table = getTableForIdentifiers(left_ast, true, data);
+    auto right_idents_table = getTableForIdentifiers(right_ast, true, data);
+
+    return std::make_pair(left_idents_table, right_idents_table);
 }
 
 const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases)
@@ -277,16 +206,14 @@ const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifie
 
 /// @returns Left or right table identifiers belongs to.
 /// Place detected identifier into identifiers[0] if any.
-std::set<JoinIdentifierPos> CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr & ast, const Data & data)
+JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr & ast, bool throw_on_table_mix, const Data & data)
 {
     std::vector<const ASTIdentifier *> identifiers;
     getIdentifiers(ast, identifiers);
     if (identifiers.empty())
-    {
-        return {};
-    }
+        return JoinIdentifierPos::NotColumn;
 
-    std::set<JoinIdentifierPos> table_numbers;
+    JoinIdentifierPos table_number = JoinIdentifierPos::Unknown;
 
     for (auto & ident : identifiers)
     {
@@ -334,14 +261,24 @@ std::set<JoinIdentifierPos> CollectJoinOnKeysMatcher::getTableForIdentifiers(con
             if (in_right_table)
                 membership = JoinIdentifierPos::Right;
         }
-        if (membership == JoinIdentifierPos::Left || membership == JoinIdentifierPos::Right)
+
+        if (membership != JoinIdentifierPos::Unknown && table_number == JoinIdentifierPos::Unknown)
         {
-            table_numbers.insert(membership);
+            table_number = membership;
+            std::swap(ident, identifiers[0]); /// move first detected identifier to the first position
         }
 
+        if (membership != JoinIdentifierPos::Unknown && membership != table_number)
+        {
+            if (throw_on_table_mix)
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Invalid columns in JOIN ON section. "
+                            "Columns {} and {} are from different tables.",
+                            identifiers[0]->getAliasOrColumnName(), ident->getAliasOrColumnName());
+            return JoinIdentifierPos::Unknown;
+        }
     }
 
-    return table_numbers;
+    return table_number;
 }
 
 }

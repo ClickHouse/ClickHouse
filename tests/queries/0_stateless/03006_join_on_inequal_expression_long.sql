@@ -9,7 +9,8 @@ INSERT INTO numbers_l SELECT sipHash64(number, 11) % 32 as a, sipHash64(number, 
 CREATE TABLE numbers_r (a UInt64, b UInt64, c UInt64, d UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO numbers_r SELECT sipHash64(number, 21) % 32 as a, sipHash64(number, 22) % 128 as b, sipHash64(number, 23) % 128 as c, sipHash64(number, 24) % 128 as d FROM numbers(10_000);
 
-SET allow_experimental_analyzer = 1;
+SET allow_experimental_analyzer=1;
+SET enable_mixed_join_condition=1;
 SET join_algorithm = 'hash';
 
 -- { echoOn }

@@ -351,10 +351,21 @@ void buildJoinClause(
         }
         else
         {
-            /// expression involves both tables.
-            /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
-            const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
-            join_clause.addMixedCondition(node);
+            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().enable_mixed_join_condition;
+            if (support_mixed_join_condition)
+            {
+                /// expression involves both tables.
+                /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
+                const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
+                join_clause.addMixedCondition(node);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                    "JOIN {} join expression contains column from left and right table",
+                    join_node.formatASTForErrorMessage());
+            }
         }
 
     }
@@ -374,9 +385,20 @@ void buildJoinClause(
         }
         else
         {
-            /// expression involves both tables.
-            const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
-            join_clause.addMixedCondition(node);
+            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().enable_mixed_join_condition;
+            if (support_mixed_join_condition)
+            {
+                /// expression involves both tables.
+                const auto * node = appendExpression(mixed_dag, join_expression, planner_context, join_node);
+                join_clause.addMixedCondition(node);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                    "JOIN {} join expression contains column from left and right table",
+                    join_node.formatASTForErrorMessage());
+            }
         }
     }
 }

@@ -31,7 +31,6 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/replaceForPositionalArguments.h>
 #include <Interpreters/replaceMissedSubcolumnsInQuery.h>
-#include <Interpreters/ActionsVisitor.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -57,7 +56,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 #include <Common/checkStackSize.h>
-#include "ActionsDAG.h"
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageView.h>
 
@@ -660,28 +658,6 @@ bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, Con
     return false;
 }
 
-ExpressionActionsPtr joinConditionASTToExpression(ContextPtr context, ASTPtr ast, const TablesWithColumns & tables)
-{
-    auto actions_dag = TreeRewriter::astToActionsDAG(context, ast, tables);
-    if (!actions_dag)
-        return nullptr;
-
-    const auto & outputs = actions_dag->getOutputs();
-    if (outputs.size() != 1)
-        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Only one output is expected. but got:\n{}", actions_dag->dumpDAG());
-    auto output_type = removeNullable(outputs[0]->result_type);
-    WhichDataType which_type(output_type);
-    if (!which_type.isUInt8())
-    {
-        DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
-        auto true_col = ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true");
-        const auto * true_node = &actions_dag->addColumn(true_col);
-        actions_dag = ActionsDAG::buildFilterActionsDAG({outputs[0], true_node});
-    }
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context));
-    return expression;
-}
-
 /// Find the columns that are obtained by JOIN.
 void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                           const TablesWithColumns & tables, const Aliases & aliases, ContextPtr context)
@@ -704,7 +680,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
 
         bool is_asof = (table_join.strictness == JoinStrictness::Asof);
 
-        CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, context, is_asof};
+        CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
         if (auto * or_func = table_join.on_expression->as<ASTFunction>(); or_func && or_func->name == "or")
         {
             for (auto & disjunct : or_func->arguments->children)
@@ -719,28 +695,6 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
             analyzed_join.addDisjunct();
             CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
             assert(analyzed_join.oneDisjunct());
-        }
-
-        bool has_mixed_join_filter_condition = false;
-        for (const auto & clause : analyzed_join.getClauses())
-        {
-            if (clause.on_filter_condition_mixed)
-            {
-                has_mixed_join_filter_condition = true;
-                break;
-            }
-        }
-        if (has_mixed_join_filter_condition)
-        {
-            ExpressionActionsPtr & mixed_condition = analyzed_join.getFullJoinExpression();
-            auto join_clauses = analyzed_join.getClauses();
-            ASTPtr condition_ast = nullptr;
-            if (join_clauses.size() == 1)
-                condition_ast = join_clauses[0].on_filter_condition_mixed->clone();
-            else
-                condition_ast = table_join.on_expression->clone();
-
-            mixed_condition = joinConditionASTToExpression(context, condition_ast, tables);
         }
 
         auto check_keys_empty = [] (auto e) { return e.key_names_left.empty(); };
@@ -1647,57 +1601,6 @@ void TreeRewriter::normalize(
     QueryNormalizer(normalizer_data).visit(query);
 
     optimizeGroupingSets(query);
-}
-
-ActionsDAGPtr TreeRewriter::astToActionsDAG(ContextPtr context_, ASTPtr ast, const TablesWithColumns & tables)
-{
-    if (!ast)
-        return nullptr;
-
-    /// The qualified name of a columns from the left table is removed.
-    /// So we need to be careful to build the inpput columns for a actions dag.
-    /// There may be some other better ways to solve this.
-    NamesAndTypesList all_cols;
-    NameSet left_col_names;
-    for (const auto & col : tables[0].columns)
-    {
-        left_col_names.insert(col.name);
-        all_cols.emplace_back(col.name, col.type);
-    }
-    for (const auto & col : tables[1].columns)
-    {
-        if (!left_col_names.contains(col.name))
-        {
-            // If column name is ambiguous, only add the column with qualified name.
-            all_cols.emplace_back(col.name, col.type);
-        }
-        all_cols.emplace_back(tables[1].table.getQualifiedNamePrefix() + col.name, col.type);
-    }
-
-    auto actions_dag = std::make_shared<ActionsDAG>(all_cols);
-    DebugASTLog<false> log;
-    NamesAndTypesList empty_agg_keys;
-    ColumnNumbersList empty_agg_col_nums;
-    NamesAndTypesList source_col;
-    ActionsVisitor::Data visitor_data(
-        context_,
-        {},
-        0,
-        source_col,
-        std::move(actions_dag),
-        {},
-        true,
-        true,
-        false,
-        {empty_agg_keys, empty_agg_col_nums, GroupByKind::NONE},
-        false,
-        false);
-    ActionsVisitor(visitor_data, log.stream()).visit(ast);
-    actions_dag = visitor_data.getActions();
-    auto outputs = actions_dag->getOutputs();
-    NameSet required_output{outputs.back()->result_name};
-    actions_dag->removeUnusedActions(required_output);
-    return actions_dag;
 }
 
 }

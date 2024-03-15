@@ -3,7 +3,6 @@
 #include <Core/Names.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Aliases.h>
@@ -13,7 +12,6 @@ namespace DB
 {
 
 class ASTIdentifier;
-class ASTLiteral;
 class TableJoin;
 
 namespace ASOF
@@ -52,11 +50,9 @@ public:
         const TableWithColumnNamesAndTypes & left_table;
         const TableWithColumnNamesAndTypes & right_table;
         const Aliases & aliases;
-        ContextPtr context;
         const bool is_asof{false};
         ASTPtr asof_left_key{};
         ASTPtr asof_right_key{};
-        bool has_asof{false};
 
         void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos, bool null_safe_comparison);
         void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos,
@@ -74,14 +70,10 @@ public:
         {
             visit(*ident, ast, data);
         }
-        else if (auto * literal = ast->as<ASTLiteral>())
-        {
-            visit(*literal, ast, data);
-        }
         else
         {
             if (ast->children.empty())
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Illegal expression '{}' in JOIN ON section.", queryToString(ast));
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Illegal expression '{}' in JOIN ON section", queryToString(ast));
 
             /// visit children
         }
@@ -97,13 +89,11 @@ public:
 private:
     static void visit(const ASTFunction & func, const ASTPtr & ast, Data & data);
     static void visit(const ASTIdentifier & ident, const ASTPtr & ast, Data & data);
-    static void visit(const ASTLiteral & ident, const ASTPtr & ast, Data & data);
-
 
     static void getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out);
+    static JoinIdentifierPosPair getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
     static const ASTIdentifier * unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases);
-    static std::set<JoinIdentifierPos> getTableForIdentifiers(const ASTPtr & ast, const Data & data);
-    static bool isConstExpression(const IAST & func, Data & data);
+    static JoinIdentifierPos getTableForIdentifiers(const ASTPtr & ast, bool throw_on_table_mix, const Data & data);
 };
 
 /// Parse JOIN ON expression and collect ASTs for joined columns.

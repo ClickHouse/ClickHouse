@@ -61,8 +61,6 @@ public:
 
         ASTPtr on_filter_condition_left;
         ASTPtr on_filter_condition_right;
-        // filter conditions involve both table.
-        ASTPtr on_filter_condition_mixed;
 
         std::string analyzer_left_filter_condition_column_name;
         std::string analyzer_right_filter_condition_column_name;
@@ -329,8 +327,6 @@ public:
      *     doesn't supported yet, it can be added later.
      */
     void addJoinCondition(const ASTPtr & ast, bool is_left);
-
-    void addJoinMixedCondition(const ASTPtr & ast);
 
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }

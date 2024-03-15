@@ -881,11 +881,6 @@ void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
     addJoinConditionWithAnd(cond_ast, ast);
 }
 
-void TableJoin::addJoinMixedCondition(const ASTPtr & ast)
-{
-    addJoinConditionWithAnd(clauses.back().on_filter_condition_mixed, ast);
-}
-
 std::unordered_map<String, String> TableJoin::leftToRightKeyRemap() const
 {
     std::unordered_map<String, String> left_to_right_key_remap;

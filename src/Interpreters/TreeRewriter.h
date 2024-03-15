@@ -7,8 +7,6 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Storages/IStorage_fwd.h>
-#include "ActionsDAG.h"
-#include "Context_fwd.h"
 
 namespace DB
 {
@@ -134,8 +132,6 @@ public:
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns = {},
         const Names & required_result_columns = {},
         std::shared_ptr<TableJoin> table_join = {}) const;
-
-    static ActionsDAGPtr astToActionsDAG(ContextPtr context, ASTPtr ast, const TablesWithColumns & tables);
 
 private:
     static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_, bool is_create_parameterized_view = false);
