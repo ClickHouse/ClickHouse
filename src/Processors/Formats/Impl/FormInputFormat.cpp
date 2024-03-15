@@ -1,16 +1,6 @@
-#include <memory>
 #include<Processors/Formats/Impl/FormInputFormat.h>
-#include <IO/ReadHelpers.h>
-#include "Core/NamesAndTypes.h"
-#include "DataTypes/IDataType.h"
 #include "Formats/EscapingRuleUtils.h"
-#include "Formats/FormatSettings.h"
-#include <DataTypes/Serializations/SerializationNullable.h>
-#include <Formats/JSONUtils.h>
-#include "Processors/Formats/IRowInputFormat.h"
-#include "base/find_symbols.h"
 #include <Formats/FormatFactory.h>
-#include <DataTypes/NestedUtils.h>
 
 namespace DB
 {
@@ -142,15 +132,6 @@ void FormInputFormat::readFormData(MutableColumns & columns)
     }
 }
 
-void FormInputFormat::readNestedFormData(const String & name, MutableColumns & columns)
-{
-    current_column_name = name;
-    current_column_name.push_back('.');
-    nested_prefix_length = current_column_name.size();
-    readFormData(columns);
-    nested_prefix_length = 0;
-}
-
 bool FormInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
     if (in->eof())
@@ -181,7 +162,6 @@ bool FormInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 void FormInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    nested_prefix_length = 0;
     read_columns.clear();
     seen_columns.clear();
 }
@@ -199,7 +179,7 @@ NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, cons
     {
         auto name = readFieldName(in);
         readStringUntilAmpersand(value,in);
-        auto type = tryInferDataTypeByEscapingRule(value, settings, FormatSettings::EscapingRule::Escaped);
+        auto type = tryInferDataTypeByEscapingRule(value, settings, FormatSettings::EscapingRule::Raw);
         names_and_types.emplace_back(name, type);
     }
     while (checkChar('&',in));

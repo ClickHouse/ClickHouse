@@ -26,18 +26,10 @@ private:
     void skipUnknownFormField(StringRef name_ref);
     const String & columnName(size_t i) const;
 
-    /// recursively split names separated by '.' into own columns
-    void checkAndSplitIfNested(StringRef column_name);
-
     String name_buf;
 
     /// holds common prefix of nested column names
     String current_column_name;
-
-    /// holds length of common prefix of nested column names 
-    /// eg: given 'n.a', 'n.b' -> 'n.a' and 'n.b' are nested
-    /// column names and 'n.' is the common prefix.  
-    size_t nested_prefix_length = 0;
 
     /// Hash table matches field name to position in the block
     using NameMap = HashMap<StringRef, size_t, StringRefHash>;
