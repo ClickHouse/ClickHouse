@@ -1512,7 +1512,7 @@ ColumnPtr buildAdditionalFilter(
     {
         Block block;
         added_columns.additional_filter_expression->execute(block);
-        return block.getByPosition(0).column;
+        return block.getByPosition(0).column->cloneResized(selected_rows.size());
     }
     NameSet required_column_names;
     for (auto & col : required_cols)
