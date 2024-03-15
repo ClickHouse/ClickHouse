@@ -6143,7 +6143,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
 
             LOG_DEBUG(log, "Found containing part {} for part {}", containing_part, part_info.dir_name);
 
-            if (!containing_part.empty() && containing_part != part_info.dir_name)
+            if (containing_part != part_info.dir_name)
                 part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
                     fs::path(relative_data_path) / source_dir / ("inactive_" + part_info.dir_name));
             else
