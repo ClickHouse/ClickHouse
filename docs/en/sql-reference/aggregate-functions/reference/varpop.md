@@ -63,8 +63,8 @@ covarPopStable(x, y)
 
 **Parameters**
 
-- `x`: The first data column. [String literal](../syntax#syntax-string-literal)
-- `y`: The second data column. [Expression](../syntax#syntax-expressions)
+- `x`: The first data column. [String literal](../../syntax#syntax-string-literal)
+- `y`: The second data column. [Expression](../../syntax#syntax-expressions)
 
 **Returned value**
 
