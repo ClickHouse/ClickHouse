@@ -2,7 +2,7 @@
 # It's based on the assumption that we don't care of the cctools version so much
 # It event does not depend on the clickhouse/fasttest in the `docker/images.json`
 ARG FROM_TAG=latest
-FROM clickhouse/fasttest:$FROM_TAG
+FROM clickhouse/fasttest:$FROM_TAG as builder
 
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
@@ -29,3 +29,6 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && make install -j$(nproc) \
     && cd ../.. \
     && rm -rf cctools-port
+
+FROM scratch
+COPY --from=builder /cctools /cctools

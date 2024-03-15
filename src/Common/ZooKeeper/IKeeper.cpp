@@ -23,7 +23,7 @@ namespace ProfileEvents
 namespace Coordination
 {
 
-void Exception::incrementErrorMetrics(const Error code_)
+void Exception::incrementErrorMetrics(Error code_)
 {
     if (Coordination::isUserError(code_))
         ProfileEvents::increment(ProfileEvents::ZooKeeperUserExceptions);
@@ -33,14 +33,14 @@ void Exception::incrementErrorMetrics(const Error code_)
         ProfileEvents::increment(ProfileEvents::ZooKeeperOtherExceptions);
 }
 
-Exception::Exception(const std::string & msg, const Error code_, int)
+Exception::Exception(const std::string & msg, Error code_, int)
     : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION)
     , code(code_)
 {
     incrementErrorMetrics(code);
 }
 
-Exception::Exception(PreformattedMessage && msg, const Error code_)
+Exception::Exception(PreformattedMessage && msg, Error code_)
     : DB::Exception(std::move(msg), DB::ErrorCodes::KEEPER_EXCEPTION)
     , code(code_)
 {
@@ -48,7 +48,7 @@ Exception::Exception(PreformattedMessage && msg, const Error code_)
     incrementErrorMetrics(code);
 }
 
-Exception::Exception(const Error code_)
+Exception::Exception(Error code_)
     : Exception(code_, "Coordination error: {}", errorMessage(code_))
 {
 }

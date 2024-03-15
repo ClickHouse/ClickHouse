@@ -1,6 +1,7 @@
 #include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -693,6 +694,9 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         reader->set(memory->data(), memory->size());
     }
 
+    const auto reserve_space_lock_wait_timeout_milliseconds =
+        Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+
     size_t offset = file_segment.getCurrentWriteOffset();
     if (offset != static_cast<size_t>(reader->getPosition()))
         reader->seek(offset, SEEK_SET);
@@ -701,7 +705,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     {
         auto size = reader->available();
 
-        if (!file_segment.reserve(size))
+        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds))
         {
             LOG_TEST(
                 log, "Failed to reserve space during background download "

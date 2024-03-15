@@ -126,7 +126,7 @@ static void postprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Co
 
 
 AggregatingSortedAlgorithm::SimpleAggregateDescription::SimpleAggregateDescription(
-    AggregateFunctionPtr function_, const size_t column_number_,
+    AggregateFunctionPtr function_, size_t column_number_,
     DataTypePtr nested_type_, DataTypePtr real_type_)
     : function(std::move(function_)), column_number(column_number_)
     , nested_type(std::move(nested_type_)), real_type(std::move(real_type_))

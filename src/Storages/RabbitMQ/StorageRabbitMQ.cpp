@@ -8,6 +8,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -132,6 +133,9 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     if (configuration.secure)
         SSL_library_init();
+
+    if (!columns_.getMaterialized().empty() || !columns_.getAliases().empty() || !columns_.getDefaults().empty() || !columns_.getEphemeral().empty())
+        context_->addWarningMessage("RabbitMQ table engine doesn't support ALIAS, DEFAULT or MATERIALIZED columns. They will be ignored and filled with default values");
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -1055,18 +1059,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
-    // Create an INSERT query for streaming data
-    auto insert = std::make_shared<ASTInsertQuery>();
-    insert->table_id = table_id;
-
-    // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
-    auto block_io = interpreter.execute();
-
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
-    auto column_names = block_io.pipeline.getHeader().getNames();
-    auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
-
     auto block_size = getMaxBlockSize();
 
     // Create a stream for each consumer and join them in a union stream
@@ -1082,12 +1075,28 @@ bool StorageRabbitMQ::tryStreamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, rabbitmq_context, column_names, block_size,
-            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, false);
+            *this, storage_snapshot, rabbitmq_context, Names{}, block_size,
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
     }
+
+    // Create an INSERT query for streaming data
+    auto insert = std::make_shared<ASTInsertQuery>();
+    insert->table_id = table_id;
+    if (!sources.empty())
+    {
+        auto column_list = std::make_shared<ASTExpressionList>();
+        const auto & header = sources[0]->getPort().getHeader();
+        for (const auto & column : header)
+            column_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+        insert->columns = std::move(column_list);
+    }
+
+    // Only insert into dependent views and expect that input blocks contain virtual columns
+    InterpreterInsertQuery interpreter(insert, rabbitmq_context, /* allow_materialized_ */ false, /* no_squash_ */ true, /* no_destination_ */ true);
+    auto block_io = interpreter.execute();
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
 

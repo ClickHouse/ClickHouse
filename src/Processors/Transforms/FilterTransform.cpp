@@ -337,7 +337,6 @@ void FilterTransform::doTransform(Chunk & chunk)
                 min_size_in_memory = size_in_memory;
                 first_non_constant_column = i;
             }
-            break;
         }
     }
     (void)min_size_in_memory; /// Suppress error of clang-analyzer-deadcode.DeadStores

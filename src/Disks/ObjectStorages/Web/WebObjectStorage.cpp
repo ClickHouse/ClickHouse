@@ -86,6 +86,10 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
             loaded_files.emplace_back(file_path);
         }
 
+        /// Check for not found url after read attempt, because of delayed initialization.
+        if (metadata_buf->hasNotFoundURL())
+            return {};
+
         auto [it, inserted] = files.add(path, FileData::createDirectoryInfo(true));
         if (!inserted)
         {

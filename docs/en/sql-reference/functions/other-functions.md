@@ -298,7 +298,7 @@ Full columns and constants are represented differently in memory. Functions usua
 Accepts any arguments, including `NULL` and does nothing. Always returns 0.
 The argument is internally still evaluated. Useful e.g. for benchmarks.
 
-## sleep(seconds)
+## sleep
 
 Used to introduce a delay or pause in the execution of a query. It is primarily used for testing and debugging purposes.
 
@@ -310,7 +310,7 @@ sleep(seconds)
 
 **Arguments**
 
-- `seconds`: [Int](../../sql-reference/data-types/int-uint.md) The number of seconds to pause the query execution to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.
+- `seconds`: [UInt*](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md) The number of seconds to pause the query execution to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.
 
 **Returned value**
 
@@ -360,7 +360,7 @@ sleepEachRow(seconds)
 
 **Arguments**
 
-- `seconds`: [Int](../../sql-reference/data-types/int-uint.md) The number of seconds to pause the query execution for each row in the result set to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.
+- `seconds`: [UInt*](../../sql-reference/data-types/int-uint.md) or [Float*](../../sql-reference/data-types/float.md) The number of seconds to pause the query execution for each row in the result set to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.
 
 **Returned value**
 

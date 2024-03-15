@@ -62,7 +62,7 @@ protected:
             settings.ostr << '.';
         }
 
-        chassert(table);
+        chassert(table != nullptr, "Table is empty for the ASTQueryWithTableAndOutputImpl.");
         table->formatImpl(settings, state, frame);
     }
 };

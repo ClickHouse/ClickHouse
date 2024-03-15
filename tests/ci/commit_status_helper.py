@@ -18,8 +18,10 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
-from env_helper import GITHUB_JOB_URL, GITHUB_REPOSITORY, TEMP_PATH
+# isort: on
+
+from ci_config import CHECK_DESCRIPTIONS, REQUIRED_CHECKS, CheckDescription
+from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL, TEMP_PATH
 from pr_info import SKIP_MERGEABLE_CHECK_LABEL, PRInfo
 from report import (
     ERROR,
@@ -259,6 +261,12 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
 
     result = [comment_body]
 
+    if visible_table_rows:
+        visible_table_rows.sort()
+        result.append(table_header)
+        result.extend(visible_table_rows)
+        result.append(table_footer)
+
     if hidden_table_rows:
         hidden_table_rows.sort()
         result.append(details_header)
@@ -266,12 +274,6 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         result.extend(hidden_table_rows)
         result.append(table_footer)
         result.append(details_footer)
-
-    if visible_table_rows:
-        visible_table_rows.sort()
-        result.append(table_header)
-        result.extend(visible_table_rows)
-        result.append(table_footer)
 
     return "".join(result)
 
@@ -427,7 +429,7 @@ def set_mergeable_check(
         context=MERGEABLE_NAME,
         description=format_description(description),
         state=state,
-        target_url=GITHUB_JOB_URL(),
+        target_url=GITHUB_RUN_URL,
     )
 
 

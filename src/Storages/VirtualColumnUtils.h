@@ -25,6 +25,9 @@ void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block,
 /// Just filters block. Block should contain all the required columns.
 void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context);
 
+/// Recursively checks if all functions used in DAG are deterministic in scope of query.
+bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
+
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
 ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs);
 

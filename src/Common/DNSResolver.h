@@ -56,7 +56,7 @@ public:
     void setDisableCacheFlag(bool is_disabled = true);
 
     /// Set a limit of entries in cache
-    void setCacheMaxEntries(const UInt64 cache_max_entries);
+    void setCacheMaxEntries(UInt64 cache_max_entries);
 
     /// Drops all caches
     void dropCache();

@@ -32,6 +32,35 @@ void MetadataStorageFactory::registerMetadataStorageType(const std::string & met
     }
 }
 
+std::string MetadataStorageFactory::getCompatibilityMetadataTypeHint(const ObjectStorageType & type)
+{
+    switch (type)
+    {
+        case ObjectStorageType::S3:
+        case ObjectStorageType::HDFS:
+        case ObjectStorageType::Local:
+        case ObjectStorageType::Azure:
+            return "local";
+        case ObjectStorageType::Web:
+            return "web";
+        default:
+            return "";
+    }
+}
+
+std::string MetadataStorageFactory::getMetadataType(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const std::string & compatibility_type_hint)
+{
+    if (compatibility_type_hint.empty() && !config.has(config_prefix + ".metadata_type"))
+    {
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Expected `metadata_type` in config");
+    }
+
+    return config.getString(config_prefix + ".metadata_type", compatibility_type_hint);
+}
+
 MetadataStoragePtr MetadataStorageFactory::create(
     const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
@@ -39,12 +68,7 @@ MetadataStoragePtr MetadataStorageFactory::create(
     ObjectStoragePtr object_storage,
     const std::string & compatibility_type_hint) const
 {
-    if (compatibility_type_hint.empty() && !config.has(config_prefix + ".metadata_type"))
-    {
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Expected `metadata_type` in config");
-    }
-
-    const auto type = config.getString(config_prefix + ".metadata_type", compatibility_type_hint);
+    const auto type = getMetadataType(config, config_prefix, compatibility_type_hint);
     const auto it = registry.find(type);
 
     if (it == registry.end())

@@ -7,4 +7,8 @@
             </hdd_blob>
         </disks>
     </storage_configuration>
+    <filesystem_cache_log>
+            <database>system</database>
+            <table>filesystem_cache_log</table>
+    </filesystem_cache_log>
 </clickhouse>

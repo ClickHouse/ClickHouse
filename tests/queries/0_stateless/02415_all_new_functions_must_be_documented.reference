@@ -644,14 +644,6 @@ shardNum
 showCertificate
 sigmoid
 sign
-simpleJSONExtractBool
-simpleJSONExtractFloat
-simpleJSONExtractInt
-simpleJSONExtractRaw
-simpleJSONExtractString
-simpleJSONExtractUInt
-simpleJSONHas
-sin
 sinh
 sipHash128
 sipHash128Keyed
