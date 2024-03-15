@@ -154,7 +154,6 @@ public:
     /// Used by InterpreterSystemQuery
     void flushClusterNodesAllData(ContextPtr context);
 
-    /// Used by ClusterCopier
     size_t getShardCount() const;
 
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;

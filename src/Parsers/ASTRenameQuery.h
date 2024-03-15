@@ -45,7 +45,6 @@ public:
     };
 
     using Elements = std::vector<Element>;
-    Elements elements;
 
     bool exchange{false};   /// For EXCHANGE TABLES
     bool database{false};   /// For RENAME DATABASE
@@ -54,12 +53,48 @@ public:
     /// Special flag for CREATE OR REPLACE. Do not throw if the second table does not exist.
     bool rename_if_cannot_exchange{false};
 
+    explicit ASTRenameQuery(Elements elements_ = {})
+        : elements(std::move(elements_))
+    {
+        for (const auto & elem : elements)
+        {
+            if (elem.from.database)
+                children.push_back(elem.from.database);
+            if (elem.from.table)
+                children.push_back(elem.from.table);
+            if (elem.to.database)
+                children.push_back(elem.to.database);
+            if (elem.to.table)
+                children.push_back(elem.to.table);
+        }
+    }
+
+    void setDatabaseIfNotExists(const String & database_name)
+    {
+        for (auto & elem : elements)
+        {
+            if (!elem.from.database)
+            {
+                elem.from.database = std::make_shared<ASTIdentifier>(database_name);
+                children.push_back(elem.from.database);
+            }
+            if (!elem.to.database)
+            {
+                elem.to.database = std::make_shared<ASTIdentifier>(database_name);
+                children.push_back(elem.to.database);
+            }
+        }
+    }
+
+    const Elements & getElements() const { return elements; }
+
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Rename"; }
 
     ASTPtr clone() const override
     {
         auto res = std::make_shared<ASTRenameQuery>(*this);
+        res->cloneChildren();
         cloneOutputOptions(*res);
         return res;
     }
@@ -145,6 +180,8 @@ protected:
 
         formatOnCluster(settings);
     }
+
+    Elements elements;
 };
 
 }
