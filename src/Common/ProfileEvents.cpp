@@ -476,6 +476,7 @@ The server successfully detected this situation and will download merged part fr
     M(FileSegmentRemoveMicroseconds, "File segment remove() time") \
     M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time") \
     M(FileSegmentFailToIncreasePriority, "Number of times the priority was not increased due to a high contention on the cache lock") \
+    M(FilesystemCacheFailToReserveSpaceBecauseOfLockContention, "Number of times space reservation was skipped due to a high contention on the cache lock") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segments count, which were hold") \
     M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)") \
     \
@@ -696,6 +697,35 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ParallelReplicasAvailableCount, "Number of replicas available to execute a query with task-based parallel replicas") \
     M(ParallelReplicasUnavailableCount, "Number of replicas which was chosen, but found to be unavailable during query execution with task-based parallel replicas") \
+    \
+    M(StorageConnectionsCreated, "Number of created connections for storages") \
+    M(StorageConnectionsReused, "Number of reused connections for storages") \
+    M(StorageConnectionsReset, "Number of reset connections for storages") \
+    M(StorageConnectionsPreserved, "Number of preserved connections for storages") \
+    M(StorageConnectionsExpired, "Number of expired connections for storages") \
+    M(StorageConnectionsErrors, "Number of cases when creation of a connection for storage is failed") \
+    M(StorageConnectionsElapsedMicroseconds, "Total time spend on creating connections for storages")                                                                                                                                                                                                                                               \
+    \
+    M(DiskConnectionsCreated, "Number of created connections for disk") \
+    M(DiskConnectionsReused, "Number of reused connections for disk") \
+    M(DiskConnectionsReset, "Number of reset connections for disk") \
+    M(DiskConnectionsPreserved, "Number of preserved connections for disk") \
+    M(DiskConnectionsExpired, "Number of expired connections for disk") \
+    M(DiskConnectionsErrors, "Number of cases when creation of a connection for disk is failed") \
+    M(DiskConnectionsElapsedMicroseconds, "Total time spend on creating connections for disk") \
+    \
+    M(HTTPConnectionsCreated, "Number of created http connections") \
+    M(HTTPConnectionsReused, "Number of reused http connections") \
+    M(HTTPConnectionsReset, "Number of reset http connections") \
+    M(HTTPConnectionsPreserved, "Number of preserved http connections") \
+    M(HTTPConnectionsExpired, "Number of expired http connections") \
+    M(HTTPConnectionsErrors, "Number of cases when creation of a http connection failed") \
+    M(HTTPConnectionsElapsedMicroseconds, "Total time spend on creating http connections") \
+    \
+    M(AddressesDiscovered, "Total count of new addresses in dns resolve results for http connections") \
+    M(AddressesExpired, "Total count of expired addresses which is no longer presented in dns resolve results for http connections") \
+    M(AddressesMarkedAsFailed, "Total count of addresses which has been marked as faulty due to connection errors for http connections") \
+
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)
