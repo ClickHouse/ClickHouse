@@ -631,6 +631,9 @@ try
         if (wait_time != 0)
         {
             observer.emplace(std::chrono::seconds(wait_time));
+            /// Keeper use setting max_memory_usage_soft_limit to control memory limit. When memory usage
+            /// hits the limit, Keeper will refuse all the request util memory usage is lower.
+            /// We don't call setLimits() here because of this.
             observer->setOnMemoryAmountAvailableChanged([&]()
             {
                 main_config_reloader->reload();

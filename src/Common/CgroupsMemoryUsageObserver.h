@@ -17,7 +17,8 @@ namespace DB
 /// 2. Periodically reads the the maximum memory available to the process (which can change due to cgroups settings).
 ///    You can specify a callback to react on changes. The callback typically performs circular logic: It reloads the
 ///    configuration (e.g. server configuration file), which will check the memory amount again and re-calculate
-///    soft/hard limits (see 1.).
+///    soft/hard limits (see 1.) and update the value of setting `max_server_memory_usage` for clickhouse-server or
+///    `max_memory_usage_soft_limit` for clickhouse-keeper.
 #if defined(OS_LINUX)
 class CgroupsMemoryUsageObserver
 {
