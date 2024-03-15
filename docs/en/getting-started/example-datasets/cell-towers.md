@@ -75,14 +75,14 @@ This is the output of `DESCRIBE`.  Down further in this guide the field type cho
 </TabItem>
 <TabItem value="selfmanaged" label="Self-managed">
 
-1. Download the snapshot of the dataset from February 2021: [cell_towers.csv.xz](https://datasets.clickhouse.com/cell_towers.csv.xz) (729 MB).
+1. Download the snapshot of the dataset from February 2021: [cell_towers.csv.xz](https://datasets.clickhouse.com/cell_towers.csv.xz) (686 MB).
 
 2. Validate the integrity (optional step):
 ```bash
 md5sum cell_towers.csv.xz
 ```
 ```response
-8cf986f4a0d9f12c6f384a0e9192c908  cell_towers.csv.xz
+8a797f7bdb55faba93f6cbc37d47b037  cell_towers.csv.xz
 ```
 
 3. Decompress it with the following command:
@@ -132,7 +132,7 @@ SELECT radio, count() AS c FROM cell_towers GROUP BY radio ORDER BY c DESC
 ┌─radio─┬────────c─┐
 │ UMTS  │ 20686487 │
 │ LTE   │ 12101148 │
-│ GSM   │  9931312 │
+│ GSM   │  9931304 │
 │ CDMA  │   556344 │
 │ NR    │      867 │
 └───────┴──────────┘
