@@ -157,14 +157,8 @@ void SelectStreamFactory::createForShardImpl(
 {
     auto emplace_local_stream = [&]()
     {
-        Block shard_header;
-        if (context->getSettingsRef().allow_experimental_analyzer)
-            shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree, context, SelectQueryOptions(processed_stage).analyze());
-        else
-            shard_header = header;
-
         local_plans.emplace_back(createLocalPlan(
-            query_ast, shard_header, context, processed_stage, shard_info.shard_num, shard_count));
+            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)

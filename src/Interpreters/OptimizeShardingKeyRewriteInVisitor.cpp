@@ -11,6 +11,7 @@
 #include "Analyzer/FunctionNode.h"
 #include "Analyzer/IQueryTreeNode.h"
 #include "Analyzer/InDepthQueryTreeVisitor.h"
+#include "Analyzer/Utils.h"
 #include "DataTypes/IDataType.h"
 #include "Interpreters/Context_fwd.h"
 
@@ -170,7 +171,12 @@ public:
 
                 if (new_tuple.empty())
                     new_tuple.push_back(tuple.back());
-                node = std::make_shared<ConstantNode>(new_tuple);
+
+                if (new_tuple.size() == tuple.size())
+                    return;
+
+                arguments[1] = std::make_shared<ConstantNode>(new_tuple);
+                rerunFunctionResolve(function_node, getContext());
             }
         }
     }

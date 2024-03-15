@@ -11,6 +11,7 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
@@ -49,6 +50,9 @@ static void addConvertingActions(Pipe & pipe, const Block & header, bool use_pos
             mode,
             true);
     };
+
+    if (use_positions_to_match)
+        pipe.addSimpleTransform([](const Block & stream_header) { return std::make_shared<MaterializingTransform>(stream_header); });
 
     auto convert_actions = std::make_shared<ExpressionActions>(get_converting_dag(pipe.getHeader(), header));
     pipe.addSimpleTransform([&](const Block & cur_header, Pipe::StreamType) -> ProcessorPtr
@@ -190,7 +194,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         if (try_results.empty() || local_delay < max_remote_delay)
         {
             auto plan = createLocalPlan(
-                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count);
+                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
 
             return std::move(*plan->buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(my_context),
