@@ -178,11 +178,11 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         }
         else if (left_tables.size() == 1 && right_tables.size() ==1)
         {
-            auto left_table_pos = left_tables.begin();
-            auto right_table_pos = right_tables.begin();
+            auto left_table_pos = *left_tables.begin();
+            auto right_table_pos = *right_tables.begin();
             if (left_table_pos != right_table_pos)
             {
-                JoinIdentifierPosPair table_numbers = std::make_pair(*left_table_pos, *right_table_pos);
+                JoinIdentifierPosPair table_numbers = std::make_pair(left_table_pos, right_table_pos);
                 if (is_asof_join_inequality)
                 {
                     if (data.has_asof)
@@ -203,7 +203,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
             }
             else
             {
-                data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(*left_table_pos));
+                data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(left_table_pos));
             }
         }
         else
@@ -334,11 +334,10 @@ std::set<JoinIdentifierPos> CollectJoinOnKeysMatcher::getTableForIdentifiers(con
             if (in_right_table)
                 membership = JoinIdentifierPos::Right;
         }
-        if (membership != JoinIdentifierPos::Left && membership != JoinIdentifierPos::Right)
+        if (membership == JoinIdentifierPos::Left || membership == JoinIdentifierPos::Right)
         {
-            throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Column '{}' doesn't belong to any table", identifier->name());
+            table_numbers.insert(membership);
         }
-        table_numbers.insert(membership);
 
     }
 

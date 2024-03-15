@@ -1012,6 +1012,13 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
+    if (analyzed_join->getFullJoinExpression() && !analyzed_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
+        && !(analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH) && analyzed_join->oneDisjunct()))
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "JOIN with mixed conditions supports only hash join or grace hash join with one disjunct.");
+    }
+
     Block right_sample_block = joined_plan->getCurrentDataStream().header;
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
     for (const auto alg : join_algorithms)

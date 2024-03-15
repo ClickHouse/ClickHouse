@@ -1508,6 +1508,12 @@ ColumnPtr buildAdditionalFilter(
         return ColumnUInt8::create();
 
     auto required_cols = added_columns.additional_filter_expression->getRequiredColumnsWithTypes();
+    if (required_cols.empty())
+    {
+        Block block;
+        added_columns.additional_filter_expression->execute(block);
+        return block.getByPosition(0).column;
+    }
     NameSet required_column_names;
     for (auto & col : required_cols)
     {
@@ -1680,6 +1686,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
     auto copy_final_matched_rows = [&](size_t left_start_row, ColumnPtr filter_col)
     {
         const PaddedPODArray<UInt8> * filter_flags = nullptr;
+        filter_col = filter_col->convertToFullIfNeeded();
         if (filter_col->isNullable())
         {
             auto nested_col = typeid_cast<const ColumnNullable &>(*filter_col).getNestedColumnPtr();
