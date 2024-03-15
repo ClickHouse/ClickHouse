@@ -1,4 +1,3 @@
-#include <variant>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
@@ -72,17 +71,34 @@ ISource::Status RemoteSource::prepare()
     if (is_async_state)
         return Status::Async;
 
+    if (executor_finished)
+        return Status::Finished;
+
     Status status = ISource::prepare();
     /// To avoid resetting the connection (because of "unfinished" query) in the
     /// RemoteQueryExecutor it should be finished explicitly.
     if (status == Status::Finished)
     {
-        query_executor->finish();
         is_async_state = false;
-        return status;
+        need_drain = true;
+        return Status::Ready;
     }
 
     return status;
+}
+
+void RemoteSource::work()
+{
+    /// Connection drain is a heavy operation that may take a long time.
+    /// Therefore we move connection drain from prepare() to work(), and drain multiple connections in parallel.
+    /// See issue: https://github.com/ClickHouse/ClickHouse/issues/60844
+    if (need_drain)
+    {
+        query_executor->finish();
+        executor_finished = true;
+        return;
+    }
+    ISource::work();
 }
 
 std::optional<Chunk> RemoteSource::tryGenerate()

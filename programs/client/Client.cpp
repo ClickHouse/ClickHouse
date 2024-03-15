@@ -50,10 +50,7 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
-
-#ifndef __clang__
-#pragma GCC optimize("-fno-var-tracking-assignments")
-#endif
+#include <Formats/FormatFactory.h>
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -330,6 +327,7 @@ try
     processConfig();
     adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()
@@ -1140,6 +1138,13 @@ void Client::processOptions(const OptionsDescription & options_description,
 }
 
 
+static bool checkIfStdoutIsRegularFile()
+{
+    struct stat file_stat;
+    return fstat(STDOUT_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
+}
+
+
 void Client::processConfig()
 {
     if (!queries.empty() && config().has("queries-file"))
@@ -1176,7 +1181,14 @@ void Client::processConfig()
     pager = config().getString("pager", "");
 
     is_default_format = !config().has("vertical") && !config().has("format");
-    if (config().has("vertical"))
+    if (is_default_format && checkIfStdoutIsRegularFile())
+    {
+        is_default_format = false;
+        std::optional<String> format_from_file_name;
+        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDOUT_FILENO);
+        format = format_from_file_name ? *format_from_file_name : "TabSeparated";
+    }
+    else if (config().has("vertical"))
         format = config().getString("format", "Vertical");
     else
         format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
@@ -1380,8 +1392,8 @@ void Client::readArguments(
 }
 
 
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

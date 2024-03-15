@@ -37,15 +37,15 @@ public:
         Status status;
 
         /// Future that allows to wait until the query is flushed.
-        std::future<void> future;
+        std::future<void> future{};
 
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
-        std::unique_ptr<ReadBuffer> insert_data_buffer;
+        std::unique_ptr<ReadBuffer> insert_data_buffer{};
 
         /// Block that contains received by Native
         /// protocol data in case of too much data.
-        Block insert_block;
+        Block insert_block{};
     };
 
     enum class DataKind
@@ -265,7 +265,7 @@ private:
         const InsertDataPtr & data,
         const Block & header,
         const ContextPtr & insert_context,
-        const LoggerPtr logger,
+        LoggerPtr logger,
         LogFunc && add_to_async_insert_log);
 
     template <typename LogFunc>

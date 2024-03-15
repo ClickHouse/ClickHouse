@@ -133,20 +133,20 @@ public:
     /// This function also enables custom prefixes to be used.
     void setCustomSettingsPrefixes(const Strings & prefixes);
     void setCustomSettingsPrefixes(const String & comma_separated_prefixes);
-    bool isSettingNameAllowed(const std::string_view name) const;
-    void checkSettingNameIsAllowed(const std::string_view name) const;
+    bool isSettingNameAllowed(std::string_view name) const;
+    void checkSettingNameIsAllowed(std::string_view name) const;
 
     /// Allows implicit user creation without password (by default it's allowed).
     /// In other words, allow 'CREATE USER' queries without 'IDENTIFIED WITH' clause.
-    void setImplicitNoPasswordAllowed(const bool allow_implicit_no_password_);
+    void setImplicitNoPasswordAllowed(bool allow_implicit_no_password_);
     bool isImplicitNoPasswordAllowed() const;
 
     /// Allows users without password (by default it's allowed).
-    void setNoPasswordAllowed(const bool allow_no_password_);
+    void setNoPasswordAllowed(bool allow_no_password_);
     bool isNoPasswordAllowed() const;
 
     /// Allows users with plaintext password (by default it's allowed).
-    void setPlaintextPasswordAllowed(const bool allow_plaintext_password_);
+    void setPlaintextPasswordAllowed(bool allow_plaintext_password_);
     bool isPlaintextPasswordAllowed() const;
 
     /// Default password type when the user does not specify it.
@@ -164,7 +164,7 @@ public:
     int getBcryptWorkfactor() const;
 
     /// Enables logic that users without permissive row policies can still read rows using a SELECT query.
-    /// For example, if there two users A, B and a row policy is defined only for A, then
+    /// For example, if there are two users A, B and a row policy is defined only for A, then
     /// if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
     void setEnabledUsersWithoutRowPoliciesCanReadRows(bool enable) { users_without_row_policies_can_read_rows = enable; }
     bool isEnabledUsersWithoutRowPoliciesCanReadRows() const { return users_without_row_policies_can_read_rows; }

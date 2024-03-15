@@ -60,19 +60,7 @@ export RUNNER_URL="https://github.com/${RUNNER_ORG}"
 INSTANCE_ID=$(ec2metadata --instance-id)
 export INSTANCE_ID
 
-# Add cloudflare DNS as a fallback
-# Get default gateway interface
-IFACE=$(ip --json route list | jq '.[]|select(.dst == "default").dev' --raw-output)
-# `Link 2 (eth0): 172.31.0.2`
-ETH_DNS=$(resolvectl dns "$IFACE") || :
-CLOUDFLARE_NS=1.1.1.1
-if [[ "$ETH_DNS" ]] && [[ "${ETH_DNS#*: }" != *"$CLOUDFLARE_NS"* ]]; then
-  # Cut the leading legend
-  ETH_DNS=${ETH_DNS#*: }
-  # shellcheck disable=SC2206
-  new_dns=(${ETH_DNS} "$CLOUDFLARE_NS")
-  resolvectl dns "$IFACE" "${new_dns[@]}"
-fi
+bash /usr/local/share/scripts/init-network.sh
 
 # combine labels
 RUNNER_TYPE=$(/usr/local/bin/aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --query "Tags[?Key=='github:runner-type'].Value" --output text)
@@ -150,13 +138,15 @@ check_spot_instance_is_old() {
 check_proceed_spot_termination() {
     # The function checks and proceeds spot instance termination if exists
     # The event for spot instance termination
+    local FORCE
+    FORCE=${1:-}
     if TERMINATION_DATA=$(curl -s --fail http://169.254.169.254/latest/meta-data/spot/instance-action); then
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html#instance-action-metadata
         _action=$(jq '.action' -r <<< "$TERMINATION_DATA")
         _time=$(jq '.time | fromdate' <<< "$TERMINATION_DATA")
         _until_action=$((_time - $(date +%s)))
         echo "Received the '$_action' event that will be effective in $_until_action seconds"
-        if (( _until_action <= 30 )); then
+        if (( _until_action <= 30 )) || [ "$FORCE" == "force" ]; then
             echo "The action $_action will be done in $_until_action, killing the runner and exit"
             local runner_pid
             runner_pid=$(pgrep Runner.Listener)
@@ -321,7 +311,7 @@ while true; do
         echo "Checking if the instance suppose to terminate"
         no_terminating_metadata || terminate_on_event
         check_spot_instance_is_old && terminate_and_exit
-        check_proceed_spot_termination
+        check_proceed_spot_termination force
 
         echo "Going to configure runner"
         sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$(get_runner_token)" \
@@ -331,7 +321,7 @@ while true; do
         echo "Another one check to avoid race between runner and infrastructure"
         no_terminating_metadata || terminate_on_event
         check_spot_instance_is_old && terminate_and_exit
-        check_proceed_spot_termination
+        check_proceed_spot_termination force
 
         echo "Run"
         sudo -u ubuntu \
