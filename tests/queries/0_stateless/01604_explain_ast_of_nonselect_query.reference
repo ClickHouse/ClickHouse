@@ -18,3 +18,34 @@ CreateFunctionQuery double (children 2)
     ExpressionList (children 2)
      Literal UInt64_2
      Identifier n
+CreateQuery  tt (children 3)
+ Identifier tt
+ Columns definition (children 1)
+  ExpressionList (children 4)
+   ColumnDeclaration a (children 1)
+    Function Nullable (children 1)
+     ExpressionList (children 1)
+      Function TINYINT UNSIGNED
+   ColumnDeclaration b (children 1)
+    Function Nested (children 1)
+     ExpressionList (children 2)
+      NameTypePair c (children 1)
+       Function Nullable (children 1)
+        ExpressionList (children 1)
+         Function INT UNSIGNED
+      NameTypePair d (children 1)
+       Function String
+   ColumnDeclaration e (children 1)
+    Function Tuple (children 1)
+     ExpressionList (children 2)
+      NameTypePair f (children 1)
+       Function TINYINT
+      NameTypePair g (children 1)
+       Function String
+   ColumnDeclaration h (children 1)
+    Function Tuple (children 1)
+     ExpressionList (children 2)
+      Function INT
+      Function String
+ Storage definition (children 1)
+  Function Memory

@@ -12,6 +12,7 @@
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Poco/String.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -70,6 +71,9 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
     {
         auto name_type_pair = std::make_shared<ASTNameTypePair>();
         tryGetIdentifierNameInto(name, name_type_pair->name);
+        /// name should not be a type name, check if multiword type, like `INT UNSIGNED`
+        if (DataTypeFactory::instance().hasNameOrAlias(name_type_pair->name))
+            return false;
         name_type_pair->type = type;
         name_type_pair->children.push_back(type);
         node = name_type_pair;
