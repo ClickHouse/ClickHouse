@@ -50,6 +50,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_having("HAVING");
     ParserKeyword s_window("WINDOW");
     ParserKeyword s_order_by("ORDER BY");
+    ParserKeyword s_depends_on("DEPENDS ON");
     ParserKeyword s_limit("LIMIT");
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_by("BY");
@@ -269,6 +270,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
     if (s_order_by.ignore(pos, expected))
     {
+
         if (!order_list.parse(pos, order_expression_list, expected))
             return false;
 
@@ -290,11 +292,15 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (order_expression_list->children.size() == 1)
         {
+
             /// ORDER BY ALL
             auto * identifier = order_expression_list->children[0]->as<ASTOrderByElement>()->children[0]->as<ASTIdentifier>();
             if (identifier != nullptr && Poco::toUpper(identifier->name()) == "ALL")
                 select_query->order_by_all = true;
+            else if (s_depends_on.ignore(pos, expected))
+                select_query->depends_on_order_by = true;
         }
+
     }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.

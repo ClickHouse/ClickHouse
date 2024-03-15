@@ -231,6 +231,17 @@ public:
         is_order_by_all = is_order_by_all_value;
     }
 
+    /// Set query node ORDER BY smth DEPENDS ON  smth modifier value
+    void setIsDependsOnOrderBy(bool is_depends_on_order_by_value){
+        is_depends_on_order_by = is_depends_on_order_by_value;
+    }
+
+    /// Returns true, if query node has ORDER BY ALL modifier, false otherwise
+    bool isIsDependsOnOrderBy() const{
+        return is_depends_on_order_by;
+    }
+
+
     /// Returns true if query node WITH section is not empty, false otherwise
     bool hasWith() const
     {
@@ -603,6 +614,7 @@ private:
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
     bool is_order_by_all = false;
+    bool is_depends_on_order_by = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;
