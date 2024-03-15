@@ -8,7 +8,7 @@ This page contains information on the `varSamp` and `varSampStable` ClickHouse f
 
 ## varSamp
 
-Calculate the sample variance of a data set. 
+Calculate the sample variance of a data set.
 
 **Syntax**
 
@@ -18,7 +18,7 @@ varSamp(expr)
 
 **Parameters**
 
-- `expr`: An expression representing the data set for which you want to calculate the sample variance. [Expression](../syntax#syntax-expressions)
+- `expr`: An expression representing the data set for which you want to calculate the sample variance. [Expression](../../syntax#syntax-expressions)
 
 **Returned value**
 
@@ -78,7 +78,7 @@ varSampStable(expr)
 
 **Parameters**
 
-- `expr`: An expression representing the data set for which you want to calculate the sample variance. [Expression](../syntax#syntax-expressions)
+- `expr`: An expression representing the data set for which you want to calculate the sample variance. [Expression](../../syntax#syntax-expressions)
 
 **Returned value**
 
