@@ -162,7 +162,7 @@ private:
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns,
         const PaddedPODArray<KeyState> & key_index_to_state,
-        IColumn::Filter * const default_mask = nullptr) const;
+        IColumn::Filter * default_mask = nullptr) const;
 
     MutableColumns aggregateColumns(
         const PaddedPODArray<KeyType> & keys,
