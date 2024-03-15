@@ -161,6 +161,7 @@ ClickHouseVapor
 ClickVisual
 ClickableSquare
 CloudDetails
+CloudNotSupportedBadge
 CodeBlock
 CodeLLDB
 Codecs

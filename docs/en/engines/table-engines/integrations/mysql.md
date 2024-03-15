@@ -4,7 +4,11 @@ sidebar_position: 138
 sidebar_label: MySQL
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # MySQL
+
+<CloudNotSupportedBadge />
 
 The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.
 
