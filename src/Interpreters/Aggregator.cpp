@@ -53,6 +53,7 @@ namespace ProfileEvents
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
     extern const Event OverflowAny;
+    extern const Event AggregationOptimizedEqualRangesOfKeys;
 }
 
 namespace CurrentMetrics
@@ -1325,6 +1326,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     if constexpr (use_compiled_functions)
     {
         std::vector<ColumnData> columns_data;
+        bool can_optimize_equal_keys_ranges = true;
 
         for (size_t i = 0; i < aggregate_functions.size(); ++i)
         {
@@ -1333,13 +1335,15 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             AggregateFunctionInstruction * inst = aggregate_instructions + i;
             size_t arguments_size = inst->that->getArgumentTypes().size(); // NOLINT
+            can_optimize_equal_keys_ranges &= inst->can_optimize_equal_keys_ranges;
 
             for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
                 columns_data.emplace_back(getColumnData(inst->batch_arguments[argument_index]));
         }
 
-        if (all_keys_are_const || (!no_more_keys && state.hasOnlyOneValueSinceLastReset()))
+        if (all_keys_are_const || (can_optimize_equal_keys_ranges && state.hasOnlyOneValueSinceLastReset()))
         {
+            ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
             add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[key_start]);
         }
@@ -1362,10 +1366,15 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         AggregateFunctionInstruction * inst = aggregate_instructions + i;
 
-        if (all_keys_are_const || (!no_more_keys && state.hasOnlyOneValueSinceLastReset()))
+        if (all_keys_are_const || (inst->can_optimize_equal_keys_ranges && state.hasOnlyOneValueSinceLastReset()))
+        {
+            ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             addBatchSinglePlace(row_begin, row_end, inst, places[key_start] + inst->state_offset, aggregates_pool);
+        }
         else
+        {
             addBatch(row_begin, row_end, inst, places.get(), aggregates_pool);
+        }
     }
 }
 
@@ -1571,6 +1580,7 @@ void Aggregator::prepareAggregateInstructions(
         }
 
         aggregate_functions_instructions[i].has_sparse_arguments = has_sparse_arguments;
+        aggregate_functions_instructions[i].can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();
         aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
         aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
 
