@@ -326,7 +326,7 @@ public:
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 4; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -375,8 +375,9 @@ public:
         const IColumn & x = *arguments[1].column;
         const IColumn & y = *arguments[2].column;
 
-        size_t rows = input_rows_count;
-        auto res = ColumnInt64::create(rows);
+        auto res = ColumnInt64::create(input_rows_count);
+        if (input_rows_count == 0 || x.empty() || y.empty())
+            return res;
 
         const auto & timezone_x = extractTimeZoneFromFunctionArguments(arguments, 3, 1);
         const auto & timezone_y = extractTimeZoneFromFunctionArguments(arguments, 3, 2);
