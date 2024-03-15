@@ -54,7 +54,7 @@ public:
             if (!constant_node)
                 return;
 
-            if (auto constant_type = constant_node->getResultType(); !isUInt64(constant_type) && !isInt64(constant_type))
+            if (auto constant_type = constant_node->getResultType(); !isNativeInteger(constant_type))
                 return;
 
             const auto & constant_value_literal = constant_node->getValue();
