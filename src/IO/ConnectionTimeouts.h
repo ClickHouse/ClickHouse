@@ -4,7 +4,6 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 
-#include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Timespan.h>
 
 namespace DB
@@ -111,8 +110,5 @@ inline ConnectionTimeouts & ConnectionTimeouts::withConnectionTimeout(Poco::Time
     secure_connection_timeout = span;
     return *this;
 }
-
-void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts);
-ConnectionTimeouts getTimeouts(const Poco::Net::HTTPClientSession & session);
 
 }

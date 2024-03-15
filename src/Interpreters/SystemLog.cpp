@@ -563,6 +563,7 @@ void SystemLog<LogElement>::prepareTable()
                 {table_id.database_name, table_id.table_name + "_" + toString(suffix)}, getContext()))
                 ++suffix;
 
+            auto rename = std::make_shared<ASTRenameQuery>();
             ASTRenameQuery::Element elem
             {
                 ASTRenameQuery::Table
@@ -585,7 +586,7 @@ void SystemLog<LogElement>::prepareTable()
                 old_create_query,
                 create_query);
 
-            auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
+            rename->elements.emplace_back(std::move(elem));
 
             ActionLock merges_lock;
             if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID() == UUIDHelpers::Nil)

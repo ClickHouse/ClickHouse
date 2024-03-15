@@ -79,7 +79,7 @@ private:
 
         MemoryToken mem;
 
-        explicit ColumnChunk(ParquetBlockOutputFormat * p) : mem(p) {}
+        ColumnChunk(ParquetBlockOutputFormat * p) : mem(p) {}
     };
 
     struct RowGroupState

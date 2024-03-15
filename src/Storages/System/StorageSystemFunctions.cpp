@@ -133,7 +133,7 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
     };
 }
 
-void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     const auto & functions_factory = FunctionFactory::instance();
     const auto & function_names = functions_factory.getAllRegisteredNames();

@@ -37,10 +37,9 @@ def get_fasttest_cmd(
 ) -> str:
     return (
         f"docker run --cap-add=SYS_PTRACE --user={os.geteuid()}:{os.getegid()} "
-        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         "--network=host "  # required to get access to IAM credentials
         f"-e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output "
-        f"-e FASTTEST_SOURCE=/ClickHouse "
+        f"-e FASTTEST_SOURCE=/ClickHouse --cap-add=SYS_PTRACE "
         f"-e FASTTEST_CMAKE_FLAGS='-DCOMPILER_CACHE=sccache' "
         f"-e PULL_REQUEST_NUMBER={pr_number} -e COMMIT_SHA={commit_sha} "
         f"-e COPY_CLICKHOUSE_BINARY_TO_OUTPUT=1 "

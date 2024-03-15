@@ -1,7 +1,6 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
-#include "Core/Names.h"
 #include "Parsers/IAST_fwd.h"
 
 namespace DB
@@ -29,8 +28,6 @@ public:
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
-
-    NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
 
     static size_t getMaxNumberOfArguments() { return 4; }
 

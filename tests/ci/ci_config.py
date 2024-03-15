@@ -11,15 +11,7 @@ from ci_utils import WithIter
 from integration_test_images import IMAGES
 
 
-class WorkFlows(metaclass=WithIter):
-    PULL_REQUEST = "PULL_REQUEST"
-    MASTER = "MASTER"
-    BACKPORT = "BACKPORT"
-    RELEASE = "RELEASE"
-    SYNC = "SYNC"
-
-
-class CIStages(metaclass=WithIter):
+class CIStages:
     NA = "UNKNOWN"
     BUILDS_1 = "Builds_1"
     BUILDS_2 = "Builds_2"
@@ -294,8 +286,6 @@ class BuildConfig:
         def process(field_name: str, field: Union[bool, str]) -> str:
             if isinstance(field, bool):
                 field = str(field).lower()
-            elif not isinstance(field, str):
-                field = ""
             if export:
                 return f"export BUILD_{field_name.upper()}={repr(field)}"
             return f"BUILD_{field_name.upper()}={field}"
@@ -558,17 +548,9 @@ class CIConfig:
             stage_type = CIStages.TESTS_2
         elif self.is_test_job(job_name):
             stage_type = CIStages.TESTS_1
-            if job_name in CI_CONFIG.test_configs:
-                required_build = CI_CONFIG.test_configs[job_name].required_build
-                assert required_build
-                if required_build in CI_CONFIG.get_builds_for_report(
-                    JobNames.BUILD_CHECK
-                ):
-                    stage_type = CIStages.TESTS_1
-                else:
-                    stage_type = CIStages.TESTS_2
-            else:
-                stage_type = CIStages.TESTS_1
+            if job_name == JobNames.LIBFUZZER_TEST:
+                # since fuzzers build in Builds_2, test must be in Tests_2
+                stage_type = CIStages.TESTS_2
         assert stage_type, f"BUG [{job_name}]"
         return stage_type
 
@@ -704,18 +686,18 @@ class CIConfig:
         ), f"Invalid check_name or CI_CONFIG outdated, config not found for [{check_name}]"
         return res  # type: ignore
 
-    def job_generator(self, branch: str) -> Iterable[str]:
+    def job_generator(self) -> Iterable[str]:
         """
         traverses all check names in CI pipeline
         """
-        assert branch
         for config in (
             self.other_jobs_configs,
             self.build_config,
             self.builds_report_config,
             self.test_configs,
         ):
-            yield from config  # type: ignore
+            for check_name in config:  # type: ignore
+                yield check_name
 
     def get_builds_for_report(
         self, report_name: str, release: bool = False, backport: bool = False
@@ -838,15 +820,17 @@ CI_CONFIG = CIConfig(
                 job
                 for job in JobNames
                 if not any(
-                    nogo in job
-                    for nogo in (
-                        "asan",
-                        "tsan",
-                        "msan",
-                        "ubsan",
-                        # skip build report jobs as not all builds will be done
-                        "build check",
-                    )
+                    [
+                        nogo in job
+                        for nogo in (
+                            "asan",
+                            "tsan",
+                            "msan",
+                            "ubsan",
+                            # skip build report jobs as not all builds will be done
+                            "build check",
+                        )
+                    ]
                 )
             ]
         ),

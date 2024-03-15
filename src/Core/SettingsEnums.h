@@ -141,7 +141,6 @@ enum class DefaultTableEngine
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
-
 enum class CleanDeletedRows
 {
     Never = 0, /// Disable.
@@ -177,7 +176,6 @@ enum class DistributedDDLOutputMode
     NEVER_THROW,
     THROW_ONLY_ACTIVE,
     NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE,
-    NONE_ONLY_ACTIVE,
 };
 
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)

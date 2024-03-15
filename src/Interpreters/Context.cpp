@@ -17,7 +17,6 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
-#include <Common/PageCache.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -295,7 +294,6 @@ struct ContextSharedPart : boost::noncopyable
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
-    mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -380,6 +378,8 @@ struct ContextSharedPart : boost::noncopyable
     OrdinaryBackgroundExecutorPtr moves_executor TSA_GUARDED_BY(background_executors_mutex);
     OrdinaryBackgroundExecutorPtr fetch_executor TSA_GUARDED_BY(background_executors_mutex);
     OrdinaryBackgroundExecutorPtr common_executor TSA_GUARDED_BY(background_executors_mutex);
+    /// The global pool of HTTP sessions for background fetches.
+    PooledSessionFactoryPtr fetches_session_factory TSA_GUARDED_BY(background_executors_mutex);
 
     RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
     HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
@@ -724,7 +724,7 @@ struct ContextSharedPart : boost::noncopyable
     void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        LOG_WARNING(log, "{}", message);
+        log->warning(message);
         warnings.push_back(message);
     }
 
@@ -1177,29 +1177,6 @@ void Context::addWarningMessage(const String & msg) const
         shared->addWarningMessage(msg);
 }
 
-void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_name) const
-{
-    std::lock_guard lock(shared->mutex);
-
-    /// We would like to report only about the first database with engine Ordinary
-    static std::atomic_bool is_called = false;
-    if (is_called.exchange(true))
-        return;
-
-    auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
-    /// We don't use getFlagsPath method, because it takes a shared lock.
-    auto convert_databases_flag = fs::path(shared->flags_path) / "convert_ordinary_to_atomic";
-    auto message = fmt::format("Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
-            "To convert this database to a new Atomic engine, please create a forcing flag {} and make sure that ClickHouse has write permission for it. "
-            "Example: sudo touch '{}' && sudo chmod 666 '{}'",
-            database_name,
-            convert_databases_flag.string(), convert_databases_flag.string(), convert_databases_flag.string());
-
-    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message, suppress_re);
-    if (!is_supressed)
-        shared->addWarningMessage(message);
-}
-
 void Context::setConfig(const ConfigurationPtr & config)
 {
     shared->setConfig(config);
@@ -1251,7 +1228,7 @@ void Context::setUser(const UUID & user_id_, const std::optional<const std::vect
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
-    /// so Context::getLocalLock() and Context::getGlobalLock() must be unlocked while we're doing this.
+    /// so Context::getLock() must be unlocked while we're doing this.
 
     auto & access_control = getAccessControl();
     auto user = access_control.read<User>(user_id_);
@@ -1381,7 +1358,7 @@ void Context::checkAccess(const AccessRightsElements & elements) const { return 
 
 std::shared_ptr<const ContextAccess> Context::getAccess() const
 {
-    /// A helper function to collect parameters for calculating access rights, called with Context::getLocalSharedLock() acquired.
+    /// A helper function to collect parameters for calculating access rights, called with Context::getLock() acquired.
     auto get_params = [this]()
     {
         /// If setUserID() was never called then this must be the global context with the full access.
@@ -1408,8 +1385,7 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
     }
 
     /// Calculate new access rights according to the collected parameters.
-    /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLocalLock()
-    ///       and Context::getGlobalLock() must be unlocked while we're doing this.
+    /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLock() must be unlocked while we're doing this.
     auto res = getAccessControl().getContextAccess(*params);
 
     {
@@ -2738,33 +2714,6 @@ void Context::clearUncompressedCache() const
         shared->uncompressed_cache->clear();
 }
 
-void Context::setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->page_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Page cache has been already created.");
-
-    shared->page_cache = std::make_shared<PageCache>(bytes_per_chunk, bytes_per_mmap, bytes_total, use_madv_free, use_huge_pages);
-}
-
-PageCachePtr Context::getPageCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->page_cache;
-}
-
-void Context::dropPageCache() const
-{
-    PageCachePtr cache;
-    {
-        SharedLockGuard lock(shared->mutex);
-        cache = shared->page_cache;
-    }
-    if (cache)
-        cache->dropCache();
-}
-
 void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
@@ -3268,7 +3217,7 @@ bool checkZooKeeperConfigIsLocal(const Poco::Util::AbstractConfiguration & confi
         if (startsWith(key, "node"))
         {
             String host = config.getString(config_name + "." + key + ".host");
-            if (isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(host).front()))
+            if (isLocalAddress(DNSResolver::instance().resolveHost(host)))
                 return true;
         }
     }
@@ -4319,7 +4268,7 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, const std::optional<size_t> max_parsing_threads) const
 {
     return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
 }
@@ -5037,6 +4986,11 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     );
     LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}", background_move_pool_size, background_move_pool_size);
 
+    auto timeouts = ConnectionTimeouts::getFetchPartHTTPTimeouts(getServerSettings(), getSettingsRef());
+    /// The number of background fetches is limited by the number of threads in the background thread pool.
+    /// It doesn't make any sense to limit the number of connections per host any further.
+    shared->fetches_session_factory = std::make_shared<PooledSessionFactory>(timeouts, background_fetches_pool_size);
+
     shared->fetch_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
         "Fetch",
@@ -5088,6 +5042,12 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 {
     SharedLockGuard lock(shared->background_executors_mutex);
     return shared->common_executor;
+}
+
+PooledSessionFactoryPtr Context::getCommonFetchesSessionFactory() const
+{
+    SharedLockGuard lock(shared->background_executors_mutex);
+    return shared->fetches_session_factory;
 }
 
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
@@ -5166,15 +5126,9 @@ ReadSettings Context::getReadSettings() const
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
     res.filesystem_cache_segments_batch_size = settings.filesystem_cache_segments_batch_size;
-    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
     res.filesystem_cache_max_download_size = settings.filesystem_cache_max_download_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
-
-    res.page_cache = getPageCache();
-    res.use_page_cache_for_disks_without_file_cache = settings.use_page_cache_for_disks_without_file_cache;
-    res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings.read_from_page_cache_if_exists_otherwise_bypass_cache;
-    res.page_cache_inject_eviction = settings.page_cache_inject_eviction;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 
@@ -5215,7 +5169,6 @@ WriteSettings Context::getWriteSettings() const
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
     res.throw_on_error_from_cache = settings.throw_on_error_from_cache_on_write_operations;
-    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
     res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
 

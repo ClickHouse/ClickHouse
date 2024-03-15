@@ -45,7 +45,7 @@ KafkaSource::KafkaSource(
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
-    , virtual_header(storage.getVirtualsHeader())
+    , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
 {
 }

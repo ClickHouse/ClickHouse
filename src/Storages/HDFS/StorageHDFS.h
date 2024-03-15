@@ -69,6 +69,9 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
+    NamesAndTypesList getVirtuals() const override;
+    static Names getVirtualColumnNames();
+
     bool supportsPartitionBy() const override { return true; }
 
     /// Check if the format is column-oriented.
@@ -111,6 +114,7 @@ private:
     const bool distributed_processing;
     ASTPtr partition_by;
     bool is_path_with_globs;
+    NamesAndTypesList virtual_columns;
 
     LoggerPtr log = getLogger("StorageHDFS");
 };

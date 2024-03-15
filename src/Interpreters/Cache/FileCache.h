@@ -161,8 +161,7 @@ public:
         FileSegment & file_segment,
         size_t size,
         FileCacheReserveStat & stat,
-        const UserInfo & user,
-        size_t lock_wait_timeout_milliseconds);
+        const UserInfo & user);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
@@ -174,7 +173,6 @@ public:
     void deactivateBackgroundOperations();
 
     CacheGuard::Lock lockCache() const;
-    CacheGuard::Lock tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout = std::nullopt) const;
 
     std::vector<FileSegment::Info> sync();
 

@@ -40,9 +40,9 @@ INSERT INTO t_mutations_subcolumns VALUES (2, '{"k2": 1}');
 INSERT INTO t_mutations_subcolumns VALUES (3, '{"k3": 1}');
 
 ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k2 = 1;
-SELECT a, arrayFilter(x -> not isNull(x.2), tupleToNameValuePairs(obj)) FROM t_mutations_subcolumns ORDER BY a;
+SELECT * FROM t_mutations_subcolumns ORDER BY a FORMAT JSONEachRow;
 
 ALTER TABLE t_mutations_subcolumns DELETE WHERE isNull(obj.k1);
-SELECT a, arrayFilter(x -> not isNull(x.2), tupleToNameValuePairs(obj)) FROM t_mutations_subcolumns ORDER BY a;
+SELECT * FROM t_mutations_subcolumns ORDER BY a FORMAT JSONEachRow;
 
 DROP TABLE t_mutations_subcolumns;

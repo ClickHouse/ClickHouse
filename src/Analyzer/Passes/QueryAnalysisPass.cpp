@@ -3,7 +3,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/NamePrompter.h>
 #include <Common/ProfileEvents.h>
-#include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -86,7 +85,6 @@
 namespace ProfileEvents
 {
     extern const Event ScalarSubqueriesGlobalCacheHit;
-    extern const Event ScalarSubqueriesLocalCacheHit;
     extern const Event ScalarSubqueriesCacheMiss;
 }
 
@@ -708,10 +706,7 @@ struct IdentifierResolveScope
         {
             subquery_depth = parent_scope->subquery_depth;
             context = parent_scope->context;
-            projection_mask_map = parent_scope->projection_mask_map;
         }
-        else
-            projection_mask_map = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>();
 
         if (auto * union_node = scope_node->as<UnionNode>())
         {
@@ -723,11 +718,6 @@ struct IdentifierResolveScope
             group_by_use_nulls = context->getSettingsRef().group_by_use_nulls &&
                 (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
         }
-
-        if (context)
-            join_use_nulls = context->getSettingsRef().join_use_nulls;
-        else if (parent_scope)
-            join_use_nulls = parent_scope->join_use_nulls;
     }
 
     QueryTreeNodePtr scope_node;
@@ -782,8 +772,6 @@ struct IdentifierResolveScope
 
     /// Apply nullability to aggregation keys
     bool group_by_use_nulls = false;
-    /// Join retutns NULLs instead of default values
-    bool join_use_nulls = false;
 
     /// JOINs count
     size_t joins_count = 0;
@@ -795,9 +783,6 @@ struct IdentifierResolveScope
       * Valid only during analysis construction for single expression.
       */
     QueryTreeNodePtr expression_join_tree_node;
-
-    /// Node hash to mask id map
-    std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const
     {
@@ -1445,8 +1430,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, size_t> node_to_tree_size;
 
     /// Global scalar subquery to scalar value map
-    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_local;
-    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_global;
+    std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value;
 
     const bool only_analyze;
 };
@@ -1953,24 +1937,6 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromSQLUserDefinedFunctions(const st
     return result_node;
 }
 
-bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
-{
-    if (!node)
-        return false;
-
-    if (const auto * table_node = node->as<TableNode>())
-    {
-        if (table_node->getStorageID().getFullNameNotQuoted() == context.getViewSource()->getStorageID().getFullNameNotQuoted())
-            return true;
-    }
-
-    for (const auto & child : node->getChildren())
-        if (subtreeHasViewSource(child.get(), context))
-            return true;
-
-    return false;
-}
-
 /// Evaluate scalar subquery and perform constant folding if scalar subquery does not have constant value
 void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
@@ -1990,26 +1956,12 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     node_without_alias->removeAlias();
 
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
-    auto str_hash = DB::toString(node_with_hash.hash);
+    auto scalar_value_it = scalar_subquery_to_scalar_value.find(node_with_hash);
 
-    bool can_use_global_scalars = !only_analyze && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
-
-    auto & scalars_cache = can_use_global_scalars ? scalar_subquery_to_scalar_value_global : scalar_subquery_to_scalar_value_local;
-
-    if (scalars_cache.contains(node_with_hash))
+    if (scalar_value_it != scalar_subquery_to_scalar_value.end())
     {
-        if (can_use_global_scalars)
-            ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
-        else
-            ProfileEvents::increment(ProfileEvents::ScalarSubqueriesLocalCacheHit);
-
-        scalar_block = scalars_cache.at(node_with_hash);
-    }
-    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
-    {
-        scalar_block = context->getQueryContext()->getScalar(str_hash);
-        scalar_subquery_to_scalar_value_global.emplace(node_with_hash, scalar_block);
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+        scalar_block = scalar_value_it->second;
     }
     else
     {
@@ -2121,9 +2073,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
         }
 
-        scalars_cache.emplace(node_with_hash, scalar_block);
-        if (can_use_global_scalars && context->hasQueryContext())
-            context->getQueryContext()->addScalar(str_hash, scalar_block);
+        scalar_subquery_to_scalar_value.emplace(node_with_hash, scalar_block);
     }
 
     const auto & scalar_column_with_type = scalar_block.safeGetByPosition(0);
@@ -3355,6 +3305,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     QueryTreeNodePtr resolved_identifier;
 
     JoinKind join_kind = from_join_node.getKind();
+    bool join_use_nulls = scope.context->getSettingsRef().join_use_nulls;
 
     /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
     /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
@@ -3519,7 +3470,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     if (join_node_in_resolve_process || !resolved_identifier)
         return resolved_identifier;
 
-    if (scope.join_use_nulls)
+    if (join_use_nulls)
     {
         resolved_identifier = resolved_identifier->clone();
         convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side);
@@ -4507,7 +4458,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     else
         matched_expression_nodes_with_names = resolveUnqualifiedMatcher(matcher_node, scope);
 
-    if (scope.join_use_nulls)
+    if (scope.context->getSettingsRef().join_use_nulls)
     {
         /** If we are resolving matcher came from the result of JOIN and `join_use_nulls` is set,
           * we need to convert joined column type to Nullable.
@@ -5192,31 +5143,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     /// Resolve function arguments
+
     bool allow_table_expressions = is_special_function_in;
     auto arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
         scope,
         true /*allow_lambda_expression*/,
         allow_table_expressions /*allow_table_expression*/);
 
-    /// Mask arguments if needed
-    if (!scope.context->getSettingsRef().format_display_secrets_in_show_and_select)
+    if (function_node_ptr->toAST()->hasSecretParts())
     {
-        if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.count)
+        for (auto & argument : arguments_projection_names)
         {
-            auto & argument_nodes = function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
-
-            for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
-            {
-                if (auto * constant = argument_nodes[n]->as<ConstantNode>())
-                {
-                    auto mask = scope.projection_mask_map->insert({constant->getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
-                    constant->setMaskId(mask);
-                    arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(mask) + "]";
-                }
-            }
+            SipHash hash;
+            hash.update(argument);
+            argument = getHexUIntLowercase(hash.get128());
         }
     }
-
     auto & function_node = *function_node_ptr;
 
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
@@ -6728,6 +6670,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             if (column_default && column_default->kind == ColumnDefaultKind::Alias)
             {
                 auto alias_expression = buildQueryTree(column_default->expression, scope.context);
+                alias_expression = buildCastFunction(alias_expression, column_name_and_type.type, scope.context, false /*resolve*/);
                 auto column_node = std::make_shared<ColumnNode>(column_name_and_type, std::move(alias_expression), table_expression_node);
                 column_name_to_column_node.emplace(column_name_and_type.name, column_node);
                 alias_columns_to_resolve.emplace_back(column_name_and_type.name, column_node);
@@ -6760,9 +6703,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
                 alias_column_resolve_scope,
                 false /*allow_lambda_expression*/,
                 false /*allow_table_expression*/);
-            auto & resolved_expression = alias_column_to_resolve->getExpression();
-            if (!resolved_expression->getResultType()->equals(*alias_column_to_resolve->getResultType()))
-                resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
+
             column_name_to_column_node = std::move(alias_column_resolve_scope.column_name_to_column_node);
             column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
         }
@@ -7636,21 +7577,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     if (query_node_typed.getPrewhere())
-    {
-        /** Expression in PREWHERE with JOIN should not be modified by join_use_nulls.
-          * Example: SELECT * FROM t1 JOIN t2 USING (id) PREWHERE a = 1
-          * Column `a` should be resolved from table and should not change its type to Nullable.
-          */
-        bool join_use_nulls = scope.join_use_nulls;
-        bool use_identifier_lookup_to_result_cache = scope.use_identifier_lookup_to_result_cache;
-        scope.join_use_nulls = false;
-        scope.use_identifier_lookup_to_result_cache = false;
-
         resolveExpressionNode(query_node_typed.getPrewhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-        scope.join_use_nulls = join_use_nulls;
-        scope.use_identifier_lookup_to_result_cache = use_identifier_lookup_to_result_cache;
-    }
 
     if (query_node_typed.getWhere())
         resolveExpressionNode(query_node_typed.getWhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);

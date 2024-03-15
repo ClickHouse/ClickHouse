@@ -124,17 +124,15 @@ def check_backup_and_restore(
 def check_system_tables(backup_query_id=None):
     disks = [
         tuple(disk.split("\t"))
-        for disk in node.query(
-            "SELECT name, type, object_storage_type, metadata_type FROM system.disks"
-        ).split("\n")
+        for disk in node.query("SELECT name, type FROM system.disks").split("\n")
         if disk
     ]
     expected_disks = (
-        ("default", "Local", "None", "None"),
-        ("disk_s3", "ObjectStorage", "S3", "Local"),
-        ("disk_s3_cache", "ObjectStorage", "S3", "Local"),
-        ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
-        ("disk_s3_plain", "ObjectStorage", "S3", "Plain"),
+        ("default", "local"),
+        ("disk_s3", "s3"),
+        ("disk_s3_cache", "s3"),
+        ("disk_s3_other_bucket", "s3"),
+        ("disk_s3_plain", "s3_plain"),
     )
     assert len(expected_disks) == len(disks)
     for expected_disk in expected_disks:
@@ -453,48 +451,6 @@ def test_backup_to_zip():
     storage_policy = "default"
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', 'minio123')"
-    check_backup_and_restore(storage_policy, backup_destination)
-
-
-def test_backup_to_tar():
-    storage_policy = "default"
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar', 'minio', 'minio123')"
-    check_backup_and_restore(storage_policy, backup_destination)
-
-
-def test_backup_to_tar_gz():
-    storage_policy = "default"
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.gz', 'minio', 'minio123')"
-    check_backup_and_restore(storage_policy, backup_destination)
-
-
-def test_backup_to_tar_bz2():
-    storage_policy = "default"
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.bz2', 'minio', 'minio123')"
-    check_backup_and_restore(storage_policy, backup_destination)
-
-
-def test_backup_to_tar_lzma():
-    storage_policy = "default"
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.lzma', 'minio', 'minio123')"
-    check_backup_and_restore(storage_policy, backup_destination)
-
-
-def test_backup_to_tar_zst():
-    storage_policy = "default"
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.zst', 'minio', 'minio123')"
-    check_backup_and_restore(storage_policy, backup_destination)
-
-
-def test_backup_to_tar_xz():
-    storage_policy = "default"
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.xz', 'minio', 'minio123')"
     check_backup_and_restore(storage_policy, backup_destination)
 
 

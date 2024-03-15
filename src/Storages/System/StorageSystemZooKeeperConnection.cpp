@@ -39,7 +39,7 @@ ColumnsDescription StorageSystemZooKeeperConnection::getColumnsDescription()
 }
 
 void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, ContextPtr context,
-    const ActionsDAG::Node *, std::vector<UInt8>) const
+    const SelectQueryInfo &) const
 {
     const auto add_enabled_feature_flags = [&](const auto & zookeeper)
     {

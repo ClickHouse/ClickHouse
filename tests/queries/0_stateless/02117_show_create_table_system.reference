@@ -195,8 +195,6 @@ CREATE TABLE system.disks
     `unreserved_space` UInt64,
     `keep_free_space` UInt64,
     `type` String,
-    `object_storage_type` String,
-    `metadata_type` String,
     `is_encrypted` UInt8,
     `is_read_only` UInt8,
     `is_write_once` UInt8,

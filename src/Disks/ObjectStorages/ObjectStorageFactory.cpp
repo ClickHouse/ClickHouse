@@ -18,8 +18,6 @@
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
 #endif
-#include <Disks/ObjectStorages/MetadataStorageFactory.h>
-#include <Disks/ObjectStorages/PlainObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 
@@ -32,36 +30,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-    bool isPlainStorage(
-        ObjectStorageType type,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix)
-    {
-        auto compatibility_hint = MetadataStorageFactory::getCompatibilityMetadataTypeHint(type);
-        auto metadata_type = MetadataStorageFactory::getMetadataType(config, config_prefix, compatibility_hint);
-        return metadataTypeFromString(metadata_type) == MetadataStorageType::Plain;
-    }
-
-    template <typename BaseObjectStorage, class ...Args>
-    ObjectStoragePtr createObjectStorage(
-        ObjectStorageType type,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        Args && ...args)
-    {
-        if (isPlainStorage(type, config, config_prefix))
-        {
-            return std::make_shared<PlainObjectStorage<BaseObjectStorage>>(std::forward<Args>(args)...);
-        }
-        else
-        {
-            return std::make_shared<BaseObjectStorage>(std::forward<Args>(args)...);
-        }
-    }
 }
 
 ObjectStorageFactory & ObjectStorageFactory::instance()
@@ -128,10 +96,10 @@ S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::st
 }
 
 void checkS3Capabilities(
-    S3ObjectStorage & storage, const S3Capabilities s3_capabilities, const String & name)
+    S3ObjectStorage & storage, const S3Capabilities s3_capabilities, const String & name, const String & key_with_trailing_slash)
 {
     /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
-    if (s3_capabilities.support_batch_delete && !checkBatchRemove(storage))
+    if (s3_capabilities.support_batch_delete && !checkBatchRemove(storage, key_with_trailing_slash))
     {
         LOG_WARNING(
             getLogger("S3ObjectStorage"),
@@ -159,14 +127,14 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto settings = getSettings(config, config_prefix, context);
         auto client = getClient(config, config_prefix, context, *settings);
-        auto key_generator = getKeyGenerator(uri, config, config_prefix);
+        auto key_generator = getKeyGenerator(disk_type, uri, config, config_prefix);
 
-        auto object_storage = createObjectStorage<S3ObjectStorage>(
-            ObjectStorageType::S3, config, config_prefix, std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
+        auto object_storage = std::make_shared<S3ObjectStorage>(
+            std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
 
         /// NOTE: should we still perform this check for clickhouse-disks?
         if (!skip_access_check)
-            checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name);
+            checkS3Capabilities(*object_storage, s3_capabilities, name, uri.key);
 
         return object_storage;
     });
@@ -195,14 +163,14 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto settings = getSettings(config, config_prefix, context);
         auto client = getClient(config, config_prefix, context, *settings);
-        auto key_generator = getKeyGenerator(uri, config, config_prefix);
+        auto key_generator = getKeyGenerator(disk_type, uri, config, config_prefix);
 
-        auto object_storage = std::make_shared<PlainObjectStorage<S3ObjectStorage>>(
+        auto object_storage = std::make_shared<S3PlainObjectStorage>(
             std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
 
         /// NOTE: should we still perform this check for clickhouse-disks?
         if (!skip_access_check)
-            checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name);
+            checkS3Capabilities(*object_storage, s3_capabilities, name, uri.key);
 
         return object_storage;
     });
@@ -230,7 +198,7 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
             context->getSettingsRef().hdfs_replication
         );
 
-        return createObjectStorage<HDFSObjectStorage>(ObjectStorageType::HDFS, config, config_prefix, uri, std::move(settings), config);
+        return std::make_unique<HDFSObjectStorage>(uri, std::move(settings), config);
     });
 }
 #endif
@@ -238,22 +206,21 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 #if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
-    auto creator = [](
+    factory.registerObjectStorageType("azure_blob_storage", [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        AzureBlobStorageEndpoint endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
-        return createObjectStorage<AzureObjectStorage>(
-            ObjectStorageType::Azure, config, config_prefix, name,
+        String container_name = config.getString(config_prefix + ".container_name", "default-container");
+        return std::make_unique<AzureObjectStorage>(
+            name,
             getAzureBlobContainerClient(config, config_prefix),
             getAzureBlobStorageSettings(config, config_prefix, context),
-            endpoint.prefix.empty() ? endpoint.container_name : endpoint.container_name + "/" + endpoint.prefix);
-    };
-    factory.registerObjectStorageType("azure_blob_storage", creator);
-    factory.registerObjectStorageType("azure", creator);
+            container_name);
+
+    });
 }
 #endif
 
@@ -281,13 +248,13 @@ void registerWebObjectStorage(ObjectStorageFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS, "Bad URI: `{}`. Error: {}", uri, e.what());
         }
 
-        return createObjectStorage<WebObjectStorage>(ObjectStorageType::Web, config, config_prefix, uri, context);
+        return std::make_shared<WebObjectStorage>(uri, context);
     });
 }
 
 void registerLocalObjectStorage(ObjectStorageFactory & factory)
 {
-    auto creator = [](
+    factory.registerObjectStorageType("local_blob_storage", [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -299,11 +266,8 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
-        return createObjectStorage<LocalObjectStorage>(ObjectStorageType::Local, config, config_prefix, object_key_prefix);
-    };
-
-    factory.registerObjectStorageType("local_blob_storage", creator);
-    factory.registerObjectStorageType("local", creator);
+        return std::make_shared<LocalObjectStorage>(object_key_prefix);
+    });
 }
 #endif
 

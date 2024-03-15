@@ -32,7 +32,7 @@ ColumnsDescription StorageSystemDNSCache::getColumnsDescription()
         };
 }
 
-void StorageSystemDNSCache::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemDNSCache::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     using HostIPPair = std::pair<std::string, std::string>;
     std::unordered_set<HostIPPair, boost::hash<std::pair<std::string, std::string>>> reported_elements;

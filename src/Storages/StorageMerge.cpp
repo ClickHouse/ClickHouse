@@ -63,12 +63,10 @@
 #include <Core/NamesAndTypes.h>
 #include <Functions/FunctionFactory.h>
 
-namespace DB
-{
-
 namespace
 {
 
+using namespace DB;
 bool columnIsPhysical(ColumnDefaultKind kind)
 {
     return kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Materialized;
@@ -84,23 +82,10 @@ bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs)
     return false;
 }
 
-/// Adds to the select query section `WITH value AS column_name`
-///
-/// For example:
-/// - `WITH 9000 as _port`.
-void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
+}
+
+namespace DB
 {
-    auto & select = ast->as<ASTSelectQuery &>();
-    if (!select.with())
-        select.setExpression(ASTSelectQuery::Expression::WITH, std::make_shared<ASTExpressionList>());
-
-    auto literal = std::make_shared<ASTLiteral>(value);
-    literal->alias = column_name;
-    literal->prefer_alias_to_column_name = true;
-    select.with()->children.push_back(literal);
-}
-
-}
 
 namespace ErrorCodes
 {
@@ -147,7 +132,6 @@ StorageMerge::StorageMerge(
     storage_metadata.setColumns(columns_.empty() ? getColumnsDescriptionFromSourceTables() : columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 StorageMerge::StorageMerge(
@@ -170,7 +154,6 @@ StorageMerge::StorageMerge(
     storage_metadata.setColumns(columns_.empty() ? getColumnsDescriptionFromSourceTables() : columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(ContextPtr context_) const
@@ -321,37 +304,6 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     }
 
     return selected_table_size == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
-}
-
-VirtualColumnsDescription StorageMerge::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-
-    return desc;
-}
-
-StorageSnapshotPtr StorageMerge::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
-{
-    static const auto common_virtuals = createVirtuals();
-
-    auto virtuals = common_virtuals;
-    if (auto first_table = getFirstTable([](auto && table) { return table; }))
-    {
-        auto table_virtuals = first_table->getVirtualsPtr();
-        for (const auto & column : *table_virtuals)
-        {
-            if (virtuals.has(column.name))
-                continue;
-
-            virtuals.add(column);
-        }
-    }
-
-    auto virtuals_ptr = std::make_shared<VirtualColumnsDescription>(std::move(virtuals));
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(virtuals_ptr));
 }
 
 void StorageMerge::read(
@@ -945,6 +897,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
                     column_node = std::make_shared<ColumnNode>(NameAndTypePair{column, storage_columns.getColumn(get_column_options, column).type }, modified_query_info.table_expression);
                 }
 
+
                 PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, false /*use_column_identifier_as_action_node_name*/);
                 actions_visitor.visit(filter_actions_dag, column_node);
             }
@@ -975,8 +928,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
 
         if (!is_storage_merge_engine)
         {
-            rewriteEntityInAst(modified_query_info.query, "_table", current_storage_id.table_name);
-            rewriteEntityInAst(modified_query_info.query, "_database", current_storage_id.database_name);
+            VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", current_storage_id.table_name);
+            VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_database", current_storage_id.database_name);
         }
     }
 
@@ -1047,7 +1000,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         Block pipe_header = builder->getHeader();
 
-        if (has_database_virtual_column && common_header.has("_database") && !pipe_header.has("_database"))
+        if (has_database_virtual_column && !pipe_header.has("_database"))
         {
             ColumnWithTypeAndName column;
             column.name = "_database";
@@ -1062,7 +1015,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                                         { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
         }
 
-        if (has_table_virtual_column && common_header.has("_table") && !pipe_header.has("_table"))
+        if (has_table_virtual_column && !pipe_header.has("_table"))
         {
             ColumnWithTypeAndName column;
             column.name = "_table";
@@ -1422,7 +1375,6 @@ void StorageMerge::alter(
     params.apply(storage_metadata, local_context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, storage_metadata);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 void ReadFromMerge::convertAndFilterSourceStream(
@@ -1680,6 +1632,22 @@ void registerStorageMerge(StorageFactory & factory)
     {
         .supports_schema_inference = true
     });
+}
+
+NamesAndTypesList StorageMerge::getVirtuals() const
+{
+    NamesAndTypesList virtuals{
+        {"_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
+
+    auto first_table = getFirstTable([](auto && table) { return table; });
+    if (first_table)
+    {
+        auto table_virtuals = first_table->getVirtuals();
+        virtuals.insert(virtuals.end(), table_virtuals.begin(), table_virtuals.end());
+    }
+
+    return virtuals;
 }
 
 }

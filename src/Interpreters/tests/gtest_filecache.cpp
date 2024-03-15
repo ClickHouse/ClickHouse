@@ -245,7 +245,7 @@ void download(FileSegment & file_segment)
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
     ASSERT_EQ(file_segment.getDownloadedSize(), 0);
 
-    ASSERT_TRUE(file_segment.reserve(file_segment.range().size(), 1000));
+    ASSERT_TRUE(file_segment.reserve(file_segment.range().size()));
     download(cache_base_path, file_segment);
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
 
@@ -257,7 +257,7 @@ void assertDownloadFails(FileSegment & file_segment)
 {
     ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment.getDownloadedSize(), 0);
-    ASSERT_FALSE(file_segment.reserve(file_segment.range().size(), 1000));
+    ASSERT_FALSE(file_segment.reserve(file_segment.range().size()));
     file_segment.complete();
 }
 
@@ -956,7 +956,7 @@ TEST_F(FileCacheTest, temporaryData)
         for (auto & segment : *some_data_holder)
         {
             ASSERT_TRUE(segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            ASSERT_TRUE(segment->reserve(segment->range().size(), 1000));
+            ASSERT_TRUE(segment->reserve(segment->range().size()));
             download(*segment);
             segment->complete();
         }

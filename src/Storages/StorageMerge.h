@@ -55,8 +55,6 @@ public:
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -118,11 +116,10 @@ private:
     template <typename F>
     void forEachTable(F && func) const;
 
+    NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
 
     ColumnsDescription getColumnsDescriptionFromSourceTables() const;
-
-    static VirtualColumnsDescription createVirtuals();
 
     bool tableSupportsPrewhere() const;
 
@@ -284,8 +281,6 @@ private:
         ContextPtr query_context,
         bool filter_by_database_virtual_column,
         bool filter_by_table_virtual_column) const;
-
-    // static VirtualColumnsDescription createVirtuals(StoragePtr first_table);
 };
 
 }

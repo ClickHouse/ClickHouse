@@ -433,6 +433,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-client",
             "clickhouse-local",
             "clickhouse-benchmark",
+            "clickhouse-copier",
             "clickhouse-obfuscator",
             "clickhouse-git-import",
             "clickhouse-compressor",

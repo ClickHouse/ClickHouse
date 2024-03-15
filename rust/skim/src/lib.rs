@@ -1,7 +1,7 @@
-use cxx::{CxxString, CxxVector};
 use skim::prelude::*;
-use std::panic;
 use term::terminfo::TermInfo;
+use cxx::{CxxString, CxxVector};
+use std::panic;
 
 #[cxx::bridge]
 mod ffi {
@@ -16,7 +16,7 @@ struct Item {
 }
 impl Item {
     fn new(text: String) -> Self {
-        Self {
+        return Self{
             // Text that will be printed by skim, and will be used for matching.
             //
             // Text that will be shown should not contains new lines since in this case skim may
@@ -24,16 +24,16 @@ impl Item {
             text_no_newlines: text.replace("\n", " "),
             // This will be used when the match had been selected.
             orig_text: text,
-        }
+        };
     }
 }
 impl SkimItem for Item {
     fn text(&self) -> Cow<str> {
-        Cow::Borrowed(&self.text_no_newlines)
+        return Cow::Borrowed(&self.text_no_newlines);
     }
 
     fn output(&self) -> Cow<str> {
-        Cow::Borrowed(&self.orig_text)
+        return Cow::Borrowed(&self.orig_text);
     }
 }
 
@@ -88,11 +88,14 @@ fn skim_impl(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String,
     if output.selected_items.is_empty() {
         return Err("No items had been selected".to_string());
     }
-    Ok(output.selected_items[0].output().to_string())
+    return Ok(output.selected_items[0].output().to_string());
 }
 
 fn skim(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String, String> {
-    match panic::catch_unwind(|| skim_impl(prefix, words)) {
+    let ret = panic::catch_unwind(|| {
+        return skim_impl(prefix, words);
+    });
+    return match ret {
         Err(err) => {
             let e = if let Some(s) = err.downcast_ref::<String>() {
                 format!("{}", s)
@@ -102,7 +105,7 @@ fn skim(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String, Stri
                 format!("Unknown panic type: {:?}", err.type_id())
             };
             Err(format!("Rust panic: {:?}", e))
-        }
+        },
         Ok(res) => res,
     }
 }

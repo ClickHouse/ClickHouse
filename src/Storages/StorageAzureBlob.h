@@ -94,6 +94,9 @@ public:
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
+    NamesAndTypesList getVirtuals() const override;
+    static Names getVirtualColumnNames();
+
     bool supportsPartitionBy() const override;
 
     bool supportsSubcolumns() const override { return true; }
@@ -133,6 +136,7 @@ private:
     std::string name;
     Configuration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
+    NamesAndTypesList virtual_columns;
 
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
@@ -145,7 +149,7 @@ public:
     class IIterator : public WithContext
     {
     public:
-        explicit IIterator(const ContextPtr & context_):WithContext(context_) {}
+        IIterator(const ContextPtr & context_):WithContext(context_) {}
         virtual ~IIterator() = default;
         virtual RelativePathWithMetadata next() = 0;
 

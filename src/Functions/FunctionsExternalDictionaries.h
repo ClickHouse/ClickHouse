@@ -324,15 +324,12 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
-    bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
     {
         if constexpr (dictionary_get_function_type != DictionaryGetFunctionType::getOrDefault)
             return false;
 
-        /// We execute lazily only last argument with default expression.
-        for (size_t i = 0; i != number_of_arguments - 1; ++i)
-            settings.arguments_with_disabled_lazy_execution.insert(i);
-
+        settings.arguments_with_disabled_lazy_execution.insert({0, 1, 2});
         settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
         settings.force_enable_lazy_execution = false;
         return true;

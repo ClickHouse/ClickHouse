@@ -52,7 +52,6 @@ protected:
             settings.ostr << '.';
         }
 
-        chassert(table);
         table->formatImpl(settings, state, frame);
 
         if (is_watch_events)

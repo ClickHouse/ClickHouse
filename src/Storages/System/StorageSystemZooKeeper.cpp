@@ -233,9 +233,9 @@ private:
 StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
         : IStorage(table_id_)
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(getColumnsDescription());
-    setInMemoryMetadata(storage_metadata);
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(getColumnsDescription());
+        setInMemoryMetadata(storage_metadata);
 }
 
 void StorageSystemZooKeeper::read(
@@ -248,7 +248,7 @@ void StorageSystemZooKeeper::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
     auto read_step = std::make_unique<ReadFromSystemZooKeeper>(
         column_names,
         query_info,

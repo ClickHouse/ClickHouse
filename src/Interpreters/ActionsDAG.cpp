@@ -1362,7 +1362,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     size_t num_result_columns = result.size();
 
     if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
-        throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns doesn't match (source: {} and result: {})", num_input_columns, num_result_columns);
+        throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns doesn't match");
 
     if (add_casted_columns && mode != MatchColumnsMode::Name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_casted_columns supported only for MatchColumnsMode::Name");

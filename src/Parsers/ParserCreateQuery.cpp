@@ -917,11 +917,15 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
+    ASTPtr live_view_periodic_refresh;
     ASTPtr sql_security;
 
     String cluster_str;
     bool attach = false;
     bool if_not_exists = false;
+    bool with_and = false;
+    bool with_timeout = false;
+    bool with_periodic_refresh = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -944,6 +948,23 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     if (!table_name_p.parse(pos, table, expected))
         return false;
+
+    if (ParserKeyword{"WITH"}.ignore(pos, expected))
+    {
+        if (ParserKeyword{"REFRESH"}.ignore(pos, expected) || ParserKeyword{"PERIODIC REFRESH"}.ignore(pos, expected))
+        {
+            if (!ParserNumber{}.parse(pos, live_view_periodic_refresh, expected))
+                live_view_periodic_refresh = std::make_shared<ASTLiteral>(static_cast<UInt64>(60));
+
+            with_periodic_refresh = true;
+        }
+
+        else if (with_and)
+            return false;
+
+        if (!with_timeout && !with_periodic_refresh)
+            return false;
+    }
 
     if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
@@ -1006,6 +1027,9 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
+
+    if (live_view_periodic_refresh)
+        query->live_view_periodic_refresh.emplace(live_view_periodic_refresh->as<ASTLiteral &>().value.safeGet<UInt64>());
 
     if (comment)
         query->set(query->comment, comment);

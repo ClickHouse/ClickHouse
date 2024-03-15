@@ -38,6 +38,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/BlockNumberColumn.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -876,6 +877,24 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column.name));
     }
 
+    /// Check if _row_exists for lightweight delete column in column_lists for merge tree family.
+    if (create.storage && create.storage->engine && endsWith(create.storage->engine->name, "MergeTree"))
+    {
+        auto search = all_columns.find(LightweightDeleteDescription::FILTER_COLUMN.name);
+        if (search != all_columns.end())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Cannot create table with column '{}' for *MergeTree engines because it "
+                            "is reserved for lightweight delete feature",
+                            LightweightDeleteDescription::FILTER_COLUMN.name);
+
+        auto search_block_number = all_columns.find(BlockNumberColumn::name);
+        if (search_block_number != all_columns.end())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Cannot create table with column '{}' for *MergeTree engines because it "
+                            "is reserved for storing block number",
+                            BlockNumberColumn::name);
+    }
+
     const auto & settings = getContext()->getSettingsRef();
 
     /// If it's not attach and not materialized view to existing table,
@@ -888,23 +907,9 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
-void validateVirtualColumns(const IStorage & storage)
-{
-    auto virtual_columns = storage.getVirtualsPtr();
-    for (const auto & storage_column : storage.getInMemoryMetadataPtr()->getColumns())
-    {
-        if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
-                storage_column.name, storage.getName());
-        }
-    }
-}
-
 namespace
 {
-    void checkTemporaryTableEngineName(const String & name)
+    void checkTemporaryTableEngineName(const String& name)
     {
         if (name.starts_with("Replicated") || name.starts_with("Shared") || name == "KeeperMap")
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated, Shared or KeeperMap table engines");
@@ -1487,16 +1492,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
     }
 
-    validateVirtualColumns(*res);
-
-    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()))
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create table with column of type Object, "
-            "because storage {} doesn't support dynamic subcolumns",
-            res->getName());
-    }
-
     if (!create.attach && getContext()->getSettingsRef().database_replicated_allow_only_replicated_engine)
     {
         bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
@@ -1545,6 +1540,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// Also note that "startup" method is exception-safe. If exception is thrown from "startup",
     /// we can safely destroy the object without a call to "shutdown", because there is guarantee
     /// that no background threads/similar resources remain after exception from "startup".
+
+    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()))
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column of type Object, "
+            "because storage {} doesn't support dynamic subcolumns",
+            res->getName());
+    }
 
     res->startup();
     return true;
@@ -1612,6 +1615,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         executeTrivialBlockIO(fill_io, getContext());
 
         /// Replace target table with created one
+        auto ast_rename = std::make_shared<ASTRenameQuery>();
         ASTRenameQuery::Element elem
         {
             ASTRenameQuery::Table
@@ -1626,7 +1630,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             }
         };
 
-        auto ast_rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
+        ast_rename->elements.push_back(std::move(elem));
         ast_rename->dictionary = create.is_dictionary;
         if (create.create_or_replace)
         {

@@ -9,11 +9,6 @@
 #include <Common/OpenSSLHelpers.h>
 
 #include <base/scope_guard.h>
-#include <base/defines.h>
-#include <string_view>
-
-
-using namespace std::literals;
 
 namespace DB
 {

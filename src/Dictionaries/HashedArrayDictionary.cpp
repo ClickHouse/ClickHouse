@@ -1078,7 +1078,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
                     bytes_allocated += container.allocated_bytes();
                 }
 
-                bucket_count += container.capacity();
+                bucket_count = container.capacity();
             }
         };
 
@@ -1088,13 +1088,6 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
             for (const auto & container : attribute.is_index_null.value())
                 bytes_allocated += container.size();
     }
-
-    /// `bucket_count` should be a sum over all shards,
-    /// but it should not be a sum over all attributes, since it is used to
-    /// calculate load_factor like this: `element_count / bucket_count`
-    /// While element_count is a sum over all shards, not over all attributes.
-    if (attributes.size())
-        bucket_count /= attributes.size();
 
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
@@ -1174,23 +1167,16 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         if (shards <= 0 || 128 < shards)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARDS parameter should be within [1, 128]", full_name);
 
-        Int64 shard_load_queue_backlog = config.getInt(config_prefix + dictionary_layout_prefix + ".shard_load_queue_backlog", 10000);
-        if (shard_load_queue_backlog <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: SHARD_LOAD_QUEUE_BACKLOG parameter should be greater then zero", full_name);
+        HashedArrayDictionaryStorageConfiguration configuration{require_nonempty, dict_lifetime, static_cast<size_t>(shards)};
 
         if (source_ptr->hasUpdateField() && shards > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: SHARDS parameter does not supports for updatable source (UPDATE_FIELD)", full_name);
-
-        HashedArrayDictionaryStorageConfiguration configuration{require_nonempty, dict_lifetime, static_cast<size_t>(shards), static_cast<UInt64>(shard_load_queue_backlog)};
 
         ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
         const auto & settings = context->getSettingsRef();
 
         const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
         configuration.use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings.dictionary_use_async_executor;
-
-        if (settings.max_execution_time.totalSeconds() > 0)
-            configuration.load_timeout = std::chrono::seconds(settings.max_execution_time.totalSeconds());
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {

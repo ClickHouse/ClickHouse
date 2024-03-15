@@ -152,7 +152,8 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 
@@ -460,20 +461,22 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         try
         {
-            auto res = BuilderRWBufferFromHTTP(request_uri)
-                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
-                           .withMethod(http_method)
-                           .withProxy(proxy_config)
-                           .withSettings(read_settings)
-                           .withTimeouts(timeouts)
-                           .withHostFilter(&context_->getRemoteHostFilter())
-                           .withBufSize(settings.max_read_buffer_size)
-                           .withRedirects(settings.max_http_get_redirects)
-                           .withOutCallback(callback)
-                           .withSkipNotFound(skip_url_not_found_error)
-                           .withHeaders(headers)
-                           .withDelayInit(delay_initialization)
-                           .create(credentials);
+            auto res = std::make_unique<ReadWriteBufferFromHTTP>(
+                request_uri,
+                http_method,
+                callback,
+                timeouts,
+                credentials,
+                settings.max_http_get_redirects,
+                settings.max_read_buffer_size,
+                read_settings,
+                headers,
+                &context_->getRemoteHostFilter(),
+                delay_initialization,
+                /* use_external_buffer */ false,
+                /* skip_url_not_found_error */ skip_url_not_found_error,
+                /* file_info */ std::nullopt,
+                proxy_config);
 
             if (context_->getSettingsRef().engine_url_skip_empty_files && res->eof() && option != std::prev(end))
             {
@@ -545,7 +548,7 @@ StorageURLSink::StorageURLSink(
     auto proxy_config = getProxyConfiguration(http_method);
 
     auto write_buffer = std::make_unique<WriteBufferFromHTTP>(
-        HTTPConnectionGroupType::STORAGE, Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts, DBMS_DEFAULT_BUFFER_SIZE, proxy_config
+        Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts, DBMS_DEFAULT_BUFFER_SIZE, proxy_config
     );
 
     const auto & settings = context->getSettingsRef();
@@ -1056,7 +1059,7 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
@@ -1124,7 +1127,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     else if (is_url_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage->getVirtualsList(), context);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage->virtual_columns, context);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -1227,7 +1230,7 @@ void StorageURLWithFailover::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
@@ -1300,6 +1303,16 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
     }
 }
 
+NamesAndTypesList IStorageURLBase::getVirtuals() const
+{
+    return virtual_columns;
+}
+
+Names IStorageURLBase::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
+}
+
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
 {
     static SchemaCache schema_cache(context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_url", DEFAULT_SCHEMA_CACHE_ELEMENTS));
@@ -1318,17 +1331,24 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
 
     auto proxy_config = getProxyConfiguration(uri.getScheme());
 
-    auto buf = BuilderRWBufferFromHTTP(uri)
-                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
-                   .withSettings(context->getReadSettings())
-                   .withTimeouts(getHTTPTimeouts(context))
-                   .withHostFilter(&context->getRemoteHostFilter())
-                   .withBufSize(settings.max_read_buffer_size)
-                   .withRedirects(settings.max_http_get_redirects)
-                   .withHeaders(headers)
-                   .create(credentials);
+    ReadWriteBufferFromHTTP buf(
+        uri,
+        Poco::Net::HTTPRequest::HTTP_GET,
+        {},
+        getHTTPTimeouts(context),
+        credentials,
+        settings.max_http_get_redirects,
+        settings.max_read_buffer_size,
+        context->getReadSettings(),
+        headers,
+        &context->getRemoteHostFilter(),
+        true,
+        false,
+        false,
+        std::nullopt,
+        proxy_config);
 
-    return buf->tryGetLastModificationTime();
+    return buf.tryGetLastModificationTime();
 }
 
 StorageURL::StorageURL(

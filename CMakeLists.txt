@@ -61,8 +61,8 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
 
-    # -fsanitize=memory and address are too heavy
-    if (SANITIZE)
+    # -fsanitize=memory is too heavy
+    if (SANITIZE STREQUAL "memory")
        set (RLIMIT_DATA 10000000000) # 10G
     endif()
 
@@ -319,8 +319,7 @@ if (COMPILER_CLANG)
     endif()
 endif ()
 
-# Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
-set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
+set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 
 # Our built-in unwinder only supports DWARF version up to 4.
 set (DEBUG_INFO_FLAGS "-g")

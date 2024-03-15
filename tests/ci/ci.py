@@ -408,7 +408,7 @@ class CiCache:
                 status.dump_to_file(record_file)
             elif record_type == self.RecordType.PENDING:
                 assert isinstance(status, PendingState)
-                with open(record_file, "w", encoding="utf-8") as json_file:
+                with open(record_file, "w") as json_file:
                     json.dump(asdict(status), json_file)
             else:
                 assert False
@@ -1017,7 +1017,7 @@ def _mark_success_action(
 
 def _print_results(result: Any, outfile: Optional[str], pretty: bool = False) -> None:
     if outfile:
-        with open(outfile, "w", encoding="utf-8") as f:
+        with open(outfile, "w") as f:
             if isinstance(result, str):
                 print(result, file=f)
             elif isinstance(result, dict):
@@ -1122,7 +1122,7 @@ def _configure_jobs(
     digests: Dict[str, str] = {}
 
     print("::group::Job Digests")
-    for job in CI_CONFIG.job_generator(pr_info.head_ref):
+    for job in CI_CONFIG.job_generator():
         digest = job_digester.get_job_digest(CI_CONFIG.get_digest_config(job))
         digests[job] = digest
         print(f"    job [{job.rjust(50)}] has digest [{digest}]")
@@ -1137,7 +1137,8 @@ def _configure_jobs(
     jobs_to_wait: Dict[str, Dict[str, Any]] = {}
     randomization_buckets = {}  # type: Dict[str, Set[str]]
 
-    for job, digest in digests.items():
+    for job in digests:
+        digest = digests[job]
         job_config = CI_CONFIG.get_job_config(job)
         num_batches: int = job_config.num_batches
         batches_to_do: List[int] = []
@@ -1194,13 +1195,13 @@ def _configure_jobs(
 
         if batches_to_do:
             jobs_to_do.append(job)
-            jobs_params[job] = {
-                "batches": batches_to_do,
-                "num_batches": num_batches,
-            }
         elif add_to_skip:
             # treat job as being skipped only if it's controlled by digest
             jobs_to_skip.append(job)
+        jobs_params[job] = {
+            "batches": batches_to_do,
+            "num_batches": num_batches,
+        }
 
     if not pr_info.is_release_branch():
         # randomization bucket filtering (pick one random job from each bucket, for jobs with configured random_bucket property)
@@ -1279,33 +1280,6 @@ def _configure_jobs(
             jobs_to_do = list(
                 set(job for job in jobs_to_do_requested if job not in jobs_to_skip)
             )
-            # if requested job does not have params in jobs_params (it happens for "run_by_label" job)
-            #   we need to add params - otherwise it won't run as "batches" list will be empty
-            for job in jobs_to_do:
-                if job not in jobs_params:
-                    num_batches = CI_CONFIG.get_job_config(job).num_batches
-                    jobs_params[job] = {
-                        "batches": list(range(num_batches)),
-                        "num_batches": num_batches,
-                    }
-
-        requested_batches = set()
-        for token in commit_tokens:
-            if token.startswith("batch_"):
-                try:
-                    batches = [
-                        int(batch) for batch in token.removeprefix("batch_").split("_")
-                    ]
-                except Exception:
-                    print(f"ERROR: failed to parse commit tag [{token}]")
-                requested_batches.update(batches)
-        if requested_batches:
-            print(
-                f"NOTE: Only specific job batches were requested [{list(requested_batches)}]"
-            )
-            for job, params in jobs_params.items():
-                if params["num_batches"] > 1:
-                    params["batches"] = list(requested_batches)
 
     return {
         "digests": digests,
@@ -1410,11 +1384,7 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
 def _fetch_commit_tokens(message: str) -> List[str]:
     pattern = r"#[\w-]+"
     matches = [match[1:] for match in re.findall(pattern, message)]
-    res = [
-        match
-        for match in matches
-        if match in Labels or match.startswith("job_") or match.startswith("batch_")
-    ]
+    res = [match for match in matches if match in Labels or match.startswith("job_")]
     return res
 
 
@@ -1677,11 +1647,11 @@ def main() -> int:
 
     indata: Optional[Dict[str, Any]] = None
     if args.infile:
-        if os.path.isfile(args.infile):
-            with open(args.infile, encoding="utf-8") as jfd:
-                indata = json.load(jfd)
-        else:
-            indata = json.loads(args.infile)
+        indata = (
+            json.loads(args.infile)
+            if not os.path.isfile(args.infile)
+            else json.load(open(args.infile))
+        )
         assert indata and isinstance(indata, dict), "Invalid --infile json"
 
     result: Dict[str, Any] = {}
@@ -1798,8 +1768,7 @@ def main() -> int:
         result["build"] = build_digest
         result["docs"] = docs_digest
         result["ci_flags"] = ci_flags
-        if not args.skip_jobs:
-            result["stages_data"] = _generate_ci_stage_config(jobs_data)
+        result["stages_data"] = _generate_ci_stage_config(jobs_data)
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
     ### CONFIGURE action: end

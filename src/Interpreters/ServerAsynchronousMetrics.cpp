@@ -9,8 +9,6 @@
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 
-#include <Common/PageCache.h>
-
 #include <Databases/IDatabase.h>
 
 #include <IO/UncompressedCache.h>
@@ -77,16 +75,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     {
         new_values["MarkCacheBytes"] = { mark_cache->sizeInBytes(), "Total size of mark cache in bytes" };
         new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
-    }
-
-    if (auto page_cache = getContext()->getPageCache())
-    {
-        auto rss = page_cache->getResidentSetSize();
-        new_values["PageCacheBytes"] = { rss.page_cache_rss, "Userspace page cache memory usage in bytes" };
-        new_values["PageCachePinnedBytes"] = { page_cache->getPinnedSize(), "Userspace page cache memory that's currently in use and can't be evicted" };
-
-        if (rss.unreclaimable_rss.has_value())
-            new_values["UnreclaimableRSS"] = { *rss.unreclaimable_rss, "The amount of physical memory used by the server process, in bytes, excluding memory reclaimable by the OS (MADV_FREE)" };
     }
 
     if (auto uncompressed_cache = getContext()->getUncompressedCache())
