@@ -1,8 +1,10 @@
 import base64
 import errno
+from functools import cache
 import http.client
 import logging
 import os
+import platform
 import stat
 import os.path as p
 import pprint
@@ -4746,3 +4748,8 @@ class ClickHouseKiller(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.clickhouse_node.start_clickhouse()
+
+
+@cache
+def is_arm():
+    return any(arch in platform.processor().lower() for arch in ("arm, aarch"))
