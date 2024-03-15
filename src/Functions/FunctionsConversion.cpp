@@ -1183,26 +1183,26 @@ struct ConvertImpl
         {
             /// Conversion of DateTime to Date: throw off time component.
             /// Conversion of Date32 to Date.
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateImpl<date_time_overflow_behavior>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateImpl<date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> && std::is_same_v<ToDataType, DataTypeDate32>)
         {
             /// Conversion of DateTime to Date: throw off time component.
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Impl, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Impl, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
             && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
             /// Conversion from Date/Date32 to DateTime.
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeImpl<date_time_overflow_behavior>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeImpl<date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64> && std::is_same_v<ToDataType, DataTypeDate32>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>, false>::execute(
+            return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
         /** Special case of converting Int8, Int16, (U)Int32 or (U)Int64 (and also, for convenience,
@@ -1220,7 +1220,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1229,7 +1229,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform8Or16Signed<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform8Or16Signed<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1240,7 +1240,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64Signed<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64Signed<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1249,7 +1249,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate32>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1258,7 +1258,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate32>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform8Or16Signed<typename FromDataType::FieldType, UInt16>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform8Or16Signed<typename FromDataType::FieldType, UInt16>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1269,7 +1269,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate32>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64Signed<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64Signed<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         /// Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to DateTime.
@@ -1280,14 +1280,14 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDateTime>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
             && std::is_same_v<ToDataType, DataTypeDateTime>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1297,7 +1297,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDateTime>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1308,15 +1308,15 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDateTime64>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::execute(
-                arguments, result_type, input_rows_count, additions);
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
             && std::is_same_v<ToDataType, DataTypeDateTime64>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::execute(
-                arguments, result_type, input_rows_count, additions);
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
         }
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeFloat32>
@@ -1324,22 +1324,22 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDateTime64>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::execute(
-                arguments, result_type, input_rows_count, additions);
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
         }
         /// Conversion of DateTime64 to Date or DateTime: discards fractional part.
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
             && std::is_same_v<ToDataType, DataTypeDate>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateImpl<date_time_overflow_behavior>>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
             && std::is_same_v<ToDataType, DataTypeDateTime>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>, false>::execute(
+            return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
         /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
@@ -1350,8 +1350,8 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDateTime64>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::execute(
-                arguments, result_type, input_rows_count, additions);
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
         }
         else if constexpr (IsDataTypeDateOrDateTime<FromDataType>
             && std::is_same_v<ToDataType, DataTypeString>)
@@ -1573,8 +1573,8 @@ struct ConvertImpl
             && std::is_same_v<FromDataType, DataTypeString>
             && std::is_same_v<ToDataType, DataTypeUInt32>)
         {
-            return ConvertImpl<FromDataType, DataTypeDateTime, Name, SpecialTag, date_time_overflow_behavior>::execute(
-                arguments, result_type, input_rows_count, additions);
+            return ConvertImpl<FromDataType, DataTypeDateTime, Name, SpecialTag, date_time_overflow_behavior>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
         }
         else if constexpr ((std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>)
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
@@ -1974,11 +1974,8 @@ public:
     using Monotonic = MonotonicityImpl;
 
     static constexpr auto name = Name::name;
-    static constexpr bool to_decimal =
-        std::is_same_v<Name, NameToDecimal32> || std::is_same_v<Name, NameToDecimal64>
-         || std::is_same_v<Name, NameToDecimal128> || std::is_same_v<Name, NameToDecimal256>;
-
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
+    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !to_datetime64;
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvert>(context); }
     static FunctionPtr create() { return std::make_shared<FunctionConvert>(); }
@@ -2319,7 +2316,7 @@ private:
         }
 
         bool done = false;
-        if constexpr (std::is_same_v<ToDataType, DataTypeFixedString> || std::is_same_v<ToDataType, DataTypeString>)
+        if constexpr (is_any_of<ToDataType, DataTypeString, DataTypeFixedString>)
         {
             done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertDefaultBehaviorTag{});
         }
@@ -2371,13 +2368,8 @@ class FunctionConvertFromString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static constexpr bool to_decimal =
-        std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>> ||
-        std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
-        std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>> ||
-        std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>>;
-
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
+    static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !to_datetime64;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertFromString>(); }
 
@@ -3203,13 +3195,12 @@ private:
             return createFunctionAdaptor(function, from_type);
         }
 
-        auto wrapper_cast_type = cast_type;
-
-        return [wrapper_cast_type, from_type_index, to_type, date_time_overflow_behavior]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
+        return [wrapper_cast_type = cast_type, from_type_index, to_type, date_time_overflow_behavior]
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
-            auto res = callOnIndexAndDataType<ToDataType>(from_type_index, [&](const auto & types) -> bool {
+            auto res = callOnIndexAndDataType<ToDataType>(from_type_index, [&](const auto & types) -> bool
+            {
                 using Types = std::decay_t<decltype(types)>;
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
