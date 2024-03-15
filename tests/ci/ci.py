@@ -1613,6 +1613,42 @@ def _upload_build_profile_data(
             logging.error("Failed to insert binary_size_file for the build, continue")
 
 
+def _add_build_to_version_history(
+    pr_info: PRInfo,
+    job_report: JobReport,
+    git_ref: str,
+    version: str,
+    ch_helper: ClickHouseHelper,
+) -> None:
+    ci_logs_credentials = CiLogsCredentials(Path("/dev/null"))
+    if not ci_logs_credentials.host:
+        return
+
+    # with some probability we will not silently break this logic
+    assert pr_info.sha and pr_info.commit_html_url and version and git_ref
+
+    data = {
+        "check_start_time": job_report.start_time,
+        "pull_request_number": pr_info.number,
+        "pull_request_url": pr_info.pr_html_url,
+        "commit_sha": pr_info.sha,
+        "commit_url": pr_info.commit_html_url,
+        "version": version,
+        "git_ref": git_ref,
+    }
+
+    json_str = json.dumps(data)
+
+    print(f"::notice ::Log Adding record to versions history: {json_str}")
+
+    try:
+        ch_helper.insert_json_into(
+            db="default", table="version_history", json_str=json_str
+        )
+    except InsertException:
+        logging.error("Failed to insert profile data for the build, continue")
+
+
 def _run_test(job_name: str, run_command: str) -> int:
     assert (
         run_command or CI_CONFIG.get_job_config(job_name).run_command
@@ -1986,6 +2022,11 @@ def main() -> int:
             ch_helper.insert_events_into(
                 db="default", table="checks", events=prepared_events
             )
+
+            if args.job_name == "DockerServerImageRelease" and indata is not None:
+                _add_build_to_version_history(
+                    pr_info, job_report, indata["git_ref"], indata["version"], ch_helper
+                )
         else:
             # no job report
             print(f"No job report for {[args.job_name]} - do nothing")
