@@ -193,7 +193,7 @@ public:
 
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.
-    static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts);
+    static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts, const bool & account_for_deleted = false);
 
 private:
     /** Select all parts belonging to the same partition.
