@@ -7,7 +7,8 @@ SET max_block_size = 1, min_insert_block_size_rows = 0, min_insert_block_size_by
 SET max_threads=1, max_insert_threads=1;
 
 -- exception is not thrown if threshold is exceeded when multi-block INSERT is already started.
-INSERT INTO too_many_parts SELECT * FROM numbers(10);
+-- Single thread is used as different threads check it separately https://github.com/ClickHouse/ClickHouse/issues/61158
+INSERT INTO too_many_parts SELECT * FROM numbers(10) SETTINGS max_insert_threads=1;
 SELECT count() FROM too_many_parts;
 
 -- exception is thrown if threshold is exceeded on new INSERT.
