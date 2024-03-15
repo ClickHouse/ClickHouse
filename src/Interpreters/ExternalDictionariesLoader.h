@@ -43,6 +43,9 @@ protected:
     LoadablePtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config,
             const std::string & key_in_config, const std::string & repository_name) const override;
 
+    bool doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & old_config, const String & old_key_in_config,
+                                                 const Poco::Util::AbstractConfiguration & new_config, const String & new_key_in_config) const override;
+
     void updateObjectFromConfigWithoutReloading(
         IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
 

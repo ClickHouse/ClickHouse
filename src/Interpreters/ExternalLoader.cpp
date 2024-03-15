@@ -88,6 +88,7 @@ namespace
         }
     };
 
+    using DoesConfigChangeRequiresReloadingObjectFunction = std::function<bool(const Poco::Util::AbstractConfiguration & config_1, const String & key_in_config_1, const Poco::Util::AbstractConfiguration & config_2, const String & key_in_config_2)>;
     using UpdateObjectFromConfigWithoutReloadingFunction = std::function<void(const IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config)>;
 }
 
@@ -402,10 +403,12 @@ public:
 
     LoadingDispatcher(
         const CreateObjectFunction & create_object_function_,
+        const DoesConfigChangeRequiresReloadingObjectFunction & does_config_change_requires_reloading_object_,
         const UpdateObjectFromConfigWithoutReloadingFunction & update_object_from_config_without_reloading_,
         const String & type_name_,
         LoggerPtr log_)
         : create_object(create_object_function_)
+        , does_config_change_requires_reloading_object(does_config_change_requires_reloading_object_)
         , update_object_from_config_without_reloading(update_object_from_config_without_reloading_)
         , type_name(type_name_)
         , log(log_)
@@ -472,10 +475,14 @@ public:
 
                     if (info.triedToLoad())
                     {
-                        /// The object has been tried to load before, so it is currently in use or was in use
-                        /// and we should try to reload it with the new config.
-                        LOG_TRACE(log, "Will reload '{}' because its configuration has been changed and there were attempts to load it before", name);
-                        startLoading(info, true);
+                        bool config_change_requires_reloading = does_config_change_requires_reloading_object(*previous_config->config, previous_config->key_in_config, *new_config->config, new_config->key_in_config);
+                        if (config_change_requires_reloading)
+                        {
+                            /// The object has been tried to load before, so it is currently in use or was in use
+                            /// and we should try to reload it with the new config.
+                            LOG_TRACE(log, "Will reload '{}' because its configuration has been changed and there were attempts to load it before", name);
+                            startLoading(info, true);
+                        }
                     }
                 }
             }
@@ -1204,6 +1211,7 @@ private:
     }
 
     const CreateObjectFunction create_object;
+    const DoesConfigChangeRequiresReloadingObjectFunction does_config_change_requires_reloading_object;
     const UpdateObjectFromConfigWithoutReloadingFunction update_object_from_config_without_reloading;
     const String type_name;
     LoggerPtr log;
@@ -1290,6 +1298,8 @@ ExternalLoader::ExternalLoader(const String & type_name_, LoggerPtr log_)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(
           [this](auto && a, auto && b, auto && c) { return createObject(a, b, c); },
+          [this](const Poco::Util::AbstractConfiguration & config_1, const String & key_in_config_1, const Poco::Util::AbstractConfiguration & config_2, const String & key_in_config_2)
+                { return doesConfigChangeRequiresReloadingObject(config_1, key_in_config_1, config_2, key_in_config_2); },
           [this](const IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config)
                 { return updateObjectFromConfigWithoutReloading(const_cast<IExternalLoadable &>(object), config, key_in_config); },
           type_name_,

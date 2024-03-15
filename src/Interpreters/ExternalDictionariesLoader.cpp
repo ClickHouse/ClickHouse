@@ -5,6 +5,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
 
 #include "config.h"
 
@@ -39,6 +40,19 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
     /// additional checks, so we identify them here.
     bool created_from_ddl = !repository_name.empty();
     return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), created_from_ddl);
+}
+
+bool ExternalDictionariesLoader::doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & old_config, const String & old_key_in_config,
+                                                                         const Poco::Util::AbstractConfiguration & new_config, const String & new_key_in_config) const
+{
+    /// If the database is atomic then a dictionary can be renamed without reloading.
+    if (!old_config.getString(old_key_in_config + ".uuid", "").empty() && !new_config.getString(new_key_in_config + ".uuid", "").empty())
+    {
+        static const std::unordered_set<std::string_view> ignore_keys{"name", "database"};
+        bool only_name_or_database_may_differ = isSameConfigurationIgnoringKeys(old_config, old_key_in_config, new_config, new_key_in_config, ignore_keys);
+        return !only_name_or_database_may_differ;
+    }
+    return true;
 }
 
 void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const

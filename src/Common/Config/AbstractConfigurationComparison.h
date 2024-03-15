@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <unordered_set>
 
 namespace Poco::Util
 {
@@ -32,6 +33,11 @@ namespace DB
     /// Returns true if specified subviews of the two configurations contains the same keys and values.
     bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const String & left_key,
                              const Poco::Util::AbstractConfiguration & right, const String & right_key);
+
+    /// Returns true if specified subviews of the two configurations contains the same keys and values, but without checking specified keys.
+    bool isSameConfigurationIgnoringKeys(const Poco::Util::AbstractConfiguration & left, const String & left_key,
+                                         const Poco::Util::AbstractConfiguration & right, const String & right_key,
+                                         const std::unordered_set<std::string_view> & ignore_keys);
 
     inline bool operator==(const Poco::Util::AbstractConfiguration & left, const Poco::Util::AbstractConfiguration & right)
     {
