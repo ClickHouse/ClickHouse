@@ -726,7 +726,12 @@ The server successfully detected this situation and will download merged part fr
     M(AddressesDiscovered, "Total count of new addresses in dns resolve results for http connections") \
     M(AddressesExpired, "Total count of expired addresses which is no longer presented in dns resolve results for http connections") \
     M(AddressesMarkedAsFailed, "Total count of addresses which has been marked as faulty due to connection errors for http connections") \
-
+    \
+    M(ConcurrencyControlGrantedHard, "Number of CPU slot granted according to guarantee of 1 thread per query and for queries with setting 'use_concurrency_control' = 0") \
+    M(ConcurrencyControlGrantDelayed, "Number of CPU slot not granted initially and required to wait for a free CPU slot") \
+    M(ConcurrencyControlAcquiredTotal, "Total number of CPU slot acquired") \
+    M(ConcurrencyControlAllocationDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale") \
+    /**/
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)

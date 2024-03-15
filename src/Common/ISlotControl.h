@@ -1,10 +1,10 @@
 #pragma once
 
+#include <Common/CurrentMetrics.h>
 #include <limits>
 #include <memory>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
-
 
 namespace DB
 {
@@ -39,7 +39,13 @@ constexpr SlotCount UnlimitedSlots = std::numeric_limits<SlotCount>::max();
 class IAcquiredSlot : public std::enable_shared_from_this<IAcquiredSlot>, boost::noncopyable
 {
 public:
+    IAcquiredSlot(CurrentMetrics::Metric metric, CurrentMetrics::Value amount = 1)
+        : acquired_slot_increment(metric, amount)
+    {}
+
     virtual ~IAcquiredSlot() = default;
+private:
+    CurrentMetrics::Increment acquired_slot_increment;
 };
 
 using AcquiredSlotPtr = std::shared_ptr<IAcquiredSlot>;

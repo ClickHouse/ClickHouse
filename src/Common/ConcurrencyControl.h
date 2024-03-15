@@ -130,6 +130,7 @@ private:
     Waiters::iterator cur_waiter; // round-robin pointer
     SlotCount max_concurrency = UnlimitedSlots;
     SlotCount cur_concurrency = 0;
+    CurrentMetrics::Increment max_concurrency_metric;
 };
 
 }
