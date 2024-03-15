@@ -12,7 +12,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsTimeWindow.h>
 
-
 namespace DB
 {
 
@@ -76,8 +75,8 @@ namespace
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
                 "Should be an interval of time", argument.type->getName(), function_name);
         interval_kind = interval_type->getKind();
-        result_type_is_date = (interval_type->getKind() == IntervalKind::Kind::Year) || (interval_type->getKind() == IntervalKind::Kind::Quarter)
-            || (interval_type->getKind() == IntervalKind::Kind::Month) || (interval_type->getKind() == IntervalKind::Kind::Week);
+        result_type_is_date = (interval_type->getKind() == IntervalKind::Year) || (interval_type->getKind() == IntervalKind::Quarter)
+            || (interval_type->getKind() == IntervalKind::Month) || (interval_type->getKind() == IntervalKind::Week);
     }
 
     void checkIntervalArgument(const ColumnWithTypeAndName & argument, const String & function_name, bool & result_type_is_date)
@@ -160,23 +159,29 @@ struct TimeWindowImpl<TUMBLE>
 
         switch (std::get<0>(interval))
         {
-            /// TODO: add proper support for fractional seconds
-            case IntervalKind::Kind::Second:
-                return executeTumble<UInt32, IntervalKind::Kind::Second>(*time_column_vec, std::get<1>(interval), time_zone);
-            case IntervalKind::Kind::Minute:
-                return executeTumble<UInt32, IntervalKind::Kind::Minute>(*time_column_vec, std::get<1>(interval), time_zone);
-            case IntervalKind::Kind::Hour:
-                return executeTumble<UInt32, IntervalKind::Kind::Hour>(*time_column_vec, std::get<1>(interval), time_zone);
-            case IntervalKind::Kind::Day:
-                return executeTumble<UInt32, IntervalKind::Kind::Day>(*time_column_vec, std::get<1>(interval), time_zone);
-            case IntervalKind::Kind::Week:
-                return executeTumble<UInt16, IntervalKind::Kind::Week>(*time_column_vec, std::get<1>(interval), time_zone);
-            case IntervalKind::Kind::Month:
-                return executeTumble<UInt16, IntervalKind::Kind::Month>(*time_column_vec, std::get<1>(interval), time_zone);
-            case IntervalKind::Kind::Quarter:
-                return executeTumble<UInt16, IntervalKind::Kind::Quarter>(*time_column_vec, std::get<1>(interval), time_zone);
-            case IntervalKind::Kind::Year:
-                return executeTumble<UInt16, IntervalKind::Kind::Year>(*time_column_vec, std::get<1>(interval), time_zone);
+                //TODO: add proper support for fractional seconds
+//            case IntervalKind::Nanosecond:
+//                return executeTumble<UInt32, IntervalKind::Nanosecond>(*time_column_vec, std::get<1>(interval), time_zone);
+//            case IntervalKind::Microsecond:
+//                return executeTumble<UInt32, IntervalKind::Microsecond>(*time_column_vec, std::get<1>(interval), time_zone);
+//            case IntervalKind::Millisecond:
+//                return executeTumble<UInt32, IntervalKind::Millisecond>(*time_column_vec, std::get<1>(interval), time_zone);
+            case IntervalKind::Second:
+                return executeTumble<UInt32, IntervalKind::Second>(*time_column_vec, std::get<1>(interval), time_zone);
+            case IntervalKind::Minute:
+                return executeTumble<UInt32, IntervalKind::Minute>(*time_column_vec, std::get<1>(interval), time_zone);
+            case IntervalKind::Hour:
+                return executeTumble<UInt32, IntervalKind::Hour>(*time_column_vec, std::get<1>(interval), time_zone);
+            case IntervalKind::Day:
+                return executeTumble<UInt32, IntervalKind::Day>(*time_column_vec, std::get<1>(interval), time_zone);
+            case IntervalKind::Week:
+                return executeTumble<UInt16, IntervalKind::Week>(*time_column_vec, std::get<1>(interval), time_zone);
+            case IntervalKind::Month:
+                return executeTumble<UInt16, IntervalKind::Month>(*time_column_vec, std::get<1>(interval), time_zone);
+            case IntervalKind::Quarter:
+                return executeTumble<UInt16, IntervalKind::Quarter>(*time_column_vec, std::get<1>(interval), time_zone);
+            case IntervalKind::Year:
+                return executeTumble<UInt16, IntervalKind::Year>(*time_column_vec, std::get<1>(interval), time_zone);
             default:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
         }
@@ -342,30 +347,39 @@ struct TimeWindowImpl<HOP>
 
         switch (std::get<0>(window_interval))
         {
-            /// TODO: add proper support for fractional seconds
-            case IntervalKind::Kind::Second:
-                return executeHop<UInt32, IntervalKind::Kind::Second>(
+                //TODO: add proper support for fractional seconds
+//            case IntervalKind::Nanosecond:
+//                return executeHop<UInt32, IntervalKind::Nanosecond>(
+//                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
+//            case IntervalKind::Microsecond:
+//                return executeHop<UInt32, IntervalKind::Microsecond>(
+//                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
+//            case IntervalKind::Millisecond:
+//                return executeHop<UInt32, IntervalKind::Millisecond>(
+//                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
+            case IntervalKind::Second:
+                return executeHop<UInt32, IntervalKind::Second>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Minute:
-                return executeHop<UInt32, IntervalKind::Kind::Minute>(
+            case IntervalKind::Minute:
+                return executeHop<UInt32, IntervalKind::Minute>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Hour:
-                return executeHop<UInt32, IntervalKind::Kind::Hour>(
+            case IntervalKind::Hour:
+                return executeHop<UInt32, IntervalKind::Hour>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Day:
-                return executeHop<UInt32, IntervalKind::Kind::Day>(
+            case IntervalKind::Day:
+                return executeHop<UInt32, IntervalKind::Day>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Week:
-                return executeHop<UInt16, IntervalKind::Kind::Week>(
+            case IntervalKind::Week:
+                return executeHop<UInt16, IntervalKind::Week>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Month:
-                return executeHop<UInt16, IntervalKind::Kind::Month>(
+            case IntervalKind::Month:
+                return executeHop<UInt16, IntervalKind::Month>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Quarter:
-                return executeHop<UInt16, IntervalKind::Kind::Quarter>(
+            case IntervalKind::Quarter:
+                return executeHop<UInt16, IntervalKind::Quarter>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Year:
-                return executeHop<UInt16, IntervalKind::Kind::Year>(
+            case IntervalKind::Year:
+                return executeHop<UInt16, IntervalKind::Year>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             default:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");
@@ -478,30 +492,39 @@ struct TimeWindowImpl<WINDOW_ID>
 
         switch (std::get<0>(window_interval))
         {
-            /// TODO: add proper support for fractional seconds
-            case IntervalKind::Kind::Second:
-                return executeHopSlice<UInt32, IntervalKind::Kind::Second>(
+                //TODO: add proper support for fractional seconds
+//            case IntervalKind::Nanosecond:
+//                return executeHopSlice<UInt32, IntervalKind::Nanosecond>(
+//                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
+//            case IntervalKind::Microsecond:
+//                return executeHopSlice<UInt32, IntervalKind::Microsecond>(
+//                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
+//            case IntervalKind::Millisecond:
+//                return executeHopSlice<UInt32, IntervalKind::Millisecond>(
+//                    *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
+            case IntervalKind::Second:
+                return executeHopSlice<UInt32, IntervalKind::Second>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Minute:
-                return executeHopSlice<UInt32, IntervalKind::Kind::Minute>(
+            case IntervalKind::Minute:
+                return executeHopSlice<UInt32, IntervalKind::Minute>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Hour:
-                return executeHopSlice<UInt32, IntervalKind::Kind::Hour>(
+            case IntervalKind::Hour:
+                return executeHopSlice<UInt32, IntervalKind::Hour>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Day:
-                return executeHopSlice<UInt32, IntervalKind::Kind::Day>(
+            case IntervalKind::Day:
+                return executeHopSlice<UInt32, IntervalKind::Day>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Week:
-                return executeHopSlice<UInt16, IntervalKind::Kind::Week>(
+            case IntervalKind::Week:
+                return executeHopSlice<UInt16, IntervalKind::Week>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Month:
-                return executeHopSlice<UInt16, IntervalKind::Kind::Month>(
+            case IntervalKind::Month:
+                return executeHopSlice<UInt16, IntervalKind::Month>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Quarter:
-                return executeHopSlice<UInt16, IntervalKind::Kind::Quarter>(
+            case IntervalKind::Quarter:
+                return executeHopSlice<UInt16, IntervalKind::Quarter>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
-            case IntervalKind::Kind::Year:
-                return executeHopSlice<UInt16, IntervalKind::Kind::Year>(
+            case IntervalKind::Year:
+                return executeHopSlice<UInt16, IntervalKind::Year>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             default:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fraction seconds are unsupported by windows yet");

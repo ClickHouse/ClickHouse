@@ -4,372 +4,80 @@ sidebar_position: 105
 sidebar_label: JSON
 ---
 
-There are two sets of functions to parse JSON.
-   - `simpleJSON*` (`visitParam*`) is made to parse a special very limited subset of a JSON, but these functions are extremely fast.
+There are two sets of functions to parse JSON. 
+   - `visitParam*` (`simpleJSON*`) is made to parse a special very limited subset of a JSON, but these functions are extremely fast.
    - `JSONExtract*` is made to parse normal JSON.
 
-# simpleJSON/visitParam functions
+# visitParam functions
 
 ClickHouse has special functions for working with simplified JSON. All these JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
 
 The following assumptions are made:
 
 1.  The field name (function argument) must be a constant.
-2.  The field name is somehow canonically encoded in JSON. For example: `simpleJSONHas('{"abc":"def"}', 'abc') = 1`, but `simpleJSONHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
+2.  The field name is somehow canonically encoded in JSON. For example: `visitParamHas('{"abc":"def"}', 'abc') = 1`, but `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
 3.  Fields are searched for on any nesting level, indiscriminately. If there are multiple matching fields, the first occurrence is used.
 4.  The JSON does not have space characters outside of string literals.
 
-## simpleJSONHas
+## visitParamHas(params, name)
 
-Checks whether there is a field named `field_name`.  The result is `UInt8`.
+Checks whether there is a field with the `name` name.
 
-**Syntax**
+Alias: `simpleJSONHas`.
 
-```sql
-simpleJSONHas(json, field_name)
+## visitParamExtractUInt(params, name)
+
+Parses UInt64 from the value of the field named `name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns 0.
+
+Alias: `simpleJSONExtractUInt`.
+
+## visitParamExtractInt(params, name)
+
+The same as for Int64.
+
+Alias: `simpleJSONExtractInt`.
+
+## visitParamExtractFloat(params, name)
+
+The same as for Float64.
+
+Alias: `simpleJSONExtractFloat`.
+
+## visitParamExtractBool(params, name)
+
+Parses a true/false value. The result is UInt8.
+
+Alias: `simpleJSONExtractBool`.
+
+## visitParamExtractRaw(params, name)
+
+Returns the value of a field, including separators.
+
+Alias: `simpleJSONExtractRaw`.
+
+Examples:
+
+``` sql
+visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"';
+visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}';
 ```
 
-**Parameters**
+## visitParamExtractString(params, name)
 
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
+Parses the string in double quotes. The value is unescaped. If unescaping failed, it returns an empty string.
 
-**Returned value**
+Alias: `simpleJSONExtractString`.
 
-It returns `1` if the field exists, `0` otherwise.
+Examples:
 
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE jsons
-(
-    `json` String
-)
-ENGINE = Memory;
-
-INSERT INTO jsons VALUES ('{"foo":"true","qux":1}');
-
-SELECT simpleJSONHas(json, 'foo') FROM jsons;
-SELECT simpleJSONHas(json, 'bar') FROM jsons;
+``` sql
+visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0';
+visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺';
+visitParamExtractString('{"abc":"\\u263"}', 'abc') = '';
+visitParamExtractString('{"abc":"hello}', 'abc') = '';
 ```
-
-```response
-1
-0
-```
-## simpleJSONExtractUInt
-
-Parses `UInt64` from the value of the field named `field_name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns `0`.
-
-**Syntax**
-
-```sql
-simpleJSONExtractUInt(json, field_name)
-```
-
-**Parameters**
-
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
-
-**Returned value**
-
-It returns the number parsed from the field if the field exists and contains a number, `0` otherwise.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE jsons
-(
-    `json` String
-)
-ENGINE = Memory;
-
-INSERT INTO jsons VALUES ('{"foo":"4e3"}');
-INSERT INTO jsons VALUES ('{"foo":3.4}');
-INSERT INTO jsons VALUES ('{"foo":5}');
-INSERT INTO jsons VALUES ('{"foo":"not1number"}');
-INSERT INTO jsons VALUES ('{"baz":2}');
-
-SELECT simpleJSONExtractUInt(json, 'foo') FROM jsons ORDER BY json;
-```
-
-```response
-0
-4
-0
-3
-5
-```
-
-## simpleJSONExtractInt
-
-Parses `Int64` from the value of the field named `field_name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns `0`.
-
-**Syntax**
-
-```sql
-simpleJSONExtractInt(json, field_name)
-```
-
-**Parameters**
-
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
-
-**Returned value**
-
-It returns the number parsed from the field if the field exists and contains a number, `0` otherwise.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE jsons
-(
-    `json` String
-)
-ENGINE = Memory;
-
-INSERT INTO jsons VALUES ('{"foo":"-4e3"}');
-INSERT INTO jsons VALUES ('{"foo":-3.4}');
-INSERT INTO jsons VALUES ('{"foo":5}');
-INSERT INTO jsons VALUES ('{"foo":"not1number"}');
-INSERT INTO jsons VALUES ('{"baz":2}');
-
-SELECT simpleJSONExtractInt(json, 'foo') FROM jsons ORDER BY json;
-```
-
-```response
-0
--4
-0
--3
-5
-```
-
-## simpleJSONExtractFloat
-
-Parses `Float64` from the value of the field named `field_name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns `0`.
-
-**Syntax**
-
-```sql
-simpleJSONExtractFloat(json, field_name)
-```
-
-**Parameters**
-
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
-
-**Returned value**
-
-It returns the number parsed from the field if the field exists and contains a number, `0` otherwise.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE jsons
-(
-    `json` String
-)
-ENGINE = Memory;
-
-INSERT INTO jsons VALUES ('{"foo":"-4e3"}');
-INSERT INTO jsons VALUES ('{"foo":-3.4}');
-INSERT INTO jsons VALUES ('{"foo":5}');
-INSERT INTO jsons VALUES ('{"foo":"not1number"}');
-INSERT INTO jsons VALUES ('{"baz":2}');
-
-SELECT simpleJSONExtractFloat(json, 'foo') FROM jsons ORDER BY json;
-```
-
-```response
-0
--4000
-0
--3.4
-5
-```
-
-## simpleJSONExtractBool
-
-Parses a true/false value from the value of the field named `field_name`. The result is `UInt8`.
-
-**Syntax**
-
-```sql
-simpleJSONExtractBool(json, field_name)
-```
-
-**Parameters**
-
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
-
-**Returned value**
-
-It returns `1` if the value of the field is `true`, `0` otherwise. This means this function will return `0` including (and not only) in the following cases:
- - If the field doesn't exists.
- - If the field contains `true` as a string, e.g.: `{"field":"true"}`.
- - If the field contains `1` as a numerical value.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE jsons
-(
-    `json` String
-)
-ENGINE = Memory;
-
-INSERT INTO jsons VALUES ('{"foo":false,"bar":true}');
-INSERT INTO jsons VALUES ('{"foo":"true","qux":1}');
-
-SELECT simpleJSONExtractBool(json, 'bar') FROM jsons ORDER BY json;
-SELECT simpleJSONExtractBool(json, 'foo') FROM jsons ORDER BY json;
-```
-
-```response
-0
-1
-0
-0
-```
-
-## simpleJSONExtractRaw
-
-Returns the value of the field named `field_name` as a `String`, including separators.
-
-**Syntax**
-
-```sql
-simpleJSONExtractRaw(json, field_name)
-```
-
-**Parameters**
-
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
-
-**Returned value**
-
-It returns the value of the field as a [`String`](../../sql-reference/data-types/string.md#string), including separators if the field exists, or an empty `String` otherwise.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE jsons
-(
-    `json` String
-)
-ENGINE = Memory;
-
-INSERT INTO jsons VALUES ('{"foo":"-4e3"}');
-INSERT INTO jsons VALUES ('{"foo":-3.4}');
-INSERT INTO jsons VALUES ('{"foo":5}');
-INSERT INTO jsons VALUES ('{"foo":{"def":[1,2,3]}}');
-INSERT INTO jsons VALUES ('{"baz":2}');
-
-SELECT simpleJSONExtractRaw(json, 'foo') FROM jsons ORDER BY json;
-```
-
-```response
-
-"-4e3"
--3.4
-5
-{"def":[1,2,3]}
-```
-
-## simpleJSONExtractString
-
-Parses `String` in double quotes from the value of the field named `field_name`.
-
-**Syntax**
-
-```sql
-simpleJSONExtractString(json, field_name)
-```
-
-**Parameters**
-
-- `json`: The JSON in which the field is searched for. [String](../../sql-reference/data-types/string.md#string)
-- `field_name`: The name of the field to search for. [String literal](../syntax#string)
-
-**Returned value**
-
-It returns the value of a field as a [`String`](../../sql-reference/data-types/string.md#string), including separators. The value is unescaped. It returns an empty `String`: if the field doesn't contain a double quoted string, if unescaping fails or if the field doesn't exist.
-
-**Implementation details**
 
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE jsons
-(
-    `json` String
-)
-ENGINE = Memory;
-
-INSERT INTO jsons VALUES ('{"foo":"\\n\\u0000"}');
-INSERT INTO jsons VALUES ('{"foo":"\\u263"}');
-INSERT INTO jsons VALUES ('{"foo":"\\u263a"}');
-INSERT INTO jsons VALUES ('{"foo":"hello}');
-
-SELECT simpleJSONExtractString(json, 'foo') FROM jsons ORDER BY json;
-```
-
-```response
-\n\0
-
-☺
-
-```
-
-## visitParamHas
-
-This function is [an alias of `simpleJSONHas`](./json-functions#simplejsonhas).
-
-## visitParamExtractUInt
-
-This function is [an alias of `simpleJSONExtractUInt`](./json-functions#simplejsonextractuint).
-
-## visitParamExtractInt
-
-This function is [an alias of `simpleJSONExtractInt`](./json-functions#simplejsonextractint).
-
-## visitParamExtractFloat
-
-This function is [an alias of `simpleJSONExtractFloat`](./json-functions#simplejsonextractfloat).
-
-## visitParamExtractBool
-
-This function is [an alias of `simpleJSONExtractBool`](./json-functions#simplejsonextractbool).
-
-## visitParamExtractRaw
-
-This function is [an alias of `simpleJSONExtractRaw`](./json-functions#simplejsonextractraw).
-
-## visitParamExtractString
-
-This function is [an alias of `simpleJSONExtractString`](./json-functions#simplejsonextractstring).
 
 # JSONExtract functions
 
@@ -659,7 +367,7 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[*]');
 SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
 ```
 
-:::note
+:::note    
 Before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
 :::
 
@@ -686,7 +394,7 @@ Result:
 [2]
 String
 ```
-:::note
+:::note    
 Before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, json)
 :::
 
@@ -694,7 +402,7 @@ Before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, jso
 
 Parses a JSON and extract a value as JSON scalar.
 
-If the value does not exist, an empty string will be returned by default, and by SET `function_json_value_return_type_allow_nullable` = `true`, `NULL` will be returned. If the value is complex type (such as: struct, array, map), an empty string will be returned by default, and by SET `function_json_value_return_type_allow_complex` = `true`, the complex value will be returned.
+If the value does not exist, an empty string will be returned by default, and by SET `function_return_type_allow_nullable` = `true`, `NULL` will be returned. If the value is complex type (such as: struct, array, map), an empty string will be returned by default, and by SET `function_json_value_return_type_allow_complex` = `true`, the complex value will be returned.
 
 Example:
 
@@ -703,7 +411,7 @@ SELECT JSON_VALUE('{"hello":"world"}', '$.hello');
 SELECT JSON_VALUE('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
 SELECT JSON_VALUE('{"hello":2}', '$.hello');
 SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
-select JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_return_type_allow_nullable=true;
+select JSON_VALUE('{"hello":"world"}', '$.b') settings function_return_type_allow_nullable=true;
 select JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true;
 ```
 
@@ -716,7 +424,7 @@ world
 String
 ```
 
-:::note
+:::note    
 Before version 21.11 the order of arguments was wrong, i.e. JSON_VALUE(path, json)
 :::
 
@@ -800,35 +508,4 @@ SELECT
 ┌─JSONArrayLength('')─┬─JSONArrayLength('[1,2,3]')─┐
 │                ᴺᵁᴸᴸ │                          3 │
 └─────────────────────┴────────────────────────────┘
-```
-
-
-## jsonMergePatch
-
-Returns the merged JSON object string which is formed by merging multiple JSON objects.
-
-**Syntax**
-
-``` sql
-jsonMergePatch(json1, json2, ...)
-```
-
-**Arguments**
-
-- `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
-
-**Returned value**
-
-- If JSON object strings are valid, return the merged JSON object string.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-``` sql
-SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res
-
-┌─res───────────────────┐
-│ {"a":1,"name":"zoey"} │
-└───────────────────────┘
 ```

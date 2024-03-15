@@ -70,8 +70,6 @@ public:
 
     size_t getFileSize() override;
 
-    size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
-
 private:
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
 };

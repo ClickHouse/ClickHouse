@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
-import logging
-import os
-import sys
 from io import TextIOWrapper
 from pathlib import Path
-from subprocess import PIPE, STDOUT, Popen
+from subprocess import Popen, PIPE, STDOUT
 from threading import Thread
 from time import sleep
 from typing import Optional, Union
+import logging
+import os
+import sys
 
 
 # Very simple tee logic implementation. You can specify a shell command, output
@@ -55,7 +55,6 @@ class TeePopen:
             stderr=STDOUT,
             stdout=PIPE,
             bufsize=1,
-            errors="backslashreplace",
         )
         if self.timeout is not None and self.timeout > 0:
             t = Thread(target=self._check_timeout)
@@ -98,6 +97,5 @@ class TeePopen:
     @property
     def log_file(self) -> TextIOWrapper:
         if self._log_file is None:
-            # pylint:disable-next=consider-using-with
             self._log_file = open(self._log_file_name, "w", encoding="utf-8")
         return self._log_file

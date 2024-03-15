@@ -27,14 +27,14 @@ public:
             ContextPtr context_,
             const ColumnsDescription & columns_,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-            LoadingStrictnessLevel mode);
+            bool is_attach_);
 
     std::string getName() const override { return "RabbitMQ"; }
 
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
@@ -68,6 +68,7 @@ public:
     RabbitMQConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
+    NamesAndTypesList getVirtuals() const override;
 
     String getExchange() const { return exchange_name; }
     void unbindExchange();
@@ -101,7 +102,7 @@ private:
     bool use_user_setup;
 
     bool hash_exchange;
-    LoggerPtr log;
+    Poco::Logger * log;
 
     RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;
@@ -157,9 +158,10 @@ private:
 
     size_t read_attempts = 0;
     mutable bool drop_table = false;
+    bool is_attach;
 
     RabbitMQConsumerPtr createConsumer();
-    std::atomic<bool> initialized = false;
+    bool initialized = false;
 
     /// Functions working in the background
     void streamingToViewsFunc();
@@ -185,12 +187,9 @@ private:
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
-    void streamToViewsImpl();
     /// Return true on successful stream attempt.
     bool tryStreamToViews();
     bool hasDependencies(const StorageID & table_id);
-
-    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
     static String getRandomName()
     {

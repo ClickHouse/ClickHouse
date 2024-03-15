@@ -5,12 +5,7 @@ sidebar_label: Window Functions
 title: Window Functions
 ---
 
-Windows functions let you perform calculations across a set of rows that are related to the current row.
-Some of the calculations that you can do are similar to those that can be done with an aggregate function, but a window function doesn't cause rows to be grouped into a single output - the individual rows are still returned.
-
-## Standard Window Functions
-
-ClickHouse supports the standard grammar for defining windows and window functions. The table below indicates whether a feature is currently supported.
+ClickHouse supports the standard grammar for defining windows and window functions. The following features are currently supported:
 
 | Feature                                                                            | Support or workaround                                                                                                                                                                       |
 |------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -30,8 +25,6 @@ ClickHouse supports the standard grammar for defining windows and window functio
 
 ## ClickHouse-specific Window Functions
 
-There are also the following window function that's specific to ClickHouse:
-
 ### nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])
 
 Finds non-negative derivative for given `metric_column` by `timestamp_column`. 
@@ -39,6 +32,40 @@ Finds non-negative derivative for given `metric_column` by `timestamp_column`.
 The computed value is the following for each row:
 - `0` for 1st row,
 - ${metric_i - metric_{i-1} \over timestamp_i - timestamp_{i-1}}  * interval$ for $i_th$ row.
+
+## References
+
+### GitHub Issues
+
+The roadmap for the initial support of window functions is [in this issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
+
+All GitHub issues related to window functions have the [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) tag.
+
+### Tests
+
+These tests contain the examples of the currently supported grammar:
+
+https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window_functions.xml
+
+https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql
+
+### Postgres Docs
+
+https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
+
+https://www.postgresql.org/docs/devel/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS
+
+https://www.postgresql.org/docs/devel/functions-window.html
+
+https://www.postgresql.org/docs/devel/tutorial-window.html
+
+### MySQL Docs
+
+https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
+
+https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
+
+https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
 ## Syntax
 
@@ -53,7 +80,20 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 - `PARTITION BY` - defines how to break a resultset into groups.
 - `ORDER BY` - defines how to order rows inside the group during calculation aggregate_function.
 - `ROWS or RANGE` - defines bounds of a frame, aggregate_function is calculated within a frame.
-- `WINDOW` - allows multiple expressions to use the same window definition.
+- `WINDOW` - allows to reuse a window definition with multiple expressions.
+
+### Functions
+
+These functions can be used only as a window function.
+
+`row_number()` -	Number the current row within its partition starting from 1.
+`first_value(x)` -	Return the first non-NULL value evaluated within its ordered frame.
+`last_value(x)` -	Return the last non-NULL value evaluated within its ordered frame.
+`nth_value(x, offset)` - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+`rank()` -	Rank the current row within its partition with gaps.
+`dense_rank()`	- Rank the current row within its partition without gaps.
+`lagInFrame(x)` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
+`leadInFrame(x)` - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
 ```text
       PARTITION
@@ -72,22 +112,7 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 └─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
 ```
 
-### Functions
-
-These functions can be used only as a window function.
-
-- `row_number()` - Number the current row within its partition starting from 1.
-- `first_value(x)` - Return the first non-NULL value evaluated within its ordered frame.
-- `last_value(x)` -	Return the last non-NULL value evaluated within its ordered frame.
-- `nth_value(x, offset)` - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
-- `rank()` - Rank the current row within its partition with gaps.
-- `dense_rank()` - Rank the current row within its partition without gaps.
-- `lagInFrame(x)` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
-- `leadInFrame(x)` - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
-
 ## Examples
-
-Let's have a look at some examples of how window functions can be used.
 
 ```sql
 CREATE TABLE wf_partition
@@ -563,41 +588,6 @@ ORDER BY
 │ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
-
-## References
-
-### GitHub Issues
-
-The roadmap for the initial support of window functions is [in this issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
-
-All GitHub issues related to window functions have the [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) tag.
-
-### Tests
-
-These tests contain the examples of the currently supported grammar:
-
-https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window_functions.xml
-
-https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql
-
-### Postgres Docs
-
-https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
-
-https://www.postgresql.org/docs/devel/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS
-
-https://www.postgresql.org/docs/devel/functions-window.html
-
-https://www.postgresql.org/docs/devel/tutorial-window.html
-
-### MySQL Docs
-
-https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
-
-https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
-
-https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
-
 
 ## Related Content
 

@@ -7,13 +7,17 @@
 #include <boost/noncopyable.hpp>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <map>
 #include <unordered_map>
+#include <mutex>
+#include <chrono>
 #include <vector>
 #include <memory>
+#include <thread>
+#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <functional>
-#include <span>
 
 
 namespace Coordination
@@ -226,7 +230,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     ZooKeeperCreateRequest() = default;
     explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
-    OpNum getOpNum() const override { return not_exists ? OpNum::CreateIfNotExists : OpNum::Create; }
+    OpNum getOpNum() const override { return OpNum::Create; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
     std::string toStringImpl() const override;
@@ -239,7 +243,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     void createLogElements(LogElements & elems) const override;
 };
 
-struct ZooKeeperCreateResponse : CreateResponse, ZooKeeperResponse
+struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
 
@@ -250,12 +254,6 @@ struct ZooKeeperCreateResponse : CreateResponse, ZooKeeperResponse
     size_t bytesSize() const override { return CreateResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
-};
-
-struct ZooKeeperCreateIfNotExistsResponse : ZooKeeperCreateResponse
-{
-    OpNum getOpNum() const override { return OpNum::CreateIfNotExists; }
-    using ZooKeeperCreateResponse::ZooKeeperCreateResponse;
 };
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
@@ -512,7 +510,6 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
     ZooKeeperMultiRequest() = default;
 
     ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls);
-    ZooKeeperMultiRequest(std::span<const Coordination::RequestPtr> generic_requests, const ACLs & default_acls);
 
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
