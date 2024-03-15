@@ -4,6 +4,9 @@ FROM clickhouse/test-util:$FROM_TAG
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
+# If the cctools is updated, then first build it in the CI, then update here in a different commit
+COPY --from=clickhouse/cctools:d9e3596e706b /cctools /cctools
+
 # Rust toolchain and libraries
 ENV RUSTUP_HOME=/rust/rustup
 ENV CARGO_HOME=/rust/cargo
@@ -74,9 +77,6 @@ ARG CLANG_TIDY_SHA1=c191254ea00d47ade11d7170ef82fe038c213774
 RUN curl -Lo /usr/bin/clang-tidy-cache \
         "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/clang-tidy-cache" \
     && chmod +x /usr/bin/clang-tidy-cache
-
-# If the cctools is updated, then first build it in the CI, then update here in a different commit
-COPY --from=clickhouse/cctools:5a908f73878a /cctools /cctools
 
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir
