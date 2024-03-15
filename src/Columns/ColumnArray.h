@@ -21,7 +21,7 @@ private:
     friend class COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
 
     /** Create an array column with specified values and offsets. */
-    ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column, bool check_offsets = true);
+    ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column);
 
     /** Create an empty column of arrays with the type of values as in the column `nested_column` */
     explicit ColumnArray(MutableColumnPtr && nested_column);
@@ -88,7 +88,6 @@ public:
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
     void insertFrom(const IColumn & src_, size_t n) override;
-    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
     void insertDefault() override;
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -213,17 +212,6 @@ private:
     ColumnPtr filterTuple(const Filter & filt, ssize_t result_size_hint) const;
     ColumnPtr filterNullable(const Filter & filt, ssize_t result_size_hint) const;
     ColumnPtr filterGeneric(const Filter & filt, ssize_t result_size_hint) const;
-
-    /// Specializations for insertManyFrom
-    void insertManyFromConst(const ColumnConst & src, size_t position, size_t length);
-    void insertManyFromImpl(const ColumnArray & src, size_t position, size_t length, bool update_offsets = true);
-
-    template <typename T>
-    void insertManyFromNumber(const ColumnArray & src, size_t position, size_t length);
-    void insertManyFromString(const ColumnArray & src, size_t position, size_t length);
-    void insertManyFromTuple(const ColumnArray & src, size_t position, size_t length);
-    void insertManyFromNullable(const ColumnArray & src, size_t position, size_t length);
-    void insertManyFromGeneric(const ColumnArray & src, size_t position, size_t length);
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator=nullptr) const;
 };
