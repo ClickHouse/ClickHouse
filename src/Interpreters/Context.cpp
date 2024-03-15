@@ -1169,6 +1169,16 @@ boost::container::flat_set<UUID> Context::getCurrentRoles() const
     return getRolesInfo()->current_roles;
 }
 
+std::vector<UUID> Context::getCurrentRolesAsStdVector() const
+{
+    const auto & roles = getRolesInfo()->current_roles;
+    std::vector<UUID> res;
+    res.reserve(roles.size());
+    for (auto uuid : roles)
+        res.push_back(uuid);
+    return res;
+}
+
 boost::container::flat_set<UUID> Context::getEnabledRoles() const
 {
     return getRolesInfo()->enabled_roles;
