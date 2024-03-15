@@ -1056,7 +1056,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             String table_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_table" : table_alias + "._table";
 
             if (has_database_virtual_column && common_header.has(database_column)
-                && (storage_stage == QueryProcessingStage::FetchColumns || (dynamic_cast<const StorageDistributed *>(&storage_snapshot_->storage) != nullptr && !pipe_header.has("'" + database_name + "'_String"))))
+                && (storage_stage == QueryProcessingStage::FetchColumns || !pipe_header.has("'" + database_name + "'_String")))
             {
                 ColumnWithTypeAndName column;
                 column.name = database_column;
@@ -1072,7 +1072,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             }
 
             if (has_table_virtual_column && common_header.has(table_column)
-                && (storage_stage == QueryProcessingStage::FetchColumns || (dynamic_cast<const StorageDistributed *>(&storage_snapshot_->storage) != nullptr && !pipe_header.has("'" + table_name + "'_String"))))
+                && (storage_stage == QueryProcessingStage::FetchColumns || !pipe_header.has("'" + table_name + "'_String")))
             {
                 ColumnWithTypeAndName column;
                 column.name = table_column;
@@ -1121,7 +1121,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
         convertAndFilterSourceStream(
-            header, modified_query_info, storage_snapshot_, aliases, row_policy_data_opt, context, *builder, processed_stage);
+            header, modified_query_info, storage_snapshot_, aliases, row_policy_data_opt, context, *builder, storage_stage);
     }
 
     return builder;
