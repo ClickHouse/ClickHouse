@@ -49,3 +49,5 @@ build_id:
 
 **See also**
 - [trace_log](../../operations/system-tables/trace_log.md) system table
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/crash-log)

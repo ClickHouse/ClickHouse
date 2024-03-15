@@ -26,8 +26,6 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,

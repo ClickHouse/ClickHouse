@@ -12,7 +12,7 @@ namespace DB
 
 struct AsynchronousInsertLogElement
 {
-    enum Status : int8_t
+    enum Status : Int8
     {
         Ok = 0,
         ParsingError = 1,
@@ -38,7 +38,6 @@ struct AsynchronousInsertLogElement
     time_t flush_time{};
     Decimal64 flush_time_microseconds{};
     String flush_query_id;
-    UInt64 timeout_milliseconds = 0;
 
     static std::string name() { return "AsynchronousInsertLog"; }
     static ColumnsDescription getColumnsDescription();

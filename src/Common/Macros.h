@@ -57,6 +57,8 @@ public:
 
     String expand(const String & s) const;
 
+    String expand(const String & s, const StorageID & table_id, bool allow_uuid) const;
+
 
     /** Apply expand for the list.
       */

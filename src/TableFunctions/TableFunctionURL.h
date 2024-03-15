@@ -34,7 +34,9 @@ public:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context);
+    static void addColumnsStructureToArguments(ASTs & args, const String & desired_structure, const ContextPtr & context);
+
+    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override;
 
 protected:
     void parseArguments(const ASTPtr & ast, ContextPtr context) override;
@@ -51,7 +53,8 @@ private:
 
     const char * getStorageTypeName() const override { return "URL"; }
 
-    std::optional<String> tryGetFormatFromFirstArgument() override;
+    String getFormatFromFirstArgument() override;
+
 };
 
 }

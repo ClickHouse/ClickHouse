@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2758 
+personal_ws-1.1 en 2657
 AArch
 ACLs
 ALTERs
@@ -12,7 +12,6 @@ ARMv
 ASLR
 ASOF
 ASan
-AWND
 AWST
 Actian
 ActionsMenu
@@ -112,7 +111,6 @@ CDMA
 CESU
 CIDR
 CIDRToRange
-CKMAN
 CLOB
 CLion
 CMPLNT
@@ -191,7 +189,6 @@ CustomSeparatedWithNamesAndTypes
 DBAs
 DBMSs
 DBeaver
-DD
 DDLWORKER
 DDLWorker
 DDLWorkerThreads
@@ -217,6 +214,7 @@ DatabaseOrdinaryThreadsActive
 DateTime
 DateTimes
 DbCL
+DD
 Decrypted
 Deduplicate
 Deduplication
@@ -240,7 +238,6 @@ DistributedSend
 DockerHub
 DoubleDelta
 Doxygen
-Durre
 ECMA
 Ecto
 EdgeAngle
@@ -260,7 +257,6 @@ ExactEdgeLengthRads
 ExecutablePool
 ExtType
 ExternalDistributed
-FFFFFFFF
 FFFD
 FIPS
 FOSDEM
@@ -293,7 +289,6 @@ ForEach
 FreeBSD
 Fuzzer
 Fuzzers
-GHCN
 GTID
 GTest
 Gb
@@ -449,7 +444,6 @@ Khanna
 KittenHouse
 Klickhouse
 Kolmogorov
-Korzeniewski
 Kubernetes
 LDAP
 LGPL
@@ -509,7 +503,6 @@ MaxMind
 MaxPartCountForPartition
 MaxPushedDDLEntryID
 Mbps
-McNeal
 Memcheck
 MemoryCode
 MemoryDataAndStack
@@ -519,7 +512,6 @@ MemorySanitizer
 MemoryShared
 MemoryTracking
 MemoryVirtual
-Menne
 MergeJoin
 MergeState
 MergeTree
@@ -547,8 +539,6 @@ MinIO
 MinMax
 MindsDB
 Mongodb
-mortonDecode
-mortonEncode
 MsgPack
 MultiPolygon
 Multiline
@@ -566,7 +556,6 @@ NEWDATE
 NEWDECIMAL
 NFKC
 NFKD
-NOAA
 NULLIF
 NVME
 NVMe
@@ -587,7 +576,6 @@ NetworkSendBytes
 NetworkSendDrop
 NetworkSendErrors
 NetworkSendPackets
-Noaa
 NodeJs
 NuRaft
 NumHexagons
@@ -668,10 +656,8 @@ OrZero
 OvercommitTracker
 PAAMAYIM
 PCRE
-PRCP
 PREWHERE
 PROCESSLIST
-PSUN
 PagerDuty
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
@@ -688,6 +674,7 @@ PartsCommitted
 PartsCompact
 PartsDeleteOnDestroy
 PartsDeleting
+PartsInMemory
 PartsOutdated
 PartsPreActive
 PartsPreCommitted
@@ -815,7 +802,6 @@ SIMD
 SLES
 SLRU
 SMALLINT
-SNWD
 SPNEGO
 SQEs
 SQLAlchemy
@@ -843,8 +829,6 @@ Sematext
 SendExternalTables
 SendScalars
 ShareAlike
-SharedMergeTree
-Shortkeys
 SimHash
 Simhash
 SimpleAggregateFunction
@@ -890,14 +874,11 @@ SupersetDocker
 SystemReplicasThreads
 SystemReplicasThreadsActive
 TABLUM
-TAVG
 TCPConnection
 TCPThreads
 TDigest
 TINYINT
 TLSv
-TMAX
-TMIN
 TPCH
 TSDB
 TSVRaw
@@ -957,7 +938,6 @@ TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
 Transactional
-Tukey
 TwoColumnList
 UBSan
 UDFs
@@ -995,15 +975,12 @@ VIEWs
 Vadim
 Valgrind
 Vectorized
-VersionBadge
 VersionInteger
 VersionedCollapsingMergeTree
 VideoContainer
 ViewAllLink
 VirtualBox
-Vose
 WALs
-WSFG
 Welch's
 Werror
 Wether
@@ -1022,7 +999,6 @@ Xeon
 YAML
 YAMLRegExpTree
 YYYY
-YYYYMMDD
 YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
@@ -1081,8 +1057,6 @@ anyheavy
 anylast
 appendTrailingCharIfAbsent
 approximative
-approxtopk
-approxtopsum
 argMax
 argMin
 argmax
@@ -1243,7 +1217,6 @@ buildable
 builtins
 byteHammingDistance
 byteSize
-byteSlice
 byteSwap
 bytebase
 bytesToCutForIPv
@@ -1273,8 +1246,6 @@ centroid
 certificateFile
 cetera
 cfg
-cgroup
-cgroups
 chadmin
 changelog
 changelogs
@@ -1294,7 +1265,6 @@ cipherList
 ciphertext
 cityHash
 cityhash
-ckman
 clangd
 cli
 clickcache
@@ -1337,7 +1307,6 @@ cosineDistance
 countDigits
 countEqual
 countMatches
-countMatchesCaseInsensitive
 countSubstrings
 covarPop
 covarSamp
@@ -1362,7 +1331,6 @@ cryptographic
 csv
 csvwithnames
 csvwithnamesandtypes
-ctukey
 curdate
 currentDatabase
 currentProfiles
@@ -1602,7 +1570,6 @@ getSetting
 getSizeOfEnumType
 getblockinfo
 getevents
-ghcnd
 github
 glibc
 globalIn
@@ -1622,12 +1589,10 @@ greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
-groupArrayIntersect
 groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
 groupArraySample
-groupArraySorted
 groupBitAnd
 groupBitOr
 groupBitXor
@@ -1638,12 +1603,10 @@ groupBitmapXor
 groupUniqArray
 grouparray
 grouparrayinsertat
-grouparrayintersect
 grouparraylast
 grouparraymovingavg
 grouparraymovingsum
 grouparraysample
-grouparraysorted
 groupbitand
 groupbitmap
 groupbitmapand
@@ -1703,7 +1666,6 @@ hudi
 hyperscan
 hypot
 hyvor
-iTerm
 icosahedron
 icudata
 idempotency
@@ -1846,7 +1808,6 @@ linearized
 lineasstring
 linefeeds
 lineorder
-linestring
 linux
 llvm
 loadDefaultCAFile
@@ -1902,7 +1863,6 @@ mdadm
 meanZTest
 meanztest
 mebibytes
-mergeTreeIndex
 mergeable
 mergetree
 messageID
@@ -1992,7 +1952,6 @@ ngramSimHashCaseInsensitiveUTF
 ngramSimHashUTF
 ngrambf
 ngrams
-noaa
 nonNegativeDerivative
 noop
 normalizeQuery
@@ -2150,7 +2109,6 @@ py
 qryn
 quantile
 quantileBFloat
-quantileDD
 quantileDeterministic
 quantileExact
 quantileExactExclusive
@@ -2165,7 +2123,6 @@ quantileTDigestWeighted
 quantileTiming
 quantileTimingWeighted
 quantilebfloat
-quantileddsketch
 quantiledeterministic
 quantileexact
 quantileexactweighted
@@ -2178,6 +2135,8 @@ quantiletdigest
 quantiletdigestweighted
 quantiletiming
 quantiletimingweighted
+quantileddsketch
+quantileDD
 quartile
 queryID
 queryString
@@ -2205,9 +2164,7 @@ rankCorr
 rapidjson
 rawblob
 readWKTMultiPolygon
-readWKTPoint
 readWKTPolygon
-readWKTRing
 readahead
 readline
 readme
@@ -2251,7 +2208,6 @@ reinterpretAsString
 reinterpretAsUInt
 reinterpretAsUUID
 remoteSecure
-repivot
 replaceAll
 replaceOne
 replaceRegexpAll
@@ -2313,7 +2269,6 @@ sequenceCount
 sequenceMatch
 sequenceNextNode
 seriesDecomposeSTL
-seriesOutliersDetectTukey
 seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
@@ -2327,17 +2282,8 @@ shardNum
 sharded
 sharding
 shortcircuit
-shortkeys
 shoutout
 simdjson
-simpleJSON
-simpleJSONExtractBool
-simpleJSONExtractFloat
-simpleJSONExtractInt
-simpleJSONExtractRaw
-simpleJSONExtractString
-simpleJSONExtractUInt
-simpleJSONHas
 simpleLinearRegression
 simpleaggregatefunction
 simplelinearregression
@@ -2440,7 +2386,6 @@ subranges
 subreddits
 subseconds
 subsequence
-substreams
 substring
 substringIndex
 substringIndexUTF
@@ -2504,7 +2449,6 @@ theilsu
 themself
 threadpool
 throwIf
-timeDiff
 timeSlot
 timeSlots
 timeZone
@@ -2556,7 +2500,6 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
-toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2618,7 +2561,6 @@ tryPunycodeDecode
 tskv
 tsv
 tui
-tukey
 tumbleEnd
 tumbleStart
 tupleConcat
@@ -2692,12 +2634,9 @@ userver
 utils
 uuid
 varPop
-varPopStable
 varSamp
-varSampStable
 variadic
 variantElement
-variantType
 varint
 varpop
 varsamp
@@ -2744,7 +2683,6 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
-writability
 wrt
 xcode
 xeus
@@ -2756,7 +2694,6 @@ xz
 yaml
 yandex
 youtube
-ZCurve
 zLib
 zLinux
 zabbix

@@ -12,7 +12,7 @@ namespace DB
 struct OpenTelemetrySpanLogElement : public OpenTelemetry::Span
 {
     OpenTelemetrySpanLogElement() = default;
-    explicit OpenTelemetrySpanLogElement(const OpenTelemetry::Span & span)
+    OpenTelemetrySpanLogElement(const OpenTelemetry::Span & span)
         : OpenTelemetry::Span(span) {}
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
@@ -20,6 +20,7 @@ struct OpenTelemetrySpanLogElement : public OpenTelemetry::Span
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 // OpenTelemetry standardizes some Log data as well, so it's not just

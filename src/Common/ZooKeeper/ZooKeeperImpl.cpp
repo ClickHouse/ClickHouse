@@ -1455,13 +1455,6 @@ void ZooKeeper::multi(
     const Requests & requests,
     MultiCallback callback)
 {
-    multi(std::span(requests), std::move(callback));
-}
-
-void ZooKeeper::multi(
-    std::span<const RequestPtr> requests,
-    MultiCallback callback)
-{
     ZooKeeperMultiRequest request(requests, default_acls);
 
     if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))

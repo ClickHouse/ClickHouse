@@ -12,7 +12,6 @@ public:
     static constexpr auto family_name = "Date32";
 
     TypeIndex getTypeId() const override { return TypeIndex::Date32; }
-    TypeIndex getColumnType() const override { return TypeIndex::Int32; }
     const char * getFamilyName() const override { return family_name; }
 
     Field getDefault() const override

@@ -91,35 +91,24 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_event);
 
-    auto finalize_output = [&]
-    {
-        try
-        {
-            used_output.out->finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to finalize response write buffer");
-        }
-    };
-
     auto write_response = [&](const std::string & message)
     {
+        auto & out = *used_output.out;
         if (response.sent())
         {
-            finalize_output();
+            out.finalize();
             return;
         }
 
         try
         {
-            writeString(message, *used_output.out);
-            finalize_output();
+            writeString(message, out);
+            out.finalize();
         }
         catch (...)
         {
             tryLogCurrentException(log);
-            finalize_output();
+            out.finalize();
         }
     };
 
@@ -128,7 +117,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         if (auto [message, success] = checkAuthentication(request); success)
         {
             processQuery(request, response, used_output);
-            finalize_output();
+            used_output.out->finalize();
             LOG_DEBUG(log, "Done processing query");
         }
         else

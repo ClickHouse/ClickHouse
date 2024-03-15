@@ -41,12 +41,8 @@ public:
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
     bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
-    ColumnPtr createColumnConst(size_t size, const Field & field) const override;
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
-
-    void forEachChild(const ChildCallback & callback) const override;
-
 private:
     SerializationPtr doGetDefaultSerialization() const override;
 

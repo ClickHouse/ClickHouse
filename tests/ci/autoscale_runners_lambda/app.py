@@ -8,10 +8,11 @@ from pprint import pformat
 from typing import Any, List, Literal, Optional, Tuple
 
 import boto3  # type: ignore
+
 from lambda_shared import (
-    RUNNER_TYPE_LABELS,
     CHException,
     ClickHouseHelper,
+    RUNNER_TYPE_LABELS,
     get_parameter_from_ssm,
 )
 
@@ -63,12 +64,8 @@ def get_scales(runner_type: str) -> Tuple[int, int]:
     # 10. I am trying 7 now.
     # 7 still looks a bit slow, so I try 6
     # Let's have it the same as the other ASG
-    #
-    # All type of style-checkers should be added very quickly to not block the workflows
     # UPDATE THE COMMENT ON CHANGES
     scale_up = 3
-    if "style" in runner_type:
-        scale_up = 1
     return scale_down, scale_up
 
 
@@ -118,8 +115,6 @@ def set_capacity(
         # Are we already at the capacity limits
         stop = stop or asg["MaxSize"] <= asg["DesiredCapacity"]
         # Let's calculate a new desired capacity
-        # (capacity_deficit + scale_up - 1) // scale_up : will increase min by 1
-        # if there is any capacity_deficit
         desired_capacity = (
             asg["DesiredCapacity"] + (capacity_deficit + scale_up - 1) // scale_up
         )
@@ -142,7 +137,7 @@ def set_capacity(
 
         logging.info(
             "The ASG %s capacity will be increased to %s, current capacity=%s, "
-            "effective capacity=%s, maximum capacity=%s, running jobs=%s, queue size=%s",
+            "effective capacity=%sm maximum capacity=%s, running jobs=%s, queue size=%s",
             asg["AutoScalingGroupName"],
             desired_capacity,
             effective_capacity,

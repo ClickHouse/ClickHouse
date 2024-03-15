@@ -1,14 +1,15 @@
 #pragma once
 
 #include <Core/UUID.h>
-#include <Databases/IDatabase.h>
-#include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Databases/TablesDependencyGraph.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Common/NamePrompter.h>
+#include "Common/NamePrompter.h"
 #include <Common/SharedMutex.h>
+#include "Storages/IStorage.h"
+#include "Databases/IDatabase.h"
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -443,7 +444,7 @@ class TemporaryLockForUUIDDirectory : private boost::noncopyable
     UUID uuid = UUIDHelpers::Nil;
 public:
     TemporaryLockForUUIDDirectory() = default;
-    explicit TemporaryLockForUUIDDirectory(UUID uuid_);
+    TemporaryLockForUUIDDirectory(UUID uuid_);
     ~TemporaryLockForUUIDDirectory();
 
     TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept;

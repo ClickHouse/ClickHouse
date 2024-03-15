@@ -29,19 +29,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-enum class VirtualsKind : UInt8
-{
-    None = 0,
-    Ephemeral = 1,
-    Persistent = 2,
-    All = Ephemeral | Persistent,
-};
-
 struct GetColumnsOptions
 {
     enum Kind : UInt8
     {
-        None = 0,
         Ordinary = 1,
         Materialized = 2,
         Aliases = 4,
@@ -52,7 +43,7 @@ struct GetColumnsOptions
         All = AllPhysical | Aliases | Ephemeral,
     };
 
-    GetColumnsOptions(Kind kind_) : kind(kind_) {} /// NOLINT(google-explicit-constructor)
+    GetColumnsOptions(Kind kind_) : kind(kind_) {}
 
     GetColumnsOptions & withSubcolumns(bool value = true)
     {
@@ -60,9 +51,9 @@ struct GetColumnsOptions
         return *this;
     }
 
-    GetColumnsOptions & withVirtuals(VirtualsKind value = VirtualsKind::All)
+    GetColumnsOptions & withVirtuals(bool value = true)
     {
-        virtuals_kind = value;
+        with_virtuals = value;
         return *this;
     }
 
@@ -72,11 +63,17 @@ struct GetColumnsOptions
         return *this;
     }
 
-    Kind kind;
-    VirtualsKind virtuals_kind = VirtualsKind::None;
+    GetColumnsOptions & withSystemColumns(bool value = true)
+    {
+        with_system_columns = value;
+        return *this;
+    }
 
+    Kind kind;
     bool with_subcolumns = false;
+    bool with_virtuals = false;
     bool with_extended_objects = false;
+    bool with_system_columns = false;
 };
 
 /// Description of a single table column (in CREATE TABLE for example).
@@ -116,7 +113,7 @@ public:
 
     explicit ColumnsDescription(NamesAndTypesList ordinary);
 
-    ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
+    explicit ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
 
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
 
@@ -163,7 +160,6 @@ public:
     bool hasNested(const String & column_name) const;
     bool hasSubcolumn(const String & column_name) const;
     const ColumnDescription & get(const String & column_name) const;
-    const ColumnDescription * tryGet(const String & column_name) const;
 
     template <typename F>
     void modify(const String & column_name, F && f)
@@ -217,6 +213,9 @@ public:
 
     /// Does column has non default specified compression codec
     bool hasCompressionCodec(const String & column_name) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
+    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
     String toString() const;
     static ColumnsDescription parse(const String & str);
@@ -270,5 +269,4 @@ private:
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
-
 }

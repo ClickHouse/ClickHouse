@@ -35,7 +35,7 @@ public:
     {
         const String & engine_name;
         ASTs & engine_args;
-        ASTStorage * storage = nullptr;
+        ASTStorage * storage;
         const ASTCreateQuery & create_query;
         const String & database_name;
         const String & metadata_path;

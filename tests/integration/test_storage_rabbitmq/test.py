@@ -53,13 +53,13 @@ instance3 = cluster.add_instance(
 # Helpers
 
 
-def rabbitmq_check_result(result, check=False, reference=None):
-    if reference is None:
-        reference = "\n".join([f"{i}\t{i}" for i in range(50)])
-    if check:
-        assert TSV(result) == TSV(reference)
-    else:
-        return TSV(result) == TSV(reference)
+def rabbitmq_check_result(result, check=False, ref_file="test_rabbitmq_json.reference"):
+    fpath = p.join(p.dirname(__file__), ref_file)
+    with open(fpath) as reference:
+        if check:
+            assert TSV(result) == TSV(reference)
+        else:
+            return TSV(result) == TSV(reference)
 
 
 def wait_rabbitmq_to_start(rabbitmq_docker_id, cookie, timeout=180):
@@ -133,10 +133,9 @@ def test_rabbitmq_select(rabbitmq_cluster, secure):
     if secure:
         port = cluster.rabbitmq_secure_port
 
-    # MATERIALIZED and ALIAS columns are not supported in RabbitMQ engine, but we can test that it does not fail
     instance.query(
         """
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64, value2 ALIAS value + 1, value3 MATERIALIZED value + 1)
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{}:{}',
                      rabbitmq_exchange_name = 'select',
@@ -147,11 +146,6 @@ def test_rabbitmq_select(rabbitmq_cluster, secure):
         """.format(
             rabbitmq_cluster.rabbitmq_host, port, secure
         )
-    )
-
-    assert (
-        "RabbitMQ table engine doesn\\'t support ALIAS, DEFAULT or MATERIALIZED columns"
-        in instance.query("SELECT * FROM system.warnings")
     )
 
     credentials = pika.PlainCredentials("root", "clickhouse")
@@ -385,7 +379,7 @@ def test_rabbitmq_macros(rabbitmq_cluster):
 def test_rabbitmq_materialized_view(rabbitmq_cluster):
     instance.query(
         """
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64, dt1 DateTime MATERIALIZED now(), value2 ALIAS value + 1)
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mv',
@@ -490,11 +484,9 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
         """
         DROP TABLE IF EXISTS test.view1;
         DROP TABLE IF EXISTS test.view2;
-        DROP TABLE IF EXISTS test.view3;
         DROP TABLE IF EXISTS test.consumer1;
         DROP TABLE IF EXISTS test.consumer2;
-        DROP TABLE IF EXISTS test.consumer3;
-        CREATE TABLE test.rabbitmq (key UInt64, value UInt64, value2 ALIAS value + 1, value3 MATERIALIZED value + 1, value4 DEFAULT 1)
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'mmv',
@@ -505,17 +497,12 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
         CREATE TABLE test.view1 (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
-        CREATE TABLE test.view2 (key UInt64, value UInt64, value2 UInt64, value3 UInt64, value4 UInt64)
-            ENGINE = MergeTree()
-            ORDER BY key;
-        CREATE TABLE test.view3 (key UInt64)
+        CREATE TABLE test.view2 (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer1 TO test.view1 AS
             SELECT * FROM test.rabbitmq;
         CREATE MATERIALIZED VIEW test.consumer2 TO test.view2 AS
-            SELECT * FROM test.rabbitmq;
-        CREATE MATERIALIZED VIEW test.consumer3 TO test.view3 AS
             SELECT * FROM test.rabbitmq;
     """
     )
@@ -527,7 +514,7 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
-    instance.wait_for_log_line("Started streaming to 3 attached views")
+    instance.wait_for_log_line("Started streaming to 2 attached views")
 
     messages = []
     for i in range(50):
@@ -535,43 +522,24 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange="mmv", routing_key="", body=message)
 
-    is_check_passed = False
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
+    while True:
         result1 = instance.query("SELECT * FROM test.view1 ORDER BY key")
         result2 = instance.query("SELECT * FROM test.view2 ORDER BY key")
-        result3 = instance.query("SELECT * FROM test.view3 ORDER BY key")
-        # Note that for view2 result is `i i 0 0 0`, but not `i i i+1 i+1 1` as expected, ALIAS/MATERIALIZED/DEFAULT columns are not supported in RabbitMQ engine
-        # We onlt check that at least it do not fail
-        if (
-            rabbitmq_check_result(result1)
-            and rabbitmq_check_result(
-                result2, reference="\n".join([f"{i}\t{i}\t0\t0\t0" for i in range(50)])
-            )
-            and rabbitmq_check_result(
-                result3, reference="\n".join([str(i) for i in range(50)])
-            )
-        ):
-            is_check_passed = True
+        if rabbitmq_check_result(result1) and rabbitmq_check_result(result2):
             break
-        time.sleep(0.1)
-
-    assert (
-        is_check_passed
-    ), f"References are not equal to results, result1: {result1}, result2: {result2}, result3: {result3}"
 
     instance.query(
         """
         DROP TABLE test.consumer1;
         DROP TABLE test.consumer2;
-        DROP TABLE test.consumer3;
         DROP TABLE test.view1;
         DROP TABLE test.view2;
-        DROP TABLE test.view3;
     """
     )
 
     connection.close()
+    rabbitmq_check_result(result1, True)
+    rabbitmq_check_result(result2, True)
 
 
 def test_rabbitmq_big_message(rabbitmq_cluster):

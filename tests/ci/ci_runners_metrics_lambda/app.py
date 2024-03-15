@@ -8,14 +8,23 @@ Lambda function to:
 
 import argparse
 import sys
-from typing import Dict
+from datetime import datetime
+from typing import Dict, List
 
+import requests  # type: ignore
 import boto3  # type: ignore
-from lambda_shared import RUNNER_TYPE_LABELS, RunnerDescriptions, list_runners
+from botocore.exceptions import ClientError  # type: ignore
+
+from lambda_shared import (
+    RUNNER_TYPE_LABELS,
+    RunnerDescription,
+    RunnerDescriptions,
+    list_runners,
+)
 from lambda_shared.token import (
-    get_access_token_by_key_app,
     get_cached_access_token,
     get_key_and_app_from_aws,
+    get_access_token_by_key_app,
 )
 
 UNIVERSAL_LABEL = "universal"
@@ -153,7 +162,7 @@ if __name__ == "__main__":
     if args.private_key:
         private_key = args.private_key
     elif args.private_key_path:
-        with open(args.private_key_path, "r", encoding="utf-8") as key_file:
+        with open(args.private_key_path, "r") as key_file:
             private_key = key_file.read()
     else:
         print("Attempt to get key and id from AWS secret manager")

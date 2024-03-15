@@ -275,7 +275,13 @@ private:
         if (only_replace_current_database_function)
             return;
 
-        node.setDatabaseIfNotExists(database_name);
+        for (ASTRenameQuery::Element & elem : node.elements)
+        {
+            if (!elem.from.database)
+                elem.from.database = std::make_shared<ASTIdentifier>(database_name);
+            if (!elem.to.database)
+                elem.to.database = std::make_shared<ASTIdentifier>(database_name);
+        }
     }
 
     void visitDDL(ASTAlterQuery & node, ASTPtr &) const

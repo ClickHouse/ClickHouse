@@ -11,20 +11,10 @@
 namespace DB
 {
 
-static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot, const Names & column_names)
+static std::pair<Block, Block> getHeaders(StorageRabbitMQ & storage_, const StorageSnapshotPtr & storage_snapshot)
 {
-    auto all_columns_header = storage_snapshot->metadata->getSampleBlock();
-
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->virtual_columns->getSampleBlock();
-
-    for (const auto & column_name : column_names)
-    {
-        if (non_virtual_header.has(column_name) || virtual_header.has(column_name))
-            continue;
-        const auto & column = all_columns_header.getByName(column_name);
-        non_virtual_header.insert(column);
-    }
+    auto virtual_header = storage_snapshot->getSampleBlockForColumns(storage_.getVirtuals().getNames());
 
     return {non_virtual_header, virtual_header};
 }
@@ -50,7 +40,7 @@ RabbitMQSource::RabbitMQSource(
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
-        getHeaders(storage_snapshot_, columns),
+        getHeaders(storage_, storage_snapshot_),
         context_,
         columns,
         max_block_size_,

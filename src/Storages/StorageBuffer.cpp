@@ -1,41 +1,40 @@
-#include <Interpreters/InterpreterInsertQuery.h>
+#include <boost/range/algorithm_ext/erase.hpp>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/getColumnFromBlock.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Storages/StorageBuffer.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/ISource.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
+#include <base/getThreadId.h>
+#include <base/range.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/ReverseTransform.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Transforms/ReverseTransform.h>
-#include <Storages/AlterCommands.h>
-#include <Storages/StorageBuffer.h>
-#include <Storages/StorageFactory.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <base/getThreadId.h>
-#include <base/range.h>
-#include <boost/range/algorithm_ext/erase.hpp>
-#include <Common/CurrentMetrics.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/ProfileEvents.h>
-#include <Common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <Common/threadPoolCallbackRunner.h>
-#include <Common/typeid_cast.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 
 
 namespace ProfileEvents
@@ -57,9 +56,6 @@ namespace CurrentMetrics
 {
     extern const Metric StorageBufferRows;
     extern const Metric StorageBufferBytes;
-    extern const Metric StorageBufferFlushThreads;
-    extern const Metric StorageBufferFlushThreadsActive;
-    extern const Metric StorageBufferFlushThreadsScheduled;
 }
 
 
@@ -157,12 +153,6 @@ StorageBuffer::StorageBuffer(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-    if (num_shards > 1)
-    {
-        flush_pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
-            num_shards, 0, num_shards);
-    }
     flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
 }
 
@@ -812,22 +802,7 @@ bool StorageBuffer::checkThresholdsImpl(bool direct, size_t rows, size_t bytes, 
 void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
     for (auto & buf : buffers)
-    {
-        if (flush_pool)
-        {
-            scheduleFromThreadPool<void>([&] ()
-            {
-                flushBuffer(buf, check_thresholds, false);
-            }, *flush_pool, "BufferFlush");
-        }
-        else
-        {
-            flushBuffer(buf, check_thresholds, false);
-        }
-    }
-
-    if (flush_pool)
-        flush_pool->wait();
+        flushBuffer(buf, check_thresholds, false);
 }
 
 

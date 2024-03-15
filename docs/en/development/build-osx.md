@@ -37,7 +37,7 @@ sudo xcode-select --install
 
 ``` bash
 brew update
-brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils nasm
+brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils
 ```
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}

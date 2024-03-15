@@ -4,7 +4,7 @@ import string
 import struct
 
 import pytest
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
@@ -359,8 +359,8 @@ node7 = cluster.add_instance(
     "node7",
     user_configs=["configs_old/users.d/not_optimize_count.xml"],
     with_zookeeper=True,
-    image="clickhouse/clickhouse-server",
-    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    image="yandex/clickhouse-server",
+    tag="20.8.11.17",
     stay_alive=True,
     with_installed_binary=True,
     allow_analyzer=False,

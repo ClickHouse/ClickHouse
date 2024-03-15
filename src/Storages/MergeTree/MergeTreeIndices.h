@@ -1,9 +1,12 @@
 #pragma once
 
 #include <string>
+#include <map>
 #include <unordered_map>
 #include <vector>
 #include <memory>
+#include <utility>
+#include <mutex>
 #include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/GinIndexStore.h>

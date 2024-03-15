@@ -4,7 +4,6 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 
-#include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Timespan.h>
 
 namespace DB
@@ -17,8 +16,8 @@ struct Settings;
     M(secure_connection_timeout, withSecureConnectionTimeout) \
     M(send_timeout, withSendTimeout) \
     M(receive_timeout, withReceiveTimeout) \
-    M(tcp_keep_alive_timeout, withTCPKeepAliveTimeout) \
-    M(http_keep_alive_timeout, withHTTPKeepAliveTimeout) \
+    M(tcp_keep_alive_timeout, withTcpKeepAliveTimeout) \
+    M(http_keep_alive_timeout, withHttpKeepAliveTimeout) \
     M(hedged_connection_timeout, withHedgedConnectionTimeout) \
     M(receive_data_timeout, withReceiveDataTimeout) \
     M(handshake_timeout, withHandshakeTimeout) \
@@ -111,8 +110,5 @@ inline ConnectionTimeouts & ConnectionTimeouts::withConnectionTimeout(Poco::Time
     secure_connection_timeout = span;
     return *this;
 }
-
-void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts);
-ConnectionTimeouts getTimeouts(const Poco::Net::HTTPClientSession & session);
 
 }

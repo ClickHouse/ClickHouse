@@ -72,6 +72,7 @@ struct ZooKeeperLogElement
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class ZooKeeperLog : public SystemLog<ZooKeeperLogElement>

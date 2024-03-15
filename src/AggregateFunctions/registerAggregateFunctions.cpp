@@ -15,10 +15,8 @@ void registerAggregateFunctionCount(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory &);
-void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);
-void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory &);
@@ -39,11 +37,9 @@ void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory &);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory &);
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory &);
 void registerAggregateFunctionRate(AggregateFunctionFactory &);
-void registerAggregateFunctionsMinMax(AggregateFunctionFactory &);
-void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory &);
+void registerAggregateFunctionsMin(AggregateFunctionFactory &);
+void registerAggregateFunctionsMax(AggregateFunctionFactory &);
 void registerAggregateFunctionsAny(AggregateFunctionFactory &);
-void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory &);
-void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsSecondMoment(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsThirdMoment(AggregateFunctionFactory &);
@@ -101,7 +97,7 @@ void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactor
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
-void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
+void registerAggregateFunctionCombinatorMinMax(AggregateFunctionCombinatorFactory & factory);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
 
@@ -116,10 +112,8 @@ void registerAggregateFunctions()
         registerAggregateFunctionDeltaSum(factory);
         registerAggregateFunctionDeltaSumTimestamp(factory);
         registerAggregateFunctionGroupArray(factory);
-        registerAggregateFunctionGroupArraySorted(factory);
         registerAggregateFunctionGroupUniqArray(factory);
         registerAggregateFunctionGroupArrayInsertAt(factory);
-        registerAggregateFunctionGroupArrayIntersect(factory);
         registerAggregateFunctionsQuantile(factory);
         registerAggregateFunctionsQuantileDeterministic(factory);
         registerAggregateFunctionsQuantileExact(factory);
@@ -140,11 +134,9 @@ void registerAggregateFunctions()
         registerAggregateFunctionsSequenceMatch(factory);
         registerAggregateFunctionWindowFunnel(factory);
         registerAggregateFunctionRate(factory);
-        registerAggregateFunctionsMinMax(factory);
-        registerAggregateFunctionsArgMinArgMax(factory);
+        registerAggregateFunctionsMin(factory);
+        registerAggregateFunctionsMax(factory);
         registerAggregateFunctionsAny(factory);
-        registerAggregateFunctionAnyHeavy(factory);
-        registerAggregateFunctionsAnyRespectNulls(factory);
         registerAggregateFunctionsStatisticsStable(factory);
         registerAggregateFunctionsStatisticsSecondMoment(factory);
         registerAggregateFunctionsStatisticsThirdMoment(factory);
@@ -207,7 +199,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorResample(factory);
         registerAggregateFunctionCombinatorDistinct(factory);
         registerAggregateFunctionCombinatorMap(factory);
-        registerAggregateFunctionCombinatorsArgMinArgMax(factory);
+        registerAggregateFunctionCombinatorMinMax(factory);
     }
 }
 

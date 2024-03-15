@@ -40,6 +40,7 @@ struct ProcessorProfileLogElement
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class ProcessorsProfileLog : public SystemLog<ProcessorProfileLogElement>

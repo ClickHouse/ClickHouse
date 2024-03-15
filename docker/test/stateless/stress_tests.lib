@@ -215,7 +215,8 @@ function check_server_start()
 function check_logs_for_critical_errors()
 {
     # Sanitizer asserts
-    sed -n '/WARNING:.*anitizer/,/^$/p' >> /test_output/tmp
+    rg -Fa "==================" /var/log/clickhouse-server/stderr.log | rg -v "in query:" >> /test_output/tmp
+    rg -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
     rg -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
         && echo -e "Sanitizer assert (in stderr.log)$FAIL$(head_escaped /test_output/tmp)" >> /test_output/test_results.tsv \
         || echo -e "No sanitizer asserts$OK" >> /test_output/test_results.tsv
@@ -233,8 +234,8 @@ function check_logs_for_critical_errors()
     # Remove file logical_errors.txt if it's empty
     [ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
 
-    # No such key errors (ignore a.myext which is used in 02724_database_s3.sh and does not exist)
-    rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v "a.myext" > /test_output/no_such_key_errors.txt \
+    # No such key errors
+    rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
         && echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv \
         || echo -e "No lost s3 keys$OK" >> /test_output/test_results.tsv
 
