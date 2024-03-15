@@ -66,6 +66,11 @@ def get_options(i: int, upgrade_check: bool) -> str:
     if random.random() < 0.3:
         client_options.append(f"http_make_head_request={random.randint(0, 1)}")
 
+    # TODO: After release 23.3 use ignore-drop-queries-probability for both
+    #       stress test and upgrade check
+    if not upgrade_check:
+        client_options.append("ignore-drop-queries-probability=0.5")
+
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
 

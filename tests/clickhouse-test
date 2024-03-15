@@ -2872,6 +2872,8 @@ def parse_args():
         help="Do not run shard related tests",
     )
 
+    # TODO: Remove upgrade-check option after release 23.3 and use
+    #       ignore-drop-queries-probability option in stress.py as in stress tests
     group.add_argument(
         "--upgrade-check",
         action="store_true",

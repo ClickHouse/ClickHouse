@@ -50,7 +50,6 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
-#include <Formats/FormatFactory.h>
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -953,7 +952,9 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
 
         ("no-warnings", "disable warnings when client connects to server")
+        /// TODO: Left for compatibility as it's used in upgrade check, remove after next release and use ignore-drop-queries-probability
         ("fake-drop", "Ignore all DROP queries, should be used only for testing")
+        ("ignore-drop-queries-probability", po::value<double>(), "With specified probability ignore all DROP queries (replace them to TRUNCATE for engines like Memory/JOIN), should be used only for testing")
         ("accept-invalid-certificate", "Ignore certificate verification errors, equal to config parameters openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none")
     ;
 
@@ -1096,7 +1097,9 @@ void Client::processOptions(const OptionsDescription & options_description,
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
     if (options.count("fake-drop"))
-        fake_drop = true;
+        ignore_drop_queries_probability = 1;
+    if (options.count("ignore-drop-queries-probability"))
+        ignore_drop_queries_probability = std::min(options["ignore-drop-queries-probability"].as<double>(), 1.);
     if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
@@ -1138,13 +1141,6 @@ void Client::processOptions(const OptionsDescription & options_description,
 }
 
 
-static bool checkIfStdoutIsRegularFile()
-{
-    struct stat file_stat;
-    return fstat(STDOUT_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
-}
-
-
 void Client::processConfig()
 {
     if (!queries.empty() && config().has("queries-file"))
@@ -1181,14 +1177,7 @@ void Client::processConfig()
     pager = config().getString("pager", "");
 
     is_default_format = !config().has("vertical") && !config().has("format");
-    if (is_default_format && checkIfStdoutIsRegularFile())
-    {
-        is_default_format = false;
-        std::optional<String> format_from_file_name;
-        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDOUT_FILENO);
-        format = format_from_file_name ? *format_from_file_name : "TabSeparated";
-    }
-    else if (config().has("vertical"))
+    if (config().has("vertical"))
         format = config().getString("format", "Vertical");
     else
         format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
@@ -1392,8 +1381,8 @@ void Client::readArguments(
 }
 
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
