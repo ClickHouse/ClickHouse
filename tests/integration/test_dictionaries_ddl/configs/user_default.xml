@@ -4,6 +4,7 @@
             <allow_databases>
                 <database>default</database>
                 <database>test</database>
+                <database>Log</database>
             </allow_databases>
         </default>
     </users>

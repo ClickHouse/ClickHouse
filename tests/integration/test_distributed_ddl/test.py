@@ -291,20 +291,32 @@ def test_allowed_databases(test_cluster):
     instance.query("CREATE DATABASE IF NOT EXISTS db2 ON CLUSTER cluster")
 
     instance.query(
-        "CREATE TABLE db1.t1 ON CLUSTER cluster (i Int8) ENGINE = Memory",
+        "CREATE TABLE IF NOT EXISTS db1.t1 ON CLUSTER cluster (i Int8) ENGINE = Memory"
+    )
+    instance.query(
+        "CREATE TABLE IF NOT EXISTS db2.t2 ON CLUSTER cluster (i Int8) ENGINE = Memory"
+    )
+    instance.query(
+        "CREATE TABLE IF NOT EXISTS t3 ON CLUSTER cluster (i Int8) ENGINE = Memory"
+    )
+
+    instance.query(
+        "SELECT * FROM db1.t1",
         settings={"user": "restricted_user"},
     )
 
     with pytest.raises(Exception):
         instance.query(
-            "CREATE TABLE db2.t2 ON CLUSTER cluster (i Int8) ENGINE = Memory",
+            "SELECT * FROM db2.t2",
             settings={"user": "restricted_user"},
         )
+
     with pytest.raises(Exception):
         instance.query(
-            "CREATE TABLE t3 ON CLUSTER cluster (i Int8) ENGINE = Memory",
+            "SELECT * FROM t3",
             settings={"user": "restricted_user"},
         )
+
     with pytest.raises(Exception):
         instance.query(
             "DROP DATABASE db2 ON CLUSTER cluster", settings={"user": "restricted_user"}
