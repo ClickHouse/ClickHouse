@@ -19,8 +19,8 @@ struct KeyDescription
     {
         /// Columns that will be added before and after key definition.
         /// Don't stored in definition_ast, but added to expression_list_ast and all its derivatives.
-        std::optional<std::vector<String>> ext_columns_front;
-        std::optional<std::vector<String>> ext_columns_back;
+        std::vector<String> ext_columns_front;
+        std::vector<String> ext_columns_back;
     };
 
     class Builder

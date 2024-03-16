@@ -71,18 +71,15 @@ KeyDescription::Builder::buildFromAST(const ASTPtr & definition_ast_, const Colu
     result.expression_list_ast = extractKeyExpressionList(definition_ast_);
     result.additional_settings = settings;
 
-    if (settings && settings->ext_columns_front)
+    if (settings.has_value())
     {
-        for (const auto & additional_column : std::ranges::views::reverse(settings->ext_columns_front.value()))
+        for (const auto & additional_column : std::ranges::views::reverse(settings->ext_columns_front))
         {
             ASTPtr column_identifier = std::make_shared<ASTIdentifier>(additional_column);
             result.expression_list_ast->children.insert(result.expression_list_ast->children.begin(), column_identifier);
         }
-    }
 
-    if (settings && settings->ext_columns_back)
-    {
-        for (const auto & additional_column : settings->ext_columns_back.value())
+        for (const auto & additional_column : settings->ext_columns_back)
         {
             ASTPtr column_identifier = std::make_shared<ASTIdentifier>(additional_column);
             result.expression_list_ast->children.push_back(column_identifier);

@@ -500,7 +500,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// Version collapsing is the only engine which add additional column to sorting key.
         additional_sorting_key_settings = KeyDescription::AdditionalSettings{
-            .ext_columns_back = std::vector<String>{merging_params.version_column},
+            .ext_columns_back = {merging_params.version_column},
         };
     }
 
@@ -557,15 +557,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             chassert(!additional_sorting_key_settings.has_value());
 
             additional_sorting_key_settings = KeyDescription::AdditionalSettings{};
-            additional_sorting_key_settings->ext_columns_front = std::vector<String>{QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
+            additional_sorting_key_settings->ext_columns_front = {QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
 
             additional_primary_key_settings = KeyDescription::AdditionalSettings{};
-            additional_primary_key_settings->ext_columns_front = std::vector<String>{QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
+            additional_primary_key_settings->ext_columns_front = {QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
 
             if (replicated)
             {
                 additional_partition_key_settings = KeyDescription::AdditionalSettings{};
-                additional_partition_key_settings->ext_columns_front = std::vector<String>{QueueReplicaColumn::name};
+                additional_partition_key_settings->ext_columns_front = {QueueReplicaColumn::name};
             }
         }
 
