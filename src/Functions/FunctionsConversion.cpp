@@ -181,12 +181,12 @@ struct ToDateTimeImpl
 
 /// Implementation of toDate function.
 
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTransform32Or64
 {
     static constexpr auto name = "toDate";
 
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -203,12 +203,12 @@ struct ToDateTransform32Or64
 };
 
 
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTransform32Or64Signed
 {
     static constexpr auto name = "toDate";
 
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         // TODO: decide narrow or extended range based on FromType
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
@@ -222,17 +222,17 @@ struct ToDateTransform32Or64Signed
                 return 0;
         }
         return (from <= DATE_LUT_MAX_DAY_NUM)
-            ? static_cast<ToType>(from)
+            ? static_cast<Int32>(from)
             : time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATE_TIMESTAMP)));
     }
 };
 
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTransform8Or16Signed
 {
     static constexpr auto name = "toDate";
 
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl &)
     {
         if (from < 0)
         {
@@ -247,15 +247,15 @@ struct ToDateTransform8Or16Signed
 
 /// Implementation of toDate32 function.
 
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDate32Transform32Or64
 {
     static constexpr auto name = "toDate32";
 
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         if (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
-            return static_cast<ToType>(from);
+            return static_cast<Int32>(from);
         else
         {
             if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
@@ -268,12 +268,12 @@ struct ToDate32Transform32Or64
     }
 };
 
-template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDate32Transform32Or64Signed
 {
     static constexpr auto name = "toDate32";
 
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         static const Int32 daynum_min_offset = -static_cast<Int32>(time_zone.getDayNumOffsetEpoch());
 
@@ -287,17 +287,17 @@ struct ToDate32Transform32Or64Signed
             return daynum_min_offset;
 
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
-            ? static_cast<ToType>(from)
+            ? static_cast<Int32>(from)
             : time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
     }
 };
 
-template <typename FromType, typename ToType>
+template <typename FromType>
 struct ToDate32Transform8Or16Signed
 {
     static constexpr auto name = "toDate32";
 
-    static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl &)
     {
         return from;
     }
@@ -383,6 +383,7 @@ struct ToDateTime64TransformUnsigned
             return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(std::min<time_t>(from, MAX_DATETIME64_TIMESTAMP), 0, scale_multiplier);
     }
 };
+
 template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTime64TransformSigned
 {
@@ -407,6 +408,7 @@ struct ToDateTime64TransformSigned
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
     }
 };
+
 template <typename FromDataType, typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTime64TransformFloat
 {
@@ -429,26 +431,6 @@ struct ToDateTime64TransformFloat
         from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
         from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
-    }
-};
-
-/** Conversion of DateTime64 to Date or DateTime: discards fractional part.
-  */
-template <typename Transform>
-struct FromDateTime64Transform
-{
-    static constexpr auto name = Transform::name;
-
-    const DateTime64::NativeType scale_multiplier;
-
-    FromDateTime64Transform(UInt32 scale) /// NOLINT
-        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
-    {}
-
-    auto execute(DateTime64::NativeType dt, const DateLUTImpl & time_zone) const
-    {
-        const auto c = DecimalUtils::splitWithScaleMultiplier(DateTime64(dt), scale_multiplier);
-        return Transform::execute(static_cast<UInt32>(c.whole), time_zone);
     }
 };
 
@@ -972,7 +954,7 @@ struct ConvertThroughParsing
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
             size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset - 1 : fixed_string_size;
 
-            ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
+            ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
@@ -1087,23 +1069,15 @@ struct ConvertThroughParsing
                         parsed = SerializationDecimal<typename ToDataType::FieldType>::tryReadText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
                     }
+                    else if (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>
+                            && fixed_string_size == IPV6_BINARY_LENGTH)
+                    {
+                        readBinary(vec_to[i], read_buffer);
+                        parsed = true;
+                    }
                     else
                     {
-                        /// we want to utilize constexpr condition here, which is not mixable with value comparison
-                        do
-                        {
-                            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>)
-                            {
-                                if (fixed_string_size == IPV6_BINARY_LENGTH)
-                                {
-                                    readBinary(vec_to[i], read_buffer);
-                                    parsed = true;
-                                    break;
-                                }
-                            }
-
-                            parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
-                        } while (false);
+                        parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
                     }
                 }
 
@@ -1220,7 +1194,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1229,7 +1203,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform8Or16Signed<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform8Or16Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1240,7 +1214,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64Signed<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1249,7 +1223,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate32>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1258,7 +1232,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate32>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform8Or16Signed<typename FromDataType::FieldType, UInt16>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform8Or16Signed<typename FromDataType::FieldType>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1269,7 +1243,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate32>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64Signed<typename FromDataType::FieldType, UInt16, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         /// Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to DateTime.
@@ -2475,7 +2449,7 @@ public:
     }
 
     template <typename ConvertToDataType>
-    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale = 0) const
+    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale) const
     {
         const IDataType * from_type = arguments[0].type.get();
 
@@ -2510,7 +2484,7 @@ public:
 
             if (scale == 0)
             {
-                result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count);
+                result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count, 0);
             }
             else
             {
@@ -2519,7 +2493,7 @@ public:
         }
         else
         {
-            result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count);
+            result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count, 0);
         }
 
         if (!result_column)
