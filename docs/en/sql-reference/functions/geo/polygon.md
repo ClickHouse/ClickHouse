@@ -6,7 +6,7 @@ title: "Functions for Working with Polygons"
 
 ## WKT
 
-Returns a WKT (Well Known Text) geometric object from tuples which represent point coordinates. Supported WKT objects are: 
+Returns a WKT (Well Known Text) geometric object from various [Geo Data Types](../../data-types/geo.md). Supported WKT objects are: 
 
 - POINT
 - POLYGON
@@ -15,18 +15,23 @@ Returns a WKT (Well Known Text) geometric object from tuples which represent poi
 **Syntax**
 
 ```sql
-WKT(points)
+WKT(geo_data)
 ```
 
 **Parameters**
 
-- `points`: a [tuple](../../data-types/tuple.md) representing coordinate point (x, y) or an [array](../../data-types/array.md) of tuples, or an array of multi-dimensional tuple arrays.
+`geo_data` can be one of the following [Geo Data Types](../../data-types/geo.md) or their underlying primitive types:
+
+- [Point](../../data-types/geo.md#point) / [Tuple](../../data-types/.md)
+- [Ring](../../data-types/geo.md#ring) / [Array](../../data-types/array.md)([Tuple](../../data-types/.md))
+- [Polygon](../../data-types/geo.md#polygon) / [Array](../../data-types/array.md)([Array](../../data-types/.md)([Tuple](../../data-types/array.md))) 
+- [MultiPolygon](../../data-types/geo.md#multipolygon) / [Array](../../data-types/array.md)([Array](../../data-types/array.md)([Array](../../data-types/array.md)([Tuple](../../data-types/.md))))
 
 **Returned value**
 
-- POINT is returned for a tuple.
-- POLYGON is returned for an array of tuples.
-- MULTIPOLYGON is returned for an array of multi-dimensional tuple arrays. 
+- WKT geometric object `POINT` is returned for a Point.
+- WKT geometric object `POLYGON` is returned for a Polygon
+- WKT geometric object `MULTIPOLYGON` is returned for a MultiPolygon. 
 
 **Examples**
 
