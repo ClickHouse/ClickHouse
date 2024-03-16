@@ -281,6 +281,11 @@ SELECT toDateTime64('2024-04-25 01:02:03.456789', 6);
 SELECT toString(1710612085::DateTime, 'America/Los_Angeles');
 SELECT toString(1710612085::DateTime);
 
+-- In the case when the time zone is not the part of the resulting data type, but a rule of interpretation of the source value,
+-- it can be non-constant. Let's clarify: in this example, the resulting data type is a String; it does not have a time zone parameter:
+
+SELECT toString(1710612085::DateTime, tz) FROM Values('tz String', 'Europe/Amsterdam', 'America/Los_Angeles');
+
 -- Functions converting to numeric types, date and datetime, IP and UUID, also have versions with -OrNull and -OrZero fallbacks,
 -- that don't throw exceptions on parsing errors.
 -- They use the same rules to the accurateCast operator:
