@@ -5181,6 +5181,7 @@ ReadSettings Context::getReadSettings() const
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
     res.filesystem_cache_segments_batch_size = settings.filesystem_cache_segments_batch_size;
+    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
     res.filesystem_cache_max_download_size = settings.filesystem_cache_max_download_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
@@ -5229,6 +5230,7 @@ WriteSettings Context::getWriteSettings() const
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
     res.throw_on_error_from_cache = settings.throw_on_error_from_cache_on_write_operations;
+    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
     res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
 

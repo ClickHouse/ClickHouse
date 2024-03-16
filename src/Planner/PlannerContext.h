@@ -75,11 +75,17 @@ private:
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
 
+class PlannerContext;
+using PlannerContextPtr = std::shared_ptr<PlannerContext>;
+
 class PlannerContext
 {
 public:
     /// Create planner context with query context and global planner context
     PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_, const SelectQueryOptions & select_query_options_);
+
+    /// Create planner with modified query_context
+    PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_);
 
     /// Get planner context query context
     ContextPtr getQueryContext() const
@@ -190,7 +196,5 @@ private:
     /// Set key to set
     PreparedSets prepared_sets;
 };
-
-using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 }

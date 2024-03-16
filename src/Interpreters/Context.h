@@ -331,7 +331,7 @@ protected:
             return *this;
         }
 
-        void swap(QueryAccessInfo & rhs)
+        void swap(QueryAccessInfo & rhs) noexcept
         {
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
@@ -687,7 +687,7 @@ public:
     void addSpecialScalar(const String & name, const Block & block);
 
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
-    const QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
+    QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
     void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
 
     void addQueryAccessInfo(
