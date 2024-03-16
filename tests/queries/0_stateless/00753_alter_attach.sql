@@ -114,6 +114,7 @@ CREATE TABLE replicated_partition_attach_all (x UInt64, p UInt8)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00753_{database}/replicated_partition_attach_all', '1')
         ORDER BY x
         PARTITION BY p;
+INSERT INTO replicated_partition_attach_all VALUES (1, 1), (2, 2), (3, 3);
 
 ALTER TABLE replicated_partition_attach_all DETACH PARTITION ALL;
 SELECT * FROM replicated_partition_attach_all ORDER BY x;
