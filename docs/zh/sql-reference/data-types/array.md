@@ -1,7 +1,7 @@
 ---
 slug: /zh/sql-reference/data-types/array
 ---
-# 阵列(T) {#data-type-array}
+# 数组(T) {#data-type-array}
 
 由 `T` 类型元素组成的数组。
 
@@ -65,4 +65,28 @@ SELECT array(1, 'a')
 ```response
 Received exception from server (version 1.1.54388):
 Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
+```
+
+## 数组大小 {#array-size}
+
+可以使用 `size0` 子列找到数组的大小，而无需读取整个列。对于多维数组，您可以使用 `sizeN-1`，其中 `N` 是所需的维度。
+
+**例子**
+
+SQL查询：
+
+```sql
+CREATE TABLE t_arr (`arr` Array(Array(Array(UInt32)))) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_arr VALUES ([[[12, 13, 0, 1],[12]]]);
+
+SELECT arr.size0, arr.size1, arr.size2 FROM t_arr;
+```
+
+结果：
+
+``` text
+┌─arr.size0─┬─arr.size1─┬─arr.size2─┐
+│         1 │ [2]       │ [[4,1]]   │
+└───────────┴───────────┴───────────┘
 ```

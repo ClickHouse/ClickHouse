@@ -422,6 +422,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
 
     auto table_it = selected_tables.begin();
+    auto modified_context = Context::createCopy(context);
     for (size_t i = 0; i < selected_tables.size(); ++i, ++table_it)
     {
         auto & child_plan = child_plans->at(i);
@@ -438,7 +439,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         if (child_plan.row_policy_data_opt)
             child_plan.row_policy_data_opt->extendNames(real_column_names);
 
-        auto modified_query_info = getModifiedQueryInfo(context, table, nested_storage_snaphsot, real_column_names, column_names_as_aliases, aliases);
+        auto modified_query_info = getModifiedQueryInfo(modified_context, table, nested_storage_snaphsot, real_column_names, column_names_as_aliases, aliases);
 
         auto source_pipeline = createSources(
             child_plan.plan,
@@ -547,9 +548,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     }
 
     /// Settings will be modified when planning children tables.
-    auto modified_context = Context::createCopy(context);
     for (const auto & table : selected_tables)
     {
+        auto modified_context = Context::createCopy(context);
+
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
@@ -570,25 +572,25 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         auto & aliases = res.back().table_aliases;
         auto & row_policy_data_opt = res.back().row_policy_data_opt;
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
-        auto nested_storage_snaphsot = storage->getStorageSnapshot(storage_metadata_snapshot, context);
+        auto nested_storage_snaphsot = storage->getStorageSnapshot(storage_metadata_snapshot, modified_context);
 
         Names column_names_as_aliases;
         Names real_column_names = column_names;
 
         const auto & database_name = std::get<0>(table);
         const auto & table_name = std::get<3>(table);
-        auto row_policy_filter_ptr = context->getRowPolicyFilter(
+        auto row_policy_filter_ptr = modified_context->getRowPolicyFilter(
             database_name,
             table_name,
             RowPolicyFilterType::SELECT_FILTER);
         if (row_policy_filter_ptr)
         {
-            row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, context);
+            row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
             row_policy_data_opt->extendNames(real_column_names);
         }
 
         auto modified_query_info
-            = getModifiedQueryInfo(context, table, nested_storage_snaphsot, real_column_names, column_names_as_aliases, aliases);
+            = getModifiedQueryInfo(modified_context, table, nested_storage_snaphsot, real_column_names, column_names_as_aliases, aliases);
 
         if (!context->getSettingsRef().allow_experimental_analyzer)
         {
@@ -657,10 +659,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             row_policy_data_opt,
             modified_context,
             current_streams);
+        res.back().plan.addInterpreterContext(modified_context);
     }
 
-    if (!res.empty())
-        res[0].plan.addInterpreterContext(modified_context);
 
     return res;
 }
@@ -681,8 +682,9 @@ public:
         {
             if (column->hasExpression())
             {
+                auto column_name = column->getColumnName();
                 node = column->getExpressionOrThrow();
-                node->setAlias(column->getColumnName());
+                node->setAlias(column_name);
             }
             else
                 column->setColumnSource(replacement_table_expression);
@@ -863,7 +865,7 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
 
 }
 
-SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_context,
+SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & modified_context,
     const StorageWithLockAndName & storage_with_lock_and_name,
     const StorageSnapshotPtr & storage_snapshot_,
     Names required_column_names,
@@ -876,6 +878,9 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextPtr & modified_
     SelectQueryInfo modified_query_info = query_info;
     if (modified_query_info.optimized_prewhere_info && !modified_query_info.prewhere_info)
         modified_query_info.prewhere_info = modified_query_info.optimized_prewhere_info;
+
+    if (modified_query_info.planner_context)
+        modified_query_info.planner_context = std::make_shared<PlannerContext>(modified_context, modified_query_info.planner_context);
 
     if (modified_query_info.table_expression)
     {
@@ -1047,7 +1052,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         Block pipe_header = builder->getHeader();
 
-        if (has_database_virtual_column && !pipe_header.has("_database"))
+        if (has_database_virtual_column && common_header.has("_database") && !pipe_header.has("_database"))
         {
             ColumnWithTypeAndName column;
             column.name = "_database";
@@ -1062,7 +1067,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                                         { return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions); });
         }
 
-        if (has_table_virtual_column && !pipe_header.has("_table"))
+        if (has_table_virtual_column && common_header.has("_table") && !pipe_header.has("_table"))
         {
             ColumnWithTypeAndName column;
             column.name = "_table";

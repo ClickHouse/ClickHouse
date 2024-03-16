@@ -56,13 +56,13 @@ option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile t
 if (ENABLE_CHECK_HEAVY_BUILDS)
     # set DATA (since RSS does not work since 2.6.x+) to 5G
     set (RLIMIT_DATA 5000000000)
-    # set VIRT (RLIMIT_AS) to 10G (DATA*10)
+    # set VIRT (RLIMIT_AS) to 10G (DATA*2)
     set (RLIMIT_AS 10000000000)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
 
-    # -fsanitize=memory is too heavy
-    if (SANITIZE STREQUAL "memory")
+    # -fsanitize=memory and address are too heavy
+    if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE)
        set (RLIMIT_DATA 10000000000) # 10G
     endif()
 
@@ -319,7 +319,8 @@ if (COMPILER_CLANG)
     endif()
 endif ()
 
-set (COMPILER_FLAGS "${COMPILER_FLAGS}")
+# Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
+set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
 # Our built-in unwinder only supports DWARF version up to 4.
 set (DEBUG_INFO_FLAGS "-g")
