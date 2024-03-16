@@ -210,10 +210,4 @@ private:
     std::optional<EphemeralLockInZooKeeper> single_partition_holder;
 };
 
-/// Struct for storing EphemeralLock if it was allocated correctly
-struct EphemeralLockHolder
-{
-    std::optional<EphemeralLockInZooKeeper> block_number_lock;
-};
-
 }

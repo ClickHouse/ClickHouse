@@ -58,7 +58,7 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
         MergeTreeDataWriter::TemporaryPart temp_part;
         UInt64 elapsed_ns;
         ProfileEvents::Counters part_counters;
-        std::shared_ptr<EphemeralLockHolder> lock_holder;
+        std::optional<EphemeralLockInZooKeeper> lock_holder;
 
         Partition() = default;
         Partition(LoggerPtr log_,
@@ -68,7 +68,7 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
                   BlockWithPartition && block_,
                   std::optional<BlockWithPartition> && unmerged_block_with_partition_,
                   ProfileEvents::Counters && part_counters_,
-                  std::shared_ptr<EphemeralLockHolder> && lock_holder_)
+                  std::optional<EphemeralLockInZooKeeper> && lock_holder_)
             : BlockInfo(log_, std::move(block_id_), std::move(block_), std::move(unmerged_block_with_partition_)),
               temp_part(std::move(temp_part_)),
               elapsed_ns(elapsed_ns_),
@@ -97,7 +97,7 @@ std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size
     BlockWithPartition block1(std::move(block), Row(), std::move(offsets), std::move(tokens));
     ProfileEvents::Counters profile_counters;
     ReplicatedMergeTreeSinkImpl<true>::DelayedChunk::Partition part(
-        getLogger("testSelfDeduplicate"), MergeTreeDataWriter::TemporaryPart(), 0, std::move(hashes), std::move(block1), std::nullopt, std::move(profile_counters), nullptr);
+        getLogger("testSelfDeduplicate"), MergeTreeDataWriter::TemporaryPart(), 0, std::move(hashes), std::move(block1), std::nullopt, std::move(profile_counters), std::nullopt);
 
     part.filterSelfDuplicate();
 
@@ -327,7 +327,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
         /// If storage is in queue mode, correctly configured block_number is essential for global order of rows
         /// That is why here(before writeTempPart) we create block_number_lock explicitly to materialize sorting queue key
-        std::shared_ptr<EphemeralLockHolder> lock_holder;
+        std::optional<EphemeralLockInZooKeeper> lock_holder;
         std::optional<int64_t> block_number;
         BlockIDsType block_id;
 
@@ -341,11 +341,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
                 block_id = SyncInsertBlockInfo::getHashForBlock(current_block, partition_id);
 
             /// turn off deduplication at this point, it will be performed in commitPart
-            auto block_number_lock = storage.allocateBlockNumber(partition_id, zookeeper, /*zookeeper_block_id_path=*/String{});
-            lock_holder = std::make_shared<EphemeralLockHolder>(std::move(block_number_lock));
-            chassert(lock_holder->block_number_lock.has_value());
-
-            block_number = lock_holder->block_number_lock->getNumber();
+            lock_holder = storage.allocateBlockNumber(partition_id, zookeeper, /*zookeeper_block_id_path=*/String{});
+            block_number = lock_holder->getNumber();
 
             /// after block_number is allocated let's materialize queue sorting key
             materializeQueueSortingColumns(current_block.block, block_number.value());
@@ -466,7 +463,7 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
         try
         {
-            bool deduplicated = commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false, partition.lock_holder).second;
+            bool deduplicated = commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false, &partition.lock_holder).second;
 
             last_block_is_duplicate = last_block_is_duplicate || deduplicated;
 
@@ -511,7 +508,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
         while (true)
         {
             partition.temp_part.finalize();
-            auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false, partition.lock_holder).first;
+            auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false, &partition.lock_holder).first;
             if (conflict_block_ids.empty())
                 break;
 
@@ -661,7 +658,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
     const BlockIDsType & block_id,
     size_t replicas_num,
     bool writing_existing_part,
-    std::shared_ptr<EphemeralLockHolder> lock_holder)
+    std::optional<EphemeralLockInZooKeeper> * lock_holder)
 {
     /// It is possible that we alter a part with different types of source columns.
     /// In this case, if column was not altered, the result type will be different with what we have in metadata.
@@ -871,10 +868,10 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         }
         else
         {
-            chassert(lock_holder->block_number_lock.has_value());
+            chassert(lock_holder->has_value());
 
             /// Check node livenes and deduplicate
-            auto conflict_path = checkLockAndDeduplicate(lock_holder->block_number_lock.value(), block_id_path); /// 1 RTT
+            auto conflict_path = checkLockAndDeduplicate(lock_holder->value(), block_id_path); /// 1 RTT
 
             ThreadFuzzer::maybeInjectSleep();
 
@@ -890,7 +887,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             }
         }
 
-        auto& block_number_lock = lock_holder != nullptr ? lock_holder->block_number_lock : current_try_block_number_lock;
+        auto& block_number_lock = lock_holder != nullptr ? *lock_holder : current_try_block_number_lock;
         chassert(block_number_lock.has_value());
 
         auto block_number = block_number_lock->getNumber();
