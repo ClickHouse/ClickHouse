@@ -578,7 +578,7 @@ const std::vector<String> & getAllKeyWords();
   * For compound keywords, any whitespace characters and comments could be in the middle.
   */
 /// Example: ORDER/* Hello */BY
-class ParserKeyword : public IParserBase 
+class ParserKeyword : public IParserBase
 {
 private:
     std::string_view s;
