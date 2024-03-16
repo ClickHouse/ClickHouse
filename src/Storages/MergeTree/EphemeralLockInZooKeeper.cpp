@@ -136,7 +136,9 @@ std::optional<String> checkLockAndDeduplicate(const EphemeralLockInZooKeeper& lo
 
     // ZNONODE if current node is destroyed, via disconnect
     if (e == Coordination::Error::ZNONODE)
-        throw Exception(ErrorCodes::LOST_CONNECTION_TO_ZOOKEEPER, "Lost connection to ZK");
+        throw Exception(
+            ErrorCodes::LOST_CONNECTION_TO_ZOOKEEPER,
+            "Lost ZK block-number lock, probably because of ZK disconnect or timeout. Operation can be retried.");
 
     if (e != Coordination::Error::ZOK)
     {
