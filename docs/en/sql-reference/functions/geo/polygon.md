@@ -20,13 +20,13 @@ WKT(points)
 
 **Parameters**
 
-- `points`: a [tuple](../../data-types/tuple.md) representing coordinate point (x, y) or an [array](../../data-types/array.md) of tuples, or an array of tuple arrays.
+- `points`: a [tuple](../../data-types/tuple.md) representing coordinate point (x, y) or an [array](../../data-types/array.md) of tuples, or an array of multi-dimensional tuple arrays.
 
 **Returned value**
 
 - POINT is returned for a tuple.
 - POLYGON is returned for an array of tuples.
-- MULTIPOLYGON is returned for an array of tuple arrays. 
+- MULTIPOLYGON is returned for an array of multi-dimensional tuple arrays. 
 
 **Examples**
 
@@ -40,7 +40,7 @@ SELECT wkt((0., 0.));
 POINT(0 0)
 ```
 
-POLYGON from an array of tuples:
+POLYGON from an array of tuples or an array of tuple arrays:
 
 ```sql
 SELECT wkt([(0., 0.), (10., 0.), (10., 10.), (0., 10.)]);
