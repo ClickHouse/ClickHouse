@@ -22,10 +22,10 @@ WKT(geo_data)
 
 `geo_data` can be one of the following [Geo Data Types](../../data-types/geo.md) or their underlying primitive types:
 
-- [Point](../../data-types/geo.md#point) / [Tuple](../../data-types/.md)
-- [Ring](../../data-types/geo.md#ring) / [Array](../../data-types/array.md)([Tuple](../../data-types/.md))
-- [Polygon](../../data-types/geo.md#polygon) / [Array](../../data-types/array.md)([Array](../../data-types/.md)([Tuple](../../data-types/array.md))) 
-- [MultiPolygon](../../data-types/geo.md#multipolygon) / [Array](../../data-types/array.md)([Array](../../data-types/array.md)([Array](../../data-types/array.md)([Tuple](../../data-types/.md))))
+- [Point](../../data-types/geo.md#point)
+- [Ring](../../data-types/geo.md#ring)
+- [Polygon](../../data-types/geo.md#polygon)
+- [MultiPolygon](../../data-types/geo.md#multipolygon)
 
 **Returned value**
 
