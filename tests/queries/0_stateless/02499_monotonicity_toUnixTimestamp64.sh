@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-$CLICKHOUSE_CLIENT -q "create table t(ts DateTime64) engine=MergeTree order by ts as select * from numbers_mt(1e6);"
+$CLICKHOUSE_CLIENT --optimize_trivial_insert_select 1 -q "create table t(ts DateTime64) engine=MergeTree order by ts as select * from numbers_mt(1e6);"
 
 max_block_size=8192
 
@@ -17,4 +17,3 @@ $CLICKHOUSE_CLIENT --query_id="$query_id" -q "select ts from t order by toUnixTi
 
 $CLICKHOUSE_CLIENT -q "system flush logs;"
 $CLICKHOUSE_CLIENT --param_query_id="$query_id" -q "select read_rows <= $max_block_size from system.query_log where event_date >= yesterday() and current_database = '$CLICKHOUSE_DATABASE' and query_id = {query_id:String} and type = 'QueryFinish';"
-
