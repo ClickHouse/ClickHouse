@@ -1071,6 +1071,8 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     auto virtual_columns_block = getBlockWithVirtualsForFilter({parts[0]});
 
     auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr);
+    if (!filter_dag)
+        return {};
 
     /// Generate valid expressions for filtering
     bool valid = true;
@@ -8261,6 +8263,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
+    new_data_part->existing_rows_count = block.rows();
 
     new_data_part->partition = partition;
 

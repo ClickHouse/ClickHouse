@@ -79,6 +79,7 @@ private:
 
     const bool use_external_buffer;
     const bool http_skip_not_found_url;
+    bool has_not_found_url = false;
 
     std::function<void(std::ostream &)> out_stream_callback;
 
@@ -182,6 +183,8 @@ public:
     const std::string & getCompressionMethod() const;
 
     std::optional<time_t> tryGetLastModificationTime();
+
+    bool hasNotFoundURL() const { return has_not_found_url; }
 
     HTTPFileInfo getFileInfo();
     static HTTPFileInfo parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin);

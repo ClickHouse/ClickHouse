@@ -10,10 +10,14 @@ The embeddings and the metadata are stored in separate files in the raw data. A 
 converts them to CSV and imports them into ClickHouse. You can use the following `download.sh` script for that:
 
 ```bash
-wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/img_emb/img_emb_${1}.npy          # download image embedding
-wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/text_emb/text_emb_${1}.npy        # download text embedding
-wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/metadata/metadata_${1}.parquet    # download metadata
-python3 process.py ${1} # merge files and convert to CSV
+number=${1}
+if [[ $number == '' ]]; then
+    number=1
+fi;
+wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/img_emb/img_emb_${number}.npy          # download image embedding
+wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/text_emb/text_emb_${number}.npy        # download text embedding
+wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/metadata/metadata_${number}.parquet    # download metadata
+python3 process.py $number # merge files and convert to CSV
 ```
 Script `process.py` is defined as follows:
 
