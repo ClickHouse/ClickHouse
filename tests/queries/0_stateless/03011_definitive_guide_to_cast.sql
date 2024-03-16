@@ -7,7 +7,7 @@ SET session_timezone = 'Europe/Amsterdam';
 
 SELECT CAST(123 AS String);
 
--- It convert between various data types, including parameterized data types
+-- It converts between various data types, including parameterized data types
 
 SELECT CAST(1234567890 AS DateTime('Europe/Amsterdam'));
 
@@ -15,7 +15,7 @@ SELECT CAST(1234567890 AS DateTime('Europe/Amsterdam'));
 
 SELECT CAST('[1, 2, 3]' AS Array(UInt8));
 
--- It's return type depends on the setting `cast_keep_nullable`. If it is enabled, if the source argument type is Nullable, the resulting data type will be also Nullable, even if it is not written explicitly:
+-- Its return type depends on the setting `cast_keep_nullable`. If it is enabled, if the source argument type is Nullable, the resulting data type will be also Nullable, even if it is not written explicitly:
 
 SET cast_keep_nullable = 1;
 SELECT CAST(x AS UInt8) AS y, toTypeName(y) FROM VALUES('x Nullable(String)', ('123'), ('NULL'));
@@ -25,7 +25,7 @@ SELECT CAST(x AS UInt8) AS y, toTypeName(y) FROM VALUES('x Nullable(String)', ('
 
 -- There are various type conversion rules, some worth noting.
 
--- Conversion between numeric types can involve implementation defined overflow:
+-- Conversion between numeric types can involve implementation-defined overflow:
 
 SELECT CAST(257 AS UInt8);
 SELECT CAST(-1 AS UInt8);
@@ -35,7 +35,7 @@ SELECT CAST(-1 AS UInt8);
 SELECT CAST($$['Hello', 'wo\'rld\\']$$ AS Array(String));
 
 -- '
--- While for simple data types it does not interpret escape sequences:
+-- While for simple data types, it does not interpret escape sequences:
 
 SELECT arrayJoin(CAST($$['Hello', 'wo\'rld\\']$$ AS Array(String))) AS x, CAST($$wo\'rld\\$$ AS FixedString(9)) AS y;
 
@@ -159,9 +159,9 @@ SELECT 'String' AS String, CAST(123, String);
 
 -- 3. The internal function `_CAST` which is different from `CAST` only by being not dependent on the value of `cast_keep_nullable` setting and other settings.
 
--- This is needed when ClickHouse has to persist an expression for future use, like in table definitions, including primary and partition key and other indices.
+-- This is needed when ClickHouse has to persist an expression for future use, like in table definitions, including primary and partition keys and other indices.
 
--- The function is not intended for being used directly. When a user uses a regular `CAST` operator or function in a table definition, it is transparently converted to `_CAST` to persist its behavior. However, the user can still use the internal version directly:
+-- The function is not intended to be used directly. When a user uses a regular `CAST` operator or function in a table definition, it is transparently converted to `_CAST` to persist its behavior. However, the user can still use the internal version directly:
 
 SELECT _CAST(x, 'UInt8') AS y, toTypeName(y) FROM VALUES('x Nullable(String)', ('123'), ('456'));
 
@@ -179,7 +179,7 @@ SELECT 123::String;
 
 -- It has a difference from the `CAST` operator: if it is applied to a simple literal value, instead of performing a type conversion, it invokes the SQL parser directly on the corresponding text fragment of the query. The most important case will be the floating-point and decimal types.
 
--- In this example, we parse `1.1` as Decimal and not involving any type conversion:
+-- In this example, we parse `1.1` as Decimal and do not involve any type conversion:
 
 SELECT 1.1::Decimal(30, 20);
 
@@ -211,7 +211,7 @@ SELECT 1.1::Decimal(30, 20), CAST('1.1' AS Decimal(30, 20)), (1+1)::UInt8 FORMAT
 
 SELECT 1-1::String; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- But one interesting example is the unary minus. Here the minus is not an operator, but part of the numeric literal:
+-- But one interesting example is the unary minus. Here the minus is not an operator but part of the numeric literal:
 
 SELECT -1::String;
 
@@ -236,7 +236,7 @@ SELECT accurateCastOrNull(1.123456789, 'Float32');
 
 SELECT accurateCastOrDefault(-1, 'UInt64', 0::UInt64);
 
--- These functions are case-sensitive and there are no corresponding operators:
+-- These functions are case-sensitive, and there are no corresponding operators:
 
 SELECT ACCURATECAST(1, 'String'); -- { serverError UNKNOWN_FUNCTION }.
 
@@ -254,11 +254,11 @@ SELECT ACCURATECAST(1, 'String'); -- { serverError UNKNOWN_FUNCTION }.
 -- `toIntervalSecond`, `toIntervalMinute`, `toIntervalHour`,
 -- `toIntervalDay`, `toIntervalWeek`, `toIntervalMonth`, `toIntervalQuarter`, `toIntervalYear`
 
--- These functions work under the same rules as the CAST operator, and can be thought as a elementary implementation parts of that operator. They allow implementation defined overflow while converting between numeric types.
+-- These functions work under the same rules as the CAST operator and can be thought as elementary implementation parts of that operator. They allow implementation-defined overflow while converting between numeric types.
 
 SELECT toUInt8(-1);
 
--- These are ClickHouse-native conversion functions. They take an argument with the input value, and for some of data types (`FixedString`, `DateTime`, `DateTime64`, `Decimal`s) the subsequent arguments are constant expressions, defining the parameters of these data types, or the rules to interpret the source value.
+-- These are ClickHouse-native conversion functions. They take an argument with the input value, and for some of the data types (`FixedString`, `DateTime`, `DateTime64`, `Decimal`s), the subsequent arguments are constant expressions, defining the parameters of these data types, or the rules to interpret the source value.
 
 SELECT toFloat64(123); -- no arguments
 SELECT toFixedString('Hello', 10) FORMAT TSV; -- the parameter of the FixedString data type, the function returns FixedString(10)
@@ -276,7 +276,7 @@ SELECT toDateTime64('2024-04-25 01:02:03', 6, 'Europe/Amsterdam'); -- the scale 
 SELECT toDateTime('2024-04-25 01:02:03');
 SELECT toDateTime64('2024-04-25 01:02:03.456789', 6);
 
--- Here the time zone can be specified as the rule of interpretation of the value during conversion:
+-- Here, the time zone can be specified as the rule of interpretation of the value during conversion:
 
 SELECT toString(1710612085::DateTime, 'America/Los_Angeles');
 SELECT toString(1710612085::DateTime);
@@ -320,7 +320,7 @@ SELECT DATE '2024-04-25', TIMESTAMP '2024-01-01 02:03:04', INTERVAL 1 MINUTE, IN
 
 SELECT DATE('2024-04-25'), TIMESTAMP('2024-01-01 02:03:04'), FROM_UNIXTIME(1234567890);
 
--- These functions exist for compatibility with MySQL. They are case-insensive.
+-- These functions exist for compatibility with MySQL. They are case-insensitive.
 
 SELECT date '2024-04-25', timeSTAMP('2024-01-01 02:03:04'), From_Unixtime(1234567890);
 
@@ -329,7 +329,7 @@ SELECT date '2024-04-25', timeSTAMP('2024-01-01 02:03:04'), From_Unixtime(123456
 
 -- `parseDateTimeBestEffort`, `parseDateTimeBestEffortUS`, `parseDateTime64BestEffort`, `parseDateTime64BestEffortUS`, `toUnixTimestamp`
 
--- These functions are similar to explicit conversion functions, but provide special rules on how the conversion is performed.
+-- These functions are similar to explicit conversion functions but provide special rules on how the conversion is performed.
 
 SELECT parseDateTimeBestEffort('25 Apr 1986 1pm');
 
@@ -338,4 +338,4 @@ SELECT parseDateTimeBestEffort('25 Apr 1986 1pm');
 
 SELECT toDayOfMonth(toDateTime(1234567890));
 
--- These functions are coverted in a separate topic.
+-- These functions are covered in a separate topic.
