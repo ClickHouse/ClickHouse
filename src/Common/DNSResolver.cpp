@@ -202,16 +202,23 @@ DNSResolver::DNSResolver() : impl(std::make_unique<DNSResolver::Impl>()), log(ge
 
 Poco::Net::IPAddress DNSResolver::resolveHost(const std::string & host)
 {
-    return pickAddress(resolveHostAll(host));
+    return pickAddress(resolveHostAll(host)); // random order -> random pick
 }
 
-DNSResolver::IPAddresses DNSResolver::resolveHostAll(const std::string & host)
+DNSResolver::IPAddresses DNSResolver::resolveHostAllInOriginOrder(const std::string & host)
 {
     if (impl->disable_cache)
         return resolveIPAddressImpl(host);
 
     addToNewHosts(host);
     return resolveIPAddressWithCache(impl->cache_host, host);
+}
+
+DNSResolver::IPAddresses DNSResolver::resolveHostAll(const std::string & host)
+{
+    auto addresses = resolveHostAllInOriginOrder(host);
+    std::shuffle(addresses.begin(), addresses.end(), thread_local_rng);
+    return addresses;
 }
 
 Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_and_port)
@@ -289,10 +296,10 @@ void DNSResolver::setDisableCacheFlag(bool is_disabled)
     impl->disable_cache = is_disabled;
 }
 
-void DNSResolver::setCacheMaxSize(const UInt64 cache_max_size)
+void DNSResolver::setCacheMaxEntries(const UInt64 cache_max_entries)
 {
-    impl->cache_address.setMaxSizeInBytes(cache_max_size);
-    impl->cache_host.setMaxSizeInBytes(cache_max_size);
+    impl->cache_address.setMaxSizeInBytes(cache_max_entries);
+    impl->cache_host.setMaxSizeInBytes(cache_max_entries);
 }
 
 String DNSResolver::getHostName()

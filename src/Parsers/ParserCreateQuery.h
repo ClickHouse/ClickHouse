@@ -534,7 +534,7 @@ public:
         DATABASE_ENGINE,
     };
 
-    ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
+    explicit ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
 
 protected:
     const char * getName() const override { return "storage definition"; }
