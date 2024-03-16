@@ -208,7 +208,7 @@ struct ToDateTransform32Or64Signed
 {
     static constexpr auto name = "toDate";
 
-    static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
+    static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         // TODO: decide narrow or extended range based on FromType
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
@@ -222,7 +222,7 @@ struct ToDateTransform32Or64Signed
                 return 0;
         }
         return (from <= DATE_LUT_MAX_DAY_NUM)
-            ? static_cast<Int32>(from)
+            ? static_cast<UInt16>(from)
             : time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATE_TIMESTAMP)));
     }
 };
@@ -255,7 +255,9 @@ struct ToDate32Transform32Or64
     static NO_SANITIZE_UNDEFINED Int32 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         if (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
+        {
             return static_cast<Int32>(from);
+        }
         else
         {
             if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
@@ -1214,7 +1216,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1243,7 +1245,7 @@ struct ConvertImpl
             && std::is_same_v<ToDataType, DataTypeDate32>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32Transform32Or64Signed<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         /// Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to DateTime.
