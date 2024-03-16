@@ -7,7 +7,6 @@
 01584_distributed_buffer_cannot_find_column
 01624_soft_constraints
 01747_join_view_filter_dictionary
-01761_cast_to_enum_nullable
 01925_join_materialized_columns
 02354_annoy
 # Check after constants refactoring
