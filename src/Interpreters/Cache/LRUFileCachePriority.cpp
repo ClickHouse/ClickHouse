@@ -15,11 +15,11 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictionSkippedFileSegments;
-    extern const Event FilesystemCacheEvictionSkippedEvictingFileSegments;
     extern const Event FilesystemCacheEvictionTries;
     extern const Event FilesystemCacheEvictMicroseconds;
     extern const Event FilesystemCacheEvictedBytes;
     extern const Event FilesystemCacheEvictedFileSegments;
+    extern const Event FilesystemCacheEvictionSkippedEvictingFileSegments;
 }
 
 namespace DB
@@ -167,7 +167,10 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard
         }
 
         if (entry.isEvicting(lock))
+        {
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
             continue;
+        }
 
         auto locked_key = entry.key_metadata->tryLock();
         if (!locked_key || entry.size == 0)

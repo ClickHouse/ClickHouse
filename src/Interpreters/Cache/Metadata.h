@@ -19,6 +19,10 @@ using DownloadQueuePtr = std::shared_ptr<DownloadQueue>;
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
 class CacheMetadata;
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 struct FileSegmentMetadata : private boost::noncopyable
 {
