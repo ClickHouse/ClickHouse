@@ -212,12 +212,12 @@ SELECT toDateTime64('2024-04-25 01:02:03', 6, 'Europe/Amsterdam'); -- the scale 
 -- If the time zone is not specified, the time zone of the argument's data type is used, and if the argument is not a date time, the session time zone is used.
 
 SELECT toDateTime('2024-04-25 01:02:03');
-SELECT toDateTime64('2024-04-25 01:02:03', 6);
+SELECT toDateTime64('2024-04-25 01:02:03.456789', 6);
 
--- Here the time zone can be specified as the rule of interpreration of the value during conversion:
+-- Here the time zone can be specified as the rule of interpretation of the value during conversion:
 
-SELECT toString(now(), 'Europe/Amsterdam');
-SELECT toString(now());
+SELECT toString(1710612085::DateTime, 'America/Los_Angeles');
+SELECT toString(1710612085::DateTime);
 
 
 -- 7. SQL-compatibility type-defining operators:
