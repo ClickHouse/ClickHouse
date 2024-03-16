@@ -47,9 +47,7 @@ private:
 
         std::unique_ptr<MemoryChunk> prev;
 
-        MemoryChunk()
-        {
-        }
+        MemoryChunk() = default;
 
         void swap(MemoryChunk & other)
         {
@@ -70,7 +68,7 @@ private:
             return *this;
         }
 
-        MemoryChunk(size_t size_)
+        explicit MemoryChunk(size_t size_)
         {
             ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
             ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);

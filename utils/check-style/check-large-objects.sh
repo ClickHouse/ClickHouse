@@ -4,8 +4,6 @@
 
 TU_EXCLUDES=(
     CastOverloadResolver
-    AggregateFunctionMax
-    AggregateFunctionMin
     AggregateFunctionUniq
     FunctionsConversion
 
@@ -14,7 +12,7 @@ TU_EXCLUDES=(
     Aggregator
 )
 
-if find $1 -name '*.o' | xargs wc -c | grep -v total | sort -rn | awk '{ if ($1 > 50000000) print }' \
+if find $1 -name '*.o' | xargs wc -c | grep --regexp='\.o$' | sort -rn | awk '{ if ($1 > 50000000) print }' \
     | grep -v -f <(printf "%s\n" "${TU_EXCLUDES[@]}")
 then
     echo "^ It's not allowed to have so large translation units."

@@ -9,10 +9,11 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
+#include <base/int8_to_string.h>
 #include <base/scope_guard.h>
-#include <Common/LoggingFormatStringHelpers.h>
-#include <Common/Logger.h>
 #include <Common/AtomicLogger.h>
+#include <Common/Logger.h>
+#include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
 
 #include <fmt/format.h>
@@ -202,7 +203,7 @@ public:
     {
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
         e.message_format_string = fmt.message_format_string;
-        throw e;
+        throw e; /// NOLINT
     }
 
     template <typename... Args>
@@ -211,7 +212,7 @@ public:
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, errno);
         e.message_format_string = fmt.message_format_string;
         e.path = path;
-        throw e;
+        throw e; /// NOLINT
     }
 
     template <typename... Args>
@@ -221,7 +222,7 @@ public:
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
         e.message_format_string = fmt.message_format_string;
         e.path = path;
-        throw e;
+        throw e; /// NOLINT
     }
 
     ErrnoException * clone() const override { return new ErrnoException(*this); }

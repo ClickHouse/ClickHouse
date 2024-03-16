@@ -242,3 +242,19 @@ def test_overflow(started_cluster):
     )
     assert response == "(18446744073709551614),(18446744073709551615),(0),(1),(2)"
     check_read_rows("test_overflow", 5)
+
+
+def test_non_number_filter(started_cluster):
+    response = node.query(
+        "SELECT toString(number) as a FROM numbers(3) WHERE a = '1' FORMAT Values",
+        query_id="test_non_number_filter",
+    )
+    assert response == "('1')"
+    check_read_rows("test_non_number_filter", 3)
+
+    response = node.query(
+        "SELECT toString(number) as a FROM numbers(1, 4) WHERE a = '1' FORMAT Values SETTINGS max_block_size = 3",
+        query_id="test_non_number_filter2",
+    )
+    assert response == "('1')"
+    check_read_rows("test_non_number_filter2", 4)

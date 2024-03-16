@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-## Note: The analyzer doesn't support JOIN with parallel replicas yet
+# Tags: no-tsan, no-asan, no-msan
+# It's not clear why distributed aggregation is much slower with sanitizers (https://github.com/ClickHouse/ClickHouse/issues/60625)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -64,6 +65,7 @@ function run_query_with_pure_parallel_replicas () {
         --query_id "${1}_pure" \
         --max_parallel_replicas 3 \
         --prefer_localhost_replica 1 \
+        --parallel_replicas_prefer_local_join 0 \
         --cluster_for_parallel_replicas "parallel_replicas" \
         --allow_experimental_parallel_reading_from_replicas 1 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
