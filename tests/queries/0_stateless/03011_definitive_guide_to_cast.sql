@@ -55,7 +55,7 @@ SELECT CAST('1234' AS UInt8);
 SELECT CAST(' 123' AS UInt8); -- { serverError CANNOT_PARSE_TEXT }
 SELECT CAST('123 ' AS UInt8); -- { serverError CANNOT_PARSE_TEXT }
 
--- But for composite data types, it involves a more featured parser, that take care of whitespace inside the data structures:
+-- But for composite data types, it involves a more featured parser, that takes care of whitespace inside the data structures:
 
 SELECT CAST('[ 123 ,456, ]' AS Array(UInt16));
 
