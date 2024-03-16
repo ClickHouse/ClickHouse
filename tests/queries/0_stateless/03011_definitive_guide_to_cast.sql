@@ -39,11 +39,25 @@ SELECT CAST($$['Hello', 'wo\'rld\\']$$ AS Array(String));
 
 SELECT arrayJoin(CAST($$['Hello', 'wo\'rld\\']$$ AS Array(String))) AS x, CAST($$wo\'rld\\$$ AS FixedString(9)) AS y;
 
--- The operator is case-insensitive:
+-- As conversion from String is similar to direct parsing rather than conversion from other types,
+-- it can be stricter for numbers by not tolerating overflows in some cases:
 
-SELECT CAST(123 AS String);
-SELECT cast(123 AS String);
-SELECT Cast(123 AS String);
+SELECT CAST(-123 AS UInt8), CAST(1234 AS UInt8);
+
+SELECT CAST('-123' AS UInt8); -- { serverError CANNOT_PARSE_NUMBER }
+
+-- In some cases it still allows overflows, but it is implementation defined:
+
+SELECT CAST('1234' AS UInt8);
+
+-- Parsing from a string does not tolerate extra whitespace characters:
+
+SELECT CAST(' 123' AS UInt8); -- { serverError CANNOT_PARSE_TEXT }
+SELECT CAST('123 ' AS UInt8); -- { serverError CANNOT_PARSE_TEXT }
+
+-- But for composite data types, it involves a more featured parser, that take care of whitespace inside the data structures:
+
+SELECT CAST('[ 123 ,456, ]' AS Array(UInt16));
 
 -- Conversion from a floating point value to an integer will involve truncation towards zero:
 
@@ -54,6 +68,54 @@ SELECT CAST(1.9, 'Int64'), CAST(-1.9, 'Int64');
 -- However, you might find it amusing that an empty array of Nothing data type can be converted to arrays of any dimensions:
 
 SELECT [] AS x, CAST(x AS Array(Array(Array(Tuple(UInt64, String))))) AS y, toTypeName(x), toTypeName(y);
+
+-- Conversion between numbers and DateTime/Date data types interprets the number as the number of seconds/days from the Unix epoch,
+-- where Unix epoch starts from 1970-01-01T00:00:00Z (the midnight of Gregorian year 1970 in UTC),
+-- and the number of seconds don't count the coordination seconds, as in Unix.
+
+-- For example, it is 1 AM in Amsterdam:
+
+SELECT CAST(0 AS DateTime('Europe/Amsterdam'));
+
+-- The numbers can be fractional and negative (for DateTime64):
+
+SELECT CAST(1234567890.123456 AS DateTime64(6, 'Europe/Amsterdam'));
+SELECT CAST(-0.111111 AS DateTime64(6, 'Europe/Amsterdam'));
+
+-- If the result does not fit in the range of the corresponding time data types, it is truncated and saturated to the boundaries:
+
+SELECT CAST(1234567890.123456 AS DateTime('Europe/Amsterdam'));
+SELECT CAST(-1 AS DateTime('Europe/Amsterdam'));
+
+SELECT CAST(1e20 AS DateTime64(6, 'Europe/Amsterdam'));
+
+-- A special case is DateTime64(9) - the maximum resolution, where is does not cover the usual range,
+-- and in this case, it throws an exception on overflow (I don't mind if we change this behavior in the future):
+
+ SELECT CAST(1e20 AS DateTime64(9, 'Europe/Amsterdam')); -- { serverError DECIMAL_OVERFLOW }
+
+-- If a number is converted to a Date data type, the value is interpreted as the number of days since the Unix epoch,
+-- but if the number is larger than the range of the data type, it is interpreted as a unix timestamp
+-- (the number of seconds since the Unix epoch), similarly how it is done for the DateTime data type,
+-- for convenience (while the internal representation of Date is the number of days,
+-- often people want the unix timestamp to be also parsed into the Date data type):
+
+SELECT CAST(14289 AS Date);
+SELECT CAST(1234567890 AS Date);
+
+-- When converting to a FixedString, if the length of the result data type is larger than the value, the result is padded with zero bytes:
+
+SELECT CAST('123' AS FixedString(5)) FORMAT TSV;
+
+-- But if it does not fit, an exception is thrown:
+
+SELECT CAST('12345' AS FixedString(3)) FORMAT TSV; -- { serverError TOO_LARGE_STRING_SIZE }
+
+-- The operator is case-insensitive:
+
+SELECT CAST(123 AS String);
+SELECT cast(123 AS String);
+SELECT Cast(123 AS String);
 
 
 -- 2. The functional form of this operator: `CAST(value, 'Type')`:
@@ -218,6 +280,33 @@ SELECT toDateTime64('2024-04-25 01:02:03.456789', 6);
 
 SELECT toString(1710612085::DateTime, 'America/Los_Angeles');
 SELECT toString(1710612085::DateTime);
+
+-- Functions converting to numeric types, date and datetime, IP and UUID, also have versions with -OrNull and -OrZero fallbacks,
+-- that don't throw exceptions on parsing errors.
+-- They use the same rules to the accurateCast operator:
+
+SELECT toUInt8OrNull('123'), toUInt8OrNull('-123'), toUInt8OrNull('1234'), toUInt8OrNull(' 123');
+SELECT toUInt8OrZero('123'), toUInt8OrZero('-123'), toUInt8OrZero('1234'), toUInt8OrZero(' 123');
+
+SELECT toTypeName(toUInt8OrNull('123')), toTypeName(toUInt8OrZero('123'));
+
+-- These functions are only applicable to string data types.
+-- Although it is a room for extension:
+
+SELECT toUInt8OrNull(123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- String and FixedString work:
+
+SELECT toUInt8OrNull(123::FixedString(3));
+
+-- For the FixedString data type trailing zero bytes are allowed, because they are the padding for FixedString:
+
+SELECT toUInt8OrNull('123'::FixedString(4));
+SELECT toUInt8OrNull('123\0'::FixedString(4));
+
+-- While for String, they don't:
+
+SELECT toUInt8OrNull('123\0');
 
 
 -- 7. SQL-compatibility type-defining operators:
