@@ -6,7 +6,11 @@ title: "Functions for Working with Polygons"
 
 ## WKT
 
-Returns a WKT (Well Known Text) geometric object from tuples which represent point coordinates.
+Returns a WKT (Well Known Text) geometric object from tuples which represent point coordinates. Supported WKT objects are: 
+
+- POINT
+- POLYGON
+- MULTIPOLYGON
 
 **Syntax**
 
@@ -20,16 +24,40 @@ WKT(points)
 
 **Returned value**
 
-WKT (Well Known Text) geometric object.
+- POINT is returned for a tuple.
+- POLYGON is returned for an array of tuples.
+- MULTIPOLYGON is returned for an array of tuple arrays. 
 
-**Example**
+**Examples**
+
+POINT from tuple:
 
 ```sql
-SELECT wkt([[(0., 0.), (10., 0.), (10., 10.), (0., 10.)], [(4., 4.), (5., 4.), (5., 5.), (4., 5.)]]);
+SELECT wkt((0., 0.));
 ```
 
 ```response
-POLYGON((0 0,10 0,10 10,0 10,0 0),(4 4,5 4,5 5,4 5,4 4))
+POINT(0 0)
+```
+
+POLYGON from an array of tuples:
+
+```sql
+SELECT wkt([(0., 0.), (10., 0.), (10., 10.), (0., 10.)]);
+```
+
+```response
+POLYGON((0 0,10 0,10 10,0 10))
+```
+
+MULTIPOLYGON from an array of multi-dimensional tuple arrays:
+
+```sql
+SELECT wkt([[[(0., 0.), (10., 0.), (10., 10.), (0., 10.)], [(4., 4.), (5., 4.), (5., 5.), (4., 5.)]], [[(-10., -10.), (-10., -9.), (-9., 10.)]]]);
+```
+
+```response
+MULTIPOLYGON(((0 0,10 0,10 10,0 10,0 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))
 ```
 
 ## readWKTMultiPolygon
