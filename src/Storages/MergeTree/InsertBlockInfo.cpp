@@ -149,15 +149,8 @@ std::vector<String> AsyncInsertBlockInfo::getHashesForBlocks(const BlockWithPart
 
 String SyncInsertBlockInfo::getHashForBlock(const BlockWithPartition & block, String partition_id)
 {
-    auto cols = block.block.getColumns();
-    size_t rows = block.block.rows();
-
     SipHash hash;
-    for (size_t j = 0; j < rows; ++j)
-    {
-        for (const auto & col : cols)
-            col->updateHashWithValue(j, hash);
-    }
+    block.block.updateHash(hash);
 
     const auto hash_value = hash.get128();
 
