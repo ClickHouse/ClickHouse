@@ -364,9 +364,9 @@ struct ToDateTime64TransformUnsigned
 {
     static constexpr auto name = "toDateTime64";
 
-    const DateTime64::NativeType scale_multiplier = 1;
+    const DateTime64::NativeType scale_multiplier;
 
-    ToDateTime64TransformUnsigned(UInt32 scale = 0) /// NOLINT
+    ToDateTime64TransformUnsigned(UInt32 scale) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
@@ -388,9 +388,9 @@ struct ToDateTime64TransformSigned
 {
     static constexpr auto name = "toDateTime64";
 
-    const DateTime64::NativeType scale_multiplier = 1;
+    const DateTime64::NativeType scale_multiplier;
 
-    ToDateTime64TransformSigned(UInt32 scale = 0) /// NOLINT
+    ToDateTime64TransformSigned(UInt32 scale) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
@@ -412,9 +412,9 @@ struct ToDateTime64TransformFloat
 {
     static constexpr auto name = "toDateTime64";
 
-    const UInt32 scale = 1;
+    const UInt32 scale;
 
-    ToDateTime64TransformFloat(UInt32 scale_ = 0) /// NOLINT
+    ToDateTime64TransformFloat(UInt32 scale_) /// NOLINT
         : scale(scale_)
     {}
 
@@ -439,7 +439,7 @@ struct FromDateTime64Transform
 {
     static constexpr auto name = Transform::name;
 
-    const DateTime64::NativeType scale_multiplier = 1;
+    const DateTime64::NativeType scale_multiplier;
 
     FromDateTime64Transform(UInt32 scale) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
@@ -456,9 +456,9 @@ struct ToDateTime64Transform
 {
     static constexpr auto name = "toDateTime64";
 
-    const DateTime64::NativeType scale_multiplier = 1;
+    const DateTime64::NativeType scale_multiplier;
 
-    ToDateTime64Transform(UInt32 scale = 0) /// NOLINT
+    ToDateTime64Transform(UInt32 scale) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
     {}
 
@@ -1309,14 +1309,14 @@ struct ConvertImpl
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
+                arguments, result_type, input_rows_count, additions);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
             && std::is_same_v<ToDataType, DataTypeDateTime64>
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
+                arguments, result_type, input_rows_count, additions);
         }
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeFloat32>
@@ -1325,7 +1325,7 @@ struct ConvertImpl
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
+                arguments, result_type, input_rows_count, additions);
         }
         /// Conversion of DateTime64 to Date or DateTime: discards fractional part.
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
@@ -1351,7 +1351,7 @@ struct ConvertImpl
             && std::is_same_v<SpecialTag, ConvertDefaultBehaviorTag>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count);
+                arguments, result_type, input_rows_count, additions);
         }
         else if constexpr (IsDataTypeDateOrDateTime<FromDataType>
             && std::is_same_v<ToDataType, DataTypeString>)
