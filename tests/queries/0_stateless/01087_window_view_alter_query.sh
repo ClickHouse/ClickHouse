@@ -32,6 +32,7 @@ $CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT * FROM wv ORDER BY market, w_end
 $CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT '----ALTER TABLE...MODIFY QUERY----';"
 
 $CLICKHOUSE_CLIENT "${opts[@]}" --multiquery <<EOF
+SET allow_experimental_window_view = 1;
 ALTER TABLE wv MODIFY QUERY SELECT count(a) AS count, mt.market * 2 as market, tumbleEnd(wid) AS w_end FROM mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid, mt.market;
 
 INSERT INTO mt VALUES (1, 6, toDateTime('1990/01/01 12:00:10', 'US/Samoa'));
