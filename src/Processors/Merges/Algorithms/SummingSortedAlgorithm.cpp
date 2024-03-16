@@ -12,7 +12,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/QueueModeColumns.h>
+#include <Storages/MergeTree/QueueModeColumns.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 

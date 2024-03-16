@@ -4,7 +4,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/QueueModeColumns.h>
+#include <Storages/MergeTree/QueueModeColumns.h>
 
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -532,26 +532,23 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             // explicitly disable block_number virtual column feature
             storage_settings->allow_experimental_block_number_column = false;
 
-            auto add_column = [&](const String& name, const DataTypePtr& type, const CompressionCodecPtr& codec = nullptr)
+            auto add_column = [&](const String& name, const DataTypePtr& type, const ASTPtr& codec = nullptr)
             {
                 ColumnDescription column(name, type);
 
                 if (codec != nullptr)
-                    column.codec = codec->getFullCodecDesc();
+                    column.codec = codec;
 
                 column.default_desc.kind = ColumnDefaultKind::Materialized;
-
-                // setup expression value to ensure that serialization works correctly
-                if (type->isValueRepresentedByNumber())
-                    column.default_desc.expression = std::make_shared<ASTLiteral>(0);
-                else
-                    column.default_desc.expression = std::make_shared<ASTLiteral>("");
+                column.default_desc.expression = Field::dispatch([](auto default_value) {
+                    return std::make_shared<ASTLiteral>(std::move(default_value));
+                }, type->getDefault());
 
                 metadata.columns.add(std::move(column));
             };
 
-            add_column(QueueBlockNumberColumn::name, QueueBlockNumberColumn::type, QueueBlockNumberColumn::compression_codec);
-            add_column(QueueBlockOffsetColumn::name, QueueBlockOffsetColumn::type, QueueBlockOffsetColumn::compression_codec);
+            add_column(QueueBlockNumberColumn::name, QueueBlockNumberColumn::type, QueueBlockNumberColumn::codec);
+            add_column(QueueBlockOffsetColumn::name, QueueBlockOffsetColumn::type, QueueBlockOffsetColumn::codec);
 
             if (replicated)
                 add_column(QueueReplicaColumn::name, QueueReplicaColumn::type);

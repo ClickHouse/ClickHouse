@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
-#include <Storages/QueueModeColumns.h>
+#include <Storages/MergeTree/QueueModeColumns.h>
 #include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Common/ProfileEventsScope.h>

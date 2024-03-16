@@ -1,4 +1,5 @@
 #include <memory>
+
 #include <Core/Block.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -7,27 +8,13 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 
-#include <Storages/BlockNumberColumn.h>
-#include <Storages/QueueModeColumns.h>
-
-#include <Compression/CompressionCodecMultiple.h>
+#include <Storages/MergeTree/QueueModeColumns.h>
 
 namespace DB
 {
 
 namespace
 {
-
-size_t getBlockRowsCount(const Block & block)
-{
-    size_t total_rows = 0;
-
-    for (const auto & column_with_type : block.getColumnsWithTypeAndName())
-        if (column_with_type.column)
-            total_rows = std::max(total_rows, column_with_type.column->size());
-
-    return total_rows;
-}
 
 ColumnWithTypeAndName createReplicaColumn(size_t rows_count, const String & replica_name)
 {
@@ -66,15 +53,16 @@ ColumnWithTypeAndName createBlockOffsetColumn(size_t rows_count)
 
 }
 
+CompressionCodecPtr getCompressionCodecDelta(UInt8 data_bytes_size);
 CompressionCodecPtr getCompressionCodecDoubleDelta(UInt8 data_bytes_size);
 
 const String QueueBlockNumberColumn::name = "_queue_block_number";
-const DataTypePtr QueueBlockNumberColumn::type = BlockNumberColumn::type;
-const CompressionCodecPtr QueueBlockNumberColumn::compression_codec = BlockNumberColumn::compression_codec;
+const DataTypePtr QueueBlockNumberColumn::type = std::make_shared<DataTypeUInt64>();
+const ASTPtr QueueBlockNumberColumn::codec = getCompressionCodecDelta(8)->getFullCodecDesc();
 
 const String QueueBlockOffsetColumn::name = "_queue_block_offset";
 const DataTypePtr QueueBlockOffsetColumn::type = std::make_shared<DataTypeUInt64>();
-const CompressionCodecPtr QueueBlockOffsetColumn::compression_codec = getCompressionCodecDoubleDelta(QueueBlockOffsetColumn::type->getSizeOfValueInMemory());
+const ASTPtr QueueBlockOffsetColumn::codec = getCompressionCodecDoubleDelta(8)->getFullCodecDesc();
 
 const String QueueReplicaColumn::name = "_queue_replica";
 const DataTypePtr QueueReplicaColumn::type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -93,7 +81,7 @@ void materializeQueueSortingColumns(Block & block, int64_t block_number)
     block.erase(QueueBlockNumberColumn::name);
     block.erase(QueueBlockOffsetColumn::name);
 
-    size_t rows_count = getBlockRowsCount(block);
+    size_t rows_count = block.rows();
 
     block.insert(createBlockNumberColumn(rows_count, block_number));
     block.insert(createBlockOffsetColumn(rows_count));
@@ -103,7 +91,7 @@ void materializeQueuePartitionColumns(Block & block, const String & replica_name
 {
     block.erase(QueueReplicaColumn::name);
 
-    size_t rows_count = getBlockRowsCount(block);
+    size_t rows_count = block.rows();
 
     block.insert(createReplicaColumn(rows_count, replica_name));
 }

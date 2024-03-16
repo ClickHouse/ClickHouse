@@ -11,14 +11,14 @@ struct QueueBlockNumberColumn
 {
     static const String name;
     static const DataTypePtr type;
-    static const CompressionCodecPtr compression_codec;
+    static const ASTPtr codec;
 };
 
 struct QueueBlockOffsetColumn
 {
     static const String name;
     static const DataTypePtr type;
-    static const CompressionCodecPtr compression_codec;
+    static const ASTPtr codec;
 };
 
 struct QueueReplicaColumn
