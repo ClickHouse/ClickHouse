@@ -24,22 +24,22 @@ EvictionCandidates::~EvictionCandidates()
     for (const auto & [key, key_candidates] : candidates)
     {
         for (const auto & candidate : key_candidates.candidates)
-            candidate->removal_candidate = false;
+            candidate->setEvicting(false, nullptr, nullptr);
     }
 }
 
-void EvictionCandidates::add(LockedKey & locked_key, const FileSegmentMetadataPtr & candidate)
+void EvictionCandidates::add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key, const CachePriorityGuard::Lock & lock)
 {
     auto [it, inserted] = candidates.emplace(locked_key.getKey(), KeyCandidates{});
     if (inserted)
         it->second.key_metadata = locked_key.getKeyMetadata();
     it->second.candidates.push_back(candidate);
 
-    candidate->removal_candidate = true;
+    candidate->setEvicting(true, &locked_key, &lock);
     ++candidates_size;
 }
 
-void EvictionCandidates::evict()
+void EvictionCandidates::evict(const CachePriorityGuard::Lock &)
 {
     if (candidates.empty())
         return;
@@ -84,7 +84,7 @@ void EvictionCandidates::evict()
     }
 }
 
-void EvictionCandidates::finalize(FileCacheQueryLimit::QueryContext * query_context, const CacheGuard::Lock & lock)
+void EvictionCandidates::finalize(FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock & lock)
 {
     while (!queue_entries_to_invalidate.empty())
     {

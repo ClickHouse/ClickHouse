@@ -614,7 +614,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
                         continue;
 
                     auto file_segment_metadata = locked_key->tryGetByOffset(offset);
-                    if (!file_segment_metadata || file_segment_metadata->evicting())
+                    if (!file_segment_metadata || file_segment_metadata->isEvicting(*locked_key))
                         continue;
 
                     auto file_segment = file_segment_weak.lock();
@@ -877,7 +877,7 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
             removed_all = false;
             continue;
         }
-        else if (it->second->evicting())
+        else if (it->second->isEvicting(*this))
         {
             /// File segment is currently a removal candidate,
             /// we do not know if it will be removed or not yet,
@@ -1100,7 +1100,7 @@ std::vector<FileSegment::Info> LockedKey::sync()
     std::vector<FileSegment::Info> broken;
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
-        if (it->second->evicting() || !it->second->releasable())
+        if (it->second->isEvicting(*this) || !it->second->releasable())
         {
             ++it;
             continue;

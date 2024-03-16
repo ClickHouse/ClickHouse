@@ -34,19 +34,19 @@ SLRUFileCachePriority::SLRUFileCachePriority(
         probationary_queue.max_size, protected_queue.max_elements);
 }
 
-size_t SLRUFileCachePriority::getSize(const CacheGuard::Lock & lock) const
+size_t SLRUFileCachePriority::getSize(const CachePriorityGuard::Lock & lock) const
 {
     return protected_queue.getSize(lock) + probationary_queue.getSize(lock);
 }
 
-size_t SLRUFileCachePriority::getElementsCount(const CacheGuard::Lock & lock) const
+size_t SLRUFileCachePriority::getElementsCount(const CachePriorityGuard::Lock & lock) const
 {
     return protected_queue.getElementsCount(lock) + probationary_queue.getElementsCount(lock);
 }
 
 bool SLRUFileCachePriority::canFit( /// NOLINT
     size_t size,
-    const CacheGuard::Lock & lock,
+    const CachePriorityGuard::Lock & lock,
     IteratorPtr reservee,
     bool best_effort) const
 {
@@ -70,7 +70,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
     size_t offset,
     size_t size,
     const UserInfo &,
-    const CacheGuard::Lock & lock,
+    const CachePriorityGuard::Lock & lock,
     bool is_startup)
 {
     if (is_startup)
@@ -102,7 +102,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr reservee,
     const UserID & user_id,
-    const CacheGuard::Lock & lock)
+    const CachePriorityGuard::Lock & lock)
 {
     /// If `it` is nullptr, then it is the first space reservation attempt
     /// for a corresponding file segment, so it will be directly put into probationary queue.
@@ -141,7 +141,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
         && !probationary_queue.collectCandidatesForEviction(size_to_downgrade, stat, res, reservee, user_id, lock))
         return false;
 
-    res.setFinalizeEvictionFunc([=, this](const CacheGuard::Lock & lk) mutable
+    res.setFinalizeEvictionFunc([=, this](const CachePriorityGuard::Lock & lk) mutable
     {
         for (const auto & [key, key_candidates] : *downgrade_candidates)
         {
@@ -157,7 +157,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     return true;
 }
 
-void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const CacheGuard::Lock & lock)
+void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock)
 {
     /// If entry is already in protected queue,
     /// we only need to increase its priority within the protected queue.
@@ -217,7 +217,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
             return;
         }
         /// Make space for "downgrade" candidates.
-        eviction_candidates.evict();
+        eviction_candidates.evict(lock);
         eviction_candidates.finalize(nullptr, lock);
     }
 
@@ -240,7 +240,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
     iterator.is_protected = true;
 }
 
-IFileCachePriority::PriorityDumpPtr SLRUFileCachePriority::dump(const CacheGuard::Lock & lock)
+IFileCachePriority::PriorityDumpPtr SLRUFileCachePriority::dump(const CachePriorityGuard::Lock & lock)
 {
     auto res = dynamic_pointer_cast<LRUFileCachePriority::LRUPriorityDump>(probationary_queue.dump(lock));
     auto part_res = dynamic_pointer_cast<LRUFileCachePriority::LRUPriorityDump>(protected_queue.dump(lock));
@@ -248,14 +248,14 @@ IFileCachePriority::PriorityDumpPtr SLRUFileCachePriority::dump(const CacheGuard
     return res;
 }
 
-void SLRUFileCachePriority::shuffle(const CacheGuard::Lock & lock)
+void SLRUFileCachePriority::shuffle(const CachePriorityGuard::Lock & lock)
 {
     protected_queue.shuffle(lock);
     probationary_queue.shuffle(lock);
 }
 
 bool SLRUFileCachePriority::modifySizeLimits(
-    size_t max_size_, size_t max_elements_, double size_ratio_, const CacheGuard::Lock & lock)
+    size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock & lock)
 {
     if (max_size == max_size_ && max_elements == max_elements_ && size_ratio == size_ratio_)
         return false; /// Nothing to change.
@@ -285,14 +285,14 @@ SLRUFileCachePriority::EntryPtr SLRUFileCachePriority::SLRUIterator::getEntry() 
     return entry;
 }
 
-size_t SLRUFileCachePriority::SLRUIterator::increasePriority(const CacheGuard::Lock & lock)
+size_t SLRUFileCachePriority::SLRUIterator::increasePriority(const CachePriorityGuard::Lock & lock)
 {
     assertValid();
     cache_priority->increasePriority(*this, lock);
     return getEntry()->hits;
 }
 
-void SLRUFileCachePriority::SLRUIterator::incrementSize(size_t size, const CacheGuard::Lock & lock)
+void SLRUFileCachePriority::SLRUIterator::incrementSize(size_t size, const CachePriorityGuard::Lock & lock)
 {
     assertValid();
     lru_iterator.incrementSize(size, lock);
@@ -310,7 +310,7 @@ void SLRUFileCachePriority::SLRUIterator::invalidate()
     lru_iterator.invalidate();
 }
 
-void SLRUFileCachePriority::SLRUIterator::remove(const CacheGuard::Lock & lock)
+void SLRUFileCachePriority::SLRUIterator::remove(const CachePriorityGuard::Lock & lock)
 {
     assertValid();
     lru_iterator.remove(lock);

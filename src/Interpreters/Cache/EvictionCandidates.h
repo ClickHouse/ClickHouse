@@ -9,11 +9,11 @@ class EvictionCandidates
 public:
     ~EvictionCandidates();
 
-    void add(LockedKey & locked_key, const FileSegmentMetadataPtr & candidate);
+    void add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key, const CachePriorityGuard::Lock &);
 
-    void evict();
+    void evict(const CachePriorityGuard::Lock &);
 
-    void finalize(FileCacheQueryLimit::QueryContext * query_context, const CacheGuard::Lock & lock);
+    void finalize(FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock &);
 
     size_t size() const { return candidates_size; }
 
@@ -21,7 +21,7 @@ public:
 
     auto end() const { return candidates.end(); }
 
-    using FinalizeEvictionFunc = std::function<void(const CacheGuard::Lock & lk)>;
+    using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
     void setFinalizeEvictionFunc(FinalizeEvictionFunc && func) { finalize_eviction_func = func; }
 
 private:

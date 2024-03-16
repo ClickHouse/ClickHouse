@@ -182,13 +182,13 @@ void FileCache::initialize()
     is_initialized = true;
 }
 
-CacheGuard::Lock FileCache::lockCache() const
+CachePriorityGuard::Lock FileCache::lockCache() const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
     return cache_guard.lock();
 }
 
-CacheGuard::Lock FileCache::tryLockCache() const
+CachePriorityGuard::Lock FileCache::tryLockCache() const
 {
     return cache_guard.tryLock();
 }
@@ -215,7 +215,7 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
             return false;
 
         FileSegmentPtr file_segment;
-        if (!file_segment_metadata.evicting())
+        if (!file_segment_metadata.isEvicting(locked_key))
         {
             file_segment = file_segment_metadata.file_segment;
         }
@@ -705,7 +705,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     size_t size,
     FileSegment::State state,
     const CreateFileSegmentSettings & create_settings,
-    const CacheGuard::Lock * lock)
+    const CachePriorityGuard::Lock * lock)
 {
     /// Create a file_segment_metadata and put it in `files` map by [key][offset].
 
@@ -844,7 +844,7 @@ bool FileCache::tryReserve(
     try
     {
         /// Remove eviction candidates from filesystem.
-        eviction_candidates.evict();
+        eviction_candidates.evict(cache_lock);
     }
     catch (...)
     {
