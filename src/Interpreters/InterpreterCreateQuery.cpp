@@ -1874,7 +1874,7 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
 void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach, bool is_materialized_view)
 {
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
-    if (!sql_security.type.has_value())
+    if (!sql_security.type)
     {
         SQLSecurityType default_security;
 
