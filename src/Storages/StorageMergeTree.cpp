@@ -2478,7 +2478,7 @@ void StorageMergeTree::assertNotReadonly() const
 void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
 {
     /// if storage is queue, block_number was correctly setup in consume
-    if (!getSettings()->queue)
+    if (!getSettings()->queue_mode)
         part->info.min_block = part->info.max_block = increment.get();
 
     part->info.mutation = 0;

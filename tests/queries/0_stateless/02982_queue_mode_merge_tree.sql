@@ -2,7 +2,7 @@ set asterisk_include_materialized_columns=1;
 
 DROP TABLE IF EXISTS queue_mode_test;
 
-CREATE TABLE queue_mode_test(a UInt64, b UInt64) ENGINE=MergeTree() ORDER BY (a) SETTINGS queue=1;
+CREATE TABLE queue_mode_test(a UInt64, b UInt64) ENGINE=MergeTree() ORDER BY (a) SETTINGS queue_mode=1;
 
 SELECT 'start';
 SELECT * FROM queue_mode_test;

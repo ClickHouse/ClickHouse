@@ -524,7 +524,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
 
-        if (storage_settings->queue)
+        if (storage_settings->queue_mode)
         {
             if (merging_params.mode != MergeTreeData::MergingParams::Ordinary)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree queue settings is not supported for {} mode", merging_params.getModeName());

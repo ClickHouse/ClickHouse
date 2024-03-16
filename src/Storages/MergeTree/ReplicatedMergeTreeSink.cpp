@@ -264,7 +264,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
-    if (storage_settings->queue)
+    if (storage_settings->queue_mode)
         materializeQueuePartitionColumns(block, storage.replica_name);
 
     const auto & settings = context->getSettingsRef();
@@ -331,7 +331,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         std::optional<int64_t> block_number;
         BlockIDsType block_id;
 
-        if (storage_settings->queue)
+        if (storage_settings->queue_mode)
         {
             /// _replica column is already configured in block
             auto partition_id = MergeTreePartition(current_block.partition).getID(metadata_snapshot->getPartitionKey().sample_block);
@@ -387,7 +387,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
                     ++chunk_dedup_seqnum;
                 }
 
-                if (storage_settings->queue)
+                if (storage_settings->queue_mode)
                     chassert(!block_id.empty());
                 else
                     block_id = temp_part.part->getZeroLevelPartBlockID(block_dedup_token);

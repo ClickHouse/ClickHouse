@@ -413,7 +413,7 @@ private:
     /// Check for queue mode is enabled
     static bool isInQueueMode(GlobalRuntimeContextPtr global_ctx)
     {
-        return global_ctx->data->getSettings()->queue;
+        return global_ctx->data->getSettings()->queue_mode;
     }
 
 };

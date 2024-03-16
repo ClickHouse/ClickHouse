@@ -77,7 +77,7 @@ void MergeTreeSink::consume(Chunk chunk)
     {
         std::optional<int64_t> block_number;
 
-        if (storage.getSettings()->queue)
+        if (storage.getSettings()->queue_mode)
         {
             block_number = storage.increment.get();
             materializeQueueSortingColumns(current_block.block, block_number.value());
