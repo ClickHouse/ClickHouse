@@ -2475,12 +2475,9 @@ void StorageMergeTree::assertNotReadonly() const
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
 }
 
-void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
+void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock & /*lock*/, std::optional<int64_t> block_number)
 {
-    /// if storage is queue, block_number was correctly setup in consume
-    if (!getSettings()->queue_mode)
-        part->info.min_block = part->info.max_block = increment.get();
-
+    part->info.min_block = part->info.max_block = block_number.has_value() ? block_number.value() : increment.get();
     part->info.mutation = 0;
     part->setName(part->getNewName(part->info));
 }

@@ -400,10 +400,9 @@ Block MergeTreeDataWriter::mergeBlock(
 
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
-    BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, std::optional<int64_t> block_number)
+    BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    int64_t block_number_to_use = block_number.has_value() ? block_number.value() : data.insert_increment.get();
-    return writeTempPartImpl(block, metadata_snapshot, context, block_number_to_use, /*need_tmp_prefix = */true);
+    return writeTempPartImpl(block, metadata_snapshot, context, data.insert_increment.get(), /*need_tmp_prefix = */true);
 }
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(

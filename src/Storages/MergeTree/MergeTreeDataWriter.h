@@ -80,8 +80,7 @@ public:
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    TemporaryPart writeTempPart(
-        BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, std::optional<int64_t> block_number = std::nullopt);
+    TemporaryPart writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
 
     MergeTreeData::MergingParams::Mode getMergingMode() const
     {

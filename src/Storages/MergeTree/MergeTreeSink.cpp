@@ -21,6 +21,7 @@ struct MergeTreeSink::DelayedChunk
         UInt64 elapsed_ns;
         String block_dedup_token;
         ProfileEvents::Counters part_counters;
+        std::optional<int64_t> block_number;
     };
 
     std::vector<Partition> partitions;
@@ -92,7 +93,7 @@ void MergeTreeSink::consume(Chunk chunk)
             ProfileEventsScope scoped_attach(&part_counters);
 
             Stopwatch watch;
-            temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context, std::move(block_number));
+            temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
             elapsed_ns = watch.elapsed();
         }
 
@@ -141,6 +142,7 @@ void MergeTreeSink::consume(Chunk chunk)
             .elapsed_ns = elapsed_ns,
             .block_dedup_token = std::move(block_dedup_token),
             .part_counters = std::move(part_counters),
+            .block_number = std::move(block_number),
         });
     }
 
@@ -171,7 +173,7 @@ void MergeTreeSink::finishDelayedChunk()
         MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
         {
             auto lock = storage.lockParts();
-            storage.fillNewPartName(part, lock);
+            storage.fillNewPartName(part, lock, std::move(partition.block_number));
 
             auto * deduplication_log = storage.getDeduplicationLog();
             if (deduplication_log)

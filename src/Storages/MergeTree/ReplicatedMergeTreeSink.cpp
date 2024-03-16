@@ -328,7 +328,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         /// If storage is in queue mode, correctly configured block_number is essential for global order of rows
         /// That is why here(before writeTempPart) we create block_number_lock explicitly to materialize sorting queue key
         std::optional<EphemeralLockInZooKeeper> lock_holder;
-        std::optional<int64_t> block_number;
         BlockIDsType block_id;
 
         if (storage_settings->queue_mode)
@@ -342,14 +341,13 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
             /// turn off deduplication at this point, it will be performed in commitPart
             lock_holder = storage.allocateBlockNumber(partition_id, zookeeper, /*zookeeper_block_id_path=*/String{});
-            block_number = lock_holder->getNumber();
 
             /// after block_number is allocated let's materialize queue sorting key
-            materializeQueueSortingColumns(current_block.block, block_number.value());
+            materializeQueueSortingColumns(current_block.block, lock_holder->getNumber());
         }
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
-        auto temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context, std::move(block_number));
+        auto temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.
