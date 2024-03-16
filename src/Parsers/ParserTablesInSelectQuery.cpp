@@ -167,7 +167,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 table_join->kind = JoinKind::Full;
             else if (ParserKeyword(Keyword::CROSS).ignore(pos))
                 table_join->kind = JoinKind::Cross;
-            else if (ParserKeyword("PASTE").ignore(pos))
+            else if (ParserKeyword(Keyword::PASTE).ignore(pos))
                 table_join->kind = JoinKind::Paste;
             else
                 no_kind = true;

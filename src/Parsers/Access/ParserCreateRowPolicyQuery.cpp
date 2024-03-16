@@ -98,7 +98,7 @@ namespace
             for (auto filter_type : collections::range(RowPolicyFilterType::MAX))
             {
                 std::string_view command = RowPolicyFilterTypeInfo::get(filter_type).command;
-                if (ParserKeyword{command.data()}.ignore(pos, expected))
+                if (ParserKeyword::createDeprecated(command.data()).ignore(pos, expected))
                 {
                     res_commands.emplace(command);
                     return true;
@@ -273,7 +273,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
             continue;
 
-        if (storage_name.empty() && ParserKeyword{"IN"}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
+        if (storage_name.empty() && ParserKeyword{Keyword::IN}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
             continue;
 
         break;

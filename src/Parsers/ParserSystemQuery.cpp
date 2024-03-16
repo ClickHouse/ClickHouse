@@ -216,7 +216,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     for (const auto & type : magic_enum::enum_values<Type>())
     {
-        if (ParserKeyword{ASTSystemQuery::typeToString(type)}.ignore(pos, expected))
+        if (ParserKeyword::createDeprecated(ASTSystemQuery::typeToString(type)).ignore(pos, expected))
         {
             res->type = type;
             found = true;
@@ -419,10 +419,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
 
-            if (ParserKeyword{"UNSET FAKE TIME"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::UNSET_FAKE_TIME}.ignore(pos, expected))
                 break;
 
-            if (!ParserKeyword{"SET FAKE TIME"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::SET_FAKE_TIME}.ignore(pos, expected))
                 return false;
             ASTPtr ast;
             if (!ParserStringLiteral{}.parse(pos, ast, expected))
@@ -459,10 +459,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (path_parser.parse(pos, ast, expected))
             {
                 res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
-                if (ParserKeyword{"KEY"}.ignore(pos, expected) && ParserIdentifier().parse(pos, ast, expected))
+                if (ParserKeyword{Keyword::KEY}.ignore(pos, expected) && ParserIdentifier().parse(pos, ast, expected))
                 {
                     res->key_to_drop = ast->as<ASTIdentifier>()->name();
-                    if (ParserKeyword{"OFFSET"}.ignore(pos, expected) && ParserLiteral().parse(pos, ast, expected))
+                    if (ParserKeyword{Keyword::OFFSET}.ignore(pos, expected) && ParserLiteral().parse(pos, ast, expected))
                         res->offset_to_drop = ast->as<ASTLiteral>()->value.safeGet<UInt64>();
                 }
             }
@@ -542,7 +542,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
                 for (const auto & cur_type : magic_enum::enum_values<ServerType::Type>())
                 {
-                    if (ParserKeyword{ServerType::serverTypeToString(cur_type)}.ignore(pos, expected))
+                    if (ParserKeyword::createDeprecated(ServerType::serverTypeToString(cur_type)).ignore(pos, expected))
                     {
                         type = cur_type;
                         break;
@@ -574,7 +574,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!parse_server_type(base_type, base_custom_name))
                 return false;
 
-            if (ParserKeyword{"EXCEPT"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::EXCEPT}.ignore(pos, expected))
             {
                 if (base_type != ServerType::Type::QUERIES_ALL &&
                     base_type != ServerType::Type::QUERIES_DEFAULT &&

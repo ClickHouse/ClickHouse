@@ -163,7 +163,7 @@ namespace
             }
             else if (expect_public_ssh_key)
             {
-                if (!ParserKeyword{"BY"}.ignore(pos, expected))
+                if (!ParserKeyword{Keyword::BY}.ignore(pos, expected))
                     return false;
 
                 if (!ParserList{std::make_unique<ParserPublicSSHKey>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, common_names, expected))
@@ -171,12 +171,12 @@ namespace
             }
             else if (expect_http_auth_server)
             {
-                if (!ParserKeyword{"SERVER"}.ignore(pos, expected))
+                if (!ParserKeyword{Keyword::SERVER}.ignore(pos, expected))
                     return false;
                 if (!ParserStringAndSubstitution{}.parse(pos, value, expected))
                     return false;
 
-                if (ParserKeyword{"SCHEME"}.ignore(pos, expected))
+                if (ParserKeyword{Keyword::SCHEME}.ignore(pos, expected))
                 {
                     if (!ParserStringAndSubstitution{}.parse(pos, http_auth_scheme, expected))
                         return false;
@@ -292,7 +292,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!prefix.empty() && !ParserKeyword{prefix}.ignore(pos, expected))
+            if (!prefix.empty() && !ParserKeyword::createDeprecated(prefix).ignore(pos, expected))
                 return false;
 
             if (!ParserKeyword{Keyword::HOST}.ignore(pos, expected))
@@ -393,7 +393,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"VALID UNTIL"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
                 return false;
 
             ParserStringAndSubstitution until_p;
@@ -525,7 +525,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             }
         }
 
-        if (storage_name.empty() && ParserKeyword{"IN"}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
+        if (storage_name.empty() && ParserKeyword{Keyword::IN}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
             continue;
 
         break;

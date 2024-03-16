@@ -383,12 +383,16 @@ void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
 
 bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
 {
+    ParserKeyword s_add(Keyword::ADD);
+    ParserKeyword s_remove(Keyword::REMOVE);
+    ParserKeyword s_set(Keyword::SET);
+
     ReconfigCommand::Operation operation;
-    if (ParserKeyword{"ADD"}.ignore(pos, expected))
+    if (s_add.ignore(pos, expected))
         operation = ReconfigCommand::Operation::ADD;
-    else if (ParserKeyword{"REMOVE"}.ignore(pos, expected))
+    else if (s_remove.ignore(pos, expected))
         operation = ReconfigCommand::Operation::REMOVE;
-    else if (ParserKeyword{"SET"}.ignore(pos, expected))
+    else if (s_set.ignore(pos, expected))
         operation = ReconfigCommand::Operation::SET;
     else
         return false;

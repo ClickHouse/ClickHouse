@@ -219,7 +219,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"base_backup"}.ignore(pos, expected)
+            return ParserKeyword{Keyword::BASE_BACKUP}.ignore(pos, expected)
                 && ParserToken(TokenType::Equals).ignore(pos, expected)
                 && parseBackupName(pos, expected, base_backup_name);
         });
@@ -234,7 +234,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"cluster_host_ids"}.ignore(pos, expected)
+            return ParserKeyword{Keyword::CLUSTER_HOST_IDS}.ignore(pos, expected)
                 && ParserToken(TokenType::Equals).ignore(pos, expected)
                 && parseClusterHostIDs(pos, expected, cluster_host_ids);
         });

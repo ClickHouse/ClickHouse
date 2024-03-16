@@ -84,7 +84,7 @@ namespace
         {
             for (auto qt : collections::range(QuotaType::MAX))
             {
-                if (ParserKeyword{QuotaTypeInfo::get(qt).keyword}.ignore(pos, expected))
+                if (ParserKeyword::createDeprecated(QuotaTypeInfo::get(qt).keyword).ignore(pos, expected))
                 {
                     quota_type = qt;
                     return true;
@@ -313,7 +313,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
             continue;
 
-        if (storage_name.empty() && ParserKeyword{"IN"}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
+        if (storage_name.empty() && ParserKeyword{Keyword::IN}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
             continue;
 
         break;

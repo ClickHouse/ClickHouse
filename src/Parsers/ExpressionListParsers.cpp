@@ -135,7 +135,7 @@ static bool parseOperator(IParser::Pos & pos, std::string_view op, Expected & ex
 {
     if (!op.empty() && isWordCharASCII(op.front()))
     {
-        return ParserKeyword(op).ignore(pos, expected);
+        return ParserKeyword::createDeprecated(op).ignore(pos, expected);
     }
     else if (op.length() == pos->size() && 0 == memcmp(op.data(), pos->begin, pos->size()))
     {

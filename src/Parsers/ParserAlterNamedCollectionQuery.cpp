@@ -18,9 +18,9 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     ParserKeyword s_delete(Keyword::DELETE);
 
     ParserIdentifier name_p;
-    ParserKeyword s_set("SET");
-    ParserKeyword s_overridable("OVERRIDABLE");
-    ParserKeyword s_not_overridable("NOT OVERRIDABLE");
+    ParserKeyword s_set(Keyword::SET);
+    ParserKeyword s_overridable(Keyword::OVERRIDABLE);
+    ParserKeyword s_not_overridable(Keyword::NOT_OVERRIDABLE);
     ParserToken s_comma(TokenType::Comma);
 
     String cluster_str;
