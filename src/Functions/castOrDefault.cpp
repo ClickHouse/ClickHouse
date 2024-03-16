@@ -329,7 +329,18 @@ REGISTER_FUNCTION(CastOrDefault)
     factory.registerFunction("toUInt64OrDefault", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
         std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt64OrDefault", std::make_shared<DataTypeUInt64>())); });
     factory.registerFunction("toUInt128OrDefault", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-        std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt128OrDefault", std::make_shared<DataTypeUInt128>())); });
+        std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt128OrDefault", std::make_shared<DataTypeUInt128>())); },
+        FunctionDocumentation{
+            .description=R"(
+Converts a string in the first argument of the function to UInt128 by parsing it.
+If it cannot parse the value, returns the default value, which can be provided as the second function argument, and if provided, must be of UInt128 type.
+If the default value is not provided in the second argument, it is assumed to be zero.
+)",
+            .examples{
+                {"Successful conversion", "SELECT toUInt128OrDefault('1', 2::UInt128)", "1"},
+                {"Default value", "SELECT toUInt128OrDefault('upyachka', 123456789012345678901234567890::UInt128)", "123456789012345678901234567890"}},
+            .categories{"ConversionFunctions"}
+        });
     factory.registerFunction("toUInt256OrDefault", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
         std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt256OrDefault", std::make_shared<DataTypeUInt256>())); });
 
