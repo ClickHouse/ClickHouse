@@ -4,6 +4,34 @@ sidebar_label: Polygons
 title: "Functions for Working with Polygons"
 ---
 
+## WKT
+
+Returns a WKT (Well Known Text) geometric object from tuples which represent point coordinates.
+
+**Syntax**
+
+```sql
+WKT(points)
+```
+
+**Parameters**
+
+- `points`: a [tuple](../../data-types/tuple.md) representing coordinate point (x, y) or an [array](../../data-types/array.md) of tuples, or an array of tuple arrays.
+
+**Returned value**
+
+WKT (Well Known Text) geometric object.
+
+**Example**
+
+```sql
+SELECT wkt([[(0., 0.), (10., 0.), (10., 10.), (0., 10.)], [(4., 4.), (5., 4.), (5., 5.), (4., 5.)]]);
+```
+
+```response
+POLYGON((0 0,10 0,10 10,0 10,0 0),(4 4,5 4,5 5,4 5,4 4))
+```
+
 ## readWKTMultiPolygon
 
 Converts a WKT (Well Known Text) MultiPolygon into a MultiPolygon type.
