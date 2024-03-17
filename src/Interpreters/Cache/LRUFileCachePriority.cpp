@@ -168,6 +168,7 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard
 
         if (entry.isEvicting(lock))
         {
+            ++it;
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
             continue;
         }
