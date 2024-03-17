@@ -1955,9 +1955,6 @@ public:
     static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !to_datetime64;
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvert>(context); }
-    static FunctionPtr create() { return std::make_shared<FunctionConvert>(); }
-
-    FunctionConvert() = default;
     explicit FunctionConvert(ContextPtr context_) : context(context_) {}
 
     String getName() const override
@@ -3295,9 +3292,9 @@ arguments, result_type, input_rows_count); \
         };
     }
 
-    static WrapperType createStringWrapper(const DataTypePtr & from_type)
+    WrapperType createStringWrapper(const DataTypePtr & from_type) const
     {
-        FunctionPtr function = FunctionToString::create();
+        FunctionPtr function = FunctionToString::create(context);
         return createFunctionAdaptor(function, from_type);
     }
 
@@ -3318,9 +3315,9 @@ arguments, result_type, input_rows_count); \
 
 #define GENERATE_INTERVAL_CASE(INTERVAL_KIND) \
             case IntervalKind::Kind::INTERVAL_KIND: \
-                return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::create(), from_type);
+                return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::create(context), from_type);
 
-    static WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind)
+    WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const
     {
         switch (kind.kind)
         {
@@ -4207,7 +4204,7 @@ arguments, result_type, input_rows_count); \
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
         else if (isNativeNumber(from_type) || isEnum(from_type))
         {
-            auto function = Function::create();
+            auto function = Function::create(context);
             return createFunctionAdaptor(function, from_type);
         }
         else
@@ -4846,7 +4843,7 @@ REGISTER_FUNCTION(Conversion)
     /// MySQL compatibility alias. Cannot be registered as alias,
     /// because we don't want it to be normalized to toDate in queries,
     /// otherwise CREATE DICTIONARY query breaks.
-    factory.registerFunction<FunctionToDate>("DATE", {}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction("DATE", &FunctionToDate::create, {}, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionToDate32>();
     factory.registerFunction<FunctionToDateTime>();

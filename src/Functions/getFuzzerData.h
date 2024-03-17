@@ -7,6 +7,7 @@
 
 namespace DB
 {
+
 class FunctionGetFuzzerData : public IFunction
 {
     inline static String fuzz_data;
@@ -14,12 +15,7 @@ class FunctionGetFuzzerData : public IFunction
 public:
     static constexpr auto name = "getFuzzerData";
 
-    inline static FunctionPtr create(ContextPtr) { return create(); }
-
-    static FunctionPtr create()
-    {
-        return std::make_shared<FunctionGetFuzzerData>();
-    }
+    inline static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetFuzzerData>(); }
 
     inline String getName() const override { return name; }
 
