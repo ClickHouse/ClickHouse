@@ -62,8 +62,8 @@ namespace DB
 struct CachePriorityGuard : private boost::noncopyable
 {
     using Mutex = std::timed_mutex;
-    /// struct is used (not keyword `using`) to make CacheGuard::Lock non-interchangable with other guards locks
-    /// so, we wouldn't be able to pass CacheGuard::Lock to a function which accepts KeyGuard::Lock, for example
+    /// struct is used (not keyword `using`) to make CachePriorityGuard::Lock non-interchangable with other guards locks
+    /// so, we wouldn't be able to pass CachePriorityGuard::Lock to a function which accepts KeyGuard::Lock, for example
     struct Lock : public std::unique_lock<Mutex>
     {
         using Base = std::unique_lock<Mutex>;
