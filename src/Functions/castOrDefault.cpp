@@ -320,16 +320,16 @@ REGISTER_FUNCTION(CastOrDefault)
 {
     factory.registerFunction<FunctionCastOrDefault>();
 
-    factory.registerFunction("toUInt8OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt8OrDefault", std::make_shared<DataTypeUInt8>()); });
-    factory.registerFunction("toUInt16OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt16OrDefault", std::make_shared<DataTypeUInt16>()); });
-    factory.registerFunction("toUInt32OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt32OrDefault", std::make_shared<DataTypeUInt32>()); });
-    factory.registerFunction("toUInt64OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt64OrDefault", std::make_shared<DataTypeUInt64>()); });
-    factory.registerFunction("toUInt128OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt128OrDefault", std::make_shared<DataTypeUInt128>()); },
+    factory.registerFunction("toUInt8OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt8OrDefault", std::make_shared<DataTypeUInt8>()); });
+    factory.registerFunction("toUInt16OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt16OrDefault", std::make_shared<DataTypeUInt16>()); });
+    factory.registerFunction("toUInt32OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt32OrDefault", std::make_shared<DataTypeUInt32>()); });
+    factory.registerFunction("toUInt64OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt64OrDefault", std::make_shared<DataTypeUInt64>()); });
+    factory.registerFunction("toUInt128OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt128OrDefault", std::make_shared<DataTypeUInt128>()); },
         FunctionDocumentation{
             .description=R"(
 Converts a string in the first argument of the function to UInt128 by parsing it.
@@ -342,51 +342,51 @@ If the default value is not provided in the second argument, it is assumed to be
                 {"Implicit default value", "SELECT toUInt128OrDefault('upyachka')", "0"}},
             .categories{"ConversionFunctions"}
         });
-    factory.registerFunction("toUInt256OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt256OrDefault", std::make_shared<DataTypeUInt256>()); });
+    factory.registerFunction("toUInt256OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUInt256OrDefault", std::make_shared<DataTypeUInt256>()); });
 
-    factory.registerFunction("toInt8OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt8OrDefault", std::make_shared<DataTypeInt8>()); });
-    factory.registerFunction("toInt16OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt16OrDefault", std::make_shared<DataTypeInt16>()); });
-    factory.registerFunction("toInt32OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt32OrDefault", std::make_shared<DataTypeInt32>()); });
-    factory.registerFunction("toInt64OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt64OrDefault", std::make_shared<DataTypeInt64>()); });
-    factory.registerFunction("toInt128OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt128OrDefault", std::make_shared<DataTypeInt128>()); });
-    factory.registerFunction("toInt256OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt256OrDefault", std::make_shared<DataTypeInt256>()); });
+    factory.registerFunction("toInt8OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt8OrDefault", std::make_shared<DataTypeInt8>()); });
+    factory.registerFunction("toInt16OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt16OrDefault", std::make_shared<DataTypeInt16>()); });
+    factory.registerFunction("toInt32OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt32OrDefault", std::make_shared<DataTypeInt32>()); });
+    factory.registerFunction("toInt64OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt64OrDefault", std::make_shared<DataTypeInt64>()); });
+    factory.registerFunction("toInt128OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt128OrDefault", std::make_shared<DataTypeInt128>()); });
+    factory.registerFunction("toInt256OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toInt256OrDefault", std::make_shared<DataTypeInt256>()); });
 
-    factory.registerFunction("toFloat32OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toFloat32OrDefault", std::make_shared<DataTypeFloat32>()); });
-    factory.registerFunction("toFloat64OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toFloat64OrDefault", std::make_shared<DataTypeFloat64>()); });
+    factory.registerFunction("toFloat32OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toFloat32OrDefault", std::make_shared<DataTypeFloat32>()); });
+    factory.registerFunction("toFloat64OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toFloat64OrDefault", std::make_shared<DataTypeFloat64>()); });
 
-    factory.registerFunction("toDateOrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateOrDefault", std::make_shared<DataTypeDate>()); });
-    factory.registerFunction("toDate32OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDate32OrDefault", std::make_shared<DataTypeDate32>()); });
-    factory.registerFunction("toDateTimeOrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateTimeOrDefault", std::make_shared<DataTypeDateTime>()); });
-    factory.registerFunction("toDateTime64OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateTime64OrDefault", std::make_shared<DataTypeDateTime64>(3 /* default scale */)); });
+    factory.registerFunction("toDateOrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateOrDefault", std::make_shared<DataTypeDate>()); });
+    factory.registerFunction("toDate32OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDate32OrDefault", std::make_shared<DataTypeDate32>()); });
+    factory.registerFunction("toDateTimeOrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateTimeOrDefault", std::make_shared<DataTypeDateTime>()); });
+    factory.registerFunction("toDateTime64OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateTime64OrDefault", std::make_shared<DataTypeDateTime64>(3 /* default scale */)); });
 
-    factory.registerFunction("toDecimal32OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal32OrDefault", createDecimalMaxPrecision<Decimal32>(0)); });
-    factory.registerFunction("toDecimal64OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal64OrDefault", createDecimalMaxPrecision<Decimal64>(0)); });
-    factory.registerFunction("toDecimal128OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal128OrDefault", createDecimalMaxPrecision<Decimal128>(0)); });
-    factory.registerFunction("toDecimal256OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal256OrDefault", createDecimalMaxPrecision<Decimal256>(0)); });
+    factory.registerFunction("toDecimal32OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal32OrDefault", createDecimalMaxPrecision<Decimal32>(0)); });
+    factory.registerFunction("toDecimal64OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal64OrDefault", createDecimalMaxPrecision<Decimal64>(0)); });
+    factory.registerFunction("toDecimal128OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal128OrDefault", createDecimalMaxPrecision<Decimal128>(0)); });
+    factory.registerFunction("toDecimal256OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDecimal256OrDefault", createDecimalMaxPrecision<Decimal256>(0)); });
 
-    factory.registerFunction("toUUIDOrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUUIDOrDefault", std::make_shared<DataTypeUUID>()); });
-    factory.registerFunction("toIPv4OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv4OrDefault", std::make_shared<DataTypeIPv4>()); });
-    factory.registerFunction("toIPv6OrDefault", [](ContextPtr context){
-        return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv6OrDefault", std::make_shared<DataTypeIPv6>()); });
+    factory.registerFunction("toUUIDOrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toUUIDOrDefault", std::make_shared<DataTypeUUID>()); });
+    factory.registerFunction("toIPv4OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv4OrDefault", std::make_shared<DataTypeIPv4>()); });
+    factory.registerFunction("toIPv6OrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv6OrDefault", std::make_shared<DataTypeIPv6>()); });
 }
 
 }
