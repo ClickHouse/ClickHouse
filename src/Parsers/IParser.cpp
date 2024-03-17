@@ -24,9 +24,6 @@ IParser::Pos & IParser::Pos::operator=(const IParser::Pos & rhs)
 
     TokenIterator::operator=(rhs);
 
-    if (backtracks % 1000 == 0)
-        std::cerr << backtracks << "\n";
-
     return *this;
 }
 
