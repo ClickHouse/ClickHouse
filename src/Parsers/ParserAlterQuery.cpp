@@ -138,7 +138,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserList parser_reset_setting(
         std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma),
         /* allow_empty = */ false);
-    ParserNameList values_p;
     ParserSelectWithUnionQuery select_p;
     ParserSQLSecurity sql_security_p;
     ParserRefreshStrategy refresh_p;
@@ -163,7 +162,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_settings_changes;
     ASTPtr command_settings_resets;
     ASTPtr command_select;
-    ASTPtr command_values;
     ASTPtr command_rename_to;
     ASTPtr command_sql_security;
 
@@ -867,7 +865,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_modify_sql_security.ignore(pos, expected))
             {
                 /// This is a hack so we can reuse parser from create and don't have to write `MODIFY SQL SECURITY SQL SECURITY INVOKER`
-                pos -= 2;
+                --pos;
+                --pos;
                 if (!sql_security_p.parse(pos, command_sql_security, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;
@@ -944,8 +943,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->settings_resets = command->children.emplace_back(std::move(command_settings_resets)).get();
     if (command_select)
         command->select = command->children.emplace_back(std::move(command_select)).get();
-    if (command_values)
-        command->values = command->children.emplace_back(std::move(command_values)).get();
     if (command_sql_security)
         command->sql_security = command->children.emplace_back(std::move(command_sql_security)).get();
     if (command_rename_to)

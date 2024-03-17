@@ -103,6 +103,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int INCORRECT_DATA;
+    extern const int SYNTAX_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace FailPoints
@@ -650,6 +653,36 @@ static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
     }
 }
 
+void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+{
+    if (ast->as<ASTSetQuery>())
+        return;
+
+    bool top_level = context_value;
+
+    std::vector<ASTPtr> nodes_to_process{ ast };
+    while (!nodes_to_process.empty())
+    {
+        auto node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (auto * set_query = node->as<ASTSetQuery>())
+        {
+            if (auto * value = set_query->changes.tryGet("allow_experimental_analyzer"))
+            {
+                if (top_level != value->safeGet<bool>())
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
+            }
+        }
+
+        for (auto child : node->children)
+        {
+            if (child)
+                nodes_to_process.push_back(std::move(child));
+        }
+    }
+}
+
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
@@ -713,29 +746,45 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
-            ParserPRQLQuery parser(max_query_size, settings.max_parser_depth);
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ParserPRQLQuery parser(max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         }
         else
         {
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 
-#if 0
+#ifndef NDEBUG
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
             String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
 
-            ASTPtr ast2 = parseQuery(parser,
-                formatted1.data(),
-                formatted1.data() + formatted1.size(),
-                "", max_query_size, settings.max_parser_depth);
+            /// The query can become more verbose after formatting, so:
+            size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
+
+            ASTPtr ast2;
+            try
+            {
+                ast2 = parseQuery(parser,
+                    formatted1.data(),
+                    formatted1.data() + formatted1.size(),
+                    "", new_max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Inconsistent AST formatting: the query:\n{}\ncannot parse.",
+                        formatted1);
+                else
+                    throw;
+            }
 
             chassert(ast2);
 
@@ -844,6 +893,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
+        validateAnalyzerSettings(ast, context->getSettingsRef().allow_experimental_analyzer);
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
@@ -973,6 +1023,21 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
             if (settings.implicit_transaction && settings.throw_on_unsupported_query_inside_transaction)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
+
+            /// Let's agree on terminology and say that a mini-INSERT is an asynchronous INSERT
+            /// which typically contains not a lot of data inside and a big-INSERT in an INSERT
+            /// which was formed by concatenating several mini-INSERTs together.
+            /// In case when the client had to retry some mini-INSERTs then they will be properly deduplicated
+            /// by the source tables. This functionality is controlled by a setting `async_insert_deduplicate`.
+            /// But then they will be glued together into a block and pushed through a chain of Materialized Views if any.
+            /// The process of forming such blocks is not deteministic so each time we retry mini-INSERTs the resulting
+            /// block may be concatenated differently.
+            /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
+            if (settings.throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert &&
+                settings.deduplicate_blocks_in_dependent_materialized_views)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Deduplication is dependent materialized view cannot work together with async inserts. "\
+                        "Please disable eiher `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
 
             quota = context->getQuota();
             if (quota)
@@ -1150,7 +1215,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
                                 settings.query_cache_compress_entries);
 
-                            const size_t num_query_runs = query_cache->recordQueryRun(key);
+                            const size_t num_query_runs = settings.query_cache_min_query_runs ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                             if (num_query_runs <= settings.query_cache_min_query_runs)
                             {
                                 LOG_TRACE(getLogger("QueryCache"),

@@ -19,7 +19,7 @@ namespace ErrorCodes
 class ClickHouseVersion
 {
 public:
-    ClickHouseVersion(const String & version)
+    ClickHouseVersion(const String & version) /// NOLINT(google-explicit-constructor)
     {
         Strings split;
         boost::split(split, version, [](char c){ return c == '.'; });
@@ -37,7 +37,7 @@ public:
         }
     }
 
-    ClickHouseVersion(const char * version) : ClickHouseVersion(String(version)) {}
+    ClickHouseVersion(const char * version) : ClickHouseVersion(String(version)) {} /// NOLINT(google-explicit-constructor)
 
     String toString() const
     {
@@ -85,9 +85,22 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.2", {
+    {"24.3", {{"s3_connect_timeout_ms", 1000, 1000, "Introduce new dedicated setting for s3 connection timeout"},
+              {"allow_experimental_shared_merge_tree", false, true, "The setting is obsolete"},
+              {"use_page_cache_for_disks_without_file_cache", false, false, "Added userspace page cache"},
+              {"read_from_page_cache_if_exists_otherwise_bypass_cache", false, false, "Added userspace page cache"},
+              {"page_cache_inject_eviction", false, false, "Added userspace page cache"},
+              {"default_table_engine", "None", "MergeTree", "Set default table engine to MergeTree for better usability"},
+              {"input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects", false, false, "Allow to use String type for ambiguous paths during named tuple inference from JSON objects"},
+              {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", false, true, "Deduplication is dependent materialized view cannot work together with async inserts."},
+              {"parallel_replicas_allow_in_with_subquery", false, true, "If true, subquery for IN will be executed on every follower replica"},
+              {"filesystem_cache_reserve_space_wait_lock_timeout_milliseconds", 1000, 1000, "Wait time to lock cache for sapce reservation in filesystem cache"},
+              {"max_parser_backtracks", 0, 1000000, "Limiting the complexity of parsing"},
+              }},
+    {"24.2", {{"allow_suspicious_variant_types", true, false, "Don't allow creating Variant type with suspicious variants by default"},
               {"validate_experimental_and_suspicious_types_inside_nested_types", false, true, "Validate usage of experimental and suspicious types inside nested types"},
               {"output_format_values_escape_quote_with_quote", false, false, "If true escape ' with '', otherwise quoted with \\'"},
+              {"output_format_pretty_single_large_number_tip_threshold", 0, 1'000'000, "Print a readable number tip on the right side of the table if the block consists of a single number which exceeds this value (except 0)"},
               {"input_format_try_infer_exponent_floats", true, false, "Don't infer floats in exponential notation by default"},
               {"query_plan_optimize_prewhere", true, true, "Allow to push down filter to PREWHERE expression for supported storages"},
               {"async_insert_max_data_size", 1000000, 10485760, "The previous value appeared to be too small."},

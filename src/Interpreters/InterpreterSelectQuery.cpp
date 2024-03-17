@@ -160,7 +160,7 @@ FilterDAGInfoPtr generateFilterActions(
     {
         ParserExpression expr_parser;
         /// We should add back quotes around column name as it can contain dots.
-        expr_list->children.push_back(parseQuery(expr_parser, backQuoteIfNeed(column_str), 0, context->getSettingsRef().max_parser_depth));
+        expr_list->children.push_back(parseQuery(expr_parser, backQuoteIfNeed(column_str), 0, context->getSettingsRef().max_parser_depth, context->getSettingsRef().max_parser_backtracks));
     }
 
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
@@ -331,7 +331,7 @@ ASTPtr parseAdditionalFilterConditionForTable(
             const auto & settings = context.getSettingsRef();
             return parseQuery(
                 parser, filter.data(), filter.data() + filter.size(),
-                "additional filter", settings.max_query_size, settings.max_parser_depth);
+                "additional filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         }
     }
 
@@ -780,13 +780,30 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         result_header = getSampleBlockImpl();
     };
 
+
+    /// This is a hack to make sure we reanalyze if GlobalSubqueriesVisitor changed allow_experimental_parallel_reading_from_replicas
+    /// inside the query context (because it doesn't have write access to the main context)
+    UInt64 parallel_replicas_before_analysis
+        = context->hasQueryContext() ? context->getQueryContext()->getSettingsRef().allow_experimental_parallel_reading_from_replicas : 0;
+
     /// Conditionally support AST-based PREWHERE optimization.
     analyze(shouldMoveToPrewhere() && (!settings.query_plan_optimize_prewhere || !settings.query_plan_enable_optimizations));
 
+
     bool need_analyze_again = false;
     bool can_analyze_again = false;
+
     if (context->hasQueryContext())
     {
+        /// As this query can't be executed with parallel replicas, we must reanalyze it
+        if (context->getQueryContext()->getSettingsRef().allow_experimental_parallel_reading_from_replicas
+            != parallel_replicas_before_analysis)
+        {
+            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("max_parallel_replicas", UInt64{0});
+            need_analyze_again = true;
+        }
+
         /// Check number of calls of 'analyze' function.
         /// If it is too big, we will not analyze the query again not to have exponential blowup.
         std::atomic<size_t> & current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter;
@@ -875,7 +892,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     {
         /// The query could use trivial count if it didn't use parallel replicas, so let's disable it and reanalyze
         context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        context->setSetting("max_parallel_replicas", UInt64{0});
+        context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_DEBUG(log, "Disabling parallel replicas to be able to use a trivial count optimization");
         return true;
     }
@@ -2094,8 +2111,7 @@ void InterpreterSelectQuery::applyFiltersToPrewhereInAnalysis(ExpressionAnalysis
         if (does_storage_support_prewhere && shouldMoveToPrewhere())
         {
             /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
-            analysis.prewhere_info
-                = std::make_shared<PrewhereInfo>(std::move(analysis.filter_info->actions), std::move(analysis.filter_info->column_name));
+            analysis.prewhere_info = std::make_shared<PrewhereInfo>(analysis.filter_info->actions, analysis.filter_info->column_name);
             analysis.prewhere_info->prewhere_actions->projectInput(false);
             analysis.prewhere_info->remove_prewhere_column = analysis.filter_info->do_remove_column;
             analysis.prewhere_info->need_filter = true;
@@ -2105,8 +2121,8 @@ void InterpreterSelectQuery::applyFiltersToPrewhereInAnalysis(ExpressionAnalysis
     else
     {
         /// Add row level security actions to prewhere.
-        analysis.prewhere_info->row_level_filter = std::move(analysis.filter_info->actions);
-        analysis.prewhere_info->row_level_column_name = std::move(analysis.filter_info->column_name);
+        analysis.prewhere_info->row_level_filter = analysis.filter_info->actions;
+        analysis.prewhere_info->row_level_column_name = analysis.filter_info->column_name;
         analysis.prewhere_info->row_level_filter->projectInput(false);
         analysis.filter_info = nullptr;
     }
@@ -2536,7 +2552,12 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_sync_remote)
-            max_streams = static_cast<size_t>(max_streams * settings.max_streams_to_max_threads_ratio);
+        {
+            if (auto streams_with_ratio = max_streams * settings.max_streams_to_max_threads_ratio; streams_with_ratio < SIZE_MAX)
+                max_streams = static_cast<size_t>(streams_with_ratio);
+            else
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Exceeded limit for `max_streams` with `max_streams_to_max_threads_ratio`. Make sure that `max_streams * max_streams_to_max_threads_ratio` not exceeds {}, current value: {}", SIZE_MAX, streams_with_ratio);
+        }
 
         auto & prewhere_info = analysis_result.prewhere_info;
 

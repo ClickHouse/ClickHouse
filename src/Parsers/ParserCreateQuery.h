@@ -228,11 +228,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
         if (!type_parser.parse(pos, type, expected))
             return false;
-        if (s_collate.ignore(pos, expected))
-        {
-            if (!collation_parser.parse(pos, collation_expression, expected))
-                return false;
-        }
+        if (s_collate.ignore(pos, expected)
+            && !collation_parser.parse(pos, collation_expression, expected))
+            return false;
     }
 
     if (allow_null_modifiers)
@@ -246,6 +244,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         else if (s_null.check(pos, expected))
             null_modifier.emplace(true);
     }
+
+    /// Collate is also allowed after NULL/NOT NULL
+    if (!collation_expression && s_collate.ignore(pos, expected)
+        && !collation_parser.parse(pos, collation_expression, expected))
+        return false;
 
     Pos pos_before_specifier = pos;
     if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))
@@ -283,7 +286,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         {
             const String type_int("INT");
             Tokens tokens(type_int.data(), type_int.data() + type_int.size());
-            Pos tmp_pos(tokens, 0);
+            Pos tmp_pos(tokens, pos.max_depth, pos.max_backtracks);
             Expected tmp_expected;
             ParserDataType().parse(tmp_pos, type, tmp_expected);
         }
@@ -531,7 +534,7 @@ public:
         DATABASE_ENGINE,
     };
 
-    ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
+    explicit ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
 
 protected:
     const char * getName() const override { return "storage definition"; }

@@ -100,7 +100,8 @@ private:
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
-    nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorageBase::RequestsForSessions & requests_for_sessions);
+    nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
+        RaftAppendResult & result, KeeperStorageBase::RequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
 
 public:
     std::mutex read_request_queue_mutex;

@@ -63,12 +63,23 @@ static constexpr auto DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC = 120;
 
 /// Default limit on recursion depth of recursive descend parser.
 static constexpr auto DBMS_DEFAULT_MAX_PARSER_DEPTH = 1000;
+/// Default limit on the amount of backtracking of recursive descend parser.
+static constexpr auto DBMS_DEFAULT_MAX_PARSER_BACKTRACKS = 1000000;
 
 /// Default limit on query size.
 static constexpr auto DBMS_DEFAULT_MAX_QUERY_SIZE = 262144;
 
 /// Max depth of hierarchical dictionary
 static constexpr auto DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH = 1000;
+
+#ifdef OS_LINUX
+#define DBMS_DEFAULT_PAGE_CACHE_USE_MADV_FREE true
+#else
+/// On Mac OS, MADV_FREE is not lazy, so page_cache_use_madv_free should be disabled.
+/// On FreeBSD, it may work but we haven't tested it.
+#define DBMS_DEFAULT_PAGE_CACHE_USE_MADV_FREE false
+#endif
+
 
 /// Default maximum (total and entry) sizes and policies of various caches
 static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_POLICY = "SLRU";

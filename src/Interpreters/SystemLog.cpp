@@ -216,7 +216,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     /// Validate engine definition syntax to prevent some configuration errors.
     ParserStorageWithComment storage_parser;
     auto storage_ast = parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
-            "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     auto & storage_with_comment = storage_ast->as<StorageWithComment &>();
 
     /// Add comment to AST. So it will be saved when the table will be renamed.
@@ -563,7 +563,6 @@ void SystemLog<LogElement>::prepareTable()
                 {table_id.database_name, table_id.table_name + "_" + toString(suffix)}, getContext()))
                 ++suffix;
 
-            auto rename = std::make_shared<ASTRenameQuery>();
             ASTRenameQuery::Element elem
             {
                 ASTRenameQuery::Table
@@ -586,7 +585,7 @@ void SystemLog<LogElement>::prepareTable()
                 old_create_query,
                 create_query);
 
-            rename->elements.emplace_back(std::move(elem));
+            auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
 
             ActionLock merges_lock;
             if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID() == UUIDHelpers::Nil)
@@ -648,7 +647,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
     ASTPtr storage_with_comment_ast = parseQuery(
         storage_parser, storage_def.data(), storage_def.data() + storage_def.size(),
-        "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
 
