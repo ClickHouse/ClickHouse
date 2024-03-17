@@ -7,6 +7,10 @@ namespace DB
 
 bool IParserBase::parse(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Limit backtracking.
+    if (expected.max_greedy_pos && pos->begin < expected.max_greedy_pos)
+        return false;
+
     expected.add(pos, getName());
 
     return wrapParseImpl(pos, IncreaseDepthTag{}, [&]

@@ -99,6 +99,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (s_with.ignore(pos, expected))
         {
+            expected.addGreedyPos(pos);
+
             if (!ParserList(std::make_unique<ParserWithElement>(), std::make_unique<ParserToken>(TokenType::Comma))
                      .parse(pos, with_expression_list, expected))
                 return false;
@@ -110,6 +112,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction(...)
     if (s_from.ignore(pos, expected))
     {
+        expected.addGreedyPos(pos);
+
         if (!ParserTablesInSelectQuery(false).parse(pos, tables, expected))
             return false;
     }
@@ -119,6 +123,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         bool has_all = false;
         if (!s_select.ignore(pos, expected))
             return false;
+
+        expected.addGreedyPos(pos);
 
         if (s_all.ignore(pos, expected))
             has_all = true;

@@ -28,6 +28,7 @@ struct Expected
 {
     absl::InlinedVector<const char *, 7> variants;
     const char * max_parsed_pos = nullptr;
+    const char * max_greedy_pos = nullptr;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)
@@ -47,6 +48,14 @@ struct Expected
     ALWAYS_INLINE void add(TokenIterator it, const char * description)
     {
         add(it->begin, description);
+    }
+
+    /// Parser cannot backtrack behind this checkpoint.
+    /// This allows to limit backtracking.
+    void addGreedyPos(TokenIterator it)
+    {
+        if (!max_greedy_pos || max_greedy_pos < it->begin)
+            max_greedy_pos = it->begin;
     }
 };
 
