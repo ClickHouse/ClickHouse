@@ -56,13 +56,13 @@ option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile t
 if (ENABLE_CHECK_HEAVY_BUILDS)
     # set DATA (since RSS does not work since 2.6.x+) to 5G
     set (RLIMIT_DATA 5000000000)
-    # set VIRT (RLIMIT_AS) to 10G (DATA*10)
+    # set VIRT (RLIMIT_AS) to 10G (DATA*2)
     set (RLIMIT_AS 10000000000)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
 
     # -fsanitize=memory and address are too heavy
-    if (SANITIZE)
+    if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE)
        set (RLIMIT_DATA 10000000000) # 10G
     endif()
 
@@ -109,11 +109,6 @@ endif()
 # - default_libs.cmake
 # - sanitize.cmake
 add_library(global-libs INTERFACE)
-
-# We don't want to instrument everything with fuzzer, but only specific targets (see below),
-# also, since we build our own llvm, we specifically don't want to instrument
-# libFuzzer library itself - it would result in infinite recursion
-#include (cmake/fuzzer.cmake)
 
 include (cmake/sanitize.cmake)
 
