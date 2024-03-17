@@ -30,6 +30,8 @@ EvictionCandidates::~EvictionCandidates()
 
 void EvictionCandidates::add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key, const CachePriorityGuard::Lock & lock)
 {
+    chassert(lock.owns_lock());
+
     auto [it, inserted] = candidates.emplace(locked_key.getKey(), KeyCandidates{});
     if (inserted)
         it->second.key_metadata = locked_key.getKeyMetadata();
@@ -39,7 +41,7 @@ void EvictionCandidates::add(const FileSegmentMetadataPtr & candidate, LockedKey
     ++candidates_size;
 }
 
-void EvictionCandidates::evict(const CachePriorityGuard::Lock &)
+void EvictionCandidates::evict()
 {
     if (candidates.empty())
         return;
@@ -86,6 +88,7 @@ void EvictionCandidates::evict(const CachePriorityGuard::Lock &)
 
 void EvictionCandidates::finalize(FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock & lock)
 {
+    chassert(lock.owns_lock());
     while (!queue_entries_to_invalidate.empty())
     {
         auto iterator = queue_entries_to_invalidate.back();

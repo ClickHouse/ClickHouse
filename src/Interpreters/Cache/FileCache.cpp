@@ -783,6 +783,7 @@ bool FileCache::tryReserve(
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
 
     assertInitialized();
+
     auto cache_lock = tryLockCache(std::chrono::milliseconds(lock_wait_timeout_milliseconds));
     if (!cache_lock)
     {
@@ -841,7 +842,7 @@ bool FileCache::tryReserve(
         return false;
 
     /// Let's release cache lock if we are going to remove files from filesystem.
-    bool release_lock = eviction_candidates.size() > 0;
+    const bool release_lock = eviction_candidates.size() > 0;
     if (release_lock)
         cache_lock.unlock();
 
@@ -851,10 +852,13 @@ bool FileCache::tryReserve(
     try
     {
         /// Remove eviction candidates from filesystem.
-        eviction_candidates.evict(cache_lock);
+        eviction_candidates.evict();
     }
     catch (...)
     {
+        if (release_lock)
+            cache_lock.lock();
+
         /// Invalidate queue entries if some succeeded to be removed.
         eviction_candidates.finalize(query_context.get(), cache_lock);
         throw;
