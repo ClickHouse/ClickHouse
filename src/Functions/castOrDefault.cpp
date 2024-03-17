@@ -221,7 +221,7 @@ private:
         size_t scale = 0;
         std::string time_zone;
 
-        if (isDecimal(type))
+        if (isDecimal(type) || isDateTime64(type))
         {
             const auto & scale_argument = arguments[additional_argument_index];
 
@@ -338,7 +338,8 @@ If the default value is not provided in the second argument, it is assumed to be
 )",
             .examples{
                 {"Successful conversion", "SELECT toUInt128OrDefault('1', 2::UInt128)", "1"},
-                {"Default value", "SELECT toUInt128OrDefault('upyachka', 123456789012345678901234567890::UInt128)", "123456789012345678901234567890"}},
+                {"Default value", "SELECT toUInt128OrDefault('upyachka', 123456789012345678901234567890::UInt128)", "123456789012345678901234567890"},
+                {"Implicit default value", "SELECT toUInt128OrDefault('upyachka')", "0"}},
             .categories{"ConversionFunctions"}
         });
     factory.registerFunction("toUInt256OrDefault", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
