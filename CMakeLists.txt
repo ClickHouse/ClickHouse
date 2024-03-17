@@ -110,11 +110,6 @@ endif()
 # - sanitize.cmake
 add_library(global-libs INTERFACE)
 
-# We don't want to instrument everything with fuzzer, but only specific targets (see below),
-# also, since we build our own llvm, we specifically don't want to instrument
-# libFuzzer library itself - it would result in infinite recursion
-#include (cmake/fuzzer.cmake)
-
 include (cmake/sanitize.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
