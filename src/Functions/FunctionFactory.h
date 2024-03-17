@@ -17,6 +17,7 @@ namespace DB
 {
 
 using FunctionCreator = std::function<FunctionOverloadResolverPtr(ContextPtr)>;
+using FunctionSimpleCreator = std::function<FunctionPtr(ContextPtr)>;
 using FunctionFactoryData = std::pair<FunctionCreator, FunctionDocumentation>;
 
 /** Creates function by name.
@@ -63,6 +64,12 @@ public:
     void registerFunction(
         const std::string & name,
         FunctionCreator creator,
+        FunctionDocumentation doc = {},
+        CaseSensitiveness case_sensitiveness = CaseSensitive);
+
+    void registerFunction(
+        const std::string & name,
+        FunctionSimpleCreator creator,
         FunctionDocumentation doc = {},
         CaseSensitiveness case_sensitiveness = CaseSensitive);
 
