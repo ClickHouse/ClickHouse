@@ -101,10 +101,12 @@ RestorerFromBackup::RestorerFromBackup(
 
 RestorerFromBackup::~RestorerFromBackup()
 {
-    if (!futures.empty())
+    /// If an exception occurs we can come here to the destructor having some tasks still unfinished.
+    /// We have to wait until they finish.
+    if (getNumFutures() > 0)
     {
-        LOG_ERROR(log, "RestorerFromBackup must not be destroyed while {} tasks are still running", futures.size());
-        chassert(false && "RestorerFromBackup must not be destroyed while some tasks are still running");
+        LOG_INFO(log, "Waiting for {} tasks to finish", getNumFutures());
+        waitFutures();
     }
 }
 
