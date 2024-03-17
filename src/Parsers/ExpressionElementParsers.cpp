@@ -109,6 +109,14 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
+    /// This pre-check is needed to avoid exponential complexity in the parser.
+    /// Example: SELECT (((((SELECT 1+)))))
+    /// In this example, the parser will backtrack due to the error after 1+
+    /// But each of parentheses will be attempted to parse either
+    /// as part of SELECT subquery or as part of expression.
+    if (pos->type != TokenType::BareWord)
+        return false;
+
     ASTPtr result_node = nullptr;
 
     if (ASTPtr select_node; select.parse(pos, select_node, expected))
