@@ -6,7 +6,6 @@ export LC_ALL=C # The "total" should be printed without localization
 
 TU_EXCLUDES=(
     AggregateFunctionUniq
-    RangeHashedDictionary
     Aggregator
 )
 
