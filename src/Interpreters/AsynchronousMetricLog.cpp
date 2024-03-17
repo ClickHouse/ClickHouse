@@ -8,7 +8,6 @@
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Common/AsynchronousMetrics.h>
 
 
 namespace DB
