@@ -1007,13 +1007,16 @@ extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
 
     auto it = argv.begin() + 1;
     for (; *it; ++it)
+    {
         if (strcmp(*it, "--") == 0)
         {
             ++it;
             break;
         }
+    }
 
     while (*it)
+    {
         if (strncmp(*it, "--", 2) != 0)
         {
             *(p++) = *it;
@@ -1021,6 +1024,7 @@ extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
         }
         else
             ++it;
+    }
 
     *pargc = static_cast<int>(p - &(*pargv)[0]);
     *p = nullptr;
