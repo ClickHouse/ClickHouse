@@ -53,6 +53,7 @@
 #include <Functions/TransformDateTime64.h>
 #include <Functions/FunctionsCodingIP.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/castTypeToEither.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
@@ -4776,67 +4777,6 @@ arguments, result_type, input_rows_count); \
     }
 };
 
-class MonotonicityHelper
-{
-public:
-    using MonotonicityForRange = FunctionCast::MonotonicityForRange;
-
-    template <typename DataType>
-    static auto monotonicityForType(const DataType * const)
-    {
-        return FunctionTo<DataType>::Type::Monotonic::get;
-    }
-
-    static MonotonicityForRange getMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type)
-    {
-        if (const auto * type = checkAndGetDataType<DataTypeUInt8>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeUInt16>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeUInt32>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeUInt64>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeUInt128>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeUInt256>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeInt8>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeInt16>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeInt32>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeInt64>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeInt128>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeInt256>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeFloat32>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeFloat64>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeDate>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeDate32>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeDateTime>(to_type))
-            return monotonicityForType(type);
-        if (const auto * type = checkAndGetDataType<DataTypeString>(to_type))
-            return monotonicityForType(type);
-        if (isEnum(from_type))
-        {
-            if (const auto * type = checkAndGetDataType<DataTypeEnum8>(to_type))
-                return monotonicityForType(type);
-            if (const auto * type = checkAndGetDataType<DataTypeEnum16>(to_type))
-                return monotonicityForType(type);
-        }
-        /// other types like Null, FixedString, Array and Tuple have no monotonicity defined
-        return {};
-    }
-};
-
 }
 
 
@@ -4853,7 +4793,29 @@ FunctionBasePtr createFunctionBaseCast(
     for (size_t i = 0; i < arguments.size(); ++i)
         data_types[i] = arguments[i].type;
 
-    auto monotonicity = MonotonicityHelper::getMonotonicityInformation(arguments.front().type, return_type.get());
+    FunctionCast::MonotonicityForRange monotonicity;
+
+    if (isEnum(arguments.front().type)
+        && castTypeToEither<DataTypeEnum8, DataTypeEnum16>(return_type.get(), [&](auto & type)
+        {
+            monotonicity = FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
+            return true;
+        }))
+    {
+    }
+    else if (castTypeToEither<
+        DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
+        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
+        DataTypeFloat32, DataTypeFloat64,
+        DataTypeDate, DataTypeDate32, DataTypeDateTime,
+        DataTypeString>(return_type.get(), [&](auto & type)
+        {
+            monotonicity = FunctionTo<std::decay_t<decltype(type)>>::Type::Monotonic::get;
+            return true;
+        }))
+    {
+    }
+
     return std::make_unique<FunctionCast>(context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
 }
 
