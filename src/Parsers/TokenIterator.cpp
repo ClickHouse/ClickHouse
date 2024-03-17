@@ -12,10 +12,17 @@ Tokens::Tokens(const char * begin, const char * end, size_t max_query_size, bool
     do
     {
         Token token = lexer.nextToken();
-        stop = token.isEnd() || token.type == TokenType::ErrorMaxQuerySizeExceeded;
+        stop = token.isEnd() || token.isError();
         if (token.isSignificant() || (!skip_insignificant && !data.empty() && data.back().isSignificant()))
             data.emplace_back(std::move(token));
     } while (!stop);
+}
+
+std::optional<Token> Tokens::getError() const
+{
+    if (!data.empty() && data.back().isError())
+        return data.back();
+    return {};
 }
 
 UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
