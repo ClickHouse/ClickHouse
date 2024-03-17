@@ -4,7 +4,7 @@ CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=MergeTree ORDER BY
 INSERT INTO users VALUES (1231, 'John', 33);
 INSERT INTO users VALUES (6666, 'Ksenia', 48);
 
-SELECT uuid, name from system.parts WHERE table = 'users';
+SELECT uuid, name from system.parts WHERE database = currentDatabase() AND table = 'users';
 
-SELECT table from system.parts WHERE uuid = '00000000-0000-0000-0000-000000000000';
+SELECT table from system.parts WHERE database = currentDatabase() AND uuid = '00000000-0000-0000-0000-000000000000';
 DROP TABLE IF EXISTS users;
