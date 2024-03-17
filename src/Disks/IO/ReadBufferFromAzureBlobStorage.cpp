@@ -8,7 +8,9 @@
 #include <Common/Throttler.h>
 #include <base/sleep.h>
 #include <Common/ProfileEvents.h>
+#include <IO/SeekableReadBuffer.h>
 
+#include <sstream>
 
 namespace ProfileEvents
 {
@@ -260,6 +262,55 @@ size_t ReadBufferFromAzureBlobStorage::getFileSize()
 
     file_size = blob_client->GetProperties().Value.BlobSize;
     return *file_size;
+}
+
+size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const
+{
+    size_t initial_n = n;
+
+    size_t sleep_time_with_backoff_milliseconds = 100;
+    auto handle_exception = [&, this](const auto & e, size_t i)
+    {
+        LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
+        if (i + 1 == max_single_download_retries)
+            throw;
+
+        sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+        sleep_time_with_backoff_milliseconds *= 2;
+    };
+
+    Azure::Storage::Blobs::DownloadBlobOptions download_options;
+    download_options.Range = {static_cast<int64_t>(range_begin), range_begin+n};
+
+    for (size_t i = 0; i < max_single_download_retries; ++i)
+    {
+        size_t bytes_copied = 0;
+        try
+        {
+            auto download_response = blob_client->Download(download_options);
+            std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
+            auto length = body_stream->Length();
+            char buffer[length];
+            body_stream->Read(reinterpret_cast<uint8_t *>(buffer), length);
+            std::istringstream string_stream(String(static_cast<char *>(buffer),length));
+            copyFromIStreamWithProgressCallback(string_stream, to, n, progress_callback, &bytes_copied);
+
+            if (read_settings.remote_throttler)
+                read_settings.remote_throttler->add(bytes_copied, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+
+            break;
+        }
+        catch (const Azure::Core::RequestFailedException & e)
+        {
+            handle_exception(e,i);
+        }
+
+        range_begin += bytes_copied;
+        to += bytes_copied;
+        n -= bytes_copied;
+    }
+
+    return initial_n;
 }
 
 }
