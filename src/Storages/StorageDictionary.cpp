@@ -278,19 +278,19 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
 
     auto new_comment = getInMemoryMetadataPtr()->comment;
 
-    auto storage_id = getStorageID();
-    const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
-    auto result = external_dictionaries_loader.getLoadResult(storage_id.getInternalDictionaryName());
+    /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or
+    /// it can be in the process of loading or reloading right now.
+    /// The correct way is to update the dictionary's configuration first and then ask ExternalDictionariesLoader to reload our dictionary.
 
-    if (result.object)
     {
-        auto dictionary = std::static_pointer_cast<const IDictionary>(result.object);
-        auto * dictionary_non_const = const_cast<IDictionary *>(dictionary.get());
-        dictionary_non_const->setDictionaryComment(new_comment);
+        std::lock_guard lock(dictionary_config_mutex);
+        auto new_configuration = ConfigHelper::clone(*configuration);
+        new_configuration->setString("dictionary.comment", new_comment);
+        configuration = new_configuration;
     }
 
-    std::lock_guard lock(dictionary_config_mutex);
-    configuration->setString("dictionary.comment", new_comment);
+    const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
+    external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
 }
 
 void registerStorageDictionary(StorageFactory & factory)

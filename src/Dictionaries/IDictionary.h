@@ -332,12 +332,6 @@ public:
         return std::static_pointer_cast<const IDictionary>(IExternalLoadable::shared_from_this());
     }
 
-    void setDictionaryComment(String new_comment)
-    {
-        std::lock_guard lock{mutex};
-        dictionary_comment = std::move(new_comment);
-    }
-
     String getDictionaryComment() const
     {
         std::lock_guard lock{mutex};
@@ -452,6 +446,14 @@ public:
         std::lock_guard lock{mutex};
         assert((new_dictionary_id.uuid == dictionary_id.uuid) && (dictionary_id.uuid != UUIDHelpers::Nil));
         dictionary_id = new_dictionary_id;
+    }
+
+    /// Internally called by ExternalDictionariesLoader.
+    /// In order to update the dictionary comment change its configuration first and then call ExternalDictionariesLoader::reloadConfig().
+    void updateDictionaryComment(const String & new_dictionary_comment)
+    {
+        std::lock_guard lock{mutex};
+        dictionary_comment = new_dictionary_comment;
     }
 
 private:
