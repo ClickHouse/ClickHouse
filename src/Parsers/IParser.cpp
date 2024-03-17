@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_SLOW_PARSING;
+}
+
 IParser::Pos & IParser::Pos::operator=(const IParser::Pos & rhs)
 {
     depth = rhs.depth;
@@ -18,7 +23,7 @@ IParser::Pos & IParser::Pos::operator=(const IParser::Pos & rhs)
     {
         ++backtracks;
         if (max_backtracks && backtracks > max_backtracks)
-            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Maximum amount of backtracking ({}) exceeded in the parser. "
+            throw Exception(ErrorCodes::TOO_SLOW_PARSING, "Maximum amount of backtracking ({}) exceeded in the parser. "
                 "Consider rising max_parser_backtracks parameter.", max_backtracks);
     }
 
