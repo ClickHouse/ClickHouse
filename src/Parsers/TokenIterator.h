@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <vector>
+#include <optional>
 
 
 namespace DB
@@ -34,6 +35,8 @@ public:
     }
 
     ALWAYS_INLINE inline const Token & max() { return data[last_accessed_index]; }
+
+    std::optional<Token> getError() const;
 };
 
 

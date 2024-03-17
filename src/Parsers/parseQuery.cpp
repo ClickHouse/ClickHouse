@@ -258,6 +258,12 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
+    if (auto error = tokens.getError(); error)
+    {
+        out_error_message = getLexicalErrorMessage(query_begin, all_queries_end, *error, hilite, query_description);
+        return nullptr;
+    }
+
     Expected expected;
     ASTPtr res;
     const bool parse_res = parser.parse(token_iterator, res, expected);
