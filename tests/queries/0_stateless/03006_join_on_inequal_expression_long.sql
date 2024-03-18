@@ -3,10 +3,10 @@
 DROP TABLE IF EXISTS numbers_l;
 DROP TABLE IF EXISTS numbers_r;
 
-CREATE TABLE numbers_l (a UInt64, b UInt64, c UInt64, d UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE numbers_l (a UInt64, b UInt64, c UInt64, d UInt64) ENGINE = Memory;
 INSERT INTO numbers_l SELECT sipHash64(number, 11) % 32 as a, sipHash64(number, 12) % 128 as b, sipHash64(number, 13) % 128 as c, sipHash64(number, 14) % 128 as d FROM numbers(10_000);
 
-CREATE TABLE numbers_r (a UInt64, b UInt64, c UInt64, d UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE numbers_r (a UInt64, b UInt64, c UInt64, d UInt64) ENGINE = Memory;
 INSERT INTO numbers_r SELECT sipHash64(number, 21) % 32 as a, sipHash64(number, 22) % 128 as b, sipHash64(number, 23) % 128 as c, sipHash64(number, 24) % 128 as d FROM numbers(10_000);
 
 SET allow_experimental_analyzer=1;
