@@ -130,8 +130,16 @@ public:
 
         const auto transform_x = TransformDateTime64<Transform>(getScale(x));
         const auto transform_y = TransformDateTime64<Transform>(getScale(y));
-        for (size_t i = 0, size = x.size(); i < size; ++i)
+        std::cerr << x.size() << " " << y.size() << std::endl;
+        for (size_t i = 0, size = x.size() < y.size() ? y.size() : x.size(); i < size; ++i)
+        {
+            if (i >= x.size())
+                result[i] = calculate(transform_x, transform_y, x_data[x.size()-1], y_data[i], timezone_x, timezone_y);
+            else if (i >= y.size())
+                result[i] = calculate(transform_x, transform_y, x_data[i], y_data[y.size()-1], timezone_x, timezone_y);
+            else
                 result[i] = calculate(transform_x, transform_y, x_data[i], y_data[i], timezone_x, timezone_y);
+        }
     }
 
     template <typename Transform, typename LeftColumnType, typename T2>
