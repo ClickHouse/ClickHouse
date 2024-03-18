@@ -1620,10 +1620,6 @@ def _add_build_to_version_history(
     version: str,
     ch_helper: ClickHouseHelper,
 ) -> None:
-    ci_logs_credentials = CiLogsCredentials(Path("/dev/null"))
-    if not ci_logs_credentials.host:
-        return
-
     # with some probability we will not silently break this logic
     assert pr_info.sha and pr_info.commit_html_url and version and git_ref
 
