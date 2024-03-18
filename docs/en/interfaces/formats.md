@@ -2850,7 +2850,7 @@ The Form format can be used to read or write a single record in the application/
 
 Examples:
 
-Given a file `data.tmp` placed in the `user_files` path with some url-encoded data:
+Given a file `data.tmp` placed in the `user_files` path with some URL-encoded data:
 
 ```text
 t_page=116&c.e=ls7xfkpm&c.tti.m=raf&rt.start=navigation&rt.bmr=390%2C11%2C10
