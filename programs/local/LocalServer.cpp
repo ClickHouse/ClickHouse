@@ -959,8 +959,8 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
 
 }
 
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
@@ -1000,12 +1000,6 @@ extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
 {
     std::vector<char *> argv(*pargv, *pargv + (*pargc + 1));
 
-    if (!isClickhouseApp("local", argv))
-    {
-        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode, only clickhouse local is available." << "\033[0m" << std::endl;
-        exit(1);
-    }
-
     /// As a user you can add flags to clickhouse binary in fuzzing mode as follows
     /// clickhouse local <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
 
@@ -1013,13 +1007,16 @@ extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
 
     auto it = argv.begin() + 1;
     for (; *it; ++it)
+    {
         if (strcmp(*it, "--") == 0)
         {
             ++it;
             break;
         }
+    }
 
     while (*it)
+    {
         if (strncmp(*it, "--", 2) != 0)
         {
             *(p++) = *it;
@@ -1027,6 +1024,7 @@ extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
         }
         else
             ++it;
+    }
 
     *pargc = static_cast<int>(p - &(*pargv)[0]);
     *p = nullptr;

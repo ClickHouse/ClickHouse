@@ -245,6 +245,7 @@ public:
         const IColumn ** batch_arguments{};
         const UInt64 * offsets{};
         bool has_sparse_arguments = false;
+        bool can_optimize_equal_keys_ranges = true;
     };
 
     /// Used for optimize_aggregation_in_order:
@@ -427,7 +428,6 @@ private:
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        bool no_more_keys,
         bool all_keys_are_const,
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
@@ -440,7 +440,6 @@ private:
         const std::unique_ptr<AggregateDataPtr[]> & places,
         size_t key_start,
         bool has_only_one_value_since_last_reset,
-        bool no_more_keys,
         bool all_keys_are_const,
         bool use_compiled_functions) const;
 
