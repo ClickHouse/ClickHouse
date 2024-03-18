@@ -35,6 +35,26 @@ public:
         INTERPOLATE
     };
 
+    constexpr static const Expression All[] =
+    {
+        Expression::WITH,
+        Expression::SELECT,
+        Expression::TABLES,
+        Expression::PREWHERE,
+        Expression::WHERE,
+        Expression::GROUP_BY,
+        Expression::HAVING,
+        Expression::WINDOW,
+        Expression::ORDER_BY,
+        Expression::LIMIT_BY_OFFSET,
+        Expression::LIMIT_BY_LENGTH,
+        Expression::LIMIT_BY,
+        Expression::LIMIT_OFFSET,
+        Expression::LIMIT_LENGTH,
+        Expression::SETTINGS,
+        Expression::INTERPOLATE
+    };
+
     static String expressionToString(Expression expr)
     {
         switch (expr)

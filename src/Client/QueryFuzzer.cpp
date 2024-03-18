@@ -1268,6 +1268,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
  */
 void QueryFuzzer::collectFuzzInfoMain(ASTPtr ast)
 {
+    /// Keep only fixed amount of donors
+    if (donors.size() == static_cast<size_t>(max_donors))
+        donors.erase(std::next(donors.begin(), fuzz_rand() % max_donors));
+    donors.insert(ast->clone());
+
     collectFuzzInfoRecurse(ast);
 }
 
@@ -1351,6 +1356,48 @@ void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
     }
 }
 
+template <typename T>
+std::optional<std::pair<T, T>> tryCast(ASTPtr & left, const ASTPtr & right)
+{
+    auto * left_cast = typeid_cast<T>(left.get());
+    auto * right_cast = typeid_cast<T>(right.get());
+
+    if (!left_cast || !right_cast)
+        return {};
+
+    return std::pair<T, T>(left_cast, right_cast);
+}
+
+void QueryFuzzer::crossover(ASTPtr main, const ASTPtr & donor)
+{
+    if (!main || !donor)
+        return;
+
+    if (auto res = tryCast<ASTSelectWithUnionQuery *>(main, donor); res.has_value())
+    {
+        auto [main_p, donor_p] = res.value();
+        crossover(main_p->list_of_selects, donor_p->list_of_selects);
+    }
+    else if (auto res_select = tryCast<ASTSelectQuery *>(main, donor); res_select.has_value())
+    {
+        auto [main_p, donor_p] = res_select.value();
+
+        for (auto expression : ASTSelectQuery::All)
+        {
+            if (!rollTheDice(2))
+                continue;
+
+            if (auto organ = donor_p->getExpression(expression, true))
+                main_p->setExpression(expression, std::move(organ));
+        }
+    }
+
+    for (auto & main_child : main->children)
+        for (const auto & donor_child : donor->children)
+            crossover(main_child, donor_child);
+
+}
+
 void QueryFuzzer::fuzzMain(ASTPtr & ast)
 {
     current_ast_depth = 0;
@@ -1358,7 +1405,10 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     debug_top_ast = &ast;
 
     collectFuzzInfoMain(ast);
-    fuzz(ast);
+    if (coinToss())
+        fuzz(ast);
+    else
+        crossover(ast, *(std::next(donors.begin(), fuzz_rand() % donors.size())));
 
     std::cout << std::endl;
     WriteBufferFromOStream ast_buf(std::cout, 4096);

@@ -291,6 +291,8 @@ protected:
     NameToNameMap query_parameters; /// Dictionary with query parameters for prepared statements.
 
     QueryFuzzer fuzzer;
+    std::set<ASTPtr> donors;
+    int max_donors = 100;
     int query_fuzzer_runs = 0;
     int create_query_fuzzer_runs = 0;
 
