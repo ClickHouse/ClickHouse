@@ -786,7 +786,7 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
         return;
 
     if (log_events)
-        LOG_DEBUG(log, "Wait load job '{}' in {}", job->name, getPoolName(job->executionPool()));
+        LOG_DEBUG(log, "Wait load job '{}' in {}", job->name, getPoolName(job->pool_id));
 
     Stopwatch watch;
     job->waiters++;
@@ -885,7 +885,7 @@ void AsyncLoader::worker(Pool & pool)
                 {
                     NOEXCEPT_SCOPE({
                         ALLOW_ALLOCATIONS_IN_SCOPE;
-                        LOG_DEBUG(log, "Stop worked in {}", pool.name);
+                        LOG_DEBUG(log, "Stop worker in {}", pool.name);
                     });
                 }
                 if (--pool.workers == 0)
