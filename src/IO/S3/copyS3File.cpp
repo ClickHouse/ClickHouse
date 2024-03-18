@@ -199,11 +199,6 @@ namespace
                                                dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
                                                outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
-                if (blob_storage_log)
-                    blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadComplete,
-                                               dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
-                                               outcome.IsSuccess() ? nullptr : &outcome.GetError());
-
                 if (outcome.IsSuccess())
                 {
                     LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, part_tags.size());
