@@ -624,21 +624,17 @@ try
     buildLoggers(config(), logger());
     main_config_reloader->start();
 
-    std::optional<CgroupsMemoryUsageObserver> observer;
+    std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
     try
     {
         auto wait_time = config().getUInt64("keeper_server.cgroups_memory_observer_wait_time", 15);
         if (wait_time != 0)
         {
-            observer.emplace(std::chrono::seconds(wait_time));
-            /// Keeper use setting max_memory_usage_soft_limit to control memory limit. When memory usage
-            /// hits the limit, Keeper will refuse all the request util memory usage is lower.
-            /// We don't call setLimits() here because of this.
-            observer->setOnMemoryAmountAvailableChanged([&]()
-            {
-                main_config_reloader->reload();
-            });
-            observer->startThread();
+            cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
+            /// Not calling cgroups_memory_usage_observer->setLimits() here (as for the normal ClickHouse server) because Keeper controls
+            /// its memory usage by other means (via setting 'max_memory_usage_soft_limit').
+            cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]() { main_config_reloader->reload(); });
+            cgroups_memory_usage_observer->startThread();
         }
     }
     catch (Exception &)

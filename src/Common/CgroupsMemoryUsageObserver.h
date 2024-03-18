@@ -2,7 +2,6 @@
 
 #include <Common/ThreadPool.h>
 
-#include <atomic>
 #include <chrono>
 #include <mutex>
 
@@ -14,11 +13,16 @@ namespace DB
 ///    You can specify soft or hard memory limits:
 ///    - When the soft memory limit is hit, drop jemalloc cache.
 ///    - When the hard memory limit is hit, update MemoryTracking metric to throw memory exceptions faster.
+///    The goal of this is to avoid that the process hits the maximum allowed memory limit at which there is a good
+///    chance that the Limux OOM killer terminates it. All of this is done is because internal memory tracking in
+///    ClickHouse can unfortunately under-estimate the actually used memory.
 /// 2. Periodically reads the the maximum memory available to the process (which can change due to cgroups settings).
-///    You can specify a callback to react on changes. The callback typically performs circular logic: It reloads the
-///    configuration (e.g. server configuration file), which will check the memory amount again and re-calculate
-///    soft/hard limits (see 1.) and update the value of setting `max_server_memory_usage` for clickhouse-server or
-///    `max_memory_usage_soft_limit` for clickhouse-keeper.
+///    You can specify a callback to react on changes. The callback typically reloads the configuration, i.e. Server
+///    or Keeper configuration file. This reloads settings 'max_server_memory_usage' (Server) and 'max_memory_usage_soft_limit'
+///    (Keeper) from which various other internal limits are calculated, including the soft and hard limits for (1.).
+///    The goal of this is to provide elasticity when the container is scaled-up/scaled-down. The mechanism (polling
+///    cgroups) is quite implicit, unfortuantely there is currently no better way to communicate memory threshold changes
+///    to the database.
 #if defined(OS_LINUX)
 class CgroupsMemoryUsageObserver
 {
@@ -36,11 +40,9 @@ public:
     ~CgroupsMemoryUsageObserver();
 
     void setMemoryUsageLimits(uint64_t hard_limit_, uint64_t soft_limit_);
-    void setOnMemoryAmountAvailableChanged(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed);
+    void setOnMemoryAmountAvailableChangedFn(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed_);
 
     void startThread();
-
-    uint64_t readMemoryUsage() const;
 
 private:
     LoggerPtr log;
@@ -52,8 +54,9 @@ private:
     size_t soft_limit TSA_GUARDED_BY(limit_mutex) = 0;
     OnMemoryLimitFn on_hard_limit TSA_GUARDED_BY(limit_mutex);
     OnMemoryLimitFn on_soft_limit TSA_GUARDED_BY(limit_mutex);
-    std::mutex memory_amount_change_mutex;
-    OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed TSA_GUARDED_BY(memory_amount_change_mutex);
+
+    std::mutex memory_amount_available_changed_mutex;
+    OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed TSA_GUARDED_BY(memory_amount_available_changed_mutex);
 
     uint64_t last_memory_usage = 0;        /// how much memory does the process use
     uint64_t last_available_memory_amount; /// how much memory can the process use
@@ -93,9 +96,8 @@ public:
     explicit CgroupsMemoryUsageObserver(std::chrono::seconds) {}
 
     void setMemoryUsageLimits(uint64_t, uint64_t) {}
-    void setOnMemoryAmountAvailableChanged(OnMemoryAmountAvailableChangedFn) {}
+    void setOnMemoryAmountAvailableChangedFn(OnMemoryAmountAvailableChangedFn) {}
     void startThread() {}
-    size_t readMemoryUsage() { return 0; }
 };
 #endif
 

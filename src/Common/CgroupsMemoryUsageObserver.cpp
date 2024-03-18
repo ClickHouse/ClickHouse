@@ -84,7 +84,7 @@ void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint
             mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
 #endif
             /// Reset current usage in memory tracker. Expect zero for free_memory_in_allocator_arenas as we just purged them.
-            uint64_t memory_usage = readMemoryUsage();
+            uint64_t memory_usage = memory_usage_file.readMemoryUsage();
             MemoryTracker::setRSS(memory_usage, 0);
 
             LOG_INFO(log, "Purged jemalloc arenas. Current memory usage is {}", ReadableSize(memory_usage));
@@ -98,15 +98,10 @@ void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint
     LOG_INFO(log, "Set new limits, soft limit: {}, hard limit: {}", ReadableSize(soft_limit_), ReadableSize(hard_limit_));
 }
 
-void CgroupsMemoryUsageObserver::setOnMemoryAmountAvailableChanged(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed_)
+void CgroupsMemoryUsageObserver::setOnMemoryAmountAvailableChangedFn(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed_)
 {
-    std::lock_guard<std::mutex> memory_amount_change_lock(memory_amount_change_mutex);
+    std::lock_guard<std::mutex> memory_amount_available_changed_lock(memory_amount_available_changed_mutex);
     on_memory_amount_available_changed = on_memory_amount_available_changed_;
-}
-
-uint64_t CgroupsMemoryUsageObserver::readMemoryUsage() const
-{
-    return memory_usage_file.readMemoryUsage();
 }
 
 namespace
@@ -299,7 +294,7 @@ void CgroupsMemoryUsageObserver::runThread()
             {
                 LOG_INFO(log, "Memory amount available to the process changed from {} to {}", ReadableSize(last_available_memory_amount), ReadableSize(available_memory_amount));
                 last_available_memory_amount = available_memory_amount;
-                std::lock_guard<std::mutex> memory_amount_change_lock(memory_amount_change_mutex);
+                std::lock_guard<std::mutex> memory_amount_available_changed_lock(memory_amount_available_changed_mutex);
                 on_memory_amount_available_changed();
             }
 

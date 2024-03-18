@@ -1702,10 +1702,7 @@ try
 
     if (cgroups_memory_usage_observer)
     {
-        cgroups_memory_usage_observer->setOnMemoryAmountAvailableChanged([&]()
-        {
-            main_config_reloader->reload();
-        });
+        cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]() { main_config_reloader->reload(); });
         cgroups_memory_usage_observer->startThread();
     }
 
