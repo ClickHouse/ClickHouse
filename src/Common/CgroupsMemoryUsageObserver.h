@@ -21,7 +21,7 @@ namespace DB
 ///    or Keeper configuration file. This reloads settings 'max_server_memory_usage' (Server) and 'max_memory_usage_soft_limit'
 ///    (Keeper) from which various other internal limits are calculated, including the soft and hard limits for (1.).
 ///    The goal of this is to provide elasticity when the container is scaled-up/scaled-down. The mechanism (polling
-///    cgroups) is quite implicit, unfortuantely there is currently no better way to communicate memory threshold changes
+///    cgroups) is quite implicit, unfortunately there is currently no better way to communicate memory threshold changes
 ///    to the database.
 #if defined(OS_LINUX)
 class CgroupsMemoryUsageObserver
