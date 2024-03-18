@@ -4,7 +4,6 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <base/getMemoryAmount.h>
-#include <base/errnoToString.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
@@ -22,8 +21,6 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/scope_guard_safe.h>
-#include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
@@ -34,7 +31,6 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
-#include <Loggers/Loggers.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
@@ -42,7 +38,6 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
-#include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
@@ -60,10 +55,6 @@
 #include <filesystem>
 
 #include "config.h"
-
-#if defined(FUZZING_MODE)
-    #include <Functions/getFuzzerData.h>
-#endif
 
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
@@ -474,25 +465,10 @@ try
         }
     }
 
-#if defined(FUZZING_MODE)
-    static bool first_time = true;
-    if (first_time)
-    {
-
-    if (queries_files.empty() && queries.empty())
-    {
-        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode." << "\033[0m" << std::endl;
-        std::cerr << "\033[31m" << "You have to provide a query with --query or --queries-file option." << "\033[0m" << std::endl;
-        std::cerr << "\033[31m" << "The query have to use function getFuzzerData() inside." << "\033[0m" << std::endl;
-        exit(1);
-    }
-
-    is_interactive = false;
-#else
     is_interactive = stdin_is_a_tty
         && (config().hasOption("interactive")
             || (queries.empty() && !config().has("table-structure") && queries_files.empty() && !config().has("table-file")));
-#endif
+
     if (!is_interactive)
     {
         /// We will terminate process on error
@@ -538,15 +514,13 @@ try
 
     connect();
 
-#ifdef FUZZING_MODE
-    first_time = false;
-    }
-#endif
-
     String initial_query = getInitialCreateTableQuery();
     if (!initial_query.empty())
         processQueryText(initial_query);
 
+#if defined(FUZZING_MODE)
+    runLibFuzzer();
+#else
     if (is_interactive && !delayed_interactive)
     {
         runInteractive();
@@ -558,10 +532,8 @@ try
         if (delayed_interactive)
             runInteractive();
     }
-
-#ifndef FUZZING_MODE
-    cleanup();
 #endif
+
     return Application::EXIT_OK;
 }
 catch (const DB::Exception & e)
@@ -829,23 +801,11 @@ void LocalServer::processConfig()
 
 void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & options_description)
 {
-#if defined(FUZZING_MODE)
-    std::cout <<
-        "usage: clickhouse <clickhouse-local arguments> -- <libfuzzer arguments>\n"
-        "Note: It is important not to use only one letter keys with single dash for \n"
-        "for clickhouse-local arguments. It may work incorrectly.\n"
-
-        "ClickHouse is build with coverage guided fuzzer (libfuzzer) inside it.\n"
-        "You have to provide a query which contains getFuzzerData function.\n"
-        "This will take the data from fuzzing engine, pass it to getFuzzerData function and execute a query.\n"
-        "Each time the data will be different, and it will last until some segfault or sanitizer assertion is found. \n";
-#else
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
     std::cout << getHelpFooter() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
-#endif
 }
 
 
@@ -921,6 +881,7 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
+
         /// Parameter arg after underline.
         if (arg.starts_with("--param_"))
         {
@@ -952,9 +913,27 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
             arg = argv[arg_num];
             addMultiquery(arg, common_arguments);
         }
+        else if (arg == "--")
+        {
+#if defined(FUZZING_MODE)
+            fuzzer_argc = 1 + argc - arg_num;
+            fuzzer_argv = argv + arg_num;
+            break;
+#endif
+        }
         else
+        {
             common_arguments.emplace_back(arg);
+        }
     }
+
+#if defined(FUZZING_MODE)
+    if (!fuzzer_argc)
+    {
+        fuzzer_argc = 1;
+        fuzzer_argv = argv;
+    }
+#endif
 }
 
 }
@@ -988,67 +967,3 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
         return code ? code : 1;
     }
 }
-
-#if defined(FUZZING_MODE)
-
-// linked from programs/main.cpp
-bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv);
-
-std::optional<DB::LocalServer> fuzz_app;
-
-extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
-{
-    std::vector<char *> argv(*pargv, *pargv + (*pargc + 1));
-
-    /// As a user you can add flags to clickhouse binary in fuzzing mode as follows
-    /// clickhouse local <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
-
-    char **p = &(*pargv)[1];
-
-    auto it = argv.begin() + 1;
-    for (; *it; ++it)
-    {
-        if (strcmp(*it, "--") == 0)
-        {
-            ++it;
-            break;
-        }
-    }
-
-    while (*it)
-    {
-        if (strncmp(*it, "--", 2) != 0)
-        {
-            *(p++) = *it;
-            it = argv.erase(it);
-        }
-        else
-            ++it;
-    }
-
-    *pargc = static_cast<int>(p - &(*pargv)[0]);
-    *p = nullptr;
-
-    /// Initialize clickhouse-local app
-    fuzz_app.emplace();
-    fuzz_app->init(static_cast<int>(argv.size() - 1), argv.data());
-
-    return 0;
-}
-
-
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
-{
-    try
-    {
-        auto input = String(reinterpret_cast<const char *>(data), size);
-        DB::FunctionGetFuzzerData::update(input);
-        fuzz_app->run();
-    }
-    catch (...)
-    {
-    }
-
-    return 0;
-}
-#endif

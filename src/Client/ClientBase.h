@@ -78,6 +78,13 @@ protected:
     void runInteractive();
     void runNonInteractive();
 
+#if defined(FUZZING_MODE)
+    int fuzzer_argc = 0;
+    char ** fuzzer_argv = nullptr;
+
+    void runLibFuzzer();
+#endif
+
     virtual bool processWithFuzzing(const String &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
