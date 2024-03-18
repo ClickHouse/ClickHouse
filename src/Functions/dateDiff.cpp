@@ -130,7 +130,7 @@ public:
 
         const auto transform_x = TransformDateTime64<Transform>(getScale(x));
         const auto transform_y = TransformDateTime64<Transform>(getScale(y));
-        std::cerr << x.size() << " " << y.size() << std::endl;
+
         for (size_t i = 0, size = x.size() < y.size() ? y.size() : x.size(); i < size; ++i)
         {
             if (i >= x.size())
