@@ -86,7 +86,6 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
             continue;
 
         auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
-        replacement_table_expression->setAlias(node->getAlias());
 
         if (auto table_expression_modifiers = table_node.getTableExpressionModifiers())
             replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
