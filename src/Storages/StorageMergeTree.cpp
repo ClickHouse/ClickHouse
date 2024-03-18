@@ -2482,7 +2482,7 @@ void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock 
     part->setName(part->getNewName(part->info));
 }
 
-void StorageMergeTree::fillNewPartNameAttachFromDisk(MutableDataPartPtr & part, DataPartsLock & lock)
+void StorageMergeTree::fillNewPartNameAttachFromDisk(MutableDataPartPtr & part, DataPartsLock &)
 {
     part->info.min_block = part->info.max_block = increment.get();
     part->info.mutation = 0;
