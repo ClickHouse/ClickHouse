@@ -17,9 +17,9 @@ public:
     ObjectStorageKey generate(const String & path, bool is_directory) const override;
 
 private:
-    std::tuple<std::string, std::vector<String>> getLongestPrefix(const String & path) const;
+    std::tuple<std::string, std::vector<String>> getLongestObjectKeyPrefix(const String & path) const;
 
-    String key_prefix;
+    String storage_key_prefix;
     std::weak_ptr<PathMap> path_map;
 };
 
