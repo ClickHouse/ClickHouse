@@ -31,10 +31,11 @@ public:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
         clockid_t clock_type_);
 
-    bool canReadIncompleteGranules() const override final { return false; }
+    bool canReadIncompleteGranules() const final { return false; }
 
 protected:
     void fillColumnPositions();
+    NameAndTypePair getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column);
 
     using InputStreamGetter = ISerialization::InputStreamGetter;
 

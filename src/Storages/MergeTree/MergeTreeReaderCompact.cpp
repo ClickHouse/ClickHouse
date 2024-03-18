@@ -78,31 +78,7 @@ void MergeTreeReaderCompact::fillColumnPositions()
         /// we have to read its offsets if they exist.
         if (!position && is_array)
         {
-            NameAndTypePair column_to_read_with_subcolumns = column_to_read;
-            auto [name_in_storage, subcolumn_name] = Nested::splitName(column_to_read.name);
-
-            /// If it is a part of Nested, we need to get the column from
-            /// storage metadata which is converted to Nested type with subcolumns.
-            /// It is required for proper counting of shared streams.
-            if (!subcolumn_name.empty())
-            {
-                /// If column is renamed get the new name from storage metadata.
-                if (alter_conversions->columnHasNewName(name_in_storage))
-                    name_in_storage = alter_conversions->getColumnNewName(name_in_storage);
-
-                if (!storage_columns_with_collected_nested)
-                {
-                    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
-                    auto storage_columns_list = Nested::collect(storage_snapshot->getColumns(options));
-                    storage_columns_with_collected_nested = ColumnsDescription(std::move(storage_columns_list));
-                }
-
-                column_to_read_with_subcolumns = storage_columns_with_collected_nested
-                    ->getColumnOrSubcolumn(
-                        GetColumnsOptions::All,
-                        Nested::concatenateName(name_in_storage, subcolumn_name));
-            }
-
+            auto column_to_read_with_subcolumns = getColumnConvertedToSubcolumnOfNested(column_to_read);
             auto name_level_for_offsets = findColumnForOffsets(column_to_read_with_subcolumns);
 
             if (name_level_for_offsets.has_value())
@@ -117,6 +93,35 @@ void MergeTreeReaderCompact::fillColumnPositions()
             column_positions[i] = std::move(position);
         }
     }
+}
+
+NameAndTypePair MergeTreeReaderCompact::getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column)
+{
+    if (!isArray(column.type))
+        return column;
+
+    /// If it is a part of Nested, we need to get the column from
+    /// storage metadata which is converted to Nested type with subcolumns.
+    /// It is required for proper counting of shared streams.
+    auto [name_in_storage, subcolumn_name] = Nested::splitName(column.name);
+
+    if (subcolumn_name.empty())
+        return column;
+
+    /// If column is renamed get the new name from storage metadata.
+    if (alter_conversions->columnHasNewName(name_in_storage))
+        name_in_storage = alter_conversions->getColumnNewName(name_in_storage);
+
+    if (!storage_columns_with_collected_nested)
+    {
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+        auto storage_columns_list = Nested::collect(storage_snapshot->getColumns(options));
+        storage_columns_with_collected_nested = ColumnsDescription(std::move(storage_columns_list));
+    }
+
+    return storage_columns_with_collected_nested->getColumnOrSubcolumn(
+        GetColumnsOptions::All,
+        Nested::concatenateName(name_in_storage, subcolumn_name));
 }
 
 void MergeTreeReaderCompact::readData(
