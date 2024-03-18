@@ -788,7 +788,7 @@ bool FileCache::tryReserve(
     /// in this case we will try to lock cache with timeout, this is ok, timeout is small
     /// and as resizing of cache can take a long time then this small chance of a race is
     /// ok compared to the number of cases this check will help.
-    if (cache_is_being_resized.load())
+    if (cache_is_being_resized.load(std::memory_order_relaxed))
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
         return false;
@@ -1340,9 +1340,9 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
     if (new_settings.max_size != actual_settings.max_size
         || new_settings.max_elements != actual_settings.max_elements)
     {
-        cache_is_being_resized.store(true);
+        cache_is_being_resized.store(true, std::memory_order_relaxed);
         SCOPE_EXIT({
-            cache_is_being_resized.store(false);
+            cache_is_being_resized.store(false, std::memory_order_relaxed);
         });
 
         auto cache_lock = lockCache();
