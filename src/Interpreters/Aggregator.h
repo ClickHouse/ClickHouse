@@ -428,6 +428,7 @@ private:
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
+        bool no_more_keys,
         bool all_keys_are_const,
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
