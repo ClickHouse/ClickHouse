@@ -804,8 +804,10 @@ bool AsyncLoader::canWorkerLive(Pool & pool, std::unique_lock<std::mutex> &)
 
 void AsyncLoader::setCurrentPriority(std::unique_lock<std::mutex> &, std::optional<Priority> priority)
 {
-    if (log_event && current_priority != priority)
-        LOG_DEBUG(log, "Change current priority: {} -> {}", current_priority, priority);
+    if (log_events && current_priority != priority)
+        LOG_DEBUG(log, "Change current priority: {} -> {}",
+            current_priority ? std::to_string(*current_priority) : "none",
+            priority ? std::to_string(*priority) : "none");
     current_priority = priority;
 }
 
