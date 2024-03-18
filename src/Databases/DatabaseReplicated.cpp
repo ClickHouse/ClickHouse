@@ -1329,7 +1329,6 @@ void DatabaseReplicated::stopReplication()
 
 void DatabaseReplicated::shutdown()
 {
-    stopLoading();
     stopReplication();
     ddl_worker_initialized = false;
     ddl_worker = nullptr;
