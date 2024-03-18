@@ -1,6 +1,7 @@
 #include <iterator>
 #include <variant>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string.hpp>
 #include <Poco/SHA1Engine.h>

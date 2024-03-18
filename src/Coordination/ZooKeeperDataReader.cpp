@@ -196,7 +196,7 @@ void deserializeKeeperStorageFromSnapshot(Storage & storage, const std::string &
     LOG_INFO(log, "Finished, snapshot ZXID {}", storage.zxid);
 }
 
-/// namespace fs = std::filesystem;
+namespace fs = std::filesystem;
 
 template<typename Storage>
 void deserializeKeeperStorageFromSnapshotsDir(Storage & storage, const std::string & path, LoggerPtr log)
