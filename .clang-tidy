@@ -20,6 +20,7 @@ Checks: [
   '-bugprone-branch-clone',
   '-bugprone-easily-swappable-parameters',
   '-bugprone-exception-escape',
+  '-bugprone-forward-declaration-namespace',
   '-bugprone-implicit-widening-of-multiplication-result',
   '-bugprone-narrowing-conversions',
   '-bugprone-not-null-terminated-result',
