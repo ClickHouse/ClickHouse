@@ -12,7 +12,6 @@ class GlobalMaterializeCTEVisitor
 public:
     struct Data : WithMutableContext
     {
-        size_t subquery_depth;
         FutureTablesFromCTE & future_tables;
 
         Data(

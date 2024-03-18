@@ -60,7 +60,7 @@ void GlobalMaterializeCTEVisitor::Data::addExternalStorage(ASTWithElement & cte_
 {
     String external_table_name = cte_expr.name;
     auto context = getContext();
-    auto interpreter = interpretSubquery(cte_expr.subquery, context, subquery_depth, required_columns);
+    auto interpreter = interpretSubquery(cte_expr.subquery, context, /*subquery_depth*/ 1, required_columns);
 
     Block sample = interpreter->getSampleBlock();
     NamesAndTypesList columns = sample.getNamesAndTypesList();
