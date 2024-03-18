@@ -29,6 +29,15 @@ extern const int TOO_MANY_ROWS;
 namespace
 {
 
+template <iota_supported_types T>
+inline void iota_with_step_optimized(T * begin, size_t count, T first_value, T step)
+{
+    if (step == 1)
+        iota(begin, count, first_value);
+    else
+        iota_with_step(begin, count, first_value, step);
+}
+
 class NumbersSource : public ISource
 {
 public:
@@ -66,14 +75,8 @@ protected:
         UInt64 * pos = vec.data(); /// This also accelerates the code.
 
         UInt64 * current_end = &vec[real_block_size];
-        if (step == 1)
-        {
-            iota(pos, static_cast<size_t>(current_end - pos), curr);
-        }
-        else
-        {
-            iota_with_step(pos, static_cast<size_t>(current_end - pos), curr, step);
-        }
+
+        iota_with_step_optimized(pos, static_cast<size_t>(current_end - pos), curr, step);
 
         next += chunk_step;
 
@@ -101,8 +104,6 @@ using RangesWithStep = std::vector<RangeWithStep>;
 
 std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 step, UInt64 remainder)
 {
-    // LOG_DEBUG(&Poco::Logger::get("Stepped from range"),
-    //                     "stepped from range");
     if ((r.right.get<UInt64>() == 0) && (!r.right_included))
         return std::nullopt;
     UInt64 begin = (r.left.get<UInt64>() / step) * step;
@@ -155,7 +156,7 @@ public:
 
     using RangesStatePtr = std::shared_ptr<RangesState>;
 
-    [[maybe_unused]] NumbersRangedSource(
+    NumbersRangedSource(
         const RangesWithStep & ranges_,
         RangesStatePtr & ranges_state_,
         UInt64 base_block_size_,
@@ -167,17 +168,6 @@ public:
         , base_block_size(base_block_size_)
         , step(step_)
     {
-        // for (const auto& range_with_step : ranges_) {
-        //     // LOG_DEBUG(&Poco::Logger::get("Ranges With Step"),
-        //     //             "Ranges: {} {} {} {} {}",
-        //     //             range_with_step.range.left.get<UInt64>(),
-        //     //             range_with_step.range.right.get<UInt64>(),
-        //     //             range_with_step.range.left_included,
-        //     //             range_with_step.range.right_included,
-        //     //             range_with_step.step);
-        //     // LOG_DEBUG(&Poco::Logger::get("Ranges With Step"),
-        //     //             "Step: {}", step);
-        // }
     }
 
     String getName() const override { return "NumbersRange"; }
@@ -242,8 +232,6 @@ protected:
         RangesPos start, end;
         auto block_size = findRanges(start, end, base_block_size);
 
-        // LOG_DEBUG(&Poco::Logger::get("Found range"), "Evth: {} {} {} {} {} {}", start.offset_in_ranges, static_cast<UInt64>(start.offset_in_range), end.offset_in_ranges, static_cast<UInt64>(end.offset_in_range), base_block_size, block_size);
-
         if (!block_size)
             return {};
 
@@ -259,11 +247,6 @@ protected:
         while (block_size - provided != 0)
         {
             UInt64 need = block_size - provided;
-            // LOG_DEBUG(&Poco::Logger::get("Indices:"),
-            //             "Indices: {} {}, provided: {}",
-            //             ranges.size(),
-            //             cursor.offset_in_ranges,
-            //             provided);
             auto & range = ranges[cursor.offset_in_ranges];
 
             UInt128 can_provide = cursor.offset_in_ranges == end.offset_in_ranges
@@ -286,14 +269,7 @@ protected:
                     auto start_value_64 = static_cast<UInt64>(start_value);
                     auto end_value_64 = static_cast<UInt64>(end_value);
                     auto size = (end_value_64 - start_value_64) / this->step;
-                    if (step == 1)
-                    {
-                        iota(pos, static_cast<size_t>(size), start_value_64);
-                    }
-                    else
-                    {
-                        iota_with_step(pos, static_cast<size_t>(size), start_value_64, step);
-                    }
+                    iota_with_step_optimized(pos, static_cast<size_t>(size), start_value_64, step);
                     pos += size;
                 }
             };
@@ -302,14 +278,7 @@ protected:
             {
                 UInt64 start_value = range.left + cursor.offset_in_range * step;
                 /// end_value will never overflow
-                if (step == 1)
-                {
-                    iota(pos, static_cast<size_t>(need), start_value);
-                }
-                else
-                {
-                    iota_with_step(pos, static_cast<size_t>(need), start_value, step);
-                }
+                iota_with_step_optimized(pos, static_cast<size_t>(need), start_value, step);
                 pos += need;
                 provided += need;
                 cursor.offset_in_range += need;
@@ -466,9 +435,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 
     Pipe pipe;
     Ranges ranges;
-
-
-    // LOG_DEBUG(&Poco::Logger::get("parameters"), "Parameters: {} {} {} {}", numbers_storage.step, numbers_storage.offset, numbers_storage.limit.has_value(), numbers_storage.limit.has_value() ? numbers_storage.limit.value() : UInt64{0});
 
     if (numbers_storage.limit.has_value() && (numbers_storage.limit.value() == 0))
     {

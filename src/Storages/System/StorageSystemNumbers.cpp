@@ -40,9 +40,7 @@ void StorageSystemNumbers::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    // LOG_DEBUG(&Poco::Logger::get("Reading from SystemNumbers"), "Limit : {}", limit.value());
     query_plan.addStep(std::make_unique<ReadFromSystemNumbersStep>(
         column_names, query_info, storage_snapshot, context, shared_from_this(), max_block_size, num_streams));
 }
-
 }

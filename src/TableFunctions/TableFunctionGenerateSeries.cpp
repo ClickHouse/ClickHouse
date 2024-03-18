@@ -24,14 +24,14 @@ namespace ErrorCodes
 namespace
 {
 
-/* numbers(limit), numbers_mt(limit)
- * - the same as SELECT number FROM system.numbers LIMIT limit.
- * Used for testing purposes, as a simple example of table function.
- */
+constexpr std::array<const char *, 2> names = {"generate_series", "generateSeries"};
+
+template <size_t alias_num>
 class TableFunctionGenerateSeries : public ITableFunction
 {
 public:
-    static constexpr auto name = "generate_series";
+    static_assert(alias_num < names.size());
+    static constexpr auto name = names[alias_num];
     std::string getName() const override { return name; }
     bool hasStaticStructure() const override { return true; }
 
@@ -49,13 +49,15 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 };
 
-ColumnsDescription TableFunctionGenerateSeries::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
+template <size_t alias_num>
+ColumnsDescription TableFunctionGenerateSeries<alias_num>::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
 {
     /// NOTE: https://bugs.llvm.org/show_bug.cgi?id=47418
     return ColumnsDescription{{{"generate_series", std::make_shared<DataTypeUInt64>()}}};
 }
 
-StoragePtr TableFunctionGenerateSeries::executeImpl(
+template <size_t alias_num>
+StoragePtr TableFunctionGenerateSeries<alias_num>::executeImpl(
     const ASTPtr & ast_function,
     ContextPtr context,
     const std::string & table_name,
@@ -86,7 +88,8 @@ StoragePtr TableFunctionGenerateSeries::executeImpl(
     throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'limit' or 'offset, limit'.", getName());
 }
 
-UInt64 TableFunctionGenerateSeries::evaluateArgument(ContextPtr context, ASTPtr & argument) const
+template <size_t alias_num>
+UInt64 TableFunctionGenerateSeries<alias_num>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
 {
     const auto & [field, type] = evaluateConstantExpression(argument, context);
 
@@ -108,8 +111,8 @@ UInt64 TableFunctionGenerateSeries::evaluateArgument(ContextPtr context, ASTPtr 
 
 void registerTableFunctionGenerateSeries(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionGenerateSeries>({.documentation = {}, .allow_readonly = true});
-    // factory.registerFunction<TableFunctionGenerateSeries>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateSeries<0>>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateSeries<1>>({.documentation = {}, .allow_readonly = true});
 }
 
 }
