@@ -604,7 +604,12 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
                 break;
             }
 
+            /// Here we check mutation for errors on local replica. If they happen on this replica
+            /// they will happen on each replica, so we can check only in-memory info.
+            auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id);
+
             String mutation_pointer = fs::path(zookeeper_path) / "replicas" / replica / "mutation_pointer";
+
             std::string mutation_pointer_value;
             /// Replica could be removed
             if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, nullptr, wait_event))
@@ -614,15 +619,20 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             }
             else if (mutation_pointer_value >= mutation_id) /// Maybe we already processed more fresh mutation
             {
-                LOG_TRACE(log, "Mutation {} is done because mutation pointer is {}", mutation_id, mutation_pointer_value);
-                break;                                      /// (numbers like 0000000000 and 0000000001)
+                bool mutation_killed_or_done_locally = !mutation_status || mutation_status->is_done;
+                if (mutation_killed_or_done_locally)
+                {
+                    LOG_TRACE(log, "Mutation {} is done because mutation pointer is {}", mutation_id, mutation_pointer_value);
+                    break;                                      /// (numbers like 0000000000 and 0000000001)
+                }
+                else
+                {
+                    LOG_TRACE(log, "Mutation {} is done because mutation pointer is {}, but state is not updated in memory, will wait", mutation_id, mutation_pointer_value);
+                }
             }
 
-            /// Here we check mutation for errors on local replica. If they happen on this replica
-            /// they will happen on each replica, so we can check only in-memory info.
-            auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id);
             /// If mutation status is empty, than local replica may just not loaded it into memory.
-            if (mutation_status && (mutation_status->is_done || !mutation_status->latest_fail_reason.empty()))
+            if (mutation_status && !mutation_status->latest_fail_reason.empty())
             {
                 LOG_DEBUG(log, "Mutation {} is done {} or falied {} (status: '{}')", mutation_id, mutation_status->is_done, !mutation_status->latest_fail_reason.empty(), mutation_status->latest_fail_reason);
                 break;
