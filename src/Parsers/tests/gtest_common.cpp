@@ -28,7 +28,7 @@ TEST_P(ParserRegexTest, parseQuery)
     ASSERT_TRUE(expected_ast);
 
     DB::ASTPtr ast;
-    ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
+    ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0));
     DB::WriteBufferFromOwnString buf;
     formatAST(*ast->clone(), buf, false, false);
     EXPECT_THAT(buf.str(), ::testing::MatchesRegex(expected_ast));
@@ -45,12 +45,12 @@ TEST_P(ParserKQLTest, parseKQLQuery)
     {
         if (std::string(expected_ast).starts_with("throws"))
         {
-            EXPECT_THROW(parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
+            EXPECT_THROW(parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
         }
         else
         {
             DB::ASTPtr ast;
-            ASSERT_NO_THROW(ast = parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
+            ASSERT_NO_THROW(ast = parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0));
             if (std::string("CREATE USER or ALTER USER query") != parser->getName()
                     && std::string("ATTACH access entity query") != parser->getName())
             {
@@ -78,6 +78,6 @@ TEST_P(ParserKQLTest, parseKQLQuery)
     }
     else
     {
-        ASSERT_THROW(parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
+        ASSERT_THROW(parseKQLQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
     }
 }

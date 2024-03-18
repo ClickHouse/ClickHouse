@@ -4,9 +4,8 @@ import argparse
 import sys
 
 import boto3  # type: ignore
-import requests  # type: ignore
-
-from lambda_shared.token import get_cached_access_token, get_access_token_by_key_app
+import requests
+from lambda_shared.token import get_access_token_by_key_app, get_cached_access_token
 
 
 def get_runner_registration_token(access_token):
@@ -17,6 +16,7 @@ def get_runner_registration_token(access_token):
     response = requests.post(
         "https://api.github.com/orgs/ClickHouse/actions/runners/registration-token",
         headers=headers,
+        timeout=30,
     )
     response.raise_for_status()
     data = response.json()
@@ -43,6 +43,7 @@ def main(access_token, push_to_ssm, ssm_parameter_name):
 
 
 def handler(event, context):
+    _, _ = event, context
     main(get_cached_access_token(), True, "github_runner_registration_token")
 
 
@@ -85,7 +86,7 @@ if __name__ == "__main__":
     if args.private_key:
         private_key = args.private_key
     else:
-        with open(args.private_key_path, "r") as key_file:
+        with open(args.private_key_path, "r", encoding="utf-8") as key_file:
             private_key = key_file.read()
 
     token = get_access_token_by_key_app(private_key, args.app_id)

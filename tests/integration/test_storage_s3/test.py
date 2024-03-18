@@ -1414,10 +1414,10 @@ def test_signatures(started_cluster):
     )
     assert int(result) == 1
 
-    result = instance.query(
+    error = instance.query_and_get_error(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', '{session_token}')"
     )
-    assert int(result) == 1
+    assert "S3_ERROR" in error
 
     result = instance.query(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'Arrow', 'x UInt64', 'auto')"
@@ -1429,20 +1429,20 @@ def test_signatures(started_cluster):
     )
     assert int(result) == 1
 
-    result = instance.query(
+    error = instance.query_and_get_error(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', '{session_token}', 'Arrow')"
     )
-    assert int(result) == 1
+    assert "S3_ERROR" in error
 
-    lt = instance.query(
+    error = instance.query_and_get_error(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', '{session_token}', 'Arrow', 'x UInt64')"
     )
-    assert int(result) == 1
+    assert "S3_ERROR" in error
 
-    lt = instance.query(
+    error = instance.query_and_get_error(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', '{session_token}', 'Arrow', 'x UInt64', 'auto')"
     )
-    assert int(result) == 1
+    assert "S3_ERROR" in error
 
 
 def test_select_columns(started_cluster):

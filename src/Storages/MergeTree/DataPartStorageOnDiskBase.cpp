@@ -623,6 +623,15 @@ void DataPartStorageOnDiskBase::remove(
             }
         }
 
+        if (!disk->exists(from))
+        {
+            LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+            /// We will never touch this part again, so unlocking it from zero-copy
+            if (!can_remove_description)
+                can_remove_description.emplace(can_remove_callback());
+            return;
+        }
+
         try
         {
             disk->moveDirectory(from, to);

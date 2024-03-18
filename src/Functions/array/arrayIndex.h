@@ -1007,8 +1007,13 @@ private:
                         if (!(*null_map)[row])
                             continue;
                     }
-                    else if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
-                        continue;
+                    else
+                    {
+                        if (null_map && (*null_map)[row])
+                            continue;
+                        if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
+                            continue;
+                    }
 
                     ConcreteAction::apply(data[row], i);
 

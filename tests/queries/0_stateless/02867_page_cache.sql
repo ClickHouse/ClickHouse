@@ -46,7 +46,7 @@ insert into events_snapshot select * from system.events;
 
 -- Cold read, should miss cache. (Populating cache on write is not implemented yet.)
 
-select sum(k) from page_cache_03055;
+select 'cold read', sum(k) from page_cache_03055;
 
 select * from events_diff where event not in ('PageCacheChunkDataHits');
 truncate table events_snapshot;
@@ -54,7 +54,7 @@ insert into events_snapshot select * from system.events;
 
 -- Repeat read, should hit cache.
 
-select sum(k) from page_cache_03055;
+select 'repeat read 1', sum(k) from page_cache_03055;
 
 select * from events_diff;
 truncate table events_snapshot;
@@ -64,16 +64,17 @@ insert into events_snapshot select * from system.events;
 
 system drop page cache;
 
-select sum(k) from page_cache_03055 settings read_from_page_cache_if_exists_otherwise_bypass_cache = 1;
+select 'dropped and bypassed cache', sum(k) from page_cache_03055 settings read_from_page_cache_if_exists_otherwise_bypass_cache = 1;
 
 -- Data could be read multiple times because we're not writing to cache.
-select event, if(event in ('PageCacheChunkMisses', 'ReadBufferFromS3Bytes'), diff >= 1, diff) from events_diff where event not in ('PageCacheChunkDataHits');
+-- (Not checking PageCacheBytesUnpinned* because it's unreliable in this case because of an intentional race condition, see PageCache::evictChunk.)
+select event, if(event in ('PageCacheChunkMisses', 'ReadBufferFromS3Bytes'), diff >= 1, diff) from events_diff where event not in ('PageCacheChunkDataHits', 'PageCacheBytesUnpinnedRoundedToPages', 'PageCacheBytesUnpinnedRoundedToHugePages');
 truncate table events_snapshot;
 insert into events_snapshot select * from system.events;
 
 -- Repeat read, should still miss, but populate cache.
 
-select sum(k) from page_cache_03055;
+select 'repeat read 2', sum(k) from page_cache_03055;
 
 select * from events_diff where event not in ('PageCacheChunkDataHits');
 truncate table events_snapshot;
@@ -81,7 +82,7 @@ insert into events_snapshot select * from system.events;
 
 -- Read again, hit the cache.
 
-select sum(k) from page_cache_03055 settings read_from_page_cache_if_exists_otherwise_bypass_cache = 1;
+select 'repeat read 3', sum(k) from page_cache_03055 settings read_from_page_cache_if_exists_otherwise_bypass_cache = 1;
 
 select * from events_diff;
 truncate table events_snapshot;

@@ -23,19 +23,19 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     auto query = std::make_shared<ASTShowColumnsQuery>();
 
-    if (!ParserKeyword("SHOW").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::SHOW).ignore(pos, expected))
         return false;
 
-    if (ParserKeyword("EXTENDED").ignore(pos, expected))
+    if (ParserKeyword(Keyword::EXTENDED).ignore(pos, expected))
         query->extended = true;
 
-    if (ParserKeyword("FULL").ignore(pos, expected))
+    if (ParserKeyword(Keyword::FULL).ignore(pos, expected))
         query->full = true;
 
-    if (!(ParserKeyword("COLUMNS").ignore(pos, expected) || ParserKeyword("FIELDS").ignore(pos, expected)))
+    if (!(ParserKeyword(Keyword::COLUMNS).ignore(pos, expected) || ParserKeyword(Keyword::FIELDS).ignore(pos, expected)))
         return false;
 
-    if (ParserKeyword("FROM").ignore(pos, expected) || ParserKeyword("IN").ignore(pos, expected))
+    if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
     {
         if (!ParserCompoundIdentifier().parse(pos, from1, expected))
             return false;
@@ -55,7 +55,7 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
     else
     {
-        if (ParserKeyword("FROM").ignore(pos, expected) || ParserKeyword("IN").ignore(pos, expected))
+        if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
             if (!ParserIdentifier().parse(pos, from2, expected))
                 return false;
 
@@ -65,10 +65,10 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->database = from2_str;
     }
 
-    if (ParserKeyword("NOT").ignore(pos, expected))
+    if (ParserKeyword(Keyword::NOT).ignore(pos, expected))
         query->not_like = true;
 
-    if (bool insensitive = ParserKeyword("ILIKE").ignore(pos, expected); insensitive || ParserKeyword("LIKE").ignore(pos, expected))
+    if (bool insensitive = ParserKeyword(Keyword::ILIKE).ignore(pos, expected); insensitive || ParserKeyword(Keyword::LIKE).ignore(pos, expected))
     {
         if (insensitive)
             query->case_insensitive_like = true;
@@ -78,11 +78,11 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
     else if (query->not_like)
         return false;
-    else if (ParserKeyword("WHERE").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::WHERE).ignore(pos, expected))
         if (!ParserExpressionWithOptionalAlias(false).parse(pos, query->where_expression, expected))
             return false;
 
-    if (ParserKeyword("LIMIT").ignore(pos, expected))
+    if (ParserKeyword(Keyword::LIMIT).ignore(pos, expected))
         if (!ParserExpressionWithOptionalAlias(false).parse(pos, query->limit_length, expected))
             return false;
 

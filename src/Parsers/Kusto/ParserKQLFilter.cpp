@@ -14,7 +14,7 @@ bool ParserKQLFilter::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr where_expression;
 
     Tokens token_filter(expr.c_str(), expr.c_str() + expr.size());
-    IParser::Pos pos_filter(token_filter, pos.max_depth);
+    IParser::Pos pos_filter(token_filter, pos.max_depth, pos.max_backtracks);
     if (!ParserExpressionWithOptionalAlias(false).parse(pos_filter, where_expression, expected))
         return false;
 

@@ -14,10 +14,10 @@ namespace DB
 
 bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_describe("DESCRIBE");
-    ParserKeyword s_desc("DESC");
-    ParserKeyword s_table("TABLE");
-    ParserKeyword s_settings("SETTINGS");
+    ParserKeyword s_describe(Keyword::DESCRIBE);
+    ParserKeyword s_desc(Keyword::DESC);
+    ParserKeyword s_table(Keyword::TABLE);
+    ParserKeyword s_settings(Keyword::SETTINGS);
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p;
     ParserSetQuery parser_settings(true);

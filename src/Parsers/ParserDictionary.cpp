@@ -165,12 +165,12 @@ bool ParserDictionarySettings::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
 bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword primary_key_keyword("PRIMARY KEY");
-    ParserKeyword source_keyword("SOURCE");
-    ParserKeyword lifetime_keyword("LIFETIME");
-    ParserKeyword range_keyword("RANGE");
-    ParserKeyword layout_keyword("LAYOUT");
-    ParserKeyword settings_keyword("SETTINGS");
+    ParserKeyword primary_key_keyword(Keyword::PRIMARY_KEY);
+    ParserKeyword source_keyword(Keyword::SOURCE);
+    ParserKeyword lifetime_keyword(Keyword::LIFETIME);
+    ParserKeyword range_keyword(Keyword::RANGE);
+    ParserKeyword layout_keyword(Keyword::LAYOUT);
+    ParserKeyword settings_keyword(Keyword::SETTINGS);
     ParserToken open(TokenType::OpeningRoundBracket);
     ParserToken close(TokenType::ClosingRoundBracket);
     ParserFunctionWithKeyValueArguments key_value_pairs_p;

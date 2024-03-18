@@ -13,6 +13,7 @@ set (SRCS
     cgroupsv2.cpp
     coverage.cpp
     demangle.cpp
+    Decimal.cpp
     getAvailableMemoryAmount.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp

@@ -20,14 +20,14 @@ StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & tab
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
     {
-        {"disk_name", std::make_shared<DataTypeString>()},
-        {"path", std::make_shared<DataTypeString>()},
-        {"cache_base_path", std::make_shared<DataTypeString>()},
-        {"local_path", std::make_shared<DataTypeString>()},
-        {"remote_path", std::make_shared<DataTypeString>()},
-        {"size", std::make_shared<DataTypeUInt64>()},
-        {"common_prefix_for_blobs", std::make_shared<DataTypeString>()},
-        {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"disk_name", std::make_shared<DataTypeString>(), "Disk name."},
+        {"path", std::make_shared<DataTypeString>(), "Disk path."},
+        {"cache_base_path", std::make_shared<DataTypeString>(), "Base directory of cache files."},
+        {"local_path", std::make_shared<DataTypeString>(), "Path of ClickHouse file, also used as metadata path."},
+        {"remote_path", std::make_shared<DataTypeString>(), "Blob path in object storage, with which ClickHouse file is associated with."},
+        {"size", std::make_shared<DataTypeUInt64>(), "Size of the file (compressed)."},
+        {"common_prefix_for_blobs", std::make_shared<DataTypeString>(), "Common prefix for blobs in object storage."},
+        {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Cache files for corresponding blob."},
     }));
     setInMemoryMetadata(storage_metadata);
 }

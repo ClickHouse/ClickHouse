@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 
@@ -22,11 +21,10 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
-MergeTreeReadTask::Columns getReadTaskColumns(
+MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
-    const Names & system_columns,
     const PrewhereInfoPtr & prewhere_info,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,

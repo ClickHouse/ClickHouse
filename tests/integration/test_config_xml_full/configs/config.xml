@@ -72,7 +72,7 @@
     <http_port>8123</http_port>
 
     <!-- Port for interaction by native protocol with:
-         - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark, clickhouse-copier);
+         - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark);
          - clickhouse-server with other clickhouse-servers for distributed query processing;
          - ClickHouse drivers and applications supporting native protocol
          (this protocol is also informally called as "the TCP protocol");

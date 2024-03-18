@@ -12,12 +12,13 @@ StorageValues::StorageValues(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const Block & res_block_,
-    const NamesAndTypesList & virtuals_)
-    : IStorage(table_id_), res_block(res_block_), virtuals(virtuals_)
+    VirtualColumnsDescription virtuals_)
+    : IStorage(table_id_), res_block(res_block_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(std::move(virtuals_));
 }
 
 Pipe StorageValues::read(

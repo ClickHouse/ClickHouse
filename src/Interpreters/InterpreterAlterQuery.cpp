@@ -1,3 +1,4 @@
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
@@ -71,11 +72,15 @@ BlockIO InterpreterAlterQuery::execute()
 
 BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
+    ASTSelectWithUnionQuery * modify_query = nullptr;
+
     for (auto & child : alter.command_list->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
         if (command_ast->sql_security)
             InterpreterCreateQuery::processSQLSecurityOption(getContext(), command_ast->sql_security->as<ASTSQLSecurity &>());
+        else if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
+            modify_query = command_ast->select->as<ASTSelectWithUnionQuery>();
     }
 
     BlockIO res;
@@ -122,6 +127,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+
+    if (modify_query)
+    {
+        // Expand CTE before filling default database
+        ApplyWithSubqueryVisitor().visit(*modify_query);
+    }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());

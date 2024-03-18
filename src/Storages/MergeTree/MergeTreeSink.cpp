@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
@@ -64,7 +63,7 @@ void MergeTreeSink::consume(Chunk chunk)
     if (!storage_snapshot->object_columns.empty())
         convertDynamicColumnsToTuples(block, storage_snapshot);
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
+    auto part_blocks = storage.writer.splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<MergeTreeSink::DelayedChunk::Partition>;
     DelayedPartitions partitions;
@@ -87,6 +86,10 @@ void MergeTreeSink::consume(Chunk chunk)
             temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
             elapsed_ns = watch.elapsed();
         }
+
+        /// Reset earlier to free memory
+        current_block.block.clear();
+        current_block.partition.clear();
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.

@@ -144,7 +144,7 @@ public:
             count = other.count;
             compressed = other.compressed;
 
-            sampled.resize(other.sampled.size());
+            sampled.resize_exact(other.sampled.size());
             memcpy(sampled.data(), other.sampled.data(), sizeof(Stats) * other.sampled.size());
             return;
         }
@@ -180,7 +180,7 @@ public:
             compress();
 
             backup_sampled.clear();
-            backup_sampled.reserve(sampled.size() + other.sampled.size());
+            backup_sampled.reserve_exact(sampled.size() + other.sampled.size());
             double merged_relative_error = std::max(relative_error, other.relative_error);
             size_t merged_count = count + other.count;
             Int64 additional_self_delta = static_cast<Int64>(std::floor(2 * other.relative_error * other.count));
@@ -268,11 +268,7 @@ public:
 
         size_t sampled_len = 0;
         readBinaryLittleEndian(sampled_len, buf);
-        if (sampled_len > compress_threshold)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA, "The number of elements {} for quantileGK exceeds {}", sampled_len, compress_threshold);
-
-        sampled.resize(sampled_len);
+        sampled.resize_exact(sampled_len);
 
         for (size_t i = 0; i < sampled_len; ++i)
         {
@@ -317,7 +313,7 @@ private:
             ::sort(head_sampled.begin(), head_sampled.end());
 
         backup_sampled.clear();
-        backup_sampled.reserve(sampled.size() + head_sampled.size());
+        backup_sampled.reserve_exact(sampled.size() + head_sampled.size());
 
         size_t sample_idx = 0;
         size_t ops_idx = 0;

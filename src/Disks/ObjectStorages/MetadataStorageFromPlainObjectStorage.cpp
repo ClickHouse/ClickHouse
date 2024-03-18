@@ -48,10 +48,7 @@ bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path
     std::string directory = object_key.serialize();
     if (!directory.ends_with('/'))
         directory += '/';
-
-    RelativePathsWithMetadata files;
-    object_storage->listObjects(directory, files, 1);
-    return !files.empty();
+    return object_storage->existsOrHasAnyChild(directory);
 }
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const

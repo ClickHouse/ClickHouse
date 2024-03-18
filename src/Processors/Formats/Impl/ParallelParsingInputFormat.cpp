@@ -224,7 +224,9 @@ Chunk ParallelParsingInputFormat::read()
             /// skipped all rows. For example, it can happen while using settings
             /// input_format_allow_errors_num/input_format_allow_errors_ratio
             /// and this segment contained only rows with errors.
-            /// Process the next unit.
+            /// Return this empty unit back to segmentator and process the next unit.
+            unit->status = READY_TO_INSERT;
+            segmentator_condvar.notify_all();
             ++reader_ticket_number;
             unit = &processing_units[reader_ticket_number % processing_units.size()];
         }

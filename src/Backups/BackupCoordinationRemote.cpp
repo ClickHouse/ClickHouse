@@ -14,6 +14,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
+#include <boost/algorithm/string.hpp>
+
 
 namespace DB
 {

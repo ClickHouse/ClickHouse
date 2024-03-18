@@ -173,7 +173,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
         return result;
 
     ParserIndexDeclarationList parser;
-    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     for (const auto & index : list->children)
         result.emplace_back(IndexDescription::getIndexFromAST(index, columns, context));

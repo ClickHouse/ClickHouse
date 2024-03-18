@@ -1,11 +1,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/BlockNumberColumn.h>
 
 namespace DB
 {
-
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
 
 namespace ErrorCodes
 {
@@ -15,7 +12,7 @@ namespace ErrorCodes
 static CompressionCodecPtr getMarksCompressionCodec(const String & marks_compression_codec)
 {
     ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     return CompressionCodecFactory::instance().get(ast, nullptr);
 }
 
@@ -55,14 +52,10 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
     }
 
-    const auto & storage_columns = metadata_snapshot->getColumns();
+    auto storage_snapshot = std::make_shared<StorageSnapshot>(data_part->storage, metadata_snapshot);
     for (const auto & column : columns_list)
     {
-        ASTPtr compression;
-        if (column.name == BlockNumberColumn::name)
-            compression = BlockNumberColumn::compression_codec->getFullCodecDesc();
-        else
-            compression = storage_columns.getCodecDescOrDefault(column.name, default_codec);
+        auto compression = storage_snapshot->getCodecDescOrDefault(column.name, default_codec);
         addStreams(column, compression);
     }
 }

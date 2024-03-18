@@ -25,14 +25,14 @@ ColumnsDescription StorageSystemS3Queue::getColumnsDescription()
     /// TODO: Fill in all the comments
     return ColumnsDescription
     {
-        {"zookeeper_path", std::make_shared<DataTypeString>()},
-        {"file_name", std::make_shared<DataTypeString>()},
-        {"rows_processed", std::make_shared<DataTypeUInt64>()},
-        {"status", std::make_shared<DataTypeString>()},
-        {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
-        {"processing_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
-        {"exception", std::make_shared<DataTypeString>()},
+        {"zookeeper_path", std::make_shared<DataTypeString>(), "Path in zookeeper to S3Queue metadata"},
+        {"file_name", std::make_shared<DataTypeString>(), "File name of a file which is being processed by S3Queue"},
+        {"rows_processed", std::make_shared<DataTypeUInt64>(), "Currently processed number of rows"},
+        {"status", std::make_shared<DataTypeString>(), "Status of processing: Processed, Processing, Failed"},
+        {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which processing of the file started"},
+        {"processing_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which processing of the file ended"},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "Profile events collected during processing of the file"},
+        {"exception", std::make_shared<DataTypeString>(), "Exception which happened during processing"},
     };
 }
 

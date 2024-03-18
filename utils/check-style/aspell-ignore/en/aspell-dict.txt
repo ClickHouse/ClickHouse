@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2724
+personal_ws-1.1 en 2758 
 AArch
 ACLs
 ALTERs
@@ -260,6 +260,7 @@ ExactEdgeLengthRads
 ExecutablePool
 ExtType
 ExternalDistributed
+FFFFFFFF
 FFFD
 FIPS
 FOSDEM
@@ -546,6 +547,8 @@ MinIO
 MinMax
 MindsDB
 Mongodb
+mortonDecode
+mortonEncode
 MsgPack
 MultiPolygon
 Multiline
@@ -685,7 +688,6 @@ PartsCommitted
 PartsCompact
 PartsDeleteOnDestroy
 PartsDeleting
-PartsInMemory
 PartsOutdated
 PartsPreActive
 PartsPreCommitted
@@ -842,7 +844,6 @@ SendExternalTables
 SendScalars
 ShareAlike
 SharedMergeTree
-Shortkeys
 Shortkeys
 SimHash
 Simhash
@@ -1703,7 +1704,6 @@ hyperscan
 hypot
 hyvor
 iTerm
-iTerm
 icosahedron
 icudata
 idempotency
@@ -1846,6 +1846,7 @@ linearized
 lineasstring
 linefeeds
 lineorder
+linestring
 linux
 llvm
 loadDefaultCAFile
@@ -2204,7 +2205,9 @@ rankCorr
 rapidjson
 rawblob
 readWKTMultiPolygon
+readWKTPoint
 readWKTPolygon
+readWKTRing
 readahead
 readline
 readme
@@ -2327,6 +2330,14 @@ shortcircuit
 shortkeys
 shoutout
 simdjson
+simpleJSON
+simpleJSONExtractBool
+simpleJSONExtractFloat
+simpleJSONExtractInt
+simpleJSONExtractRaw
+simpleJSONExtractString
+simpleJSONExtractUInt
+simpleJSONHas
 simpleLinearRegression
 simpleaggregatefunction
 simplelinearregression
@@ -2545,6 +2556,7 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
+toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2680,7 +2692,9 @@ userver
 utils
 uuid
 varPop
+varPopStable
 varSamp
+varSampStable
 variadic
 variantElement
 variantType
@@ -2742,6 +2756,7 @@ xz
 yaml
 yandex
 youtube
+ZCurve
 zLib
 zLinux
 zabbix

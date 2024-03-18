@@ -43,6 +43,12 @@ HTTPFixedLengthStreamBuf::~HTTPFixedLengthStreamBuf()
 }
 
 
+bool HTTPFixedLengthStreamBuf::isComplete() const
+{
+    return _count == _length;
+}
+
+
 int HTTPFixedLengthStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 {
 	int n = 0;

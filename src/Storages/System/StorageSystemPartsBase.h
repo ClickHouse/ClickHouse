@@ -133,8 +133,6 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    NamesAndTypesList getVirtuals() const override;
-
     bool isSystemStorage() const override { return true; }
 
 private:

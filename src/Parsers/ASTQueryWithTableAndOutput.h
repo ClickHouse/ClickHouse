@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/defines.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Core/UUID.h>
@@ -61,6 +62,7 @@ protected:
             settings.ostr << '.';
         }
 
+        chassert(table != nullptr, "Table is empty for the ASTQueryWithTableAndOutputImpl.");
         table->formatImpl(settings, state, frame);
     }
 };

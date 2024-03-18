@@ -38,8 +38,8 @@ ColumnsDescription StorageSystemRowPolicies::getColumnsDescription()
 
     for (auto filter_type : collections::range(RowPolicyFilterType::MAX))
     {
-        const String & column_name = RowPolicyFilterTypeInfo::get(filter_type).name;
-        description.add({column_name, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+        const auto & filter_type_info = RowPolicyFilterTypeInfo::get(filter_type);
+        description.add({filter_type_info.name, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), filter_type_info.description});
     }
 
     description.add({"is_restrictive", std::make_shared<DataTypeUInt8>(),

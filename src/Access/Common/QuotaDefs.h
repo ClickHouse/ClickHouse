@@ -33,6 +33,8 @@ struct QuotaTypeInfo
     const char * const raw_name = "";
     const String name;    /// Lowercased with underscores, e.g. "result_rows".
     const String keyword; /// Uppercased with spaces, e.g. "RESULT ROWS".
+    const String current_usage_description;
+    const String max_allowed_usage_description;
     const bool output_as_float = false;
     const UInt64 output_denominator = 1;
     String valueToString(QuotaValue value) const;

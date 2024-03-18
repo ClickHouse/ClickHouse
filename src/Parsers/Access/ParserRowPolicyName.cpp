@@ -16,7 +16,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 
@@ -39,13 +39,13 @@ namespace
                 res_table_name = RowPolicyName::ANY_TABLE_MARK;
             }
 
-            /// If table is specified without DB it cannot be followed by "ON"
-            /// (but can be followed by "ON CLUSTER").
+            /// If table is specified without DB it cannot be followed by Keyword::ON
+            /// (but can be followed by Keyword::ON CLUSTER).
             /// The following code is necessary to figure out while parsing something like
             /// policy1 ON table1, policy2 ON table2
             /// that policy2 is another policy, not another table.
             auto end_pos = pos;
-            if (res_database.empty() && ParserKeyword{"ON"}.ignore(pos, expected))
+            if (res_database.empty() && ParserKeyword{Keyword::ON}.ignore(pos, expected))
             {
                 String unused;
                 if (ASTQueryWithOnCluster::parse(pos, unused, expected))
@@ -65,7 +65,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && parseDBAndTableName(pos, expected, database, table_name);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && parseDBAndTableName(pos, expected, database, table_name);
         });
     }
 
@@ -74,7 +74,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"ON"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::ON}.ignore(pos, expected))
                 return false;
 
             std::vector<std::pair<String, String>> res;

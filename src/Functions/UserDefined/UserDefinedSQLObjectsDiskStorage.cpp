@@ -92,7 +92,8 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
                     object_create_query.data() + object_create_query.size(),
                     "",
                     0,
-                    global_context->getSettingsRef().max_parser_depth);
+                    global_context->getSettingsRef().max_parser_depth,
+                    global_context->getSettingsRef().max_parser_backtracks);
                 return ast;
             }
         }

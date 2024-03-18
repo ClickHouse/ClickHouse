@@ -38,7 +38,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
             "1 if the mutation is completed, "
             "0 if the mutation is still in process. "
         },
-        { "is_killed",                  std::make_shared<DataTypeUInt8>() },
+        { "is_killed",                  std::make_shared<DataTypeUInt8>(), "Only available in ClickHouse Cloud."},
         { "latest_failed_part",         std::make_shared<DataTypeString>(), "The name of the most recent part that could not be mutated."},
         { "latest_fail_time",           std::make_shared<DataTypeDateTime>(), "The date and time of the most recent part mutation failure."},
         { "latest_fail_reason",         std::make_shared<DataTypeString>(), "The exception message that caused the most recent part mutation failure."},

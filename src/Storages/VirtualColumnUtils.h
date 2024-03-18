@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 #include <unordered_set>
 
@@ -24,6 +25,9 @@ void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block,
 /// Just filters block. Block should contain all the required columns.
 void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context);
 
+/// Recursively checks if all functions used in DAG are deterministic in scope of query.
+bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
+
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
 ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs);
 
@@ -39,7 +43,8 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
     return res;
 }
 
-NamesAndTypesList getPathFileAndSizeVirtualsForStorage(NamesAndTypesList storage_columns);
+NameSet getVirtualNamesForFileLikeStorage();
+VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns);
 
 ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 

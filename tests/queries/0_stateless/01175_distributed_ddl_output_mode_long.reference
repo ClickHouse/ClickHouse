@@ -3,7 +3,7 @@ Received exception from server:
 Code: 57. Error: Received from localhost:9000. Error: There was an error on [localhost:9000]: Code: 57. Error: Table default.none already exists. (TABLE_ALREADY_EXISTS)
 (query: create table none on cluster test_shard_localhost (n int) engine=Memory;)
 Received exception from server:
-Code: 159. Error: Received from localhost:9000. Error: Watching task <task> is executing longer than distributed_ddl_task_timeout (=1) seconds. There are 1 unfinished hosts (0 of them are currently executing the task), they are going to execute the query in background. (TIMEOUT_EXCEEDED)
+Code: 159. Error: Received from localhost:9000. Error: Distributed DDL task <task> is not finished on 1 of 2 hosts (0 of them are currently executing the task, 0 are inactive). They are going to execute the query in background. Was waiting for <sec> seconds, which is longer than distributed_ddl_task_timeout. (TIMEOUT_EXCEEDED)
 (query: drop table if exists none on cluster test_unavailable_shard;)
 throw
 localhost	9000	0		0	0
@@ -12,7 +12,7 @@ Code: 57. Error: Received from localhost:9000. Error: There was an error on [loc
 (query: create table throw on cluster test_shard_localhost (n int) engine=Memory format Null;)
 localhost	9000	0		1	0
 Received exception from server:
-Code: 159. Error: Received from localhost:9000. Error: Watching task <task> is executing longer than distributed_ddl_task_timeout (=1) seconds. There are 1 unfinished hosts (0 of them are currently executing the task), they are going to execute the query in background. (TIMEOUT_EXCEEDED)
+Code: 159. Error: Received from localhost:9000. Error: Distributed DDL task <task> is not finished on 1 of 2 hosts (0 of them are currently executing the task, 0 are inactive). They are going to execute the query in background. Was waiting for <sec> seconds, which is longer than distributed_ddl_task_timeout. (TIMEOUT_EXCEEDED)
 (query: drop table if exists throw on cluster test_unavailable_shard;)
 null_status_on_timeout
 localhost	9000	0		0	0

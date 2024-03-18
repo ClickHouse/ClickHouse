@@ -16,7 +16,7 @@ class MergeTreeTransaction;
 /// or transaction object is not needed and not passed intentionally.
 #ifndef NO_TRANSACTION_PTR
 #define NO_TRANSACTION_PTR std::shared_ptr<MergeTreeTransaction>(nullptr)
-#define NO_TRANSACTION_RAW static_cast<MergeTreeTransaction *>(nullptr)
+#define NO_TRANSACTION_RAW static_cast<MergeTreeTransaction *>(nullptr) /// NOLINT(bugprone-macro-parentheses)
 #endif
 
 /// Commit Sequence Number

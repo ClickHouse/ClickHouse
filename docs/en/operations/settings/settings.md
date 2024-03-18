@@ -3954,6 +3954,7 @@ Possible values:
 - `none` — Is similar to throw, but distributed DDL query returns no result set.
 - `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
 - `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
+- `none_only_active` - similar to `none`, but doesn't wait for inactive replicas of the `Replicated` database. Note: with this mode it's impossible to figure out that the query was not executed on some replica and will be executed in background.
 - `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
 - `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
@@ -4335,6 +4336,18 @@ Possible values:
 - 1 — Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
 
 Default value: `0`.
+
+
+## function_locate_has_mysql_compatible_argument_order {#function-locate-has-mysql-compatible-argument-order}
+
+Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md#locate).
+
+Possible values:
+
+- 0 — Function `locate` accepts arguments `(haystack, needle[, start_pos])`.
+- 1 — Function `locate` accepts arguments `(needle, haystack, [, start_pos])` (MySQL-compatible behavior)
+
+Default value: `1`.
 
 ## date_time_overflow_behavior {#date_time_overflow_behavior}
 

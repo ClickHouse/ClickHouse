@@ -24,12 +24,6 @@ sidebar_label: "\u6570\u636E\u5907\u4EFD"
 
 某些本地文件系统提供快照功能（例如, [ZFS](https://en.wikipedia.org/wiki/ZFS)），但它们可能不是提供实时查询的最佳选择。 一个可能的解决方案是使用这种文件系统创建额外的副本，并将它们与用于`SELECT` 查询的 [分布式](../engines/table-engines/special/distributed.md) 表分离。 任何修改数据的查询都无法访问此类副本上的快照。 作为回报，这些副本可能具有特殊的硬件配置，每个服务器附加更多的磁盘，这将是经济高效的。
 
-## clickhouse-copier {#clickhouse-copier}
-
-[clickhouse-copier](utilities/clickhouse-copier.md) 是一个多功能工具，最初创建它是为了用于重新切分pb大小的表。 因为它能够在ClickHouse表和集群之间可靠地复制数据，所以它也可用于备份和还原数据。
-
-对于较小的数据量，一个简单的 `INSERT INTO ... SELECT ...` 到远程表也可以工作。
-
 ## part操作 {#manipulations-with-parts}
 
 ClickHouse允许使用 `ALTER TABLE ... FREEZE PARTITION ...` 查询以创建表分区的本地副本。 这是利用硬链接(hardlink)到 `/var/lib/clickhouse/shadow/` 文件夹中实现的，所以它通常不会因为旧数据而占用额外的磁盘空间。 创建的文件副本不由ClickHouse服务器处理，所以你可以把它们留在那里：你将有一个简单的备份，不需要任何额外的外部系统，但它仍然容易出现硬件问题。 出于这个原因，最好将它们远程复制到另一个位置，然后删除本地副本。 分布式文件系统和对象存储仍然是一个不错的选择，但是具有足够大容量的正常附加文件服务器也可以工作（在这种情况下，传输将通过网络文件系统或者也许是 [rsync](https://en.wikipedia.org/wiki/Rsync) 来进行).

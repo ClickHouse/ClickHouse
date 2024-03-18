@@ -3,13 +3,15 @@ import argparse
 import csv
 import logging
 import os
+import shutil
 import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import List, Tuple
 
 from docker_images_helper import get_docker_image, pull_image
-from env_helper import REPO_COPY, TEMP_PATH
+from env_helper import CI, REPO_COPY, TEMP_PATH
 from git_helper import GIT_PREFIX, git_runner
 from pr_info import PRInfo
 from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
@@ -43,7 +45,7 @@ def process_result(
         results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path)
         if len(test_results) == 0:
-            raise Exception("Empty results")
+            raise ValueError("Empty results")
 
         return state, description, test_results, additional_files
     except Exception:
@@ -125,30 +127,71 @@ def main():
 
     repo_path = Path(REPO_COPY)
     temp_path = Path(TEMP_PATH)
+    if temp_path.is_dir():
+        shutil.rmtree(temp_path)
     temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
     IMAGE_NAME = "clickhouse/style-test"
     image = pull_image(get_docker_image(IMAGE_NAME))
-    cmd = (
+    cmd_cpp = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
         f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"{image}"
+        f"--entrypoint= -w/ClickHouse/utils/check-style "
+        f"{image} ./check_cpp.sh"
     )
 
-    if args.push:
-        checkout_head(pr_info)
+    cmd_py = (
+        f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
+        f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
+        f"--entrypoint= -w/ClickHouse/utils/check-style "
+        f"{image} ./check_py.sh"
+    )
 
-    logging.info("Is going to run the command: %s", cmd)
+    cmd_docs = (
+        f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
+        f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
+        f"--entrypoint= -w/ClickHouse/utils/check-style "
+        f"{image} ./check_docs.sh"
+    )
+
+    with ProcessPoolExecutor(max_workers=2) as executor:
+        logging.info("Run docs files check: %s", cmd_docs)
+        future = executor.submit(subprocess.run, cmd_docs, shell=True)
+        # Parallelization  does not make it faster - run subsequently
+        _ = future.result()
+
+        run_cppcheck = True
+        run_pycheck = True
+        if CI and pr_info.number > 0:
+            pr_info.fetch_changed_files()
+            if not any(file.endswith(".py") for file in pr_info.changed_files):
+                run_pycheck = False
+            if all(file.endswith(".py") for file in pr_info.changed_files):
+                run_cppcheck = False
+
+        if run_cppcheck:
+            logging.info("Run source files check: %s", cmd_cpp)
+            future1 = executor.submit(subprocess.run, cmd_cpp, shell=True)
+            _ = future1.result()
+
+        if run_pycheck:
+            if args.push:
+                checkout_head(pr_info)
+            logging.info("Run py files check: %s", cmd_py)
+            future2 = executor.submit(subprocess.run, cmd_py, shell=True)
+            _ = future2.result()
+            if args.push:
+                commit_push_staged(pr_info)
+                checkout_last_ref(pr_info)
+
     subprocess.check_call(
-        cmd,
+        f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
+        f"--out-results-file {temp_path}/test_results.tsv --out-status-file {temp_path}/check_status.tsv || "
+        f'echo -e "failure\tCannot parse results" > {temp_path}/check_status.tsv',
         shell=True,
     )
-
-    if args.push:
-        commit_push_staged(pr_info)
-        checkout_last_ref(pr_info)
 
     state, description, test_results, additional_files = process_result(temp_path)
 

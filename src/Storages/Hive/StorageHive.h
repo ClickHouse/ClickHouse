@@ -54,8 +54,6 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool async_insert) override;
 
-    NamesAndTypesList getVirtuals() const override;
-
     bool supportsSubsetOfColumns() const;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;

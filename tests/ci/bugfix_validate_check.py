@@ -1,37 +1,37 @@
 #!/usr/bin/env python3
 
-from pathlib import Path
-import subprocess
-import sys
-from typing import List, Sequence, Tuple
 import csv
 import logging
+import subprocess
+import sys
+from pathlib import Path
+from typing import List, Sequence, Tuple
 
-from report import (
-    ERROR,
-    FAILURE,
-    SKIPPED,
-    SUCCESS,
-    FAIL,
-    OK,
-    TestResult,
-    TestResults,
-    JobReport,
-)
-from env_helper import TEMP_PATH
-from stopwatch import Stopwatch
 from ci_config import JobNames
 from ci_utils import normalize_string
+from env_helper import TEMP_PATH
 from functional_test_check import NO_CHANGES_MSG
+from report import (
+    ERROR,
+    FAIL,
+    FAILURE,
+    OK,
+    SKIPPED,
+    SUCCESS,
+    JobReport,
+    TestResult,
+    TestResults,
+)
+from stopwatch import Stopwatch
 
 
 def post_commit_status_from_file(file_path: Path) -> List[str]:
     with open(file_path, "r", encoding="utf-8") as f:
         res = list(csv.reader(f, delimiter="\t"))
     if len(res) < 1:
-        raise Exception(f'Can\'t read from "{file_path}"')
+        raise IndexError(f'Can\'t read from "{file_path}"')
     if len(res[0]) != 3:
-        raise Exception(f'Can\'t read from "{file_path}"')
+        raise IndexError(f'Can\'t read from "{file_path}"')
     return res[0]
 
 

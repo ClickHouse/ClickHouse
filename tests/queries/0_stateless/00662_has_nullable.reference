@@ -1,0 +1,14 @@
+Nullable(UInt64), non-null array
+1	1
+\N	0
+Non-nullable UInt64, nullable array
+0	0
+1	1
+2	1
+Nullable(UInt64), nullable array
+0	0
+\N	1
+1	1
+All NULLs
+0	0
+\N	1

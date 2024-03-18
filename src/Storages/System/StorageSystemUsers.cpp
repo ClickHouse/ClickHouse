@@ -69,10 +69,10 @@ ColumnsDescription StorageSystemUsers::getColumnsDescription()
         {"default_roles_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "All the granted roles set as default excepting of the listed ones."
         },
-        {"grantees_any", std::make_shared<DataTypeUInt8>()},
-        {"grantees_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"grantees_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"default_database", std::make_shared<DataTypeString>()},
+        {"grantees_any", std::make_shared<DataTypeUInt8>(), "The flag that indicates whether a user with any grant option can grant it to anyone."},
+        {"grantees_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of users or roles to which this user is allowed to grant options to."},
+        {"grantees_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of users or roles to which this user is forbidden from grant options to."},
+        {"default_database", std::make_shared<DataTypeString>(), "The name of the default database for this user."},
     };
 }
 

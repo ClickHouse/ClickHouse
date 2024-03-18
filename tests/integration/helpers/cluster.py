@@ -1618,6 +1618,7 @@ class ClickHouseCluster:
         with_installed_binary=False,
         external_dirs=None,
         tmpfs=None,
+        mem_limit=None,
         zookeeper_docker_compose_path=None,
         minio_certs_dir=None,
         minio_data_dir=None,
@@ -1728,6 +1729,7 @@ class ClickHouseCluster:
             with_installed_binary=with_installed_binary,
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
+            mem_limit=mem_limit,
             config_root_name=config_root_name,
             extra_configs=extra_configs,
         )
@@ -3203,6 +3205,7 @@ services:
             {krb5_conf}
         entrypoint: {entrypoint_cmd}
         tmpfs: {tmpfs}
+        {mem_limit}
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
@@ -3288,6 +3291,7 @@ class ClickHouseInstance:
         with_installed_binary=False,
         external_dirs=None,
         tmpfs=None,
+        mem_limit=None,
         config_root_name="clickhouse",
         extra_configs=[],
     ):
@@ -3299,6 +3303,10 @@ class ClickHouseInstance:
 
         self.external_dirs = external_dirs
         self.tmpfs = tmpfs or []
+        if mem_limit is not None:
+            self.mem_limit = "mem_limit : " + mem_limit
+        else:
+            self.mem_limit = ""
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
         )
@@ -4644,6 +4652,7 @@ class ClickHouseInstance:
                     db_dir=db_dir,
                     external_dirs_volumes=external_dirs_volumes,
                     tmpfs=str(self.tmpfs),
+                    mem_limit=self.mem_limit,
                     logs_dir=logs_dir,
                     depends_on=str(depends_on),
                     user=os.getuid(),

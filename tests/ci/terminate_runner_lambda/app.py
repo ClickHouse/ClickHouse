@@ -8,8 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 import boto3  # type: ignore
-
-from lambda_shared import RunnerDescriptions, list_runners, cached_value_is_valid
+from lambda_shared import RunnerDescriptions, cached_value_is_valid, list_runners
 from lambda_shared.token import get_access_token_by_key_app, get_cached_access_token
 
 
@@ -134,7 +133,7 @@ def main(access_token: str, event: dict) -> Dict[str, List[str]]:
         candidates = instances_by_zone[zone]
         total_to_kill += num_to_kill
         if num_to_kill > len(candidates):
-            raise Exception(
+            raise RuntimeError(
                 f"Required to kill {num_to_kill}, but have only {len(candidates)}"
                 f" candidates in AV {zone}"
             )
@@ -196,6 +195,7 @@ def main(access_token: str, event: dict) -> Dict[str, List[str]]:
 
 
 def handler(event: dict, context: Any) -> Dict[str, List[str]]:
+    _ = context
     return main(get_cached_access_token(), event)
 
 
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     if args.private_key:
         private_key = args.private_key
     else:
-        with open(args.private_key_path, "r") as key_file:
+        with open(args.private_key_path, "r", encoding="utf-8") as key_file:
             private_key = key_file.read()
 
     token = get_access_token_by_key_app(private_key, args.app_id)

@@ -30,7 +30,6 @@ public:
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
-    NamesAndTypesList getVirtuals() const override { return getNested()->getVirtuals(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr context,

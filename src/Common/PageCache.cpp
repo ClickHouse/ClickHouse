@@ -191,7 +191,7 @@ size_t PageCache::maxChunks() const { return chunks_per_mmap_target * max_mmaps;
 
 size_t PageCache::getPinnedSize() const
 {
-    std::unique_lock lock(global_mutex);
+    std::lock_guard lock(global_mutex);
     return (total_chunks - lru.size()) * bytes_per_page * pages_per_chunk;
 }
 
@@ -202,8 +202,11 @@ PageCache::MemoryStats PageCache::getResidentSetSize() const
     if (use_madv_free)
     {
         std::unordered_set<UInt64> cache_mmap_addrs;
-        for (const auto & m : mmaps)
-            cache_mmap_addrs.insert(reinterpret_cast<UInt64>(m.ptr));
+        {
+            std::lock_guard lock(global_mutex);
+            for (const auto & m : mmaps)
+                cache_mmap_addrs.insert(reinterpret_cast<UInt64>(m.ptr));
+        }
 
         ReadBufferFromFile in("/proc/self/smaps");
 
@@ -283,6 +286,7 @@ PageCache::MemoryStats PageCache::getResidentSetSize() const
     }
 #endif
 
+    std::lock_guard lock(global_mutex);
     stats.page_cache_rss = bytes_per_page * pages_per_chunk * total_chunks;
     return stats;
 }
@@ -294,12 +298,12 @@ PinnedPageChunk PageCache::getOrSet(PageCacheKey key, bool detached_if_missing, 
     bool incremented_profile_events = false;
 
     {
-        std::unique_lock lock(global_mutex);
+        std::lock_guard lock(global_mutex);
 
         auto * it = chunk_by_key.find(key);
         if (it == chunk_by_key.end())
         {
-            chunk = getFreeChunk(lock);
+            chunk = getFreeChunk();
             chassert(!chunk->key.has_value());
 
             if (!detached_if_missing)
@@ -331,14 +335,14 @@ PinnedPageChunk PageCache::getOrSet(PageCacheKey key, bool detached_if_missing, 
                     ///  otherwise we may detach a chunk pinned by someone else, which may be unexpected
                     ///  for that someone else. Or maybe the latter is fine, dropCache() already does it.)
                     if (chunk->pages_populated.get(0) && reinterpret_cast<volatile std::atomic<char>*>(chunk->data)->load(std::memory_order_relaxed) == 0)
-                        evictChunk(chunk, lock);
+                        evictChunk(chunk);
                 }
 
                 if (inject_eviction && chunk->key.has_value() && rng() % 10 == 0)
                 {
                     /// Simulate eviction of the chunk or some of its pages.
                     if (rng() % 2 == 0)
-                        evictChunk(chunk, lock);
+                        evictChunk(chunk);
                     else
                         for (size_t i = 0; i < 20; ++i)
                             chunk->pages_populated.unset(rng() % (chunk->size / chunk->page_size));
@@ -353,7 +357,7 @@ PinnedPageChunk PageCache::getOrSet(PageCacheKey key, bool detached_if_missing, 
     }
 
     {
-        std::unique_lock chunk_lock(chunk->chunk_mutex);
+        std::lock_guard chunk_lock(chunk->chunk_mutex);
 
         if (chunk->pages_state == PageChunkState::Limbo)
         {
@@ -383,7 +387,7 @@ void PageCache::removeRef(PageChunk * chunk) noexcept
         return;
 
     {
-        std::unique_lock lock(global_mutex);
+        std::lock_guard lock(global_mutex);
 
         prev_pin_count = chunk->pin_count.fetch_sub(1);
         if (prev_pin_count > 1)
@@ -398,7 +402,7 @@ void PageCache::removeRef(PageChunk * chunk) noexcept
     }
 
     {
-        std::unique_lock chunk_lock(chunk->chunk_mutex);
+        std::lock_guard chunk_lock(chunk->chunk_mutex);
 
         /// Need to be extra careful here because we unlocked global_mutex above, so other
         /// getOrSet()/removeRef() calls could have happened during this brief period.
@@ -421,7 +425,7 @@ static void logUnexpectedSyscallError(std::string name)
 #endif
 }
 
-void PageCache::sendChunkToLimbo(PageChunk * chunk [[maybe_unused]], std::unique_lock<std::mutex> & /* chunk_mutex */) const noexcept
+void PageCache::sendChunkToLimbo(PageChunk * chunk [[maybe_unused]], std::lock_guard<std::mutex> & /* chunk_mutex */) const noexcept
 {
 #ifdef MADV_FREE // if we're not on a very old version of Linux
     chassert(chunk->size == bytes_per_page * pages_per_chunk);
@@ -454,7 +458,7 @@ void PageCache::sendChunkToLimbo(PageChunk * chunk [[maybe_unused]], std::unique
 #endif
 }
 
-std::pair<size_t, size_t> PageCache::restoreChunkFromLimbo(PageChunk * chunk, std::unique_lock<std::mutex> & /* chunk_mutex */) const noexcept
+std::pair<size_t, size_t> PageCache::restoreChunkFromLimbo(PageChunk * chunk, std::lock_guard<std::mutex> & /* chunk_mutex */) const noexcept
 {
     static_assert(sizeof(std::atomic<char>) == 1, "char is not atomic?");
     // Make sure our strategic memory reads/writes are not reordered or optimized out.
@@ -505,10 +509,10 @@ std::pair<size_t, size_t> PageCache::restoreChunkFromLimbo(PageChunk * chunk, st
     return {pages_restored, pages_evicted};
 }
 
-PageChunk * PageCache::getFreeChunk(std::unique_lock<std::mutex> & lock /* global_mutex */)
+PageChunk * PageCache::getFreeChunk()
 {
     if (lru.empty() || (mmaps.size() < max_mmaps && lru.front().key.has_value()))
-        addMmap(lock);
+        addMmap();
     if (lru.empty())
         throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "All chunks in the entire page cache ({:.3} GiB) are pinned.",
             bytes_per_page * pages_per_chunk * total_chunks * 1. / (1l << 30));
@@ -519,12 +523,12 @@ PageChunk * PageCache::getFreeChunk(std::unique_lock<std::mutex> & lock /* globa
     size_t prev_pin_count = chunk->pin_count.fetch_add(1);
     chassert(prev_pin_count == 0);
 
-    evictChunk(chunk, lock);
+    evictChunk(chunk);
 
     return chunk;
 }
 
-void PageCache::evictChunk(PageChunk * chunk, std::unique_lock<std::mutex> & /* global_mutex */)
+void PageCache::evictChunk(PageChunk * chunk)
 {
     if (chunk->key.has_value())
     {
@@ -548,7 +552,7 @@ void PageCache::evictChunk(PageChunk * chunk, std::unique_lock<std::mutex> & /* 
     chunk->pages_populated.unsetAll();
 }
 
-void PageCache::addMmap(std::unique_lock<std::mutex> & /* global_mutex */)
+void PageCache::addMmap()
 {
     /// ASLR by hand.
     void * address_hint = reinterpret_cast<void *>(std::uniform_int_distribution<size_t>(0x100000000000UL, 0x700000000000UL)(rng));
@@ -564,13 +568,13 @@ void PageCache::addMmap(std::unique_lock<std::mutex> & /* global_mutex */)
 
 void PageCache::dropCache()
 {
-    std::unique_lock lock(global_mutex);
+    std::lock_guard lock(global_mutex);
 
     /// Detach and free unpinned chunks.
     bool logged_error = false;
     for (PageChunk & chunk : lru)
     {
-        evictChunk(&chunk, lock);
+        evictChunk(&chunk);
 
         if (use_madv_free)
         {

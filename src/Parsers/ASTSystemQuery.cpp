@@ -114,6 +114,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
             settings.ostr << '.';
         }
 
+        chassert(table);
         table->formatImpl(settings, state, frame);
         return settings.ostr;
     };
@@ -383,6 +384,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::KILL:
         case Type::SHUTDOWN:
         case Type::DROP_DNS_CACHE:
+        case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
         case Type::DROP_MARK_CACHE:

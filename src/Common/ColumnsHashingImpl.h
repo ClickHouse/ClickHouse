@@ -62,7 +62,6 @@ struct LastElementCache
     bool check(const Key & key) const { return value.first == key; }
 
     bool hasOnlyOneValue() const { return found && misses == 1; }
-    UInt64 getMisses() const { return misses; }
 };
 
 template <typename Data>
@@ -232,7 +231,7 @@ public:
     ALWAYS_INLINE UInt64 getCacheMissesSinceLastReset() const
     {
         if constexpr (consecutive_keys_optimization)
-            return cache.getMisses();
+            return cache.misses;
         return 0;
     }
 

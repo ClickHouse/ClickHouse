@@ -2,6 +2,7 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Planner/PlannerJoinTree.h>
@@ -156,7 +157,8 @@ QueryTreeNodePtr replaceTablesWithDummyTables(const QueryTreeNodePtr & query, co
 /// Otherwise we can execute current query up to WithMergableStage only.
 const QueryNode * findQueryForParallelReplicas(
     std::stack<const QueryNode *> stack,
-    const std::unordered_map<const QueryNode *, const QueryPlan::Node *> & mapping)
+    const std::unordered_map<const QueryNode *, const QueryPlan::Node *> & mapping,
+    const Settings & settings)
 {
     const QueryPlan::Node * prev_checked_node = nullptr;
     const QueryNode * res = nullptr;
@@ -192,7 +194,11 @@ const QueryNode * findQueryForParallelReplicas(
             {
                 const auto * expression = typeid_cast<ExpressionStep *>(step);
                 const auto * filter = typeid_cast<FilterStep *>(step);
-                if (!expression && !filter)
+
+                const auto * creating_sets = typeid_cast<DelayedCreatingSetsStep *>(step);
+                bool allowed_creating_sets = settings.parallel_replicas_allow_in_with_subquery && creating_sets;
+
+                if (!expression && !filter && !allowed_creating_sets)
                     can_distribute_full_node = false;
 
                 next_node_to_check = children.front();
@@ -274,7 +280,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     /// So that we build a list of candidates again, and call findQueryForParallelReplicas for it.
     auto new_stack = getSupportingParallelReplicasQuery(updated_query_tree.get());
     const auto & mapping = planner.getQueryNodeToPlanStepMapping();
-    const auto * res = findQueryForParallelReplicas(new_stack, mapping);
+    const auto * res = findQueryForParallelReplicas(new_stack, mapping, context->getSettingsRef());
 
     /// Now, return a query from initial stack.
     if (res)

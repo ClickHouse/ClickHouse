@@ -119,8 +119,6 @@ public:
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
-    static bool canUseReadThroughCache(const ReadSettings & settings);
-
 #if USE_AZURE_BLOB_STORAGE
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() override
     {

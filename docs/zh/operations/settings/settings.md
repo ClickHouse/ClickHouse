@@ -649,10 +649,21 @@ log_query_threads=1
 
 ## max_query_size {#settings-max_query_size}
 
-查询的最大部分，可以被带到RAM用于使用SQL解析器进行解析。
-插入查询还包含由单独的流解析器（消耗O(1)RAM）处理的插入数据，这些数据不包含在此限制中。
+SQL 解析器解析的查询字符串的最大字节数。 INSERT 查询的 VALUES 子句中的数据由单独的流解析器（消耗 O(1) RAM）处理，并且不受此限制的影响。
 
 默认值：256KiB。
+
+
+## max_parser_depth {#max_parser_depth}
+
+限制递归下降解析器中的最大递归深度。允许控制堆栈大小。
+
+可能的值：
+
+- 正整数。
+- 0 — 递归深度不受限制。
+
+默认值：1000。
 
 ## interactive_delay {#interactive-delay}
 
@@ -1063,6 +1074,28 @@ ClickHouse生成异常
 -   0 — Throwing an exception is disabled.
 
 默认值：0。
+
+## optimize_functions_to_subcolumns {#optimize_functions_to_subcolumns}
+
+启用或禁用通过将某些函数转换为读取子列的优化。这减少了要读取的数据量。
+
+这些函数可以转化为：
+
+- [length](../../sql-reference/functions/array-functions.md/#array_functions-length) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
+- [empty](../../sql-reference/functions/array-functions.md/#empty函数) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
+- [notEmpty](../../sql-reference/functions/array-functions.md/#notempty函数) 读取 [size0](../../sql-reference/data-types/array.md/#array-size）子列。
+- [isNull](../../sql-reference/operators/index.md#operator-is-null) 读取 [null](../../sql-reference/data-types/nullable. md/#finding-null) 子列。
+- [isNotNull](../../sql-reference/operators/index.md#is-not-null) 读取 [null](../../sql-reference/data-types/nullable. md/#finding-null) 子列。
+- [count](../../sql-reference/aggregate-functions/reference/count.md) 读取 [null](../../sql-reference/data-types/nullable.md/#finding-null) 子列。
+- [mapKeys](../../sql-reference/functions/tuple-map-functions.mdx/#mapkeys) 读取 [keys](../../sql-reference/data-types/map.md/#map-subcolumns) 子列。
+- [mapValues](../../sql-reference/functions/tuple-map-functions.mdx/#mapvalues) 读取 [values](../../sql-reference/data-types/map.md/#map-subcolumns) 子列。
+
+可能的值：
+
+- 0 — 禁用优化。
+- 1 — 优化已启用。
+
+默认值：`0`。
 
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 

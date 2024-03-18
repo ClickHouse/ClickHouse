@@ -51,8 +51,6 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
-
     const auto & getFormatName() const { return configuration.format; }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
@@ -71,7 +69,6 @@ private:
     Configuration configuration;
 
     const std::optional<FormatSettings> format_settings;
-    NamesAndTypesList virtual_columns;
 
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};

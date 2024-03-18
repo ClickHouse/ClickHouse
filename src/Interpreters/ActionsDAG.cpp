@@ -64,6 +64,37 @@ std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::N
     return { std::move(arguments), all_const };
 }
 
+bool isConstantFromScalarSubquery(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> stack;
+    stack.push(node);
+    while (!stack.empty())
+    {
+        const auto * arg = stack.top();
+        stack.pop();
+
+        if (arg->column && isColumnConst(*arg->column))
+            continue;
+
+        while (arg->type == ActionsDAG::ActionType::ALIAS)
+            arg = arg->children.at(0);
+
+        if (arg->type != ActionsDAG::ActionType::FUNCTION)
+            return false;
+
+        if (arg->function_base->getName() == "__scalarSubqueryResult")
+            continue;
+
+        if (arg->children.empty() || !arg->function_base->isSuitableForConstantFolding())
+            return false;
+
+        for (const auto * child : arg->children)
+            stack.push(child);
+    }
+
+    return true;
+}
+
 }
 
 void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
@@ -195,6 +226,19 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     std::string result_name)
 {
     auto [arguments, all_const] = getFunctionArguments(children);
+
+    auto constant_args = function->getArgumentsThatAreAlwaysConstant();
+    for (size_t pos : constant_args)
+    {
+        if (pos >= children.size())
+            continue;
+
+        if (arguments[pos].column && isColumnConst(*arguments[pos].column))
+            continue;
+
+        if (isConstantFromScalarSubquery(children[pos]))
+            arguments[pos].column = arguments[pos].type->createColumnConstWithDefaultValue(0);
+    }
 
     auto function_base = function->build(arguments);
     return addFunctionImpl(
@@ -1318,7 +1362,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     size_t num_result_columns = result.size();
 
     if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
-        throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns doesn't match");
+        throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns doesn't match (source: {} and result: {})", num_input_columns, num_result_columns);
 
     if (add_casted_columns && mode != MatchColumnsMode::Name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_casted_columns supported only for MatchColumnsMode::Name");

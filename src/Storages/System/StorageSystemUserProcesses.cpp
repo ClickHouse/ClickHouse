@@ -18,10 +18,10 @@ ColumnsDescription StorageSystemUserProcesses::getColumnsDescription()
 {
     auto description = ColumnsDescription
     {
-        {"user", std::make_shared<DataTypeString>()},
-        {"memory_usage", std::make_shared<DataTypeInt64>()},
-        {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
+        {"user", std::make_shared<DataTypeString>(), "User name."},
+        {"memory_usage", std::make_shared<DataTypeInt64>(), "Sum of RAM used by all processes of the user. It might not include some types of dedicated memory. See the max_memory_usage setting."},
+        {"peak_memory_usage", std::make_shared<DataTypeInt64>(), "The peak of memory usage of the user. It can be reset when no queries are run for the user."},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "Summary of ProfileEvents that measure different metrics for the user. The description of them could be found in the table system.events"},
     };
 
     description.setAliases({

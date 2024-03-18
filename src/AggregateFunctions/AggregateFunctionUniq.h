@@ -483,6 +483,7 @@ public:
     }
 
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
+    bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *) const override
     {
@@ -576,6 +577,7 @@ public:
     }
 
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
+    bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *) const override
     {

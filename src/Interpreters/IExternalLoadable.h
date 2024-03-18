@@ -23,7 +23,7 @@ struct ExternalLoadableLifetime
     UInt64 max_sec = 0;
 
     ExternalLoadableLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
-    ExternalLoadableLifetime() {}
+    ExternalLoadableLifetime() = default;
 };
 
 /// Get delay before trying to load again after error.

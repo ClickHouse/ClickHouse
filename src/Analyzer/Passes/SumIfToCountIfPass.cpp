@@ -54,10 +54,10 @@ public:
             if (!constant_node)
                 return;
 
-            const auto & constant_value_literal = constant_node->getValue();
-            if (!isInt64OrUInt64FieldType(constant_value_literal.getType()))
+            if (auto constant_type = constant_node->getResultType(); !isNativeInteger(constant_type))
                 return;
 
+            const auto & constant_value_literal = constant_node->getValue();
             if (getSettings().aggregate_functions_null_for_empty)
                 return;
 

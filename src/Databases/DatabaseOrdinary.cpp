@@ -440,10 +440,22 @@ void DatabaseOrdinary::stopLoading()
 
 DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
 {
-    auto result = DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name);
-    std::scoped_lock lock(mutex);
-    typeid_cast<DatabaseTablesSnapshotIterator &>(*result).setLoadTasks(startup_table);
-    return result;
+    // Wait for every table (matching the filter) to be loaded and started up before we make the snapshot.
+    // It is important, because otherwise table might be:
+    //  - not attached and thus will be missed in the snapshot;
+    //  - not started, which is not good for DDL operations.
+    LoadTaskPtrs tasks_to_wait;
+    {
+        std::lock_guard lock(mutex);
+        if (!filter_by_table_name)
+            tasks_to_wait.reserve(startup_table.size());
+        for (const auto & [table_name, task] : startup_table)
+            if (!filter_by_table_name || filter_by_table_name(table_name))
+                tasks_to_wait.emplace_back(task);
+    }
+    waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), tasks_to_wait);
+
+    return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name);
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
@@ -469,7 +481,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         statement.data() + statement.size(),
         "in file " + table_metadata_path,
         0,
-        local_context->getSettingsRef().max_parser_depth);
+        local_context->getSettingsRef().max_parser_depth, local_context->getSettingsRef().max_parser_backtracks);
 
     applyMetadataChangesToCreateQuery(ast, metadata);
 

@@ -53,7 +53,7 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
                 }
             }
         }
-        else if (function->name == "toUInt8" || function->name == "toInt8" || function->name == "identity")
+        else if (function->name == "toUInt8" || function->name == "toInt8" || function->name == "identity" || function->name == "__scalarSubqueryResult")
         {
             if (const auto * expr_list = function->arguments->as<ASTExpressionList>())
             {

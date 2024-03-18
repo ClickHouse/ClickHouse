@@ -52,6 +52,7 @@ struct RowPolicyFilterTypeInfo
     const char * const raw_name;
     const String name;    /// Lowercased with underscores, e.g. "select_filter".
     const String command; /// Uppercased without last word, e.g. "SELECT".
+    const String description;
     const bool is_check;  /// E.g. false for SELECT_FILTER.
     static const RowPolicyFilterTypeInfo & get(RowPolicyFilterType type);
 };

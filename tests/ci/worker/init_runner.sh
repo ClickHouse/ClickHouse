@@ -138,13 +138,15 @@ check_spot_instance_is_old() {
 check_proceed_spot_termination() {
     # The function checks and proceeds spot instance termination if exists
     # The event for spot instance termination
+    local FORCE
+    FORCE=${1:-}
     if TERMINATION_DATA=$(curl -s --fail http://169.254.169.254/latest/meta-data/spot/instance-action); then
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html#instance-action-metadata
         _action=$(jq '.action' -r <<< "$TERMINATION_DATA")
         _time=$(jq '.time | fromdate' <<< "$TERMINATION_DATA")
         _until_action=$((_time - $(date +%s)))
         echo "Received the '$_action' event that will be effective in $_until_action seconds"
-        if (( _until_action <= 30 )); then
+        if (( _until_action <= 30 )) || [ "$FORCE" == "force" ]; then
             echo "The action $_action will be done in $_until_action, killing the runner and exit"
             local runner_pid
             runner_pid=$(pgrep Runner.Listener)
@@ -309,7 +311,7 @@ while true; do
         echo "Checking if the instance suppose to terminate"
         no_terminating_metadata || terminate_on_event
         check_spot_instance_is_old && terminate_and_exit
-        check_proceed_spot_termination
+        check_proceed_spot_termination force
 
         echo "Going to configure runner"
         sudo -u ubuntu ./config.sh --url $RUNNER_URL --token "$(get_runner_token)" \
@@ -319,7 +321,7 @@ while true; do
         echo "Another one check to avoid race between runner and infrastructure"
         no_terminating_metadata || terminate_on_event
         check_spot_instance_is_old && terminate_and_exit
-        check_proceed_spot_termination
+        check_proceed_spot_termination force
 
         echo "Run"
         sudo -u ubuntu \

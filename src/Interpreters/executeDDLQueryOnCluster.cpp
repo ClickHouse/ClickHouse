@@ -252,7 +252,8 @@ BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & en
     auto source = std::make_shared<DDLQueryStatusSource>(node_path, entry, context, hosts_to_wait);
     io.pipeline = QueryPipeline(std::move(source));
 
-    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
+    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE ||
+        context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
         io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getHeader()));
 
     return io;
@@ -264,7 +265,9 @@ Block DDLQueryStatusSource::getSampleBlock(ContextPtr context_, bool hosts_to_wa
 
     auto maybe_make_nullable = [&](const DataTypePtr & type) -> DataTypePtr
     {
-        if (output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE)
+        if (output_mode == DistributedDDLOutputMode::THROW ||
+            output_mode == DistributedDDLOutputMode::NONE ||
+            output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE)
             return type;
         return std::make_shared<DataTypeNullable>(type);
     };
@@ -313,14 +316,15 @@ DDLQueryStatusSource::DDLQueryStatusSource(
 {
     auto output_mode = context->getSettingsRef().distributed_ddl_output_mode;
     throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::THROW_ONLY_ACTIVE
-        || output_mode == DistributedDDLOutputMode::NONE;
+        || output_mode == DistributedDDLOutputMode::NONE || output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE;
 
     if (hosts_to_wait)
     {
         waiting_hosts = NameSet(hosts_to_wait->begin(), hosts_to_wait->end());
         is_replicated_database = true;
         only_running_hosts = output_mode == DistributedDDLOutputMode::THROW_ONLY_ACTIVE ||
-                            output_mode == DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE;
+                             output_mode == DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE ||
+                             output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE;
     }
     else
     {
@@ -442,14 +446,16 @@ Chunk DDLQueryStatusSource::generate()
             size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
             size_t num_active_hosts = current_active_hosts.size();
 
-            constexpr auto msg_format = "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
-                                                "There are {} unfinished hosts ({} of them are currently executing the task), "
-                                                "they are going to execute the query in background";
+            constexpr auto msg_format = "Distributed DDL task {} is not finished on {} of {} hosts "
+                                        "({} of them are currently executing the task, {} are inactive). "
+                                        "They are going to execute the query in background. Was waiting for {} seconds{}";
+
             if (throw_on_timeout)
             {
                 if (!first_exception)
                     first_exception = std::make_unique<Exception>(Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                        msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts));
+                        msg_format, node_path, num_unfinished_hosts, waiting_hosts.size(), num_active_hosts, offline_hosts.size(),
+                        watch.elapsedSeconds(), stop_waiting_offline_hosts ? "" : ", which is longer than distributed_ddl_task_timeout"));
 
                 /// For Replicated database print a list of unfinished hosts as well. Will return empty block on next iteration.
                 if (is_replicated_database)
@@ -457,7 +463,8 @@ Chunk DDLQueryStatusSource::generate()
                 return {};
             }
 
-            LOG_INFO(log, msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+            LOG_INFO(log, msg_format, node_path, num_unfinished_hosts, waiting_hosts.size(), num_active_hosts, offline_hosts.size(),
+                     watch.elapsedSeconds(), stop_waiting_offline_hosts ? "" : "which is longer than distributed_ddl_task_timeout");
 
             return generateChunkWithUnfinishedHosts();
         }

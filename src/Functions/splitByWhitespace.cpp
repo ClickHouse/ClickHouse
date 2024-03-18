@@ -30,6 +30,8 @@ public:
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }
 
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1}; }
+
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         checkArgumentsWithOptionalMaxSubstrings(func, arguments);
