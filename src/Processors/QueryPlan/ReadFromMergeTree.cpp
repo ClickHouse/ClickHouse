@@ -1343,7 +1343,7 @@ static void buildIndexes(
     {
         const auto & indices = settings.ignore_data_skipping_indices.toString();
         Tokens tokens(indices.data(), indices.data() + indices.size(), settings.max_query_size);
-        IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth));
+        IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
         Expected expected;
 
         /// Use an unordered list rather than string vector

@@ -192,7 +192,7 @@ private:
 
     using Aliases = std::vector<AliasData>;
 
-    SelectQueryInfo getModifiedQueryInfo(const ContextPtr & modified_context,
+    SelectQueryInfo getModifiedQueryInfo(const ContextMutablePtr & modified_context,
         const StorageWithLockAndName & storage_with_lock_and_name,
         const StorageSnapshotPtr & storage_snapshot,
         Names required_column_names,

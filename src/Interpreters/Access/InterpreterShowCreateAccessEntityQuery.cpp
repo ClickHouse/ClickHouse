@@ -206,7 +206,7 @@ namespace
             if (!filter.empty())
             {
                 ParserExpression parser;
-                ASTPtr expr = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                ASTPtr expr = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
                 query->filters.emplace_back(type, std::move(expr));
             }
         }

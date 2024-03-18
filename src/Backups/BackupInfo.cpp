@@ -25,7 +25,7 @@ String BackupInfo::toString() const
 BackupInfo BackupInfo::fromString(const String & str)
 {
     ParserIdentifierWithOptionalParameters parser;
-    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     return fromAST(*ast);
 }
 

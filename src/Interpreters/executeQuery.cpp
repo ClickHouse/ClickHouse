@@ -746,18 +746,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
-            ParserPRQLQuery parser(max_query_size, settings.max_parser_depth);
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ParserPRQLQuery parser(max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         }
         else
         {
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 
 #ifndef NDEBUG
             /// Verify that AST formatting is consistent:
@@ -774,7 +774,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 ast2 = parseQuery(parser,
                     formatted1.data(),
                     formatted1.data() + formatted1.size(),
-                    "", new_max_query_size, settings.max_parser_depth);
+                    "", new_max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
             }
             catch (const Exception & e)
             {

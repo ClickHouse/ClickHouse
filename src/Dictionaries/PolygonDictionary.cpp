@@ -1,6 +1,5 @@
 #include "PolygonDictionary.h"
 
-#include <numeric>
 #include <cmath>
 
 #include <base/sort.h>
@@ -15,7 +14,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 
 
 namespace DB

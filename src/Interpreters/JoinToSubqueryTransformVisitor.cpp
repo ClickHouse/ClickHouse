@@ -43,7 +43,7 @@ ASTPtr makeSubqueryTemplate(const String & table_alias)
     String query_template = "(select * from _t)";
     if (!table_alias.empty())
         query_template += " as " + table_alias;
-    ASTPtr subquery_template = parseQuery(parser, query_template, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr subquery_template = parseQuery(parser, query_template, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     if (!subquery_template)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse subquery template");
     return subquery_template;

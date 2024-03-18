@@ -162,6 +162,10 @@ public:
     /// Tells if merge() with thread pool parameter could be used.
     virtual bool isAbleToParallelizeMerge() const { return false; }
 
+    /// Return true if it is allowed to replace call of `addBatch`
+    /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
+    virtual bool canOptimizeEqualKeysRanges() const { return true; }
+
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     virtual void
     merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, Arena * /*arena*/) const

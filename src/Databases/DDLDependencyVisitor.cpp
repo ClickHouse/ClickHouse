@@ -444,8 +444,9 @@ namespace
             ParserSelectWithUnionQuery parser;
             String description = fmt::format("Query for ClickHouse dictionary {}", data.table_name);
             String fixed_query = removeWhereConditionPlaceholder(query);
+            const Settings & settings = data.context->getSettingsRef();
             ASTPtr select = parseQuery(parser, fixed_query, description,
-                                       data.context->getSettingsRef().max_query_size, data.context->getSettingsRef().max_parser_depth);
+                settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 
             DDLDependencyVisitor::Visitor visitor{data};
             visitor.visit(select);

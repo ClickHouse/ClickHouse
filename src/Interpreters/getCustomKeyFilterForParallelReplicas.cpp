@@ -122,7 +122,7 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
     const auto & settings = context.getSettingsRef();
     return parseQuery(
         parser, custom_key.data(), custom_key.data() + custom_key.size(),
-        "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth);
+        "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 }
 
 }

@@ -1,7 +1,5 @@
 #include "ReadBufferFromRemoteFSGather.h"
 
-#include <IO/SeekableReadBuffer.h>
-
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
@@ -9,7 +7,6 @@
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <base/hex.h>
 #include <Common/logger_useful.h>
 
 using namespace DB;

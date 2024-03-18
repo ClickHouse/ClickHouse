@@ -55,9 +55,11 @@ static void executeCreateQuery(
     bool create,
     bool has_force_restore_data_flag)
 {
+    const Settings & settings = context->getSettingsRef();
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(
-        parser, query.data(), query.data() + query.size(), "in file " + file_name, 0, context->getSettingsRef().max_parser_depth);
+        parser, query.data(), query.data() + query.size(), "in file " + file_name,
+        0, settings.max_parser_depth, settings.max_parser_backtracks);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.setDatabase(database);

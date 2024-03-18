@@ -538,7 +538,7 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
             ParserExpression parser;
             additional_filter_ast = parseQuery(
                 parser, filter.data(), filter.data() + filter.size(),
-                "additional filter", settings.max_query_size, settings.max_parser_depth);
+                "additional filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
             break;
         }
     }

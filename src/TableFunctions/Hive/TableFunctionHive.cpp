@@ -17,6 +17,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
+
 namespace DB
 {
 
@@ -99,7 +100,8 @@ StoragePtr TableFunctionHive::executeImpl(
         "(" + partition_by_def + ")",
         "partition by declaration list",
         settings.max_query_size,
-        settings.max_parser_depth);
+        settings.max_parser_depth,
+        settings.max_parser_backtracks);
     StoragePtr storage;
     storage = std::make_shared<StorageHive>(
         hive_metastore_url,

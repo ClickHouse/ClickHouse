@@ -7,8 +7,7 @@ namespace DB
 REGISTER_FUNCTION(ToUnixTimestamp64Milli)
 {
     factory.registerFunction("toUnixTimestamp64Milli",
-        [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionToUnixTimestamp64>(3, "toUnixTimestamp64Milli")); });
+        [](ContextPtr){ return std::make_shared<FunctionToUnixTimestamp64>(3, "toUnixTimestamp64Milli"); });
 }
 
 }

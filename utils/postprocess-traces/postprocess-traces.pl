@@ -8,6 +8,19 @@ use Data::Dumper;
 my @current_stack = ();
 my $grouped_stacks = {};
 
+sub process_stacktrace
+{
+    my $group = \$grouped_stacks;
+    for my $frame (reverse @current_stack)
+    {
+        $$group->{count} ||= 0;
+        ++$$group->{count};
+        $group = \$$group->{children}{$frame};
+    }
+
+    @current_stack = ();
+}
+
 while (my $line = <>)
 {
     chomp $line;
@@ -21,17 +34,11 @@ while (my $line = <>)
 
     if ($line eq '')
     {
-        my $group = \$grouped_stacks;
-        for my $frame (reverse @current_stack)
-        {
-            $$group->{count} ||= 0;
-            ++$$group->{count};
-            $group = \$$group->{children}{$frame};
-        }
-
-        @current_stack = ();
+        process_stacktrace();
     }
 }
+
+process_stacktrace();
 
 sub print_group
 {

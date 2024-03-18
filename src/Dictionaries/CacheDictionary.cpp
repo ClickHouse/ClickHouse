@@ -9,7 +9,7 @@
 #include <Common/ProfilingScopedRWLock.h>
 
 #include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>

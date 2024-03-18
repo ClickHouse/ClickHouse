@@ -69,7 +69,7 @@ bool ParserKQLMVExpand::parseColumnArrayExprs(ColumnArrayExprs & column_array_ex
 
         auto add_columns = [&]
         {
-            column_array_expr = getExprFromToken(String(expr_begin_pos->begin, expr_end_pos->end), pos.max_depth);
+            column_array_expr = getExprFromToken(String(expr_begin_pos->begin, expr_end_pos->end), pos.max_depth, pos.max_backtracks);
 
             if (alias.empty())
             {
@@ -189,7 +189,7 @@ bool ParserKQLMVExpand::parserMVExpand(KQLMVExpand & kql_mv_expand, Pos & pos, E
     return true;
 }
 
-bool ParserKQLMVExpand::genQuery(KQLMVExpand & kql_mv_expand, ASTPtr & select_node, int32_t max_depth)
+bool ParserKQLMVExpand::genQuery(KQLMVExpand & kql_mv_expand, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks)
 {
     String expand_str;
     String cast_type_column_remove, cast_type_column_rename;
@@ -253,7 +253,7 @@ bool ParserKQLMVExpand::genQuery(KQLMVExpand & kql_mv_expand, ASTPtr & select_no
     if (cast_type_column_remove.empty())
     {
         query = std::format("Select {} {} From {} {}", columns, extra_columns, input, expand_str);
-        if (!parseSQLQueryByString(std::make_unique<ParserSelectQuery>(), query, sub_query_node, max_depth))
+        if (!parseSQLQueryByString(std::make_unique<ParserSelectQuery>(), query, sub_query_node, max_depth, max_backtracks))
             return false;
         if (!setSubQuerySource(sub_query_node, select_node, false, false))
             return false;
@@ -262,14 +262,14 @@ bool ParserKQLMVExpand::genQuery(KQLMVExpand & kql_mv_expand, ASTPtr & select_no
     else
     {
         query = std::format("(Select {} {} From {} {})", columns, extra_columns, input, expand_str);
-        if (!parseSQLQueryByString(std::make_unique<ParserTablesInSelectQuery>(), query, sub_query_node, max_depth))
+        if (!parseSQLQueryByString(std::make_unique<ParserTablesInSelectQuery>(), query, sub_query_node, max_depth, max_backtracks))
             return false;
         if (!setSubQuerySource(sub_query_node, select_node, true, false))
             return false;
         select_node = std::move(sub_query_node);
 
         auto rename_query = std::format("(Select * {}, {} From {})", cast_type_column_remove, cast_type_column_rename, "query");
-        if (!parseSQLQueryByString(std::make_unique<ParserTablesInSelectQuery>(), rename_query, sub_query_node, max_depth))
+        if (!parseSQLQueryByString(std::make_unique<ParserTablesInSelectQuery>(), rename_query, sub_query_node, max_depth, max_backtracks))
             return false;
         if (!setSubQuerySource(sub_query_node, select_node, true, true))
             return false;
@@ -277,7 +277,7 @@ bool ParserKQLMVExpand::genQuery(KQLMVExpand & kql_mv_expand, ASTPtr & select_no
         select_node = std::move(sub_query_node);
         query = std::format("Select * {}, {} from {}", cast_type_column_restore, cast_type_column_restore_name, "rename_query");
 
-        if (!parseSQLQueryByString(std::make_unique<ParserSelectQuery>(), query, sub_query_node, max_depth))
+        if (!parseSQLQueryByString(std::make_unique<ParserSelectQuery>(), query, sub_query_node, max_depth, max_backtracks))
             return false;
         sub_query_node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(select_node));
         select_node = std::move(sub_query_node);
@@ -294,12 +294,12 @@ bool ParserKQLMVExpand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     KQLMVExpand kql_mv_expand;
     if (!parserMVExpand(kql_mv_expand, pos, expected))
         return false;
-    if (!genQuery(kql_mv_expand, node, pos.max_depth))
+    if (!genQuery(kql_mv_expand, node, pos.max_depth, pos.max_backtracks))
         return false;
 
     const String setting_str = "enable_unaligned_array_join = 1";
     Tokens token_settings(setting_str.c_str(), setting_str.c_str() + setting_str.size());
-    IParser::Pos pos_settings(token_settings, pos.max_depth);
+    IParser::Pos pos_settings(token_settings, pos.max_depth, pos.max_backtracks);
 
     if (!ParserSetQuery(true).parse(pos_settings, setting, expected))
         return false;
