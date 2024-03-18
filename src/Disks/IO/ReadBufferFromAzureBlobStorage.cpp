@@ -292,7 +292,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             auto length = body_stream->Length();
             char buffer[length];
             body_stream->Read(reinterpret_cast<uint8_t *>(buffer), length);
-            std::istringstream string_stream(String(static_cast<char *>(buffer),length));
+            std::istringstream string_stream(String(static_cast<char *>(buffer),length)); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             copyFromIStreamWithProgressCallback(string_stream, to, n, progress_callback, &bytes_copied);
 
             if (read_settings.remote_throttler)
