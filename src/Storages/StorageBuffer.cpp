@@ -365,9 +365,9 @@ void StorageBuffer::read(
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
       */
+    /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
-        /// TODO: Find a way to support projections for StorageBuffer
         if (local_context->getSettingsRef().allow_experimental_analyzer)
         {
             auto storage = std::make_shared<StorageValues>(
