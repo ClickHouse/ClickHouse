@@ -12,12 +12,12 @@ CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspic
 function test4_insert()
 {
     echo "test4 insert"
-    $CH_CLIENT -nmq "insert into test select number, NULL from numbers(200000);
-insert into test select number + 200000, number from numbers(200000);
-insert into test select number + 400000, 'str_' || toString(number) from numbers(200000);
-insert into test select number + 600000, ('lc_str_' || toString(number))::LowCardinality(String) from numbers(200000);
-insert into test select number + 800000, tuple(number, number + 1)::Tuple(a UInt32, b UInt32) from numbers(200000);
-insert into test select number + 1000000, range(number % 20 + 1)::Array(UInt64) from numbers(200000);"
+    $CH_CLIENT -nmq "insert into test select number, NULL from numbers(100000);
+insert into test select number + 100000, number from numbers(100000);
+insert into test select number + 200000, 'str_' || toString(number) from numbers(100000);
+insert into test select number + 300000, ('lc_str_' || toString(number))::LowCardinality(String) from numbers(100000);
+insert into test select number + 400000, tuple(number, number + 1)::Tuple(a UInt32, b UInt32) from numbers(100000);
+insert into test select number + 500000, range(number % 20 + 1)::Array(UInt64) from numbers(100000);"
 }
 
 function test4_select

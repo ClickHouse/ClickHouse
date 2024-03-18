@@ -25,6 +25,8 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
         {"unreserved_space", std::make_shared<DataTypeUInt64>(), "Free space which is not taken by reservations (free_space minus the size of reservations taken by merges, inserts, and other disk write operations currently running)."},
         {"keep_free_space", std::make_shared<DataTypeUInt64>(), "Amount of disk space that should stay free on disk in bytes. Defined in the keep_free_space_bytes parameter of disk configuration."},
         {"type", std::make_shared<DataTypeString>(), "The disk type which tells where this disk stores the data - RAM, local drive or remote storage."},
+        {"object_storage_type", std::make_shared<DataTypeString>(), "Type of object storage if disk type is object_storage"},
+        {"metadata_type", std::make_shared<DataTypeString>(), "Type of metadata storage if disk type is object_storage"},
         {"is_encrypted", std::make_shared<DataTypeUInt8>(), "Flag which shows whether this disk ecrypts the underlying data. "},
         {"is_read_only", std::make_shared<DataTypeUInt8>(), "Flag which indicates that you can only perform read operations with this disk."},
         {"is_write_once", std::make_shared<DataTypeUInt8>(), "Flag which indicates if disk is write-once. Which means that it does support BACKUP to this disk, but does not support INSERT into MergeTree table on this disk."},
@@ -53,6 +55,8 @@ Pipe StorageSystemDisks::read(
     MutableColumnPtr col_unreserved = ColumnUInt64::create();
     MutableColumnPtr col_keep = ColumnUInt64::create();
     MutableColumnPtr col_type = ColumnString::create();
+    MutableColumnPtr col_object_storage_type = ColumnString::create();
+    MutableColumnPtr col_metadata_type = ColumnString::create();
     MutableColumnPtr col_is_encrypted = ColumnUInt8::create();
     MutableColumnPtr col_is_read_only = ColumnUInt8::create();
     MutableColumnPtr col_is_write_once = ColumnUInt8::create();
@@ -69,7 +73,9 @@ Pipe StorageSystemDisks::read(
         col_unreserved->insert(disk_ptr->getUnreservedSpace().value_or(std::numeric_limits<UInt64>::max()));
         col_keep->insert(disk_ptr->getKeepingFreeSpace());
         auto data_source_description = disk_ptr->getDataSourceDescription();
-        col_type->insert(data_source_description.toString());
+        col_type->insert(magic_enum::enum_name(data_source_description.type));
+        col_object_storage_type->insert(magic_enum::enum_name(data_source_description.object_storage_type));
+        col_metadata_type->insert(magic_enum::enum_name(data_source_description.metadata_type));
         col_is_encrypted->insert(data_source_description.is_encrypted);
         col_is_read_only->insert(disk_ptr->isReadOnly());
         col_is_write_once->insert(disk_ptr->isWriteOnce());
@@ -91,6 +97,8 @@ Pipe StorageSystemDisks::read(
     res_columns.emplace_back(std::move(col_unreserved));
     res_columns.emplace_back(std::move(col_keep));
     res_columns.emplace_back(std::move(col_type));
+    res_columns.emplace_back(std::move(col_object_storage_type));
+    res_columns.emplace_back(std::move(col_metadata_type));
     res_columns.emplace_back(std::move(col_is_encrypted));
     res_columns.emplace_back(std::move(col_is_read_only));
     res_columns.emplace_back(std::move(col_is_write_once));

@@ -10,7 +10,7 @@ StorageID tryParseTableIDFromDDL(const String & query, const String & default_da
 {
     bool is_ddl = false;
     Tokens tokens(query.data(), query.data() + query.size());
-    IParser::Pos pos(tokens, 0);
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     Expected expected;
     if (ParserKeyword("CREATE TEMPORARY TABLE").ignore(pos, expected) || ParserKeyword("CREATE TABLE").ignore(pos, expected))
     {

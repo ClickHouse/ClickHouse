@@ -606,7 +606,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         Strings forced_indices;
         {
             Tokens tokens(indices.data(), indices.data() + indices.size(), settings.max_query_size);
-            IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth));
+            IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
             Expected expected;
             if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
                 throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse force_data_skipping_indices ('{}')", indices);
@@ -1018,7 +1018,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     DataTypes key_types;
     for (size_t i : key_indices)
     {
-        index_columns->emplace_back(ColumnWithTypeAndName{index[i], primary_key.data_types[i], primary_key.column_names[i]});
+        if (i < index.size())
+            index_columns->emplace_back(index[i], primary_key.data_types[i], primary_key.column_names[i]);
+        else
+            index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
+
         key_types.emplace_back(primary_key.data_types[i]);
     }
 
@@ -1027,7 +1031,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
     if (key_condition.hasMonotonicFunctionsChain())
     {
-
         create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
             field = {index_columns.get(), row, column};
@@ -1067,7 +1070,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    create_field_ref(range.begin, i, index_left[i]);
+                    if ((*index_columns)[i].column)
+                        create_field_ref(range.begin, i, index_left[i]);
+                    else
+                        index_left[i] = NEGATIVE_INFINITY;
+
                     index_right[i] = POSITIVE_INFINITY;
                 }
             }
@@ -1078,8 +1085,17 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    create_field_ref(range.begin, i, index_left[i]);
-                    create_field_ref(range.end, i, index_right[i]);
+                    if ((*index_columns)[i].column)
+                    {
+                        create_field_ref(range.begin, i, index_left[i]);
+                        create_field_ref(range.end, i, index_right[i]);
+                    }
+                    else
+                    {
+                        /// If the PK column was not loaded in memory - exclude it from the analysis.
+                        index_left[i] = NEGATIVE_INFINITY;
+                        index_right[i] = POSITIVE_INFINITY;
+                    }
                 }
             }
             key_condition_maybe_true = key_condition.mayBeTrueInRange(used_key_size, index_left.data(), index_right.data(), key_types);
@@ -1114,6 +1130,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     bool part_offset_condition_exact_range
         = !part_offset_condition || part_offset_condition->alwaysUnknownOrTrue() || part_offset_condition->matchesExactContinuousRange();
     const String & part_name = part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPart()->name) : part->name;
+
     if (!key_condition_exact_range || !part_offset_condition_exact_range)
     {
         // Do exclusion search, where we drop ranges that do not match
@@ -1128,10 +1145,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part->index_granularity_info.index_granularity_bytes);
 
         /** There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
-        * At each step, take the left segment and check if it fits.
-        * If fits, split it into smaller ones and put them on the stack. If not, discard it.
-        * If the segment is already of one mark length, add it to response and discard it.
-        */
+          * At each step, take the left segment and check if it fits.
+          * If fits, split it into smaller ones and put them on the stack. If not, discard it.
+          * If the segment is already of one mark length, add it to response and discard it.
+          */
         std::vector<MarkRange> ranges_stack = { {0, marks_count} };
 
         size_t steps = 0;
@@ -1141,7 +1158,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             MarkRange range = ranges_stack.back();
             ranges_stack.pop_back();
 
-            steps++;
+            ++steps;
 
             if (!may_be_true_in_range(range))
                 continue;
