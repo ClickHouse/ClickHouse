@@ -47,9 +47,7 @@ private:
 
         std::unique_ptr<MemoryChunk> prev;
 
-        MemoryChunk()
-        {
-        }
+        MemoryChunk() = default;
 
         void swap(MemoryChunk & other)
         {
