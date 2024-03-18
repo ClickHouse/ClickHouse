@@ -136,6 +136,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals(rabbitmq_settings->rabbitmq_handle_error_mode));
 
     rabbitmq_context = addSettings(getContext());
     rabbitmq_context->makeQueryContext();
@@ -191,6 +192,26 @@ StorageRabbitMQ::StorageRabbitMQ(
     init_task->deactivate();
 }
 
+VirtualColumnsDescription StorageRabbitMQ::createVirtuals(StreamingHandleErrorMode handle_error_mode)
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_exchange_name", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_channel_id", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_delivery_tag", std::make_shared<DataTypeUInt64>(), "");
+    desc.addEphemeral("_redelivered", std::make_shared<DataTypeUInt8>(), "");
+    desc.addEphemeral("_message_id", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_timestamp", std::make_shared<DataTypeUInt64>(), "");
+
+
+    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+    }
+
+    return desc;
+}
 
 Names StorageRabbitMQ::parseSettings(String settings_list)
 {
@@ -1211,27 +1232,6 @@ void registerStorageRabbitMQ(StorageFactory & factory)
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
-}
-
-
-NamesAndTypesList StorageRabbitMQ::getVirtuals() const
-{
-    auto virtuals = NamesAndTypesList{
-            {"_exchange_name", std::make_shared<DataTypeString>()},
-            {"_channel_id", std::make_shared<DataTypeString>()},
-            {"_delivery_tag", std::make_shared<DataTypeUInt64>()},
-            {"_redelivered", std::make_shared<DataTypeUInt8>()},
-            {"_message_id", std::make_shared<DataTypeString>()},
-            {"_timestamp", std::make_shared<DataTypeUInt64>()}
-    };
-
-    if (rabbitmq_settings->rabbitmq_handle_error_mode == StreamingHandleErrorMode::STREAM)
-    {
-        virtuals.push_back({"_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-    }
-
-    return virtuals;
 }
 
 }

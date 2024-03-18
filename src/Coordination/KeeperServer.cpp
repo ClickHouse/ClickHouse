@@ -11,7 +11,6 @@
 #include <Coordination/KeeperStateManager.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/LoggerWrapper.h>
-#include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -26,12 +25,15 @@
 #include <Poco/Util/Application.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
-#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
+
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <fmt/chrono.h>
+
 #include <libnuraft/req_msg.hxx>
+
 
 namespace DB
 {
@@ -312,6 +314,18 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
                 "completely.");
             std::terminate();
         }
+    }
+
+    params.leadership_expiry_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings->leadership_expiry_ms.totalMilliseconds(), "leadership_expiry_ms", log);
+
+    if (params.leadership_expiry_ > 0 && params.leadership_expiry_ <= params.election_timeout_lower_bound_)
+    {
+        LOG_INFO(
+            log,
+            "leadership_expiry_ is smaller than or equal to election_timeout_lower_bound_ms, which can avoid multiple leaders. "
+            "Notice that too small leadership_expiry_ may make Raft group sensitive to network status. "
+            );
     }
 
     params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);

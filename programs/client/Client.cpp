@@ -51,10 +51,6 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
 
-#ifndef __clang__
-#pragma GCC optimize("-fno-var-tracking-assignments")
-#endif
-
 namespace fs = std::filesystem;
 using namespace std::literals;
 
