@@ -174,7 +174,14 @@ function fuzz
     mkdir -p /var/run/clickhouse-server
 
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > server.log 2>>stderr.log &
+    # server.log -> CH logs
+    # stderr.log -> Process logs (sanitizer)
+    clickhouse-server \
+        --config-file db/config.xml \
+        --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
+        --  --path db \
+            --logger.console=0 \
+            --logger.log=server.log > stderr.log 2>&1
     server_pid=$!
 
     kill -0 $server_pid
@@ -310,7 +317,7 @@ quit
 
         IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 
-        if [ "${IS_SANITIZED}" -eq "1" ] && rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' description.txt
+        if [ "${IS_SANITIZED}" -eq "1" ] && rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' stderr.log
         then
             # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
             # Why? Because sanitizers have the memory overhead, that is not controllable from inside clickhouse-server.
@@ -392,7 +399,7 @@ if [ -f core.zst ]; then
 fi
 
 # Keep all the lines in the paragraphs containing <Fatal> that either contain <Fatal> or don't start with 20... (year)
-sed -n '/<Fatal>/,/^$/p' server.log stderr.log | awk '/<Fatal>/ || !/^20/' > fatal.log ||:
+sed -n '/<Fatal>/,/^$/p' server.log | awk '/<Fatal>/ || !/^20/' > fatal.log ||:
 FATAL_LINK=''
 if [ -s fatal.log ]; then
     FATAL_LINK='<a href="fatal.log">fatal.log</a>'
@@ -401,7 +408,6 @@ fi
 dmesg -T > dmesg.log ||:
 
 zstd --threads=0 --rm server.log
-zstd --threads=0 --rm stderr.log
 zstd --threads=0 --rm fuzzer.log
 
 cat > report.html <<EOF ||:
@@ -428,7 +434,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
   <a href="run.log">run.log</a>
   <a href="fuzzer.log.zst">fuzzer.log.zst</a>
   <a href="server.log.zst">server.log.zst</a>
-  <a href="stderr.log.zst">stderr.log.zst</a>
+  <a href="stderr.log">stderr.log</a>
   <a href="main.log">main.log</a>
   <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}

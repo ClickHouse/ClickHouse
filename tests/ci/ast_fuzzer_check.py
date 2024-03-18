@@ -115,6 +115,7 @@ def main():
         "core.zst": workspace_path / "core.zst",
         "dmesg.log": workspace_path / "dmesg.log",
         "fatal.log": workspace_path / "fatal.log",
+        "stderr.log": workspace_path / "stderr.log",
     }
 
     compressed_server_log_path = workspace_path / "server.log.zst"
@@ -125,14 +126,6 @@ def main():
         not_compressed_server_log_path = workspace_path / "server.log"
         if not_compressed_server_log_path.exists():
             paths["server.log"] = not_compressed_server_log_path
-
-    compressed_stderr_log_path = workspace_path / "stderr.log.zst"
-    if compressed_stderr_log_path.exists():
-        paths["stderr.log.zst"] = compressed_stderr_log_path
-    else:
-        not_compressed_stderr_log_path = workspace_path / "stderr.log"
-        if compressed_stderr_log_path.exists():
-            paths["stderr.log"] = not_compressed_stderr_log_path
 
     # Same idea but with the fuzzer log
     compressed_fuzzer_log_path = workspace_path / "fuzzer.log.zst"
