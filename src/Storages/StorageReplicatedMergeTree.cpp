@@ -615,8 +615,8 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             else if (mutation_pointer_value >= mutation_id) /// Maybe we already processed more fresh mutation
                 break;                                      /// (numbers like 0000000000 and 0000000001)
 
-            /// Replica can become inactive, so wait with timeout and recheck it
-            if (wait_event->tryWait(1000))
+            /// Replica can become inactive, so wait with timeout, if nothing happened -> recheck it
+            if (!wait_event->tryWait(1000))
                 continue;
 
             /// Here we check mutation for errors on local replica. If they happen on this replica
