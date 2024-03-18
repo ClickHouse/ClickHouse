@@ -6169,11 +6169,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             .withPartFormatFromDisk()
             .build();
 
-        auto & part_info = part->info;
-        part_info.level = 0u;
-        part_info.use_leagcy_max_level = false;
-        part->setName(part->getNewName(part_info));
-
         loadPartAndFixMetadataImpl(part, local_context, getInMemoryMetadataPtr()->getMetadataVersion(), getSettings()->fsync_after_insert);
         loaded_parts.push_back(part);
     }
