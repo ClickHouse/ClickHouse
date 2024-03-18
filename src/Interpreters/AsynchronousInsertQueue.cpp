@@ -1062,8 +1062,6 @@ void AsynchronousInsertQueue::finishWithException(
 
 void AsynchronousInsertQueue::checkQueueLimit(std::chrono::seconds wait_timeout)
 {
-    LOG_DEBUG(&Poco::Logger::get("debug"), "pending_inserts={}", pending_inserts);
-
     if (pending_inserts <= max_pending_inserts)
         return;
 

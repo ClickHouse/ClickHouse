@@ -33,7 +33,7 @@ client_opts=(
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 
-${CLICKHOUSE_BENCHMARK} "${client_opts[@]}" -q "INSERT INTO $table VALUES (42)" -i 1001 -c 10 >& /dev/null
+${CLICKHOUSE_BENCHMARK} "${client_opts[@]}" -q "INSERT INTO $table VALUES (42)" -i 999 -c 10 &> /dev/null
 
 ${CLICKHOUSE_CLIENT} -nq "
   SYSTEM FLUSH LOGS;
