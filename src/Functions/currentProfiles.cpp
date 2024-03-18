@@ -98,9 +98,9 @@ namespace
 
 REGISTER_FUNCTION(Profiles)
 {
-    factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionProfiles>(context, Kind::currentProfiles)); });
-    factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionProfiles>(context, Kind::enabledProfiles)); });
-    factory.registerFunction("defaultProfiles", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionProfiles>(context, Kind::defaultProfiles)); });
+    factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::currentProfiles); });
+    factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::enabledProfiles); });
+    factory.registerFunction("defaultProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::defaultProfiles); });
 }
 
 }
