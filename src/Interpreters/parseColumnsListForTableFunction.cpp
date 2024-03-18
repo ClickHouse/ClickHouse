@@ -115,7 +115,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     ParserColumnDeclarationList parser(true, true);
     const Settings & settings = context->getSettingsRef();
 
-    ASTPtr columns_list_raw = parseQuery(parser, structure, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
+    ASTPtr columns_list_raw = parseQuery(parser, structure, "columns declaration list", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 
     auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
     if (!columns_list)
@@ -136,7 +136,7 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     const char * start = structure.data();
     const char * end = structure.data() + structure.size();
     ASTPtr columns_list_raw = tryParseQuery(
-        parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth);
+        parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks, true);
     if (!columns_list_raw)
         return false;
 

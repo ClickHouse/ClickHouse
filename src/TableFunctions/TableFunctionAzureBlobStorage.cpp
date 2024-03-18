@@ -16,6 +16,7 @@
 #include <Storages/StorageAzureBlob.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
@@ -348,8 +349,7 @@ bool TableFunctionAzureBlobStorage::supportsReadingSubsetOfColumns(const Context
 
 std::unordered_set<String> TableFunctionAzureBlobStorage::getVirtualsToCheckBeforeUsingStructureHint() const
 {
-    auto virtual_column_names = StorageAzureBlob::getVirtualColumnNames();
-    return {virtual_column_names.begin(), virtual_column_names.end()};
+    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
 }
 
 StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const

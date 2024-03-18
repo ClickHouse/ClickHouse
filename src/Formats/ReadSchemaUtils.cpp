@@ -1,11 +1,11 @@
 #include <Formats/ReadSchemaUtils.h>
-#include <Interpreters/Context.h>
-#include <Processors/Formats/ISchemaReader.h>
-#include <Common/assert_cast.h>
-#include <IO/WithFileSize.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/PeekableReadBuffer.h>
+#include <IO/WithFileSize.h>
+#include <Interpreters/Context.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Storages/IStorage.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {

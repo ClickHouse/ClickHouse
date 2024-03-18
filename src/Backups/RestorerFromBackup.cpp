@@ -101,10 +101,12 @@ RestorerFromBackup::RestorerFromBackup(
 
 RestorerFromBackup::~RestorerFromBackup()
 {
-    if (!futures.empty())
+    /// If an exception occurs we can come here to the destructor having some tasks still unfinished.
+    /// We have to wait until they finish.
+    if (getNumFutures() > 0)
     {
-        LOG_ERROR(log, "RestorerFromBackup must not be destroyed while {} tasks are still running", futures.size());
-        chassert(false && "RestorerFromBackup must not be destroyed while some tasks are still running");
+        LOG_INFO(log, "Waiting for {} tasks to finish", getNumFutures());
+        waitFutures();
     }
 }
 
@@ -422,7 +424,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     readStringUntilEOF(create_query_str, *read_buffer);
     read_buffer.reset();
     ParserCreateQuery create_parser;
-    ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     applyCustomStoragePolicy(create_table_query);
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
     String create_table_query_str = serializeAST(*create_table_query);
@@ -532,7 +534,7 @@ void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_i
         readStringUntilEOF(create_query_str, *read_buffer);
         read_buffer.reset();
         ParserCreateQuery create_parser;
-        ASTPtr create_database_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        ASTPtr create_database_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         renameDatabaseAndTableNameInCreateQuery(create_database_query, renaming_map, context->getGlobalContext());
         String create_database_query_str = serializeAST(*create_database_query);
 

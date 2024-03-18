@@ -81,8 +81,6 @@ std::string MarkType::getFileExtension() const
             return res + "2";
         case MergeTreeDataPartType::Compact:
             return res + "3";
-        case MergeTreeDataPartType::InMemory:
-            return "";
         case MergeTreeDataPartType::Unknown:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown data part type");
     }
@@ -126,8 +124,6 @@ size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) con
         return mark_type.adaptive ? getAdaptiveMrkSizeWide() : getNonAdaptiveMrkSizeWide();
     else if (mark_type.part_type == MergeTreeDataPartType::Compact)
         return getAdaptiveMrkSizeCompact(columns_num);
-    else if (mark_type.part_type == MergeTreeDataPartType::InMemory)
-        return 0;
     else
         throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown part type");
 }
