@@ -105,7 +105,8 @@ StorageS3Queue::StorageS3Queue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * engine_args)
+    ASTStorage * engine_args,
+    LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
     , s3queue_settings(std::move(s3queue_settings_))
@@ -127,6 +128,14 @@ StorageS3Queue::StorageS3Queue(
     else if (!containsGlobs(configuration.url))
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue url must either end with '/' or contain globs");
+    }
+
+    if (mode == LoadingStrictnessLevel::CREATE
+        && !context_->getSettingsRef().s3queue_allow_experimental_sharded_mode
+        && s3queue_settings->mode == S3QueueMode::ORDERED
+        && s3queue_settings->s3queue_total_shards_num)
+    {
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue sharded mode is not allowed. To enable use `s3queue_allow_experimental_sharded_mode`");
     }
 
     checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef());
@@ -663,7 +672,8 @@ void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
                 args.comment,
                 args.getContext(),
                 format_settings,
-                args.storage_def);
+                args.storage_def,
+                args.mode);
         },
         {
             .supports_settings = true,
