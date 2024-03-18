@@ -325,12 +325,10 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Colu
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     setInMemoryMetadata(storage_metadata);
+
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral("_state", std::make_shared<DataTypeString>(), "");
+    setVirtuals(std::move(virtuals));
 }
 
-NamesAndTypesList StorageSystemPartsBase::getVirtuals() const
-{
-    return NamesAndTypesList{
-        NameAndTypePair("_state", std::make_shared<DataTypeString>())
-    };
-}
 }

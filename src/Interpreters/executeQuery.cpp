@@ -104,6 +104,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int INCORRECT_DATA;
     extern const int SYNTAX_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
 }
 
@@ -745,18 +746,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
-            ParserPRQLQuery parser(max_query_size, settings.max_parser_depth);
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ParserPRQLQuery parser(max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         }
         else
         {
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 
 #ifndef NDEBUG
             /// Verify that AST formatting is consistent:
@@ -773,7 +774,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 ast2 = parseQuery(parser,
                     formatted1.data(),
                     formatted1.data() + formatted1.size(),
-                    "", new_max_query_size, settings.max_parser_depth);
+                    "", new_max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
             }
             catch (const Exception & e)
             {
@@ -1022,6 +1023,21 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
             if (settings.implicit_transaction && settings.throw_on_unsupported_query_inside_transaction)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
+
+            /// Let's agree on terminology and say that a mini-INSERT is an asynchronous INSERT
+            /// which typically contains not a lot of data inside and a big-INSERT in an INSERT
+            /// which was formed by concatenating several mini-INSERTs together.
+            /// In case when the client had to retry some mini-INSERTs then they will be properly deduplicated
+            /// by the source tables. This functionality is controlled by a setting `async_insert_deduplicate`.
+            /// But then they will be glued together into a block and pushed through a chain of Materialized Views if any.
+            /// The process of forming such blocks is not deteministic so each time we retry mini-INSERTs the resulting
+            /// block may be concatenated differently.
+            /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
+            if (settings.throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert &&
+                settings.deduplicate_blocks_in_dependent_materialized_views)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Deduplication is dependent materialized view cannot work together with async inserts. "\
+                        "Please disable eiher `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
 
             quota = context->getQuota();
             if (quota)

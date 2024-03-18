@@ -54,7 +54,6 @@ namespace CurrentMetrics
 
     extern const Metric PartsWide;
     extern const Metric PartsCompact;
-    extern const Metric PartsInMemory;
 }
 
 namespace DB
@@ -281,9 +280,6 @@ static void incrementTypeMetric(MergeTreeDataPartType type)
         case MergeTreeDataPartType::Compact:
             CurrentMetrics::add(CurrentMetrics::PartsCompact);
             return;
-        case MergeTreeDataPartType::InMemory:
-            CurrentMetrics::add(CurrentMetrics::PartsInMemory);
-            return;
         case MergeTreeDataPartType::Unknown:
             return;
     }
@@ -298,9 +294,6 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
             return;
         case MergeTreeDataPartType::Compact:
             CurrentMetrics::sub(CurrentMetrics::PartsCompact);
-            return;
-        case MergeTreeDataPartType::InMemory:
-            CurrentMetrics::sub(CurrentMetrics::PartsInMemory);
             return;
         case MergeTreeDataPartType::Unknown:
             return;
@@ -619,6 +612,15 @@ UInt64 IMergeTreeDataPart::getMarksCount() const
     return index_granularity.getMarksCount();
 }
 
+UInt64 IMergeTreeDataPart::getExistingBytesOnDisk() const
+{
+    if (storage.getSettings()->exclude_deleted_rows_for_part_size_in_merge && supportLightweightDeleteMutate() && hasLightweightDelete()
+        && existing_rows_count.has_value() && existing_rows_count.value() < rows_count && rows_count > 0)
+        return bytes_on_disk * existing_rows_count.value() / rows_count;
+    else
+        return bytes_on_disk;
+}
+
 size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
 {
     auto checksum = checksums.files.find(file_name);
@@ -701,6 +703,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
         calculateColumnsAndSecondaryIndicesSizesOnDisk();
         loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
+        loadExistingRowsCount(); /// Must be called after loadRowsCount() as it uses the value of `rows_count`.
         loadPartitionAndMinMaxIndex();
         if (!parent_part)
         {
@@ -847,6 +850,27 @@ void IMergeTreeDataPart::loadIndex() const
             for (size_t j = 0; j < key_size; ++j)
                 key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, {});
 
+        /// Cut useless suffix columns, if necessary.
+        Float64 ratio_to_drop_suffix_columns = storage.getSettings()->primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns;
+        if (key_size > 1 && ratio_to_drop_suffix_columns > 0 && ratio_to_drop_suffix_columns < 1)
+        {
+            chassert(marks_count > 0);
+            for (size_t j = 0; j < key_size - 1; ++j)
+            {
+                size_t num_changes = 0;
+                for (size_t i = 1; i < marks_count; ++i)
+                    if (0 != loaded_index[j]->compareAt(i, i - 1, *loaded_index[j], 0))
+                        ++num_changes;
+
+                if (static_cast<Float64>(num_changes) / marks_count >= ratio_to_drop_suffix_columns)
+                {
+                    key_size = j + 1;
+                    loaded_index.resize(key_size);
+                    break;
+                }
+            }
+        }
+
         for (size_t i = 0; i < key_size; ++i)
         {
             loaded_index[i]->shrinkToFit();
@@ -936,7 +960,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         try
         {
             ParserCodec codec_parser;
-            auto codec_ast = parseQuery(codec_parser, codec_line.data() + buf.getPosition(), codec_line.data() + codec_line.length(), "codec parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            auto codec_ast = parseQuery(codec_parser, codec_line.data() + buf.getPosition(), codec_line.data() + codec_line.length(), "codec parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
             default_codec = CompressionCodecFactory::instance().get(codec_ast, {});
         }
         catch (const DB::Exception & ex)
@@ -1323,6 +1347,87 @@ void IMergeTreeDataPart::loadRowsCount()
     }
 }
 
+void IMergeTreeDataPart::loadExistingRowsCount()
+{
+    if (existing_rows_count.has_value())
+        return;
+
+    if (!rows_count || !storage.getSettings()->load_existing_rows_count_for_old_parts || !supportLightweightDeleteMutate()
+        || !hasLightweightDelete())
+        existing_rows_count = rows_count;
+    else
+        existing_rows_count = readExistingRowsCount();
+}
+
+UInt64 IMergeTreeDataPart::readExistingRowsCount()
+{
+    const size_t total_mark = getMarksCount();
+    if (!total_mark)
+        return rows_count;
+
+    NamesAndTypesList cols;
+    cols.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
+
+    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
+    StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
+
+    MergeTreeReaderPtr reader = getReader(
+        cols,
+        storage_snapshot_ptr,
+        MarkRanges{MarkRange(0, total_mark)},
+        /*virtual_fields=*/ {},
+        /*uncompressed_cache=*/{},
+        storage.getContext()->getMarkCache().get(),
+        std::make_shared<AlterConversions>(),
+        MergeTreeReaderSettings{},
+        ValueSizeMap{},
+        ReadBufferFromFileBase::ProfileCallback{});
+
+    if (!reader)
+    {
+        LOG_WARNING(storage.log, "Create reader failed while reading existing rows count");
+        return rows_count;
+    }
+
+    size_t current_mark = 0;
+    bool continue_reading = false;
+    size_t current_row = 0;
+    size_t existing_count = 0;
+
+    while (current_row < rows_count)
+    {
+        size_t rows_to_read = index_granularity.getMarkRows(current_mark);
+        continue_reading = (current_mark != 0);
+
+        Columns result;
+        result.resize(1);
+
+        size_t rows_read = reader->readRows(current_mark, total_mark, continue_reading, rows_to_read, result);
+        if (!rows_read)
+        {
+            LOG_WARNING(storage.log, "Part {} has lightweight delete, but _row_exists column not found", name);
+            return rows_count;
+        }
+
+        current_row += rows_read;
+        current_mark += (rows_to_read == rows_read);
+
+        const ColumnUInt8 * row_exists_col = typeid_cast<const ColumnUInt8 *>(result[0].get());
+        if (!row_exists_col)
+        {
+            LOG_WARNING(storage.log, "Part {} _row_exists column type is not UInt8", name);
+            return rows_count;
+        }
+
+        for (UInt8 row_exists : row_exists_col->getData())
+            if (row_exists)
+                existing_count++;
+    }
+
+    LOG_DEBUG(storage.log, "Part {} existing_rows_count = {}", name, existing_count);
+    return existing_count;
+}
+
 void IMergeTreeDataPart::appendFilesOfRowsCount(Strings & files)
 {
     files.push_back("count.txt");
@@ -1452,6 +1557,11 @@ bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
 {
     return (part_type == MergeTreeDataPartType::Wide || part_type == MergeTreeDataPartType::Compact) &&
         parent_part == nullptr && projection_parts.empty();
+}
+
+bool IMergeTreeDataPart::hasLightweightDelete() const
+{
+    return columns.contains(RowExistsColumn::name);
 }
 
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const
@@ -2235,11 +2345,6 @@ bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 bool isWidePart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::Wide);
-}
-
-bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
-{
-    return (data_part && data_part->getType() == MergeTreeDataPartType::InMemory);
 }
 
 std::optional<std::string> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage)
