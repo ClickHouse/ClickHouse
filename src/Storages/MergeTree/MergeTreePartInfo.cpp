@@ -131,7 +131,7 @@ std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
         /// "Part 20170601_20170630_0_2_999999999 intersects 201706_0_1_4294967295".
         /// So we replace unexpected max level to make contains(...) method and comparison operators work
         /// correctly with such virtual parts. On part name serialization we will use legacy max level to keep the name unchanged.
-        part_info.use_leagcy_max_level = true;
+        part_info.use_legacy_max_level = true;
         level = MAX_LEVEL;
     }
 
@@ -205,7 +205,7 @@ String MergeTreePartInfo::getPartNameV1() const
     writeChar('_', wb);
     writeIntText(max_block, wb);
     writeChar('_', wb);
-    if (use_leagcy_max_level)
+    if (use_legacy_max_level)
     {
         assert(level == MAX_LEVEL);
         writeIntText(LEGACY_MAX_LEVEL, wb);
@@ -244,7 +244,7 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     writeChar('_', wb);
     writeIntText(max_block, wb);
     writeChar('_', wb);
-    if (use_leagcy_max_level)
+    if (use_legacy_max_level)
     {
         assert(level == MAX_LEVEL);
         writeIntText(LEGACY_MAX_LEVEL, wb);
@@ -274,7 +274,7 @@ void MergeTreePartInfo::serialize(WriteBuffer & out) const
     writeIntBinary(max_block, out);
     writeIntBinary(level, out);
     writeIntBinary(mutation, out);
-    writeBoolText(use_leagcy_max_level, out);
+    writeBoolText(use_legacy_max_level, out);
 }
 
 
@@ -297,7 +297,7 @@ void MergeTreePartInfo::deserialize(ReadBuffer & in)
     readIntBinary(max_block, in);
     readIntBinary(level, in);
     readIntBinary(mutation, in);
-    readBoolText(use_leagcy_max_level, in);
+    readBoolText(use_legacy_max_level, in);
 }
 
 bool MergeTreePartInfo::areAllBlockNumbersCovered(const MergeTreePartInfo & blocks_range, std::vector<MergeTreePartInfo> candidates)
