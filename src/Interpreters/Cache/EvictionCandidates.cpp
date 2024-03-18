@@ -32,7 +32,7 @@ void EvictionCandidates::add(LockedKey & locked_key, const FileSegmentMetadataPt
     ++candidates_size;
 }
 
-void EvictionCandidates::evict(FileCacheQueryLimit::QueryContext * query_context, const CacheGuard::Lock & lock)
+void EvictionCandidates::evict(FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock & lock)
 {
     if (candidates.empty())
         return;

@@ -183,7 +183,7 @@ ASTPtr DatabaseHDFS::getCreateDatabaseQuery() const
     ParserCreateQuery parser;
 
     const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(getDatabaseName()), source);
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {

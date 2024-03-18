@@ -183,13 +183,13 @@ void FileCache::initialize()
     is_initialized = true;
 }
 
-CacheGuard::Lock FileCache::lockCache() const
+CachePriorityGuard::Lock FileCache::lockCache() const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
     return cache_guard.lock();
 }
 
-CacheGuard::Lock FileCache::tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout) const
+CachePriorityGuard::Lock FileCache::tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout) const
 {
     return acquire_timeout.has_value() ? cache_guard.tryLockFor(acquire_timeout.value()) : cache_guard.tryLock();
 }
@@ -706,7 +706,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     size_t size,
     FileSegment::State state,
     const CreateFileSegmentSettings & create_settings,
-    const CacheGuard::Lock * lock)
+    const CachePriorityGuard::Lock * lock)
 {
     /// Create a file_segment_metadata and put it in `files` map by [key][offset].
 

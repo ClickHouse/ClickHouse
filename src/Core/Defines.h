@@ -63,6 +63,8 @@ static constexpr auto DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC = 120;
 
 /// Default limit on recursion depth of recursive descend parser.
 static constexpr auto DBMS_DEFAULT_MAX_PARSER_DEPTH = 1000;
+/// Default limit on the amount of backtracking of recursive descend parser.
+static constexpr auto DBMS_DEFAULT_MAX_PARSER_BACKTRACKS = 1000000;
 
 /// Default limit on query size.
 static constexpr auto DBMS_DEFAULT_MAX_QUERY_SIZE = 262144;

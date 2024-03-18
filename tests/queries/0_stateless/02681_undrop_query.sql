@@ -85,5 +85,5 @@ drop table 02681_undrop_multiple;
 select table from system.dropped_tables where table = '02681_undrop_multiple' limit 1;
 undrop table 02681_undrop_multiple;
 select * from 02681_undrop_multiple order by id;
-undrop table 02681_undrop_multiple; -- { serverError 57 }
+undrop table 02681_undrop_multiple; -- { serverError TABLE_ALREADY_EXISTS }
 drop table 02681_undrop_multiple sync;

@@ -135,7 +135,7 @@ void MergeTreeDataPartWriterWide::addStreams(
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
         ParserCodec codec_parser;
-        auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
         const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());

@@ -1054,7 +1054,7 @@ namespace
     {
         if (depth > settings.max_parser_depth)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-                            "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", settings.max_parser_depth);
+                "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", settings.max_parser_depth);
 
         assertChar('{', buf);
         skipWhitespaceIfAny(buf);

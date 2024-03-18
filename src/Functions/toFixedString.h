@@ -34,7 +34,6 @@ class FunctionToFixedString : public IFunction
 public:
     static constexpr auto name = "toFixedString";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToFixedString>(); }
-    static FunctionPtr create() { return std::make_shared<FunctionToFixedString>(); }
 
     String getName() const override
     {
@@ -158,4 +157,3 @@ public:
 };
 
 }
-

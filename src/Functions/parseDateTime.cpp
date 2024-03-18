@@ -1942,7 +1942,7 @@ namespace
 REGISTER_FUNCTION(ParseDateTime)
 {
     factory.registerFunction<FunctionParseDateTime>();
-    factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name);
+    factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionParseDateTimeOrZero>();
     factory.registerFunction<FunctionParseDateTimeOrNull>();
     factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::CaseInsensitive);

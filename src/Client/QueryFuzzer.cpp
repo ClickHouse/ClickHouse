@@ -569,7 +569,8 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
         auto data_type = fuzzDataType(DataTypeFactory::instance().get(column.type));
 
         ParserDataType parser;
-        column.type = parseQuery(parser, data_type->getName(), DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        column.type = parseQuery(parser, data_type->getName(),
+            DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
 }
 
@@ -821,7 +822,8 @@ static ASTPtr tryParseInsertQuery(const String & full_query)
     ParserInsertQuery parser(end, false);
     String message;
 
-    return tryParseQuery(parser, pos, end, message, false, "", false, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    return tryParseQuery(parser, pos, end, message, false, "", false,
+        DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
 }
 
 ASTs QueryFuzzer::getInsertQueriesForFuzzedTables(const String & full_query)

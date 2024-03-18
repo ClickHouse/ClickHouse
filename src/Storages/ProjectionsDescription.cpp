@@ -341,7 +341,7 @@ ProjectionsDescription ProjectionsDescription::parse(const String & str, const C
         return result;
 
     ParserProjectionDeclarationList parser;
-    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     for (const auto & projection_ast : list->children)
     {

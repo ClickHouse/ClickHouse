@@ -15,7 +15,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 

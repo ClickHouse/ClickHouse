@@ -77,8 +77,8 @@ public:
     static std::optional<String>
     getOptionalArgument(const String & function_name, DB::IParser::Pos & pos, ArgumentState argument_state = ArgumentState::Parsed);
     static String
-    kqlCallToExpression(std::string_view function_name, std::initializer_list<const std::string_view> params, uint32_t max_depth);
-    static String kqlCallToExpression(std::string_view function_name, std::span<const std::string_view> params, uint32_t max_depth);
+    kqlCallToExpression(std::string_view function_name, std::initializer_list<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks);
+    static String kqlCallToExpression(std::string_view function_name, std::span<const std::string_view> params, uint32_t max_depth, uint32_t max_backtracks);
     static String escapeSingleQuotes(const String & input);
 
 protected:

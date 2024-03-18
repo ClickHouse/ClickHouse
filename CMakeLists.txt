@@ -110,11 +110,6 @@ endif()
 # - sanitize.cmake
 add_library(global-libs INTERFACE)
 
-# We don't want to instrument everything with fuzzer, but only specific targets (see below),
-# also, since we build our own llvm, we specifically don't want to instrument
-# libFuzzer library itself - it would result in infinite recursion
-#include (cmake/fuzzer.cmake)
-
 include (cmake/sanitize.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
@@ -554,7 +549,9 @@ if (ENABLE_RUST)
     endif()
 endif()
 
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
+    AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT ENABLE_FUZZING
+    AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT ON)
 else ()
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT OFF)
@@ -577,10 +574,7 @@ if (FUZZER)
             if (NOT(target_type STREQUAL "INTERFACE_LIBRARY" OR target_type STREQUAL "UTILITY"))
                 target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
             endif()
-            # clickhouse fuzzer isn't working correctly
-            # initial PR https://github.com/ClickHouse/ClickHouse/pull/27526
-            #if (target MATCHES ".+_fuzzer" OR target STREQUAL "clickhouse")
-            if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
+            if (target_type STREQUAL "EXECUTABLE" AND (target MATCHES ".+_fuzzer" OR target STREQUAL "clickhouse"))
                 message(STATUS "${target} instrumented with fuzzer")
                 target_link_libraries(${target} PUBLIC ch_contrib::fuzzer)
                 # Add to fuzzers bundle

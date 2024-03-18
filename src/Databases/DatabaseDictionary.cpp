@@ -115,7 +115,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message,
-            /* hilite = */ false, "", /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
+        /* hilite = */ false, "", /* allow_multi_statements = */ false, 0, settings.max_parser_depth, settings.max_parser_backtracks, true);
 
     if (!ast && throw_on_error)
         throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -134,7 +134,7 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
     }
     auto settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
 }
 
 void DatabaseDictionary::shutdown()

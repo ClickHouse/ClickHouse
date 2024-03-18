@@ -24,6 +24,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
         auto initialize = [&]() mutable
         {
+            if (context)
+                return true;
+
             shared_context = Context::createShared();
             context = Context::createGlobal(shared_context.get());
             context->makeGlobalContext();

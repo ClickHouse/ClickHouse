@@ -1,7 +1,4 @@
-#include <IO/WriteBufferFromOStream.h>
-#include <Interpreters/applyTableOverride.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
@@ -10,7 +7,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserRenameQuery.h>
-#include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ParserAttachAccessEntity.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -54,12 +50,12 @@ TEST_P(ParserTest, parseQuery)
     {
         if (std::string(expected_ast).starts_with("throws"))
         {
-            EXPECT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
+            EXPECT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
         }
         else
         {
             ASTPtr ast;
-            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
+            ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0));
             if (std::string("CREATE USER or ALTER USER query") != parser->getName()
                     && std::string("ATTACH access entity query") != parser->getName())
             {
@@ -106,7 +102,7 @@ TEST_P(ParserTest, parseQuery)
     }
     else
     {
-        ASSERT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0), DB::Exception);
+        ASSERT_THROW(parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0, 0), DB::Exception);
     }
 }
 
@@ -649,12 +645,13 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserKQLTest,
 
 static constexpr size_t kDummyMaxQuerySize = 256 * 1024;
 static constexpr size_t kDummyMaxParserDepth = 256;
+static constexpr size_t kDummyMaxParserBacktracks = 1000000;
 
 INSTANTIATE_TEST_SUITE_P(
     ParserPRQL,
     ParserTest,
     ::testing::Combine(
-        ::testing::Values(std::make_shared<ParserPRQLQuery>(kDummyMaxQuerySize, kDummyMaxParserDepth)),
+        ::testing::Values(std::make_shared<ParserPRQLQuery>(kDummyMaxQuerySize, kDummyMaxParserDepth, kDummyMaxParserBacktracks)),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
             {
                 "from albums\ngroup {author_id} (\n  aggregate {first_published = min published}\n)\njoin a=author side:left (==author_id)\njoin p=purchases side:right (==author_id)\ngroup {a.id, p.purchase_id} (\n  aggregate {avg_sell = min first_published}\n)",

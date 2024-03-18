@@ -523,7 +523,7 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings)
     ParserExpression parser;
     auto additional_result_filter_ast = parseQuery(
                 parser, additional_result_filter.data(), additional_result_filter.data() + additional_result_filter.size(),
-                "additional result filter", settings.max_query_size, settings.max_parser_depth);
+                "additional result filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
     return additional_result_filter_ast;
 }
 

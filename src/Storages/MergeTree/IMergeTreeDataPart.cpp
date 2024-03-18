@@ -957,7 +957,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         try
         {
             ParserCodec codec_parser;
-            auto codec_ast = parseQuery(codec_parser, codec_line.data() + buf.getPosition(), codec_line.data() + codec_line.length(), "codec parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            auto codec_ast = parseQuery(codec_parser, codec_line.data() + buf.getPosition(), codec_line.data() + codec_line.length(), "codec parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
             default_codec = CompressionCodecFactory::instance().get(codec_ast, {});
         }
         catch (const DB::Exception & ex)

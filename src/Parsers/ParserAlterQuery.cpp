@@ -865,7 +865,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             else if (s_modify_sql_security.ignore(pos, expected))
             {
                 /// This is a hack so we can reuse parser from create and don't have to write `MODIFY SQL SECURITY SQL SECURITY INVOKER`
-                pos -= 2;
+                --pos;
+                --pos;
                 if (!sql_security_p.parse(pos, command_sql_security, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;

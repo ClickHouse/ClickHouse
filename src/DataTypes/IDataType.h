@@ -533,6 +533,8 @@ class DataTypeDateTime;
 class DataTypeDateTime64;
 
 template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
+
+/// TODO: this is garbage, remove it.
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
