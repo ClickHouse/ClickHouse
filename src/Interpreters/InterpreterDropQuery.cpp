@@ -400,6 +400,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 table_context->setInternalQuery(true);
                 /// Do not hold extra shared pointers to tables
                 std::vector<std::pair<String, bool>> tables_to_drop;
+                // NOTE: This means we wait for all tables to be loaded inside getTablesIterator() call in case of `async_load_databases = true`.
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     auto table_ptr = iterator->table();

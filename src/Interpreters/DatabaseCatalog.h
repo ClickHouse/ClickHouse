@@ -418,11 +418,7 @@ public:
 
     Names getAllRegisteredNames() const override
     {
-        Names result;
-        if (database)
-            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-                result.emplace_back(table_it->name());
-        return result;
+        return database ? database->getAllTableNames(context) : {};
     }
 
 private:

@@ -1323,13 +1323,13 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
 void DatabaseReplicated::stopReplication()
 {
-    stopLoading();
     if (ddl_worker)
         ddl_worker->shutdown();
 }
 
 void DatabaseReplicated::shutdown()
 {
+    stopLoading();
     stopReplication();
     ddl_worker_initialized = false;
     ddl_worker = nullptr;
