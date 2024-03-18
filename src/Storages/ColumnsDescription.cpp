@@ -145,7 +145,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
         readEscapedStringUntilEOL(modifiers, buf);
 
         ParserColumnDeclaration column_parser(/* require type */ true);
-        ASTPtr ast = parseQuery(column_parser, "x T " + modifiers, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        ASTPtr ast = parseQuery(column_parser, "x T " + modifiers, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         if (auto * col_ast = ast->as<ASTColumnDeclaration>())
         {
@@ -211,7 +211,7 @@ void ColumnsDescription::setAliases(NamesAndAliases aliases)
         const char * alias_expression_pos = alias.expression.data();
         const char * alias_expression_end = alias_expression_pos + alias.expression.size();
         ParserExpression expression_parser;
-        description.default_desc.expression = parseQuery(expression_parser, alias_expression_pos, alias_expression_end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        description.default_desc.expression = parseQuery(expression_parser, alias_expression_pos, alias_expression_end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         add(std::move(description));
     }

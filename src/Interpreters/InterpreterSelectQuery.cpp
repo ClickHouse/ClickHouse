@@ -160,7 +160,7 @@ FilterDAGInfoPtr generateFilterActions(
     {
         ParserExpression expr_parser;
         /// We should add back quotes around column name as it can contain dots.
-        expr_list->children.push_back(parseQuery(expr_parser, backQuoteIfNeed(column_str), 0, context->getSettingsRef().max_parser_depth));
+        expr_list->children.push_back(parseQuery(expr_parser, backQuoteIfNeed(column_str), 0, context->getSettingsRef().max_parser_depth, context->getSettingsRef().max_parser_backtracks));
     }
 
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
@@ -331,7 +331,7 @@ ASTPtr parseAdditionalFilterConditionForTable(
             const auto & settings = context.getSettingsRef();
             return parseQuery(
                 parser, filter.data(), filter.data() + filter.size(),
-                "additional filter", settings.max_query_size, settings.max_parser_depth);
+                "additional filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         }
     }
 
@@ -2552,7 +2552,12 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_sync_remote)
-            max_streams = static_cast<size_t>(max_streams * settings.max_streams_to_max_threads_ratio);
+        {
+            if (auto streams_with_ratio = max_streams * settings.max_streams_to_max_threads_ratio; streams_with_ratio < SIZE_MAX)
+                max_streams = static_cast<size_t>(streams_with_ratio);
+            else
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Exceeded limit for `max_streams` with `max_streams_to_max_threads_ratio`. Make sure that `max_streams * max_streams_to_max_threads_ratio` not exceeds {}, current value: {}", SIZE_MAX, streams_with_ratio);
+        }
 
         auto & prewhere_info = analysis_result.prewhere_info;
 
