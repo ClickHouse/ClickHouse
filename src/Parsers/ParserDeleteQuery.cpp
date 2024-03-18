@@ -1,3 +1,4 @@
+#include "Parsers/IAST.h"
 #include <Parsers/ParserDeleteQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
@@ -45,8 +46,8 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (s_settings.ignore(pos, expected))
         {
             ParserSetQuery parser_settings(true);
-
-            if (!parser_settings.parse(pos, query->settings_ast, expected))
+            auto & settings_node = ASTHelpers::getOrCreate(query.get(), query->settings_ast);
+            if (!parser_settings.parse(pos, settings_node, expected))
                 return false;
         }
     }
@@ -61,9 +62,6 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (query->table)
         query->children.push_back(query->table);
-
-    if (query->settings_ast)
-        query->children.push_back(query->settings_ast);
 
     return true;
 }

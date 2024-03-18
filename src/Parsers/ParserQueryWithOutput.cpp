@@ -102,54 +102,52 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!parsed)
         return false;
 
-    /// FIXME: try to prettify this cast using `as<>()`
-    auto & query_with_output = dynamic_cast<ASTQueryWithOutput &>(*query);
+    auto * query_with_output = typeid_cast<ASTQueryWithOutput *>(query.get());
+    chassert(query_with_output, "AST is not a ASTQueryWithOutput");
 
     ParserKeyword s_into_outfile(Keyword::INTO_OUTFILE);
     if (s_into_outfile.ignore(pos, expected))
     {
         ParserStringLiteral out_file_p;
-        if (!out_file_p.parse(pos, query_with_output.out_file, expected))
+        auto & out_file_node = ASTHelpers::getOrCreate(query_with_output, query_with_output->out_file);
+        if (!out_file_p.parse(pos, out_file_node, expected))
             return false;
 
         ParserKeyword s_append(Keyword::APPEND);
         if (s_append.ignore(pos, expected))
         {
-            query_with_output.is_outfile_append = true;
+            query_with_output->is_outfile_append = true;
         }
 
         ParserKeyword s_truncate(Keyword::TRUNCATE);
         if (s_truncate.ignore(pos, expected))
         {
-            query_with_output.is_outfile_truncate = true;
+            query_with_output->is_outfile_truncate = true;
         }
 
         ParserKeyword s_stdout(Keyword::AND_STDOUT);
         if (s_stdout.ignore(pos, expected))
         {
-            query_with_output.is_into_outfile_with_stdout = true;
+            query_with_output->is_into_outfile_with_stdout = true;
         }
 
         ParserKeyword s_compression_method(Keyword::COMPRESSION);
         if (s_compression_method.ignore(pos, expected))
         {
-            ParserStringLiteral compression;
-            if (!compression.parse(pos, query_with_output.compression, expected))
+            ParserStringLiteral compression_p;
+            auto & compression_node = ASTHelpers::getOrCreate(query_with_output, query_with_output->compression);
+            if (!compression_p.parse(pos, compression_node, expected))
                 return false;
-            query_with_output.children.push_back(query_with_output.compression);
 
             ParserKeyword s_compression_level(Keyword::LEVEL);
             if (s_compression_level.ignore(pos, expected))
             {
-                ParserNumber compression_level;
-                if (!compression_level.parse(pos, query_with_output.compression_level, expected))
+                ParserNumber compression_level_p;
+                auto & compression_level_node = ASTHelpers::getOrCreate(query_with_output, query_with_output->compression_level);
+                if (!compression_level_p.parse(pos, compression_level_node, expected))
                     return false;
-                query_with_output.children.push_back(query_with_output.compression_level);
             }
         }
-
-        query_with_output.children.push_back(query_with_output.out_file);
-
     }
 
     ParserKeyword s_format(Keyword::FORMAT);
@@ -157,28 +155,26 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (s_format.ignore(pos, expected))
     {
         ParserIdentifier format_p;
-
-        if (!format_p.parse(pos, query_with_output.format, expected))
+        auto & format_node = ASTHelpers::getOrCreate(query_with_output, query_with_output->format);
+        if (!format_p.parse(pos, format_node, expected))
             return false;
-        setIdentifierSpecial(query_with_output.format);
-
-        query_with_output.children.push_back(query_with_output.format);
+        setIdentifierSpecial(format_node);
     }
 
     // SETTINGS key1 = value1, key2 = value2, ...
     ParserKeyword s_settings(Keyword::SETTINGS);
-    if (!query_with_output.settings_ast && s_settings.ignore(pos, expected))
+    if (!query_with_output->settings_ast && s_settings.ignore(pos, expected))
     {
         ParserSetQuery parser_settings(true);
-        if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
+        auto & settings_node = ASTHelpers::getOrCreate(query_with_output, query_with_output->settings_ast);
+        if (!parser_settings.parse(pos, settings_node, expected))
             return false;
-        query_with_output.children.push_back(query_with_output.settings_ast);
 
         // SETTINGS after FORMAT is not parsed by the SELECT parser (ParserSelectQuery)
         // Pass them manually, to apply in InterpreterSelectQuery::initSettings()
         if (query->as<ASTSelectWithUnionQuery>())
         {
-            auto settings = query_with_output.settings_ast->clone();
+            auto settings = query_with_output->settings_ast->clone();
             assert_cast<ASTSetQuery *>(settings.get())->print_in_format = false;
             QueryWithOutputSettingsPushDownVisitor::Data data{settings};
             QueryWithOutputSettingsPushDownVisitor(data).visit(query);

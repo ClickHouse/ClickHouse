@@ -9,30 +9,28 @@ namespace DB
 void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
 {
     if (out_file)
-    {
-        cloned.out_file = out_file->clone();
-        cloned.children.push_back(cloned.out_file);
-    }
+        cloned.set(cloned.out_file, out_file->clone());
+
     if (format)
-    {
-        cloned.format = format->clone();
-        cloned.children.push_back(cloned.format);
-    }
+        cloned.set(cloned.format, format->clone());
+
     if (settings_ast)
-    {
-        cloned.settings_ast = settings_ast->clone();
-        cloned.children.push_back(cloned.settings_ast);
-    }
+        cloned.set(cloned.settings_ast, settings_ast->clone());
+
     if (compression)
-    {
-        cloned.compression = compression->clone();
-        cloned.children.push_back(cloned.compression);
-    }
+        cloned.set(cloned.compression, compression->clone());
+
     if (compression_level)
-    {
-        cloned.compression_level = compression_level->clone();
-        cloned.children.push_back(cloned.compression_level);
-    }
+        cloned.set(cloned.compression_level, compression_level->clone());
+}
+
+void ASTQueryWithOutput::forEachPointerToChild(std::function<void(void**)> f)
+{
+    f(reinterpret_cast<void **>(&out_file));
+    f(reinterpret_cast<void **>(&format));
+    f(reinterpret_cast<void **>(&settings_ast));
+    f(reinterpret_cast<void **>(&compression));
+    f(reinterpret_cast<void **>(&compression_level));
 }
 
 void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
@@ -62,7 +60,7 @@ void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & stat
         format->formatImpl(s, state, frame);
     }
 
-    if (settings_ast && assert_cast<ASTSetQuery *>(settings_ast.get())->print_in_format)
+    if (settings_ast && assert_cast<ASTSetQuery *>(settings_ast)->print_in_format)
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings_ast->formatImpl(s, state, frame);
@@ -71,25 +69,13 @@ void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & stat
 
 bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
 {
-    /// FIXME: try to prettify this cast using `as<>()`
-    if (auto * ast_with_output = dynamic_cast<ASTQueryWithOutput *>(&ast))
+    if (auto * ast_with_output = typeid_cast<ASTQueryWithOutput *>(&ast))
     {
-        auto remove_if_exists = [&](ASTPtr & p)
-        {
-            if (p)
-            {
-                if (auto * it = std::find(ast_with_output->children.begin(), ast_with_output->children.end(), p);
-                    it != ast_with_output->children.end())
-                    ast_with_output->children.erase(it);
-                p.reset();
-            }
-        };
-
-        remove_if_exists(ast_with_output->out_file);
-        remove_if_exists(ast_with_output->format);
-        remove_if_exists(ast_with_output->settings_ast);
-        remove_if_exists(ast_with_output->compression);
-        remove_if_exists(ast_with_output->compression_level);
+        ast_with_output->reset(ast_with_output->out_file);
+        ast_with_output->reset(ast_with_output->format);
+        ast_with_output->reset(ast_with_output->settings_ast);
+        ast_with_output->reset(ast_with_output->compression);
+        ast_with_output->reset(ast_with_output->compression_level);
 
         return true;
     }

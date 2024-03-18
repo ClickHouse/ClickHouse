@@ -14,14 +14,14 @@ namespace DB
 class ASTQueryWithOutput : public IAST
 {
 public:
-    ASTPtr out_file;
+    IAST * out_file;
     bool is_into_outfile_with_stdout = false;
     bool is_outfile_append = false;
     bool is_outfile_truncate = false;
-    ASTPtr format;
-    ASTPtr settings_ast;
-    ASTPtr compression;
-    ASTPtr compression_level;
+    IAST * format;
+    IAST * settings_ast;
+    IAST * compression;
+    IAST * compression_level;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 
@@ -34,6 +34,8 @@ protected:
 
     /// Format only the query part of the AST (without output options).
     virtual void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override;
 };
 
 
