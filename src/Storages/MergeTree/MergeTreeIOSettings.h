@@ -44,6 +44,8 @@ struct MergeTreeReaderSettings
     bool enable_multiple_prewhere_read_steps = false;
     /// If true, try to lower size of read buffer according to granule size and compressed block size.
     bool adjust_read_buffer_size = true;
+    /// TODO:
+    bool always_load_marks = true;
 };
 
 struct MergeTreeWriterSettings

@@ -227,12 +227,13 @@ void MergeTreeReaderWide::addStreams(
 
         auto context = data_part_info_for_read->getContext();
         auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+        size_t num_marks_in_part = data_part_info_for_read->getMarksCount();
 
         auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
             data_part_info_for_read,
             mark_cache,
             data_part_info_for_read->getIndexGranularityInfo().getMarksFilePath(*stream_name),
-            data_part_info_for_read->getMarksCount(),
+            num_marks_in_part,
             data_part_info_for_read->getIndexGranularityInfo(),
             settings.save_marks_in_cache,
             settings.read_settings,
@@ -243,11 +244,26 @@ void MergeTreeReaderWide::addStreams(
         auto stream_settings = settings;
         stream_settings.is_low_cardinality_dictionary = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
 
-        streams.emplace(*stream_name, std::make_unique<MergeTreeReaderStreamSingleColumn>(
-            data_part_info_for_read->getDataPartStorage(), *stream_name, DATA_FILE_EXTENSION,
-            data_part_info_for_read->getMarksCount(), all_mark_ranges, stream_settings,
-            uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(*stream_name + DATA_FILE_EXTENSION),
-            std::move(marks_loader), profile_callback, clock_type));
+        auto create_stream = [&]<typename Stream>()
+        {
+            return std::make_unique<Stream>(
+                data_part_info_for_read->getDataPartStorage(), *stream_name, DATA_FILE_EXTENSION,
+                num_marks_in_part, all_mark_ranges, stream_settings,
+                uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(*stream_name + DATA_FILE_EXTENSION),
+                std::move(marks_loader), profile_callback, clock_type);
+        };
+
+        LOG_DEBUG(getLogger("KEK"), "settings.always_load_marks: {}, one range: {}", settings.always_load_marks, all_mark_ranges.isOneRangeForWholePart(num_marks_in_part));
+
+        if (!settings.always_load_marks && all_mark_ranges.isOneRangeForWholePart(num_marks_in_part))
+        {
+            streams.emplace(*stream_name, create_stream.operator()<MergeTreeReaderStreamSingleColumnWholePart>());
+        }
+        else
+        {
+            marks_loader->startAsyncLoad();
+            streams.emplace(*stream_name, create_stream.operator()<MergeTreeReaderStreamSingleColumn>());
+        }
     };
 
     serialization->enumerateStreams(callback);
@@ -284,7 +300,7 @@ static ReadBuffer * getStream(
 
     if (seek_to_start)
         stream.seekToStart();
-    else if (seek_to_mark)
+    else if (seek_to_mark && from_mark != 0)
         stream.seekToMark(from_mark);
 
     return stream.getDataBuffer();
