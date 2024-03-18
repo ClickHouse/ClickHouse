@@ -288,7 +288,7 @@ private:
 extern template class RangeHashedDictionary<DictionaryKeyType::Simple>;
 extern template class RangeHashedDictionary<DictionaryKeyType::Complex>;
 
-namespace
+namespace impl
 {
     template <typename F>
     void callOnRangeType(const DataTypePtr & range_type, F && func)
@@ -465,7 +465,7 @@ ColumnUInt8::Ptr RangeHashedDictionary<dictionary_key_type>::hasKeys(const Colum
     auto & out = result->getData();
     size_t keys_found = 0;
 
-    callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
+    impl::callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
     {
         using Types = std::decay_t<decltype(types)>;
         using RangeColumnType = typename Types::LeftType;
@@ -523,7 +523,7 @@ void RangeHashedDictionary<dictionary_key_type>::createAttributes()
                             getDictionaryID().getNameForLogs());
     }
 
-    callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
+    impl::callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
     {
         using Types = std::decay_t<decltype(types)>;
         using RangeColumnType = typename Types::LeftType;
@@ -553,7 +553,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
         updateData();
     }
 
-    callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
+    impl::callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
     {
         using Types = std::decay_t<decltype(types)>;
         using RangeColumnType = typename Types::LeftType;
@@ -573,7 +573,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
 {
-    callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
+    impl::callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
     {
         using Types = std::decay_t<decltype(types)>;
         using RangeColumnType = typename Types::LeftType;
@@ -783,7 +783,7 @@ void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block &
         max_range_null_map = &max_range_column_nullable->getNullMapColumn().getData();
     }
 
-    callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
+    impl::callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
     {
         using Types = std::decay_t<decltype(types)>;
         using RangeColumnType = typename Types::LeftType;
@@ -930,7 +930,7 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
 
     PaddedPODArray<KeyType> keys;
 
-    callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
+    impl::callOnRangeType(dict_struct.range_min->type, [&](const auto & types)
     {
         using Types = std::decay_t<decltype(types)>;
         using RangeColumnType = typename Types::LeftType;
