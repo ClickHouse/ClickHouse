@@ -1221,6 +1221,7 @@ public:
         const IColumn ** batch_arguments{};
         const UInt64 * offsets{};
         bool has_sparse_arguments = false;
+        bool can_optimize_equal_keys_ranges = true;
     };
 
     /// Used for optimize_aggregation_in_order:
@@ -1395,7 +1396,7 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool no_more_keys, bool use_compiled_functions, bool prefetch, typename Method, typename State>
+    template <bool no_more_keys, bool prefetch, typename Method, typename State>
     void executeImplBatch(
         Method & method,
         State & state,
@@ -1404,16 +1405,17 @@ private:
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
         bool all_keys_are_const,
+        bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
 
     /// For case when there are no keys (all aggregate into one row).
-    template <bool use_compiled_functions>
     void executeWithoutKeyImpl(
         AggregatedDataWithoutKey & res,
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        Arena * arena) const;
+        Arena * arena,
+        bool use_compiled_functions) const;
 
     template <typename Method>
     void writeToTemporaryFileImpl(
@@ -1429,8 +1431,8 @@ private:
             Arena * arena) const;
 
     /// Merge data from hash table `src` into `dst`.
-    template <typename Method, bool use_compiled_functions, bool prefetch, typename Table>
-    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena) const;
+    template <typename Method, bool prefetch, typename Table>
+    void mergeDataImpl(Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions) const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
@@ -1467,12 +1469,16 @@ private:
         MutableColumns & final_aggregate_columns,
         Arena * arena) const;
 
-    template <bool use_compiled_functions>
-    Block insertResultsIntoColumns(PaddedPODArray<AggregateDataPtr> & places, OutputBlockColumns && out_cols, Arena * arena, bool has_null_key_data) const;
+    Block insertResultsIntoColumns(
+        PaddedPODArray<AggregateDataPtr> & places,
+        OutputBlockColumns && out_cols,
+        Arena * arena,
+        bool has_null_key_data,
+        bool use_compiled_functions) const;
 
-    template <typename Method, bool use_compiled_functions, bool return_single_block, typename Table>
-    ConvertToBlockRes<return_single_block>
-    convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t rows) const;
+    template <typename Method, bool return_single_block, typename Table>
+    ConvertToBlockRes<return_single_block> convertToBlockImplFinal(
+        Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool use_compiled_functions, size_t rows) const;
 
     template <bool return_single_block, typename Method, typename Table>
     ConvertToBlockRes<return_single_block>
@@ -1508,11 +1514,12 @@ private:
         bool final,
         ThreadPool * thread_pool) const;
 
-    template <bool no_more_keys, typename State, typename Table>
+    template <typename State, typename Table>
     void mergeStreamsImplCase(
         Arena * aggregates_pool,
         State & state,
         Table & data,
+        bool no_more_keys,
         AggregateDataPtr overflow_row,
         size_t row_begin,
         size_t row_end,

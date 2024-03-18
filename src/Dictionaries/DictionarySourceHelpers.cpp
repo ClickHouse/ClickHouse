@@ -9,15 +9,11 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/SettingsChanges.h>
 
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
@@ -134,30 +130,5 @@ String TransformWithAdditionalColumns::getName() const
 {
     return "TransformWithAdditionalColumns";
 }
-
-DictionaryPipelineExecutor::DictionaryPipelineExecutor(QueryPipeline & pipeline_, bool async)
-    : async_executor(async ? std::make_unique<PullingAsyncPipelineExecutor>(pipeline_) : nullptr)
-    , executor(async ? nullptr : std::make_unique<PullingPipelineExecutor>(pipeline_))
-{}
-
-bool DictionaryPipelineExecutor::pull(Block & block)
-{
-    if (async_executor)
-    {
-        while (true)
-        {
-            bool has_data = async_executor->pull(block);
-            if (has_data && !block)
-                continue;
-            return has_data;
-        }
-    }
-    else if (executor)
-        return executor->pull(block);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionaryPipelineExecutor is not initialized");
-}
-
-DictionaryPipelineExecutor::~DictionaryPipelineExecutor() = default;
 
 }
