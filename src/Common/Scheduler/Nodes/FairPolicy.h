@@ -248,7 +248,6 @@ private:
             parent->activateChild(this);
     }
 
-private:
     /// Beginning of `items` vector is heap of active children: [0; `heap_size`).
     /// Next go inactive children in unsorted order.
     /// NOTE: we have to track vruntime of inactive children for max-min fairness.

@@ -37,7 +37,7 @@ size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
     const size_t keys_size = keys_extractor.getKeysSize();
     default_mask.resize(keys_size);
 
-    callOnRangeType(
+    impl::callOnRangeType(
         dict_struct.range_min->type,
         [&](const auto & types)
         {

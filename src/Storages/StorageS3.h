@@ -26,11 +26,6 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
-namespace Aws::S3
-{
-    class Client;
-}
-
 namespace DB
 {
 
