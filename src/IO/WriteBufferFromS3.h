@@ -86,7 +86,7 @@ private:
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
-    IBufferAllocationPolicyPtr buffer_allocation_policy;
+    IBufferAllocationPolicy::IBufferAllocationPolicyPtr buffer_allocation_policy;
 
     /// Upload in S3 is made in parts.
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.

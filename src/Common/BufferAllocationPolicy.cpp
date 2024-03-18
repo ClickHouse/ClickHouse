@@ -11,7 +11,7 @@ class FixedSizeBufferAllocationPolicy : public IBufferAllocationPolicy
     size_t buffer_number = 0;
 
 public:
-    explicit FixedSizeBufferAllocationPolicy(const BufferAllocationSettings & settings_)
+    explicit FixedSizeBufferAllocationPolicy(const IBufferAllocationPolicy::Settings & settings_)
         : buffer_size(settings_.strict_upload_part_size)
     {
         chassert(buffer_size > 0);
@@ -45,7 +45,7 @@ class ExpBufferAllocationPolicy : public DB::IBufferAllocationPolicy
     size_t buffer_number = 0;
 
 public:
-    explicit ExpBufferAllocationPolicy(const BufferAllocationSettings & settings_)
+    explicit ExpBufferAllocationPolicy(const IBufferAllocationPolicy::Settings & settings_)
         : first_size(std::max(settings_.max_single_part_upload_size, settings_.min_upload_part_size))
         , second_size(settings_.min_upload_part_size)
         , multiply_factor(settings_.upload_part_size_multiply_factor)
@@ -91,7 +91,7 @@ public:
 
 IBufferAllocationPolicy::~IBufferAllocationPolicy() = default;
 
-IBufferAllocationPolicyPtr ChooseBufferPolicy(BufferAllocationSettings settings_)
+IBufferAllocationPolicy::IBufferAllocationPolicyPtr IBufferAllocationPolicy::create(IBufferAllocationPolicy::Settings settings_)
 {
     if (settings_.strict_upload_part_size > 0)
         return std::make_unique<FixedSizeBufferAllocationPolicy>(settings_);

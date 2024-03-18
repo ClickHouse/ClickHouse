@@ -33,12 +33,12 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     ThreadPoolCallbackRunner<void> schedule_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
-    , buffer_allocation_policy(ChooseBufferPolicy({settings_->strict_upload_part_size,
-                                                   settings_->min_upload_part_size,
-                                                   settings_->max_upload_part_size,
-                                                   settings_->upload_part_size_multiply_factor,
-                                                   settings_->upload_part_size_multiply_parts_count_threshold,
-                                                   settings_->max_single_part_upload_size}))
+    , buffer_allocation_policy(IBufferAllocationPolicy::create({settings_->strict_upload_part_size,
+                                                                settings_->min_upload_part_size,
+                                                                settings_->max_upload_part_size,
+                                                                settings_->upload_part_size_multiply_factor,
+                                                                settings_->upload_part_size_multiply_parts_count_threshold,
+                                                                settings_->max_single_part_upload_size}))
     , max_single_part_upload_size(settings_->max_single_part_upload_size)
     , max_unexpected_write_error_retries(settings_->max_unexpected_write_error_retries)
     , blob_path(blob_path_)
