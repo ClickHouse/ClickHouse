@@ -606,7 +606,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         Strings forced_indices;
         {
             Tokens tokens(indices.data(), indices.data() + indices.size(), settings.max_query_size);
-            IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth));
+            IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
             Expected expected;
             if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
                 throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse force_data_skipping_indices ('{}')", indices);
