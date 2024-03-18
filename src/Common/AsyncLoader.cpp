@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <optional>
+#include <magic_enum.hpp>
 #include <fmt/format.h>
 #include <base/defines.h>
 #include <base/scope_guard.h>
@@ -196,9 +197,10 @@ void LoadTask::remove()
     }
 }
 
-AsyncLoader::AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool log_failures_, bool log_progress_)
+AsyncLoader::AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool log_failures_, bool log_progress_, bool log_events_)
     : log_failures(log_failures_)
     , log_progress(log_progress_)
+    , log_events(log_events_)
     , log(getLogger("AsyncLoader"))
 {
     pools.reserve(pool_initializers.size());
@@ -327,6 +329,8 @@ void AsyncLoader::schedule(const LoadJobSet & jobs_to_schedule)
             ALLOW_ALLOCATIONS_IN_SCOPE;
             scheduled_jobs.try_emplace(job);
             job->scheduled(++last_job_id);
+            if (log_events)
+                LOG_DEBUG(log, "Schedule load job '{}' into {}", job->name, getPoolName(job->pool()));
         });
     }
 
@@ -582,6 +586,9 @@ void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, std::excepti
     else if (status == LoadStatus::CANCELED)
         job->canceled(reason);
 
+    if (log_events)
+        LOG_DEBUG(log, "Finish load job '{}' with status {}", job->name, magic_enum::enum_name(status));
+
     Info & info = scheduled_jobs[job];
     if (info.isReady())
     {
@@ -660,6 +667,9 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool_id, std::un
     }
 
     job->pool_id.store(new_pool_id);
+
+    if (log_events)
+        LOG_DEBUG(log, "Prioritize load job '{}': {} -> {}", job->name, old_pool.name, new_pool.name);
 
     // Recurse into dependencies
     for (const auto & dep : job->dependencies)
@@ -765,6 +775,9 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
     if (job->load_status != LoadStatus::PENDING) // Shortcut just to avoid incrementing ProfileEvents
         return;
 
+    if (log_events)
+        LOG_DEBUG(log, "Wait load job '{}' in {}", job->name, getPoolName(job->executionPool()));
+
     Stopwatch watch;
     job->waiters++;
     job->finished.wait(job_lock, [&] { return job->load_status != LoadStatus::PENDING; });
@@ -789,6 +802,13 @@ bool AsyncLoader::canWorkerLive(Pool & pool, std::unique_lock<std::mutex> &)
         && (!current_priority || *current_priority >= pool.priority);
 }
 
+void AsyncLoader::setCurrentPriority(std::unique_lock<std::mutex> &, std::optional<Priority> priority)
+{
+    if (log_event && current_priority != priority)
+        LOG_DEBUG(log, "Change current priority: {} -> {}", current_priority, priority);
+    current_priority = priority;
+}
+
 void AsyncLoader::updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> & lock)
 {
     // Find current priority.
@@ -799,7 +819,7 @@ void AsyncLoader::updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> & l
         if (pool.isActive() && (!priority || *priority > pool.priority))
             priority = pool.priority;
     }
-    current_priority = priority;
+    setCurrentPriority(lock, priority);
 
     // Spawn workers in all pools with current priority
     for (Pool & pool : pools)
@@ -809,10 +829,12 @@ void AsyncLoader::updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> & l
     }
 }
 
-void AsyncLoader::spawn(Pool & pool, std::unique_lock<std::mutex> &)
+void AsyncLoader::spawn(Pool & pool, std::unique_lock<std::mutex> & lock)
 {
+    setCurrentPriority(lock, pool.priority); // canSpawnWorker() ensures this would not decrease current_priority
     pool.workers++;
-    current_priority = pool.priority; // canSpawnWorker() ensures this would not decrease current_priority
+    if (log_events)
+        LOG_DEBUG(log, "Spawn loader worker #{} in {}", pool.workers, pool.name);
     NOEXCEPT_SCOPE({
         ALLOW_ALLOCATIONS_IN_SCOPE;
         pool.thread_pool->scheduleOrThrowOnError([this, &pool] { worker(pool); });
@@ -842,6 +864,8 @@ void AsyncLoader::worker(Pool & pool)
 
             if (!canWorkerLive(pool, lock))
             {
+                if (log_events)
+                    LOG_DEBUG(log, "Stop worked in {}", pool.name);
                 if (--pool.workers == 0)
                     updateCurrentPriorityAndSpawn(lock); // It will spawn lower priority workers if needed
                 return;
@@ -852,6 +876,9 @@ void AsyncLoader::worker(Pool & pool)
             job = it->second;
             pool.ready_queue.erase(it);
             scheduled_jobs.find(job)->second.ready_seqno = 0; // This job is no longer in the ready queue
+
+            if (log_events)
+                LOG_DEBUG(log, "Execute load job '{}' in {}", job->name, pool.name);
         }
 
         ALLOW_ALLOCATIONS_IN_SCOPE;

@@ -327,7 +327,7 @@ private:
     };
 
 public:
-    AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool log_failures_, bool log_progress_);
+    AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool log_failures_, bool log_progress_, bool log_events_);
 
     // WARNING: all tasks instances should be destructed before associated AsyncLoader.
     ~AsyncLoader();
@@ -407,6 +407,7 @@ private:
     void wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job);
     bool canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> & lock);
     bool canWorkerLive(Pool & pool, std::unique_lock<std::mutex> & lock);
+    void setCurrentPriority(std::unique_lock<std::mutex> & lock, std::optional<Priority> priority);
     void updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> & lock);
     void spawn(Pool & pool, std::unique_lock<std::mutex> & lock);
     void worker(Pool & pool);
@@ -415,6 +416,7 @@ private:
     // Logging
     const bool log_failures; // Worker should log all exceptions caught from job functions.
     const bool log_progress; // Periodically log total progress
+    const bool log_events; // Log all important events: job start/end, waits, prioritizations
     LoggerPtr log;
 
     mutable std::mutex mutex; // Guards all the fields below.
