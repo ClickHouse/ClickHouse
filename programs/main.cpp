@@ -68,7 +68,6 @@ namespace
 using MainFunc = int (*)(int, char**);
 
 #if !defined(FUZZING_MODE)
-
 /// Add an item here to register new application
 std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
@@ -105,13 +104,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"restart", mainEntryClickHouseRestart},
 };
 
-/// Add an item here to register a new short name
-std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
-{
-    {"chl", "local"},
-    {"chc", "client"},
-};
-
 int printHelp(int, char **)
 {
     std::cerr << "Use one of the following commands:" << std::endl;
@@ -120,6 +112,13 @@ int printHelp(int, char **)
     return -1;
 }
 #endif
+
+/// Add an item here to register a new short name
+std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
+{
+    {"chl", "local"},
+    {"chc", "client"},
+};
 
 
 enum class InstructionFail
