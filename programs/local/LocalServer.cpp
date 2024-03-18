@@ -878,6 +878,11 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
 
 void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)
 {
+#if defined(FUZZING_MODE)
+    if (argc)
+        fuzzer_args.push_back(argv[0]);
+#endif
+
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
@@ -916,8 +921,7 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
         else if (arg == "--")
         {
 #if defined(FUZZING_MODE)
-            fuzzer_argc = 1 + argc - arg_num;
-            fuzzer_argv = argv + arg_num;
+            fuzzer_args.insert(fuzzer_args.end(), &argv[arg_num + 1], &argv[argc]);
             break;
 #endif
         }
@@ -926,14 +930,6 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
             common_arguments.emplace_back(arg);
         }
     }
-
-#if defined(FUZZING_MODE)
-    if (!fuzzer_argc)
-    {
-        fuzzer_argc = 1;
-        fuzzer_argv = argv;
-    }
-#endif
 }
 
 }

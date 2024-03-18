@@ -79,9 +79,7 @@ protected:
     void runNonInteractive();
 
 #if defined(FUZZING_MODE)
-    int fuzzer_argc = 0;
-    char ** fuzzer_argv = nullptr;
-
+    std::vector<char *> fuzzer_args;
     void runLibFuzzer();
 #endif
 

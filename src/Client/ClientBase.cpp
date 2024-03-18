@@ -2638,6 +2638,9 @@ ClientBase * app;
 void ClientBase::runLibFuzzer()
 {
     app = this;
+    int fuzzer_argc = fuzzer_args.size();
+    char ** fuzzer_argv = fuzzer_args.data();
+
     LLVMFuzzerRunDriver(&fuzzer_argc, &fuzzer_argv, [](const uint8_t * data, size_t size)
     {
         try
