@@ -1618,6 +1618,7 @@ def _add_build_to_version_history(
     job_report: JobReport,
     git_ref: str,
     version: str,
+    docker_tag: str,
     ch_helper: ClickHouseHelper,
 ) -> None:
     # with some probability we will not silently break this logic
@@ -1630,6 +1631,7 @@ def _add_build_to_version_history(
         "commit_sha": pr_info.sha,
         "commit_url": pr_info.commit_html_url,
         "version": version,
+        "docker_tag": docker_tag,
         "git_ref": git_ref,
     }
 
@@ -2019,9 +2021,14 @@ def main() -> int:
                 db="default", table="checks", events=prepared_events
             )
 
-            if args.job_name == "DockerServerImageRelease" and indata is not None:
+            if "DockerServerImage" in args.job_name and indata is not None:
                 _add_build_to_version_history(
-                    pr_info, job_report, indata["git_ref"], indata["version"], ch_helper
+                    pr_info,
+                    job_report,
+                    indata["git_ref"],
+                    indata["version"],
+                    indata["build"],
+                    ch_helper,
                 )
         else:
             # no job report
