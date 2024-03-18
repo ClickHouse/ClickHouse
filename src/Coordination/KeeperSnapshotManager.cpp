@@ -885,14 +885,16 @@ SnapshotFileInfo KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(const K
     return {snapshot_file_name, disk};
 }
 
-size_t KeeperSnapshotManager::getLatestSnapshotIndex() const
+template<typename Storage>
+size_t KeeperSnapshotManager<Storage>::getLatestSnapshotIndex() const
 {
     if (!existing_snapshots.empty())
         return existing_snapshots.rbegin()->first;
     return 0;
 }
 
-SnapshotFileInfo KeeperSnapshotManager::getLatestSnapshotInfo() const
+template<typename Storage>
+SnapshotFileInfo KeeperSnapshotManager<Storage>::getLatestSnapshotInfo() const
 {
     if (!existing_snapshots.empty())
     {
