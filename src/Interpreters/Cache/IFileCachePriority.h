@@ -102,6 +102,7 @@ public:
     /// for the corresponding file segment.
     virtual bool canFit( /// NOLINT
         size_t size,
+        size_t elements,
         const CachePriorityGuard::Lock &,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const = 0;
@@ -120,14 +121,39 @@ public:
         size_t size,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
-        IFileCachePriority::IteratorPtr reservee,
+        IteratorPtr reservee,
         const UserID & user_id,
+        bool & reached_size_limit,
+        bool & reached_elements_limit,
         const CachePriorityGuard::Lock &) = 0;
 
     virtual bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) = 0;
 
+    struct HoldSpace : boost::noncopyable
+    {
+        HoldSpace(size_t size_, size_t elements_, IteratorPtr reservee_, IFileCachePriority & priority_, const CachePriorityGuard::Lock & lock)
+            : size(size_), elements(elements_), reservee(reservee_), priority(priority_)
+        {
+            priority.holdImpl(size, elements, reservee, lock);
+        }
+
+        ~HoldSpace()
+        {
+            priority.releaseImpl(size, elements, reservee);
+        }
+
+        size_t size;
+        size_t elements;
+        IteratorPtr reservee;
+        IFileCachePriority & priority;
+    };
+    HoldSpace takeHold();
+
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
+
+    virtual void holdImpl(size_t size, size_t elements, IteratorPtr reservee, const CachePriorityGuard::Lock & lock) = 0;
+    virtual void releaseImpl(size_t size, size_t elements, IteratorPtr) = 0;
 
     size_t max_size = 0;
     size_t max_elements = 0;

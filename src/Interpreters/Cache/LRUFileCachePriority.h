@@ -30,6 +30,7 @@ public:
 
     bool canFit( /// NOLINT
         size_t size,
+        size_t elements,
         const CachePriorityGuard::Lock &,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const override;
@@ -48,6 +49,8 @@ public:
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
         const UserID & user_id,
+        bool & reached_size_limit,
+        bool & reached_elements_limit,
         const CachePriorityGuard::Lock &) override;
 
     void shuffle(const CachePriorityGuard::Lock &) override;
@@ -76,7 +79,14 @@ private:
     void updateElementsCount(int64_t num);
     void updateSize(int64_t size);
 
-    bool canFit(size_t size, size_t released_size_assumption, size_t released_elements_assumption, const CachePriorityGuard::Lock &) const;
+    bool canFit(
+        size_t size,
+        size_t elements,
+        size_t released_size_assumption,
+        size_t released_elements_assumption,
+        bool * reached_size_limit,
+        bool * reached_elements_limit,
+        const CachePriorityGuard::Lock &) const;
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
 
@@ -91,6 +101,9 @@ private:
 
     LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::Lock &);
     LRUIterator add(EntryPtr entry, const CachePriorityGuard::Lock &);
+
+    void holdImpl(size_t size, size_t elements, IteratorPtr, const CachePriorityGuard::Lock & lock) override;
+    void releaseImpl(size_t size, size_t elements, IteratorPtr) override;
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator

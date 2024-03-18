@@ -219,21 +219,32 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard
 
 bool LRUFileCachePriority::canFit( /// NOLINT
     size_t size,
+    size_t elements,
     const CachePriorityGuard::Lock & lock,
     IteratorPtr,
     bool) const
 {
-    return canFit(size, 0, 0, lock);
+    return canFit(size, elements, 0, 0, nullptr, nullptr, lock);
 }
 
 bool LRUFileCachePriority::canFit(
     size_t size,
+    size_t elements,
     size_t released_size_assumption,
     size_t released_elements_assumption,
+    bool * reached_size_limit,
+    bool * reached_elements_limit,
     const CachePriorityGuard::Lock &) const
 {
-    return (max_size == 0 || (state->current_size + size - released_size_assumption <= max_size))
-        && (max_elements == 0 || state->current_elements_num + 1 - released_elements_assumption <= max_elements);
+    const bool size_limit_satisifed = max_size == 0 || state->current_size + size - released_size_assumption <= max_size;
+    const bool elements_limit_satisfied = max_elements == 0 || state->current_elements_num + elements - released_elements_assumption <= max_elements;
+
+    if (reached_size_limit)
+        *reached_size_limit |= !size_limit_satisifed;
+    if (reached_elements_limit)
+        *reached_elements_limit |= !elements_limit_satisfied;
+
+    return size_limit_satisifed && elements_limit_satisfied;
 }
 
 bool LRUFileCachePriority::collectCandidatesForEviction(
@@ -242,9 +253,11 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr,
     const UserID &,
+    bool & reached_size_limit,
+    bool & reached_elements_limit,
     const CachePriorityGuard::Lock & lock)
 {
-    if (canFit(size, lock))
+    if (canFit(size, 1, 0, 0, &reached_size_limit, &reached_elements_limit, lock))
         return true;
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
@@ -270,7 +283,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
     auto can_fit = [&]
     {
-        return canFit(size, stat.stat.releasable_size, stat.stat.releasable_count, lock);
+        return canFit(size, 1, stat.stat.releasable_size, stat.stat.releasable_count, nullptr, nullptr, lock);
     };
 
     iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
@@ -448,6 +461,25 @@ void LRUFileCachePriority::shuffle(const CachePriorityGuard::Lock &)
     std::shuffle(its.begin(), its.end(), generator);
     for (auto & it : its)
         queue.splice(queue.end(), queue, it);
+}
+
+void LRUFileCachePriority::holdImpl(size_t size, size_t elements, IteratorPtr, const CachePriorityGuard::Lock & lock)
+{
+    if (!canFit(size, elements, lock))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot take space {}. Current state {}/{} in size, {}/{} in elements",
+                        size, state->current_size, max_size, state->current_elements_num, max_elements);
+    }
+
+    state->current_size += size;
+    state->current_elements_num += elements;
+}
+
+void LRUFileCachePriority::releaseImpl(size_t size, size_t elements, IteratorPtr)
+{
+    state->current_size -= size;
+    state->current_elements_num -= elements;
 }
 
 }

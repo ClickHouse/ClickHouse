@@ -27,6 +27,7 @@ public:
 
     bool canFit( /// NOLINT
         size_t size,
+        size_t elements,
         const CachePriorityGuard::Lock &,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const override;
@@ -45,6 +46,8 @@ public:
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
         const UserID & user_id,
+        bool & reached_size_limit,
+        bool & reached_elements_limit,
         const CachePriorityGuard::Lock &) override;
 
     void shuffle(const CachePriorityGuard::Lock &) override;
@@ -60,6 +63,9 @@ private:
     LoggerPtr log = getLogger("SLRUFileCachePriority");
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock);
+
+    void holdImpl(size_t size, size_t elements, IteratorPtr reservee, const CachePriorityGuard::Lock & lock) override;
+    void releaseImpl(size_t size, size_t elements, IteratorPtr reservee) override;
 };
 
 class SLRUFileCachePriority::SLRUIterator : public IFileCachePriority::Iterator

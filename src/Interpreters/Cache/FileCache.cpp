@@ -823,10 +823,13 @@ bool FileCache::tryReserve(
     }
 
     EvictionCandidates eviction_candidates;
+    bool reached_size_limit = false;
+    bool reached_elements_limit = false;
 
     if (query_priority)
     {
-        if (!query_priority->collectCandidatesForEviction(size, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
+        if (!query_priority->collectCandidatesForEviction(
+                size, reserve_stat, eviction_candidates, {}, user.user_id, reached_size_limit, reached_elements_limit, cache_lock))
             return false;
 
         LOG_TEST(log, "Query limits satisfied (while reserving for {}:{})", file_segment.key(), file_segment.offset());
@@ -839,38 +842,41 @@ bool FileCache::tryReserve(
     auto queue_iterator = file_segment.getQueueIterator();
     chassert(!queue_iterator || file_segment.getReservedSize() > 0);
 
-    if (!main_priority->collectCandidatesForEviction(size, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
+    if (!main_priority->collectCandidatesForEviction(
+            size, reserve_stat, eviction_candidates, queue_iterator, user.user_id, reached_size_limit, reached_elements_limit, cache_lock))
         return false;
-
-    /// Let's release cache lock if we are going to remove files from filesystem.
-    const bool release_lock = eviction_candidates.size() > 0;
-    if (release_lock)
-        cache_lock.unlock();
 
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
         return false;
 
-    try
+    if (eviction_candidates.size() > 0)
     {
-        /// Remove eviction candidates from filesystem.
-        eviction_candidates.evict();
-    }
-    catch (...)
-    {
-        if (release_lock)
+        chassert(reached_size_limit || reached_elements_limit);
+
+        std::unique_ptr<IFileCachePriority::HoldSpace> hold_space;
+        if (!reached_size_limit)
+            hold_space = std::make_unique<IFileCachePriority::HoldSpace>(size, 0, queue_iterator, *main_priority, cache_lock);
+        else if (!reached_elements_limit)
+            hold_space = std::make_unique<IFileCachePriority::HoldSpace>(0, 1, queue_iterator, *main_priority, cache_lock);
+
+        cache_lock.unlock();
+        try
+        {
+            /// Remove eviction candidates from filesystem.
+            eviction_candidates.evict();
+        }
+        catch (...)
+        {
             cache_lock.lock();
+            /// Invalidate queue entries if some succeeded to be removed.
+            eviction_candidates.finalize(query_context.get(), cache_lock);
+            throw;
+        }
 
-        /// Invalidate queue entries if some succeeded to be removed.
-        eviction_candidates.finalize(query_context.get(), cache_lock);
-        throw;
-    }
-
-    /// Take cache lock again.
-    if (release_lock)
         cache_lock.lock();
-
-    /// Invalidate and remove queue entries and execute (only for SLRU) finalize func.
-    eviction_candidates.finalize(query_context.get(), cache_lock);
+        /// Invalidate and remove queue entries and execute (only for SLRU) finalize func.
+        eviction_candidates.finalize(query_context.get(), cache_lock);
+    }
 
     /// Space reservation is incremental, so file_segment_metadata is created first (with state Empty),
     /// and queue_iterator is assigned on first space reservation attempt
@@ -887,9 +893,6 @@ bool FileCache::tryReserve(
         file_segment.setQueueIterator(queue_iterator);
     }
 
-    file_segment.reserved_size += size;
-    chassert(file_segment.reserved_size == queue_iterator->getEntry()->size);
-
     if (query_context)
     {
         auto query_queue_it = query_context->tryGet(file_segment.key(), file_segment.offset(), cache_lock);
@@ -898,6 +901,9 @@ bool FileCache::tryReserve(
         else
             query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_lock);
     }
+
+    file_segment.reserved_size += size;
+    chassert(file_segment.reserved_size == queue_iterator->getEntry()->size);
 
     if (main_priority->getSize(cache_lock) > (1ull << 63))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache became inconsistent. There must be a bug");
@@ -1161,7 +1167,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                 auto lock = lockCache();
                 size_limit = main_priority->getSizeLimit(lock);
 
-                limits_satisfied = main_priority->canFit(size, lock, nullptr, true);
+                limits_satisfied = main_priority->canFit(size, 1, lock, nullptr, true);
                 if (limits_satisfied)
                     cache_it = main_priority->add(key_metadata, offset, size, user, lock, /* best_effort */true);
 
