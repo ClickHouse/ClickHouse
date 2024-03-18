@@ -95,6 +95,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", false, true, "Deduplication is dependent materialized view cannot work together with async inserts."},
               {"parallel_replicas_allow_in_with_subquery", false, true, "If true, subquery for IN will be executed on every follower replica"},
               {"filesystem_cache_reserve_space_wait_lock_timeout_milliseconds", 1000, 1000, "Wait time to lock cache for sapce reservation in filesystem cache"},
+              {"max_parser_backtracks", 0, 1000000, "Limiting the complexity of parsing"},
               {"keeper_max_retries", 10, 10, "Max retries for general keeper operations"},
               {"keeper_retry_initial_backoff_ms", 100, 100, "Initial backoff timeout for general keeper operations"},
               {"keeper_retry_max_backoff_ms", 5000, 5000, "Max backoff timeout for general keeper operations"},

@@ -469,7 +469,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         statement.data() + statement.size(),
         "in file " + table_metadata_path,
         0,
-        local_context->getSettingsRef().max_parser_depth);
+        local_context->getSettingsRef().max_parser_depth, local_context->getSettingsRef().max_parser_backtracks);
 
     applyMetadataChangesToCreateQuery(ast, metadata);
 

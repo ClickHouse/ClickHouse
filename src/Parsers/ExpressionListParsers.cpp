@@ -1918,7 +1918,7 @@ public:
                 && string_literal->as<ASTLiteral &>().value.tryGet(literal))
             {
                 Tokens tokens(literal.data(), literal.data() + literal.size());
-                IParser::Pos token_pos(tokens, 0);
+                IParser::Pos token_pos(tokens, pos.max_depth, pos.max_backtracks);
                 Expected token_expected;
                 ASTPtr expr;
 
