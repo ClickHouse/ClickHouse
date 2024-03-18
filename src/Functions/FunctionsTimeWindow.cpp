@@ -48,11 +48,12 @@ dispatchForIntervalColumns(const ColumnWithTypeAndName & interval_column, const 
     return {interval_type->getKind(), num_units};
 }
 
-ColumnPtr executeWindowBound(const ColumnPtr & column, int index, const String & function_name)
+ColumnPtr executeWindowBound(const ColumnPtr & column, size_t index, const String & function_name)
 {
+    chassert(index == 0 || index == 1);
     if (const ColumnTuple * col_tuple = checkAndGetColumn<ColumnTuple>(column.get()); col_tuple)
     {
-        if (!checkColumn<ColumnVector<UInt32>>(*col_tuple->getColumnPtr(index)))
+        if (index >= col_tuple->tupleSize() || !checkColumn<ColumnVector<UInt32>>(*col_tuple->getColumnPtr(index)))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for first argument of function {}. "
                 "Must be a Tuple(DataTime, DataTime)", function_name);
         return col_tuple->getColumnPtr(index);
