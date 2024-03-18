@@ -109,6 +109,16 @@ class ClickHouseHelper:
     def _insert_json_str_info(self, db, table, json_str):
         self.insert_json_str(self.url, self.auth, db, table, json_str)
 
+    def insert_json_into(self, db, table, json_str, safe=True):
+        try:
+            self._insert_json_str_info(db, table, json_str)
+        except InsertException as e:
+            logging.error(
+                "Exception happened during inserting data into clickhouse: %s", e
+            )
+            if not safe:
+                raise
+
     def insert_event_into(self, db, table, event, safe=True):
         event_str = json.dumps(event)
         try:
