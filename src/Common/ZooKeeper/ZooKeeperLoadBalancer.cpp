@@ -396,8 +396,6 @@ public:
     }
 };
 
-// NOTE: Nearest host and other DNS edit distance based algorithm might be able to consturct the host dynamically.
-// Or we can define a test constant priority to test load balancer behavior itself. -- This might be a better idea.
 class NearestHostname : public IBalancerWithPriorities
 {
 public:

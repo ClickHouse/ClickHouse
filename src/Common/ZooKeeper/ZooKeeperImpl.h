@@ -194,6 +194,10 @@ public:
         ReconfigCallback callback) final;
 
     void multi(
+        std::span<const RequestPtr> requests,
+        MultiCallback callback) override;
+
+    void multi(
         const Requests & requests,
         MultiCallback callback) override;
 

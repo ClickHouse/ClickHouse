@@ -2,26 +2,27 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 
+
 namespace DB
 {
 
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
+    VirtualFields shared_virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
-    const Names & virtual_column_names_,
     const PoolSettings & pool_settings_,
     const ContextPtr & context_)
     : parts_ranges(std::move(parts_))
+    , shared_virtual_fields(std::move(shared_virtual_fields_))
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
     , reader_settings(reader_settings_)
     , column_names(column_names_)
-    , virtual_column_names(virtual_column_names_)
     , pool_settings(pool_settings_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
@@ -44,7 +45,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos()
         assertSortedAndNonIntersecting(part_with_ranges.ranges);
 #endif
 
-        MergeTreeReadTask::Info read_task_info;
+        MergeTreeReadTaskInfo read_task_info;
 
         read_task_info.data_part = part_with_ranges.data_part;
         read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
@@ -53,9 +54,16 @@ void MergeTreeReadPoolBase::fillPerPartInfos()
         LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, part_with_ranges.alter_conversions);
 
         read_task_info.task_columns = getReadTaskColumns(
-            part_info, storage_snapshot, column_names, virtual_column_names,
-            prewhere_info, actions_settings,
-            reader_settings, /*with_subcolumns=*/ true);
+            part_info,
+            storage_snapshot,
+            column_names,
+            prewhere_info,
+            actions_settings,
+            reader_settings,
+            /*with_subcolumns=*/true);
+
+        read_task_info.const_virtual_fields = shared_virtual_fields;
+        read_task_info.const_virtual_fields.emplace("_part_index", read_task_info.part_index_in_query);
 
         if (pool_settings.preferred_block_size_bytes > 0)
         {
@@ -75,7 +83,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos()
         }
 
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
-        per_part_infos.push_back(std::make_shared<MergeTreeReadTask::Info>(std::move(read_task_info)));
+        per_part_infos.push_back(std::make_shared<MergeTreeReadTaskInfo>(std::move(read_task_info)));
     }
 }
 
@@ -97,7 +105,7 @@ std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
-    MergeTreeReadTask::InfoPtr read_info,
+    MergeTreeReadTaskInfoPtr read_info,
     MarkRanges ranges,
     MergeTreeReadTask * previous_task) const
 {

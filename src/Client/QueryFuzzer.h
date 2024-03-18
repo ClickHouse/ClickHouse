@@ -50,14 +50,12 @@ struct QueryFuzzer
     // we are currently fuzzing. We add some part from each new query we are asked
     // to fuzz, and keep this state between queries, so the fuzzing output becomes
     // more interesting over time, as the queries mix.
-    std::unordered_set<std::string> aliases_set;
-    std::vector<std::string> aliases;
-
+    // The hash tables are used for collection, and the vectors are used for random access.
     std::unordered_map<std::string, ASTPtr> column_like_map;
-    std::vector<ASTPtr> column_like;
+    std::vector<std::pair<std::string, ASTPtr>> column_like;
 
     std::unordered_map<std::string, ASTPtr> table_like_map;
-    std::vector<ASTPtr> table_like;
+    std::vector<std::pair<std::string, ASTPtr>> table_like;
 
     // Some debug fields for detecting problematic ASTs with loops.
     // These are reset for each fuzzMain call.
@@ -95,6 +93,9 @@ struct QueryFuzzer
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzTableName(ASTTableExpression & table);
+    ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
+    ASTPtr reverseLiteralFuzzing(ASTPtr child);
+    void fuzzExpressionList(ASTExpressionList & expr_list);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);

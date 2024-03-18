@@ -11,6 +11,7 @@ set (CLICKHOUSE_LIBRARY_BRIDGE_SOURCES
     LibraryBridgeHandlers.cpp
     SharedLibrary.cpp
     library-bridge.cpp
+    createFunctionBaseCast.cpp
 )
 
 clickhouse_add_executable(clickhouse-library-bridge ${CLICKHOUSE_LIBRARY_BRIDGE_SOURCES})
