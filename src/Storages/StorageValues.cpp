@@ -54,7 +54,7 @@ Pipe StorageValues::read(
         for (const auto & name : column_names)
             outputs.push_back(dag->getOutputs()[prepared_pipe.getHeader().getPositionByName(name)]);
 
-        dag->getOutputs().swap( outputs);
+        dag->getOutputs().swap(outputs);
         auto expression = std::make_shared<ExpressionActions>(dag);
 
         prepared_pipe.addSimpleTransform([&](const Block & header)
