@@ -28,7 +28,7 @@ namespace
             if (pos_->type != TokenType::BareWord)
                 return false;
             std::string_view word{pos_->begin, pos_->size()};
-            return !(boost::iequals(word, toStringRef(Keyword::ON)) || boost::iequals(word, toStringRef(Keyword::TO)) || boost::iequals(word, toStringRef(Keyword::FROM)));
+            return !(boost::iequals(word, toStringView(Keyword::ON)) || boost::iequals(word, toStringView(Keyword::TO)) || boost::iequals(word, toStringView(Keyword::FROM)));
         };
 
         expected.add(pos, "access type");

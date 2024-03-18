@@ -508,7 +508,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (!new_name && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
                 continue;
 
-            if (parseHosts(pos, expected, toStringRef(Keyword::ADD), new_hosts))
+            if (parseHosts(pos, expected, toStringView(Keyword::ADD), new_hosts))
             {
                 if (!add_hosts)
                     add_hosts.emplace();
@@ -516,7 +516,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 continue;
             }
 
-            if (parseHosts(pos, expected, toStringRef(Keyword::DROP), new_hosts))
+            if (parseHosts(pos, expected, toStringView(Keyword::DROP), new_hosts))
             {
                 if (!remove_hosts)
                     remove_hosts.emplace();

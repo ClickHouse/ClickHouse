@@ -1347,7 +1347,7 @@ public:
                 if (elements.size() != 2)
                     return false;
 
-                elements = {makeASTFunction(toString(toStringRef(Keyword::CAST)), elements[0], elements[1])};
+                elements = {makeASTFunction(toString(toStringView(Keyword::CAST)), elements[0], elements[1])};
                 finished = true;
                 return true;
             }
@@ -2377,13 +2377,13 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
     {"?",             Operator("",                2,  0, OperatorType::StartIf)},
     {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
-    {toStringRef(Keyword::OR),            Operator("or",              3,  2, OperatorType::Mergeable)},
-    {toStringRef(Keyword::AND),           Operator("and",             4,  2, OperatorType::Mergeable)},
-    {toStringRef(Keyword::IS_NOT_DISTINCT_FROM), Operator("isNotDistinctFrom", 6, 2)},
-    {toStringRef(Keyword::IS_NULL),       Operator("isNull",          6,  1, OperatorType::IsNull)},
-    {toStringRef(Keyword::IS_NOT_NULL),   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
-    {toStringRef(Keyword::BETWEEN),       Operator("",                7,  0, OperatorType::StartBetween)},
-    {toStringRef(Keyword::NOT_BETWEEN),   Operator("",                7,  0, OperatorType::StartNotBetween)},
+    {toStringView(Keyword::OR),            Operator("or",              3,  2, OperatorType::Mergeable)},
+    {toStringView(Keyword::AND),           Operator("and",             4,  2, OperatorType::Mergeable)},
+    {toStringView(Keyword::IS_NOT_DISTINCT_FROM), Operator("isNotDistinctFrom", 6, 2)},
+    {toStringView(Keyword::IS_NULL),       Operator("isNull",          6,  1, OperatorType::IsNull)},
+    {toStringView(Keyword::IS_NOT_NULL),   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
+    {toStringView(Keyword::BETWEEN),       Operator("",                7,  0, OperatorType::StartBetween)},
+    {toStringView(Keyword::NOT_BETWEEN),   Operator("",                7,  0, OperatorType::StartNotBetween)},
     {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
     {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
     {"<=>",           Operator("isNotDistinctFrom", 9, 2, OperatorType::Comparison)},
@@ -2393,15 +2393,15 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"<",             Operator("less",            9,  2, OperatorType::Comparison)},
     {">",             Operator("greater",         9,  2, OperatorType::Comparison)},
     {"=",             Operator("equals",          9,  2, OperatorType::Comparison)},
-    {toStringRef(Keyword::LIKE),          Operator("like",            9,  2)},
-    {toStringRef(Keyword::ILIKE),         Operator("ilike",           9,  2)},
-    {toStringRef(Keyword::NOT_LIKE),      Operator("notLike",         9,  2)},
-    {toStringRef(Keyword::NOT_ILIKE),     Operator("notILike",        9,  2)},
-    {toStringRef(Keyword::REGEXP),        Operator("match",           9,  2)},
-    {toStringRef(Keyword::IN),            Operator("in",              9,  2)},
-    {toStringRef(Keyword::NOT_IN),        Operator("notIn",           9,  2)},
-    {toStringRef(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
-    {toStringRef(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
+    {toStringView(Keyword::LIKE),          Operator("like",            9,  2)},
+    {toStringView(Keyword::ILIKE),         Operator("ilike",           9,  2)},
+    {toStringView(Keyword::NOT_LIKE),      Operator("notLike",         9,  2)},
+    {toStringView(Keyword::NOT_ILIKE),     Operator("notILike",        9,  2)},
+    {toStringView(Keyword::REGEXP),        Operator("match",           9,  2)},
+    {toStringView(Keyword::IN),            Operator("in",              9,  2)},
+    {toStringView(Keyword::NOT_IN),        Operator("notIn",           9,  2)},
+    {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
+    {toStringView(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
@@ -2409,16 +2409,16 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"*",             Operator("multiply",        12, 2)},
     {"/",             Operator("divide",          12, 2)},
     {"%",             Operator("modulo",          12, 2)},
-    {toStringRef(Keyword::MOD),           Operator("modulo",          12, 2)},
-    {toStringRef(Keyword::DIV),           Operator("intDiv",          12, 2)},
+    {toStringView(Keyword::MOD),           Operator("modulo",          12, 2)},
+    {toStringView(Keyword::DIV),           Operator("intDiv",          12, 2)},
     {".",             Operator("tupleElement",    14, 2, OperatorType::TupleElement)},
     {"[",             Operator("arrayElement",    14, 2, OperatorType::ArrayElement)},
-    {"::",            Operator(toString(toStringRef(Keyword::CAST)),            14, 2, OperatorType::Cast)},
+    {"::",            Operator(toString(toStringView(Keyword::CAST)),            14, 2, OperatorType::Cast)},
 };
 
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
-    {toStringRef(Keyword::NOT), Operator("not", 5, 1, OperatorType::Not)},
+    {toStringView(Keyword::NOT), Operator("not", 5, 1, OperatorType::Not)},
     {"-", Operator("negate", 13, 1)},
     {"−", Operator("negate", 13, 1)},
 };
@@ -2603,13 +2603,13 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     auto current_checkpoint = layers.back()->current_checkpoint;
     layers.back()->current_checkpoint = Checkpoint::None;
 
-    if (current_checkpoint != Checkpoint::Interval && parseOperator(pos, toStringRef(Keyword::INTERVAL), expected))
+    if (current_checkpoint != Checkpoint::Interval && parseOperator(pos, toStringView(Keyword::INTERVAL), expected))
     {
         layers.back()->saved_checkpoint = {old_pos, Checkpoint::Interval};
         layers.push_back(std::make_unique<IntervalLayer>());
         return Action::OPERAND;
     }
-    else if (current_checkpoint != Checkpoint::Case && parseOperator(pos, toStringRef(Keyword::CASE), expected))
+    else if (current_checkpoint != Checkpoint::Case && parseOperator(pos, toStringView(Keyword::CASE), expected))
     {
         layers.back()->saved_checkpoint = {old_pos, Checkpoint::Case};
         layers.push_back(std::make_unique<CaseLayer>());

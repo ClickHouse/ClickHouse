@@ -720,19 +720,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_remove.ignore(pos, expected))
                 {
                     if (s_default.ignore(pos, expected))
-                        command->remove_property = toStringRef(Keyword::DEFAULT);
+                        command->remove_property = toStringView(Keyword::DEFAULT);
                     else if (s_materialized.ignore(pos, expected))
-                        command->remove_property = toStringRef(Keyword::MATERIALIZED);
+                        command->remove_property = toStringView(Keyword::MATERIALIZED);
                     else if (s_alias.ignore(pos, expected))
-                        command->remove_property = toStringRef(Keyword::ALIAS);
+                        command->remove_property = toStringView(Keyword::ALIAS);
                     else if (s_comment.ignore(pos, expected))
-                        command->remove_property = toStringRef(Keyword::COMMENT);
+                        command->remove_property = toStringView(Keyword::COMMENT);
                     else if (s_codec.ignore(pos, expected))
-                        command->remove_property = toStringRef(Keyword::CODEC);
+                        command->remove_property = toStringView(Keyword::CODEC);
                     else if (s_ttl.ignore(pos, expected))
-                        command->remove_property = toStringRef(Keyword::TTL);
+                        command->remove_property = toStringView(Keyword::TTL);
                     else if (s_settings.ignore(pos, expected))
-                        command->remove_property = toStringRef(Keyword::SETTINGS);
+                        command->remove_property = toStringView(Keyword::SETTINGS);
                     else
                         return false;
                 }

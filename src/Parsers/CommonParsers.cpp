@@ -25,7 +25,7 @@ public:
         return res;
     }
 
-    const String & convert(Keyword type) const
+    std::string_view convert(Keyword type) const
     {
         return mapping[static_cast<size_t>(type)];
     }
@@ -50,14 +50,12 @@ private:
 #undef KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING
 
 #ifndef NDEBUG
-#endif
-
 #define KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING(identifier, value) \
         check(#identifier, value);
         APPLY_FOR_PARSER_KEYWORDS(KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING)
         APPLY_FOR_PARSER_KEYWORDS_WITH_UNDERSCORES(KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING)
 #undef KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING
-
+#endif
     }
 
     void addToMapping(Keyword identifier, std::string_view value)
@@ -74,7 +72,7 @@ private:
                 "The keyword {} has underscore. If this is intentional, please declare it in another list.", value);
     }
 
-    void check(std::string_view identifier, std::string_view value)
+    [[ maybe_unused ]] void check(std::string_view identifier, std::string_view value)
     {
         if (value == "TRUE" || value == "FALSE" || value == "NULL")
             return;
@@ -100,7 +98,7 @@ private:
 }
 
 
-const String & toStringRef(Keyword type)
+std::string_view toStringView(Keyword type)
 {
     return KeyWordToStringConverter::instance().convert(type);
 }
@@ -111,7 +109,7 @@ const std::vector<String> & getAllKeyWords()
 }
 
 ParserKeyword::ParserKeyword(Keyword keyword)
-    : s(toStringRef(keyword))
+    : s(toStringView(keyword))
 {}
 
 bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expected & expected)

@@ -151,7 +151,7 @@ namespace
             if (!has_value_or_constraint)
                 return false;
 
-            if (boost::iequals(res_setting_name, toStringRef(Keyword::PROFILE)) && !res_value && !res_min_value && !res_max_value
+            if (boost::iequals(res_setting_name, toStringView(Keyword::PROFILE)) && !res_value && !res_min_value && !res_max_value
                 && res_writability == SettingConstraintWritability::CONST)
             {
                 /// Ambiguity: "profile readonly" can be treated either as a profile named "readonly" or

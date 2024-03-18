@@ -54,7 +54,7 @@ struct AuthenticationTypeInfo
 
 inline String toString(AuthenticationType type_)
 {
-    return toStringRef(AuthenticationTypeInfo::get(type_).keyword);
+    return String(toStringView(AuthenticationTypeInfo::get(type_).keyword));
 }
 
 }

@@ -65,15 +65,15 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (type_name_upper == "NATIONAL")
     {
         if (ParserKeyword(Keyword::CHARACTER_LARGE_OBJECT).ignore(pos))
-            type_name_suffix = toStringRef(Keyword::CHARACTER_LARGE_OBJECT);
+            type_name_suffix = toStringView(Keyword::CHARACTER_LARGE_OBJECT);
         else if (ParserKeyword(Keyword::CHARACTER_VARYING).ignore(pos))
-            type_name_suffix = toStringRef(Keyword::CHARACTER_VARYING);
+            type_name_suffix = toStringView(Keyword::CHARACTER_VARYING);
         else if (ParserKeyword(Keyword::CHAR_VARYING).ignore(pos))
-            type_name_suffix = toStringRef(Keyword::CHAR_VARYING);
+            type_name_suffix = toStringView(Keyword::CHAR_VARYING);
         else if (ParserKeyword(Keyword::CHARACTER).ignore(pos))
-            type_name_suffix = toStringRef(Keyword::CHARACTER);
+            type_name_suffix = toStringView(Keyword::CHARACTER);
         else if (ParserKeyword(Keyword::CHAR).ignore(pos))
-            type_name_suffix = toStringRef(Keyword::CHAR);
+            type_name_suffix = toStringView(Keyword::CHAR);
     }
     else if (type_name_upper == "BINARY" ||
              type_name_upper == "CHARACTER" ||
@@ -81,22 +81,22 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
              type_name_upper == "NCHAR")
     {
         if (ParserKeyword(Keyword::LARGE_OBJECT).ignore(pos))
-            type_name_suffix = toStringRef(Keyword::LARGE_OBJECT);
+            type_name_suffix = toStringView(Keyword::LARGE_OBJECT);
         else if (ParserKeyword(Keyword::VARYING).ignore(pos))
-            type_name_suffix = toStringRef(Keyword::VARYING);
+            type_name_suffix = toStringView(Keyword::VARYING);
     }
     else if (type_name_upper == "DOUBLE")
     {
         if (ParserKeyword(Keyword::PRECISION).ignore(pos))
-            type_name_suffix = toStringRef(Keyword::PRECISION);
+            type_name_suffix = toStringView(Keyword::PRECISION);
     }
     else if (type_name_upper.find("INT") != std::string::npos)
     {
         /// Support SIGNED and UNSIGNED integer type modifiers for compatibility with MySQL
         if (ParserKeyword(Keyword::SIGNED).ignore(pos))
-            type_name_suffix = toStringRef(Keyword::SIGNED);
+            type_name_suffix = toStringView(Keyword::SIGNED);
         else if (ParserKeyword(Keyword::UNSIGNED).ignore(pos))
-            type_name_suffix = toStringRef(Keyword::UNSIGNED);
+            type_name_suffix = toStringView(Keyword::UNSIGNED);
         else if (pos->type == TokenType::OpeningRoundBracket)
         {
             ++pos;
@@ -106,9 +106,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                return false;
             ++pos;
             if (ParserKeyword(Keyword::SIGNED).ignore(pos))
-                type_name_suffix = toStringRef(Keyword::SIGNED);
+                type_name_suffix = toStringView(Keyword::SIGNED);
             else if (ParserKeyword(Keyword::UNSIGNED).ignore(pos))
-                type_name_suffix = toStringRef(Keyword::UNSIGNED);
+                type_name_suffix = toStringView(Keyword::UNSIGNED);
         }
 
     }
