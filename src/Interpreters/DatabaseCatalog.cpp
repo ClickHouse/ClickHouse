@@ -26,8 +26,12 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
-#include "Interpreters/Context_fwd.h"
-#include "config.h"
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/StorageJoin.h>
 
 #if USE_MYSQL
 #    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
@@ -61,6 +65,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
+    extern const int BAD_ARGUMENTS;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -121,24 +126,61 @@ TemporaryTableHolder::TemporaryTableHolder(
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     const ASTPtr & query,
-    bool create_for_global_subquery)
+    bool create_for_global_subquery,
+    const ASTPtr & custom_engine)
     : TemporaryTableHolder(
         context_,
-        [&](const StorageID & table_id)
+        [&](const StorageID & table_id) -> StoragePtr
         {
-            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
+            ASTFunction * engine = custom_engine ? custom_engine->as<ASTFunction>() : nullptr;
+            auto create_memory_table = [&]
+            {
+                auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
+                if (create_for_global_subquery)
+                    storage->delayReadForGlobalSubqueries();
+                return storage;
+            };
+            if (!engine || engine->name == "Memory")
+                return create_memory_table();
 
-            if (create_for_global_subquery)
-                storage->delayReadForGlobalSubqueries();
+            if (engine->name == "Join")
+            {
+                return StorageJoin::create(
+                    /*disk_name*/ "",
+                    /*relative_path*/ "",
+                    table_id,
+                    /*storage*/ nullptr,
+                    engine->name,
+                    engine->arguments->children,
+                    /*persistent*/ false,
+                    ColumnsDescription{columns},
+                    ConstraintsDescription{constraints},
+                    /*comment*/ "For materializing CTE",
+                    context_);
+            }
+            else if (engine->name == "Set")
+            {
+                return std::make_shared<StorageSet>(
+                    /*disk*/ nullptr, /*relative_path*/ "",
+                    table_id,
+                    ColumnsDescription{columns},
+                    ConstraintsDescription{constraints},
+                    /*comments*/ "For materializing CTE",
+                    /*persistent*/ false);
+            }
 
-            return storage;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} is not supported for temporary table", engine->name);
         },
         query)
 {
 }
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
-        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id), future_set(std::move(rhs.future_set))
+    : WithContext(rhs.context)
+    , temporary_tables(rhs.temporary_tables)
+    , id(rhs.id)
+    , future_set(std::move(rhs.future_set))
+    , can_be_sent_to_remote(rhs.can_be_sent_to_remote)
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -146,6 +188,7 @@ TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
 TemporaryTableHolder & TemporaryTableHolder::operator=(TemporaryTableHolder && rhs) noexcept
 {
     id = rhs.id;
+    can_be_sent_to_remote = rhs.can_be_sent_to_remote;
     rhs.id = UUIDHelpers::Nil;
     return *this;
 }

@@ -14,6 +14,7 @@
 #include <IO/copyData.h>
 
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
@@ -65,6 +66,22 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Interpreters/GlobalMaterializeCTEVisitor.h>
+#include <Interpreters/MaterializedTableFromCTE.h>
+#include <Planner/Utils.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <Dictionaries/IDictionary.h>
+#include <Functions/FunctionsExternalDictionaries.h>
+#include <Interpreters/IKeyValueEntity.h>
+#include <Storages/StorageDictionary.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Sources/KeyValueSource.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -279,6 +296,48 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
 }
 
+static void buildTemporaryTablesFromCTE(
+    FutureTablesFromCTE future_tables,
+    ContextPtr context
+)
+{
+    if (future_tables.empty())
+        return;
+
+    /// Build query plan
+    auto query_plan = QueryPlan();
+    DataStreams input_streams;
+    std::vector<std::unique_ptr<QueryPlan>> plans;
+    for (auto & [_, future_table] : future_tables)
+    {
+        auto plan = future_table.build(context);
+        input_streams.emplace_back(plan->getCurrentDataStream());
+        plans.emplace_back(std::move(plan));
+    }
+
+    if (plans.size() > 1)
+    {
+        /// Create a dummy UNION step to merge all plans into a single plans. The output is unused.
+        auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+        union_step->setStepDescription("Dummy Union");
+        query_plan.unitePlans(std::move(union_step), std::move(plans));
+    }
+    else
+        query_plan = std::move(*plans.front());
+
+    LOG_DEBUG(getLogger("executeQuery"), "Plan to build temporary tables from CTE:\n{}\n", dumpQueryPlan(query_plan));
+    LOG_DEBUG(getLogger("executeQuery"), "Pipeline to build temporary tables from CTE:\n{}\n", dumpQueryPipeline(query_plan));
+
+    /// Execute the plan
+    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    pipeline.complete(std::make_shared<EmptySink>(pipeline.getHeader()));
+
+    {
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
+    }
+}
 
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
@@ -919,6 +978,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         logQuery(query_for_logging, context, internal, stage);
+
+        if (context->getSettingsRef().enable_materialized_cte)
+        {
+            /// Materialize all CTE with MATERIALIZED keyword add to query context as temporary tables
+            /// We need to do it here before analyzing the query
+            /// We also need to fill the external tables here, otherwise the following query may work incorrectly if
+            /// id is the primary key and we need it for primary key analysis:
+            /// WITH target AS (SELECT number FROM numbers(10)) SELECT * FROM t WHERE id IN target
+            FutureTablesFromCTE future_materialized_cte_tables;
+            GlobalMaterializeCTEVisitor::Data data(context, future_materialized_cte_tables);
+            GlobalMaterializeCTEVisitor(data).visit(ast);
+            buildTemporaryTablesFromCTE(std::move(future_materialized_cte_tables), context);
+        }
 
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)

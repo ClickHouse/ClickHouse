@@ -22,8 +22,16 @@ void ASTWithElement::formatImpl(const FormatSettings & settings, FormatState & s
     settings.writeIdentifier(name);
     settings.ostr << (settings.hilite ? hilite_none : "");
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << (settings.hilite ? hilite_none : "");
+    if (has_materialized_keyword)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " MATERIALIZED" << (settings.hilite ? hilite_none : "");
     settings.ostr << settings.nl_or_ws << indent_str;
     dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(settings, state, frame);
+    if (engine)
+    {
+        settings.ostr << settings.nl_or_ws << indent_str;
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ENGINE" << (settings.hilite ? hilite_none : "") << " = ";
+        engine->formatImpl(settings, state, frame);
+    }
 }
 
 }

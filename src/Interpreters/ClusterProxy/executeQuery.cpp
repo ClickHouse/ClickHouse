@@ -278,7 +278,7 @@ void executeQuery(
         Scalars scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
         scalars.emplace(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
-        auto external_tables = context->getExternalTables();
+        auto external_tables = context->getExternalTables(/*for_sending_to_remote=*/true);
 
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(
@@ -408,7 +408,7 @@ void executeQueryWithParallelReplicas(
 
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(
         new_cluster->getShardsInfo().begin()->getAllNodeCount(), settings.parallel_replicas_mark_segment_size);
-    auto external_tables = new_context->getExternalTables();
+    auto external_tables = new_context->getExternalTables(/*for_sending_to_remote=*/true);
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,
         new_cluster,

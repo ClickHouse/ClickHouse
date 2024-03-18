@@ -1197,9 +1197,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
             {
                 auto table_id = identifier->getTableId();
-                table_id = data.getContext()->resolveStorageID(table_id, Context::ResolveOrdinary);
+                /// We don't resolve table name for joinGet here because it can be a temporary table.
+                /// We will resolve it while building the function
+                if (functionIsDictGet(node.name))
+                    table_id = data.getContext()->resolveStorageID(table_id, Context::ResolveOrdinary);
                 auto column_string = ColumnString::create();
-                column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
+                column_string->insert(table_id.hasDatabase() ? table_id.getDatabaseName() + "." + table_id.getTableName() : table_id.getTableName());
                 ColumnWithTypeAndName column(
                     ColumnConst::create(std::move(column_string), 1),
                     std::make_shared<DataTypeString>(),
