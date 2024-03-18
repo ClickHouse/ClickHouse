@@ -86,6 +86,7 @@ namespace SettingsChangesHistory
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"24.3", {{"s3_connect_timeout_ms", 1000, 1000, "Introduce new dedicated setting for s3 connection timeout"},
+              {"input_format_tsv_crlf_end_of_line", false, false, "Enables reading of CRLF line endings with TSV formats"},
               {"allow_experimental_shared_merge_tree", false, true, "The setting is obsolete"},
               {"use_page_cache_for_disks_without_file_cache", false, false, "Added userspace page cache"},
               {"read_from_page_cache_if_exists_otherwise_bypass_cache", false, false, "Added userspace page cache"},
@@ -109,7 +110,6 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"async_insert_busy_timeout_max_ms", 200, 200, "The minimum value of the asynchronous insert timeout in milliseconds; async_insert_busy_timeout_ms is aliased to async_insert_busy_timeout_max_ms"},
               {"async_insert_busy_timeout_increase_rate", 0.2, 0.2, "The exponential growth rate at which the adaptive asynchronous insert timeout increases"},
               {"async_insert_busy_timeout_decrease_rate", 0.2, 0.2, "The exponential growth rate at which the adaptive asynchronous insert timeout decreases"},
-              {"input_format_tsv_crlf_end_of_line", false, false, "Enables reading of CRLF line endings with TSV formats"},
               {"format_template_row_format", "", "", "Template row format string can be set directly in query"},
               {"format_template_resultset_format", "", "", "Template result set format string can be set in query"},
               {"split_parts_ranges_into_intersecting_and_non_intersecting_final", true, true, "Allow to split parts ranges into intersecting and non intersecting during FINAL optimization"},
