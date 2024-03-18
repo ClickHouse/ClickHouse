@@ -884,7 +884,7 @@ Default value: false
 
 ## load_existing_rows_count_for_old_parts {#load_existing_rows_count_for_old_parts}
 
-If enabled along with [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge), deleted rows count for existing data parts will be calculated during table starting up.
+If enabled along with [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge), deleted rows count for existing data parts will be calculated during table starting up. Note that it may slow down start up table loading.
 
 Possible values:
 
