@@ -3171,7 +3171,7 @@ def parse_args():
     )
 
     # TODO: Remove upgrade-check option after release 24.3 and use
-    #       ignore-drop-queries-probability option in stress.py as in stress tests
+    #       ignore_drop_queries_probability option in stress.py as in stress tests
     group.add_argument(
         "--upgrade-check",
         action="store_true",

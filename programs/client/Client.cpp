@@ -953,9 +953,8 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
 
         ("no-warnings", "disable warnings when client connects to server")
-        /// TODO: Left for compatibility as it's used in upgrade check, remove after next release and use ignore-drop-queries-probability
+        /// TODO: Left for compatibility as it's used in upgrade check, remove after next release and use server setting ignore_drop_queries_probability
         ("fake-drop", "Ignore all DROP queries, should be used only for testing")
-        ("ignore-drop-queries-probability", po::value<double>(), "With specified probability ignore all DROP queries (replace them to TRUNCATE for engines like Memory/JOIN), should be used only for testing")
         ("accept-invalid-certificate", "Ignore certificate verification errors, equal to config parameters openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none")
     ;
 
@@ -1098,9 +1097,7 @@ void Client::processOptions(const OptionsDescription & options_description,
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
     if (options.count("fake-drop"))
-        ignore_drop_queries_probability = 1;
-    if (options.count("ignore-drop-queries-probability"))
-        ignore_drop_queries_probability = std::min(options["ignore-drop-queries-probability"].as<double>(), 1.);
+        config().setString("ignore_drop_queries_probability", "1");
     if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");

@@ -876,69 +876,8 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
         processError(full_query);
 }
 
-String ClientBase::getTableEngine(const String & database, const String & table)
-{
-    auto is_interactive_copy = is_interactive;
-    auto format_copy = format;
-
-    is_interactive = false;
-    format = "TSVRaw";
-    String result;
-    output_format_buffer = std::make_unique<WriteBufferFromString>(result);
-    String query;
-    if (database.empty())
-        query = fmt::format("SELECT engine FROM system.tables where name='{}' and database=currentDatabase()", table);
-    else
-        query = fmt::format("SELECT engine FROM system.tables where name='{}' and database='{}'", table, database);
-
-    try
-    {
-        processTextAsSingleQuery(query);
-    }
-    catch (...)
-    {
-        result = "";
-    }
-
-    output_format_buffer->finalize();
-    output_format_buffer.reset();
-    is_interactive = is_interactive_copy;
-    format = format_copy;
-    boost::trim(result);
-    return result;
-}
-
-void ClientBase::ignoreDropQueryOrTruncateTable(const DB::ASTDropQuery * drop_query)
-{
-    const auto & database = drop_query->getDatabase();
-    const auto & table = drop_query->getTable();
-    /// Use TRUNCATE for Memory/JOIN table engines to reduce memory usage in tests.
-    String table_engine = getTableEngine(database, table);
-    if (table_engine == "Memory" || table_engine == "JOIN")
-    {
-        String truncate_query;
-        if (database.empty())
-            truncate_query = fmt::format("TRUNCATE TABLE {}", table);
-        else
-            truncate_query = fmt::format("TRUNCATE TABLE {}.{}", database, table);
-
-        auto is_interactive_copy = is_interactive;
-        is_interactive = false;
-        processTextAsSingleQuery(truncate_query);
-        is_interactive = is_interactive_copy;
-    }
-}
-
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
-    /// In tests we can ignore DROP queries with some probability.
-    const auto * drop_query = parsed_query->as<ASTDropQuery>();
-    if (ignore_drop_queries_probability != 0 && drop_query && drop_query->kind == ASTDropQuery::Kind::Drop && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= ignore_drop_queries_probability)
-    {
-        ignoreDropQueryOrTruncateTable(drop_query);
-        return;
-    }
-
     auto query = query_to_execute;
 
     /// Rewrite query only when we have query parameters.

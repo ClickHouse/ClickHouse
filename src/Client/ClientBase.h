@@ -178,12 +178,6 @@ private:
     void initQueryIdFormats();
     bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
-    void ignoreDropQueryOrTruncateTable(const ASTDropQuery * drop_query);
-    /// Request table engine from system.tables from server.
-    String getTableEngine(const String & database, const String & table);
-    /// Send TRUNCATE query for specific table.
-    void truncateTable(const String & database, const String & table);
-
 protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
@@ -313,8 +307,6 @@ protected:
 
     QueryProcessingStage::Enum query_processing_stage;
     ClientInfo::QueryKind query_kind;
-
-    double ignore_drop_queries_probability = 0;
 
     struct HostAndPort
     {
