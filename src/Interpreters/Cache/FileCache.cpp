@@ -792,9 +792,10 @@ bool FileCache::tryReserve(
     }
 
     LOG_TEST(
-        log, "Trying to reserve space ({} bytes) for {}:{}, current usage {}/{}",
+        log, "Trying to reserve space ({} bytes) for {}:{}, current usage {}/{} in size, {}/{} in elements",
         size, file_segment.key(), file_segment.offset(),
-        main_priority->getSize(cache_lock), main_priority->getSizeLimit(cache_lock));
+        main_priority->getSize(cache_lock), main_priority->getSizeLimit(cache_lock),
+        main_priority->getElementsCount(cache_lock), main_priority->getElementsLimit(cache_lock));
 
     /// In case of per query cache limit (by default disabled), we add/remove entries from both
     /// (main_priority and query_priority) priority queues, but iterate entries in order of query_priority,
