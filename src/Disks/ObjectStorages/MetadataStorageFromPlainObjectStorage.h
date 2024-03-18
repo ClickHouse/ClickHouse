@@ -77,6 +77,9 @@ public:
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
+
+private:
+    ObjectStorageKey getObjectKeyForPath(const std::string & path) const;
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
@@ -86,6 +89,7 @@ private:
     ObjectStoragePtr object_storage;
 
     std::vector<MetadataOperationPtr> operations;
+
 public:
     explicit MetadataStorageFromPlainObjectStorageTransaction(
         MetadataStorageFromPlainObjectStorage & metadata_storage_, ObjectStoragePtr object_storage_)
@@ -126,5 +130,4 @@ public:
 
     bool supportsChmod() const override { return false; }
 };
-
 }

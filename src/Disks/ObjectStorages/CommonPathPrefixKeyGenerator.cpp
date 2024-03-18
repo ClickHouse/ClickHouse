@@ -1,6 +1,5 @@
 #include "CommonPathPrefixKeyGenerator.h"
 
-#include <Common/Exception.h>
 #include <Common/getRandomASCIIString.h>
 
 #include <deque>
@@ -9,39 +8,36 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
 
 CommonPathPrefixKeyGenerator::CommonPathPrefixKeyGenerator(String key_prefix_, std::weak_ptr<PathMap> path_map_)
-    : key_prefix(key_prefix_), path_map(std::move(path_map_))
+    : storage_key_prefix(key_prefix_), path_map(std::move(path_map_))
 {
 }
 
 ObjectStorageKey CommonPathPrefixKeyGenerator::generate(const String & path, bool is_directory) const
 {
-    auto result = getLongestPrefix(path);
+    const auto & [object_key_prefix, suffix_parts] = getLongestObjectKeyPrefix(path);
 
-    const auto & unrealized_parts = std::get<1>(result);
-
-    if (unrealized_parts.size() >= 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not find object key prefix for path {}", path);
-
-    auto key = std::filesystem::path(std::get<0>(result));
-    if (unrealized_parts.empty())
+    auto key = std::filesystem::path(object_key_prefix.empty() ? storage_key_prefix : object_key_prefix);
+    if (suffix_parts.empty())
         return ObjectStorageKey::createAsRelative(std::move(key));
 
-    constexpr size_t part_size = 8;
-    if (is_directory)
-        key /= getRandomASCIIString(part_size);
+    if (!is_directory || object_key_prefix.empty())
+        for (const auto & part : suffix_parts)
+            key /= part;
     else
-        key /= unrealized_parts.front();
+    {
+        for (size_t i = 0; i + 1 < suffix_parts.size(); ++i)
+            key /= suffix_parts[i];
+
+        constexpr size_t part_size = 16;
+        key /= getRandomASCIIString(part_size);
+    }
 
     return ObjectStorageKey::createAsRelative(key);
 }
 
-std::tuple<std::string, std::vector<std::string>> CommonPathPrefixKeyGenerator::getLongestPrefix(const std::string & path) const
+std::tuple<std::string, std::vector<std::string>> CommonPathPrefixKeyGenerator::getLongestObjectKeyPrefix(const std::string & path) const
 {
     std::filesystem::path p(path);
     std::deque<std::string> dq;
@@ -63,7 +59,7 @@ std::tuple<std::string, std::vector<std::string>> CommonPathPrefixKeyGenerator::
         p = p.parent_path();
     }
 
-    return {key_prefix, std::vector<std::string>(std::make_move_iterator(dq.begin()), std::make_move_iterator(dq.end()))};
+    return {std::string(), std::vector<std::string>(std::make_move_iterator(dq.begin()), std::make_move_iterator(dq.end()))};
 }
 
 }
