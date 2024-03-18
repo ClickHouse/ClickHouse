@@ -87,9 +87,6 @@ namespace
                 lock = std::unique_lock(mutex);
         }
     };
-
-    using DoesConfigChangeRequiresReloadingObjectFunction = std::function<bool(const Poco::Util::AbstractConfiguration & config_1, const String & key_in_config_1, const Poco::Util::AbstractConfiguration & config_2, const String & key_in_config_2)>;
-    using UpdateObjectFromConfigWithoutReloadingFunction = std::function<void(const IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config)>;
 }
 
 
@@ -98,10 +95,7 @@ namespace
 class ExternalLoader::LoadablesConfigReader : private boost::noncopyable
 {
 public:
-    LoadablesConfigReader(const String & type_name_, LoggerPtr log_)
-        : type_name(type_name_), log(log_)
-    {
-    }
+    LoadablesConfigReader(const String & type_name_, LoggerPtr log_) : type_name(type_name_), log(log_) { }
     ~LoadablesConfigReader() = default;
 
     using Repository = IExternalLoaderConfigRepository;
@@ -397,21 +391,8 @@ private:
 class ExternalLoader::LoadingDispatcher : private boost::noncopyable
 {
 public:
-    /// Called to load or reload an object.
-    using CreateObjectFunction = std::function<LoadablePtr(
-        const String & /* name */, const ObjectConfig & /* config */, const LoadablePtr & /* previous_version */)>;
-
-    LoadingDispatcher(
-        const CreateObjectFunction & create_object_function_,
-        const DoesConfigChangeRequiresReloadingObjectFunction & does_config_change_requires_reloading_object_,
-        const UpdateObjectFromConfigWithoutReloadingFunction & update_object_from_config_without_reloading_,
-        const String & type_name_,
-        LoggerPtr log_)
-        : create_object(create_object_function_)
-        , does_config_change_requires_reloading_object(does_config_change_requires_reloading_object_)
-        , update_object_from_config_without_reloading(update_object_from_config_without_reloading_)
-        , type_name(type_name_)
-        , log(log_)
+    LoadingDispatcher(const String & type_name_, LoggerPtr log_, const ExternalLoader & external_loader_)
+        : type_name(type_name_), log(log_), external_loader(external_loader_)
     {
     }
 
@@ -471,11 +452,11 @@ public:
                 if (config_changed)
                 {
                     if (info.object)
-                        update_object_from_config_without_reloading(*info.object, *new_config->config, new_config->key_in_config);
+                        external_loader.updateObjectFromConfigWithoutReloading(*info.object, *new_config->config, new_config->key_in_config);
 
                     if (info.triedToLoad())
                     {
-                        bool config_change_requires_reloading = does_config_change_requires_reloading_object(*previous_config->config, previous_config->key_in_config, *new_config->config, new_config->key_in_config);
+                        bool config_change_requires_reloading = external_loader.doesConfigChangeRequiresReloadingObject(*previous_config->config, previous_config->key_in_config, *new_config->config, new_config->key_in_config);
                         if (config_change_requires_reloading)
                         {
                             /// The object has been tried to load before, so it is currently in use or was in use
@@ -786,7 +767,7 @@ private:
         }
 
         String name;
-        LoadablePtr object;
+        LoadableMutablePtr object;
         std::shared_ptr<const ObjectConfig> config;
         TimePoint loading_start_time;
         TimePoint loading_end_time;
@@ -1046,17 +1027,17 @@ private:
     }
 
     /// Load one object, returns object ptr or exception.
-    std::pair<LoadablePtr, std::exception_ptr>
+    std::pair<LoadableMutablePtr, std::exception_ptr>
     loadSingleObject(const String & name, const ObjectConfig & config, LoadablePtr previous_version)
     {
         /// Use `create_function` to perform the actual loading.
         /// It's much better to do it with `mutex` unlocked because the loading can take a lot of time
         /// and require access to other objects.
-        LoadablePtr new_object;
+        LoadableMutablePtr new_object;
         std::exception_ptr new_exception;
         try
         {
-            new_object = create_object(name, config, previous_version);
+            new_object = external_loader.createOrCloneObject(name, config, previous_version);
         }
         catch (...)
         {
@@ -1070,7 +1051,7 @@ private:
         const String & name,
         size_t loading_id,
         LoadablePtr previous_version,
-        LoadablePtr new_object,
+        LoadableMutablePtr new_object,
         std::exception_ptr new_exception,
         size_t error_count,
         const LoadingGuardForAsyncLoad &)
@@ -1134,7 +1115,7 @@ private:
 
         if (new_object)
         {
-            update_object_from_config_without_reloading(*new_object, *info->config->config, info->config->key_in_config);
+            external_loader.updateObjectFromConfigWithoutReloading(*new_object, *info->config->config, info->config->key_in_config);
             info->object = new_object;
         }
 
@@ -1210,11 +1191,9 @@ private:
         }
     }
 
-    const CreateObjectFunction create_object;
-    const DoesConfigChangeRequiresReloadingObjectFunction does_config_change_requires_reloading_object;
-    const UpdateObjectFromConfigWithoutReloadingFunction update_object_from_config_without_reloading;
     const String type_name;
-    LoggerPtr log;
+    const LoggerPtr log;
+    const ExternalLoader & external_loader;
 
     mutable std::mutex mutex;
     std::condition_variable event;
@@ -1296,14 +1275,7 @@ private:
 
 ExternalLoader::ExternalLoader(const String & type_name_, LoggerPtr log_)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
-    , loading_dispatcher(std::make_unique<LoadingDispatcher>(
-          [this](auto && a, auto && b, auto && c) { return createObject(a, b, c); },
-          [this](const Poco::Util::AbstractConfiguration & config_1, const String & key_in_config_1, const Poco::Util::AbstractConfiguration & config_2, const String & key_in_config_2)
-                { return doesConfigChangeRequiresReloadingObject(config_1, key_in_config_1, config_2, key_in_config_2); },
-          [this](const IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config)
-                { return updateObjectFromConfigWithoutReloading(const_cast<IExternalLoadable &>(object), config, key_in_config); },
-          type_name_,
-          log_))
+    , loading_dispatcher(std::make_unique<LoadingDispatcher>(type_name_, log_, *this))
     , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
     , type_name(type_name_)
     , log(log_)
@@ -1530,13 +1502,13 @@ void ExternalLoader::reloadConfig(const String & repository_name, const String &
     loading_dispatcher->setConfiguration(config_files_reader->read(repository_name, path));
 }
 
-ExternalLoader::LoadablePtr ExternalLoader::createObject(
+ExternalLoader::LoadableMutablePtr ExternalLoader::createOrCloneObject(
     const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const
 {
     if (previous_version)
         return previous_version->clone();
 
-    return create(name, *config.config, config.key_in_config, config.repository_name);
+    return createObject(name, *config.config, config.key_in_config, config.repository_name);
 }
 
 template ExternalLoader::LoadablePtr ExternalLoader::getLoadResult<ExternalLoader::LoadablePtr>(const String &) const;

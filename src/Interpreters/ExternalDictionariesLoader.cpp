@@ -32,7 +32,7 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context
         enablePeriodicUpdates(true);
 }
 
-ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
+ExternalLoader::LoadableMutablePtr ExternalDictionariesLoader::createObject(
         const std::string & name, const Poco::Util::AbstractConfiguration & config,
         const std::string & key_in_config, const std::string & repository_name) const
 {

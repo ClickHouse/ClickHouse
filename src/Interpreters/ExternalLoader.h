@@ -50,6 +50,7 @@ class ExternalLoader
 {
 public:
     using LoadablePtr = std::shared_ptr<const IExternalLoadable>;
+    using LoadableMutablePtr = std::shared_ptr<IExternalLoadable>;
     using Loadables = std::vector<LoadablePtr>;
     using Status = ExternalLoaderStatus;
 
@@ -211,7 +212,7 @@ public:
     void reloadConfig(const String & repository_name, const String & path) const;
 
 protected:
-    virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;
+    virtual LoadableMutablePtr createObject(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;
 
     /// Returns whether the object must be reloaded after a specified change in its configuration.
     virtual bool doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & /* old_config */, const String & /* old_key_in_config */,
@@ -227,7 +228,7 @@ private:
 
     Strings getAllTriedToLoadNames() const;
 
-    LoadablePtr createObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const;
+    LoadableMutablePtr createOrCloneObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const;
 
     class LoadablesConfigReader;
     std::unique_ptr<LoadablesConfigReader> config_files_reader;
@@ -239,7 +240,7 @@ private:
     std::unique_ptr<PeriodicUpdater> periodic_updater;
 
     const String type_name;
-    LoggerPtr log;
+    const LoggerPtr log;
 };
 
 }
