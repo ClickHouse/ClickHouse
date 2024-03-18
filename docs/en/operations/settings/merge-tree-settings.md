@@ -867,3 +867,31 @@ Default value: `Never`
 Persists virtual column `_block_number` on merges.
 
 Default value: false.
+
+## exclude_deleted_rows_for_part_size_in_merge {#exclude_deleted_rows_for_part_size_in_merge}
+
+If enabled, estimated actual size of data parts (i.e., excluding those rows that have been deleted through `DELETE FROM`) will be used when selecting parts to merge. Note that this behavior is only triggered for data parts affected by `DELETE FROM` executed after this setting is enabled.
+
+Possible values:
+
+- true, false
+
+Default value: false
+
+**See Also**
+
+- [load_existing_rows_count_for_old_parts](#load_existing_rows_count_for_old_parts) setting
+
+## load_existing_rows_count_for_old_parts {#load_existing_rows_count_for_old_parts}
+
+If enabled along with [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge), deleted rows count for existing data parts will be calculated during table starting up.
+
+Possible values:
+
+- true, false
+
+Default value: false
+
+**See Also**
+
+- [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting

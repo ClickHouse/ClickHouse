@@ -674,7 +674,8 @@ private:
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
 
-    /// Load existing rows count from _row_exists column if load_existing_rows_count_for_old_parts is true.
+    /// Load existing rows count from _row_exists column
+    /// if load_existing_rows_count_for_old_parts and exclude_deleted_rows_for_part_size_in_merge are both enabled.
     void loadExistingRowsCount();
 
     static void appendFilesOfRowsCount(Strings & files);

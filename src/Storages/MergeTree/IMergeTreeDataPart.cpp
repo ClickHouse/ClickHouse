@@ -1349,8 +1349,9 @@ void IMergeTreeDataPart::loadExistingRowsCount()
     if (existing_rows_count.has_value())
         return;
 
-    if (!rows_count || !storage.getSettings()->load_existing_rows_count_for_old_parts || !supportLightweightDeleteMutate()
-        || !hasLightweightDelete())
+    if (!rows_count || !supportLightweightDeleteMutate() || !hasLightweightDelete()
+        || !storage.getSettings()->exclude_deleted_rows_for_part_size_in_merge
+        || !storage.getSettings()->load_existing_rows_count_for_old_parts)
         existing_rows_count = rows_count;
     else
         existing_rows_count = readExistingRowsCount();
