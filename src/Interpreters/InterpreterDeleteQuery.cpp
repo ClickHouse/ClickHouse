@@ -97,7 +97,8 @@ BlockIO InterpreterDeleteQuery::execute()
             alter_query.data() + alter_query.size(),
             "ALTER query",
             0,
-            DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto context = Context::createCopy(getContext());
         context->setSetting("mutations_sync", 2);   /// Lightweight delete is always synchronous
