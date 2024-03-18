@@ -1,135 +1,29 @@
 -- { echoOn }
-SELECT count(1) == 1542059 FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a;
-1
-SELECT sum(t1.d) == 98610126, sum(t2.d) == 97232272 FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a;
-1	1
-SELECT count(1) == 775871 FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2);
-1
-SELECT sum(t1.d) == 66052398, sum(t2.d) == 48936042 FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2);
-1	1
-SELECT count(1) == 260711 FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0);
-1
-SELECT sum(t1.d) == 22054037, sum(t2.d) == 16329655 FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0);
-1	1
-SELECT count(1) == 280 FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b;
-1
-SELECT sum(t1.d) == 30451, sum(t2.d) == 17512 FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b;
-1	1
-SELECT count(1) == 120 FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b AND t2.d % 2 == 0;
-1
-SELECT sum(t1.d) == 13614, sum(t2.d) == 8328 FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b AND t2.d % 2 == 0;
-1	1
-SELECT count(1) == 118 FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b AND t2.d % 2 == 0 AND (t2.b % 2 == 0 OR t1.b % 2 == 0);
-1
-SELECT sum(t1.d) == 13394, sum(t2.d) == 8132 FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b AND t2.d % 2 == 0 AND (t2.b % 2 == 0 OR t1.b % 2 == 0);
-1	1
+SELECT count(1) FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a;
+61551
+SELECT sum(t1.d), sum(t2.d) FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a;
+3888982	3931194
+SELECT count(1) FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2);
+30836
+SELECT sum(t1.d), sum(t2.d) FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2);
+2579244	1935915
+SELECT count(1) FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0);
+10303
+SELECT sum(t1.d), sum(t2.d) FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0);
+862663	654013
+SELECT count(1) FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b;
+4
+SELECT sum(t1.d), sum(t2.d) FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b;
+469	369
+SELECT count(1) FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b AND t2.d % 2 == 0;
+3
+SELECT sum(t1.d), sum(t2.d)FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b AND t2.d % 2 == 0;
+358	286
+SELECT count(1) FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b AND t2.d % 2 == 0 AND (t2.b % 2 == 0 OR t1.b % 2 == 0);
+3
+SELECT sum(t1.d), sum(t2.d) FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b AND t2.d % 2 == 0 AND (t2.b % 2 == 0 OR t1.b % 2 == 0);
+358	286
 SELECT * FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b AND t2.d % 2 == 0 AND (t2.b % 2 == 0 OR t1.b % 2 == 0) AND t2.d < t1.d ORDER BY 1, 2, 3, 4, 5, 6, 7, 8;
-0	0	111	124	0	2	54	104
-0	0	111	124	0	7	72	116
-0	0	111	124	0	7	90	76
-0	0	111	124	0	8	105	30
-0	0	111	124	0	15	36	44
-0	0	111	124	0	21	6	96
-0	0	111	124	0	22	108	44
-0	0	111	124	0	26	24	94
-0	0	111	124	0	30	0	80
-0	0	111	124	0	35	3	54
-0	0	111	124	0	36	15	120
-0	0	111	124	0	36	36	74
-0	0	111	124	0	37	33	68
-0	0	111	124	0	37	75	84
-0	0	111	124	0	42	3	78
-0	0	111	124	0	45	69	2
-0	0	111	124	0	45	111	48
-0	0	111	124	0	61	87	14
-0	0	111	124	0	64	15	118
-0	0	111	124	0	65	48	34
-0	0	111	124	0	65	75	122
-0	0	111	124	0	65	87	112
-0	0	111	124	0	67	84	60
-0	0	111	124	0	72	6	90
-0	0	111	124	0	72	60	26
-0	0	111	124	0	74	99	98
-0	0	111	124	0	81	15	68
-0	0	111	124	0	92	81	90
-0	0	111	124	0	93	27	62
-0	0	111	124	0	93	90	50
-0	0	111	124	0	93	111	114
-0	0	111	124	0	104	90	76
-0	0	111	124	0	104	93	68
-0	0	111	124	0	107	75	64
-0	0	111	124	0	108	27	50
-0	0	111	124	0	115	114	66
-0	0	111	124	0	117	78	66
-0	0	111	124	0	118	9	4
-0	0	111	124	0	118	114	116
-0	0	111	124	0	120	3	58
-0	0	111	124	0	123	30	100
-0	0	111	124	0	125	111	38
-0	0	111	124	0	126	60	66
-0	0	113	118	0	2	54	104
-0	0	113	118	0	7	72	116
-0	0	113	118	0	7	90	76
-0	0	113	118	0	8	105	30
-0	0	113	118	0	15	36	44
-0	0	113	118	0	21	6	96
-0	0	113	118	0	22	108	44
-0	0	113	118	0	26	24	94
-0	0	113	118	0	30	0	80
-0	0	113	118	0	35	3	54
-0	0	113	118	0	36	36	74
-0	0	113	118	0	37	33	68
-0	0	113	118	0	37	75	84
-0	0	113	118	0	42	3	78
-0	0	113	118	0	45	69	2
-0	0	113	118	0	45	111	48
-0	0	113	118	0	61	87	14
-0	0	113	118	0	65	48	34
-0	0	113	118	0	65	87	112
-0	0	113	118	0	67	84	60
-0	0	113	118	0	72	6	90
-0	0	113	118	0	72	60	26
-0	0	113	118	0	74	99	98
-0	0	113	118	0	81	15	68
-0	0	113	118	0	92	81	90
-0	0	113	118	0	93	27	62
-0	0	113	118	0	93	90	50
-0	0	113	118	0	93	111	114
-0	0	113	118	0	104	90	76
-0	0	113	118	0	104	93	68
-0	0	113	118	0	107	75	64
-0	0	113	118	0	108	27	50
-0	0	113	118	0	115	114	66
-0	0	113	118	0	117	78	66
-0	0	113	118	0	118	9	4
-0	0	113	118	0	118	114	116
-0	0	113	118	0	120	3	58
-0	0	113	118	0	123	30	100
-0	0	113	118	0	125	111	38
-0	0	113	118	0	126	60	66
-6	4	0	76	6	9	5	8
-10	2	93	85	10	50	3	20
-10	2	93	86	10	50	3	20
-10	2	97	49	10	50	3	20
-10	4	1	55	10	25	18	24
-16	8	79	97	16	32	72	50
-16	8	84	119	16	32	23	106
-16	8	84	119	16	32	72	50
-16	8	89	100	16	32	72	50
 16	8	108	117	16	32	23	106
-16	8	108	117	16	32	72	50
-20	4	31	57	20	100	21	0
-20	8	19	62	20	50	24	54
-22	11	43	38	22	44	21	4
-24	8	42	127	24	72	45	26
-24	8	42	127	24	72	64	26
-24	9	53	92	24	64	33	60
-24	9	107	78	24	64	33	60
-28	7	51	117	28	112	45	90
-30	15	126	124	30	60	16	50
-30	15	126	124	30	60	20	116
-30	15	126	124	30	60	92	56
 30	15	126	124	30	60	108	54
 SELECT * FROM numbers_l AS t1 JOIN numbers_r as t2 ON t1.b < t2.b AND t1.a = t2.a AND (t2.c < t1.d OR t1.d >= t2.c * 2) AND if(t1.c % 2 = 0, t1.c % 3 == 0, t2.c % 3 == 0) AND t1.a * t2.a == t1.b * t2.b AND t2.d % 2 == 0 AND (t2.b % 2 == 0 OR t1.b % 2 == 0) AND t1.b + 30 = t2.b;
-0	0	113	118	0	30	0	80
-0	0	111	124	0	30	0	80
