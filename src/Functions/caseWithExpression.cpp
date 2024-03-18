@@ -113,9 +113,7 @@ REGISTER_FUNCTION(CaseWithExpression)
     factory.registerFunction<FunctionCaseWithExpression>();
 
     /// These are obsolete function names.
-    factory.registerFunction<FunctionCaseWithExpression>("caseWithExpr");
+    factory.registerAlias("caseWithExpr", "caseWithExpression");
 }
 
 }
-
-

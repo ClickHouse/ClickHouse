@@ -286,7 +286,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         {
             const String type_int("INT");
             Tokens tokens(type_int.data(), type_int.data() + type_int.size());
-            Pos tmp_pos(tokens, 0);
+            Pos tmp_pos(tokens, pos.max_depth, pos.max_backtracks);
             Expected tmp_expected;
             ParserDataType().parse(tmp_pos, type, tmp_expected);
         }

@@ -23,7 +23,6 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_FILE_TYPE;
-    extern const int FILE_ALREADY_EXISTS;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int LOGICAL_ERROR;
 }
@@ -593,14 +592,8 @@ void DiskObjectStorageTransaction::moveDirectory(const std::string & from_path, 
 void DiskObjectStorageTransaction::moveFile(const String & from_path, const String & to_path)
 {
      operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [from_path, to_path, this](MetadataTransactionPtr tx)
+        std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [from_path, to_path](MetadataTransactionPtr tx)
         {
-            if (metadata_storage.exists(to_path))
-                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", to_path);
-
-            if (!metadata_storage.exists(from_path))
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", from_path);
-
             tx->moveFile(from_path, to_path);
         }));
 }
