@@ -36,13 +36,13 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/ParserCase.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/StorageID.h>
+
 
 namespace DB
 {
@@ -1628,7 +1628,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             is_strict = true;
 
         ASTs identifiers;
-        ASTPtr regex_node;
+        ASTPtr regexp_node;
         ParserStringLiteral regex;
         auto parse_id = [&identifiers, &pos, &expected]
         {
@@ -1644,7 +1644,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         {
             // support one or more parameter
             ++pos;
-            if (!ParserList::parseUtil(pos, expected, parse_id, false) && !regex.parse(pos, regex_node, expected))
+            if (!ParserList::parseUtil(pos, expected, parse_id, false) && !regex.parse(pos, regexp_node, expected))
                 return false;
 
             if (pos->type != TokenType::ClosingRoundBracket)
@@ -1654,13 +1654,13 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         else
         {
             // only one parameter
-            if (!parse_id() && !regex.parse(pos, regex_node, expected))
+            if (!parse_id() && !regex.parse(pos, regexp_node, expected))
                 return false;
         }
 
         auto res = std::make_shared<ASTColumnsExceptTransformer>();
-        if (regex_node)
-            res->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+        if (regexp_node)
+            res->setPattern(regexp_node->as<ASTLiteral &>().value.get<String>());
         else
             res->children = std::move(identifiers);
         res->is_strict = is_strict;
@@ -1794,11 +1794,11 @@ static bool parseColumnsMatcherBody(IParser::Pos & pos, ASTPtr & node, Expected 
     ++pos;
 
     ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(false, true), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserStringLiteral regex;
+    ParserStringLiteral regexp;
 
     ASTPtr column_list;
-    ASTPtr regex_node;
-    if (!columns_p.parse(pos, column_list, expected) && !regex.parse(pos, regex_node, expected))
+    ASTPtr regexp_node;
+    if (!columns_p.parse(pos, column_list, expected) && !regexp.parse(pos, regexp_node, expected))
         return false;
 
     if (pos->type != TokenType::ClosingRoundBracket)
@@ -1832,7 +1832,7 @@ static bool parseColumnsMatcherBody(IParser::Pos & pos, ASTPtr & node, Expected 
     else
     {
         auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
-        regexp_matcher->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
+        regexp_matcher->setPattern(regexp_node->as<ASTLiteral &>().value.get<String>());
 
         if (!transformers->children.empty())
         {
@@ -1895,8 +1895,7 @@ bool ParserQualifiedColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected
     else if (auto * column_regexp_matcher = node->as<ASTColumnsRegexpMatcher>())
     {
         auto result = std::make_shared<ASTQualifiedColumnsRegexpMatcher>();
-        result->setPattern(column_regexp_matcher->getPattern(), false);
-        result->setMatcher(column_regexp_matcher->getMatcher());
+        result->setPattern(column_regexp_matcher->getPattern());
 
         result->qualifier = std::move(identifier_node);
         result->children.push_back(result->qualifier);
