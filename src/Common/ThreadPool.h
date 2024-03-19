@@ -252,6 +252,10 @@ public:
         if (!initialized())
             abort();
 
+        /// Thread cannot join itself.
+        if (state->thread_id == std::this_thread::get_id())
+            abort();
+
         state->event.wait();
         state.reset();
     }
@@ -265,12 +269,7 @@ public:
 
     bool joinable() const
     {
-        if (!state)
-            return false;
-        /// Thread cannot join itself.
-        if (state->thread_id == std::this_thread::get_id())
-            return false;
-        return true;
+        return initialized();
     }
 
     std::thread::id get_id() const
