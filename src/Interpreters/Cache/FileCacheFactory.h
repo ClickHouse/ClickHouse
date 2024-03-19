@@ -57,6 +57,8 @@ public:
 
     void clear();
 
+    void loadDefaultCaches(const Poco::Util::AbstractConfiguration & config);
+
 private:
     std::mutex mutex;
     CacheByName caches_by_name;

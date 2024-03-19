@@ -98,4 +98,16 @@ void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
     loadImpl(std::move(collection_has), std::move(collection_get_uint), std::move(collection_get_string), std::move(collection_get_double));
 }
 
+void FileCacheSettings::load(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+{
+    auto predefined_configuration = config.has(config_prefix + ".collection")
+        ? NamedCollectionFactory::instance().tryGet(config.getString(config_prefix + ".collection"))
+        : nullptr;
+
+    if (predefined_configuration)
+        loadFromCollection(*predefined_configuration);
+    else
+        loadFromConfig(config, config_prefix);
+}
+
 }

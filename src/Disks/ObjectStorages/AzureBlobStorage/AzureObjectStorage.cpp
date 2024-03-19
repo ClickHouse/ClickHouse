@@ -204,9 +204,9 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
     auto settings_ptr = settings.get();
     auto global_context = Context::getGlobalContextInstance();
 
-    auto read_buffer_creator =
-        [this, settings_ptr, disk_read_settings]
-        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
+    auto read_buffer_creator
+        = [this, settings_ptr, disk_read_settings](
+              const std::string & path, bool restricted_seek, size_t read_until_position, bool use_external_buffer) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromAzureBlobStorage>(
             client.get(),
@@ -214,8 +214,9 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
             disk_read_settings,
             settings_ptr->max_single_read_retries,
             settings_ptr->max_single_download_retries,
-            /* use_external_buffer */true,
-            restricted_seek);
+            use_external_buffer,
+            restricted_seek,
+            read_until_position);
     };
 
     switch (read_settings.remote_fs_method)

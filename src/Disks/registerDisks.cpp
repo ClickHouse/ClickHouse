@@ -16,6 +16,9 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
 void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
 void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check);
 
+#if USE_SSL
+void registerDiskEncryptedOS(DiskFactory & factory, bool global_skip_access_check);
+#endif
 
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
@@ -32,6 +35,10 @@ void registerDisks(bool global_skip_access_check)
     registerDiskCache(factory, global_skip_access_check);
 
     registerDiskObjectStorage(factory, global_skip_access_check);
+
+    registerDiskLocalObjectStorage(factory, global_skip_access_check);
+
+    registerDiskEncryptedOS(factory, global_skip_access_check);
 }
 
 #else

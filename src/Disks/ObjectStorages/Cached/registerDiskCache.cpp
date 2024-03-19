@@ -50,6 +50,8 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         else
             file_cache_settings.loadFromConfig(config, config_prefix);
 
+        file_cache_settings.load(config, config_prefix);
+
         auto config_fs_caches_dir = context->getFilesystemCachesPath();
         if (custom_disk)
         {

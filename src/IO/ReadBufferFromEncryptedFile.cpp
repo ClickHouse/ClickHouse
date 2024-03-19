@@ -14,8 +14,9 @@ ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
     std::unique_ptr<ReadBufferFromFileBase> in_,
     const String & key_,
     const FileEncryption::Header & header_,
-    size_t offset_)
-    : ReadBufferFromFileBase(buffer_size_, nullptr, 0)
+    size_t offset_,
+    bool use_external_buffer_)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size_, nullptr, 0)
     , in(std::move(in_))
     , encrypted_buffer(buffer_size_)
     , encryptor(header_.algorithm, key_, header_.init_vector)
@@ -65,6 +66,11 @@ off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
 off_t ReadBufferFromEncryptedFile::getPosition()
 {
     return offset - available();
+}
+
+size_t ReadBufferFromEncryptedFile::getFileOffsetOfBufferEnd() const
+{
+    return offset;
 }
 
 bool ReadBufferFromEncryptedFile::nextImpl()

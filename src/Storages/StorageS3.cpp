@@ -722,9 +722,10 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
     const String & key, const ReadSettings & read_settings, size_t object_size)
 {
     auto context = getContext();
-    auto read_buffer_creator =
-        [this, read_settings, object_size]
-        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
+
+    auto read_buffer_creator
+        = [this, read_settings, object_size](
+              const std::string & path, size_t read_until_position, bool use_external_buffer, bool restricted_seek) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromS3>(
             client,
@@ -733,9 +734,9 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
             version_id,
             request_settings,
             read_settings,
-            /* use_external_buffer */true,
-            /* offset */0,
-            /* read_until_position */0,
+            use_external_buffer,
+            /* offset */ 0,
+            read_until_position,
             restricted_seek,
             object_size);
     };
