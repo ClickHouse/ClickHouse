@@ -487,7 +487,7 @@ Chain buildPushingToViewsChain(
 
     for (const auto & view_id : views)
     {
-        LOG_ERROR(&Poco::Logger::get("PushingToViews"), "dependent view: {}.{}", view_id.database_name, view_id.table_name);
+        LOG_DEBUG(&Poco::Logger::get("PushingToViews"), "dependent view: {}.{}", view_id.database_name, view_id.table_name);
 
         try
         {
