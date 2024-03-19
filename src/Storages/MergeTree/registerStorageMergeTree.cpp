@@ -537,9 +537,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     column.codec = codec;
 
                 column.default_desc.kind = ColumnDefaultKind::Materialized;
-                column.default_desc.expression = Field::dispatch([](auto default_value) {
-                    return std::make_shared<ASTLiteral>(std::move(default_value));
-                }, type->getDefault());
+                column.default_desc.expression = Field::dispatch(
+                    [](auto default_value) { return std::make_shared<ASTLiteral>(std::move(default_value)); }, type->getDefault());
 
                 metadata.columns.add(std::move(column));
             };

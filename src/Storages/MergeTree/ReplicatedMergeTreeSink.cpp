@@ -849,9 +849,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         /// Will store current try block number lock here if lock_holder does not specified
         std::optional<EphemeralLockInZooKeeper> current_try_block_number_lock;
 
-        auto is_block_number_lock_provided = [&]() {
-            return lock_holder && lock_holder->has_value();
-        };
+        auto is_block_number_lock_provided = [&]() { return lock_holder && lock_holder->has_value(); };
 
         if (!is_block_number_lock_provided())
         {
