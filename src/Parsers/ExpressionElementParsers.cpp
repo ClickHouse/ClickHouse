@@ -2121,10 +2121,12 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     auto elem = std::make_shared<ASTOrderByElement>();
 
+    /// We have an invariant that expression is always the first child.
+    elem->children.emplace_back(expression);
+
     elem->direction = direction;
     elem->nulls_direction = nulls_direction;
     elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
-    elem->set(elem->expression, expression);
     elem->set(elem->collation, locale_node);
     elem->with_fill = has_with_fill;
     elem->set(elem->fill_from, locale_node);

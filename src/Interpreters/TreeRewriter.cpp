@@ -280,9 +280,6 @@ struct ReplacePositionalArgumentsData
 
     static void visit(ASTSelectQuery & select_query, ASTPtr &)
     {
-
-        std::cout << select_query.dumpTree() << std::endl;
-
         if (select_query.groupBy())
         {
             for (auto & expr : select_query.groupBy()->children)
@@ -290,15 +287,12 @@ struct ReplacePositionalArgumentsData
         }
         if (select_query.orderBy())
         {
-            for (auto & expr : select_query.orderBy()->children)
+            for (auto & elem : select_query.orderBy()->children)
             {
-                auto * order_by_element = assert_cast<ASTOrderByElement *>(expr.get());
-                chassert(order_by_element->expression, "ORDER BY requires an expression.");
-                auto order_by_expression = order_by_element->expression->ptr();
-                auto * old_ptr = order_by_expression.get();
+                chassert(assert_cast<ASTOrderByElement *>(elem.get()));
+                chassert(!elem->children.empty(), "ORDER BY requires at least an expression.");
+                auto order_by_expression = elem->children.front();
                 replaceForPositionalArguments(order_by_expression, &select_query, ASTSelectQuery::Expression::ORDER_BY);
-                auto * new_ptr = order_by_expression.get();
-                select_query.orderBy()->updatePointerToChild(old_ptr, new_ptr);
             }
         }
         if (select_query.limitBy())
