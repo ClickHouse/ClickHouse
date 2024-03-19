@@ -205,16 +205,16 @@ private:
                 has_asterisks = true;
 
                 String pattern = columns_regexp_matcher->getPattern();
-                auto regexp = std::make_shared<re2::RE2>(pattern, re2::RE2::Quiet);
-                if (!regexp->ok())
+                re2::RE2 regexp(pattern, re2::RE2::Quiet);
+                if (!regexp.ok())
                     throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                        "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp->error());
+                        "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
 
                 for (auto & table_name : data.tables_order)
                     data.addTableColumns(
                         table_name,
                         columns,
-                        [&](const String & column_name) { return re2::RE2::PartialMatch(column_name, *regexp); });
+                        [&](const String & column_name) { return re2::RE2::PartialMatch(column_name, regexp); });
 
                 if (columns_regexp_matcher->transformers)
                 {

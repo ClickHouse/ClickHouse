@@ -4,16 +4,10 @@
 #include <IO/WriteHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
-#include <Common/re2.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_COMPILE_REGEXP;
-}
 
 ASTPtr ASTColumnsRegexpMatcher::clone() const
 {

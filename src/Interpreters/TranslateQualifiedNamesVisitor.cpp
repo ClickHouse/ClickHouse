@@ -278,17 +278,17 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         else if (const auto * asterisk_regexp_pattern = child->as<ASTColumnsRegexpMatcher>())
         {
             String pattern = asterisk_regexp_pattern->getPattern();
-            auto regexp = std::make_shared<re2::RE2>(pattern, re2::RE2::Quiet);
-            if (!regexp->ok())
+            re2::RE2 regexp(pattern, re2::RE2::Quiet);
+            if (!regexp.ok())
                 throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                    "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp->error());
+                    "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp.error());
 
             bool first_table = true;
             for (const auto & table : tables_with_columns)
             {
                 for (const auto & column : table.columns)
                 {
-                    if (re2::RE2::PartialMatch(column.name, *regexp)
+                    if (re2::RE2::PartialMatch(column.name, regexp)
                         && (first_table || !data.join_using_columns.contains(column.name)))
                     {
                         addIdentifier(columns, table.table, column.name);
