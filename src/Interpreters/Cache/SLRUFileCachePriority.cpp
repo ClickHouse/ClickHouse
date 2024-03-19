@@ -314,11 +314,14 @@ void SLRUFileCachePriority::shuffle(const CachePriorityGuard::Lock & lock)
     probationary_queue.shuffle(lock);
 }
 
-bool SLRUFileCachePriority::modifySizeLimits(
-    size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock & lock)
+void SLRUFileCachePriority::modifySizeLimits(
+    size_t max_size_,
+    size_t max_elements_,
+    double size_ratio_,
+    const CachePriorityGuard::Lock & lock)
 {
     if (max_size == max_size_ && max_elements == max_elements_ && size_ratio == size_ratio_)
-        return false; /// Nothing to change.
+        return; /// Nothing to change.
 
     protected_queue.modifySizeLimits(getRatio(max_size_, size_ratio_), getRatio(max_elements_, size_ratio_), 0, lock);
     probationary_queue.modifySizeLimits(getRatio(max_size_, 1 - size_ratio_), getRatio(max_elements_, 1 - size_ratio_), 0, lock);
@@ -326,7 +329,6 @@ bool SLRUFileCachePriority::modifySizeLimits(
     max_size = max_size_;
     max_elements = max_elements_;
     size_ratio = size_ratio_;
-    return true;
 }
 
 SLRUFileCachePriority::SLRUIterator::SLRUIterator(

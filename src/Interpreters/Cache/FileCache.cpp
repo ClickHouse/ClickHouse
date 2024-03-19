@@ -808,6 +808,12 @@ bool FileCache::tryReserve(
         return false;
     }
 
+    if (cache_is_being_resized.load(std::memory_order_relaxed))
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
+        return false;
+    }
+
     LOG_TEST(
         log, "Trying to reserve space ({} bytes) for {}:{}, current usage {}/{} in size, {}/{} in elements",
         size, file_segment.key(), file_segment.offset(),
@@ -1457,29 +1463,28 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
             cache_is_being_resized.store(false, std::memory_order_relaxed);
         });
 
-        auto cache_lock = lockCache();
-        bool updated = false;
-        try
+        std::optional<EvictionCandidates> eviction_candidates;
         {
-            updated = main_priority->modifySizeLimits(
+            auto cache_lock = lockCache();
+            FileCacheReserveStat stat;
+            eviction_candidates.emplace(main_priority->collectCandidatesForEviction(
+                new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */, stat, cache_lock));
+        }
+
+        eviction_candidates->evict();
+
+        {
+            auto cache_lock = lockCache();
+            main_priority->modifySizeLimits(
                 new_settings.max_size, new_settings.max_elements, new_settings.slru_size_ratio, cache_lock);
         }
-        catch (...)
-        {
-            actual_settings.max_size = main_priority->getSizeLimit(cache_lock);
-            actual_settings.max_elements = main_priority->getElementsLimit(cache_lock);
-            throw;
-        }
 
-        if (updated)
-        {
-            LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
-                    actual_settings.max_size, new_settings.max_size,
-                    actual_settings.max_elements, new_settings.max_elements);
+        LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
+                actual_settings.max_size, new_settings.max_size,
+                actual_settings.max_elements, new_settings.max_elements);
 
-            actual_settings.max_size = main_priority->getSizeLimit(cache_lock);
-            actual_settings.max_elements = main_priority->getElementsLimit(cache_lock);
-        }
+        actual_settings.max_size = new_settings.max_size;
+        actual_settings.max_elements = new_settings.max_elements;
     }
 
     if (new_settings.max_file_segment_size != actual_settings.max_file_segment_size)

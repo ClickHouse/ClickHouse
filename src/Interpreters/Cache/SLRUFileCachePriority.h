@@ -65,7 +65,11 @@ public:
 
     PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
 
-    bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) override;
+    void modifySizeLimits(
+        size_t max_size_,
+        size_t max_elements_,
+        double size_ratio_,
+        const CachePriorityGuard::Lock &) override;
 
 private:
     double size_ratio;
