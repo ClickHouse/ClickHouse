@@ -497,7 +497,7 @@ LockedKeyPtr FileSegment::lockKeyMetadata(bool assert_exists) const
     return metadata->tryLock();
 }
 
-bool FileSegment::reserve(size_t size_to_reserve, FileCacheReserveStat * reserve_stat)
+bool FileSegment::reserve(size_t size_to_reserve, size_t lock_wait_timeout_milliseconds, FileCacheReserveStat * reserve_stat)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -549,7 +549,7 @@ bool FileSegment::reserve(size_t size_to_reserve, FileCacheReserveStat * reserve
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat, getKeyMetadata()->user);
+    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds);
 
     if (!reserved)
         setDownloadFailedUnlocked(lockFileSegment());

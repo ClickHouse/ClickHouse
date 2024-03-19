@@ -218,7 +218,6 @@ public:
 
     const MergeTreeData & storage;
 
-public:
     const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
 
@@ -230,6 +229,9 @@ public:
     MergeTreeIndexGranularityInfo index_granularity_info;
 
     size_t rows_count = 0;
+
+    /// Existing rows count (excluding lightweight deleted rows)
+    std::optional<size_t> existing_rows_count;
 
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
@@ -373,6 +375,10 @@ public:
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
     void setBytesUncompressedOnDisk(UInt64 bytes_uncompressed_on_disk_) { bytes_uncompressed_on_disk = bytes_uncompressed_on_disk_; }
 
+    /// Returns estimated size of existing rows if setting exclude_deleted_rows_for_part_size_in_merge is true
+    /// Otherwise returns bytes_on_disk
+    UInt64 getExistingBytesOnDisk() const;
+
     size_t getFileSizeOrZero(const String & file_name) const;
     auto getFilesChecksums() const { return checksums.files; }
 
@@ -498,6 +504,9 @@ public:
 
     /// True if here is lightweight deleted mask file in part.
     bool hasLightweightDelete() const;
+
+    /// Read existing rows count from _row_exists column
+    UInt64 readExistingRowsCount();
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 
@@ -663,6 +672,9 @@ private:
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
+
+    /// Load existing rows count from _row_exists column if load_existing_rows_count_for_old_parts is true.
+    void loadExistingRowsCount();
 
     static void appendFilesOfRowsCount(Strings & files);
 

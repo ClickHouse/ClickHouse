@@ -75,8 +75,8 @@ private:
         VariantSubcolumnCreator(
             const ColumnPtr & local_discriminators_,
             const String & variant_element_name_,
-            const ColumnVariant::Discriminator global_variant_discriminator_,
-            const ColumnVariant::Discriminator local_variant_discriminator_);
+            ColumnVariant::Discriminator global_variant_discriminator_,
+            ColumnVariant::Discriminator local_variant_discriminator_);
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;

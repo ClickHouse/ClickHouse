@@ -129,24 +129,24 @@ using ParserCompoundColumnDeclaration = IParserColumnDeclaration<ParserCompoundI
 template <typename NameParser>
 bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_default{"DEFAULT"};
-    ParserKeyword s_null{"NULL"};
-    ParserKeyword s_not{"NOT"};
-    ParserKeyword s_materialized{"MATERIALIZED"};
-    ParserKeyword s_ephemeral{"EPHEMERAL"};
-    ParserKeyword s_alias{"ALIAS"};
-    ParserKeyword s_auto_increment{"AUTO_INCREMENT"};
-    ParserKeyword s_comment{"COMMENT"};
-    ParserKeyword s_codec{"CODEC"};
-    ParserKeyword s_stat{"STATISTIC"};
-    ParserKeyword s_ttl{"TTL"};
-    ParserKeyword s_remove{"REMOVE"};
-    ParserKeyword s_modify_setting("MODIFY SETTING");
-    ParserKeyword s_reset_setting("RESET SETTING");
-    ParserKeyword s_settings("SETTINGS");
-    ParserKeyword s_type{"TYPE"};
-    ParserKeyword s_collate{"COLLATE"};
-    ParserKeyword s_primary_key{"PRIMARY KEY"};
+    ParserKeyword s_default{Keyword::DEFAULT};
+    ParserKeyword s_null{Keyword::NULL_KEYWORD};
+    ParserKeyword s_not{Keyword::NOT};
+    ParserKeyword s_materialized{Keyword::MATERIALIZED};
+    ParserKeyword s_ephemeral{Keyword::EPHEMERAL};
+    ParserKeyword s_alias{Keyword::ALIAS};
+    ParserKeyword s_auto_increment{Keyword::AUTO_INCREMENT};
+    ParserKeyword s_comment{Keyword::COMMENT};
+    ParserKeyword s_codec{Keyword::CODEC};
+    ParserKeyword s_stat{Keyword::STATISTIC};
+    ParserKeyword s_ttl{Keyword::TTL};
+    ParserKeyword s_remove{Keyword::REMOVE};
+    ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
+    ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
+    ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_type{Keyword::TYPE};
+    ParserKeyword s_collate{Keyword::COLLATE};
+    ParserKeyword s_primary_key{Keyword::PRIMARY_KEY};
 
     NameParser name_parser;
     ParserDataType type_parser;
@@ -286,7 +286,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         {
             const String type_int("INT");
             Tokens tokens(type_int.data(), type_int.data() + type_int.size());
-            Pos tmp_pos(tokens, 0);
+            Pos tmp_pos(tokens, pos.max_depth, pos.max_backtracks);
             Expected tmp_expected;
             ParserDataType().parse(tmp_pos, type, tmp_expected);
         }
