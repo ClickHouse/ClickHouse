@@ -14,21 +14,31 @@ namespace DB
 
 EvictionCandidates::~EvictionCandidates()
 {
+    for (const auto & iterator : queue_entries_to_invalidate)
+    {
+        /// If there was an exception between evict and finalize phase
+        /// for some eviction candidate, we need to reset its entry now.
+        iterator->invalidate();
+    }
+
     for (const auto & [key, key_candidates] : candidates)
     {
         for (const auto & candidate : key_candidates.candidates)
-            candidate->removal_candidate = false;
+            candidate->setEvicting(false, nullptr, nullptr);
     }
 }
 
-void EvictionCandidates::add(LockedKey & locked_key, const FileSegmentMetadataPtr & candidate)
+void EvictionCandidates::add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key, const CachePriorityGuard::Lock & lock)
 {
+    chassert(lock.owns_lock());
+
     auto [it, inserted] = candidates.emplace(locked_key.getKey(), KeyCandidates{});
     if (inserted)
         it->second.key_metadata = locked_key.getKeyMetadata();
     it->second.candidates.push_back(candidate);
 
-    candidate->removal_candidate = true;
+    chassert(!candidate->isEvicting(lock));
+    candidate->setEvicting(true, &locked_key, &lock);
     ++candidates_size;
 }
 
@@ -38,6 +48,7 @@ void EvictionCandidates::evict()
         return;
 
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::FilesystemCacheEvictMicroseconds);
+    queue_entries_to_invalidate.reserve(candidates_size);
 
     for (auto & [key, key_candidates] : candidates)
     {
@@ -45,37 +56,55 @@ void EvictionCandidates::evict()
         if (!locked_key)
             continue; /// key could become invalid after we released the key lock above, just skip it.
 
-        auto & to_evict = key_candidates.candidates;
-        while (!to_evict.empty())
+        while (!key_candidates.candidates.empty())
         {
-            auto & candidate = to_evict.back();
+            auto & candidate = key_candidates.candidates.back();
             chassert(candidate->releasable());
 
             const auto segment = candidate->file_segment;
-            auto queue_it = segment->getQueueIterator();
-            chassert(queue_it);
+            auto iterator = segment->getQueueIterator();
+            chassert(iterator);
 
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
 
-            locked_key->removeFileSegment(segment->offset(), segment->lock());
-            queue_it->invalidate();
+            /// We remove file segment, but do not invalidate queue entry now,
+            /// we will invalidate it after all eviction candidates are removed (in finalize() method),
+            /// because invalidation of queue entries needs to be done under cache lock.
+            /// Why?
+            /// Firstly, as long as queue entry exists, the corresponding space in cache is considered to be hold,
+            /// and once it is invalidated - the space is released.
+            /// Secondly, after evict() and finalize() stages we will also add back "reserved size"
+            /// (<= actually released size), but until we do this - we cannot allow other threads to think that
+            /// this released space is free, as it is not - it is removed in favour of some reserver
+            /// so we can make it visibly free only for that particular reserver.
+            locked_key->removeFileSegment(
+                segment->offset(), segment->lock(), /* can_be_broken */false, /* invalidate_queue_entry */false);
 
-            to_evict.pop_back();
+            queue_entries_to_invalidate.push_back(iterator);
+            key_candidates.candidates.pop_back();
         }
     }
 }
 
-void EvictionCandidates::finalize(FileCacheQueryLimit::QueryContext * query_context, const CacheGuard::Lock & lock)
+void EvictionCandidates::finalize(FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock & lock)
 {
-    for (const auto & it : invalidated_queue_entries)
+    chassert(lock.owns_lock());
+    while (!queue_entries_to_invalidate.empty())
     {
+        auto iterator = queue_entries_to_invalidate.back();
+        iterator->invalidate();
+        queue_entries_to_invalidate.pop_back();
+
+        /// Remove entry from per query priority queue.
         if (query_context)
         {
-            const auto & entry = it->getEntry();
+            const auto & entry = iterator->getEntry();
             query_context->remove(entry->key, entry->offset, lock);
         }
-        it->remove(lock);
+
+        /// Remove entry from main priority queue.
+        iterator->remove(lock);
     }
 
     if (finalize_eviction_func)

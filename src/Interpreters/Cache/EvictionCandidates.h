@@ -12,18 +12,18 @@ public:
     {
         candidates = std::move(other.candidates);
         candidates_size = std::move(other.candidates_size);
-        invalidated_queue_entries = std::move(other.invalidated_queue_entries);
+        queue_entries_to_invalidate = std::move(other.queue_entries_to_invalidate);
         finalize_eviction_func = std::move(other.finalize_eviction_func);
     }
     ~EvictionCandidates();
 
-    void add(LockedKey & locked_key, const FileSegmentMetadataPtr & candidate);
+    void add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key, const CachePriorityGuard::Lock &);
 
     void add(const EvictionCandidates & other, const CacheGuard::Lock &) { candidates.insert(other.candidates.begin(), other.candidates.end()); }
 
     void evict();
 
-    void finalize(FileCacheQueryLimit::QueryContext * query_context, const CacheGuard::Lock & lock);
+    void finalize(FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock &);
 
     size_t size() const { return candidates_size; }
 
@@ -31,7 +31,7 @@ public:
 
     auto end() const { return candidates.end(); }
 
-    using FinalizeEvictionFunc = std::function<void(const CacheGuard::Lock & lk)>;
+    using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
     void setFinalizeEvictionFunc(FinalizeEvictionFunc && func) { finalize_eviction_func = func; }
 
 private:
@@ -43,8 +43,8 @@ private:
 
     std::unordered_map<FileCacheKey, KeyCandidates> candidates;
     size_t candidates_size = 0;
-    std::vector<IFileCachePriority::IteratorPtr> invalidated_queue_entries;
     FinalizeEvictionFunc finalize_eviction_func;
+    std::vector<IFileCachePriority::IteratorPtr> queue_entries_to_invalidate;
 };
 
 using EvictionCandidatesPtr = std::unique_ptr<EvictionCandidates>;

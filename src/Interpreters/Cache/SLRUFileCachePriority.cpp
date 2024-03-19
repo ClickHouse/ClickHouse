@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
     size_t getRatio(size_t total, double ratio)
@@ -34,35 +39,46 @@ SLRUFileCachePriority::SLRUFileCachePriority(
         probationary_queue.max_size, protected_queue.max_elements);
 }
 
-size_t SLRUFileCachePriority::getSize(const CacheGuard::Lock & lock) const
+size_t SLRUFileCachePriority::getSize(const CachePriorityGuard::Lock & lock) const
 {
     return protected_queue.getSize(lock) + probationary_queue.getSize(lock);
 }
 
-size_t SLRUFileCachePriority::getElementsCount(const CacheGuard::Lock & lock) const
+size_t SLRUFileCachePriority::getElementsCount(const CachePriorityGuard::Lock & lock) const
 {
     return protected_queue.getElementsCount(lock) + probationary_queue.getElementsCount(lock);
 }
 
+size_t SLRUFileCachePriority::getSizeApprox() const
+{
+    return protected_queue.getSizeApprox() + probationary_queue.getSizeApprox();
+}
+
+size_t SLRUFileCachePriority::getElementsCountApprox() const
+{
+    return protected_queue.getElementsCountApprox() + probationary_queue.getElementsCountApprox();
+}
+
 bool SLRUFileCachePriority::canFit( /// NOLINT
     size_t size,
-    const CacheGuard::Lock & lock,
+    size_t elements,
+    const CachePriorityGuard::Lock & lock,
     IteratorPtr reservee,
     bool best_effort) const
 {
     if (best_effort)
-        return probationary_queue.canFit(size, lock) || protected_queue.canFit(size, lock);
+        return probationary_queue.canFit(size, elements, lock) || protected_queue.canFit(size, elements, lock);
 
     if (reservee)
     {
         const auto * slru_iterator = assert_cast<SLRUIterator *>(reservee.get());
         if (slru_iterator->is_protected)
-            return protected_queue.canFit(size, lock);
+            return protected_queue.canFit(size, elements, lock);
         else
-            return probationary_queue.canFit(size, lock);
+            return probationary_queue.canFit(size, elements, lock);
     }
     else
-        return probationary_queue.canFit(size, lock);
+        return probationary_queue.canFit(size, elements, lock);
 }
 
 IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
@@ -70,7 +86,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
     size_t offset,
     size_t size,
     const UserInfo &,
-    const CacheGuard::Lock & lock,
+    const CachePriorityGuard::Lock & lock,
     bool is_startup)
 {
     if (is_startup)
@@ -78,7 +94,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
         /// If it is server startup, we put entries in any queue it will fit in,
         /// but with preference for probationary queue,
         /// because we do not know the distribution between queues after server restart.
-        if (probationary_queue.canFit(size, lock))
+        if (probationary_queue.canFit(size, 1, lock))
         {
             auto lru_iterator = probationary_queue.add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock);
             return std::make_shared<SLRUIterator>(this, std::move(lru_iterator), false);
@@ -102,13 +118,16 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr reservee,
     const UserID & user_id,
-    const CacheGuard::Lock & lock)
+    bool & reached_size_limit,
+    bool & reached_elements_limit,
+    const CachePriorityGuard::Lock & lock)
 {
     /// If `it` is nullptr, then it is the first space reservation attempt
     /// for a corresponding file segment, so it will be directly put into probationary queue.
     if (!reservee)
     {
-        return probationary_queue.collectCandidatesForEviction(size, stat, res, reservee, user_id, lock);
+        return probationary_queue.collectCandidatesForEviction(
+            size, stat, res, reservee, user_id, reached_size_limit, reached_elements_limit, lock);
     }
 
     /// If `it` not nullptr (e.g. is already in some queue),
@@ -116,13 +135,14 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     /// (in order to know where we need to free space).
     if (!assert_cast<SLRUIterator *>(reservee.get())->is_protected)
     {
-        return probationary_queue.collectCandidatesForEviction(size, stat, res, reservee, user_id, lock);
+        return probationary_queue.collectCandidatesForEviction(
+            size, stat, res, reservee, user_id, reached_size_limit, reached_elements_limit, lock);
     }
 
     /// Entry is in protected queue.
     /// Check if we have enough space in protected queue to fit a new size of entry.
     /// `size` is the increment to the current entry.size we want to increase.
-    if (protected_queue.canFit(size, lock))
+    if (protected_queue.canFit(size, 1, lock))
         return true;
 
     /// If not enough space - we need to "downgrade" lowest priority entries from protected
@@ -132,16 +152,20 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     auto downgrade_candidates = std::make_shared<EvictionCandidates>();
     FileCacheReserveStat downgrade_stat;
 
-    if (!protected_queue.collectCandidatesForEviction(size, downgrade_stat, *downgrade_candidates, reservee, user_id, lock))
+    if (!protected_queue.collectCandidatesForEviction(
+            size, downgrade_stat, *downgrade_candidates, reservee, user_id, reached_size_limit, reached_elements_limit, lock))
         return false;
 
     const size_t size_to_downgrade = downgrade_stat.stat.releasable_size;
 
-    if (!probationary_queue.canFit(size_to_downgrade, lock)
-        && !probationary_queue.collectCandidatesForEviction(size_to_downgrade, stat, res, reservee, user_id, lock))
+    bool reached_size_limit_noop;
+    bool reached_elements_limit_noop;
+    if (!probationary_queue.canFit(size_to_downgrade, 1, lock)
+        && !probationary_queue.collectCandidatesForEviction(
+            size_to_downgrade, stat, res, reservee, user_id, reached_size_limit_noop, reached_elements_limit_noop, lock))
         return false;
 
-    res.setFinalizeEvictionFunc([=, this](const CacheGuard::Lock & lk) mutable
+    res.setFinalizeEvictionFunc([=, this](const CachePriorityGuard::Lock & lk) mutable
     {
         for (const auto & [key, key_candidates] : *downgrade_candidates)
         {
@@ -162,7 +186,7 @@ EvictionCandidates SLRUFileCachePriority::collectCandidatesForEviction(
     size_t desired_elements_count,
     size_t max_candidates_to_evict,
     FileCacheReserveStat & stat,
-    const CacheGuard::Lock & lock)
+    const CachePriorityGuard::Lock & lock)
 {
     if (!max_candidates_to_evict)
         return {};
@@ -188,7 +212,7 @@ EvictionCandidates SLRUFileCachePriority::collectCandidatesForEviction(
     return res;
 }
 
-void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const CacheGuard::Lock & lock)
+void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock)
 {
     /// If entry is already in protected queue,
     /// we only need to increase its priority within the protected queue.
@@ -216,7 +240,11 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
     EvictionCandidates downgrade_candidates;
     FileCacheReserveStat downgrade_stat;
 
-    if (!protected_queue.collectCandidatesForEviction(size, downgrade_stat, downgrade_candidates, {}, "", lock))
+    bool reached_size_limit_noop;
+    bool reached_elements_limit_noop;
+
+    if (!protected_queue.collectCandidatesForEviction(
+            size, downgrade_stat, downgrade_candidates, {}, "", reached_size_limit_noop, reached_elements_limit_noop, lock))
     {
         /// We cannot make space for entry to be moved to protected queue
         /// (not enough releasable file segments).
@@ -239,7 +267,8 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
 
     if (size_to_free)
     {
-        if (!probationary_queue.collectCandidatesForEviction(size_to_free, stat, eviction_candidates, {}, {}, lock))
+        if (!probationary_queue.collectCandidatesForEviction(
+                size_to_free, stat, eviction_candidates, {}, {}, reached_size_limit_noop, reached_elements_limit_noop, lock))
         {
             /// "downgrade" candidates cannot be moved to probationary queue,
             /// so entry cannot be moved to protected queue as well.
@@ -249,6 +278,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         }
         /// Make space for "downgrade" candidates.
         eviction_candidates.evict();
+        eviction_candidates.finalize(nullptr, lock);
     }
 
     /// All checks passed, now we can move downgrade candidates to
@@ -270,7 +300,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
     iterator.is_protected = true;
 }
 
-IFileCachePriority::PriorityDumpPtr SLRUFileCachePriority::dump(const CacheGuard::Lock & lock)
+IFileCachePriority::PriorityDumpPtr SLRUFileCachePriority::dump(const CachePriorityGuard::Lock & lock)
 {
     auto res = dynamic_pointer_cast<LRUFileCachePriority::LRUPriorityDump>(probationary_queue.dump(lock));
     auto part_res = dynamic_pointer_cast<LRUFileCachePriority::LRUPriorityDump>(protected_queue.dump(lock));
@@ -278,14 +308,14 @@ IFileCachePriority::PriorityDumpPtr SLRUFileCachePriority::dump(const CacheGuard
     return res;
 }
 
-void SLRUFileCachePriority::shuffle(const CacheGuard::Lock & lock)
+void SLRUFileCachePriority::shuffle(const CachePriorityGuard::Lock & lock)
 {
     protected_queue.shuffle(lock);
     probationary_queue.shuffle(lock);
 }
 
 bool SLRUFileCachePriority::modifySizeLimits(
-    size_t max_size_, size_t max_elements_, double size_ratio_, const CacheGuard::Lock & lock)
+    size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock & lock)
 {
     if (max_size == max_size_ && max_elements == max_elements_ && size_ratio == size_ratio_)
         return false; /// Nothing to change.
@@ -315,14 +345,14 @@ SLRUFileCachePriority::EntryPtr SLRUFileCachePriority::SLRUIterator::getEntry() 
     return entry;
 }
 
-size_t SLRUFileCachePriority::SLRUIterator::increasePriority(const CacheGuard::Lock & lock)
+size_t SLRUFileCachePriority::SLRUIterator::increasePriority(const CachePriorityGuard::Lock & lock)
 {
     assertValid();
     cache_priority->increasePriority(*this, lock);
     return getEntry()->hits;
 }
 
-void SLRUFileCachePriority::SLRUIterator::incrementSize(size_t size, const CacheGuard::Lock & lock)
+void SLRUFileCachePriority::SLRUIterator::incrementSize(size_t size, const CachePriorityGuard::Lock & lock)
 {
     assertValid();
     lru_iterator.incrementSize(size, lock);
@@ -340,7 +370,7 @@ void SLRUFileCachePriority::SLRUIterator::invalidate()
     lru_iterator.invalidate();
 }
 
-void SLRUFileCachePriority::SLRUIterator::remove(const CacheGuard::Lock & lock)
+void SLRUFileCachePriority::SLRUIterator::remove(const CachePriorityGuard::Lock & lock)
 {
     assertValid();
     lru_iterator.remove(lock);
@@ -351,4 +381,34 @@ void SLRUFileCachePriority::SLRUIterator::assertValid() const
     lru_iterator.assertValid();
 }
 
+void SLRUFileCachePriority::holdImpl(size_t size, size_t elements, IteratorPtr reservee, const CachePriorityGuard::Lock & lock)
+{
+    if (!canFit(size, elements, lock, reservee))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot hold space {}", size);
+
+    if (reservee)
+    {
+        const auto * slru_iterator = assert_cast<SLRUIterator *>(reservee.get());
+        if (slru_iterator->is_protected)
+            return protected_queue.holdImpl(size, elements, reservee, lock);
+        else
+            return probationary_queue.holdImpl(size, elements, reservee, lock);
+    }
+    else
+        return probationary_queue.holdImpl(size, elements, reservee, lock);
+}
+
+void SLRUFileCachePriority::releaseImpl(size_t size, size_t elements, IteratorPtr reservee)
+{
+    if (reservee)
+    {
+        const auto * slru_iterator = assert_cast<SLRUIterator *>(reservee.get());
+        if (slru_iterator->is_protected)
+            return protected_queue.releaseImpl(size, elements, reservee);
+        else
+            return probationary_queue.releaseImpl(size, elements, reservee);
+    }
+    else
+        return probationary_queue.releaseImpl(size, elements, reservee);
+}
 }

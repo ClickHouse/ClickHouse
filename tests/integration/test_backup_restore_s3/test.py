@@ -124,15 +124,17 @@ def check_backup_and_restore(
 def check_system_tables(backup_query_id=None):
     disks = [
         tuple(disk.split("\t"))
-        for disk in node.query("SELECT name, type FROM system.disks").split("\n")
+        for disk in node.query(
+            "SELECT name, type, object_storage_type, metadata_type FROM system.disks"
+        ).split("\n")
         if disk
     ]
     expected_disks = (
-        ("default", "local"),
-        ("disk_s3", "s3"),
-        ("disk_s3_cache", "s3"),
-        ("disk_s3_other_bucket", "s3"),
-        ("disk_s3_plain", "s3_plain"),
+        ("default", "Local", "None", "None"),
+        ("disk_s3", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_cache", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_plain", "ObjectStorage", "S3", "Plain"),
     )
     assert len(expected_disks) == len(disks)
     for expected_disk in expected_disks:

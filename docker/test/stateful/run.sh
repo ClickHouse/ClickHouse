@@ -33,12 +33,12 @@ fi
 
 echo "Using cache policy: $cache_policy"
 
-if [ "$cache_policy" = "SLRU" ]; then
-    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
-    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
-    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
-    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
-fi
+#if [ "$cache_policy" = "SLRU" ]; then
+#    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+#    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
+#    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+#    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+#fi
 
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
     # It is not needed, we will explicitly create tables on s3.
