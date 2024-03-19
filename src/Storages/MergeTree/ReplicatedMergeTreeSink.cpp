@@ -535,7 +535,7 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
     ProfileEventsScope profile_events_scope;
 
     String original_part_dir = part->getDataPartStorage().getPartDirectory();
-    auto try_rollback_part_rename = [this, &part, &original_part_dir]()
+    auto try_rollback_part_rename = [this, &part, &original_part_dir] ()
     {
         if (original_part_dir == part->getDataPartStorage().getPartDirectory())
             return;
