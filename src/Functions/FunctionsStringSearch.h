@@ -161,14 +161,26 @@ public:
         {
             if (col_haystack_const && col_needle_const)
             {
-                const auto is_col_start_pos_const = !column_start_pos || isColumnConst(*column_start_pos);
+                auto column_start_position_arg = column_start_pos;
+                bool is_col_start_pos_const = false;
+                if (column_start_pos)
+                {
+                    if (const ColumnConst * const_column_start_pos = typeid_cast<const ColumnConst *>(&*column_start_pos))
+                    {
+                        is_col_start_pos_const = true;
+                        column_start_position_arg = const_column_start_pos->getDataColumnPtr();
+                    }
+                }
+                else
+                    is_col_start_pos_const = true;
+
                 vec_res.resize(is_col_start_pos_const ? 1 : column_start_pos->size());
                 const auto null_map = create_null_map();
 
                 Impl::constantConstant(
                     col_haystack_const->getValue<String>(),
                     col_needle_const->getValue<String>(),
-                    column_start_pos,
+                    column_start_position_arg,
                     vec_res,
                     null_map.get());
 
