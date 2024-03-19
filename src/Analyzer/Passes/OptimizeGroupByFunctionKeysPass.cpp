@@ -73,12 +73,14 @@ private:
             candidates.push_back({ *it, is_deterministic });
 
         /// Using DFS we traverse function tree and try to find if it uses other keys as function arguments.
+        bool found_at_least_one_usage = false;
         while (!candidates.empty())
         {
             auto [candidate, parents_are_only_deterministic] = candidates.back();
             candidates.pop_back();
 
             bool found = group_by_keys.contains(candidate);
+            found_at_least_one_usage |= found;
 
             switch (candidate->getNodeType())
             {
@@ -111,7 +113,7 @@ private:
             }
         }
 
-        return true;
+        return found_at_least_one_usage;
     }
 
     static void optimizeGroupingSet(QueryTreeNodes & grouping_set)
