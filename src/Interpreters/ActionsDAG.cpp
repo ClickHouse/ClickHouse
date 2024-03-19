@@ -563,7 +563,7 @@ void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
         stack.pop();
 
         /// Constant folding.
-        if (allow_constant_folding && !node->children.empty() && node->column && isColumnConst(*node->column))
+        if (allow_constant_folding && node->column && isColumnConst(*node->column))
         {
             node->type = ActionsDAG::ActionType::COLUMN;
 
