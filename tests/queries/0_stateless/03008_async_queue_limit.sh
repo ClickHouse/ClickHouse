@@ -42,7 +42,8 @@ ${CLICKHOUSE_CLIENT} -nq "
     FROM system.query_log
    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND log_comment = '$log_comment' AND type = 'QueryFinish';
 
-  SELECT throwIf(MAX(pending_inserts) > 500)
+  # max_pending_async_inserts + max concurrency
+  SELECT throwIf(MAX(pending_inserts) > 510)
     FROM (
       SELECT SUM(CurrentMetric_PendingAsyncInsert) AS pending_inserts
         FROM system.metric_log
