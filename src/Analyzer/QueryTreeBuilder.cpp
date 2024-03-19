@@ -463,11 +463,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_express
             order_by_element.with_fill);
 
         if (order_by_element.fill_from)
-            sort_node->getFillFrom() = buildExpression(order_by_element.fill_from, context);
+            sort_node->getFillFrom() = buildExpression(order_by_element.fill_from->ptr(), context);
         if (order_by_element.fill_to)
-            sort_node->getFillTo() = buildExpression(order_by_element.fill_to, context);
+            sort_node->getFillTo() = buildExpression(order_by_element.fill_to->ptr(), context);
         if (order_by_element.fill_step)
-            sort_node->getFillStep() = buildExpression(order_by_element.fill_step, context);
+            sort_node->getFillStep() = buildExpression(order_by_element.fill_step->ptr(), context);
 
         list_node->getNodes().push_back(std::move(sort_node));
     }

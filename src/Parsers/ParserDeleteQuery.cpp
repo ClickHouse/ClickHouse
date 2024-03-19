@@ -46,9 +46,10 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (s_settings.ignore(pos, expected))
         {
             ParserSetQuery parser_settings(true);
-            auto & settings_node = ASTHelpers::getOrCreate(query.get(), query->settings_ast);
+            ASTPtr settings_node;
             if (!parser_settings.parse(pos, settings_node, expected))
                 return false;
+            query->setSettingsAST(settings_node);
         }
     }
     else

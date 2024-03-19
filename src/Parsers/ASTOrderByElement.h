@@ -16,20 +16,30 @@ public:
     bool nulls_direction_was_explicitly_specified = false;
 
     /** Collation for locale-specific string comparison. If empty, then sorting done by bytes. */
-    ASTPtr collation;
+    IAST * collation = nullptr;
 
     bool with_fill = false;
-    ASTPtr fill_from;
-    ASTPtr fill_to;
-    ASTPtr fill_step;
+    IAST * fill_from;
+    IAST * fill_to;
+    IAST * fill_step;
 
     String getID(char) const override { return "OrderByElement"; }
 
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTOrderByElement>(*this);
-        clone->cloneChildren();
-        return clone;
+        auto res = std::make_shared<ASTOrderByElement>(*this);
+        res->children.clear();
+
+        if (collation)
+            res->set(res->collation, collation->clone());
+        if (fill_from)
+            res->set(res->fill_from, fill_from->clone());
+        if (fill_to)
+            res->set(res->fill_to, fill_to->clone());
+        if (fill_step)
+            res->set(res->fill_step, fill_step->clone());
+
+        return res;
     }
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;

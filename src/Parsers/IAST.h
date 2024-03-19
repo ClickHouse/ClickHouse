@@ -114,6 +114,25 @@ public:
             child->collectIdentifierNames(set);
     }
 
+    /// You have to be sure that field != nullptr, e.g. we have the subtree among children.
+    template <typename T>
+    const ASTPtr & get(const T * const field) const
+    {
+        chassert(field);
+
+        const auto child = std::find_if(
+            children.begin(), children.end(), [field](const auto & p)
+        {
+            return p.get() == field;
+        });
+
+        if (child == children.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
+
+        /// This is an iterator, so it's safe to dereference it.
+        return *child;
+    }
+
     template <typename T>
     void set(T * & field, const ASTPtr & child)
     {
@@ -357,52 +376,4 @@ private:
     ASTPtr * next_to_delete_list_head = nullptr;
 };
 
-namespace ASTHelpers
-{
-
-template <typename Derived, typename Field>
-ASTPtr & getOrCreate(Derived * derived, Field * & field)
-{
-    chassert(reinterpret_cast<char *>(field) <= reinterpret_cast<const char * const>(derived) + sizeof(Derived));
-    chassert(reinterpret_cast<char *>(field) >= reinterpret_cast<const char * const>(derived));
-    chassert(derived);
-
-    if (field == nullptr)
-        derived->set(field, std::shared_ptr<IAST>());
-
-    const auto child = std::find_if(
-        derived->children.begin(), derived->children.end(), [field](const auto & p)
-    {
-        return p.get() == field;
-    });
-
-    if (child == derived->children.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
-
-    /// This is an iterator, so it's safe to dereference it.
-    return *child;
-}
-
-template <typename Derived, typename Field>
-ASTPtr & get(const Derived * const derived, const Field * const field)
-{
-    chassert(reinterpret_cast<char *>(field) <= reinterpret_cast<const char * const>(derived) + sizeof(Derived));
-    chassert(reinterpret_cast<char *>(field) >= reinterpret_cast<const char * const>(derived));
-    chassert(derived);
-    chassert(field);
-
-    const auto child = std::find_if(
-        derived->children.begin(), derived->children.end(), [field](const auto & p)
-    {
-        return p.get() == field;
-    });
-
-    if (child == derived->children.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
-
-    /// This is an iterator, so it's safe to dereference it.
-    return *child;
-}
-
-}
 }

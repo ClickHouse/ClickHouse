@@ -9,19 +9,15 @@ namespace DB
 void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
 {
     if (out_file)
-        cloned.set(cloned.out_file, out_file->clone());
-
+        cloned.setOutFile(out_file->clone());
     if (format)
-        cloned.set(cloned.format, format->clone());
-
+        cloned.setFormat(format->clone());
     if (settings_ast)
-        cloned.set(cloned.settings_ast, settings_ast->clone());
-
+        cloned.setSettingsAST(settings_ast->clone());
     if (compression)
-        cloned.set(cloned.compression, compression->clone());
-
+        cloned.setCompression(compression->clone());
     if (compression_level)
-        cloned.set(cloned.compression_level, compression_level->clone());
+        cloned.setCompressionLevel(compression_level->clone());
 }
 
 void ASTQueryWithOutput::forEachPointerToChild(std::function<void(void**)> f)

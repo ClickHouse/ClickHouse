@@ -70,8 +70,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
     {
         auto name_type_pair = std::make_shared<ASTNameTypePair>();
         tryGetIdentifierNameInto(name, name_type_pair->name);
-        name_type_pair->type = type;
-        name_type_pair->children.push_back(type);
+        name_type_pair->set(name_type_pair->type, type);
         node = name_type_pair;
         return true;
     }

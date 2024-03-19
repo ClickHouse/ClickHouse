@@ -39,8 +39,10 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ASTPtr settings;
     if (s_settings.ignore(pos, expected))
     {
-        if (!parser_settings.parse(pos, ASTHelpers::getOrCreate(query.get(), query->settings_ast), expected))
+        ASTPtr settings_node;
+        if (!parser_settings.parse(pos, settings_node, expected))
             return false;
+        query->setSettingsAST(settings_node);
     }
 
     query->children.push_back(query->table_expression);

@@ -14,47 +14,23 @@ class ASTOptimizeQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithO
 {
 public:
     /// The partition to optimize can be specified.
-    ASTPtr partition;
+    IAST * partition = nullptr;
     /// A flag can be specified - perform optimization "to the end" instead of one step.
     bool final = false;
     /// Do deduplicate (default: false)
     bool deduplicate = false;
     /// Deduplicate by columns.
-    ASTPtr deduplicate_by_columns;
+    IAST * deduplicate_by_columns = nullptr;
     /// Delete 'is_deleted' data
     bool cleanup = false;
     /** Get the text that identifies this element. */
-    String getID(char delim) const override
-    {
-        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "")+ (cleanup ? "_cleanup" : "");
-    }
+    String getID(char delim) const override;
 
-    ASTPtr clone() const override
-    {
-        auto res = std::make_shared<ASTOptimizeQuery>(*this);
-        res->children.clear();
-
-        if (partition)
-        {
-            res->partition = partition->clone();
-            res->children.push_back(res->partition);
-        }
-
-        if (deduplicate_by_columns)
-        {
-            res->deduplicate_by_columns = deduplicate_by_columns->clone();
-            res->children.push_back(res->deduplicate_by_columns);
-        }
-
-        return res;
-    }
+    ASTPtr clone() const override;
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
-    {
-        return removeOnCluster<ASTOptimizeQuery>(clone(), params.default_database);
-    }
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Optimize; }
 };

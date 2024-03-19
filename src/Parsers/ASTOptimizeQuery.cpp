@@ -5,6 +5,24 @@
 namespace DB
 {
 
+String ASTOptimizeQuery::getID(char delim) const
+{
+    return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "")+ (cleanup ? "_cleanup" : "");
+}
+
+ASTPtr ASTOptimizeQuery::clone() const
+{
+    auto res = std::make_shared<ASTOptimizeQuery>(*this);
+    res->children.clear();
+
+    if (partition)
+        res->set(res->partition, partition->clone());
+    if (deduplicate_by_columns)
+        res->set(res->deduplicate_by_columns, deduplicate_by_columns->clone());
+
+    return res;
+}
+
 void ASTOptimizeQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (settings.hilite ? hilite_none : "");
@@ -40,6 +58,11 @@ void ASTOptimizeQuery::formatQueryImpl(const FormatSettings & settings, FormatSt
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " BY " << (settings.hilite ? hilite_none : "");
         deduplicate_by_columns->formatImpl(settings, state, frame);
     }
+}
+
+ASTPtr ASTOptimizeQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
+{
+    return removeOnCluster<ASTOptimizeQuery>(clone(), params.default_database);
 }
 
 }

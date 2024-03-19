@@ -49,7 +49,7 @@ BlockIO InterpreterOptimizeQuery::execute()
         {
             // Expand asterisk, column transformers, etc into list of column names.
             const auto cols
-                = processColumnTransformers(getContext()->getCurrentDatabase(), table, metadata_snapshot, ast.deduplicate_by_columns);
+                = processColumnTransformers(getContext()->getCurrentDatabase(), table, metadata_snapshot, ast.deduplicate_by_columns->ptr());
             for (const auto & col : cols->children)
                 column_names.emplace_back(col->getColumnName());
         }
@@ -80,7 +80,7 @@ BlockIO InterpreterOptimizeQuery::execute()
     if (auto * snapshot_data = dynamic_cast<MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
         snapshot_data->parts = {};
 
-    table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
+    table->optimize(query_ptr, metadata_snapshot, ast.partition ? ast.partition->ptr() : nullptr, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
 
     return {};
 }

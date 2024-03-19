@@ -68,14 +68,14 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     else if (const auto * explain_query = ast->as<ASTExplainQuery>())
     {
         if (explain_query->settings_ast)
-            InterpreterSetQuery(ASTHelpers::get(explain_query, explain_query->settings_ast), context_).executeForCurrentContext();
+            InterpreterSetQuery(explain_query->settings_ast->ptr(), context_).executeForCurrentContext();
 
         applySettingsFromQuery(explain_query->getExplainedQuery(), context_);
     }
     else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         if (query_with_output->settings_ast)
-            InterpreterSetQuery(ASTHelpers::get(query_with_output, query_with_output->settings_ast), context_).executeForCurrentContext();
+            InterpreterSetQuery(query_with_output->settings_ast->ptr(), context_).executeForCurrentContext();
 
         if (const auto * create_query = ast->as<ASTCreateQuery>())
         {

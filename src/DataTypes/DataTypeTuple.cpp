@@ -400,7 +400,8 @@ static DataTypePtr create(const ASTPtr & arguments)
     {
         if (const auto * name_and_type_pair = child->as<ASTNameTypePair>())
         {
-            nested_types.emplace_back(DataTypeFactory::instance().get(name_and_type_pair->type));
+            chassert(name_and_type_pair->type);
+            nested_types.emplace_back(DataTypeFactory::instance().get(name_and_type_pair->type->ptr()));
             names.emplace_back(name_and_type_pair->name);
         }
         else

@@ -12,10 +12,7 @@ ASTPtr ASTNameTypePair::clone() const
     res->children.clear();
 
     if (type)
-    {
-        res->type = type->clone();
-        res->children.push_back(res->type);
-    }
+        res->set(res->type, type->clone());
 
     return res;
 }

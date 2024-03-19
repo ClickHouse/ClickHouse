@@ -14,7 +14,7 @@ public:
     /// name
     String name;
     /// type
-    ASTPtr type;
+    IAST * type = nullptr;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "NameTypePair" + (delim + name); }

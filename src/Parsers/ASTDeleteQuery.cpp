@@ -21,7 +21,7 @@ ASTPtr ASTDeleteQuery::clone() const
     }
 
     if (settings_ast)
-        res->set(res->settings_ast, settings_ast->clone());
+        res->setSettingsAST(settings_ast->clone());
 
     cloneTableOptions(*res);
     return res;

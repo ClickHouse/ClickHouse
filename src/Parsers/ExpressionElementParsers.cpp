@@ -2124,11 +2124,15 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     elem->direction = direction;
     elem->nulls_direction = nulls_direction;
     elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
-    elem->collation = locale_node;
+    if (locale_node)
+        elem->set(elem->collation, locale_node);
     elem->with_fill = has_with_fill;
-    elem->fill_from = fill_from;
-    elem->fill_to = fill_to;
-    elem->fill_step = fill_step;
+    if (fill_from)
+        elem->set(elem->fill_from, locale_node);
+    if (fill_to)
+        elem->set(elem->fill_to, locale_node);
+    if (fill_step)
+        elem->set(elem->fill_step, locale_node);
     elem->children.push_back(expr_elem);
     if (locale_node)
         elem->children.push_back(locale_node);

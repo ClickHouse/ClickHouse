@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <Parsers/IAST.h>
 #include <IO/Operators.h>
+#include "Core/Settings.h"
 #include "Parsers/IAST_fwd.h"
 
 
@@ -14,14 +16,21 @@ namespace DB
 class ASTQueryWithOutput : public IAST
 {
 public:
-    IAST * out_file;
+    IAST * out_file = nullptr;
     bool is_into_outfile_with_stdout = false;
     bool is_outfile_append = false;
     bool is_outfile_truncate = false;
-    IAST * format;
-    IAST * settings_ast;
-    IAST * compression;
-    IAST * compression_level;
+    IAST * format = nullptr;
+    IAST * settings_ast = nullptr;
+    IAST * compression = nullptr;
+    IAST * compression_level = nullptr;
+
+    /// Just for convinience.
+    void setOutFile(const ASTPtr & out_file_) { set(out_file, out_file_); }
+    void setFormat(const ASTPtr & format_) { set(format, format_); }
+    void setSettingsAST(const ASTPtr & settings_ast_) { set(settings_ast, settings_ast_); }
+    void setCompression(const ASTPtr & compression_) { set(compression, compression_); }
+    void setCompressionLevel(const ASTPtr & compression_level_) { set(compression_level, compression_level_); }
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 

@@ -85,11 +85,12 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     node = query;
 
     query->cluster = cluster_str;
-    if ((query->partition = partition))
-        query->children.push_back(partition);
+    if (partition)
+        query->set(query->partition, partition);
     query->final = final;
     query->deduplicate = deduplicate;
-    query->deduplicate_by_columns = deduplicate_by_columns;
+    if (deduplicate_by_columns)
+        query->set(query->deduplicate_by_columns, deduplicate_by_columns);
     query->cleanup = cleanup;
     query->database = database;
     query->table = table;

@@ -33,6 +33,7 @@
 #include <Parsers/Access/ParserShowPrivilegesQuery.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include "Parsers/IAST_fwd.h"
 
 
 namespace DB
@@ -102,16 +103,17 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!parsed)
         return false;
 
-    auto * query_with_output = typeid_cast<ASTQueryWithOutput *>(query.get());
+    auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(query.get());
     chassert(query_with_output, "AST is not a ASTQueryWithOutput");
 
     ParserKeyword s_into_outfile(Keyword::INTO_OUTFILE);
     if (s_into_outfile.ignore(pos, expected))
     {
         ParserStringLiteral out_file_p;
-        auto & out_file_node = ASTHelpers::getOrCreate(query_with_output, query_with_output->out_file);
+        ASTPtr out_file_node;
         if (!out_file_p.parse(pos, out_file_node, expected))
             return false;
+        query_with_output->setOutFile(out_file_node);
 
         ParserKeyword s_append(Keyword::APPEND);
         if (s_append.ignore(pos, expected))
@@ -135,17 +137,19 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (s_compression_method.ignore(pos, expected))
         {
             ParserStringLiteral compression_p;
-            auto & compression_node = ASTHelpers::getOrCreate(query_with_output, query_with_output->compression);
+            ASTPtr compression_node;
             if (!compression_p.parse(pos, compression_node, expected))
                 return false;
+            query_with_output->setCompression(compression_node);
 
             ParserKeyword s_compression_level(Keyword::LEVEL);
             if (s_compression_level.ignore(pos, expected))
             {
                 ParserNumber compression_level_p;
-                auto & compression_level_node = ASTHelpers::getOrCreate(query_with_output, query_with_output->compression_level);
+                ASTPtr compression_level_node;
                 if (!compression_level_p.parse(pos, compression_level_node, expected))
                     return false;
+                query_with_output->setCompressionLevel(compression_level_node);
             }
         }
     }
@@ -155,9 +159,10 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (s_format.ignore(pos, expected))
     {
         ParserIdentifier format_p;
-        auto & format_node = ASTHelpers::getOrCreate(query_with_output, query_with_output->format);
+        ASTPtr format_node;
         if (!format_p.parse(pos, format_node, expected))
             return false;
+        query_with_output->setFormat(format_node);
         setIdentifierSpecial(format_node);
     }
 
@@ -166,9 +171,10 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!query_with_output->settings_ast && s_settings.ignore(pos, expected))
     {
         ParserSetQuery parser_settings(true);
-        auto & settings_node = ASTHelpers::getOrCreate(query_with_output, query_with_output->settings_ast);
+        ASTPtr settings_node;
         if (!parser_settings.parse(pos, settings_node, expected))
             return false;
+        query_with_output->setSettingsAST(settings_node);
 
         // SETTINGS after FORMAT is not parsed by the SELECT parser (ParserSelectQuery)
         // Pass them manually, to apply in InterpreterSelectQuery::initSettings()

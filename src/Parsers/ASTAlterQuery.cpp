@@ -23,45 +23,45 @@ ASTPtr ASTAlterCommand::clone() const
     res->children.clear();
 
     if (col_decl)
-        res->col_decl = res->children.emplace_back(col_decl->clone()).get();
+        res->set(res->col_decl, col_decl->clone());
     if (column)
-        res->column = res->children.emplace_back(column->clone()).get();
+        res->set(res->column, column->clone());
     if (order_by)
-        res->order_by = res->children.emplace_back(order_by->clone()).get();
+        res->set(res->order_by, order_by->clone());
     if (sample_by)
-        res->sample_by = res->children.emplace_back(sample_by->clone()).get();
+        res->set(res->sample_by, sample_by->clone());
     if (index_decl)
-        res->index_decl = res->children.emplace_back(index_decl->clone()).get();
+        res->set(res->index_decl, index_decl->clone());
     if (index)
-        res->index = res->children.emplace_back(index->clone()).get();
+        res->set(res->index, index->clone());
     if (constraint_decl)
-        res->constraint_decl = res->children.emplace_back(constraint_decl->clone()).get();
+        res->set(res->constraint_decl, constraint_decl->clone());
     if (constraint)
-        res->constraint = res->children.emplace_back(constraint->clone()).get();
+        res->set(res->constraint, constraint->clone());
     if (projection_decl)
-        res->projection_decl = res->children.emplace_back(projection_decl->clone()).get();
+        res->set(res->projection_decl, projection_decl->clone());
     if (projection)
-        res->projection = res->children.emplace_back(projection->clone()).get();
+        res->set(res->projection, projection->clone());
     if (statistic_decl)
-        res->statistic_decl = res->children.emplace_back(statistic_decl->clone()).get();
+        res->set(res->statistic_decl, statistic_decl->clone());
     if (partition)
-        res->partition = res->children.emplace_back(partition->clone()).get();
+        res->set(res->partition, partition->clone());
     if (predicate)
-        res->predicate = res->children.emplace_back(predicate->clone()).get();
+        res->set(res->predicate, predicate->clone());
     if (update_assignments)
-        res->update_assignments = res->children.emplace_back(update_assignments->clone()).get();
+        res->set(res->update_assignments, update_assignments->clone());
     if (comment)
-        res->comment = res->children.emplace_back(comment->clone()).get();
+        res->set(res->comment, comment->clone());
     if (ttl)
-        res->ttl = res->children.emplace_back(ttl->clone()).get();
+        res->set(res->ttl, ttl->clone());
     if (settings_changes)
-        res->settings_changes = res->children.emplace_back(settings_changes->clone()).get();
+        res->set(res->settings_changes, settings_changes->clone());
     if (settings_resets)
-        res->settings_resets = res->children.emplace_back(settings_resets->clone()).get();
+        res->set(res->settings_resets, settings_resets->clone());
     if (select)
-        res->select = res->children.emplace_back(select->clone()).get();
+        res->set(res->select, select->clone());
     if (rename_to)
-        res->rename_to = res->children.emplace_back(rename_to->clone()).get();
+        res->set(res->rename_to, rename_to->clone());
 
     return res;
 }
@@ -661,6 +661,8 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
 void ASTAlterQuery::forEachPointerToChild(std::function<void(void**)> f)
 {
+    ASTQueryWithTableAndOutput::forEachPointerToChild(f);
+
     for (const auto & child : command_list->children)
         child->as<ASTAlterCommand &>().forEachPointerToChild(f);
     f(reinterpret_cast<void **>(&command_list));
