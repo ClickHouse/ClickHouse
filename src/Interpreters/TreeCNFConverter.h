@@ -58,7 +58,7 @@ public:
         for (const auto & or_group : statements)
         {
             OrGroup filtered_group;
-            for (auto ast : or_group)
+            for (const auto & ast : or_group)
             {
                 if (predicate_is_unknown(ast))
                     filtered_group.insert(ast);
