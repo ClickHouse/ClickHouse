@@ -4,5 +4,5 @@ sidebar_position: 147
 sidebar_label: generateSeries
 ---
 
-### AliasTo
+### Alias To
 [generate_series](generate_series.md)
