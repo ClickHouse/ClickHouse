@@ -2896,17 +2896,8 @@ def find_clickhouse_command(binary, command):
     return binary + " " + command
 
 
-def get_additional_client_options(args):
-    if args.client_option:
-        client_options = " ".join("--" + option for option in args.client_option)
-        if "CLICKHOUSE_CLIENT_OPT" in os.environ:
-            return os.environ["CLICKHOUSE_CLIENT_OPT"] + " " + client_options
-        else:
-            return client_options
-    else:
-        if "CLICKHOUSE_CLIENT_OPT" in os.environ:
-            return os.environ["CLICKHOUSE_CLIENT_OPT"]
-    return ""
+def get_additional_client_options(_args):
+    return os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
 
 
 def get_additional_client_options_url(args):
@@ -3359,6 +3350,10 @@ if __name__ == "__main__":
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " "
         else:
             os.environ["CLICKHOUSE_CLIENT_OPT"] = ""
+
+        os.environ["CLICKHOUSE_CLIENT_OPT"] += " ".join(
+            "--" + option for option in (args.client_option or [])
+        )
 
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
