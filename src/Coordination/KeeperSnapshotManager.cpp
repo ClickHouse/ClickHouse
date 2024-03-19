@@ -477,7 +477,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
 #else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
                                     " is different from actual children size {} for node {}",
-                                    itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+                                    itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
 #endif
                 }
             }
