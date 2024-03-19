@@ -273,14 +273,14 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 ++entries_count;
                 if (result.is_usable)
                 {
-                    if (!skip_read_only_replicas || !result.is_readonly)
+                    if (skip_read_only_replicas && result.is_readonly)
+                        ProfileEvents::increment(ProfileEvents::DistributedConnectionReadOnlyReplica);
+                    else
                     {
                         ++usable_count;
                         if (result.is_up_to_date)
                             ++up_to_date_count;
                     }
-                    else
-                        ProfileEvents::increment(ProfileEvents::DistributedConnectionReadOnlyReplica);
                 }
             }
             else
