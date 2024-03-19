@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include "Analyzer/QueryNode.h"
 
 namespace DB
 {
@@ -382,6 +383,12 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     removeGroupingFunctionSpecializations(query_tree_to_modify);
 
     createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
+
+    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
+    // settings won't break any remote parser. It's also more reasonable since the query settings
+    // are written into the query context and will be sent by the query pipeline.
+    if (auto * query_node = query_tree_to_modify->as<QueryNode>())
+        query_node->clearSettingsChanges();
 
     return query_tree_to_modify;
 }

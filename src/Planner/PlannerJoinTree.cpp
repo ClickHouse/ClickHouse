@@ -1,5 +1,6 @@
 #include <Planner/PlannerJoinTree.h>
 
+#include "Common/logger_useful.h"
 #include <Common/scope_guard_safe.h>
 
 #include <Columns/ColumnAggregateFunction.h>
@@ -63,6 +64,7 @@
 #include <Planner/Utils.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -523,6 +525,7 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
         return {};
 
     auto const & storage_id = storage->getStorageID();
+    LOG_DEBUG(&Poco::Logger::get("Planner"), "{}", storage_id.getFullNameNotQuoted());
 
     ASTPtr additional_filter_ast;
     for (const auto & additional_filter : additional_filters)
@@ -542,6 +545,8 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
             break;
         }
     }
+
+    LOG_DEBUG(&Poco::Logger::get("Planner"), "{}", additional_filter_ast != nullptr);
 
     if (!additional_filter_ast)
         return {};
@@ -847,6 +852,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 const auto & table_expression_alias = table_expression->getOriginalAlias();
                 auto additional_filters_info
                     = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context);
+                if (additional_filters_info.actions)
+                    LOG_DEBUG(&Poco::Logger::get("Planner"), "{}", additional_filters_info.actions->dumpDAG());
                 add_filter(additional_filters_info, "additional filter");
 
                 from_stage = storage->getQueryProcessingStage(
