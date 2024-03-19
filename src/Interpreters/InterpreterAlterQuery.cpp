@@ -140,7 +140,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         if (!alter.isDropPartitionAlter())
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only DROP/DETACHED PARTITION is supported currently");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Currently only DROP/DETACHED PARTITION is supported");
         }
         auto query_clone = query_ptr->clone();
         auto * alter_ast_ptr = query_clone->as<ASTAlterQuery>();
