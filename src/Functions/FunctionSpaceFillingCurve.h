@@ -65,7 +65,7 @@ public:
             const auto & arg = arguments[i];
             if (!WhichDataType(arg).isNativeUInt())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}, should be a native UInt",
+                    "Illegal type {} of argument for function {}, should be a native UInt",
                     arg->getName(), getName());
         }
         return std::make_shared<DataTypeUInt64>();
@@ -91,11 +91,11 @@ public:
         const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         if (!col_const)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column type {} of function {}, should be a constant (UInt or Tuple)",
+                "Illegal column type {} for function {}, should be a constant (UInt or Tuple)",
                 arguments[0].type->getName(), getName());
         if (!WhichDataType(arguments[1].type).isNativeUInt())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column type {} of function {}, should be a native UInt",
+                "Illegal column type {} for function {}, should be a native UInt",
                 arguments[1].type->getName(), getName());
         const auto * mask = typeid_cast<const ColumnTuple *>(col_const->getDataColumnPtr().get());
         if (mask)
@@ -108,7 +108,7 @@ public:
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column type {} of function {}, should be UInt or Tuple",
+                "Illegal column type {} for function {}, should be UInt or Tuple",
                 arguments[0].type->getName(), getName());
         if (tuple_size > max_dimensions || tuple_size < 1)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
