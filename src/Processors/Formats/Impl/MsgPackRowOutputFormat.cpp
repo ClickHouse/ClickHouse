@@ -155,8 +155,8 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         case TypeIndex::String:
         {
             const std::string_view & string = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
-            packer.pack_bin(static_cast<unsigned>(string.size()));
-            packer.pack_bin_body(string.data(), static_cast<unsigned>(string.size()));
+            packer.pack_str(static_cast<unsigned>(string.size()));
+            packer.pack_str_body(string.data(), static_cast<unsigned>(string.size()));
             return;
         }
         case TypeIndex::FixedString:
@@ -263,7 +263,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
                     writeText(uuid_column.getElement(row_num), buf);
                     std::string_view uuid_text = buf.stringView();
                     packer.pack_str(static_cast<unsigned>(uuid_text.size()));
-                    packer.pack_bin_body(uuid_text.data(), static_cast<unsigned>(uuid_text.size()));
+                    packer.pack_str_body(uuid_text.data(), static_cast<unsigned>(uuid_text.size()));
                     return;
                 }
                 case FormatSettings::MsgPackUUIDRepresentation::EXT:
