@@ -566,7 +566,8 @@ struct ContextSharedPart : boost::noncopyable
             std::lock_guard lock(mutex);
             delete_async_insert_queue = std::move(async_insert_queue);
         }
-        delete_async_insert_queue->flushAndShutdown();
+        if (delete_async_insert_queue)
+            delete_async_insert_queue->flushAndShutdown();
 
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
