@@ -521,7 +521,7 @@ public:
             }
         }
 
-        chassert(nullable_filters.size() > 0);
+        chassert(!nullable_filters.empty());
         bool found_one = false;
         if (nullable_filters.size() == 1)
         {
