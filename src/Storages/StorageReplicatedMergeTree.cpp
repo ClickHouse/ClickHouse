@@ -673,7 +673,8 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         /// they will happen on each replica, so we can check only in-memory info.
         auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id, &mutation_ids);
         checkMutationStatus(mutation_status, mutation_ids);
-        chassert(mutation_status.is_done);
+        /// Mutation should be done or we should throw exception
+        chassert(mutation_status->is_done);
     }
 
     if (!inactive_replicas.empty())
