@@ -336,7 +336,7 @@ public:
 
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
     /// Execution of first then second parts on block is equivalent to execution of initial DAG.
-    /// Inputs and outputs of original DAG are splitted between the first and the second DAGs.
+    /// Inputs and outputs of original DAG are split between the first and the second DAGs.
     /// Intermediate result can apper in first outputs and second inputs.
     /// Example:
     ///   initial DAG    : (a, b, c, d, e) -> (w, x, y, z)  | 1 a 2 b 3 c 4 d 5 e 6      ->  1 2 3 4 5 6 w x y z
