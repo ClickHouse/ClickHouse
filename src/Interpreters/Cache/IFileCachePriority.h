@@ -41,6 +41,15 @@ public:
 
         bool isEvicting(const CachePriorityGuard::Lock &) const { return evicting; }
         bool isEvicting(const LockedKey &) const { return evicting; }
+        /// This does not look good to have isEvicting with two options for locks,
+        /// but still it is valid as we do setEvicting always under both of them.
+        /// (Well, not always - only always for setting it to True,
+        /// but for False we have lower guarantees and allow a logical race,
+        /// physical race is not possible because the value is atomic).
+        /// We can avoid this ambiguity for isEvicting by introducing
+        /// a separate lock `EntryGuard::Lock`, it will make this part of code more coherent,
+        /// but it will introduce one more mutex while it is avoidable.
+        /// Introducing one more mutex just for coherency does not win the trade-off (isn't it?).
         void setEvicting(bool evicting_, const LockedKey * locked_key, const CachePriorityGuard::Lock * lock) const
         {
             if (evicting_ && (!locked_key || !lock))

@@ -25,7 +25,7 @@ azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
 cache_policy=""
-if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
+if [ $(($RANDOM%2)) -eq 1 ]; then
     cache_policy="SLRU"
 else
     cache_policy="LRU"
@@ -33,12 +33,12 @@ fi
 
 echo "Using cache policy: $cache_policy"
 
-#if [ "$cache_policy" = "SLRU" ]; then
-#    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
-#    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
-#    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
-#    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
-#fi
+if [ "$cache_policy" = "SLRU" ]; then
+    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
+    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+fi
 
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
     # It is not needed, we will explicitly create tables on s3.

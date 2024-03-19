@@ -867,7 +867,7 @@ bool FileCache::tryReserve(
         /// then we need to make sure that this fact that we fit in cache by size
         /// remains true after we release the lock and take it again.
         /// For this purpose we create a HoldSpace holder which makes sure that the space is hold in the meantime.
-        /// We substract reserve_stat.stat.releasable_size from the hold space,
+        /// We subtract reserve_stat.stat.releasable_size from the hold space,
         /// because it is the space that will be released, so we do not need to take it into account.
         const size_t hold_size = reached_size_limit
             ? size > reserve_stat.stat.releasable_size ? size - reserve_stat.stat.releasable_size : 0
