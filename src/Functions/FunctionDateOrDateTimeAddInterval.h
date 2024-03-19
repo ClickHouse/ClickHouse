@@ -621,7 +621,7 @@ public:
         }
         else
         {
-            if (!WhichDataType(arguments[0].type).isDateTime())
+            if (!WhichDataType(arguments[0].type).isDateTimeOrDateTime64())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
                     "Must be a DateTime", arguments[0].type->getName(), getName());
 
