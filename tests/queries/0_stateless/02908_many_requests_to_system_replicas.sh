@@ -49,7 +49,7 @@ echo "Making $CONCURRENCY requests to system.replicas"
 
 for i in $(seq 1 $CONCURRENCY)
 do
-    curl "$CLICKHOUSE_URL" --silent --fail --show-error --data "SELECT * FROM system.replicas WHERE database=currentDatabase() FORMAT Null;" 2>&1 || echo "query $i failed" &
+    curl "$CLICKHOUSE_URL" --silent --fail --show-error --data "SELECT * FROM system.replicas WHERE database=currentDatabase() FORMAT Null SETTINGS log_comment='02908_many_requests';" &>/dev/null &
 done
 
 echo "Query system.replicas while waiting for other concurrent requests to finish"
@@ -59,3 +59,12 @@ curl "$CLICKHOUSE_URL" --silent --fail --show-error --data "SELECT sum(lost_part
 curl "$CLICKHOUSE_URL" --silent --fail --show-error --data "SELECT sum(is_leader) FROM system.replicas WHERE database=currentDatabase();" 2>&1;
 
 wait;
+
+$CLICKHOUSE_CLIENT -nq "
+SYSTEM FLUSH LOGS;
+
+-- without optimisation there are ~350K zk requests
+SELECT sum(ProfileEvents['ZooKeeperTransactions']) < 30000
+  FROM system.query_log
+ WHERE current_database=currentDatabase() AND log_comment='02908_many_requests';
+"
