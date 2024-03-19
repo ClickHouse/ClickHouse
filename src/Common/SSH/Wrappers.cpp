@@ -2,13 +2,13 @@
 # if USE_SSH
 #    include <stdexcept>
 
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wreserved-macro-identifier"
-#    pragma GCC diagnostic ignored "-Wreserved-identifier"
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wreserved-macro-identifier"
+#    pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #    include <libssh/libssh.h>
 
-#    pragma GCC diagnostic pop
+#    pragma clang diagnostic pop
 
 namespace
 {

@@ -11,15 +11,15 @@ namespace DB
 
 bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_rename("RENAME");
-    ParserKeyword s_rename_table("RENAME TABLE");
-    ParserKeyword s_exchange_tables("EXCHANGE TABLES");
-    ParserKeyword s_rename_dictionary("RENAME DICTIONARY");
-    ParserKeyword s_exchange_dictionaries("EXCHANGE DICTIONARIES");
-    ParserKeyword s_rename_database("RENAME DATABASE");
-    ParserKeyword s_if_exists("IF EXISTS");
-    ParserKeyword s_to("TO");
-    ParserKeyword s_and("AND");
+    ParserKeyword s_rename(Keyword::RENAME);
+    ParserKeyword s_rename_table(Keyword::RENAME_TABLE);
+    ParserKeyword s_exchange_tables(Keyword::EXCHANGE_TABLES);
+    ParserKeyword s_rename_dictionary(Keyword::RENAME_DICTIONARY);
+    ParserKeyword s_exchange_dictionaries(Keyword::EXCHANGE_DICTIONARIES);
+    ParserKeyword s_rename_database(Keyword::RENAME_DATABASE);
+    ParserKeyword s_if_exists(Keyword::IF_EXISTS);
+    ParserKeyword s_to(Keyword::TO);
+    ParserKeyword s_and(Keyword::AND);
     ParserToken s_comma(TokenType::Comma);
 
     bool exchange = false;
@@ -39,20 +39,19 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         String cluster_str;
-        if (ParserKeyword{"ON"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
         {
             if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                 return false;
         }
+        ASTRenameQuery::Elements rename_elements;
+        rename_elements.emplace_back();
+        rename_elements.back().if_exists = if_exists;
+        rename_elements.back().from.database = from_db;
+        rename_elements.back().to.database = to_db;
 
-        auto query = std::make_shared<ASTRenameQuery>();
+        auto query = std::make_shared<ASTRenameQuery>(std::move(rename_elements));
         query->database = true;
-        query->elements.emplace({});
-        query->elements.front().if_exists = if_exists;
-        query->elements.front().from.database = from_db;
-        query->elements.front().to.database = to_db;
-        query->children.push_back(std::move(from_db));
-        query->children.push_back(std::move(to_db));
         query->cluster = cluster_str;
         node = query;
         return true;
@@ -75,9 +74,8 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     const auto ignore_delim = [&] { return exchange ? s_and.ignore(pos) : s_to.ignore(pos); };
 
-    auto query = std::make_shared<ASTRenameQuery>();
 
-    ASTRenameQuery::Elements & elements = query->elements;
+    ASTRenameQuery::Elements elements;
 
     while (true)
     {
@@ -93,24 +91,16 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             || !ignore_delim()
             || !parseDatabaseAndTableAsAST(pos, expected, ref.to.database, ref.to.table))
             return false;
-
-        if (ref.from.database)
-            query->children.push_back(ref.from.database);
-        if (ref.from.table)
-            query->children.push_back(ref.from.table);
-        if (ref.to.database)
-            query->children.push_back(ref.to.database);
-        if (ref.to.table)
-            query->children.push_back(ref.to.table);
     }
 
     String cluster_str;
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
     }
 
+    auto query = std::make_shared<ASTRenameQuery>(std::move(elements));
     query->cluster = cluster_str;
     query->exchange = exchange;
     query->dictionary = dictionary;
