@@ -519,12 +519,12 @@ public:
                                        "but one of them has type {}.", getName(), arguments[i + 1]->getName());
 
             if (!array_type)
-                throw exception;
+                throw exception; /// NOLINT
 
             auto nested_type = array_type->getNestedType();
             WhichDataType which(nested_type);
             if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
-                throw exception;
+                throw exception; /// NOLINT
         }
         return arguments[0];
     }

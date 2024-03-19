@@ -236,6 +236,14 @@ SELECT accurateCastOrNull(1.123456789, 'Float32');
 
 SELECT accurateCastOrDefault(-1, 'UInt64', 0::UInt64);
 
+-- If this parameter is omitted, it is assumed to be the default value of the corresponding data type:
+
+SELECT accurateCastOrDefault(-1, 'UInt64');
+SELECT accurateCastOrDefault(-1, 'DateTime');
+
+-- Unfortunately, this does not work as expected: SELECT accurateCastOrDefault(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$);
+-- https://github.com/ClickHouse/ClickHouse/issues/61495
+
 -- These functions are case-sensitive, and there are no corresponding operators:
 
 SELECT ACCURATECAST(1, 'String'); -- { serverError UNKNOWN_FUNCTION }.
@@ -286,12 +294,14 @@ SELECT toString(1710612085::DateTime);
 
 SELECT toString(1710612085::DateTime, tz) FROM Values('tz String', 'Europe/Amsterdam', 'America/Los_Angeles');
 
--- Functions converting to numeric types, date and datetime, IP and UUID, also have versions with -OrNull and -OrZero fallbacks,
+-- Functions converting to numeric types, date and datetime, IP and UUID, also have versions with -OrNull, -OrZero, and -OrDefault fallbacks,
 -- that don't throw exceptions on parsing errors.
 -- They use the same rules to the accurateCast operator:
 
 SELECT toUInt8OrNull('123'), toUInt8OrNull('-123'), toUInt8OrNull('1234'), toUInt8OrNull(' 123');
 SELECT toUInt8OrZero('123'), toUInt8OrZero('-123'), toUInt8OrZero('1234'), toUInt8OrZero(' 123');
+SELECT toUInt8OrDefault('123', 10), toUInt8OrDefault('-123', 10), toUInt8OrDefault('1234', 10), toUInt8OrDefault(' 123', 10);
+SELECT toUInt8OrDefault('123'), toUInt8OrDefault('-123'), toUInt8OrDefault('1234'), toUInt8OrDefault(' 123');
 
 SELECT toTypeName(toUInt8OrNull('123')), toTypeName(toUInt8OrZero('123'));
 

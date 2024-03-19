@@ -66,7 +66,7 @@ namespace
 
         String error_message;
         const char * pos = string_query.data();
-        auto ast = tryParseQuery(parser, pos, pos + string_query.size(), error_message, false, "", false, 0, 0);
+        auto ast = tryParseQuery(parser, pos, pos + string_query.size(), error_message, false, "", false, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
 
         if (!ast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse grant query. Error: {}", error_message);

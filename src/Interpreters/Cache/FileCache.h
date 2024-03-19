@@ -205,6 +205,7 @@ private:
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
+    std::atomic<bool> cache_is_being_resized = false;
 
     std::mutex apply_settings_mutex;
 

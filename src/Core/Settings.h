@@ -175,6 +175,7 @@ class IColumn;
     M(Bool, enable_positional_arguments, true, "Enable positional arguments in ORDER BY, GROUP BY and LIMIT BY", 0) \
     M(Bool, enable_extended_results_for_datetime_functions, false, "Enable date functions like toLastDayOfMonth return Date32 results (instead of Date results) for Date32/DateTime64 arguments.", 0) \
     M(Bool, allow_nonconst_timezone_arguments, false, "Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()", 0) \
+    M(Bool, function_locate_has_mysql_compatible_argument_order, true, "Function locate() has arguments (needle, haystack[, start_pos]) like in MySQL instead of (haystack, needle[, start_pos]) like function position()", 0) \
     \
     M(Bool, group_by_use_nulls, false, "Treat columns mentioned in ROLLUP, CUBE or GROUPING SETS as Nullable", 0) \
     \
@@ -607,6 +608,7 @@ class IColumn;
     M(Bool, use_compact_format_in_distributed_parts_names, true, "Changes format of directories names for distributed table insert parts.", 0) \
     M(Bool, validate_polygons, true, "Throw exception if polygon is invalid in function pointInPolygon (e.g. self-tangent, self-intersecting). If the setting is false, the function will accept invalid polygons but may silently return wrong result.", 0) \
     M(UInt64, max_parser_depth, DBMS_DEFAULT_MAX_PARSER_DEPTH, "Maximum parser depth (recursion depth of recursive descend parser).", 0) \
+    M(UInt64, max_parser_backtracks, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, "Maximum parser backtracking (how many times it tries different alternatives in the recursive descend parsing process).", 0) \
     M(Bool, allow_settings_after_format_in_insert, false, "Allow SETTINGS after FORMAT, but note, that this is not always safe (note: this is a compatibility setting).", 0) \
     M(Seconds, periodic_live_view_refresh, 60, "Interval after which periodically refreshed live view is forced to refresh.", 0) \
     M(Bool, transform_null_in, false, "If enabled, NULL values will be matched with 'IN' operator as if they are considered equal.", 0) \
@@ -839,6 +841,9 @@ class IColumn;
     M(Bool, compatibility_ignore_auto_increment_in_create_table, false, "Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return error. It simplifies migration from MySQL", 0) \
     M(Bool, multiple_joins_try_to_keep_original_names, false, "Do not add aliases to top level expression list on multiple joins rewrite", 0) \
     M(Bool, optimize_sorting_by_input_stream_properties, true, "Optimize sorting by sorting properties of input stream", 0) \
+    M(UInt64, keeper_max_retries, 10, "Max retries for general keeper operations", 0) \
+    M(UInt64, keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for general keeper operations", 0) \
+    M(UInt64, keeper_retry_max_backoff_ms, 5000, "Max backoff timeout for general keeper operations", 0) \
     M(UInt64, insert_keeper_max_retries, 20, "Max retries for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_max_backoff_ms, 10000, "Max backoff timeout for keeper operations during insert", 0) \
@@ -1193,7 +1198,6 @@ class IColumn;
     FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
 
-/// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
 
 
@@ -1238,7 +1242,6 @@ private:
 /*
  * User-specified file format settings for File and URL engines.
  */
-/// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 DECLARE_SETTINGS_TRAITS(FormatFactorySettingsTraits, LIST_OF_ALL_FORMAT_SETTINGS)
 
 struct FormatFactorySettings : public BaseSettings<FormatFactorySettingsTraits>

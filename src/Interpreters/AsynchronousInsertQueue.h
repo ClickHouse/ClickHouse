@@ -117,6 +117,17 @@ private:
                 return DataKind::Parsed;
         }
 
+        bool empty() const
+        {
+            return std::visit([]<typename T>(const T & arg)
+            {
+                if constexpr (std::is_same_v<T, Block>)
+                    return arg.rows() == 0;
+                else
+                    return arg.empty();
+            }, *this);
+        }
+
         const String * asString() const { return std::get_if<String>(this); }
         const Block * asBlock() const { return std::get_if<Block>(this); }
     };
@@ -140,7 +151,9 @@ private:
                 const String & format_,
                 MemoryTracker * user_memory_tracker_);
 
+            void resetChunk();
             void finish(std::exception_ptr exception_ = nullptr);
+
             std::future<void> getFuture() { return promise.get_future(); }
             bool isFinished() const { return finished; }
 
@@ -282,7 +295,7 @@ private:
 public:
     auto getQueueLocked(size_t shard_num) const
     {
-        auto & shard = queue_shards[shard_num];
+        const auto & shard = queue_shards[shard_num];
         std::unique_lock lock(shard.mutex);
         return std::make_pair(std::ref(shard.queue), std::move(lock));
     }
