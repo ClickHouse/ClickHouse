@@ -359,7 +359,8 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     {
         /// Remove child from function.arguments if it's '*' because countIf(*) is not supported.
         /// See https://github.com/ClickHouse/ClickHouse/issues/61004
-        std::erase_if(function.arguments->children, [](const ASTPtr & child) {
+        std::erase_if(function.arguments->children, [] (const ASTPtr & child)
+        {
             return typeid_cast<const ASTAsterisk *>(child.get());
         });
     }
