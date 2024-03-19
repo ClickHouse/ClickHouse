@@ -18,12 +18,6 @@ namespace ProfileEvents
 namespace DB
 {
 
-struct WriteBufferFromAzureBlobStorage::PartData
-{
-    Memory<> memory;
-    size_t data_size = 0;
-};
-
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
@@ -108,53 +102,31 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
 void WriteBufferFromAzureBlobStorage::nextImpl()
 {
     task_tracker->waitIfAny();
-
-    reallocateBuffer();
-    detachBuffer();
-
-    while (!detached_part_data.empty())
-    {
-        writePart(std::move(detached_part_data.front()));
-        detached_part_data.pop_front();
-    }
-
+    writePart();
     allocateBuffer();
 }
 
 void WriteBufferFromAzureBlobStorage::allocateBuffer()
 {
     buffer_allocation_policy->nextBuffer();
-    memory = Memory(buffer_allocation_policy->getBufferSize());
+    auto size = buffer_allocation_policy->getBufferSize();
+
+    if (buffer_allocation_policy->getBufferNumber() == 1)
+    {
+        size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size);
+    }
+
+    memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
 
-
-void WriteBufferFromAzureBlobStorage::reallocateBuffer()
-{
-    if (available() > 0)
-        return;
-
-    if (memory.size() == buffer_allocation_policy->getBufferSize())
-        return;
-
-    memory.resize(buffer_allocation_policy->getBufferSize());
-
-    WriteBuffer::set(memory.data(), memory.size());
-
-    chassert(offset() == 0);
-}
-
-void WriteBufferFromAzureBlobStorage::detachBuffer()
+void WriteBufferFromAzureBlobStorage::writePart()
 {
     size_t data_size = size_t(position() - memory.data());
-    auto buf = std::move(memory);
+    auto data = std::move(memory);
     WriteBuffer::set(nullptr, 0);
-    detached_part_data.push_back({std::move(buf), data_size});
-}
 
-void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage::PartData && data)
-{
-    if (data.data_size == 0)
+    if (data_size == 0)
         return;
 
     auto upload_worker = [&] ()
@@ -162,11 +134,11 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
         const std::string & block_id = block_ids.emplace_back(getRandomASCIIString(64));
 
-        Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(data.memory.data()), data.data_size);
-        execWithRetry([&](){ block_blob_client.StageBlock(block_id, memory_stream); }, max_unexpected_write_error_retries, data.data_size);
+        Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(data.data()), data_size);
+        execWithRetry([&](){ block_blob_client.StageBlock(block_id, memory_stream); }, max_unexpected_write_error_retries, data_size);
 
         if (write_settings.remote_throttler)
-            write_settings.remote_throttler->add(data.data_size, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+            write_settings.remote_throttler->add(data_size, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
     };
 
     task_tracker->add(std::move(upload_worker));

@@ -48,12 +48,8 @@ public:
 private:
     struct PartData;
 
-    void writePart(WriteBufferFromAzureBlobStorage::PartData && data);
-    void detachBuffer();
+    void writePart();
     void allocateBuffer();
-    void allocateFirstBuffer();
-    void reallocateFirstBuffer();
-    void reallocateBuffer();
 
     void finalizeImpl() override;
     void execWithRetry(std::function<void()> func, size_t num_tries, size_t cost = 0);
@@ -81,7 +77,6 @@ private:
     bool first_buffer=true;
 
     std::unique_ptr<TaskTracker> task_tracker;
-    std::deque<PartData> detached_part_data;
 };
 
 }
