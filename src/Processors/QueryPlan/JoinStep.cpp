@@ -44,10 +44,8 @@ JoinStep::JoinStep(
     JoinPtr join_,
     size_t max_block_size_,
     size_t max_streams_,
-    bool keep_left_read_in_order_,
-    int null_direction_hint_)
-    : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_),
-    null_direction_hint(null_direction_hint_)
+    bool keep_left_read_in_order_)
+    : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_)
 {
     updateInputStreams(DataStreams{left_stream_, right_stream_});
 }
@@ -60,7 +58,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (join->pipelineType() == JoinPipelineType::YShaped)
     {
         auto joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
-            std::move(pipelines[0]), std::move(pipelines[1]), join, output_stream->header, max_block_size, null_direction_hint, &processors);
+            std::move(pipelines[0]), std::move(pipelines[1]), join, output_stream->header, max_block_size, &processors);
         joined_pipeline->resize(max_streams);
         return joined_pipeline;
     }

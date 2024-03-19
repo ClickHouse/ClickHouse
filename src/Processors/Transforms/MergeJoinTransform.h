@@ -227,8 +227,7 @@ private:
 class MergeJoinAlgorithm final : public IMergingAlgorithm
 {
 public:
-    explicit MergeJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_,
-                                int null_direction_hint = 1);
+    explicit MergeJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_);
 
     const char * getName() const override { return "MergeJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -259,7 +258,7 @@ private:
     JoinPtr table_join;
 
     size_t max_block_size;
-    int null_direction_hint;
+    int null_direction_hint = 1;
 
     struct Statistic
     {
@@ -284,7 +283,6 @@ public:
         const Blocks & input_headers,
         const Block & output_header,
         size_t max_block_size,
-        int null_direction_hint,
         UInt64 limit_hint = 0);
 
     String getName() const override { return "MergeJoinTransform"; }

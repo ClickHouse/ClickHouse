@@ -349,7 +349,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     JoinPtr join,
     const Block & out_header,
     size_t max_block_size,
-    int null_direction_hint,
     Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
@@ -377,7 +376,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     }
     else
     {
-        auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size, null_direction_hint);
+        auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
         return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
     }
 }

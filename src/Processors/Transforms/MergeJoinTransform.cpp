@@ -16,6 +16,7 @@
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
@@ -271,11 +272,9 @@ bool FullMergeJoinCursor::fullyCompleted() const
 MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinPtr table_join_,
     const Blocks & input_headers,
-    size_t max_block_size_,
-    int null_direction_hint_)
+    size_t max_block_size_)
     : table_join(table_join_)
     , max_block_size(max_block_size_)
-    , null_direction_hint(null_direction_hint_)
     , log(getLogger("MergeJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
@@ -305,6 +304,13 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         size_t right_idx = input_headers[1].getPositionByName(right_key);
         left_to_right_key_remap[left_idx] = right_idx;
     }
+
+    auto smjPtr = typeid_cast<const FullSortingMergeJoin *>(table_join.get());
+    if (smjPtr)
+    {
+        null_direction_hint = smjPtr->getNullDirection();
+    }
+
 }
 
 void MergeJoinAlgorithm::logElapsed(double seconds)
@@ -448,7 +454,7 @@ void dispatchKind(JoinKind kind, Args && ... args)
     else if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
         return Impl<JoinKind::Full>::join(std::forward<Args>(args)...);
     else
-         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
 }
 
 std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState()
@@ -856,7 +862,6 @@ MergeJoinTransform::MergeJoinTransform(
         const Blocks & input_headers,
         const Block & output_header,
         size_t max_block_size,
-        int null_direction_hint_,
         UInt64 limit_hint_)
     : IMergingTransform<MergeJoinAlgorithm>(
         input_headers,
@@ -865,7 +870,7 @@ MergeJoinTransform::MergeJoinTransform(
         limit_hint_,
         /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
-        table_join, input_headers, max_block_size, null_direction_hint_)
+        table_join, input_headers, max_block_size)
     , log(getLogger("MergeJoinTransform"))
 {
     LOG_TRACE(log, "Use MergeJoinTransform");

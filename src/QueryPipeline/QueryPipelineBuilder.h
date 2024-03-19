@@ -137,7 +137,6 @@ public:
         JoinPtr table_join,
         const Block & out_header,
         size_t max_block_size,
-        int null_direction_hint,
         Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.
