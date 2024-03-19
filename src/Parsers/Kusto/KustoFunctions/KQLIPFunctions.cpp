@@ -34,10 +34,10 @@ bool Ipv4Compare::convertImpl(String & out, IParser::Pos & pos)
         "sign(IPv4StringToNumOrNull(toString((tupleElement(IPv4CIDRToRange(assumeNotNull(lhs_ip_{5}), "
         "toUInt8(min2({4}, min2(assumeNotNull(lhs_mask_{5}), assumeNotNull(rhs_mask_{5})))) as mask_{5}), 1))))"
         "   - IPv4StringToNumOrNull(toString((tupleElement(IPv4CIDRToRange(assumeNotNull(rhs_ip_{5}), mask_{5}), 1))))))",
-        kqlCallToExpression("parse_ipv4", {lhs}, pos.max_depth),
-        kqlCallToExpression("ipv4_netmask_suffix", {lhs}, pos.max_depth),
-        kqlCallToExpression("parse_ipv4", {rhs}, pos.max_depth),
-        kqlCallToExpression("ipv4_netmask_suffix", {rhs}, pos.max_depth),
+        kqlCallToExpression("parse_ipv4", {lhs}, pos.max_depth, pos.max_backtracks),
+        kqlCallToExpression("ipv4_netmask_suffix", {lhs}, pos.max_depth, pos.max_backtracks),
+        kqlCallToExpression("parse_ipv4", {rhs}, pos.max_depth, pos.max_backtracks),
+        kqlCallToExpression("ipv4_netmask_suffix", {rhs}, pos.max_depth, pos.max_backtracks),
         mask ? *mask : "32",
         generateUniqueIdentifier());
     return true;
@@ -56,8 +56,8 @@ bool Ipv4IsInRange::convertImpl(String & out, IParser::Pos & pos)
         "or isNull({1} as range_start_ip_{3}) or isNull({2} as range_mask_{3}), null, "
         "bitXor(range_start_ip_{3}, bitAnd(ip_{3}, bitNot(toUInt32(intExp2(toInt32(32 - range_mask_{3})) - 1)))) = 0) ",
         ip_address,
-        kqlCallToExpression("parse_ipv4", {ip_range}, pos.max_depth),
-        kqlCallToExpression("ipv4_netmask_suffix", {ip_range}, pos.max_depth),
+        kqlCallToExpression("parse_ipv4", {ip_range}, pos.max_depth, pos.max_backtracks),
+        kqlCallToExpression("ipv4_netmask_suffix", {ip_range}, pos.max_depth, pos.max_backtracks),
         generateUniqueIdentifier());
     return true;
 }
@@ -71,7 +71,7 @@ bool Ipv4IsMatch::convertImpl(String & out, IParser::Pos & pos)
     const auto lhs = getArgument(function_name, pos, ArgumentState::Raw);
     const auto rhs = getArgument(function_name, pos, ArgumentState::Raw);
     const auto mask = getOptionalArgument(function_name, pos, ArgumentState::Raw);
-    out = std::format("equals({}, 0)", kqlCallToExpression("ipv4_compare", {lhs, rhs, mask ? *mask : "32"}, pos.max_depth));
+    out = std::format("equals({}, 0)", kqlCallToExpression("ipv4_compare", {lhs, rhs, mask ? *mask : "32"}, pos.max_depth, pos.max_backtracks));
     return true;
 }
 
@@ -196,7 +196,7 @@ bool Ipv6IsMatch::convertImpl(String & out, IParser::Pos & pos)
     const auto lhs = getArgument(function_name, pos, ArgumentState::Raw);
     const auto rhs = getArgument(function_name, pos, ArgumentState::Raw);
     const auto mask = getOptionalArgument(function_name, pos, ArgumentState::Raw);
-    out = std::format("equals({}, 0)", kqlCallToExpression("ipv6_compare", {lhs, rhs, mask ? *mask : "128"}, pos.max_depth));
+    out = std::format("equals({}, 0)", kqlCallToExpression("ipv6_compare", {lhs, rhs, mask ? *mask : "128"}, pos.max_depth, pos.max_backtracks));
     return true;
 }
 
@@ -228,9 +228,9 @@ bool ParseIpv6Mask::convertImpl(String & out, IParser::Pos & pos)
     const auto unique_identifier = generateUniqueIdentifier();
     out = std::format(
         "if(empty({0} as ipv4_{3}), {1}, {2})",
-        kqlCallToExpression("format_ipv4", {"trim_start('::', " + ip_address + ")", mask + " - 96"}, pos.max_depth),
-        kqlCallToExpression("parse_ipv6", {"strcat(tostring(parse_ipv6(" + ip_address + ")), '/', tostring(" + mask + "))"}, pos.max_depth),
-        kqlCallToExpression("parse_ipv6", {"ipv4_" + unique_identifier}, pos.max_depth),
+        kqlCallToExpression("format_ipv4", {"trim_start('::', " + ip_address + ")", mask + " - 96"}, pos.max_depth, pos.max_backtracks),
+        kqlCallToExpression("parse_ipv6", {"strcat(tostring(parse_ipv6(" + ip_address + ")), '/', tostring(" + mask + "))"}, pos.max_depth, pos.max_backtracks),
+        kqlCallToExpression("parse_ipv6", {"ipv4_" + unique_identifier}, pos.max_depth, pos.max_backtracks),
         unique_identifier);
     return true;
 }
@@ -247,9 +247,9 @@ bool FormatIpv4::convertImpl(String & out, IParser::Pos & pos)
         "ifNull(if(isNotNull(toUInt32OrNull(toString({0})) as param_as_uint32_{3}) and toTypeName({0}) = 'String' or ({1}) < 0 "
         "or isNull(ifNull(param_as_uint32_{3}, {2}) as ip_as_number_{3}), null, "
         "IPv4NumToString(bitAnd(ip_as_number_{3}, bitNot(toUInt32(intExp2(toInt32(32 - ({1}))) - 1))))), '')",
-        ParserKQLBase::getExprFromToken(ip_address, pos.max_depth),
+        ParserKQLBase::getExprFromToken(ip_address, pos.max_depth, pos.max_backtracks),
         mask ? *mask : "32",
-        kqlCallToExpression("parse_ipv4", {"tostring(" + ip_address + ")"}, pos.max_depth),
+        kqlCallToExpression("parse_ipv4", {"tostring(" + ip_address + ")"}, pos.max_depth, pos.max_backtracks),
         generateUniqueIdentifier());
     return true;
 }
@@ -266,10 +266,10 @@ bool FormatIpv4Mask::convertImpl(String & out, IParser::Pos & pos)
     out = std::format(
         "if(empty({1} as formatted_ip_{2}) or position(toTypeName({0}), 'Int') = 0 or not {0} between 0 and 32, '', "
         "concat(formatted_ip_{2}, '/', toString(toInt64(min2({0}, ifNull({3} as suffix_{2}, 32))))))",
-        ParserKQLBase::getExprFromToken(calculated_mask, pos.max_depth),
-        kqlCallToExpression("format_ipv4", {ip_address, calculated_mask}, pos.max_depth),
+        ParserKQLBase::getExprFromToken(calculated_mask, pos.max_depth, pos.max_backtracks),
+        kqlCallToExpression("format_ipv4", {ip_address, calculated_mask}, pos.max_depth, pos.max_backtracks),
         generateUniqueIdentifier(),
-        kqlCallToExpression("ipv4_netmask_suffix", {"tostring(" + ip_address + ")"}, pos.max_depth));
+        kqlCallToExpression("ipv4_netmask_suffix", {"tostring(" + ip_address + ")"}, pos.max_depth, pos.max_backtracks));
     return true;
 }
 }

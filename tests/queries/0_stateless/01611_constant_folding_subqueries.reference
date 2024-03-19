@@ -5,7 +5,13 @@ SELECT (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n) FO
 1,10
 EXPLAIN SYNTAX SELECT (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n);
 SELECT
-    identity(_CAST(0, \'Nullable(UInt64)\')) AS n,
+    __scalarSubqueryResult(_CAST(0, \'Nullable(UInt64)\')) AS n,
     toUInt64(10 / n)
 SELECT * FROM (WITH (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n) as q SELECT * FROM system.one WHERE q > 0);
 0
+SELECT * FROM (SELECT (SELECT '\d[a-z]') AS n, extractAll('5abc', assumeNotNull(n))) FORMAT CSV;
+"\d[a-z]","['5a']"
+EXPLAIN SYNTAX SELECT (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n);
+SELECT
+    __scalarSubqueryResult(_CAST(0, \'Nullable(UInt64)\')) AS n,
+    toUInt64(10 / n)

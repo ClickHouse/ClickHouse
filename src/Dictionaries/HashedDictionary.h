@@ -6,7 +6,7 @@
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 #include <Dictionaries/HashedDictionaryCollectionType.h>
 #include <Dictionaries/HashedDictionaryCollectionTraits.h>
@@ -67,6 +67,7 @@ struct HashedDictionaryConfiguration
     const bool require_nonempty;
     const DictionaryLifetime lifetime;
     bool use_async_executor = false;
+    const std::chrono::seconds load_timeout{0};
 };
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>

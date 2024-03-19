@@ -71,13 +71,13 @@ public:
     /** Construct query analysis pass for query or union analysis.
       * Available columns are extracted from query node join tree.
       */
-    QueryAnalysisPass() = default;
+    explicit QueryAnalysisPass(bool only_analyze_ = false);
 
     /** Construct query analysis pass for expression or list of expressions analysis.
       * Available expression columns are extracted from table expression.
       * Table expression node must have query, union, table, table function type.
       */
-    explicit QueryAnalysisPass(QueryTreeNodePtr table_expression_);
+    explicit QueryAnalysisPass(QueryTreeNodePtr table_expression_, bool only_analyze_ = false);
 
     String getName() override
     {
@@ -93,6 +93,7 @@ public:
 
 private:
     QueryTreeNodePtr table_expression;
+    const bool only_analyze;
 };
 
 }

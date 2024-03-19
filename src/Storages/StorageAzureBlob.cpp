@@ -41,6 +41,10 @@
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 using namespace Azure::Storage::Blobs;
 
 namespace CurrentMetrics
@@ -491,12 +495,11 @@ StorageAzureBlob::StorageAzureBlob(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 
     StoredObjects objects;
     for (const auto & key : configuration.blobs_paths)
         objects.emplace_back(key);
-
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 void StorageAzureBlob::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
@@ -736,7 +739,7 @@ void StorageAzureBlob::read(
 
     auto this_ptr = std::static_pointer_cast<StorageAzureBlob>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
@@ -772,13 +775,13 @@ void ReadFromAzureBlob::createIterator(const ActionsDAG::Node * predicate)
         /// Iterate through disclosed globs and make a source for each file
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::GlobIterator>(
             storage->object_storage.get(), configuration.container, configuration.blob_path,
-            predicate, storage->virtual_columns, context, nullptr, context->getFileProgressCallback());
+            predicate, storage->getVirtualsList(), context, nullptr, context->getFileProgressCallback());
     }
     else
     {
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::KeysIterator>(
             storage->object_storage.get(), configuration.container, configuration.blobs_paths,
-            predicate, storage->virtual_columns, context, nullptr, context->getFileProgressCallback());
+            predicate, storage->getVirtualsList(), context, nullptr, context->getFileProgressCallback());
     }
 }
 
@@ -884,16 +887,6 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
             object_storage.get(),
             configuration.blobs_paths.back());
     }
-}
-
-NamesAndTypesList StorageAzureBlob::getVirtuals() const
-{
-    return virtual_columns;
-}
-
-Names StorageAzureBlob::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 bool StorageAzureBlob::supportsPartitionBy() const

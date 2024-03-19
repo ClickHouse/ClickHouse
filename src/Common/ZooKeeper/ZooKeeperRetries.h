@@ -5,8 +5,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 
-#include <memory>
-
 namespace DB
 {
 
@@ -122,7 +120,7 @@ public:
 
         iteration_succeeded = false;
         user_error.code = code;
-        user_error.message = std::move(message);
+        user_error.message = message;
         user_error.exception = exception;
         keeper_error = KeeperError{};
     }
@@ -220,8 +218,8 @@ private:
             return false;
         }
 
-        if (process_list_element && !process_list_element->checkTimeLimitSoft())
-            return false;
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
 
         /// retries
         logLastError("will retry due to error");
