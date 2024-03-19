@@ -32,9 +32,10 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/QueueModeColumns.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <ranges>
 
@@ -1267,6 +1268,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
+
+        if (isQueueModeColumn(column_name) && table->isMergeTree())
+        {
+            auto casted_table = std::dynamic_pointer_cast<MergeTreeData>(table);
+            if (const auto & settings = casted_table->getSettings(); settings && settings->queue_mode)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot alter column {}: this column is essential for queue mode", backQuote(column_name));
+        }
 
         if (command.type == AlterCommand::ADD_COLUMN)
         {
