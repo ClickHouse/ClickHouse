@@ -31,6 +31,10 @@ This reduces maintenance effort and avoids redundancy.
 
 ## Configuration Settings and Usage
 
+:::note
+In ClickHouse Cloud, you must use [query level settings](/en/operations/settings/query-level) to edit query cache settings. Editing [config level settings](/en/operations/configuration-files) is currently not supported.
+:::
+
 Setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries of the
 current session should utilize the query cache. For example, the first execution of query
 

@@ -1322,7 +1322,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     Data & data)
 {
-    DataTypePtr type = applyVisitor(FieldToDataType(), literal.value);
+    DataTypePtr type;
+    if (data.getContext()->getSettingsRef().allow_experimental_variant_type && data.getContext()->getSettingsRef().use_variant_as_common_type)
+        type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
+    else
+        type = applyVisitor(FieldToDataType(), literal.value);
+
     const auto value = convertFieldToType(literal.value, *type);
 
     // FIXME why do we have a second pass with a clean sample block over the same
@@ -1414,10 +1419,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             set_key = right_in_operand->getTreeHash(/*ignore_aliases=*/ true);
 
         if (auto set = data.prepared_sets->findSubquery(set_key))
-        {
-            set->markAsINSubquery();
             return set;
-        }
 
         FutureSetFromSubqueryPtr external_table_set;
 
@@ -1464,7 +1466,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         }
 
         return data.prepared_sets->addFromSubquery(
-            set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef(), /*in_subquery=*/true);
+            set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
     }
     else
     {

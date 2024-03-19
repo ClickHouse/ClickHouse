@@ -27,10 +27,17 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
 }
 
+IStorage::IStorage(StorageID storage_id_)
+    : storage_id(std::move(storage_id_))
+    , metadata(std::make_unique<StorageInMemoryMetadata>())
+    , virtuals(std::make_unique<VirtualColumnsDescription>())
+{
+}
+
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Virtual column maybe overridden by real column
-    return !metadata_snapshot->getColumns().has(column_name) && getVirtuals().contains(column_name);
+    return !metadata_snapshot->getColumns().has(column_name) && virtuals.get()->has(column_name);
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -237,11 +244,6 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
     storage_id = new_table_id;
 }
 
-NamesAndTypesList IStorage::getVirtuals() const
-{
-    return {};
-}
-
 Names IStorage::getAllRegisteredNames() const
 {
     Names result;
@@ -303,7 +305,7 @@ void IStorage::backupData(BackupEntriesCollector &, const String &, const std::o
 void IStorage::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> &)
 {
     /// If an inherited class doesn't override restoreDataFromBackup() that means it doesn't backup any data.
-    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup);
+    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup, /*recursive*/ false);
     if (!filenames.empty())
         throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: Folder {} in backup must be empty",
                         getStorageID().getFullTableName(), data_path_in_backup);

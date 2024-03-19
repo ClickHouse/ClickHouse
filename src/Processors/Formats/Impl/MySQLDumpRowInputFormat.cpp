@@ -274,7 +274,8 @@ static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, NamesAndTypesL
     String error;
     const char * start = create_query_str.data();
     const char * end = create_query_str.data() + create_query_str.size();
-    ASTPtr query = tryParseQuery(parser, start, end, error, false, "MySQL create query", false, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr query = tryParseQuery(parser, start, end, error, false, "MySQL create query", false,
+        DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
     if (!query)
         return false;
 
@@ -409,7 +410,7 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
     const auto & type = types[column_idx];
     const auto & serialization = serializations[column_idx];
     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-        return SerializationNullable::deserializeTextQuotedImpl(column, *in, format_settings, serialization);
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization);
 
     serialization->deserializeTextQuoted(column, *in, format_settings);
     return true;

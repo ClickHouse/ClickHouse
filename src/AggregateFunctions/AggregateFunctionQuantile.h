@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 template <typename> class QuantileTiming;
 template <typename> class QuantileGK;
-template <typename> class QuantileDDSketch;
+template <typename> class QuantileDD;
 
 /** Generic aggregate function for calculation of quantiles.
   * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
@@ -64,7 +64,7 @@ private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
-    static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDDSketch<Value>>;
+    static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -334,7 +334,7 @@ struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBF
 struct NameQuantileGK { static constexpr auto name = "quantileGK"; };
 struct NameQuantilesGK { static constexpr auto name = "quantilesGK"; };
 
-struct NameQuantileDDSketch { static constexpr auto name = "quantileDDSketch"; };
-struct NameQuantilesDDSketch { static constexpr auto name = "quantilesDDSketch"; };
+struct NameQuantileDD { static constexpr auto name = "quantileDD"; };
+struct NameQuantilesDD { static constexpr auto name = "quantilesDD"; };
 
 }

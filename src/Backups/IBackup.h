@@ -80,7 +80,7 @@ public:
 
     /// Returns names of entries stored in a specified directory in the backup.
     /// If `directory` is empty or '/' the functions returns entries in the backup's root.
-    virtual Strings listFiles(const String & directory, bool recursive = false) const = 0;
+    virtual Strings listFiles(const String & directory, bool recursive) const = 0;
 
     /// Checks if a specified directory contains any files.
     /// The function returns the same as `!listFiles(directory).empty()`.
@@ -108,20 +108,21 @@ public:
     virtual std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// Copies a file from the backup to a specified destination disk. Returns the number of bytes written.
-    virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path,
-                                  WriteMode write_mode = WriteMode::Rewrite) const = 0;
+    virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const = 0;
 
-    virtual size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path,
-                                  WriteMode write_mode = WriteMode::Rewrite) const = 0;
+    virtual size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const = 0;
 
     /// Puts a new entry to the backup.
     virtual void writeFile(const BackupFileInfo & file_info, BackupEntryPtr entry) = 0;
 
+    /// Whether it's possible to add new entries to the backup in multiple threads.
+    virtual bool supportsWritingInMultipleThreads() const = 0;
+
     /// Finalizes writing the backup, should be called after all entries have been successfully written.
     virtual void finalizeWriting() = 0;
 
-    /// Whether it's possible to add new entries to the backup in multiple threads.
-    virtual bool supportsWritingInMultipleThreads() const = 0;
+    /// Try to remove all files copied to the backup. Used after an exception or it the backup was cancelled.
+    virtual void tryRemoveAllFiles() = 0;
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

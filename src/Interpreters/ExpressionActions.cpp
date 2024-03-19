@@ -180,14 +180,17 @@ static void setLazyExecutionInfo(
                     indexes.insert(i);
             }
 
-            if (!short_circuit_nodes.at(parent).enable_lazy_execution_for_first_argument && node == parent->children[0])
+            for (auto idx : short_circuit_nodes.at(parent).arguments_with_disabled_lazy_execution)
             {
-                /// We shouldn't add 0 index in node info in this case.
-                indexes.erase(0);
-                /// Disable lazy execution for current node only if it's disabled for short-circuit node,
-                /// because we can have nested short-circuit nodes.
-                if (!lazy_execution_infos[parent].can_be_lazy_executed)
-                    lazy_execution_info.can_be_lazy_executed = false;
+                if (idx < parent->children.size() && node == parent->children[idx])
+                {
+                    /// We shouldn't add this index in node info in this case.
+                    indexes.erase(idx);
+                    /// Disable lazy execution for current node only if it's disabled for short-circuit node,
+                    /// because we can have nested short-circuit nodes.
+                    if (!lazy_execution_infos[parent].can_be_lazy_executed)
+                        lazy_execution_info.can_be_lazy_executed = false;
+                }
             }
 
             lazy_execution_info.short_circuit_ancestors_info[parent].insert(indexes.begin(), indexes.end());
@@ -563,7 +566,7 @@ namespace
     };
 }
 
-static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run)
+static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -611,6 +614,13 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
+                if (res_column.column->getDataType() != res_column.type->getColumnType())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected return type from {}. Expected {}. Got {}",
+                        action.node->function->getName(),
+                        res_column.type->getColumnType(),
+                        res_column.column->getDataType());
             }
             break;
         }
@@ -687,14 +697,19 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                                     action.node->result_name);
             }
             else
-                columns[action.result_position] = std::move(inputs[pos]);
+            {
+                if (allow_duplicates_in_input)
+                    columns[action.result_position] = inputs[pos];
+                else
+                    columns[action.result_position] = std::move(inputs[pos]);
+            }
 
             break;
         }
     }
 }
 
-void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) const
+void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input) const
 {
     ExecutionContext execution_context
     {
@@ -715,7 +730,8 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
                 if (execution_context.inputs_pos[input_pos] < 0)
                 {
                     execution_context.inputs_pos[input_pos] = pos;
-                    break;
+                    if (!allow_duplicates_in_input)
+                        break;
                 }
             }
         }
@@ -727,12 +743,8 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
     {
         try
         {
-            executeAction(action, execution_context, dry_run);
+            executeAction(action, execution_context, dry_run, allow_duplicates_in_input);
             checkLimits(execution_context.columns);
-
-            //std::cerr << "Action: " << action.toString() << std::endl;
-            //for (const auto & col : execution_context.columns)
-            //    std::cerr << col.dumpStructure() << std::endl;
         }
         catch (Exception & e)
         {
@@ -743,6 +755,12 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
 
     if (actions_dag->isInputProjected())
     {
+        block.clear();
+    }
+    else if (allow_duplicates_in_input)
+    {
+        /// This case is the same as when the input is projected
+        /// since we do not need any input columns.
         block.clear();
     }
     else
@@ -767,11 +785,11 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
     num_rows = execution_context.num_rows;
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run) const
+void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input) const
 {
     size_t num_rows = block.rows();
 
-    execute(block, num_rows, dry_run);
+    execute(block, num_rows, dry_run, allow_duplicates_in_input);
 
     if (!block)
         block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});

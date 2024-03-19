@@ -20,6 +20,7 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/ParserKQLSummarize.h>
 #include <Parsers/Kusto/ParserKQLTable.h>
+#include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 
@@ -32,20 +33,20 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-bool ParserKQLBase::parseByString(const String expr, ASTPtr & node, const uint32_t max_depth)
+bool ParserKQLBase::parseByString(String expr, ASTPtr & node, uint32_t max_depth, uint32_t max_backtracks)
 {
     Expected expected;
 
     Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
-    IParser::Pos pos(tokens, max_depth);
+    IParser::Pos pos(tokens, max_depth, max_backtracks);
     return parse(pos, node, expected);
 }
 
-bool ParserKQLBase::parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, int32_t max_depth)
+bool ParserKQLBase::parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks)
 {
     Expected expected;
     Tokens token_subquery(query.c_str(), query.c_str() + query.size());
-    IParser::Pos pos_subquery(token_subquery, max_depth);
+    IParser::Pos pos_subquery(token_subquery, max_depth, max_backtracks);
     if (!parser->parse(pos_subquery, select_node, expected))
         return false;
     return true;
@@ -59,33 +60,34 @@ bool ParserKQLBase::setSubQuerySource(ASTPtr & select_query, ASTPtr & source, bo
         if (!select_query || !select_query->as<ASTSelectQuery>()->tables()
             || select_query->as<ASTSelectQuery>()->tables()->as<ASTTablesInSelectQuery>()->children.empty())
             return false;
-        table_expr = select_query->as<ASTSelectQuery>()->tables()->as<ASTTablesInSelectQuery>()->children[0];
+        table_expr = select_query->as<ASTSelectQuery>()->tables()->as<ASTTablesInSelectQuery>()->children.at(0);
         table_expr->as<ASTTablesInSelectQueryElement>()->table_expression
-            = source->as<ASTSelectQuery>()->tables()->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression;
+            = source->as<ASTSelectQuery>()->tables()->children.at(0)->as<ASTTablesInSelectQueryElement>()->table_expression;
+        table_expr->children.at(0) = table_expr->as<ASTTablesInSelectQueryElement>()->table_expression;
         return true;
     }
 
     if (!select_query || select_query->as<ASTTablesInSelectQuery>()->children.empty()
-        || !select_query->as<ASTTablesInSelectQuery>()->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression
+        || !select_query->as<ASTTablesInSelectQuery>()->children.at(0)->as<ASTTablesInSelectQueryElement>()->table_expression
         || select_query->as<ASTTablesInSelectQuery>()
-               ->children[0]
+               ->children.at(0)
                ->as<ASTTablesInSelectQueryElement>()
                ->table_expression->as<ASTTableExpression>()
                ->subquery->children.empty()
         || select_query->as<ASTTablesInSelectQuery>()
-               ->children[0]
+               ->children.at(0)
                ->as<ASTTablesInSelectQueryElement>()
                ->table_expression->as<ASTTableExpression>()
-               ->subquery->children[0]
+               ->subquery->children.at(0)
                ->as<ASTSelectWithUnionQuery>()
                ->list_of_selects->children.empty()
         || select_query->as<ASTTablesInSelectQuery>()
-               ->children[0]
+               ->children.at(0)
                ->as<ASTTablesInSelectQueryElement>()
                ->table_expression->as<ASTTableExpression>()
-               ->subquery->children[0]
+               ->subquery->children.at(0)
                ->as<ASTSelectWithUnionQuery>()
-               ->list_of_selects->children[0]
+               ->list_of_selects->children.at(0)
                ->as<ASTSelectQuery>()
                ->tables()
                ->as<ASTTablesInSelectQuery>()
@@ -93,35 +95,36 @@ bool ParserKQLBase::setSubQuerySource(ASTPtr & select_query, ASTPtr & source, bo
         return false;
 
     table_expr = select_query->as<ASTTablesInSelectQuery>()
-                     ->children[0]
+                     ->children.at(0)
                      ->as<ASTTablesInSelectQueryElement>()
                      ->table_expression->as<ASTTableExpression>()
-                     ->subquery->children[0]
+                     ->subquery->children.at(0)
                      ->as<ASTSelectWithUnionQuery>()
-                     ->list_of_selects->children[0]
+                     ->list_of_selects->children.at(0)
                      ->as<ASTSelectQuery>()
                      ->tables()
                      ->as<ASTTablesInSelectQuery>()
-                     ->children[0];
+                     ->children.at(0);
 
     if (!src_is_subquery)
     {
         table_expr->as<ASTTablesInSelectQueryElement>()->table_expression
-            = source->as<ASTSelectQuery>()->tables()->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression;
+            = source->as<ASTSelectQuery>()->tables()->children.at(0)->as<ASTTablesInSelectQueryElement>()->table_expression;
     }
     else
     {
         table_expr->as<ASTTablesInSelectQueryElement>()->table_expression
-            = source->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression;
+            = source->children.at(0)->as<ASTTablesInSelectQueryElement>()->table_expression;
     }
 
+    table_expr->children.at(0) = table_expr->as<ASTTablesInSelectQueryElement>()->table_expression;
     return true;
 }
 
-String ParserKQLBase::getExprFromToken(const String & text, const uint32_t max_depth)
+String ParserKQLBase::getExprFromToken(const String & text, uint32_t max_depth, uint32_t max_backtracks)
 {
     Tokens tokens(text.c_str(), text.c_str() + text.size());
-    IParser::Pos pos(tokens, max_depth);
+    IParser::Pos pos(tokens, max_depth, max_backtracks);
 
     return getExprFromToken(pos);
 }
@@ -130,7 +133,7 @@ String ParserKQLBase::getExprFromPipe(Pos & pos)
 {
     BracketCount bracket_count;
     auto end = pos;
-    while (!end->isEnd() && end->type != TokenType::Semicolon)
+    while (isValidKQLPos(end) && end->type != TokenType::Semicolon)
     {
         bracket_count.count(end);
         if (end->type == TokenType::PipeMark && bracket_count.isZero())
@@ -149,7 +152,7 @@ String ParserKQLBase::getExprFromToken(Pos & pos)
     comma_pos.push_back(pos);
 
     size_t paren_count = 0;
-    while (!pos->isEnd() && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != TokenType::Semicolon)
     {
         if (pos->type == TokenType::PipeMark && paren_count == 0)
             break;
@@ -373,7 +376,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     uint16_t bracket_count = 0;
 
-    while (!pos->isEnd() && pos->type != TokenType::Semicolon)
+    while (isValidKQLPos(pos) && pos->type != TokenType::Semicolon)
     {
         if (pos->type == TokenType::OpeningRoundBracket)
             ++bracket_count;
@@ -383,6 +386,9 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (pos->type == TokenType::PipeMark && bracket_count == 0)
         {
             ++pos;
+            if (!isValidKQLPos(pos))
+                return false;
+
             String kql_operator(pos->begin, pos->end);
 
             auto validate_kql_operator = [&]
@@ -390,7 +396,10 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 if (kql_operator == "order" || kql_operator == "sort")
                 {
                     ++pos;
-                    ParserKeyword s_by("by");
+                    if (!isValidKQLPos(pos))
+                        return false;
+
+                    ParserKeyword s_by(Keyword::BY);
                     if (s_by.ignore(pos, expected))
                     {
                         kql_operator = "order by";
@@ -401,11 +410,15 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 {
                     auto op_pos_begin = pos;
                     ++pos;
+                    if (!isValidKQLPos(pos))
+                        return false;
+
                     ParserToken s_dash(TokenType::Minus);
                     if (s_dash.ignore(pos, expected))
                     {
-                        String tmp_op(op_pos_begin->begin, pos->end);
-                        kql_operator = tmp_op;
+                        if (!isValidKQLPos(pos))
+                            return false;
+                        kql_operator = String(op_pos_begin->begin, pos->end);
                     }
                     else
                         --pos;
@@ -418,6 +431,9 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!validate_kql_operator())
                 return false;
             ++pos;
+            if (!isValidKQLPos(pos))
+                return false;
+
             operation_pos.push_back(std::make_pair(kql_operator, pos));
         }
         else
@@ -507,7 +523,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             String sub_query = std::format("({})", String(operation_pos.front().second->begin, last_pos->end));
             Tokens token_subquery(sub_query.c_str(), sub_query.c_str() + sub_query.size());
-            IParser::Pos pos_subquery(token_subquery, pos.max_depth);
+            IParser::Pos pos_subquery(token_subquery, pos.max_depth, pos.max_backtracks);
 
             if (!ParserKQLSubquery().parse(pos_subquery, tables, expected))
                 return false;
@@ -528,7 +544,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (oprator)
             {
                 Tokens token_clause(op_calsue.c_str(), op_calsue.c_str() + op_calsue.size());
-                IParser::Pos pos_clause(token_clause, pos.max_depth);
+                IParser::Pos pos_clause(token_clause, pos.max_depth, pos.max_backtracks);
                 if (!oprator->parse(pos_clause, node, expected))
                     return false;
             }
@@ -561,7 +577,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         auto expr = String("*");
         Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
-        IParser::Pos new_pos(tokens, pos.max_depth);
+        IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
         if (!std::make_unique<ParserKQLProject>()->parse(new_pos, node, expected))
             return false;
     }
@@ -576,20 +592,19 @@ bool ParserKQLSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!ParserKQLTableFunction().parse(pos, select_node, expected))
         return false;
 
-    ASTPtr node_subquery = std::make_shared<ASTSubquery>();
-    node_subquery->children.push_back(select_node);
+    ASTPtr node_subquery = std::make_shared<ASTSubquery>(std::move(select_node));
 
     ASTPtr node_table_expr = std::make_shared<ASTTableExpression>();
     node_table_expr->as<ASTTableExpression>()->subquery = node_subquery;
 
     node_table_expr->children.emplace_back(node_subquery);
 
-    ASTPtr node_table_in_select_query_emlement = std::make_shared<ASTTablesInSelectQueryElement>();
-    node_table_in_select_query_emlement->as<ASTTablesInSelectQueryElement>()->table_expression = node_table_expr;
+    ASTPtr node_table_in_select_query_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    node_table_in_select_query_element->as<ASTTablesInSelectQueryElement>()->table_expression = node_table_expr;
 
     ASTPtr res = std::make_shared<ASTTablesInSelectQuery>();
 
-    res->children.emplace_back(node_table_in_select_query_emlement);
+    res->children.emplace_back(node_table_in_select_query_element);
 
     node = res;
     return true;
@@ -618,20 +633,20 @@ bool ParserSimpleCHSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             ASTSelectQuery::Expression::TABLES, parent_select_node->as<ASTSelectQuery>()->tables());
     }
 
-    ASTPtr node_subquery = std::make_shared<ASTSubquery>();
-    node_subquery->children.push_back(sub_select_node);
+    ASTPtr node_subquery = std::make_shared<ASTSubquery>(std::move(sub_select_node));
 
     ASTPtr node_table_expr = std::make_shared<ASTTableExpression>();
     node_table_expr->as<ASTTableExpression>()->subquery = node_subquery;
 
     node_table_expr->children.emplace_back(node_subquery);
 
-    ASTPtr node_table_in_select_query_emlement = std::make_shared<ASTTablesInSelectQueryElement>();
-    node_table_in_select_query_emlement->as<ASTTablesInSelectQueryElement>()->table_expression = node_table_expr;
+    ASTPtr node_table_in_select_query_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    node_table_in_select_query_element->as<ASTTablesInSelectQueryElement>()->table_expression = node_table_expr;
 
+    node_table_in_select_query_element->children.emplace_back(node_table_expr);
     ASTPtr res = std::make_shared<ASTTablesInSelectQuery>();
 
-    res->children.emplace_back(node_table_in_select_query_emlement);
+    res->children.emplace_back(node_table_in_select_query_element);
 
     node = res;
     return true;
