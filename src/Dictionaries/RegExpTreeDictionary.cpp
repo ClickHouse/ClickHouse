@@ -27,6 +27,7 @@
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/RegExpTreeDictionary.h>
 #include <Dictionaries/YAMLRegExpTreeDictionarySource.h>
 

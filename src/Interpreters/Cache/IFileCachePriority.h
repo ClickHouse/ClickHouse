@@ -43,11 +43,11 @@ public:
 
         virtual EntryPtr getEntry() const = 0;
 
-        virtual size_t increasePriority(const CacheGuard::Lock &) = 0;
+        virtual size_t increasePriority(const CachePriorityGuard::Lock &) = 0;
 
         virtual void updateSize(int64_t size) = 0;
 
-        virtual void remove(const CacheGuard::Lock &) = 0;
+        virtual void remove(const CachePriorityGuard::Lock &) = 0;
 
         virtual void invalidate() = 0;
 
@@ -57,13 +57,13 @@ public:
 
     virtual ~IFileCachePriority() = default;
 
-    size_t getElementsLimit(const CacheGuard::Lock &) const { return max_elements; }
+    size_t getElementsLimit(const CachePriorityGuard::Lock &) const { return max_elements; }
 
-    size_t getSizeLimit(const CacheGuard::Lock &) const { return max_size; }
+    size_t getSizeLimit(const CachePriorityGuard::Lock &) const { return max_size; }
 
-    virtual size_t getSize(const CacheGuard::Lock &) const = 0;
+    virtual size_t getSize(const CachePriorityGuard::Lock &) const = 0;
 
-    virtual size_t getElementsCount(const CacheGuard::Lock &) const = 0;
+    virtual size_t getElementsCount(const CachePriorityGuard::Lock &) const = 0;
 
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
@@ -71,7 +71,7 @@ public:
         size_t offset,
         size_t size,
         const UserInfo & user,
-        const CacheGuard::Lock &,
+        const CachePriorityGuard::Lock &,
         bool best_effort = false) = 0;
 
     /// `reservee` is the entry for which are reserving now.
@@ -79,11 +79,11 @@ public:
     /// for the corresponding file segment.
     virtual bool canFit( /// NOLINT
         size_t size,
-        const CacheGuard::Lock &,
+        const CachePriorityGuard::Lock &,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const = 0;
 
-    virtual void shuffle(const CacheGuard::Lock &) = 0;
+    virtual void shuffle(const CachePriorityGuard::Lock &) = 0;
 
     struct IPriorityDump
     {
@@ -91,9 +91,9 @@ public:
     };
     using PriorityDumpPtr = std::shared_ptr<IPriorityDump>;
 
-    virtual PriorityDumpPtr dump(const CacheGuard::Lock &) = 0;
+    virtual PriorityDumpPtr dump(const CachePriorityGuard::Lock &) = 0;
 
-    using FinalizeEvictionFunc = std::function<void(const CacheGuard::Lock & lk)>;
+    using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
     virtual bool collectCandidatesForEviction(
         size_t size,
         FileCacheReserveStat & stat,
@@ -101,9 +101,9 @@ public:
         IFileCachePriority::IteratorPtr reservee,
         FinalizeEvictionFunc & finalize_eviction_func,
         const UserID & user_id,
-        const CacheGuard::Lock &) = 0;
+        const CachePriorityGuard::Lock &) = 0;
 
-    virtual bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CacheGuard::Lock &) = 0;
+    virtual bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) = 0;
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);

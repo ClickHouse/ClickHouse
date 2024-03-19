@@ -284,6 +284,7 @@ void PostgreSQLHandler::processQuery()
         auto parse_res = splitMultipartQuery(query->query, queries,
             settings.max_query_size,
             settings.max_parser_depth,
+            settings.max_parser_backtracks,
             settings.allow_settings_after_format_in_insert);
         if (!parse_res.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
