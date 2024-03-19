@@ -2,7 +2,6 @@
     <profiles>
         <default>
             <s3_retry_attempts>5</s3_retry_attempts>
-            <s3queue_allow_experimental_sharded_mode>1</s3queue_allow_experimental_sharded_mode>
         </default>
     </profiles>
     <users>
