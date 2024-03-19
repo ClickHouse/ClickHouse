@@ -14,6 +14,8 @@ namespace DB::ConfigHelper
 {
 
 /// Clones a configuration.
+/// NOTE: This function assumes the source configuration doesn't have items having both children and a value
+/// (i.e. items like "<test>value<child1/></test>").
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> clone(const Poco::Util::AbstractConfiguration & src);
 
 /// The behavior is like `config.getBool(key, default_)`,

@@ -55,7 +55,7 @@ bool ExternalDictionariesLoader::doesConfigChangeRequiresReloadingObject(const P
         ignore_keys.insert("database");
     }
 
-    return !isSameConfigurationIgnoringKeys(old_config, old_key_in_config, new_config, new_key_in_config, ignore_keys);
+    return !isSameConfiguration(old_config, old_key_in_config, new_config, new_key_in_config, ignore_keys);
 }
 
 void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const

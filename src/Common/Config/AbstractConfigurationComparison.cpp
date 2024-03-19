@@ -37,6 +37,12 @@ namespace
         {
             std::erase_if(left_subkeys, [&](const String & key) { return ignore_keys->contains(key); });
             std::erase_if(right_subkeys, [&](const String & key) { return ignore_keys->contains(key); });
+
+#if defined(ABORT_ON_LOGICAL_ERROR)
+            /// Compound `ignore_keys` are not yet implemented.
+            for (const auto & ignore_key : *ignore_keys)
+                chassert(ignore_key.find(".") == std::string_view::npos);
+#endif
         }
 
         /// Check that the right configuration has the same set of subkeys as the left configuration.
@@ -63,7 +69,7 @@ namespace
                 if (!left_subkeys_set.contains(subkey))
                     return false;
 
-                if (!isSameConfiguration(left, concatKeyAndSubKey(left_key, subkey), right, concatKeyAndSubKey(right_key, subkey)))
+                if (!isSameConfigurationImpl(left, concatKeyAndSubKey(left_key, subkey), right, concatKeyAndSubKey(right_key, subkey), nullptr))
                     return false;
             }
             return true;
@@ -82,6 +88,14 @@ bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const P
     return isSameConfiguration(left, key, right, key);
 }
 
+bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const String & left_key,
+                         const Poco::Util::AbstractConfiguration & right, const String & right_key,
+                         const std::unordered_set<std::string_view> & ignore_keys)
+{
+    const auto * ignore_keys_ptr = !ignore_keys.empty() ? &ignore_keys : nullptr;
+    return isSameConfigurationImpl(left, left_key, right, right_key, ignore_keys_ptr);
+}
+
 bool isSameConfigurationWithMultipleKeys(const Poco::Util::AbstractConfiguration & left, const Poco::Util::AbstractConfiguration & right, const String & root, const String & name)
 {
     if (&left == &right)
@@ -97,19 +111,6 @@ bool isSameConfigurationWithMultipleKeys(const Poco::Util::AbstractConfiguration
             return false;
 
     return true;
-}
-
-bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const String & left_key,
-                         const Poco::Util::AbstractConfiguration & right, const String & right_key)
-{
-    return isSameConfigurationImpl(left, left_key, right, right_key, /* ignore_keys= */ nullptr);
-}
-
-bool isSameConfigurationIgnoringKeys(const Poco::Util::AbstractConfiguration & left, const String & left_key,
-                                     const Poco::Util::AbstractConfiguration & right, const String & right_key,
-                                     const std::unordered_set<std::string_view> & ignore_keys)
-{
-    return isSameConfigurationImpl(left, left_key, right, right_key, !ignore_keys.empty() ? &ignore_keys : nullptr);
 }
 
 }
