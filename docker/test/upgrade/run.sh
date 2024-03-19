@@ -67,10 +67,7 @@ configure
 
 function remove_keeper_config()
 {
-  sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
-    | sed "/<$1>$2<\/$1>/d" \
-    > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
-  sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+  sudo sed -i "/<$1>$2<\/$1>/d" /etc/clickhouse-server/config.d/keeper_port.xml
 }
 
 # async_replication setting doesn't exist on some older versions
@@ -120,10 +117,7 @@ export ZOOKEEPER_FAULT_INJECTION=0
 configure
 
 # force_sync=false doesn't work correctly on some older versions
-sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
-  | sed "s|<force_sync>false</force_sync>|<force_sync>true</force_sync>|" \
-  > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
-sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+sudo sed -i "s|<force_sync>false</force_sync>|<force_sync>true</force_sync>|" /etc/clickhouse-server/config.d/keeper_port.xml
 
 #todo: remove these after 24.3 released.
 sudo cat /etc/clickhouse-server/config.d/azure_storage_conf.xml \
@@ -150,10 +144,7 @@ remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
 remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
 
 # But we still need default disk because some tables loaded only into it
-sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
-  | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
-  > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
-mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
@@ -256,10 +247,7 @@ then
 fi
 
 # Just in case previous version left some garbage in zk
-sudo cat /etc/clickhouse-server/config.d/lost_forever_check.xml \
-  | sed "s|>1<|>0<|g" \
-  > /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp
-sudo mv /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp /etc/clickhouse-server/config.d/lost_forever_check.xml
+sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml \
 rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
 start 500
