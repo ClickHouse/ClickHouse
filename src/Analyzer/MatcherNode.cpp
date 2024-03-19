@@ -99,10 +99,13 @@ MatcherNode::MatcherNode(MatcherNodeType matcher_type_,
     , qualified_identifier(qualified_identifier_)
     , columns_identifiers(columns_identifiers_)
 {
-    columns_matcher = std::make_shared<re2::RE2>(pattern_, re2::RE2::Quiet);
-    if (!columns_matcher->ok())
-        throw DB::Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "COLUMNS pattern {} cannot be compiled: {}", pattern_, columns_matcher->error());
+    if (!pattern_.empty())
+    {
+        columns_matcher = std::make_shared<re2::RE2>(pattern_, re2::RE2::Quiet);
+        if (!columns_matcher->ok())
+            throw DB::Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "COLUMNS pattern {} cannot be compiled: {}", pattern_, columns_matcher->error());
+    }
 
     auto column_transformers_list_node = std::make_shared<ListNode>();
 

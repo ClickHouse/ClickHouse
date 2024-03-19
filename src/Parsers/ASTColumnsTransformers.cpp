@@ -278,6 +278,9 @@ void ASTColumnsExceptTransformer::setPattern(String pattern_)
 
 std::shared_ptr<re2::RE2> ASTColumnsExceptTransformer::getMatcher() const
 {
+    if (pattern.empty())
+        return {};
+
     auto regexp = std::make_shared<re2::RE2>(pattern, re2::RE2::Quiet);
     if (!regexp->ok())
         throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
