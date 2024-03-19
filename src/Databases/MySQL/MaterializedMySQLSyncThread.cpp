@@ -717,6 +717,16 @@ static void writeFieldsToColumn(
 
                 null_map_column->insertValue(0);
             }
+            else
+            {
+                // Column is not null but field is null. It's possible due to overrides
+                if (field.isNull())
+                {
+                    column_to.insertDefault();
+                    return false;
+                }
+            }
+
 
             return true;
         };
@@ -792,7 +802,7 @@ static void writeFieldsToColumn(
 
                 if (write_data_to_null_map(value, index))
                 {
-                    const String & data = value.get<const String &>();
+                    const String & data = value.safeGet<const String &>();
                     casted_string_column->insertData(data.data(), data.size());
                 }
             }
