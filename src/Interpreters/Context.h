@@ -129,7 +129,6 @@ using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
 class AccessControl;
-class Credentials;
 class GSSAcceptorContext;
 struct SettingsConstraintsAndProfileIDs;
 class SettingsProfileElements;
@@ -164,7 +163,6 @@ using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
-class Session;
 struct WriteSettings;
 
 class IInputFormat;
