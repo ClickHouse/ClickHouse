@@ -33,16 +33,17 @@ Strings BackupCoordinationLocal::waitForStage(const String &, std::chrono::milli
     return {};
 }
 
-void BackupCoordinationLocal::addReplicatedPartNames(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
+void BackupCoordinationLocal::addReplicatedPartNames(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name, const String & data_path, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
 {
     std::lock_guard lock{replicated_tables_mutex};
-    replicated_tables.addPartNames({table_shared_id, table_name_for_logs, replica_name, part_names_and_checksums});
+    replicated_tables.addPartNames({table_shared_id, table_name_for_logs, replica_name, data_path, part_names_and_checksums});
 }
 
-Strings BackupCoordinationLocal::getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const
+std::vector<IBackupCoordination::PartNameAndDataPath>
+BackupCoordinationLocal::getReplicatedPartNamesWithDataPaths(const String & table_shared_id, const String & replica_name) const
 {
     std::lock_guard lock{replicated_tables_mutex};
-    return replicated_tables.getPartNames(table_shared_id, replica_name);
+    return replicated_tables.getPartNamesWithDataPaths(table_shared_id, replica_name);
 }
 
 
