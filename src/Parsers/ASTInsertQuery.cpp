@@ -87,17 +87,14 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
 
     if (infile)
     {
-        settings.ostr
-            << (settings.hilite ? hilite_keyword : "")
-            << " FROM INFILE "
-            << (settings.hilite ? hilite_none : "")
-            << quoteString(infile->as<ASTLiteral &>().value.safeGet<std::string>());
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM INFILE " << (settings.hilite ? hilite_none : "");
+        infile->formatImpl(settings, state, frame);
+
         if (compression)
-            settings.ostr
-                << (settings.hilite ? hilite_keyword : "")
-                << " COMPRESSION "
-                << (settings.hilite ? hilite_none : "")
-                << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " COMPRESSION " << (settings.hilite ? hilite_none : "");
+            compression->formatImpl(settings, state, frame);
+        }
     }
 
     if (settings_ast)
