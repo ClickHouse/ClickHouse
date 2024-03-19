@@ -841,6 +841,9 @@ class IColumn;
     M(Bool, compatibility_ignore_auto_increment_in_create_table, false, "Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return error. It simplifies migration from MySQL", 0) \
     M(Bool, multiple_joins_try_to_keep_original_names, false, "Do not add aliases to top level expression list on multiple joins rewrite", 0) \
     M(Bool, optimize_sorting_by_input_stream_properties, true, "Optimize sorting by sorting properties of input stream", 0) \
+    M(UInt64, keeper_max_retries, 10, "Max retries for general keeper operations", 0) \
+    M(UInt64, keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for general keeper operations", 0) \
+    M(UInt64, keeper_retry_max_backoff_ms, 5000, "Max backoff timeout for general keeper operations", 0) \
     M(UInt64, insert_keeper_max_retries, 20, "Max retries for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_max_backoff_ms, 10000, "Max backoff timeout for keeper operations during insert", 0) \
@@ -1195,7 +1198,6 @@ class IColumn;
     FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
 
-/// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
 
 
@@ -1240,7 +1242,6 @@ private:
 /*
  * User-specified file format settings for File and URL engines.
  */
-/// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 DECLARE_SETTINGS_TRAITS(FormatFactorySettingsTraits, LIST_OF_ALL_FORMAT_SETTINGS)
 
 struct FormatFactorySettings : public BaseSettings<FormatFactorySettingsTraits>
