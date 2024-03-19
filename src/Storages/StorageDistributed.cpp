@@ -23,6 +23,7 @@
 
 #include <Columns/ColumnConst.h>
 
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
@@ -280,6 +281,17 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
     return (num_remote_shards + num_local_shards) * settings.max_parallel_replicas;
+}
+
+template <class F>
+void waitFutures(F & futures)
+{
+    for (auto & future : futures)
+        future.wait();
+    /// Make sure there is no exception.
+    for (auto & future : futures)
+        future.get();
+    futures.clear();
 }
 
 }
@@ -1286,42 +1298,30 @@ void StorageDistributed::initializeFromDisk()
 
     /// Make initialization for large number of disks parallel.
     ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
+    std::vector<std::future<void>> futures;
 
-    ThreadGroupPtr thread_group = CurrentThread::getGroup();
     for (const DiskPtr & disk : disks)
     {
-        pool.scheduleOrThrowOnError([&]()
+        auto future = scheduleFromThreadPool<void>([this, disk_to_init = disk]
         {
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
-            if (thread_group)
-                CurrentThread::attachToGroup(thread_group);
-            setThreadName("DistInit");
-
-            initializeDirectoryQueuesForDisk(disk);
-        });
+            initializeDirectoryQueuesForDisk(disk_to_init);
+        }, pool, "DistInit");
+        futures.push_back(std::move(future));
     }
+    waitFutures(futures);
     pool.wait();
 
     const auto & paths = getDataPaths();
     std::vector<UInt64> last_increment(paths.size());
     for (size_t i = 0; i < paths.size(); ++i)
     {
-        pool.scheduleOrThrowOnError([&, i]()
+        auto future = scheduleFromThreadPool<void>([&paths, &last_increment, i]
         {
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
-            if (thread_group)
-                CurrentThread::attachToGroup(thread_group);
-            setThreadName("DistInit");
-
             last_increment[i] = getMaximumFileNumber(paths[i]);
-        });
+        }, pool, "DistInit");
+        futures.push_back(std::move(future));
     }
+    waitFutures(futures);
     pool.wait();
 
     for (const auto inc : last_increment)
@@ -1756,24 +1756,21 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
         LOG_INFO(log, "Flushing pending INSERT blocks");
 
         Stopwatch watch;
-        ThreadGroupPtr thread_group = CurrentThread::getGroup();
         ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, directory_queues.size());
+        std::vector<std::future<void>> futures;
+
         for (const auto & node : directory_queues)
         {
-            pool.scheduleOrThrowOnError([node_to_flush = node, &thread_group]()
+            auto future = scheduleFromThreadPool<void>([node_to_flush = node]
             {
-                SCOPE_EXIT_SAFE(
-                    if (thread_group)
-                        CurrentThread::detachFromGroupIfNotDetached();
-                );
-                if (thread_group)
-                    CurrentThread::attachToGroup(thread_group);
-                setThreadName("DistFlush");
-
                 node_to_flush->flushAllData();
-            });
+            }, pool, "DistFlush");
+            futures.push_back(std::move(future));
         }
+
+        waitFutures(futures);
         pool.wait();
+
         LOG_INFO(log, "Pending INSERT blocks flushed, took {} ms.", watch.elapsedMilliseconds());
     }
     else
