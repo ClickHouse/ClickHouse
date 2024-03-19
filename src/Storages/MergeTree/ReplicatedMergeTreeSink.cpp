@@ -836,7 +836,11 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         /// Will store current try block number lock here if lock_holder does not specified
         std::optional<EphemeralLockInZooKeeper> current_try_block_number_lock;
 
-        if (lock_holder == nullptr)
+        auto is_block_number_lock_provided = [&]() {
+            return lock_holder && lock_holder->has_value();
+        };
+
+        if (!is_block_number_lock_provided())
         {
             /// Allocate new block number and check for duplicates
             current_try_block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path); /// 1 RTT
@@ -885,7 +889,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             }
         }
 
-        auto& block_number_lock = lock_holder != nullptr ? *lock_holder : current_try_block_number_lock;
+        auto& block_number_lock = is_block_number_lock_provided() ? *lock_holder : current_try_block_number_lock;
         chassert(block_number_lock.has_value());
 
         auto block_number = block_number_lock->getNumber();
