@@ -33,42 +33,42 @@ Strings BackupCoordinationLocal::waitForStage(const String &, std::chrono::milli
     return {};
 }
 
-void BackupCoordinationLocal::addReplicatedPartNames(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
+void BackupCoordinationLocal::addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name, const std::vector<PartNameAndChecksum> & part_names_and_checksums)
 {
     std::lock_guard lock{replicated_tables_mutex};
-    replicated_tables.addPartNames({table_shared_id, table_name_for_logs, replica_name, part_names_and_checksums});
+    replicated_tables.addPartNames({table_zk_path, table_name_for_logs, replica_name, part_names_and_checksums});
 }
 
-Strings BackupCoordinationLocal::getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const
+Strings BackupCoordinationLocal::getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const
 {
     std::lock_guard lock{replicated_tables_mutex};
-    return replicated_tables.getPartNames(table_shared_id, replica_name);
-}
-
-
-void BackupCoordinationLocal::addReplicatedMutations(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name, const std::vector<MutationInfo> & mutations)
-{
-    std::lock_guard lock{replicated_tables_mutex};
-    replicated_tables.addMutations({table_shared_id, table_name_for_logs, replica_name, mutations});
-}
-
-std::vector<IBackupCoordination::MutationInfo> BackupCoordinationLocal::getReplicatedMutations(const String & table_shared_id, const String & replica_name) const
-{
-    std::lock_guard lock{replicated_tables_mutex};
-    return replicated_tables.getMutations(table_shared_id, replica_name);
+    return replicated_tables.getPartNames(table_zk_path, replica_name);
 }
 
 
-void BackupCoordinationLocal::addReplicatedDataPath(const String & table_shared_id, const String & data_path)
+void BackupCoordinationLocal::addReplicatedMutations(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name, const std::vector<MutationInfo> & mutations)
 {
     std::lock_guard lock{replicated_tables_mutex};
-    replicated_tables.addDataPath({table_shared_id, data_path});
+    replicated_tables.addMutations({table_zk_path, table_name_for_logs, replica_name, mutations});
 }
 
-Strings BackupCoordinationLocal::getReplicatedDataPaths(const String & table_shared_id) const
+std::vector<IBackupCoordination::MutationInfo> BackupCoordinationLocal::getReplicatedMutations(const String & table_zk_path, const String & replica_name) const
 {
     std::lock_guard lock{replicated_tables_mutex};
-    return replicated_tables.getDataPaths(table_shared_id);
+    return replicated_tables.getMutations(table_zk_path, replica_name);
+}
+
+
+void BackupCoordinationLocal::addReplicatedDataPath(const String & table_zk_path, const String & data_path)
+{
+    std::lock_guard lock{replicated_tables_mutex};
+    replicated_tables.addDataPath({table_zk_path, data_path});
+}
+
+Strings BackupCoordinationLocal::getReplicatedDataPaths(const String & table_zk_path) const
+{
+    std::lock_guard lock{replicated_tables_mutex};
+    return replicated_tables.getDataPaths(table_zk_path);
 }
 
 

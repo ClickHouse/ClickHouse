@@ -338,9 +338,6 @@ public:
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
-    /// Returns the same as getTableSharedID(), but extracts it from a create query.
-    static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);
-
     static const String & getDefaultZooKeeperName() { return default_zookeeper_name; }
 
     /// Check if there are new broken disks and enqueue part recovery tasks.
