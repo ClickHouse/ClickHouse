@@ -20,7 +20,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
-    extern const int UNKNOWN_EXCEPTION;
 }
 
 MaterializingCTETransform::~MaterializingCTETransform()

@@ -13,8 +13,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int WRONG_GLOBAL_SUBQUERY;
-    extern const int LOGICAL_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
 }
 
@@ -42,14 +40,14 @@ void DB::GlobalMaterializeCTEVisitor::visit(ASTPtr & ast)
             return;
         for (auto & child : cte_list->children)
         {
-            /// WTH t AS MATERIALIZED (subquery)
+            /// WITH t AS MATERIALIZED (subquery)
             if (auto * with = child->as<ASTWithElement>(); with && with->has_materialized_keyword)
             {
                 data.addExternalStorage(*with, {});
                 child = nullptr;
             }
         }
-        /// Remove null childrens from WITH list
+        /// Remove null child from WITH list
         cte_list->children.erase(std::remove(cte_list->children.begin(), cte_list->children.end(), nullptr), cte_list->children.end());
         if (cte_list->children.empty())
             select->setExpression(ASTSelectQuery::Expression::WITH, nullptr);
@@ -72,8 +70,10 @@ void GlobalMaterializeCTEVisitor::Data::addExternalStorage(ASTWithElement & cte_
         /*query*/ nullptr,
         /*create_for_global_subquery*/ false,
         cte_expr.engine);
+
     if(!context->getSettingsRef().send_materialized_cte_tables_to_remote_shard)
         external_storage_holder->can_be_sent_to_remote = false;
+
     StoragePtr external_storage = external_storage_holder->getTable();
     context->addExternalTable(external_table_name, std::move(*external_storage_holder));
     FutureTableFromCTE future_table;
