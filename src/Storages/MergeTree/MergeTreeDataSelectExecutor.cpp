@@ -834,6 +834,76 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     return parts_with_ranges;
 }
 
+RangesInDataParts MergeTreeDataSelectExecutor::applyLimitForRangesInDataParts(
+    RangesInDataParts && parts_with_ranges,
+    size_t limit)
+{
+    chassert(limit > 0);
+    RangesInDataParts result_parts_with_ranges;
+    size_t remaining_limit = limit;
+
+    for (auto && part_with_ranges : parts_with_ranges)
+    {
+        if (remaining_limit == 0)
+            break;
+
+        if (part_with_ranges.data_part->hasLightweightDelete())
+        {
+            result_parts_with_ranges.push_back(std::move(part_with_ranges));
+            continue;
+        }
+
+        size_t part_ranges_total_rows = part_with_ranges.getRowsCount();
+        result_parts_with_ranges.push_back(std::move(part_with_ranges));
+        if (part_ranges_total_rows <= remaining_limit)
+        {
+            remaining_limit -= part_ranges_total_rows;
+            continue;
+        }
+
+        auto & result_part_with_ranges = result_parts_with_ranges.back();
+        const auto & part_index_granularity = result_part_with_ranges.data_part->index_granularity;
+
+        auto ranges_it = result_part_with_ranges.ranges.begin();
+        auto ranges_end_it = result_part_with_ranges.ranges.end();
+        for (; ranges_it != ranges_end_it; ++ranges_it)
+        {
+            const auto & range = *ranges_it;
+            if (remaining_limit == 0)
+                break;
+
+            size_t rows_count_in_range = part_index_granularity.getRowsCountInRange(range);
+            if (rows_count_in_range <= remaining_limit)
+            {
+                remaining_limit -= rows_count_in_range;
+                continue;
+            }
+
+            const auto & marks_rows_partial_sums = part_index_granularity.getMarksRowsPartialSums();
+            size_t mark_range_partial_sum_start = range.begin > 0 ? marks_rows_partial_sums[range.begin - 1] : 0;
+            auto range_begin_it = marks_rows_partial_sums.begin() + range.begin;
+            auto range_end_it = marks_rows_partial_sums.begin() + range.end;
+            auto it = std::lower_bound(range_begin_it, range_end_it, remaining_limit, [&](size_t limit_value, size_t partial_sum_value)
+            {
+                return limit_value < (partial_sum_value - mark_range_partial_sum_start);
+            });
+
+            size_t new_range_end = (it - range_begin_it) + 1;
+            chassert(new_range_end <= range.end);
+
+            MarkRange new_range{range.begin, new_range_end};
+            chassert(part_index_granularity.getRowsCountInRange(new_range) >= remaining_limit);
+
+            *ranges_it = new_range;
+            remaining_limit = 0;
+        }
+
+        result_part_with_ranges.ranges.erase(ranges_it, ranges_end_it);
+    }
+
+    return result_parts_with_ranges;
+}
+
 std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const MergeTreeData & data,
     const ReadFromMergeTree::AnalysisResult & result,
