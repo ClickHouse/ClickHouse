@@ -30,7 +30,7 @@ namespace ProfileEvents
 {
     extern const Event DistributedConnectionFailTry;
     extern const Event DistributedConnectionFailAtAll;
-    extern const Event DistributedConnectionReadOnlyReplica;
+    extern const Event DistributedConnectionSkipReadOnlyReplica;
 }
 
 /// This class provides a pool with fault tolerance. It is used for pooling of connections to replicated DB.
@@ -274,7 +274,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 if (result.is_usable)
                 {
                     if (skip_read_only_replicas && result.is_readonly)
-                        ProfileEvents::increment(ProfileEvents::DistributedConnectionReadOnlyReplica);
+                        ProfileEvents::increment(ProfileEvents::DistributedConnectionSkipReadOnlyReplica);
                     else
                     {
                         ++usable_count;
