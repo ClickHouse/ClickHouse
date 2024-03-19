@@ -863,14 +863,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
                 command->type = ASTAlterCommand::MODIFY_QUERY;
             }
-            else if (s_modify_sql_security.check(pos, expected))
+            else if (s_modify_sql_security.checkWithoutMoving(pos, expected))
             {
                 s_modify.ignore(pos, expected);
                 if (!sql_security_p.parse(pos, command_sql_security, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;
             }
-            else if (s_modify_definer.check(pos, expected))
+            else if (s_modify_definer.checkWithoutMoving(pos, expected))
             {
                 s_modify.ignore(pos, expected);
                 if (!sql_security_p.parse(pos, command_sql_security, expected))
