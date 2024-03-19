@@ -853,11 +853,11 @@ bool FileCache::tryReserve(
     {
         chassert(reached_size_limit || reached_elements_limit);
 
-        std::unique_ptr<IFileCachePriority::HoldSpace> hold_space;
-        if (!reached_size_limit)
-            hold_space = std::make_unique<IFileCachePriority::HoldSpace>(size, 0, queue_iterator, *main_priority, cache_lock);
-        else if (!reached_elements_limit)
-            hold_space = std::make_unique<IFileCachePriority::HoldSpace>(0, 1, queue_iterator, *main_priority, cache_lock);
+        size_t hold_size = reached_size_limit
+            ? size > reserve_stat.stat.releasable_size ? size - reserve_stat.stat.releasable_size : 0
+            : size;
+        size_t hold_elements = reached_elements_limit ? 0 : 1;
+        auto hold_space = std::make_unique<IFileCachePriority::HoldSpace>(hold_size, hold_elements, queue_iterator, *main_priority, cache_lock);
 
         cache_lock.unlock();
         try

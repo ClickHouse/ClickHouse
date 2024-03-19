@@ -37,6 +37,7 @@ void EvictionCandidates::add(const FileSegmentMetadataPtr & candidate, LockedKey
         it->second.key_metadata = locked_key.getKeyMetadata();
     it->second.candidates.push_back(candidate);
 
+    chassert(!candidate->isEvicting(lock));
     candidate->setEvicting(true, &locked_key, &lock);
     ++candidates_size;
 }
