@@ -54,7 +54,7 @@ namespace
 UserDefinedSQLObjectsDiskStorage::UserDefinedSQLObjectsDiskStorage(const ContextPtr & global_context_, const String & dir_path_)
     : global_context(global_context_)
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
-    , log{&Poco::Logger::get("UserDefinedSQLObjectsLoaderFromDisk")}
+    , log{getLogger("UserDefinedSQLObjectsLoaderFromDisk")}
 {
     createDirectory();
 }
@@ -92,7 +92,8 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
                     object_create_query.data() + object_create_query.size(),
                     "",
                     0,
-                    global_context->getSettingsRef().max_parser_depth);
+                    global_context->getSettingsRef().max_parser_depth,
+                    global_context->getSettingsRef().max_parser_backtracks);
                 return ast;
             }
         }

@@ -1,13 +1,19 @@
+#include <atomic>
+#include <chrono>
+
 #include <Coordination/KeeperContext.h>
 
 #include <Coordination/Defines.h>
-#include <Disks/DiskLocal.h>
-#include <Interpreters/Context.h>
-#include <IO/S3/Credentials.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Coordination/KeeperConstants.h>
-#include <Common/logger_useful.h>
+#include <Server/CloudPlacementInfo.h>
 #include <Coordination/KeeperFeatureFlags.h>
+#include <Disks/DiskLocal.h>
+#include <Disks/DiskSelector.h>
+#include <IO/S3/Credentials.h>
+#include <Interpreters/Context.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/logger_useful.h>
+
 #include <boost/algorithm/string.hpp>
 
 namespace DB
@@ -20,9 +26,10 @@ extern const int BAD_ARGUMENTS;
 
 }
 
-KeeperContext::KeeperContext(bool standalone_keeper_)
+KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr coordination_settings_)
     : disk_selector(std::make_shared<DiskSelector>())
     , standalone_keeper(standalone_keeper_)
+    , coordination_settings(std::move(coordination_settings_))
 {
     /// enable by default some feature flags
     feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
@@ -37,26 +44,11 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 {
     dispatcher = dispatcher_;
 
-    if (config.hasProperty("keeper_server.availability_zone"))
+    const auto keeper_az = PlacementInfo::PlacementInfo::instance().getAvailabilityZone();
+    if (!keeper_az.empty())
     {
-        auto keeper_az = config.getString("keeper_server.availability_zone.value", "");
-        const auto auto_detect_for_cloud = config.getBool("keeper_server.availability_zone.enable_auto_detection_on_cloud", false);
-        if (keeper_az.empty() && auto_detect_for_cloud)
-        {
-            try
-            {
-                keeper_az = DB::S3::getRunningAvailabilityZone();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-        if (!keeper_az.empty())
-        {
-            system_nodes_with_data[keeper_availability_zone_path] = keeper_az;
-            LOG_INFO(&Poco::Logger::get("KeeperContext"), "Initialize the KeeperContext with availability zone: '{}'", keeper_az);
-        }
+        system_nodes_with_data[keeper_availability_zone_path] = keeper_az;
+        LOG_INFO(getLogger("KeeperContext"), "Initialize the KeeperContext with availability zone: '{}'", keeper_az);
     }
 
     updateKeeperMemorySoftLimit(config);
@@ -88,7 +80,7 @@ bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::
             supported_disk_types.end(),
             [&](const auto supported_type) { return disk_type != supported_type; }))
     {
-        LOG_INFO(&Poco::Logger::get("KeeperContext"), "Disk type '{}' is not supported for Keeper", disk_type);
+        LOG_INFO(getLogger("KeeperContext"), "Disk type '{}' is not supported for Keeper", disk_type);
         return false;
     }
 
@@ -374,7 +366,7 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
         system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
     }
 
-    feature_flags.logFlags(&Poco::Logger::get("KeeperContext"));
+    feature_flags.logFlags(getLogger("KeeperContext"));
 }
 
 void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
@@ -385,11 +377,16 @@ void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfig
 
 bool KeeperContext::setShutdownCalled()
 {
-    std::unique_lock lock(local_logs_preprocessed_cv_mutex);
+    std::unique_lock local_logs_preprocessed_lock(local_logs_preprocessed_cv_mutex);
+    std::unique_lock last_committed_log_idx_lock(last_committed_log_idx_cv_mutex);
+
     if (!shutdown_called.exchange(true))
     {
-        lock.unlock();
+        local_logs_preprocessed_lock.unlock();
+        last_committed_log_idx_lock.unlock();
+
         local_logs_preprocessed_cv.notify_all();
+        last_committed_log_idx_cv.notify_all();
         return true;
     }
 
@@ -414,6 +411,43 @@ void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
 {
     std::unique_lock lock(local_logs_preprocessed_cv_mutex);
     local_logs_preprocessed_cv.wait(lock, [this]{ return shutdown_called || local_logs_preprocessed; });
+}
+
+const CoordinationSettingsPtr & KeeperContext::getCoordinationSettings() const
+{
+    return coordination_settings;
+}
+
+uint64_t KeeperContext::lastCommittedIndex() const
+{
+    return last_committed_log_idx.load(std::memory_order_relaxed);
+}
+
+void KeeperContext::setLastCommitIndex(uint64_t commit_index)
+{
+    bool should_notify;
+    {
+        std::lock_guard lock(last_committed_log_idx_cv_mutex);
+        last_committed_log_idx.store(commit_index, std::memory_order_relaxed);
+
+        should_notify = wait_commit_upto_idx.has_value() && commit_index >= wait_commit_upto_idx;
+    }
+
+    if (should_notify)
+        last_committed_log_idx_cv.notify_all();
+}
+
+bool KeeperContext::waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms)
+{
+    std::unique_lock lock(last_committed_log_idx_cv_mutex);
+    wait_commit_upto_idx = log_idx;
+    bool success = last_committed_log_idx_cv.wait_for(
+        lock,
+        std::chrono::milliseconds(wait_timeout_ms),
+        [&] { return shutdown_called || lastCommittedIndex() >= wait_commit_upto_idx; });
+
+    wait_commit_upto_idx.reset();
+    return success;
 }
 
 }

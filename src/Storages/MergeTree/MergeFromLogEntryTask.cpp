@@ -28,7 +28,7 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
     StorageReplicatedMergeTree & storage_,
     IExecutableTask::TaskResultCallback & task_result_callback_)
     : ReplicatedMergeMutateTaskBase(
-        &Poco::Logger::get(
+        getLogger(
             storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MergeFromLogEntryTask)"),
         storage_,
         selected_entry_,
@@ -174,7 +174,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     }
 
     /// Start to make the main work
-    size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
+    size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts, true);
 
     /// Can throw an exception while reserving space.
     IMergeTreeDataPart::TTLInfos ttl_infos;

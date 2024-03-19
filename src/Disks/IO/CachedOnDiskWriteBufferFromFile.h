@@ -30,6 +30,7 @@ public:
         FileCache * cache_,
         const FileSegment::Key & key_,
         const FileCacheUserInfo & user_,
+        size_t reserve_space_lock_wait_timeout_milliseconds_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
         const String & query_id_,
         const String & source_path_);
@@ -52,13 +53,14 @@ private:
     void completeFileSegment();
 
     FileCache * cache;
-    FileSegment::Key key;
+    const FileSegment::Key key;
+    const FileCacheUserInfo user;
+    const size_t reserve_space_lock_wait_timeout_milliseconds;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     std::shared_ptr<FilesystemCacheLog> cache_log;
-    String query_id;
-    String source_path;
-    FileCacheUserInfo user;
+    const String query_id;
+    const String source_path;
 
     FileSegmentsHolderPtr file_segments;
 
@@ -93,17 +95,18 @@ public:
 private:
     void cacheData(char * data, size_t size, bool throw_on_error);
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     FileCachePtr cache;
     String source_path;
     FileCacheKey key;
 
-    size_t current_download_offset = 0;
     const String query_id;
     const FileCacheUserInfo user;
+    const size_t reserve_space_lock_wait_timeout_milliseconds;
+    const bool throw_on_error_from_cache;
 
-    bool throw_on_error_from_cache;
+    size_t current_download_offset = 0;
     bool cache_in_error_state_or_disabled = false;
 
     std::unique_ptr<FileSegmentRangeWriter> cache_writer;

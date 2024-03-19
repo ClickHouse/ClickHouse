@@ -161,7 +161,8 @@ public:
         FileSegment & file_segment,
         size_t size,
         FileCacheReserveStat & stat,
-        const UserInfo & user);
+        const UserInfo & user,
+        size_t lock_wait_timeout_milliseconds);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
@@ -172,7 +173,8 @@ public:
 
     void deactivateBackgroundOperations();
 
-    CacheGuard::Lock lockCache() const;
+    CachePriorityGuard::Lock lockCache() const;
+    CachePriorityGuard::Lock tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout = std::nullopt) const;
 
     std::vector<FileSegment::Info> sync();
 
@@ -193,20 +195,21 @@ private:
     size_t load_metadata_threads;
     const bool write_cache_per_user_directory;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::exception_ptr init_exception;
     std::atomic<bool> is_initialized = false;
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
+    std::atomic<bool> cache_is_being_resized = false;
 
     std::mutex apply_settings_mutex;
 
     CacheMetadata metadata;
 
     FileCachePriorityPtr main_priority;
-    mutable CacheGuard cache_guard;
+    mutable CachePriorityGuard cache_guard;
 
     struct HitsCountStash
     {
@@ -278,7 +281,7 @@ private:
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
-        const CacheGuard::Lock *);
+        const CachePriorityGuard::Lock *);
 };
 
 }

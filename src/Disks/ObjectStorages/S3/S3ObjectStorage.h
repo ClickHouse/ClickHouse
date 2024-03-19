@@ -59,7 +59,7 @@ private:
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
-        , log(&Poco::Logger::get(logger_name))
+        , log(getLogger(logger_name))
     {
     }
 
@@ -179,28 +179,7 @@ private:
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
 
-    Poco::Logger * log;
-};
-
-/// Do not encode keys, store as-is, and do not require separate disk for metadata.
-/// But because of this does not support renames/hardlinks/attrs/...
-///
-/// NOTE: This disk has excessive API calls.
-class S3PlainObjectStorage : public S3ObjectStorage
-{
-public:
-    std::string getName() const override { return "S3PlainObjectStorage"; }
-
-    template <class ...Args>
-    explicit S3PlainObjectStorage(Args && ...args)
-        : S3ObjectStorage("S3PlainObjectStorage", std::forward<Args>(args)...) {}
-
-    ObjectStorageType getType() const override { return ObjectStorageType::S3_Plain; }
-
-    /// Notes:
-    /// - supports BACKUP to this disk
-    /// - does not support INSERT into MergeTree table on this disk
-    bool isWriteOnce() const override { return true; }
+    LoggerPtr log;
 };
 
 }

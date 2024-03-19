@@ -125,7 +125,7 @@ namespace ErrorCodes
 
 namespace
 {
-bool tryAddHttpOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     if (config.has("http_options_response"))
     {
@@ -137,7 +137,7 @@ bool tryAddHttpOptionHeadersFromConfig(HTTPServerResponse & response, const Poco
             {
                 /// If there is empty header name, it will not be processed and message about it will be in logs
                 if (config.getString("http_options_response." + config_key + ".name", "").empty())
-                    LOG_WARNING(&Poco::Logger::get("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
+                    LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
                 else
                     response.add(config.getString("http_options_response." + config_key + ".name", ""),
                                     config.getString("http_options_response." + config_key + ".value", ""));
@@ -153,7 +153,7 @@ bool tryAddHttpOptionHeadersFromConfig(HTTPServerResponse & response, const Poco
 void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     /// If can add some headers from config
-    if (tryAddHttpOptionHeadersFromConfig(response, config))
+    if (tryAddHTTPOptionHeadersFromConfig(response, config))
     {
         response.setKeepAlive(false);
         response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
@@ -328,7 +328,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
 HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_)
     : server(server_)
-    , log(&Poco::Logger::get(name))
+    , log(getLogger(name))
     , default_settings(server.context()->getSettingsRef())
     , content_type_override(content_type_override_)
 {
@@ -496,7 +496,7 @@ bool HTTPHandler::authenticateUser(
     else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
 
-    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
+    session->setHTTPClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
     session->setForwardedFor(request.get("X-Forwarded-For", ""));
     session->setQuotaClientKey(quota_key);
 
@@ -884,6 +884,11 @@ void HTTPHandler::processQuery(
     {
         if (settings.http_write_exception_in_output_format && output_format.supportsWritingException())
         {
+            bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
+
+            ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+            formatExceptionForClient(status.code, request, response, used_output);
+
             output_format.setException(getCurrentExceptionMessage(false));
             output_format.finalize();
             used_output.exception_is_written = true;
@@ -916,31 +921,7 @@ void HTTPHandler::trySendExceptionToClient(
     const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
 {
-    if (used_output.out_holder)
-        used_output.out_holder->setExceptionCode(exception_code);
-    else
-        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
-
-    /// FIXME: make sure that no one else is reading from the same stream at the moment.
-
-    /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
-    /// to avoid reading part of the current request body in the next request.
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
-        && response.getKeepAlive()
-        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED
-        && !request.getStream().eof())
-    {
-        request.getStream().ignoreAll();
-    }
-
-    if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
-    {
-        response.requireAuthentication("ClickHouse server HTTP API");
-    }
-    else
-    {
-        response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
-    }
+    formatExceptionForClient(exception_code, request, response, used_output);
 
     if (!used_output.out_holder && !used_output.exception_is_written)
     {
@@ -1001,6 +982,28 @@ catch (...)
     }
 }
 
+void HTTPHandler::formatExceptionForClient(int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+{
+    if (used_output.out_holder)
+        used_output.out_holder->setExceptionCode(exception_code);
+    else
+        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
+
+    /// FIXME: make sure that no one else is reading from the same stream at the moment.
+
+    /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
+    /// to avoid reading part of the current request body in the next request.
+    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && response.getKeepAlive()
+        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED && !request.getStream().eof())
+    {
+        request.getStream().ignoreAll();
+    }
+
+    if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
+        response.requireAuthentication("ClickHouse server HTTP API");
+    else
+        response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
+}
 
 void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
@@ -1065,7 +1068,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())
-            tryAddHttpOptionHeadersFromConfig(response, server.config());
+            tryAddHTTPOptionHeadersFromConfig(response, server.config());
 
         /// For keep-alive to work.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
@@ -1295,9 +1298,7 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
-
     factory->addFiltersFromConfig(config, config_prefix);
-
     return factory;
 }
 

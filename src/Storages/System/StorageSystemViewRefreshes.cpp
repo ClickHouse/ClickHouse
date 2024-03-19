@@ -36,20 +36,20 @@ ColumnsDescription StorageSystemViewRefreshes::getColumnsDescription()
         },
         {"refresh_count", std::make_shared<DataTypeUInt64>(), "Number of successful refreshes since last server restart or table creation."},
         {"progress", std::make_shared<DataTypeFloat64>(), "Progress of the current refresh, between 0 and 1."},
-        {"elapsed", std::make_shared<DataTypeFloat64>()},
-        {"read_rows", std::make_shared<DataTypeUInt64>(), "Number of rows read by the current refresh so far."},
-        {"read_bytes", std::make_shared<DataTypeUInt64>()},
+        {"elapsed", std::make_shared<DataTypeFloat64>(), "The amount of nanoseconds the current refresh took."},
+        {"read_rows", std::make_shared<DataTypeUInt64>(), "Number of rows read during the current refresh."},
+        {"read_bytes", std::make_shared<DataTypeUInt64>(), "Number of bytes read during the current refresh."},
         {"total_rows", std::make_shared<DataTypeUInt64>(), "Estimated total number of rows that need to be read by the current refresh."},
-        {"total_bytes", std::make_shared<DataTypeUInt64>()},
-        {"written_rows", std::make_shared<DataTypeUInt64>()},
-        {"written_bytes", std::make_shared<DataTypeUInt64>()},
-        {"result_rows", std::make_shared<DataTypeUInt64>()},
-        {"result_bytes", std::make_shared<DataTypeUInt64>()},
+        {"total_bytes", std::make_shared<DataTypeUInt64>(), "Estimated total number of bytes that need to be read by the current refresh."},
+        {"written_rows", std::make_shared<DataTypeUInt64>(), "Number of rows written during the current refresh."},
+        {"written_bytes", std::make_shared<DataTypeUInt64>(), "Number rof bytes written during the current refresh."},
+        {"result_rows", std::make_shared<DataTypeUInt64>(), "Estimated total number of rows in the result set of the SELECT query."},
+        {"result_bytes", std::make_shared<DataTypeUInt64>(), "Estimated total number of bytes in the result set of the SELECT query."},
     };
 }
 
 void StorageSystemViewRefreshes::fillData(
-    MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+    MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto access = context->getAccess();
     auto valid_access = AccessType::SHOW_TABLES;

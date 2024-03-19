@@ -58,6 +58,10 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+
+    bool existsOrHasAnyChild(const std::string & path) const override;
+
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
@@ -90,7 +94,7 @@ public:
 
 private:
     String key_prefix;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::string description;
 };
 

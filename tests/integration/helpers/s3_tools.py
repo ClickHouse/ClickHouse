@@ -36,6 +36,14 @@ def get_file_contents(minio_client, bucket, s3_path):
     return data_str.decode()
 
 
+def list_s3_objects(minio_client, bucket, prefix=""):
+    prefix_len = len(prefix)
+    return [
+        obj.object_name[prefix_len:]
+        for obj in minio_client.list_objects(bucket, prefix=prefix, recursive=True)
+    ]
+
+
 # Creates S3 bucket for tests and allows anonymous read-write access to it.
 def prepare_s3_bucket(started_cluster):
     # Allows read-write access for bucket without authorization.

@@ -32,7 +32,7 @@ class HTTPHandler : public HTTPRequestHandler
 {
 public:
     HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_);
-    virtual ~HTTPHandler() override;
+    ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -100,7 +100,7 @@ private:
     };
 
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// It is the name of the server that will be sent in an http-header X-ClickHouse-Server-Display-Name.
     String server_display_name;
@@ -143,6 +143,12 @@ private:
 
     void trySendExceptionToClient(
         const std::string & s,
+        int exception_code,
+        HTTPServerRequest & request,
+        HTTPServerResponse & response,
+        Output & used_output);
+
+    void formatExceptionForClient(
         int exception_code,
         HTTPServerRequest & request,
         HTTPServerResponse & response,

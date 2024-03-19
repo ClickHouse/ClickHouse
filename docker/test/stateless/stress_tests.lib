@@ -19,7 +19,7 @@ function escaped()
 
 function head_escaped()
 {
-    head -n $FAILURE_CONTEXT_LINES $1 | escaped
+    head -n "$FAILURE_CONTEXT_LINES" "$1" | escaped
 }
 
 function unts()
@@ -29,15 +29,15 @@ function unts()
 
 function trim_server_logs()
 {
-    head -n $FAILURE_CONTEXT_LINES "/test_output/$1" | grep -Eo " \[ [0-9]+ \] \{.*" | escaped
+    head -n "$FAILURE_CONTEXT_LINES" "/test_output/$1" | grep -Eo " \[ [0-9]+ \] \{.*" | escaped
 }
 
 function install_packages()
 {
-    dpkg -i $1/clickhouse-common-static_*.deb
-    dpkg -i $1/clickhouse-common-static-dbg_*.deb
-    dpkg -i $1/clickhouse-server_*.deb
-    dpkg -i $1/clickhouse-client_*.deb
+    dpkg -i "$1"/clickhouse-common-static_*.deb
+    dpkg -i "$1"/clickhouse-common-static-dbg_*.deb
+    dpkg -i "$1"/clickhouse-server_*.deb
+    dpkg -i "$1"/clickhouse-client_*.deb
 }
 
 function configure()
@@ -54,11 +54,11 @@ function configure()
     sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
     function randomize_config_boolean_value {
-        value=$(($RANDOM % 2))
-        sudo cat /etc/clickhouse-server/config.d/$2.xml \
+        value=$((RANDOM % 2))
+        sudo cat "/etc/clickhouse-server/config.d/$2.xml" \
         | sed "s|<$1>[01]</$1>|<$1>$value</$1>|" \
-        > /etc/clickhouse-server/config.d/$2.xml.tmp
-        sudo mv /etc/clickhouse-server/config.d/$2.xml.tmp /etc/clickhouse-server/config.d/$2.xml
+        > "/etc/clickhouse-server/config.d/$2.xml.tmp"
+        sudo mv "/etc/clickhouse-server/config.d/$2.xml.tmp" "/etc/clickhouse-server/config.d/$2.xml"
     }
 
     if [[ -n "$RANDOMIZE_KEEPER_FEATURE_FLAGS" ]] && [[ "$RANDOMIZE_KEEPER_FEATURE_FLAGS" -eq 1 ]]; then
@@ -77,6 +77,8 @@ function configure()
     else
         randomize_config_boolean_value use_compression zookeeper
     fi
+
+    randomize_config_boolean_value allow_experimental_block_number_column block_number
 
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
@@ -144,17 +146,17 @@ EOL
 
 }
 
-function stop()
+function stop_server()
 {
-    local max_tries="${1:-90}"
-    local check_hang="${2:-true}"
+    local max_tries=90
+    local check_hang=true
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
     clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
-    if [ $check_hang == true ]
+    if [ "$check_hang" == true ]
     then
       # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
       # Add a special status just in case, so it will be possible to find in the CI DB
@@ -163,7 +165,7 @@ function stop()
       sleep 5
 
       # The server could finally stop while we were terminating gdb, let's recheck if it's still running
-      kill -s 0 $pid || return
+      kill -s 0 "$pid" || return
       echo -e "Possible deadlock on shutdown (see gdb.log)$FAIL" >> /test_output/test_results.tsv
       echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
       timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
@@ -174,12 +176,13 @@ function stop()
     fi
 }
 
-function start()
+function start_server()
 {
     counter=0
+    max_attempt=120
     until clickhouse-client --query "SELECT 1"
     do
-        if [ "$counter" -gt ${1:-120} ]
+        if [ "$counter" -gt "$max_attempt" ]
         then
             echo "Cannot start clickhouse-server"
             rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt ||:
@@ -212,8 +215,7 @@ function check_server_start()
 function check_logs_for_critical_errors()
 {
     # Sanitizer asserts
-    rg -Fa "==================" /var/log/clickhouse-server/stderr.log | rg -v "in query:" >> /test_output/tmp
-    rg -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+    sed -n '/WARNING:.*anitizer/,/^$/p' /var/log/clickhouse-server/stderr.log >> /test_output/tmp
     rg -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
         && echo -e "Sanitizer assert (in stderr.log)$FAIL$(head_escaped /test_output/tmp)" >> /test_output/test_results.tsv \
         || echo -e "No sanitizer asserts$OK" >> /test_output/test_results.tsv
@@ -231,8 +233,8 @@ function check_logs_for_critical_errors()
     # Remove file logical_errors.txt if it's empty
     [ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
 
-    # No such key errors
-    rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
+    # No such key errors (ignore a.myext which is used in 02724_database_s3.sh and does not exist)
+    rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v "a.myext" > /test_output/no_such_key_errors.txt \
         && echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv \
         || echo -e "No lost s3 keys$OK" >> /test_output/test_results.tsv
 
@@ -285,9 +287,9 @@ function collect_query_and_trace_logs()
 
 function collect_core_dumps()
 {
-  find . -type f -maxdepth 1 -name 'core.*' | while read core; do
-      zstd --threads=0 $core
-      mv $core.zst /test_output/
+  find . -type f -maxdepth 1 -name 'core.*' | while read -r core; do
+      zstd --threads=0 "$core"
+      mv "$core.zst" /test_output/
   done
 }
 

@@ -48,10 +48,7 @@ bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path
     std::string directory = object_key.serialize();
     if (!directory.ends_with('/'))
         directory += '/';
-
-    RelativePathsWithMetadata files;
-    object_storage->listObjects(directory, files, 1);
-    return !files.empty();
+    return object_storage->existsOrHasAnyChild(directory);
 }
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
@@ -98,6 +95,8 @@ DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(con
 {
     /// Required for MergeTree
     auto paths = listDirectory(path);
+    // Prepend path, since iterateDirectory() includes path, unlike listDirectory()
+    std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = fs::path(path) / child; });
     std::vector<std::filesystem::path> fs_paths(paths.begin(), paths.end());
     return std::make_unique<StaticDirectoryIterator>(std::move(fs_paths));
 }
@@ -119,6 +118,12 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
     auto object_key = metadata_storage.object_storage->generateObjectKeyForPath(path);
     auto object = StoredObject(object_key.serialize());
     metadata_storage.object_storage->removeObject(object);
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
+{
+    for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
+        metadata_storage.object_storage->removeObject(StoredObject(it->path()));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string &)

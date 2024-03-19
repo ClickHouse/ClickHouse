@@ -54,7 +54,7 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
             return {};
 
         guard.reset();
-        LOG_TRACE(&Poco::Logger::get("StorageSystemDatabases"), "Failed to lock database {} ({}), will retry", name, database->getUUID());
+        LOG_TRACE(getLogger("StorageSystemDatabases"), "Failed to lock database {} ({}), will retry", name, database->getUUID());
     }
 
     ASTPtr ast = database->getCreateDatabaseQuery();
@@ -72,7 +72,7 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
     return engine_full;
 }
 
-static ColumnPtr getFilteredDatabases(const Databases & databases, const SelectQueryInfo & query_info, ContextPtr context)
+static ColumnPtr getFilteredDatabases(const Databases & databases, const ActionsDAG::Node * predicate, ContextPtr context)
 {
     MutableColumnPtr name_column = ColumnString::create();
     MutableColumnPtr engine_column = ColumnString::create();
@@ -94,17 +94,17 @@ static ColumnPtr getFilteredDatabases(const Databases & databases, const SelectQ
         ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"),
         ColumnWithTypeAndName(std::move(uuid_column), std::make_shared<DataTypeUUID>(), "uuid")
     };
-    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
     return block.getByPosition(0).column;
 }
 
-void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
-    ColumnPtr filtered_databases_column = getFilteredDatabases(databases, query_info, context);
+    ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
 
     for (size_t i = 0; i < filtered_databases_column->size(); ++i)
     {
@@ -120,7 +120,6 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 
         size_t src_index = 0;
         size_t res_index = 0;
-        const auto & columns_mask = query_info.columns_mask;
         if (columns_mask[src_index++])
             res_columns[res_index++]->insert(database_name);
         if (columns_mask[src_index++])

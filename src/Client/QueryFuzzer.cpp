@@ -232,7 +232,7 @@ ASTPtr QueryFuzzer::getRandomColumnLike()
         return nullptr;
     }
 
-    ASTPtr new_ast = column_like[fuzz_rand() % column_like.size()]->clone();
+    ASTPtr new_ast = column_like[fuzz_rand() % column_like.size()].second->clone();
     new_ast->setAlias("");
 
     return new_ast;
@@ -272,7 +272,7 @@ void QueryFuzzer::replaceWithTableLike(ASTPtr & ast)
         return;
     }
 
-    ASTPtr new_ast = table_like[fuzz_rand() % table_like.size()]->clone();
+    ASTPtr new_ast = table_like[fuzz_rand() % table_like.size()].second->clone();
 
     std::string old_alias = ast->tryGetAlias();
     new_ast->setAlias(old_alias);
@@ -569,7 +569,8 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
         auto data_type = fuzzDataType(DataTypeFactory::instance().get(column.type));
 
         ParserDataType parser;
-        column.type = parseQuery(parser, data_type->getName(), DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        column.type = parseQuery(parser, data_type->getName(),
+            DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
 }
 
@@ -821,7 +822,8 @@ static ASTPtr tryParseInsertQuery(const String & full_query)
     ParserInsertQuery parser(end, false);
     String message;
 
-    return tryParseQuery(parser, pos, end, message, false, "", false, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    return tryParseQuery(parser, pos, end, message, false, "", false,
+        DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
 }
 
 ASTs QueryFuzzer::getInsertQueriesForFuzzedTables(const String & full_query)
@@ -901,6 +903,112 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
 
     if (const auto * insert = ast->as<ASTInsertQuery>())
         remove_fuzzed_table(insert->getTable());
+}
+
+ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
+{
+    auto * l = child->as<ASTLiteral>();
+    chassert(l);
+    auto type = l->value.getType();
+    if (type == Field::Types::Which::String && fuzz_rand() % 7 == 0)
+    {
+        String value = l->value.get<String>();
+        child = makeASTFunction(
+            "toFixedString", std::make_shared<ASTLiteral>(value), std::make_shared<ASTLiteral>(static_cast<UInt64>(value.size())));
+    }
+    else if (type == Field::Types::Which::UInt64 && fuzz_rand() % 7 == 0)
+    {
+        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toUInt128" : "toUInt256", std::make_shared<ASTLiteral>(l->value.get<UInt64>()));
+    }
+    else if (type == Field::Types::Which::Int64 && fuzz_rand() % 7 == 0)
+    {
+        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toInt128" : "toInt256", std::make_shared<ASTLiteral>(l->value.get<Int64>()));
+    }
+    else if (type == Field::Types::Which::Float64 && fuzz_rand() % 7 == 0)
+    {
+        int decimal = fuzz_rand() % 4;
+        if (decimal == 0)
+            child = makeASTFunction(
+                "toDecimal32",
+                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 9)));
+        else if (decimal == 1)
+            child = makeASTFunction(
+                "toDecimal64",
+                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 18)));
+        else if (decimal == 2)
+            child = makeASTFunction(
+                "toDecimal128",
+                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 38)));
+        else
+            child = makeASTFunction(
+                "toDecimal256",
+                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 76)));
+    }
+
+    if (fuzz_rand() % 7 == 0)
+        child = makeASTFunction("toNullable", child);
+
+    if (fuzz_rand() % 7 == 0)
+        child = makeASTFunction("toLowCardinality", child);
+
+    if (fuzz_rand() % 7 == 0)
+        child = makeASTFunction("materialize", child);
+
+    return child;
+}
+
+/// Tries to remove the functions added in fuzzLiteralUnderExpressionList
+/// Note that it removes them even if the child is not a literal
+ASTPtr QueryFuzzer::reverseLiteralFuzzing(ASTPtr child)
+{
+    if (auto * function = child.get()->as<ASTFunction>())
+    {
+        const std::unordered_set<String> can_be_reverted{
+            "materialize",
+            "toDecimal32", /// Keeping the first parameter only should be ok (valid query most of the time)
+            "toDecimal64",
+            "toDecimal128",
+            "toDecimal256",
+            "toFixedString", /// Same as toDecimal
+            "toInt128",
+            "toInt256",
+            "toLowCardinality",
+            "toNullable",
+            "toUInt128",
+            "toUInt256"};
+        if (can_be_reverted.contains(function->name) && function->children.size() == 1)
+        {
+            if (fuzz_rand() % 7 == 0)
+                return function->children[0];
+        }
+    }
+
+    return nullptr;
+}
+
+
+void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
+{
+    for (auto & child : expr_list.children)
+    {
+        if (auto * literal = typeid_cast<ASTLiteral *>(child.get()))
+        {
+            if (fuzz_rand() % 13 == 0)
+                child = fuzzLiteralUnderExpressionList(child);
+        }
+        else
+        {
+            auto new_child = reverseLiteralFuzzing(child);
+            if (new_child)
+                child = new_child;
+            else
+                fuzz(child);
+        }
+    }
 }
 
 void QueryFuzzer::fuzz(ASTs & asts)
@@ -989,7 +1097,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * expr_list = typeid_cast<ASTExpressionList *>(ast.get()))
     {
-        fuzz(expr_list->children);
+        fuzzExpressionList(*expr_list);
     }
     else if (auto * order_by_element = typeid_cast<ASTOrderByElement *>(ast.get()))
     {
@@ -1106,23 +1214,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         fuzz(select->children);
     }
-    /*
-     * The time to fuzz the settings has not yet come.
-     * Apparently we don't have any infractructure to validate the values of
-     * the settings, and the first query with max_block_size = -1 breaks
-     * because of overflows here and there.
-     *//*
-     * else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
-     * {
-     *      for (auto & c : set->changes)
-     *      {
-     *          if (fuzz_rand() % 50 == 0)
-     *          {
-     *              c.value = fuzzField(c.value);
-     *          }
-     *      }
-     * }
-     */
+    else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
+    {
+        /// Fuzz settings
+        for (auto & c : set->changes)
+            if (fuzz_rand() % 50 == 0)
+                c.value = fuzzField(c.value);
+    }
     else if (auto * literal = typeid_cast<ASTLiteral *>(ast.get()))
     {
         // There is a caveat with fuzzing the children: many ASTs also keep the
@@ -1131,9 +1229,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         // are ASTPtr -- this is redundant ownership, but hides the error if the
         // child field is replaced. Others can be ASTLiteral * or the like, which
         // leads to segfault if the pointed-to AST is replaced.
-        // Replacing children is safe in case of ASTExpressionList. In a more
-        // general case, we can change the value of ASTLiteral, which is what we
-        // do here.
+        // Replacing children is safe in case of ASTExpressionList (done in fuzzExpressionList). In a more
+        // general case, we can change the value of ASTLiteral, which is what we do here
         if (fuzz_rand() % 11 == 0)
         {
             literal->value = fuzzField(literal->value);
@@ -1163,57 +1260,46 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
 }
 
+#define AST_FUZZER_PART_TYPE_CAP 1000
+
 /*
  * This functions collects various parts of query that we can then substitute
  * to a query being fuzzed.
- *
- * TODO: we just stop remembering new parts after our corpus reaches certain size.
- * This is boring, should implement a random replacement of existing parst with
- * small probability. Do this after we add this fuzzer to CI and fix all the
- * problems it can routinely find even in this boring version.
  */
 void QueryFuzzer::collectFuzzInfoMain(ASTPtr ast)
 {
     collectFuzzInfoRecurse(ast);
-
-    aliases.clear();
-    for (const auto & alias : aliases_set)
-    {
-        aliases.push_back(alias);
-    }
-
-    column_like.clear();
-    for (const auto & [name, value] : column_like_map)
-    {
-        column_like.push_back(value);
-    }
-
-    table_like.clear();
-    for (const auto & [name, value] : table_like_map)
-    {
-        table_like.push_back(value);
-    }
 }
 
 void QueryFuzzer::addTableLike(ASTPtr ast)
 {
-    if (table_like_map.size() > 1000)
+    if (table_like_map.size() > AST_FUZZER_PART_TYPE_CAP)
     {
-        table_like_map.clear();
+        const auto iter = std::next(table_like.begin(), fuzz_rand() % table_like.size());
+        const auto ast_del = *iter;
+        table_like.erase(iter);
+        table_like_map.erase(ast_del.first);
     }
 
     const auto name = ast->formatForErrorMessage();
     if (name.size() < 200)
     {
-        table_like_map.insert({name, ast});
+        const auto res = table_like_map.insert({name, ast});
+        if (res.second)
+        {
+            table_like.push_back({name, ast});
+        }
     }
 }
 
 void QueryFuzzer::addColumnLike(ASTPtr ast)
 {
-    if (column_like_map.size() > 1000)
+    if (column_like_map.size() > AST_FUZZER_PART_TYPE_CAP)
     {
-        column_like_map.clear();
+        const auto iter = std::next(column_like.begin(), fuzz_rand() % column_like.size());
+        const auto ast_del = *iter;
+        column_like.erase(iter);
+        column_like_map.erase(ast_del.first);
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -1228,22 +1314,16 @@ void QueryFuzzer::addColumnLike(ASTPtr ast)
     }
     if (name.size() < 200)
     {
-        column_like_map.insert({name, ast});
+        const auto res = column_like_map.insert({name, ast});
+        if (res.second)
+        {
+            column_like.push_back({name, ast});
+        }
     }
 }
 
 void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
 {
-    if (auto * impl = dynamic_cast<ASTWithAlias *>(ast.get()))
-    {
-        if (aliases_set.size() > 1000)
-        {
-            aliases_set.clear();
-        }
-
-        aliases_set.insert(impl->alias);
-    }
-
     if (typeid_cast<ASTLiteral *>(ast.get()))
     {
         addColumnLike(ast);

@@ -38,7 +38,7 @@ public:
         const String & format_name_,
         std::unique_ptr<FileLogSettings> settings,
         const String & comment,
-        bool attach);
+        LoadingStrictnessLevel mode);
 
     using Files = std::vector<String>;
 
@@ -102,8 +102,6 @@ public:
     String getFullMetaPath(const String & file_name) const { return std::filesystem::path(metadata_base_path) / file_name; }
     String getFullDataPath(const String & file_name) const { return std::filesystem::path(root_data_path) / file_name; }
 
-    NamesAndTypesList getVirtuals() const override;
-
     static UInt64 getInode(const String & file_name);
 
     void openFilesAndSetPos();
@@ -149,7 +147,7 @@ private:
     FileInfos file_infos;
 
     const String format_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     DiskPtr disk;
 
@@ -212,6 +210,8 @@ private:
         UInt64 inode = 0;
     };
     ReadMetadataResult readMetadata(const String & filename) const;
+
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }

@@ -4,10 +4,11 @@
         <substitution>
             <name>element_type</name>
             <values>
-                <value>UInt8</value>
-                <value>Int16</value>
-                <value>Int32</value>
-                <value>Int64</value>
+                <!-- integer cases are not relevant in practice for vector search, disable to reduce test runtime -->
+                <!-- <value>UInt8</value> -->
+                <!-- <value>Int16</value> -->
+                <!-- <value>Int32</value> -->
+                <!-- <value>Int64</value> -->
                 <value>Float32</value>
                 <value>Float64</value>
             </values>
@@ -46,7 +47,7 @@
                     rand(n*10+140), rand(n*10+141), rand(n*10+142), rand(n*10+143), rand(n*10+144), rand(n*10+145), rand(n*10+146), rand(n*10+147), rand(n*10+148), rand(n*10+149)
                 ] AS v
             FROM system.numbers
-            LIMIT 8000000
+            LIMIT 5000000
         );
     </fill_query>
 

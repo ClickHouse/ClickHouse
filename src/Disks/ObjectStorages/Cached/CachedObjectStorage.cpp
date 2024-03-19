@@ -24,7 +24,7 @@ CachedObjectStorage::CachedObjectStorage(
     , cache(cache_)
     , cache_settings(cache_settings_)
     , cache_config_name(cache_config_name_)
-    , log(&Poco::Logger::get(getName()))
+    , log(getLogger(getName()))
 {
     cache->initialize();
 }
@@ -43,10 +43,6 @@ ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settin
 {
     ReadSettings modified_settings{read_settings};
     modified_settings.remote_fs_cache = cache;
-
-    if (!canUseReadThroughCache(read_settings))
-        modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
-
     return object_storage->patchSettings(modified_settings);
 }
 
@@ -204,16 +200,6 @@ void CachedObjectStorage::applyNewSettings(
 String CachedObjectStorage::getObjectsNamespace() const
 {
     return object_storage->getObjectsNamespace();
-}
-
-bool CachedObjectStorage::canUseReadThroughCache(const ReadSettings & settings)
-{
-    if (!settings.avoid_readthrough_cache_outside_query_context)
-        return true;
-
-    return CurrentThread::isInitialized()
-        && CurrentThread::get().getQueryContext()
-        && !CurrentThread::getQueryId().empty();
 }
 
 }

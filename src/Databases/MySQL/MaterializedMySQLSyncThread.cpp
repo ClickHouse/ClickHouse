@@ -116,7 +116,7 @@ static BlockIO tryToExecuteQuery(const String & query_to_execute, ContextMutable
     catch (...)
     {
         tryLogCurrentException(
-            &Poco::Logger::get("MaterializedMySQLSyncThread(" + database + ")"),
+            getLogger("MaterializedMySQLSyncThread(" + database + ")"),
             "Query " + query_to_execute + " wasn't finished successfully");
         throw;
     }
@@ -255,7 +255,7 @@ MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
     const MySQLReplication::BinlogClientPtr & binlog_client_,
     MaterializedMySQLSettings * settings_)
     : WithContext(context_->getGlobalContext())
-    , log(&Poco::Logger::get("MaterializedMySQLSyncThread"))
+    , log(getLogger("MaterializedMySQLSyncThread"))
     , database_name(database_name_)
     , mysql_database_name(mysql_database_name_)
     , pool(std::move(pool_)) /// NOLINT
@@ -504,7 +504,7 @@ static inline void dumpDataForTables(
             StreamSettings mysql_input_stream_settings(context->getSettingsRef());
             String mysql_select_all_query = "SELECT " + rewriteMysqlQueryColumn(connection, mysql_database_name, table_name, context->getSettingsRef()) + " FROM "
                     + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name);
-            LOG_INFO(&Poco::Logger::get("MaterializedMySQLSyncThread(" + database_name + ")"), "mysql_select_all_query is {}", mysql_select_all_query);
+            LOG_INFO(getLogger("MaterializedMySQLSyncThread(" + database_name + ")"), "mysql_select_all_query is {}", mysql_select_all_query);
             auto input = std::make_unique<MySQLSource>(connection, mysql_select_all_query, pipeline.getHeader(), mysql_input_stream_settings);
             auto counting = std::make_shared<CountingTransform>(pipeline.getHeader());
             Pipe pipe(std::move(input));
@@ -516,7 +516,7 @@ static inline void dumpDataForTables(
             executor.execute();
 
             const Progress & progress = counting->getProgress();
-            LOG_INFO(&Poco::Logger::get("MaterializedMySQLSyncThread(" + database_name + ")"),
+            LOG_INFO(getLogger("MaterializedMySQLSyncThread(" + database_name + ")"),
                 "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."
                 , table_name, formatReadableQuantity(progress.written_rows), formatReadableSizeWithBinarySuffix(progress.written_bytes)
                 , watch.elapsedSeconds(), formatReadableQuantity(static_cast<size_t>(progress.written_rows / watch.elapsedSeconds()))
@@ -779,7 +779,7 @@ static void writeFieldsToColumn(
                         casted_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
                     }
                     else
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: it is a bug.");
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
                 }
             }
         }
@@ -844,7 +844,7 @@ static inline bool differenceSortingKeys(const Tuple & row_old_data, const Tuple
 static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t version, const std::vector<size_t> & sorting_columns_index)
 {
     if (rows_data.size() % 2 != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: It is a bug.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
 
     size_t prev_bytes = buffer.bytes();
     std::vector<bool> writeable_rows_mask(rows_data.size());

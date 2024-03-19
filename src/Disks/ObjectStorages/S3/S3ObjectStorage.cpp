@@ -13,7 +13,7 @@
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/copyS3File.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Disks/ObjectStorages/S3/diskSettings.h>
@@ -48,6 +48,7 @@ namespace ErrorCodes
 {
     extern const int S3_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -171,7 +172,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 
     auto read_buffer_creator =
         [this, settings_ptr, disk_read_settings]
-        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
+        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromS3>(
             client.get(),
@@ -182,8 +183,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
             disk_read_settings,
             /* use_external_buffer */true,
             /* offset */0,
-            read_until_position,
-            /* restricted_seek */true);
+            /* read_until_position */0,
+            restricted_seek);
     };
 
     switch (read_settings.remote_fs_method)
@@ -193,16 +194,17 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
             return std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator),
                 objects,
+                "s3:" + uri.bucket + "/",
                 disk_read_settings,
                 global_context->getFilesystemCacheLog(),
                 /* use_external_buffer */false);
-
         }
         case RemoteFSReadMethod::threadpool:
         {
             auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator),
                 objects,
+                "s3:" + uri.bucket + "/",
                 disk_read_settings,
                 global_context->getFilesystemCacheLog(),
                 /* use_external_buffer */true);
@@ -482,7 +484,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
             /// If authentication/permissions error occurs then fallthrough to copy with buffer.
             if (exc.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
                 throw;
-            LOG_WARNING(&Poco::Logger::get("S3ObjectStorage"),
+            LOG_WARNING(getLogger("S3ObjectStorage"),
                 "S3-server-side copy object from the disk {} to the disk {} can not be performed: {}\n",
                 getName(), dest_s3->getName(), exc.what());
         }
@@ -561,6 +563,8 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
 
 ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
+    if (!key_generator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
     return key_generator->generate(path);
 }
 

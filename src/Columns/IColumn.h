@@ -34,6 +34,7 @@ class Arena;
 class ColumnGathererStream;
 class Field;
 class WeakHash32;
+class ColumnConst;
 
 /*
  * Represents a set of equal ranges in previous column to perform sorting in current column.
@@ -165,6 +166,10 @@ public:
     /// Is used to transform raw strings to Blocks (for example, inside input format parsers)
     virtual void insert(const Field & x) = 0;
 
+    /// Appends new value at the end of the column if it has appropriate type and
+    /// returns true if insert is successful and false otherwise.
+    virtual bool tryInsert(const Field & x) = 0;
+
     /// Appends n-th element from other column with the same type.
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
     virtual void insertFrom(const IColumn & src, size_t n);
@@ -218,15 +223,46 @@ public:
       *  For example, to obtain unambiguous representation of Array of strings, strings data should be interleaved with their sizes.
       * Parameter begin should be used with Arena::allocContinue.
       */
-    virtual StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit = nullptr) const = 0;
+    virtual StringRef serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArena is not supported for {}", getName());
+    }
+
+    /// Same as above but serialize into already allocated continuous memory.
+    /// Return pointer to the end of the serialization data.
+    virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
+    }
+
+    /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
+    virtual StringRef
+    serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArenaWithNull is not supported for {}", getName());
+    }
+
+    virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemoryWithNull is not supported for {}", getName());
+    }
+
+    /// Calculate all the sizes of serialized data in column, then added to `sizes`.
+    /// If `is_null` is not nullptr, also take null bit into account.
+    /// This is currently used to facilitate the allocation of memory for an entire continuous row
+    /// in a single step. For more details, refer to the HashMethodSerialized implementation.
+    virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method collectSerializedValueSizes is not supported for {}", getName());
+    }
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns pointer to the position after the read data.
-    virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
+    [[nodiscard]] virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
     /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns a pointer to the position after the deserialized data.
-    virtual const char * skipSerializedInArena(const char *) const = 0;
+    [[nodiscard]] virtual const char * skipSerializedInArena(const char *) const = 0;
 
     /// Update state of hash function with value of n-th element.
     /// On subsequent calls of this method for sequence of column values of arbitrary types,
@@ -399,10 +435,7 @@ public:
 
     /// Requests the removal of unused capacity.
     /// It is a non-binding request to reduce the capacity of the underlying container to its size.
-    virtual MutablePtr shrinkToFit() const
-    {
-        return cloneResized(size());
-    }
+    virtual void shrinkToFit() {}
 
     /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
     virtual void ensureOwnership() {}
@@ -462,10 +495,10 @@ public:
 
     /// Returns column with @total_size elements.
     /// In result column values from current column are at positions from @offsets.
-    /// Other values are filled by @default_value.
+    /// Other values are filled by value from @column_with_default_value.
     /// @shift means how much rows to skip from the beginning of current column.
     /// Used to create full column from sparse.
-    [[nodiscard]] virtual Ptr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const;
+    [[nodiscard]] virtual Ptr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const;
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
@@ -572,43 +605,18 @@ public:
     [[nodiscard]] String dumpStructure() const;
 
 protected:
-    /// Template is to devirtualize calls to insertFrom method.
-    /// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
-    template <typename Derived>
-    std::vector<MutablePtr> scatterImpl(ColumnIndex num_columns, const Selector & selector) const;
-
-    template <typename Derived, bool reversed, bool use_indexes>
-    void compareImpl(const Derived & rhs, size_t rhs_row_num,
-                     PaddedPODArray<UInt64> * row_indexes,
-                     PaddedPODArray<Int8> & compare_results,
-                     int nan_direction_hint) const;
-
-    template <typename Derived>
-    void doCompareColumn(const Derived & rhs, size_t rhs_row_num,
-                         PaddedPODArray<UInt64> * row_indexes,
-                         PaddedPODArray<Int8> & compare_results,
-                         int direction, int nan_direction_hint) const;
-
-    template <typename Derived>
-    bool hasEqualValuesImpl() const;
-
-    /// Template is to devirtualize calls to 'isDefaultAt' method.
-    template <typename Derived>
-    double getRatioOfDefaultRowsImpl(double sample_ratio) const;
-
-    template <typename Derived>
-    UInt64 getNumberOfDefaultRowsImpl() const;
-
-    template <typename Derived>
-    void getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const;
-
     template <typename Compare, typename Sort, typename PartialSort>
-    void getPermutationImpl(size_t limit, Permutation & res, Compare compare,
-                        Sort full_sort, PartialSort partial_sort) const;
+    void getPermutationImpl(size_t limit, Permutation & res, Compare compare, Sort full_sort, PartialSort partial_sort) const;
 
     template <typename Compare, typename Equals, typename Sort, typename PartialSort>
-    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Compare compare, Equals equals,
-                        Sort full_sort, PartialSort partial_sort) const;
+    void updatePermutationImpl(
+        size_t limit,
+        Permutation & res,
+        EqualRanges & equal_ranges,
+        Compare compare,
+        Equals equals,
+        Sort full_sort,
+        PartialSort partial_sort) const;
 };
 
 using ColumnPtr = IColumn::Ptr;
@@ -625,7 +633,7 @@ struct IsMutableColumns;
 template <typename Arg, typename ... Args>
 struct IsMutableColumns<Arg, Args ...>
 {
-    static const bool value = std::is_assignable<MutableColumnPtr &&, Arg>::value && IsMutableColumns<Args ...>::value;
+    static const bool value = std::is_assignable_v<MutableColumnPtr &&, Arg> && IsMutableColumns<Args ...>::value;
 };
 
 template <>
@@ -661,5 +669,51 @@ bool isColumnConst(const IColumn & column);
 
 /// True if column's an ColumnNullable instance. It's just a syntax sugar for type check.
 bool isColumnNullable(const IColumn & column);
+
+/// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
+bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
+
+/// Implement methods to devirtualize some calls of IColumn in final descendents.
+/// `typename Parent` is needed because some columns don't inherit IColumn directly.
+/// See ColumnFixedSizeHelper for example.
+template <typename Derived, typename Parent = IColumn>
+class IColumnHelper : public Parent
+{
+    /// Devirtualize insertFrom.
+    MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override;
+
+    /// Devirtualize insertFrom and insertRangeFrom.
+    void gather(ColumnGathererStream & gatherer) override;
+
+    /// Devirtualize compareAt.
+    void compareColumn(
+        const IColumn & rhs_base,
+        size_t rhs_row_num,
+        PaddedPODArray<UInt64> * row_indexes,
+        PaddedPODArray<Int8> & compare_results,
+        int direction,
+        int nan_direction_hint) const override;
+
+    /// Devirtualize compareAt.
+    bool hasEqualValues() const override;
+
+    /// Devirtualize isDefaultAt.
+    double getRatioOfDefaultRows(double sample_ratio) const override;
+
+    /// Devirtualize isDefaultAt.
+    UInt64 getNumberOfDefaultRows() const override;
+
+    /// Devirtualize isDefaultAt.
+    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
+
+    /// Devirtualize byteSizeAt.
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+
+    /// Move common implementations into the same translation unit to ensure they are properly inlined.
+    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;
+    StringRef serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+};
 
 }

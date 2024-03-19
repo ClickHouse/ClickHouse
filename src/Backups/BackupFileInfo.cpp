@@ -102,7 +102,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     const BackupEntryPtr & backup_entry,
     const BackupPtr & base_backup,
     const ReadSettings & read_settings,
-    Poco::Logger * log)
+    LoggerPtr log)
 {
     auto adjusted_path = removeLeadingSlash(file_name);
 
@@ -129,7 +129,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     }
 
     if (!log)
-        log = &Poco::Logger::get("FileInfoFromBackupEntry");
+        log = getLogger("FileInfoFromBackupEntry");
 
     std::optional<SizeAndChecksum> base_backup_file_info = getInfoAboutFileFromBaseBackupIfExists(base_backup, adjusted_path);
 
@@ -216,7 +216,7 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
     std::exception_ptr exception;
 
     auto thread_group = CurrentThread::getGroup();
-    Poco::Logger * log = &Poco::Logger::get("FileInfosFromBackupEntries");
+    LoggerPtr log = getLogger("FileInfosFromBackupEntries");
 
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {

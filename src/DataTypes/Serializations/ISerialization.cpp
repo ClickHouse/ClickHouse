@@ -54,12 +54,16 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     TupleElement,
     NamedOffsets,
     NamedNullMap,
+    NamedVariantDiscriminators,
 };
 
 String ISerialization::Substream::toString() const
 {
     if (named_types.contains(type))
         return fmt::format("{}({})", type, name_of_substream);
+
+    if (type == VariantElement)
+        return fmt::format("VariantElement({})", variant_element_name);
 
     return String(magic_enum::enum_name(type));
 }
@@ -186,6 +190,12 @@ String getNameForSubstreamPath(
             else
                 stream_name += substream_name;
         }
+        else if (it->type == Substream::VariantDiscriminators)
+            stream_name += ".variant_discr";
+        else if (it->type == Substream::VariantOffsets)
+            stream_name += ".variant_offsets";
+        else if (it->type == Substream::VariantElement)
+            stream_name += "." + it->variant_element_name;
     }
 
     return stream_name;
@@ -274,6 +284,53 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     return true;
 }
 
+namespace
+{
+
+template <typename F>
+bool tryDeserializeText(const F deserialize, DB::IColumn & column)
+{
+    size_t prev_size = column.size();
+    try
+    {
+        deserialize(column);
+        return true;
+    }
+    catch (...)
+    {
+        if (column.size() > prev_size)
+            column.popBack(column.size() - prev_size);
+        return false;
+    }
+}
+
+}
+
+bool ISerialization::tryDeserializeTextCSV(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+{
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextCSV(my_column, istr, settings); }, column);
+}
+
+bool ISerialization::tryDeserializeTextEscaped(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+{
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextEscaped(my_column, istr, settings); }, column);
+}
+
+bool ISerialization::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+{
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextJSON(my_column, istr, settings); }, column);
+}
+
+bool ISerialization::tryDeserializeTextQuoted(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+{
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextQuoted(my_column, istr, settings); }, column);
+}
+
+bool ISerialization::tryDeserializeWholeText(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+{
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeWholeText(my_column, istr, settings); }, column);
+}
+
 void ISerialization::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
@@ -281,6 +338,15 @@ void ISerialization::deserializeTextRaw(IColumn & column, ReadBuffer & istr, con
     readString(field, istr);
     ReadBufferFromString buf(field);
     deserializeWholeText(column, buf, settings);
+}
+
+bool ISerialization::tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String field;
+    /// Read until \t or \n.
+    readString(field, istr);
+    ReadBufferFromString buf(field);
+    return tryDeserializeWholeText(column, buf, settings);
 }
 
 void ISerialization::serializeTextMarkdown(
@@ -310,7 +376,8 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
     size_t last_elem = prefix_len - 1;
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::TupleElement
-            || path[last_elem].type == Substream::ArraySizes;
+            || path[last_elem].type == Substream::ArraySizes
+            || path[last_elem].type == Substream::VariantElement;
 }
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
@@ -339,6 +406,8 @@ void ISerialization::throwUnexpectedDataAfterParsedValue(IColumn & column, ReadB
 {
     WriteBufferFromOwnString ostr;
     serializeText(column, column.size() - 1, ostr, settings);
+    /// Restore correct column size.
+    column.popBack(1);
     throw Exception(
         ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
         "Unexpected data '{}' after parsed {} value '{}'",
@@ -348,4 +417,3 @@ void ISerialization::throwUnexpectedDataAfterParsedValue(IColumn & column, ReadB
 }
 
 }
-

@@ -1,6 +1,7 @@
 #include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <filesystem>
@@ -153,7 +154,7 @@ std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) co
     return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), user);
 }
 
-Poco::Logger * KeyMetadata::logger() const
+LoggerPtr KeyMetadata::logger() const
 {
     return cache_metadata->log;
 }
@@ -167,7 +168,7 @@ CacheMetadata::CacheMetadata(
     , cleanup_queue(std::make_shared<CleanupQueue>())
     , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
     , write_cache_per_user_directory(write_cache_per_user_directory_)
-    , log(&Poco::Logger::get("CacheMetadata"))
+    , log(getLogger("CacheMetadata"))
     , download_threads_num(background_download_threads_)
 {
 }
@@ -693,6 +694,9 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         reader->set(memory->data(), memory->size());
     }
 
+    const auto reserve_space_lock_wait_timeout_milliseconds =
+        Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+
     size_t offset = file_segment.getCurrentWriteOffset();
     if (offset != static_cast<size_t>(reader->getPosition()))
         reader->seek(offset, SEEK_SET);
@@ -701,7 +705,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     {
         auto size = reader->available();
 
-        if (!file_segment.reserve(size))
+        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds))
         {
             LOG_TEST(
                 log, "Failed to reserve space during background download "
@@ -924,7 +928,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 {
     auto file_segment = it->second->file_segment;
 
-    LOG_DEBUG(
+    LOG_TEST(
         key_metadata->logger(), "Remove from cache. Key: {}, offset: {}, size: {}",
         getKey(), file_segment->offset(), file_segment->reserved_size);
 
@@ -938,8 +942,18 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     try
     {
         const auto path = key_metadata->getFileSegmentPath(*file_segment);
-        bool exists = fs::exists(path);
-        if (exists)
+        if (file_segment->segment_kind == FileSegmentKind::Temporary)
+        {
+            /// FIXME: For temporary file segment the requirement is not as strong because
+            /// the implementation of "temporary data in cache" creates files in advance.
+            if (fs::exists(path))
+                fs::remove(path);
+        }
+        else if (file_segment->downloaded_size == 0)
+        {
+            chassert(!fs::exists(path));
+        }
+        else if (fs::exists(path))
         {
             fs::remove(path);
 
@@ -952,7 +966,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
             LOG_TEST(key_metadata->logger(), "Removed file segment at path: {}", path);
         }
-        else if (file_segment->downloaded_size && !can_be_broken)
+        else if (!can_be_broken)
         {
 #ifdef ABORT_ON_LOGICAL_ERROR
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);

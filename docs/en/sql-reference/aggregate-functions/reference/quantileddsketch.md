@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/quantileddsketch
 sidebar_position: 211
-title: quantileDDSketch
+title: quantileDD
 ---
 
-Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees. It works by building a [DDSketch](https://www.vldb.org/pvldb/vol12/p2195-masson.pdf).
+Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees. It works by building a [DD](https://www.vldb.org/pvldb/vol12/p2195-masson.pdf).
 
 **Syntax**
 
@@ -44,13 +44,13 @@ Input table has an integer and a float columns:
 Query to calculate 0.75-quantile (third quartile):
 
 ``` sql
-SELECT quantileDDSketch(0.01, 0.75)(a), quantileDDSketch(0.01, 0.75)(b) FROM example_table;
+SELECT quantileDD(0.01, 0.75)(a), quantileDD(0.01, 0.75)(b) FROM example_table;
 ```
 
 Result:
 
 ``` text
-┌─quantileDDSketch(0.01, 0.75)(a)─┬─quantileDDSketch(0.01, 0.75)(b)─┐
+┌─quantileDD(0.01, 0.75)(a)─┬─quantileDD(0.01, 0.75)(b)─┐
 │               2.974233423476717 │                            1.01 │
 └─────────────────────────────────┴─────────────────────────────────┘
 ```

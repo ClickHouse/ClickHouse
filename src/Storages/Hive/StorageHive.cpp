@@ -45,6 +45,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/VirtualColumnUtils.h>
 
 namespace CurrentMetrics
 {
@@ -411,7 +412,7 @@ private:
     bool generate_chunk_from_metadata{false};
     UInt64 current_file_remained_rows = 0;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageHive");
+    LoggerPtr log = getLogger("StorageHive");
 };
 
 
@@ -444,6 +445,7 @@ StorageHive::StorageHive(
     storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
 
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 void StorageHive::lazyInitialize()
@@ -770,9 +772,12 @@ class ReadFromHive : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromHive"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters() override;
 
     ReadFromHive(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block header,
         std::shared_ptr<StorageHive> storage_,
         std::shared_ptr<StorageHiveSource::SourcesInfo> sources_info_,
@@ -780,11 +785,15 @@ public:
         HDFSFSPtr fs_,
         HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata_,
         Block sample_block_,
-        Poco::Logger * log_,
-        ContextPtr context_,
+        LoggerPtr log_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(header)})
+        : SourceStepWithFilter(
+            DataStream{.header = std::move(header)},
+            column_names_,
+            query_info_,
+            storage_snapshot_,
+            context_)
         , storage(std::move(storage_))
         , sources_info(std::move(sources_info_))
         , builder(std::move(builder_))
@@ -792,7 +801,6 @@ public:
         , hive_table_metadata(std::move(hive_table_metadata_))
         , sample_block(std::move(sample_block_))
         , log(log_)
-        , context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
     {
@@ -805,24 +813,17 @@ private:
     HDFSFSPtr fs;
     HiveMetastoreClient::HiveTableMetadataPtr hive_table_metadata;
     Block sample_block;
-    Poco::Logger * log;
+    LoggerPtr log;
 
-    ContextPtr context;
     size_t max_block_size;
     size_t num_streams;
 
     std::optional<HiveFiles> hive_files;
 
-    void createFiles(const ActionsDAGPtr & filter_actions_dag);
+    void createFiles();
 };
 
-void ReadFromHive::applyFilters()
-{
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
-    createFiles(filter_actions_dag);
-}
-
-void ReadFromHive::createFiles(const ActionsDAGPtr & filter_actions_dag)
+void ReadFromHive::createFiles()
 {
     if (hive_files)
         return;
@@ -835,7 +836,7 @@ void StorageHive::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo &,
+    SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t max_block_size,
@@ -891,6 +892,10 @@ void StorageHive::read(
     auto this_ptr = std::static_pointer_cast<StorageHive>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromHive>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        context_,
         StorageHiveSource::getHeader(sample_block, sources_info),
         std::move(this_ptr),
         std::move(sources_info),
@@ -899,7 +904,6 @@ void StorageHive::read(
         std::move(hive_table_metadata),
         std::move(sample_block),
         log,
-        context_,
         max_block_size,
         num_streams);
 
@@ -908,7 +912,7 @@ void StorageHive::read(
 
 void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    createFiles(nullptr);
+    createFiles();
 
     if (hive_files->empty())
     {
@@ -1016,13 +1020,6 @@ HiveFiles StorageHive::collectHiveFiles(
 SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /* metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for StorageHive");
-}
-
-NamesAndTypesList StorageHive::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 std::optional<UInt64> StorageHive::totalRows(const Settings & settings) const

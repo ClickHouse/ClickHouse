@@ -13,6 +13,7 @@
 #include <base/sort.h>
 
 #include <ranges>
+#include <Poco/Timestamp.h>
 
 namespace DB
 {
@@ -36,7 +37,7 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     zookeeper_path = storage.zookeeper_path;
     replica_path = storage.replica_path;
     logger_name = storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeQueue)";
-    log = &Poco::Logger::get(logger_name);
+    log = getLogger(logger_name);
 }
 
 
@@ -682,7 +683,7 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
                 ops.emplace_back(zkutil::makeSetRequest(
                     fs::path(replica_path) / "min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
 
-            auto responses = zookeeper->multi(ops);
+            auto responses = zookeeper->multi(ops, /* check_session_valid */ true);
 
             /// Now we have successfully updated the queue in ZooKeeper. Update it in RAM.
 
@@ -860,6 +861,9 @@ ActiveDataPartSet getPartNamesToMutate(
 
 int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback)
 {
+    if (pull_log_blocker.isCancelled())
+        throw Exception(ErrorCodes::ABORTED, "Log pulling is cancelled");
+
     std::lock_guard lock(update_mutations_mutex);
 
     Coordination::Stat mutations_stat;
@@ -1346,13 +1350,21 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
             if (part)
             {
-                if (auto part_in_memory = asInMemoryPart(part))
-                    sum_parts_size_in_bytes += part_in_memory->block.bytes();
+                if (entry.type == LogEntry::MERGE_PARTS)
+                    sum_parts_size_in_bytes += part->getExistingBytesOnDisk();
                 else
                     sum_parts_size_in_bytes += part->getBytesOnDisk();
+
+                if (entry.type == LogEntry::MUTATE_PART && !storage.mutation_backoff_policy.partCanBeMutated(part->name))
+                {
+                        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} "
+                           "because recently it has failed. According to exponential backoff policy, put aside this log entry.";
+
+                        LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(), entry.new_part_name);
+                        return false;
+                }
             }
         }
-
         if (merger_mutator.merges_blocker.isCancelled())
         {
             constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because merges and mutations are cancelled now.";
@@ -1786,7 +1798,7 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 }
 
 
-std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
+MutationCommands ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
     std::unique_lock lock(state_mutex);
 
@@ -1796,9 +1808,8 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
 
     Int64 part_data_version = part->info.getDataVersion();
     Int64 part_metadata_version = part->getMetadataVersion();
-    LOG_TEST(log, "Looking for mutations for part {} (part data version {}, part metadata version {})", part->name, part_data_version, part_metadata_version);
 
-    std::map<int64_t, MutationCommands> result;
+    MutationCommands result;
 
     bool seen_all_data_mutations = false;
     bool seen_all_metadata_mutations = false;
@@ -1811,7 +1822,15 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
         if (seen_all_data_mutations && seen_all_metadata_mutations)
             break;
 
-        auto alter_version = mutation_status->entry->alter_version;
+        auto & entry = mutation_status->entry;
+
+        auto add_to_result = [&] {
+            for (const auto & command : entry->commands | std::views::reverse)
+                if (AlterConversions::supportsMutationCommandType(command.type))
+                    result.emplace_back(command);
+        };
+
+        auto alter_version = entry->alter_version;
         if (alter_version != -1)
         {
             if (alter_version > storage.getInMemoryMetadataPtr()->getMetadataVersion())
@@ -1819,21 +1838,18 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
 
             /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
-                result[mutation_version] = mutation_status->entry->commands;
+                add_to_result();
             else
                 seen_all_metadata_mutations = true;
         }
         else
         {
             if (mutation_version > part_data_version)
-                result[mutation_version] = mutation_status->entry->commands;
+                add_to_result();
             else
                 seen_all_data_mutations = true;
         }
     }
-
-    LOG_TEST(log, "Got {} commands for part {} (part data version {}, part metadata version {})",
-        result.size(), part->name, part_data_version, part_metadata_version);
 
     return result;
 }
@@ -2149,7 +2165,7 @@ LocalMergePredicate::LocalMergePredicate(ReplicatedMergeTreeQueue & queue_)
 
 template<typename VirtualPartsT, typename MutationsStateT>
 CommittingBlocks BaseMergePredicate<VirtualPartsT, MutationsStateT>::getCommittingBlocks(
-    zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, Poco::Logger * log_)
+    zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, LoggerPtr log_)
 {
     CommittingBlocks committing_blocks;
 

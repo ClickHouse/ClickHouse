@@ -1,8 +1,18 @@
-#include <IO/WriteHelpers.h>
+#include <Interpreters/SystemLog.h>
+
+#include <base/scope_guard.h>
+#include <Common/logger_useful.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/quoteString.h>
+#include <Common/setThreadName.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/BackupLog.h>
+#include <Interpreters/BlobStorageLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/CrashLog.h>
+#include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
@@ -10,38 +20,31 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
-#include <Interpreters/BlobStorageLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
+#include <Interpreters/S3QueueLog.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
-#include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/FilesystemReadPrefetchesLog.h>
-#include <Interpreters/S3QueueLog.h>
 #include <Interpreters/ZooKeeperLog.h>
-#include <Interpreters/BackupLog.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
-#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/CommonParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <base/scope_guard.h>
-#include <fmt/core.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include "Common/quoteString.h"
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 
+#include <fmt/core.h>
 
 namespace DB
 {
@@ -91,7 +94,7 @@ namespace
             if (!storage_p.parse(pos, storage, expected))
                 return false;
 
-            ParserKeyword s_comment("COMMENT");
+            ParserKeyword s_comment(Keyword::COMMENT);
             ParserStringLiteral string_literal_parser;
             ASTPtr comment;
 
@@ -125,13 +128,13 @@ std::shared_ptr<TSystemLog> createSystemLog(
 {
     if (!config.has(config_prefix))
     {
-        LOG_DEBUG(&Poco::Logger::get("SystemLog"),
+        LOG_DEBUG(getLogger("SystemLog"),
                 "Not creating {}.{} since corresponding section '{}' is missing from config",
                 default_database_name, default_table_name, config_prefix);
 
         return {};
     }
-    LOG_DEBUG(&Poco::Logger::get("SystemLog"),
+    LOG_DEBUG(getLogger("SystemLog"),
               "Creating {}.{} from {}", default_database_name, default_table_name, config_prefix);
 
     SystemLogSettings log_settings;
@@ -143,7 +146,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     {
         /// System tables must be loaded before other tables, but loading order is undefined for all databases except `system`
         LOG_ERROR(
-            &Poco::Logger::get("SystemLog"),
+            getLogger("SystemLog"),
             "Custom database name for a system table specified in config."
             " Table `{}` will be created in `system` database instead of `{}`",
             log_settings.queue_settings.table,
@@ -211,16 +214,17 @@ std::shared_ptr<TSystemLog> createSystemLog(
             if (!settings.empty())
                 log_settings.engine += (storage_policy.empty() ? " " : ", ") + settings;
         }
-
-        /// Add comment to AST. So it will be saved when the table will be renamed.
-        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
     ParserStorageWithComment storage_parser;
+    auto storage_ast = parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
+            "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    auto & storage_with_comment = storage_ast->as<StorageWithComment &>();
 
-    parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
-            "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    /// Add comment to AST. So it will be saved when the table will be renamed.
+    if (!storage_with_comment.comment || storage_with_comment.comment->as<ASTLiteral &>().value.safeGet<String>().empty())
+        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
 
     log_settings.queue_settings.flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
                                                                                TSystemLog::getDefaultFlushIntervalMilliseconds());
@@ -395,7 +399,7 @@ SystemLog<LogElement>::SystemLog(
     std::shared_ptr<SystemLogQueue<LogElement>> queue_)
     : Base(settings_.queue_settings, queue_)
     , WithContext(context_)
-    , log(&Poco::Logger::get("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
+    , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
     , create_query(serializeAST(*getCreateTableQuery()))
@@ -562,7 +566,6 @@ void SystemLog<LogElement>::prepareTable()
                 {table_id.database_name, table_id.table_name + "_" + toString(suffix)}, getContext()))
                 ++suffix;
 
-            auto rename = std::make_shared<ASTRenameQuery>();
             ASTRenameQuery::Element elem
             {
                 ASTRenameQuery::Table
@@ -585,7 +588,7 @@ void SystemLog<LogElement>::prepareTable()
                 old_create_query,
                 create_query);
 
-            rename->elements.emplace_back(std::move(elem));
+            auto rename = std::make_shared<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
 
             ActionLock merges_lock;
             if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID() == UUIDHelpers::Nil)
@@ -647,7 +650,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 
     ASTPtr storage_with_comment_ast = parseQuery(
         storage_parser, storage_def.data(), storage_def.data() + storage_def.size(),
-        "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
 

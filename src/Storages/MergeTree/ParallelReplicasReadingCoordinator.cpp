@@ -1,28 +1,19 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <algorithm>
-#include <cmath>
-#include <cstddef>
 #include <iterator>
-#include <map>
-#include <mutex>
 #include <numeric>
 #include <set>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <vector>
 #include <consistent_hashing.h>
 
 #include <IO/Progress.h>
-#include <IO/WriteBufferFromString.h>
-#include <Storages/MergeTree/IntersectionsIndexes.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
-#include <base/defines.h>
-#include <base/types.h>
 #include <boost/algorithm/string/split.hpp>
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -31,7 +22,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-#include <Common/thread_local_rng.h>
+
 
 using namespace DB;
 
@@ -56,6 +47,32 @@ takeFromRange(const MarkRange & range, size_t min_number_of_marks, size_t & curr
     current_marks_amount += range_we_take.getNumberOfMarks();
     return range_we_take.getNumberOfMarks();
 }
+
+void sortResponseRanges(RangesInDataPartsDescription & result)
+{
+    std::ranges::sort(result, [](const auto & lhs, const auto & rhs) { return lhs.info < rhs.info; });
+
+    RangesInDataPartsDescription new_result;
+
+    /// Aggregate ranges for each part within a single entry
+    for (auto & ranges_in_part : result)
+    {
+        if (new_result.empty() || new_result.back().info != ranges_in_part.info)
+            new_result.push_back(RangesInDataPartDescription{.info = ranges_in_part.info});
+
+        new_result.back().ranges.insert(
+            new_result.back().ranges.end(),
+            std::make_move_iterator(ranges_in_part.ranges.begin()),
+            std::make_move_iterator(ranges_in_part.ranges.end()));
+        ranges_in_part.ranges.clear();
+    }
+
+    /// Sort ranges for each part
+    for (auto & ranges_in_part : new_result)
+        std::sort(ranges_in_part.ranges.begin(), ranges_in_part.ranges.end());
+
+    result = std::move(new_result);
+}
 }
 
 namespace ProfileEvents
@@ -71,11 +88,9 @@ extern const Event ParallelReplicasCollectingOwnedSegmentsMicroseconds;
 extern const Event ParallelReplicasReadAssignedMarks;
 extern const Event ParallelReplicasReadUnassignedMarks;
 extern const Event ParallelReplicasReadAssignedForStealingMarks;
-}
 
-namespace ProfileEvents
-{
-    extern const Event ParallelReplicasUsedCount;
+extern const Event ParallelReplicasUsedCount;
+extern const Event ParallelReplicasUnavailableCount;
 }
 
 namespace DB
@@ -219,7 +234,7 @@ private:
     };
     std::vector<ReplicaStatus> replica_status;
 
-    Poco::Logger * log = &Poco::Logger::get("DefaultCoordinator");
+    LoggerPtr log = getLogger("DefaultCoordinator");
 
     /// Workflow of a segment:
     /// 0. `all_parts_to_read` contains all the parts and thus all the segments initially present there (virtually)
@@ -775,6 +790,8 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         }
     }
 
+    sortResponseRanges(response.description);
+
     LOG_DEBUG(
         log,
         "Going to respond to replica {} with {}; mine_marks={}, stolen_by_hash={}, stolen_rest={}",
@@ -807,7 +824,7 @@ public:
     Parts all_parts_to_read;
     size_t total_rows_to_read = 0;
 
-    Poco::Logger * log = &Poco::Logger::get(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
+    LoggerPtr log = getLogger(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
 
 template <CoordinationMode mode>
@@ -997,6 +1014,8 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
 void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasUnavailableCount);
+
     std::lock_guard lock(mutex);
 
     if (!pimpl)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Parsers/CommonParsers.h>
 
 namespace DB
 {
@@ -45,7 +46,7 @@ enum class AuthenticationType
 
 struct AuthenticationTypeInfo
 {
-    const char * const raw_name;
+    Keyword keyword; // Keyword used in parser
     const String name; /// Lowercased with underscores, e.g. "sha256_password".
     bool is_password;
     static const AuthenticationTypeInfo & get(AuthenticationType type_);
@@ -53,7 +54,7 @@ struct AuthenticationTypeInfo
 
 inline String toString(AuthenticationType type_)
 {
-    return AuthenticationTypeInfo::get(type_).raw_name;
+    return String(toStringView(AuthenticationTypeInfo::get(type_).keyword));
 }
 
 }

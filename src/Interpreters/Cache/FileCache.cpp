@@ -27,6 +27,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheReserveMicroseconds;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
+    extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
 }
 
 namespace DB
@@ -85,7 +86,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , boundary_alignment(settings.boundary_alignment)
     , load_metadata_threads(settings.load_metadata_threads)
     , write_cache_per_user_directory(settings.write_cache_per_user_id_directory)
-    , log(&Poco::Logger::get("FileCache(" + cache_name + ")"))
+    , log(getLogger("FileCache(" + cache_name + ")"))
     , metadata(settings.base_path, settings.background_download_queue_size_limit, settings.background_download_threads, write_cache_per_user_directory)
 {
     if (settings.cache_policy == "LRU")
@@ -182,10 +183,15 @@ void FileCache::initialize()
     is_initialized = true;
 }
 
-CacheGuard::Lock FileCache::lockCache() const
+CachePriorityGuard::Lock FileCache::lockCache() const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
     return cache_guard.lock();
+}
+
+CachePriorityGuard::Lock FileCache::tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout) const
+{
+    return acquire_timeout.has_value() ? cache_guard.tryLockFor(acquire_timeout.value()) : cache_guard.tryLock();
 }
 
 FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const
@@ -700,7 +706,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     size_t size,
     FileSegment::State state,
     const CreateFileSegmentSettings & create_settings,
-    const CacheGuard::Lock * lock)
+    const CachePriorityGuard::Lock * lock)
 {
     /// Create a file_segment_metadata and put it in `files` map by [key][offset].
 
@@ -771,12 +777,29 @@ bool FileCache::tryReserve(
     FileSegment & file_segment,
     const size_t size,
     FileCacheReserveStat & reserve_stat,
-    const UserInfo & user)
+    const UserInfo & user,
+    size_t lock_wait_timeout_milliseconds)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
 
     assertInitialized();
-    auto cache_lock = lockCache();
+
+    /// A logical race on cache_is_being_resized is still possible,
+    /// in this case we will try to lock cache with timeout, this is ok, timeout is small
+    /// and as resizing of cache can take a long time then this small chance of a race is
+    /// ok compared to the number of cases this check will help.
+    if (cache_is_being_resized.load(std::memory_order_relaxed))
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
+        return false;
+    }
+
+    auto cache_lock = tryLockCache(std::chrono::milliseconds(lock_wait_timeout_milliseconds));
+    if (!cache_lock)
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
+        return false;
+    }
 
     LOG_TEST(
         log, "Trying to reserve space ({} bytes) for {}:{}, current usage {}/{}",
@@ -972,7 +995,7 @@ void FileCache::loadMetadataImpl()
     std::mutex set_exception_mutex;
     std::atomic<bool> stop_loading = false;
 
-    LOG_INFO(log, "Loading filesystem cache with {} threads", load_metadata_threads);
+    LOG_INFO(log, "Loading filesystem cache with {} threads from {}", load_metadata_threads, metadata.getBaseDirectory());
 
     for (size_t i = 0; i < load_metadata_threads; ++i)
     {
@@ -1252,12 +1275,14 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
 
 size_t FileCache::getUsedCacheSize() const
 {
-    return main_priority->getSize(lockCache());
+    /// We use this method for metrics, so it is ok to get approximate result.
+    return main_priority->getSizeApprox();
 }
 
 size_t FileCache::getFileSegmentsNum() const
 {
-    return main_priority->getElementsCount(lockCache());
+    /// We use this method for metrics, so it is ok to get approximate result.
+    return main_priority->getElementsCountApprox();
 }
 
 void FileCache::assertCacheCorrectness()
@@ -1315,8 +1340,12 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
     if (new_settings.max_size != actual_settings.max_size
         || new_settings.max_elements != actual_settings.max_elements)
     {
-        auto cache_lock = lockCache();
+        cache_is_being_resized.store(true, std::memory_order_relaxed);
+        SCOPE_EXIT({
+            cache_is_being_resized.store(false, std::memory_order_relaxed);
+        });
 
+        auto cache_lock = lockCache();
         bool updated = false;
         try
         {

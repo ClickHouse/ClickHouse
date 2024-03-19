@@ -233,7 +233,7 @@ public:
                     will_be);
         }
 
-        zookeeper->multi(requests);
+        zookeeper->multi(requests, /* check_session_valid */ true);
     }
 };
 
@@ -321,7 +321,7 @@ StorageKeeperMap::StorageKeeperMap(
     , primary_key(primary_key_)
     , zookeeper_name(zkutil::extractZooKeeperName(zk_root_path_))
     , keys_limit(keys_limit_)
-    , log(&Poco::Logger::get(fmt::format("StorageKeeperMap ({})", table_id.getNameForLogs())))
+    , log(getLogger(fmt::format("StorageKeeperMap ({})", table_id.getNameForLogs())))
 {
     std::string path_prefix = context_->getConfigRef().getString("keeper_map_path_prefix", "");
     if (path_prefix.empty())
@@ -330,6 +330,10 @@ StorageKeeperMap::StorageKeeperMap(
     verifyTableId(table_id);
 
     setInMemoryMetadata(metadata);
+
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "");
+    setVirtuals(std::move(virtuals));
 
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
@@ -367,7 +371,7 @@ StorageKeeperMap::StorageKeeperMap(
     zk_metadata_path = metadata_path_fs;
     zk_tables_path = metadata_path_fs / "tables";
 
-    auto table_unique_id = toString(table_id.uuid) + toString(ServerUUID::get());
+    table_unique_id = toString(table_id.uuid) + toString(ServerUUID::get());
     zk_table_path = fs::path(zk_tables_path) / table_unique_id;
 
     zk_dropped_path = metadata_path_fs / "dropped";
@@ -634,12 +638,6 @@ void StorageKeeperMap::drop()
     dropTable(client, metadata_drop_lock);
 }
 
-NamesAndTypesList StorageKeeperMap::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {std::string{version_column_name}, std::make_shared<DataTypeInt32>()}};
-}
-
 namespace
 {
 
@@ -753,14 +751,12 @@ private:
 
 void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
 {
-    auto table_id = toString(getStorageID().uuid);
-
     auto coordination = backup_entries_collector.getBackupCoordination();
-    coordination->addKeeperMapTable(zk_root_path, table_id, data_path_in_backup);
+    coordination->addKeeperMapTable(zk_root_path, table_unique_id, data_path_in_backup);
 
     /// This task will be executed after all tables have registered their root zk path and the coordination is ready to
     /// assign each path to a single table only.
-    auto post_collecting_task = [my_table_id = std::move(table_id), coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
+    auto post_collecting_task = [coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
     {
         auto path_with_data = coordination->getKeeperMapDataPath(zk_root_path);
         if (path_with_data != my_data_path_in_backup)
@@ -776,7 +772,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
 
         auto with_retries = std::make_shared<WithRetries>
         (
-            &Poco::Logger::get(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
+            getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
             [&] { return getClient(); },
             WithRetries::KeeperSettings::fromContext(backup_entries_collector.getContext()),
             backup_entries_collector.getContext()->getProcessListElement(),
@@ -798,8 +794,7 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     if (!backup->hasFiles(data_path_in_backup))
         return;
 
-    auto table_id = toString(getStorageID().uuid);
-    if (!restorer.getRestoreCoordination()->acquireInsertingDataForKeeperMap(zk_root_path, table_id))
+    if (!restorer.getRestoreCoordination()->acquireInsertingDataForKeeperMap(zk_root_path, table_unique_id))
     {
         /// Other table is already restoring the data for this Keeper path.
         /// Tables defined on the same path share data
@@ -808,7 +803,7 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
 
     auto with_retries = std::make_shared<WithRetries>
     (
-        &Poco::Logger::get(fmt::format("StorageKeeperMapRestore ({})", getStorageID().getNameForLogs())),
+        getLogger(fmt::format("StorageKeeperMapRestore ({})", getStorageID().getNameForLogs())),
         [&] { return getClient(); },
         WithRetries::KeeperSettings::fromContext(restorer.getContext()),
         restorer.getContext()->getProcessListElement(),
@@ -1210,7 +1205,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             }
 
             Coordination::Responses responses;
-            auto status = client->tryMulti(delete_requests, responses);
+            auto status = client->tryMulti(delete_requests, responses, /* check_session_valid */ true);
 
             if (status == Coordination::Error::ZOK)
                 return;
