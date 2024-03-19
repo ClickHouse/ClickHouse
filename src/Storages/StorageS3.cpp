@@ -1420,8 +1420,10 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
         url.uri.getScheme());
 
     client_configuration.endpointOverride = url.endpoint;
+    /// seems as we don't use it
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);
-    client_configuration.http_connection_pool_size = global_settings.s3_http_connection_pool_size;
+    client_configuration.connectTimeoutMs = local_settings.s3_connect_timeout_ms;
+
     auto headers = auth_settings.headers;
     if (!headers_from_ast.empty())
         headers.insert(headers.end(), headers_from_ast.begin(), headers_from_ast.end());
@@ -1449,7 +1451,8 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
             auth_settings.expiration_window_seconds.value_or(
                 context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
             auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
-        });
+        },
+        credentials.GetSessionToken());
 }
 
 void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)

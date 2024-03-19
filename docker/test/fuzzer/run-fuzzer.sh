@@ -174,7 +174,14 @@ function fuzz
     mkdir -p /var/run/clickhouse-server
 
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > server.log 2>&1 &
+    # server.log -> CH logs
+    # stderr.log -> Process logs (sanitizer)
+    clickhouse-server \
+        --config-file db/config.xml \
+        --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
+        --  --path db \
+            --logger.console=0 \
+            --logger.log=server.log > stderr.log 2>&1 &
     server_pid=$!
 
     kill -0 $server_pid
@@ -303,7 +310,7 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
-        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log > description.txt
+        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log stderr.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
@@ -343,7 +350,7 @@ quit
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        echo "Achtung!" > description.txt
+        echo "Let op!" > description.txt
         echo "Fuzzer went wrong with error code: ($fuzzer_exit_code). Its process died somehow when the server stayed alive. The server log probably won't tell you much so try to find information in other files." >>description.txt
         { rg -ao "Found error:.*" fuzzer.log || rg -ao "Exception:.*" fuzzer.log; } | tail -1 >>description.txt
     fi
@@ -427,6 +434,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
   <a href="run.log">run.log</a>
   <a href="fuzzer.log.zst">fuzzer.log.zst</a>
   <a href="server.log.zst">server.log.zst</a>
+  <a href="stderr.log">stderr.log</a>
   <a href="main.log">main.log</a>
   <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}
