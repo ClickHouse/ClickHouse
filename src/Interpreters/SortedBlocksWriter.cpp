@@ -166,7 +166,7 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
             sort_description,
             rows_in_block,
             /*max_block_size_bytes=*/0,
-            SortingQueueStrategy::Default);
+            SortingQueueStrategy::Batch);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -222,7 +222,7 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
                             sort_description,
                             rows_in_block,
                             /*max_block_size_bytes=*/0,
-                            SortingQueueStrategy::Default);
+                            SortingQueueStrategy::Batch);
 
                         pipeline.addTransform(std::move(transform));
                     }
@@ -257,7 +257,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
             sort_description,
             rows_in_block,
             /*max_block_size_bytes=*/0,
-            SortingQueueStrategy::Default);
+            SortingQueueStrategy::Batch);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -335,7 +335,7 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
                 sort_description,
                 num_rows,
                 /*max_block_size_bytes=*/0,
-                SortingQueueStrategy::Default);
+                SortingQueueStrategy::Batch);
 
             builder.addTransform(std::move(transform));
         }
