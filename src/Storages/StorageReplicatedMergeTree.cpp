@@ -641,7 +641,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Replica can become inactive, so wait with timeout, if nothing happened -> recheck it
             if (!wait_event->tryWait(1000))
             {
-                LOG_TRACE(log, "Failed to wait for mutation '{}', will recheck", mutation_id)
+                LOG_TRACE(log, "Failed to wait for mutation '{}', will recheck", mutation_id);
             }
         }
 
