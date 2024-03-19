@@ -634,7 +634,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// If mutation status is empty, than local replica may just not loaded it into memory.
             if (mutation_status && !mutation_status->latest_fail_reason.empty())
             {
-                LOG_DEBUG(log, "Mutation {} is done {} or falied {} (status: '{}')", mutation_id, mutation_status->is_done, !mutation_status->latest_fail_reason.empty(), mutation_status->latest_fail_reason);
+                LOG_DEBUG(log, "Mutation {} is done {} or failed {} (status: '{}')", mutation_id, mutation_status->is_done, !mutation_status->latest_fail_reason.empty(), mutation_status->latest_fail_reason);
                 break;
             }
 
