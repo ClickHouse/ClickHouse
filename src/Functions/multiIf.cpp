@@ -549,8 +549,8 @@ REGISTER_FUNCTION(MultiIf)
     factory.registerFunction<FunctionMultiIf>();
 
     /// These are obsolete function names.
-    factory.registerFunction<FunctionMultiIf>("caseWithoutExpr");
-    factory.registerFunction<FunctionMultiIf>("caseWithoutExpression");
+    factory.registerAlias("caseWithoutExpr", "multiIf");
+    factory.registerAlias("caseWithoutExpression", "multiIf");
 }
 
 FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool allow_experimental_variant_type, bool use_variant_as_common_type)
@@ -559,5 +559,3 @@ FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_exe
 }
 
 }
-
-

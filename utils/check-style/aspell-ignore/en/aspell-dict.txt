@@ -162,6 +162,7 @@ ClickHouseVapor
 ClickVisual
 ClickableSquare
 CloudDetails
+CloudStorage
 CodeBlock
 CodeLLDB
 Codecs
@@ -460,6 +461,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 Levenshtein
+Liao
 LibFuzzer
 LightHouse
 LineAsString
@@ -957,6 +959,7 @@ TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
 Transactional
+Tsai
 Tukey
 TwoColumnList
 UBSan
@@ -2692,7 +2695,9 @@ userver
 utils
 uuid
 varPop
+varPopStable
 varSamp
+varSampStable
 variadic
 variantElement
 variantType
