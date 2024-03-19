@@ -4,4 +4,4 @@ if (NOT TARGET ch_contrib::nuraft)
 endif ()
 
 clickhouse_add_executable(keeper-data-dumper main.cpp)
-target_link_libraries(keeper-data-dumper PRIVATE dbms)
+target_link_libraries(keeper-data-dumper PRIVATE dbms clickhouse_functions)

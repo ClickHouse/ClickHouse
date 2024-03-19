@@ -7,7 +7,7 @@ CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1"
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspicious_variant_types=1"
 
 function test6_insert()
 {
@@ -18,23 +18,23 @@ function test6_insert()
 function test6_select()
 {
     echo "test6 select"
-    $CH_CLIENT -q "select v from test format Null;"
-    $CH_CLIENT -q "select count() from test where isNotNull(v);"
-    $CH_CLIENT -q "select v.String from test format Null;"
-    $CH_CLIENT -q "select count() from test where isNotNull(v.String);"
-    $CH_CLIENT -q "select v.UInt64 from test format Null;"
-    $CH_CLIENT -q "select count() from test where isNotNull(v.UInt64);"
-    $CH_CLIENT -q "select v.\`LowCardinality(String)\` from test format Null;"
-    $CH_CLIENT -q "select count() from test where isNotNull(v.\`LowCardinality(String)\`);"
-    $CH_CLIENT -q "select v.\`Tuple(a UInt32, b UInt32)\` from test format Null;"
-    $CH_CLIENT -q "select v.\`Tuple(a UInt32, b UInt32)\`.a from test format Null;"
-    $CH_CLIENT -q "select count() from test where isNotNull(v.\`Tuple(a UInt32, b UInt32)\`.a);"
-    $CH_CLIENT -q "select v.\`Tuple(a UInt32, b UInt32)\`.b from test format Null;"
-    $CH_CLIENT -q "select count() from test where isNotNull(v.\`Tuple(a UInt32, b UInt32)\`.b);"
-    $CH_CLIENT -q "select v.\`Array(UInt64)\` from test format Null;"
-    $CH_CLIENT -q "select count() from test where not empty(v.\`Array(UInt64)\`);"
-    $CH_CLIENT -q "select v.\`Array(UInt64)\`.size0 from test format Null;"
-    $CH_CLIENT -q "select count() from test where isNotNull(v.\`Array(UInt64)\`.size0);"
+    $CH_CLIENT -nmq "select v from test format Null;
+    select count() from test where isNotNull(v);
+    select v.String from test format Null;
+    select count() from test where isNotNull(v.String);
+    select v.UInt64 from test format Null;
+    select count() from test where isNotNull(v.UInt64);
+    select v.\`LowCardinality(String)\` from test format Null;
+    select count() from test where isNotNull(v.\`LowCardinality(String)\`);
+    select v.\`Tuple(a UInt32, b UInt32)\` from test format Null;
+    select v.\`Tuple(a UInt32, b UInt32)\`.a from test format Null;
+    select count() from test where isNotNull(v.\`Tuple(a UInt32, b UInt32)\`.a);
+    select v.\`Tuple(a UInt32, b UInt32)\`.b from test format Null;
+    select count() from test where isNotNull(v.\`Tuple(a UInt32, b UInt32)\`.b);
+    select v.\`Array(UInt64)\` from test format Null;
+    select count() from test where not empty(v.\`Array(UInt64)\`);
+    select v.\`Array(UInt64)\`.size0 from test format Null;
+    select count() from test where isNotNull(v.\`Array(UInt64)\`.size0);"
     echo "-----------------------------------------------------------------------------------------------------------"
 }
 

@@ -15,14 +15,14 @@ public:
     bool checkChunkEnd() override;
 
 private:
-    const Block & header;
+    const Block header;
     const bool validate_types_from_metadata;
 };
 
 class JSONColumnsWithMetadataSchemaReader : public ISchemaReader
 {
 public:
-    JSONColumnsWithMetadataSchemaReader(ReadBuffer & in_);
+    explicit JSONColumnsWithMetadataSchemaReader(ReadBuffer & in_);
 
     NamesAndTypesList readSchema() override;
 };

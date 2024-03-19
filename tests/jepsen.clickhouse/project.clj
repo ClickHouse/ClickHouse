@@ -13,4 +13,7 @@
                  [com.hierynomus/sshj "0.34.0"]
                  [com.clickhouse/clickhouse-jdbc "0.3.2-patch11"]
                  [org.apache.zookeeper/zookeeper "3.6.1" :exclusions [org.slf4j/slf4j-log4j12]]]
-  :repl-options {:init-ns jepsen.clickhouse-keeper.main})
+  :repl-options {:init-ns jepsen.clickhouse-keeper.main}
+  ;; otherwise, target artifacts will be created under the repo root, so that checkout with clear might fail in ci
+  :target-path "/tmp/jepsen_clickhouse"
+)

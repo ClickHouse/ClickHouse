@@ -26,7 +26,7 @@ struct BackupSettings
     String password;
 
     /// S3 storage class.
-    String s3_storage_class = "";
+    String s3_storage_class;
 
     /// If this is set to true then only create queries will be written to backup,
     /// without the data of tables.

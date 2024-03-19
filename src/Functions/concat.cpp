@@ -1,8 +1,8 @@
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnStringHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -80,21 +80,21 @@ private:
         const ColumnConst * c0_const_string = checkAndGetColumnConst<ColumnString>(c0);
         const ColumnConst * c1_const_string = checkAndGetColumnConst<ColumnString>(c1);
 
-        auto c_res = ColumnString::create();
+        auto col_res = ColumnString::create();
 
         if (c0_string && c1_string)
-            concat(StringSource(*c0_string), StringSource(*c1_string), StringSink(*c_res, c0->size()));
+            concat(StringSource(*c0_string), StringSource(*c1_string), StringSink(*col_res, c0->size()));
         else if (c0_string && c1_const_string)
-            concat(StringSource(*c0_string), ConstSource<StringSource>(*c1_const_string), StringSink(*c_res, c0->size()));
+            concat(StringSource(*c0_string), ConstSource<StringSource>(*c1_const_string), StringSink(*col_res, c0->size()));
         else if (c0_const_string && c1_string)
-            concat(ConstSource<StringSource>(*c0_const_string), StringSource(*c1_string), StringSink(*c_res, c0->size()));
+            concat(ConstSource<StringSource>(*c0_const_string), StringSource(*c1_string), StringSink(*col_res, c0->size()));
         else
         {
             /// Fallback: use generic implementation for not very important cases.
             return executeFormatImpl(arguments, input_rows_count);
         }
 
-        return c_res;
+        return col_res;
     }
 
     ColumnPtr executeFormatImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
@@ -102,7 +102,7 @@ private:
         const size_t num_arguments = arguments.size();
         assert(num_arguments >= 2);
 
-        auto c_res = ColumnString::create();
+        auto col_res = ColumnString::create();
         std::vector<const ColumnString::Chars *> data(num_arguments);
         std::vector<const ColumnString::Offsets *> offsets(num_arguments);
         std::vector<size_t> fixed_string_sizes(num_arguments);
@@ -169,11 +169,11 @@ private:
             offsets,
             fixed_string_sizes,
             constant_strings,
-            c_res->getChars(),
-            c_res->getOffsets(),
+            col_res->getChars(),
+            col_res->getOffsets(),
             input_rows_count);
 
-        return c_res;
+        return col_res;
     }
 };
 

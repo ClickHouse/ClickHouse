@@ -25,6 +25,14 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** Parses sql security option. DEFINER = user_name SQL SECURITY DEFINER
+ */
+class ParserSQLSecurity : public IParserBase
+{
+protected:
+    const char * getName() const override { return "sql security"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /** Storage engine or Codec. For example:
  *         Memory()
@@ -121,24 +129,24 @@ using ParserCompoundColumnDeclaration = IParserColumnDeclaration<ParserCompoundI
 template <typename NameParser>
 bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_default{"DEFAULT"};
-    ParserKeyword s_null{"NULL"};
-    ParserKeyword s_not{"NOT"};
-    ParserKeyword s_materialized{"MATERIALIZED"};
-    ParserKeyword s_ephemeral{"EPHEMERAL"};
-    ParserKeyword s_alias{"ALIAS"};
-    ParserKeyword s_auto_increment{"AUTO_INCREMENT"};
-    ParserKeyword s_comment{"COMMENT"};
-    ParserKeyword s_codec{"CODEC"};
-    ParserKeyword s_stat{"STATISTIC"};
-    ParserKeyword s_ttl{"TTL"};
-    ParserKeyword s_remove{"REMOVE"};
-    ParserKeyword s_modify_setting("MODIFY SETTING");
-    ParserKeyword s_reset_setting("RESET SETTING");
-    ParserKeyword s_settings("SETTINGS");
-    ParserKeyword s_type{"TYPE"};
-    ParserKeyword s_collate{"COLLATE"};
-    ParserKeyword s_primary_key{"PRIMARY KEY"};
+    ParserKeyword s_default{Keyword::DEFAULT};
+    ParserKeyword s_null{Keyword::NULL_KEYWORD};
+    ParserKeyword s_not{Keyword::NOT};
+    ParserKeyword s_materialized{Keyword::MATERIALIZED};
+    ParserKeyword s_ephemeral{Keyword::EPHEMERAL};
+    ParserKeyword s_alias{Keyword::ALIAS};
+    ParserKeyword s_auto_increment{Keyword::AUTO_INCREMENT};
+    ParserKeyword s_comment{Keyword::COMMENT};
+    ParserKeyword s_codec{Keyword::CODEC};
+    ParserKeyword s_stat{Keyword::STATISTIC};
+    ParserKeyword s_ttl{Keyword::TTL};
+    ParserKeyword s_remove{Keyword::REMOVE};
+    ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
+    ParserKeyword s_reset_setting(Keyword::RESET_SETTING);
+    ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_type{Keyword::TYPE};
+    ParserKeyword s_collate{Keyword::COLLATE};
+    ParserKeyword s_primary_key{Keyword::PRIMARY_KEY};
 
     NameParser name_parser;
     ParserDataType type_parser;
@@ -220,11 +228,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
         if (!type_parser.parse(pos, type, expected))
             return false;
-        if (s_collate.ignore(pos, expected))
-        {
-            if (!collation_parser.parse(pos, collation_expression, expected))
-                return false;
-        }
+        if (s_collate.ignore(pos, expected)
+            && !collation_parser.parse(pos, collation_expression, expected))
+            return false;
     }
 
     if (allow_null_modifiers)
@@ -238,6 +244,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         else if (s_null.check(pos, expected))
             null_modifier.emplace(true);
     }
+
+    /// Collate is also allowed after NULL/NOT NULL
+    if (!collation_expression && s_collate.ignore(pos, expected)
+        && !collation_parser.parse(pos, collation_expression, expected))
+        return false;
 
     Pos pos_before_specifier = pos;
     if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))
@@ -275,7 +286,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         {
             const String type_int("INT");
             Tokens tokens(type_int.data(), type_int.data() + type_int.size());
-            Pos tmp_pos(tokens, 0);
+            Pos tmp_pos(tokens, pos.max_depth, pos.max_backtracks);
             Expected tmp_expected;
             ParserDataType().parse(tmp_pos, type, tmp_expected);
         }
@@ -534,7 +545,7 @@ public:
         DATABASE_ENGINE,
     };
 
-    ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
+    explicit ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
 
 protected:
     const char * getName() const override { return "storage definition"; }
