@@ -12,7 +12,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 
-
 namespace DB
 {
 namespace ErrorCodes

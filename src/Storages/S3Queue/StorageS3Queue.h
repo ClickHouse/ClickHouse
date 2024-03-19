@@ -14,11 +14,6 @@
 #include <Storages/StorageFactory.h>
 
 
-namespace Aws::S3
-{
-class Client;
-}
-
 namespace DB
 {
 class S3QueueFilesMetadata;

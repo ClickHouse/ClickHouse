@@ -10,6 +10,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguration & other)
     : StorageObjectStorageConfiguration(other)
@@ -29,7 +33,8 @@ ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage(ContextPtr contex
 {
     UNUSED(is_readonly);
     auto settings = std::make_unique<HDFSObjectStorageSettings>();
-    chassert(!url.empty());
+    if (!url.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS url is empty");
     return std::make_shared<HDFSObjectStorage>(url, std::move(settings), context->getConfigRef());
 }
 

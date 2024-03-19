@@ -23,7 +23,7 @@ struct SingleValueDataBase
     /// For example argMin holds 1 of these (for the result), while keeping a template for the value
     static constexpr UInt32 MAX_STORAGE_SIZE = 64;
 
-    virtual ~SingleValueDataBase() { }
+    virtual ~SingleValueDataBase() = default;
     virtual bool has() const = 0;
     virtual void insertResultInto(IColumn &) const = 0;
     virtual void write(WriteBuffer &, const ISerialization &) const = 0;

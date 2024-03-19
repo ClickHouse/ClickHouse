@@ -192,27 +192,6 @@ private:
     const HTTPHeaderEntries static_headers;
 };
 
-/// Do not encode keys, store as-is, and do not require separate disk for metadata.
-/// But because of this does not support renames/hardlinks/attrs/...
-///
-/// NOTE: This disk has excessive API calls.
-class S3PlainObjectStorage : public S3ObjectStorage
-{
-public:
-    std::string getName() const override { return "S3PlainObjectStorage"; }
-
-    template <class ...Args>
-    explicit S3PlainObjectStorage(Args && ...args)
-        : S3ObjectStorage("S3PlainObjectStorage", std::forward<Args>(args)...) {}
-
-    ObjectStorageType getType() const override { return ObjectStorageType::S3_Plain; }
-
-    /// Notes:
-    /// - supports BACKUP to this disk
-    /// - does not support INSERT into MergeTree table on this disk
-    bool isWriteOnce() const override { return true; }
-};
-
 }
 
 #endif

@@ -79,6 +79,7 @@ private:
 
     const bool use_external_buffer;
     const bool http_skip_not_found_url;
+    bool has_not_found_url = false;
 
     std::function<void(std::ostream &)> out_stream_callback;
 
@@ -183,6 +184,8 @@ public:
 
     std::optional<time_t> tryGetLastModificationTime();
 
+    bool hasNotFoundURL() const { return has_not_found_url; }
+
     HTTPFileInfo getFileInfo();
     static HTTPFileInfo parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin);
 };
@@ -207,10 +210,11 @@ class BuilderRWBufferFromHTTP
     bool delay_initialization = true;
 
 public:
-    BuilderRWBufferFromHTTP(Poco::URI uri_)
+    explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
         : uri(uri_)
     {}
 
+/// NOLINTBEGIN(bugprone-macro-parentheses)
 #define setterMember(name, member) \
     BuilderRWBufferFromHTTP & name(decltype(BuilderRWBufferFromHTTP::member) arg_##member) \
     { \
@@ -232,6 +236,7 @@ public:
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
 #undef setterMember
+/// NOLINTEND(bugprone-macro-parentheses)
 
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_)
     {

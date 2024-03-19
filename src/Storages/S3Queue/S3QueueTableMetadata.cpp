@@ -7,6 +7,7 @@
 #include <Poco/JSON/Parser.h>
 #include <Storages/S3Queue/S3QueueSettings.h>
 #include <Storages/S3Queue/S3QueueTableMetadata.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 
 namespace DB

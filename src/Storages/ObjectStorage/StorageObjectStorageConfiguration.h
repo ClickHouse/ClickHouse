@@ -1,6 +1,9 @@
 #pragma once
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
