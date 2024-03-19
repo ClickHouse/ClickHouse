@@ -68,9 +68,6 @@
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
 
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteBufferFromString.h>
-
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <iostream>
@@ -561,11 +558,6 @@ try
             config.pipe_stdin_only = true;
             pager_cmd = ShellCommand::execute(config);
             out_buf = &pager_cmd->in;
-        }
-        /// We can use special buffer for query output for internal queries.
-        else if (output_format_buffer)
-        {
-            out_buf = output_format_buffer.get();
         }
         else
         {
