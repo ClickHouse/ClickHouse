@@ -63,6 +63,8 @@ public:
     PushResult pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
 
+    void flushAndShutdown();
+
 private:
 
     struct InsertQuery

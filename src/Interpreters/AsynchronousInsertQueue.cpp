@@ -218,7 +218,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
         dump_by_first_update_threads.emplace_back([this, i] { processBatchDeadlines(i); });
 }
 
-AsynchronousInsertQueue::~AsynchronousInsertQueue()
+void AsynchronousInsertQueue::flushAndShutdown()
 {
     try
     {
@@ -254,6 +254,19 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     {
         tryLogCurrentException(log);
         pool.wait();
+    }
+}
+
+AsynchronousInsertQueue::~AsynchronousInsertQueue()
+{
+    for (const auto & shard : queue_shards)
+    {
+        for (const auto & [first_update, elem] : shard.queue)
+        {
+            const auto & insert_query = elem.key.query->as<const ASTInsertQuery &>();
+            LOG_WARNING(log, "Has unprocessed async insert for {}.{}",
+                        backQuoteIfNeed(insert_query.getDatabase()), backQuoteIfNeed(insert_query.getTable()));
+        }
     }
 }
 

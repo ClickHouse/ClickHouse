@@ -566,7 +566,7 @@ struct ContextSharedPart : boost::noncopyable
             std::lock_guard lock(mutex);
             delete_async_insert_queue = std::move(async_insert_queue);
         }
-        delete_async_insert_queue.reset();
+        delete_async_insert_queue->flushAndShutdown();
 
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
@@ -589,6 +589,8 @@ struct ContextSharedPart : boost::noncopyable
 
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
+
+        delete_async_insert_queue.reset();
 
         SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
         SHUTDOWN(log, "fetches executor", fetch_executor, wait());
@@ -4990,7 +4992,7 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 
 AsynchronousInsertQueue * Context::tryGetAsynchronousInsertQueue() const
 {
-    std::lock_guard lock(mutex);
+    SharedLockGuard lock(shared->mutex);
     return shared->async_insert_queue.get();
 }
 
@@ -4998,7 +5000,7 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 {
     AsynchronousInsertQueue::validateSettings(settings, getLogger("Context"));
 
-    std::lock_guard lock(mutex);
+    SharedLockGuard lock(shared->mutex);
 
     if (std::chrono::milliseconds(settings.async_insert_poll_timeout_ms) == std::chrono::milliseconds::zero())
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_poll_timeout_ms can't be zero");
