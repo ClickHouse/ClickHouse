@@ -28,7 +28,7 @@ CREATE TABLE url (n UInt64, col String) ENGINE=URL
 (
     replace
     (
-        'https://localhost:8443/?query='  || 'select n, _table from ' || currentDatabase() || '.merge format CSV', ' ', '+'
+        'http://localhost:8123/?query='  || 'select n, _table from ' || currentDatabase() || '.merge format CSV', ' ', '+'
     ),
     CSV
 );
