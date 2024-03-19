@@ -193,6 +193,7 @@ namespace
         if (current_user_access.getAccessRights()->containsWithGrantOption(access_to_revoke))
             return;
 
+        /// Technically, this check always fails if `containsWithGrantOption` returns `false`. But we still call it to get a nice exception message.
         current_user_access.checkGrantOption(elements_to_revoke);
     }
 
