@@ -133,7 +133,7 @@ StorageS3Queue::StorageS3Queue(
     if (mode == LoadingStrictnessLevel::CREATE
         && !context_->getSettingsRef().s3queue_allow_experimental_sharded_mode
         && s3queue_settings->mode == S3QueueMode::ORDERED
-        && s3queue_settings->s3queue_total_shards_num)
+        && (s3queue_settings->s3queue_total_shards_num > 1 || s3queue_settings->s3queue_processing_threads_num > 1))
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue sharded mode is not allowed. To enable use `s3queue_allow_experimental_sharded_mode`");
     }
