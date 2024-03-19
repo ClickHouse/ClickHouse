@@ -111,6 +111,7 @@ endif()
 add_library(global-libs INTERFACE)
 
 include (cmake/sanitize.cmake)
+include (cmake/instrument.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 

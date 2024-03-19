@@ -761,7 +761,9 @@ void BaseDaemon::closeFDs()
 
 void BaseDaemon::initialize(Application & self)
 {
+#if !defined(USE_XRAY)
     closeFDs();
+#endif
 
     ServerApplication::initialize(self);
 
