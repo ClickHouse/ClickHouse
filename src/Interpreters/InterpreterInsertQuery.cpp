@@ -306,6 +306,9 @@ Chain InterpreterInsertQuery::buildSink(
     ThreadGroupPtr running_group,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
+    LOG_DEBUG(getLogger("InsertQuery"),
+              "called InterpreterInsertQuery::buildSink() engine {} table name {}.{}", table->getName(), table->getStorageID().database_name, table->getStorageID().table_name);
+
     ThreadStatus * thread_status = current_thread;
 
     if (!thread_status_holder)
@@ -465,16 +468,17 @@ BlockIO InterpreterInsertQuery::execute()
                   * to avoid unnecessary squashing.
                   */
 
+                LOG_DEBUG(getLogger("InsertQuery"),
+                          "execute() is_trivial_insert_select=true prefersLargeBlocks={}", table->prefersLargeBlocks());
+
                 Settings new_settings = getContext()->getSettings();
 
                 new_settings.max_threads = std::max<UInt64>(1, settings.max_insert_threads);
 
                 if (table->prefersLargeBlocks())
                 {
-                    if (settings.min_insert_block_size_rows)
-                        new_settings.max_block_size = settings.min_insert_block_size_rows;
-                    if (settings.min_insert_block_size_bytes)
-                        new_settings.preferred_block_size_bytes = settings.min_insert_block_size_bytes;
+                    new_settings.max_block_size = std::max(settings.min_insert_block_size_rows, settings.max_block_size);
+                    new_settings.preferred_block_size_bytes = std::max(settings.min_insert_block_size_bytes, settings.preferred_block_size_bytes);
                 }
 
                 auto new_context = Context::createCopy(context);
@@ -527,6 +531,7 @@ BlockIO InterpreterInsertQuery::execute()
                 /// Deduplication when passing insert_deduplication_token breaks if using more than one thread
                 if (!settings.insert_deduplication_token.toString().empty())
                 {
+                    /// TODO!
                     LOG_DEBUG(
                         getLogger("InsertQuery"),
                         "Insert-select query using insert_deduplication_token, setting streams to 1 to avoid deduplication issues");
@@ -566,8 +571,13 @@ BlockIO InterpreterInsertQuery::execute()
             running_group = std::make_shared<ThreadGroup>(getContext());
         for (size_t i = 0; i < sink_streams_size; ++i)
         {
+            LOG_DEBUG(getLogger("InsertQuery"),
+                      "call buildSink table name {}.{}, stream {}/{}",
+                      table->getStorageID().database_name, table->getStorageID().table_name, i, sink_streams_size);
+
             auto out = buildSink(table, metadata_snapshot, /* thread_status_holder= */ nullptr,
                 running_group, /* elapsed_counter_ms= */ nullptr);
+
             sink_chains.emplace_back(std::move(out));
         }
         for (size_t i = 0; i < pre_streams_size; ++i)
