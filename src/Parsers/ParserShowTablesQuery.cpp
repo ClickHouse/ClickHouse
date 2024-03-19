@@ -17,25 +17,25 @@ namespace DB
 
 bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_show("SHOW");
-    ParserKeyword s_full("FULL");
-    ParserKeyword s_temporary("TEMPORARY");
-    ParserKeyword s_tables("TABLES");
-    ParserKeyword s_databases("DATABASES");
-    ParserKeyword s_clusters("CLUSTERS");
-    ParserKeyword s_cluster("CLUSTER");
-    ParserKeyword s_dictionaries("DICTIONARIES");
-    ParserKeyword s_caches("FILESYSTEM CACHES");
-    ParserKeyword s_settings("SETTINGS");
-    ParserKeyword s_merges("MERGES");
-    ParserKeyword s_changed("CHANGED");
-    ParserKeyword s_from("FROM");
-    ParserKeyword s_in("IN");
-    ParserKeyword s_not("NOT");
-    ParserKeyword s_like("LIKE");
-    ParserKeyword s_ilike("ILIKE");
-    ParserKeyword s_where("WHERE");
-    ParserKeyword s_limit("LIMIT");
+    ParserKeyword s_show(Keyword::SHOW);
+    ParserKeyword s_full(Keyword::FULL);
+    ParserKeyword s_temporary(Keyword::TEMPORARY);
+    ParserKeyword s_tables(Keyword::TABLES);
+    ParserKeyword s_databases(Keyword::DATABASES);
+    ParserKeyword s_clusters(Keyword::CLUSTERS);
+    ParserKeyword s_cluster(Keyword::CLUSTER);
+    ParserKeyword s_dictionaries(Keyword::DICTIONARIES);
+    ParserKeyword s_caches(Keyword::FILESYSTEM_CACHES);
+    ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_merges(Keyword::MERGES);
+    ParserKeyword s_changed(Keyword::CHANGED);
+    ParserKeyword s_from(Keyword::FROM);
+    ParserKeyword s_in(Keyword::IN);
+    ParserKeyword s_not(Keyword::NOT);
+    ParserKeyword s_like(Keyword::LIKE);
+    ParserKeyword s_ilike(Keyword::ILIKE);
+    ParserKeyword s_where(Keyword::WHERE);
+    ParserKeyword s_limit(Keyword::LIMIT);
     ParserStringLiteral like_p;
     ParserIdentifier name_p(true);
     ParserExpressionWithOptionalAlias exp_elem(false);
@@ -147,7 +147,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 return false;
         }
 
-        /// Not expected due to "SHOW SETTINGS PROFILES"
+        /// Not expected due to Keyword::SHOW SETTINGS PROFILES
         if (bool insensitive = s_ilike.ignore(pos, expected); insensitive || s_like.ignore(pos, expected))
         {
             if (insensitive)

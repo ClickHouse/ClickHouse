@@ -40,6 +40,7 @@ void ASTDeleteQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << '.';
     }
 
+    chassert(table);
     table->formatImpl(settings, state, frame);
 
     formatOnCluster(settings);

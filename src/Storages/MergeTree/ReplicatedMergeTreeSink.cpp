@@ -288,7 +288,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No chunk info for async inserts");
     }
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context, async_insert_info);
+    auto part_blocks = storage.writer.splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context, async_insert_info);
 
     using DelayedPartition = typename ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk::Partition;
     using DelayedPartitions = std::vector<DelayedPartition>;
@@ -322,6 +322,9 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         /// and we didn't create part.
         if (!temp_part.part)
             continue;
+
+        if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
+            support_parallel_write = true;
 
         BlockIDsType block_id;
 
@@ -365,9 +368,13 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         profile_events_scope.reset();
         UInt64 elapsed_ns = watch.elapsed();
 
-        size_t max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
-        if (!support_parallel_write || settings.max_insert_delayed_streams_for_parallel_write.changed)
+        size_t max_insert_delayed_streams_for_parallel_write;
+        if (settings.max_insert_delayed_streams_for_parallel_write.changed)
             max_insert_delayed_streams_for_parallel_write = settings.max_insert_delayed_streams_for_parallel_write;
+        else if (support_parallel_write)
+            max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
+        else
+            max_insert_delayed_streams_for_parallel_write = 0;
 
         /// In case of too much columns/parts in block, flush explicitly.
         streams += temp_part.streams.size();
@@ -383,6 +390,12 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
             partitions = DelayedPartitions{};
         }
 
+        if constexpr (!async_insert)
+        {
+            /// Reset earlier to free memory.
+            current_block.block.clear();
+            current_block.partition.clear();
+        }
 
         partitions.emplace_back(DelayedPartition(
             log,

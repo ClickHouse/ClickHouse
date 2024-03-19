@@ -1,9 +1,9 @@
 #!/usr/bin/expect -f
-# Tags: no-fasttest
-# Tag no-fasttest: 180 seconds running
 
 log_user 0
+
 set timeout 60
+
 match_max 100000
 
 if ![info exists env(CLICKHOUSE_PORT_TCP)] {set env(CLICKHOUSE_PORT_TCP) 9000}
@@ -13,15 +13,23 @@ expect ":) "
 
 # Make a query
 send -- "SELECT 1\r"
-expect ":-] "
 send -- "-- xxx\r"
-expect ":-] "
 send -- ", 2\r"
-expect ":-] "
-send -- ";\r"
+send -- ";"
 
-expect "│ 1 │ 2 │"
+# For some reason this sleep is required for this test to work properly
+sleep 1
+send -- "\r"
+
+expect {
+    "│ 1 │ 2 │" { }
+    timeout { exit 1 }
+}
+
 expect ":) "
 
-send -- "\4"
-expect eof
+send -- ""
+expect {
+    eof { exit 0 }
+    timeout { exit 1 }
+}

@@ -318,7 +318,7 @@ public:
     ~ProcessListEntry();
 
     QueryStatusPtr getQueryStatus() { return *it; }
-    const QueryStatusPtr getQueryStatus() const { return *it; }
+    QueryStatusPtr getQueryStatus() const { return *it; }
 };
 
 
