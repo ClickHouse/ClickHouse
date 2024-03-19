@@ -89,11 +89,25 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
 
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
+    auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
+
+    if (buffer_allocation_policy->getBufferNumber() == 1)
+    {
+        size_t data_size = size_t(position() - memory.data());
+        if (data_size <= max_single_part_upload_size)
+        {
+            Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(memory.data()), data_size);
+            execWithRetry([&](){ block_blob_client.Upload(memory_stream); }, max_unexpected_write_error_retries, data_size);
+            LOG_TRACE(log, "Committed single block for blob `{}`", blob_path);
+            return;
+        }
+    }
+
+
     execWithRetry([this](){ next(); }, max_unexpected_write_error_retries);
 
     task_tracker->waitAll();
 
-    auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
     execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
 
     LOG_TRACE(log, "Committed {} blocks for blob `{}`", block_ids.size(), blob_path);
@@ -116,6 +130,8 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
         size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size);
     }
 
+    LOG_INFO(log, "allocateBuffer size = {}", size);
+
     memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
@@ -128,6 +144,8 @@ void WriteBufferFromAzureBlobStorage::writePart()
 
     if (data_size == 0)
         return;
+
+    LOG_TRACE(log, "writePart data size `{}`", data_size);
 
     auto upload_worker = [&] ()
     {

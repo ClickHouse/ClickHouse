@@ -213,7 +213,7 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
 std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     std::unique_ptr<AzureObjectStorageSettings> settings = std::make_unique<AzureObjectStorageSettings>();
-    settings->max_single_part_upload_size = config.getUInt64(config_prefix + ".max_single_part_upload_size", 100 * 1024 * 1024);
+    settings->max_single_part_upload_size = config.getUInt64(config_prefix + ".max_single_part_upload_size", context->getSettings().azure_max_single_part_upload_size);
     settings->min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024);
     settings->max_single_read_retries = config.getInt(config_prefix + ".max_single_read_retries", 3);
     settings->max_single_download_retries = config.getInt(config_prefix + ".max_single_download_retries", 3);

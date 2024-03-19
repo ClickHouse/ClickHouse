@@ -37,6 +37,7 @@ def generate_cluster_def(port):
                 <account_name>devstoreaccount1</account_name>
                 <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
                 <max_single_part_upload_size>100000</max_single_part_upload_size>
+                <min_upload_part_size>100000</min_upload_part_size>
                 <max_single_download_retries>10</max_single_download_retries>
                 <max_single_read_retries>10</max_single_read_retries>
             </blob_storage_disk>
