@@ -9,8 +9,6 @@ create database shard_1;
 
 drop table if exists dist;
 drop table if exists dist_batch;
-drop table if exists shard_0.data;
-drop table if exists shard_1.data;
 
 -- normal replica
 create table shard_0.data (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'write') order by key;
@@ -29,8 +27,8 @@ system stop distributed sends dist;
 create table dist_batch as shard_0.data engine=Distributed('test_cluster_two_replicas_different_databases_internal_replication', '', 'data') settings background_insert_batch=1;
 system stop distributed sends dist_batch;
 
-create table dist_single_no_internal_replication as shard_0.data engine=Distributed('default', 'shard_1', 'data');
-system stop distributed sends dist_single_no_internal_replication;
+create table dist_single_no_internal_replication_read_only as shard_0.data engine=Distributed('default', 'shard_1', 'data');
+system stop distributed sends dist_single_no_internal_replication_read_only;
 
 create table dist_single as shard_0.data engine=Distributed('test_cluster_two_replicas_different_databases_internal_replication', 'shard_1', 'data');
 system stop distributed sends dist_single;
@@ -43,8 +41,8 @@ set insert_keeper_max_retries=3;
 set insert_keeper_fault_injection_probability=0;
 
 -- for internal_replicatio==false, distributed_insert_skip_read_only_replicas does not changes anything
-insert into dist_single_no_internal_replication settings distributed_foreground_insert=1, distributed_insert_skip_read_only_replicas=0 values (0); -- { serverError TABLE_IS_READ_ONLY }
-insert into dist_single_no_internal_replication settings distributed_foreground_insert=1, distributed_insert_skip_read_only_replicas=1 values (0); -- { serverError TABLE_IS_READ_ONLY }
+insert into dist_single_no_internal_replication_read_only settings distributed_foreground_insert=1, distributed_insert_skip_read_only_replicas=0 values (0); -- { serverError TABLE_IS_READ_ONLY }
+insert into dist_single_no_internal_replication_read_only settings distributed_foreground_insert=1, distributed_insert_skip_read_only_replicas=1 values (0); -- { serverError TABLE_IS_READ_ONLY }
 
 -- for internal_replicatio==true, it does
 insert into dist_single settings distributed_foreground_insert=1, distributed_insert_skip_read_only_replicas=0 values (0); -- { serverError TABLE_IS_READ_ONLY }
