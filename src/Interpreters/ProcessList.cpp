@@ -687,7 +687,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
 
     if (global_context)
     {
-        auto & settings = global_context->getSettingsRef();
+        const auto & settings = global_context->getSettingsRef();
         TemporaryDataOnDiskSettings temporary_data_on_disk_settings
         {
             .max_size_on_disk = settings.max_temporary_data_on_disk_size_for_user,
