@@ -567,8 +567,6 @@ Example of disk configuration:
 </clickhouse>
 ```
 
-## Using local cache {#using-local-cache}
->>>>>>> aiven-sal/aiven-sal/objenc_pr
 ### Using local cache {#using-local-cache}
 
 It is possible to configure local cache over disks in storage configuration starting from version 22.3.

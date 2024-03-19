@@ -239,8 +239,8 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method `getWrappedObjectStorage()` is not implemented for disk: {}",
-            toString(getDataSourceDescription().type));
+            "Method `getWrappedObjectStorage()` is not implemented for storage {}",
+            getName());
     }
 
 private:

@@ -36,8 +36,6 @@ void registerDisks(bool global_skip_access_check)
 
     registerDiskObjectStorage(factory, global_skip_access_check);
 
-    registerDiskLocalObjectStorage(factory, global_skip_access_check);
-
     registerDiskEncryptedOS(factory, global_skip_access_check);
 }
 
