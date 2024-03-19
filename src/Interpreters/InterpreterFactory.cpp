@@ -31,7 +31,7 @@
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTTransactionControl.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>

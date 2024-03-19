@@ -38,7 +38,9 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
 
     auto query = std::make_shared<ASTCheckTableQuery>();
 
-    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+    ASTPtr database;
+    ASTPtr table;
+    if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
         return false;
 
     if (s_partition.ignore(pos, expected))
@@ -58,11 +60,11 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
         query->part_name = ast_literal->value.get<const String &>();
     }
 
-    if (query->database)
-        query->children.push_back(query->database);
+    if (database)
+        query->set(query->database, database);
 
-    if (query->table)
-        query->children.push_back(query->table);
+    if (table)
+        query->set(query->table, table);
 
     node = query;
     return true;

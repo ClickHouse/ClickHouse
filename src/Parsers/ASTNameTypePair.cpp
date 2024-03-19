@@ -26,6 +26,10 @@ void ASTNameTypePair::formatImpl(const FormatSettings & settings, FormatState & 
     type->formatImpl(settings, state, frame);
 }
 
+void ASTNameTypePair::forEachPointerToChild(std::function<void(void**)> f)
+{
+    f(reinterpret_cast<void **>(&type));
 }
 
 
+}

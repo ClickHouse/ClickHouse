@@ -19,6 +19,8 @@ bool ParserDropIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected
     ParserKeyword s_if_exists(Keyword::IF_EXISTS);
     ParserIdentifier index_name_p;
 
+    ASTPtr database;
+    ASTPtr table;
     String cluster_str;
     bool if_exists = false;
 
@@ -38,7 +40,7 @@ bool ParserDropIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected
     if (!s_on.ignore(pos, expected))
         return false;
 
-    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+    if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
         return false;
 
     /// [ON cluster_name]
@@ -55,11 +57,11 @@ bool ParserDropIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected
 
     query->if_exists = if_exists;
 
-    if (query->database)
-        query->children.push_back(query->database);
+    if (database)
+        query->set(query->database, database);
 
-    if (query->table)
-        query->children.push_back(query->table);
+    if (table)
+        query->set(query->table, table);
 
     return true;
 }

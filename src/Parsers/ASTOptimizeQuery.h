@@ -33,6 +33,9 @@ public:
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Optimize; }
+
+protected:
+    void forEachPointerToChild(std::function<void(void**)> f) override;
 };
 
 }

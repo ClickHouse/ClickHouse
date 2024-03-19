@@ -51,15 +51,13 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     auto query = std::make_shared<ASTUndropQuery>();
     node = query;
 
-    query->database = database;
-    query->table = table;
     query->uuid = uuid;
 
     if (database)
-        query->children.push_back(database);
+        query->set(query->database, database);
 
     chassert(table);
-    query->children.push_back(table);
+    query->set(query->table, table);
 
     query->cluster = cluster_str;
 

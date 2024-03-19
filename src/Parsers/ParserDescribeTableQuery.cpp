@@ -1,4 +1,4 @@
-#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDescribeTableQuery.h>
@@ -32,7 +32,8 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     s_table.ignore(pos, expected);
 
-    if (!ParserTableExpression().parse(pos, query->table_expression, expected))
+    ASTPtr table_expression;
+    if (!ParserTableExpression().parse(pos, table_expression, expected))
         return false;
 
     /// For compatibility with SELECTs, where SETTINGS can be in front of FORMAT
@@ -45,7 +46,7 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         query->setSettingsAST(settings_node);
     }
 
-    query->children.push_back(query->table_expression);
+    query->set(query->table_expression, table_expression);
     node = std::move(query);
 
     return true;

@@ -1026,6 +1026,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     {
         if (create.attach && !from_path && create.uuid == UUIDHelpers::Nil)
         {
+            chassert(create.table);
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "Incorrect ATTACH {} query for Atomic database engine. "
                             "Use one of the following queries instead:\n"
@@ -1034,10 +1035,10 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             "3. ATTACH {} {} FROM '/path/to/data/' <table definition>;\n"
                             "4. ATTACH {} {} UUID '<uuid>' <table definition>;",
                             kind_upper,
-                            kind_upper, create.table,
-                            kind_upper, create.table,
-                            kind_upper, create.table,
-                            kind_upper, create.table);
+                            kind_upper, create.table->ptr(),
+                            kind_upper, create.table->ptr(),
+                            kind_upper, create.table->ptr(),
+                            kind_upper, create.table->ptr());
         }
 
         create.generateRandomUUID();

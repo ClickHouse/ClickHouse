@@ -16,7 +16,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <DataTypes/NestedUtils.h>
 
 namespace DB

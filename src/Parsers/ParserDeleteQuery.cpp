@@ -21,12 +21,15 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_on{Keyword::ON};
 
+    ASTPtr database;
+    ASTPtr table;
+
     if (s_delete.ignore(pos, expected))
     {
         if (!s_from.ignore(pos, expected))
             return false;
 
-        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+        if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
             return false;
 
         if (s_on.ignore(pos, expected))
@@ -58,11 +61,11 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (query->predicate)
         query->children.push_back(query->predicate);
 
-    if (query->database)
-        query->children.push_back(query->database);
+    if (database)
+        query->set(query->database, database);
 
-    if (query->table)
-        query->children.push_back(query->table);
+    if (table)
+        query->set(query->table, table);
 
     return true;
 }

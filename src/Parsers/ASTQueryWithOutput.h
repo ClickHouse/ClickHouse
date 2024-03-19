@@ -25,7 +25,7 @@ public:
     IAST * compression = nullptr;
     IAST * compression_level = nullptr;
 
-    /// Just for convinience.
+    /// Just for convenience.
     void setOutFile(const ASTPtr & out_file_) { set(out_file, out_file_); }
     void setFormat(const ASTPtr & format_) { set(format, format_); }
     void setSettingsAST(const ASTPtr & settings_ast_) { set(settings_ast, settings_ast_); }

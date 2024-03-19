@@ -745,15 +745,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->if_not_exists = if_not_exists;
         query->cluster = cluster_str;
 
-        query->database = table_id->getDatabase();
-        query->table = table_id->getTable();
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
 
-        if (query->database)
-            query->children.push_back(query->database);
-        if (query->table)
-            query->children.push_back(query->table);
+        query->set(query->database, table_id->getDatabase());
+        query->set(query->table, table_id->getTable());
 
         return true;
     }
@@ -845,16 +841,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->if_not_exists = if_not_exists;
     query->temporary = is_temporary;
 
-    query->database = table_id->getDatabase();
-    query->table = table_id->getTable();
+    query->set(query->database, table_id->getDatabase());
+    query->set(query->table, table_id->getTable());
     query->uuid = table_id->uuid;
     query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
     query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
@@ -992,15 +983,10 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->is_live_view = true;
 
     auto * table_id = table->as<ASTTableIdentifier>();
-    query->database = table_id->getDatabase();
-    query->table = table_id->getTable();
+    query->set(query->database, table_id->getDatabase());
+    query->set(query->table, table_id->getTable());
     query->uuid = table_id->uuid;
     query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
 
     if (to_table)
         query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
@@ -1170,15 +1156,10 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->is_window_view = true;
 
     auto * table_id = table->as<ASTTableIdentifier>();
-    query->database = table_id->getDatabase();
-    query->table = table_id->getTable();
+    query->set(query->database, table_id->getDatabase());
+    query->set(query->table, table_id->getTable());
     query->uuid = table_id->uuid;
     query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
 
     if (to_table)
         query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
@@ -1407,11 +1388,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     query->uuid = uuid;
     query->cluster = cluster_str;
-    query->database = database;
-
-    if (database)
-        query->children.push_back(database);
-
+    query->set(query->database, database);
     query->set(query->storage, storage);
     if (comment)
         query->set(query->comment, comment);
@@ -1597,15 +1574,10 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->replace_view = replace_view;
 
     auto * table_id = table->as<ASTTableIdentifier>();
-    query->database = table_id->getDatabase();
-    query->table = table_id->getTable();
+    query->set(query->database, table_id->getDatabase());
+    query->set(query->table, table_id->getTable());
     query->uuid = table_id->uuid;
     query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
 
     if (to_table)
         query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
@@ -1779,14 +1751,9 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->replace_table = replace;
 
     auto * dict_id = name->as<ASTTableIdentifier>();
-    query->database = dict_id->getDatabase();
-    query->table = dict_id->getTable();
+    query->set(query->database, dict_id->getDatabase());
+    query->set(query->table, dict_id->getTable());
     query->uuid = dict_id->uuid;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
 
     query->if_not_exists = if_not_exists;
     query->set(query->dictionary_attributes_list, attributes);

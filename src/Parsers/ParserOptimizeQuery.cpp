@@ -84,6 +84,10 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     auto query = std::make_shared<ASTOptimizeQuery>();
     node = query;
 
+    if (database)
+        query->set(query->database, database);
+    if (table)
+        query->set(query->table, table);
     query->cluster = cluster_str;
     if (partition)
         query->set(query->partition, partition);
@@ -92,14 +96,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (deduplicate_by_columns)
         query->set(query->deduplicate_by_columns, deduplicate_by_columns);
     query->cleanup = cleanup;
-    query->database = database;
-    query->table = table;
-
-    if (database)
-        query->children.push_back(database);
-
-    if (table)
-        query->children.push_back(table);
 
     return true;
 }

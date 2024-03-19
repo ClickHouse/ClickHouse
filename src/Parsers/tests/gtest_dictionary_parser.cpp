@@ -7,7 +7,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/types.h>

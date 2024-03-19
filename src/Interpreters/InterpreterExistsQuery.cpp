@@ -1,5 +1,5 @@
 #include <Storages/IStorage.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypesNumber.h>

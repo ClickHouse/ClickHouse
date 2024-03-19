@@ -142,7 +142,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 
     /// We remove everything that is not needed for ATTACH from the query.
     assert(!create->temporary);
-    create->database.reset();
+    create->reset(create->database);
 
     if (create->uuid != UUIDHelpers::Nil)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);

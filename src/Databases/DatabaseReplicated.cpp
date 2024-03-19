@@ -657,7 +657,8 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     {
         if (ddl_query->getDatabase() != getDatabaseName())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
-        ddl_query->database.reset();
+
+        ddl_query->reset(ddl_query->database);
 
         if (auto * create = query->as<ASTCreateQuery>())
         {
@@ -1682,7 +1683,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     /// DROP DATABASE is not replicated
     if (const auto * drop = query_ptr->as<const ASTDropQuery>())
     {
-        if (drop->table.get())
+        if (drop->table)
             return drop->kind != ASTDropQuery::Truncate || !is_keeper_map_table(query_ptr);
 
         return false;

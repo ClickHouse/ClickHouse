@@ -10,7 +10,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
@@ -39,12 +39,7 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
     else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
         visitIdentifier(ast);
     else
-    {
-        if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
-            visitChildren(describe_query->table_expression);
-        else
-            visitChildren(ast);
-    }
+        visitChildren(ast);
 }
 
 

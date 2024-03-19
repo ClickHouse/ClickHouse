@@ -2068,8 +2068,8 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserStringLiteral collate_locale_parser;
     ParserExpressionWithOptionalAlias exp_parser(false);
 
-    ASTPtr expr_elem;
-    if (!elem_p.parse(pos, expr_elem, expected))
+    ASTPtr expression;
+    if (!elem_p.parse(pos, expression, expected))
         return false;
 
     int direction = 1;
@@ -2124,18 +2124,12 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     elem->direction = direction;
     elem->nulls_direction = nulls_direction;
     elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
-    if (locale_node)
-        elem->set(elem->collation, locale_node);
+    elem->set(elem->expression, expression);
+    elem->set(elem->collation, locale_node);
     elem->with_fill = has_with_fill;
-    if (fill_from)
-        elem->set(elem->fill_from, locale_node);
-    if (fill_to)
-        elem->set(elem->fill_to, locale_node);
-    if (fill_step)
-        elem->set(elem->fill_step, locale_node);
-    elem->children.push_back(expr_elem);
-    if (locale_node)
-        elem->children.push_back(locale_node);
+    elem->set(elem->fill_from, locale_node);
+    elem->set(elem->fill_to, locale_node);
+    elem->set(elem->fill_step, locale_node);
 
     node = elem;
 

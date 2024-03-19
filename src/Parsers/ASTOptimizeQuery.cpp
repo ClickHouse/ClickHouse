@@ -65,4 +65,10 @@ ASTPtr ASTOptimizeQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterA
     return removeOnCluster<ASTOptimizeQuery>(clone(), params.default_database);
 }
 
+void ASTOptimizeQuery::forEachPointerToChild(std::function<void(void**)> f)
+{
+    f(reinterpret_cast<void **>(&partition));
+    f(reinterpret_cast<void **>(&deduplicate_by_columns));
+}
+
 }

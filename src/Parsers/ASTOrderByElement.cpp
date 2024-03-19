@@ -7,6 +7,25 @@
 namespace DB
 {
 
+ASTPtr ASTOrderByElement::clone() const
+{
+    auto res = std::make_shared<ASTOrderByElement>(*this);
+    res->children.clear();
+
+    if (expression)
+        res->set(res->expression, expression->clone());
+    if (collation)
+        res->set(res->collation, collation->clone());
+    if (fill_from)
+        res->set(res->fill_from, fill_from->clone());
+    if (fill_to)
+        res->set(res->fill_to, fill_to->clone());
+    if (fill_step)
+        res->set(res->fill_step, fill_step->clone());
+
+    return res;
+}
+
 void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(direction);
@@ -18,7 +37,9 @@ void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
 
 void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    children.front()->formatImpl(settings, state, frame);
+    chassert(expression, "ORDER BY element requires an expression");
+    expression->formatImpl(settings, state, frame);
+
     settings.ostr << (settings.hilite ? hilite_keyword : "")
         << (direction == -1 ? " DESC" : " ASC")
         << (settings.hilite ? hilite_none : "");
@@ -56,6 +77,15 @@ void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState 
             fill_step->formatImpl(settings, state, frame);
         }
     }
+}
+
+void ASTOrderByElement::forEachPointerToChild(std::function<void(void**)> f)
+{
+    f(reinterpret_cast<void **>(&expression));
+    f(reinterpret_cast<void **>(&collation));
+    f(reinterpret_cast<void **>(&fill_from));
+    f(reinterpret_cast<void **>(&fill_to));
+    f(reinterpret_cast<void **>(&fill_step));
 }
 
 }
