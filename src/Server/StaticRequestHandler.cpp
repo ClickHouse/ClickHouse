@@ -16,7 +16,6 @@
 
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <filesystem>
 
