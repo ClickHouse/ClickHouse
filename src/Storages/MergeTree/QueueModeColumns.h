@@ -27,9 +27,9 @@ struct QueueReplicaColumn
     static const DataTypePtr type;
 };
 
-bool isQueueModeColumn(const String& column_name);
+bool isQueueModeColumn(const String & column_name);
 
-void materializeQueueSortingColumns(Block& block, int64_t block_number);
-void materializeQueuePartitionColumns(Block& block, const String& replica_name);
+void materializeQueueSortingColumns(Block & block, int64_t block_number);
+void materializeQueuePartitionColumns(Block & block, const String & replica_name);
 
 }

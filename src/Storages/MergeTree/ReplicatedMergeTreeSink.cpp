@@ -885,7 +885,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         {
             chassert(lock_holder->has_value());
 
-            /// Check node livenes and deduplicate
+            /// Check node liveness and deduplicate
             auto conflict_path = checkLockAndDeduplicate(lock_holder->value(), block_id_path); /// 1 RTT
 
             ThreadFuzzer::maybeInjectSleep();
@@ -902,7 +902,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             }
         }
 
-        auto& block_number_lock = is_block_number_lock_provided() ? *lock_holder : current_try_block_number_lock;
+        auto & block_number_lock = is_block_number_lock_provided() ? *lock_holder : current_try_block_number_lock;
         chassert(block_number_lock.has_value());
 
         auto block_number = block_number_lock->getNumber();

@@ -529,10 +529,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (merging_params.mode != MergeTreeData::MergingParams::Ordinary)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree queue settings is not supported for {} mode", merging_params.getModeName());
 
-            // explicitly disable block_number virtual column feature
-            storage_settings->allow_experimental_block_number_column = false;
-
-            auto add_column = [&](const String& name, const DataTypePtr& type, const ASTPtr& codec = nullptr)
+            auto add_column = [&](const String & name, const DataTypePtr & type, const ASTPtr & codec = nullptr)
             {
                 ColumnDescription column(name, type);
 
