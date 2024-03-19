@@ -881,8 +881,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         }
         else
         {
-            chassert(lock_holder->has_value());
-
             /// Check node liveness and deduplicate
             auto conflict_path = checkLockAndDeduplicate(lock_holder->value(), block_id_path); /// 1 RTT
 
