@@ -36,7 +36,7 @@ ColumnsDescription StorageSystemSettings::getColumnsDescription()
 
 void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const Settings & settings = context->getSettingsRef();
+    const Settings & settings = context->getQueryContext()->getSettingsRef();
     auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();
     const auto & constraints = constraints_and_current_profiles->constraints;
 

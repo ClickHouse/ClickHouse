@@ -1948,7 +1948,13 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             }
         }
 
-        res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+        auto context_new = Context::createCopy(shared_from_this());
+        Settings settings = context_new->getSettings();
+        settings.limit = 0;
+        settings.offset = 0;
+        context_new->setSettings(settings);
+
+        res = table_function_ptr->execute(table_expression, context_new, table_function_ptr->getName());
 
         /// Since ITableFunction::parseArguments() may change table_expression, i.e.:
         ///
@@ -1972,7 +1978,13 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
     if (!res)
     {
-        res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+        auto context_new = Context::createCopy(shared_from_this());
+        Settings settings = context_new->getSettings();
+        settings.limit = 0;
+        settings.offset = 0;
+        context_new->setSettings(settings);
+
+        res = table_function_ptr->execute(table_expression, context_new, table_function_ptr->getName());
     }
 
     return res;
