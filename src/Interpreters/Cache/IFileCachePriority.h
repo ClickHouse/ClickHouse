@@ -46,6 +46,8 @@ public:
             if (evicting_ && (!locked_key || !lock))
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Setting evicting state to `true` can be done only under lock");
+
+            chassert(evicting.load() != evicting_);
             evicting.store(evicting_);
         }
 

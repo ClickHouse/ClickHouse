@@ -468,8 +468,10 @@ void LRUFileCachePriority::holdImpl(size_t size, size_t elements, IteratorPtr, c
     if (!canFit(size, elements, lock))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot take space {}. Current state {}/{} in size, {}/{} in elements",
-                        size, state->current_size, max_size, state->current_elements_num, max_elements);
+                        "Cannot take space {} in size and {} in elements. "
+                        "Current state {}/{} in size, {}/{} in elements",
+                        size, elements, state->current_size, max_size,
+                        state->current_elements_num, max_elements);
     }
 
     state->current_size += size;

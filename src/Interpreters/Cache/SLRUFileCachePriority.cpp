@@ -352,9 +352,6 @@ void SLRUFileCachePriority::SLRUIterator::assertValid() const
 
 void SLRUFileCachePriority::holdImpl(size_t size, size_t elements, IteratorPtr reservee, const CachePriorityGuard::Lock & lock)
 {
-    if (!canFit(size, elements, lock, reservee))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot hold space {}", size);
-
     if (reservee)
     {
         const auto * slru_iterator = assert_cast<SLRUIterator *>(reservee.get());

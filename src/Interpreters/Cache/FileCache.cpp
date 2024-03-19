@@ -863,11 +863,20 @@ bool FileCache::tryReserve(
     {
         chassert(reached_size_limit || reached_elements_limit);
 
-        size_t hold_size = reached_size_limit
+        /// If we did not reach size limit (it means we reached only elements limit here)
+        /// then we need to make sure that this fact that we fit in cache by size
+        /// remains true after we release the lock and take it again.
+        /// For this purpose we create a HoldSpace holder which makes sure that the space is hold in the meantime.
+        /// We substract reserve_stat.stat.releasable_size from the hold space,
+        /// because it is the space that will be released, so we do not need to take it into account.
+        const size_t hold_size = reached_size_limit
             ? size > reserve_stat.stat.releasable_size ? size - reserve_stat.stat.releasable_size : 0
             : size;
-        size_t hold_elements = reached_elements_limit ? 0 : 1;
-        auto hold_space = std::make_unique<IFileCachePriority::HoldSpace>(hold_size, hold_elements, queue_iterator, *main_priority, cache_lock);
+        /// If we reached the elements limit - we will evict at least 1 element,
+        /// then we do not need to hold anything, otherwise (if we reached limit only by size)
+        /// we will also evict at least one element, so hold elements count is awlays zero here.
+        auto hold_space = std::make_unique<IFileCachePriority::HoldSpace>(
+            hold_size, /* hold_elements */0, queue_iterator, *main_priority, cache_lock);
 
         cache_lock.unlock();
         try
