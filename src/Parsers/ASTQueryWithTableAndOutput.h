@@ -15,8 +15,8 @@ namespace DB
 class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 {
 public:
-    IAST * database;
-    IAST * table;
+    IAST * database = nullptr;
+    IAST * table = nullptr;
 
     UUID uuid = UUIDHelpers::Nil;
     bool temporary{false};
