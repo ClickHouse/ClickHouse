@@ -348,6 +348,7 @@ public:
     String getName() const override { return Name::name; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -468,9 +469,6 @@ public:
             return_type = makeNullable(json_return_type);
         else
             return_type = json_return_type;
-
-        /// Top-level LowCardinality columns are processed outside JSON parser.
-        json_return_type = removeLowCardinality(json_return_type);
 
         DataTypes argument_types;
         argument_types.reserve(arguments.size());
