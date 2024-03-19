@@ -131,7 +131,7 @@ public:
         const auto transform_x = TransformDateTime64<Transform>(getScale(x));
         const auto transform_y = TransformDateTime64<Transform>(getScale(y));
 
-        for (size_t i = 0, size = x.size() < y.size() ? y.size() : x.size(); i < size; ++i)
+        for (size_t i = 0, size = std::max(x.size(), y.size()); i < size; ++i)
         {
             if (i >= x.size())
                 result[i] = calculate(transform_x, transform_y, x_data[x.size()-1], y_data[i], timezone_x, timezone_y);
