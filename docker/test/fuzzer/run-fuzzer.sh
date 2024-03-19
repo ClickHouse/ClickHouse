@@ -181,7 +181,7 @@ function fuzz
         --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
         --  --path db \
             --logger.console=0 \
-            --logger.log=server.log > stderr.log 2>&1
+            --logger.log=server.log > stderr.log 2>&1 &
     server_pid=$!
 
     kill -0 $server_pid
