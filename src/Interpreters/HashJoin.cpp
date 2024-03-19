@@ -257,7 +257,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     LOG_TRACE(log, "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
         instance_log_id, TableJoin::formatClauses(table_join->getClauses(), true), data->type, kind, strictness, right_sample_block.dumpStructure());
 
-    validateAdditionalFilterExpression(table_join->getFullJoinExpression());
+    validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
     if (isCrossOrComma(kind))
     {
@@ -713,7 +713,7 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
                             table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH) ||
                             isRightOrFull(kind) ||
                             multiple_disjuncts ||
-                            table_join->getFullJoinExpression();
+                            table_join->getMixedJoinExpression();
     if (save_key_columns)
     {
         saved_block_sample = right_table_keys.cloneEmpty();
@@ -1506,8 +1506,18 @@ ColumnPtr buildAdditionalFilter(
         return ColumnUInt8::create();
     const Block & sample_right_block = *selected_rows.begin()->block;
     if (!sample_right_block)
-        return ColumnUInt8::create();
+    {
+        auto filter = ColumnUInt8::create();
+        filter->insertMany(1, selected_rows.size());
+        return filter;
+    }
 
+    if (!added_columns.additional_filter_expression)
+    {
+        auto filter = ColumnUInt8::create();
+        filter->insertMany(1, selected_rows.size());
+        return filter;
+    }
     auto required_cols = added_columns.additional_filter_expression->getRequiredColumnsWithTypes();
     if (required_cols.empty())
     {
@@ -1561,9 +1571,29 @@ ColumnPtr buildAdditionalFilter(
         }
         executed_block.insert({std::move(new_col), src_col->type, col_name});
     }
-    LOG_TRACE(getLogger("HashJoin"), "Additional filter execute block:\n{}", executed_block.dumpContent());
+    if (!executed_block)
+    {
+        WriteBufferFromOwnString buf;
+        for (const auto & col : required_cols)
+        {
+            buf << col.name << ", ";
+        }
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "required columns: {}. but not found any in left/right table. right table: {}, left table: {}",
+            buf.str(),
+            sample_right_block.dumpNames(),
+            added_columns.left_block.dumpNames());
+    }
+    // Debug
+    for (const auto & col : executed_block.getColumnsWithTypeAndName())
+    {
+        if (!col.column || !col.type)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Null column in input block. {}", executed_block.dumpStructure());
+        }
+    }
     added_columns.additional_filter_expression->execute(executed_block);
-    LOG_TRACE(getLogger("HashJoin"), "Addition filter execute result block:\n{}", executed_block.dumpContent());
     return executed_block.getByPosition(0).column;
 }
 
@@ -1609,20 +1639,20 @@ void addFoundRowRefAll(
 template <
     typename KeyGetter,
     typename Map,
-    bool need_filter,
     bool need_replication,
-    bool need_flags,
-    bool add_missing,
-    bool flag_per_row,
     typename AddedColumns>
 NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
-    JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
+    JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]],
+    bool need_filter [[maybe_unused]],
+    bool need_flags [[maybe_unused]],
+    bool add_missing [[maybe_unused]],
+    bool flag_per_row [[maybe_unused]])
 {
     size_t left_block_rows = added_columns.rows_to_add;
-    if constexpr (need_filter)
+    if (need_filter)
         added_columns.filter = IColumn::Filter(left_block_rows, 0);
 
     std::unique_ptr<Arena> pool;
@@ -1661,7 +1691,8 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                     break;
                 }
             }
-            KnownRowsHolder<flag_per_row> known_rows;
+            KnownRowsHolder<true> all_flag_known_rows;
+            KnownRowsHolder<false> single_flag_know_rows;
             for (size_t join_clause_idx = 0; join_clause_idx < added_columns.join_on_keys.size(); ++join_clause_idx)
             {
                 const auto & join_keys = added_columns.join_on_keys[join_clause_idx];
@@ -1677,7 +1708,10 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                 {
                     auto & mapped = find_result.getMapped();
                     find_results.push_back(find_result);
-                    addFoundRowRefAll<flag_per_row>(mapped, selected_rows, current_added_rows, known_rows);
+                    if (flag_per_row)
+                        addFoundRowRefAll<true>(mapped, selected_rows, current_added_rows, all_flag_known_rows);
+                    else
+                        addFoundRowRefAll<false>(mapped, selected_rows, current_added_rows, single_flag_know_rows);
                 }
             }
             row_replicate_offset.push_back(current_added_rows);
@@ -1705,7 +1739,7 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
         {
             bool any_matched = false;
             /// For all right join, flag_per_row is true, we need mark used flags for each row.
-            if constexpr (flag_per_row)
+            if (flag_per_row)
             {
                 for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                 {
@@ -1714,7 +1748,8 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
                         any_matched = true;
                         added_columns.appendFromBlock(*selected_right_row_it->block, selected_right_row_it->row_num, add_missing);
                         total_added_rows += 1;
-                        used_flags.template setUsed<need_flags, flag_per_row>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                        if (need_flags)
+                            used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
                     }
                     ++selected_right_row_it;
                 }
@@ -1734,14 +1769,18 @@ NO_INLINE size_t joinRightColumnsWithAddtitionalFilter(
             }
             if (!any_matched)
             {
-                addNotFoundRow<add_missing, need_replication>(added_columns, total_added_rows);
+                if (add_missing)
+                    addNotFoundRow<true, need_replication>(added_columns, total_added_rows);
+                else
+                    addNotFoundRow<false, need_replication>(added_columns, total_added_rows);
             }
             else
             {
-                if constexpr (!flag_per_row)
-                    used_flags.template setUsed<need_flags, false>(find_results[find_result_index]);
-                setUsed<need_filter>(added_columns.filter, left_start_row + i - 1);
-                if constexpr (add_missing)
+                if (!flag_per_row && need_flags)
+                    used_flags.template setUsed<true, false>(find_results[find_result_index]);
+                if (need_filter)
+                    setUsed<true>(added_columns.filter, left_start_row + i - 1);
+                if (add_missing)
                     added_columns.applyLazyDefaults();
             }
             find_result_index += (prev_replicated_row != row_replicate_offset[i]);
@@ -1954,23 +1993,24 @@ size_t joinRightColumnsSwitchMultipleDisjuncts(
         if (added_columns.additional_filter_expression)
         {
            constexpr bool mark_per_row_used = join_features.right || join_features.full;
-           return mapv.size() > 1
-               ? joinRightColumnsWithAddtitionalFilter<
-                   KeyGetter,
-                   Map,
-                   need_filter,
-                   join_features.need_replication,
-                   join_features.need_flags,
-                   join_features.add_missing,
-                   true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags)
-               : joinRightColumnsWithAddtitionalFilter<
-                   KeyGetter,
-                   Map,
-                   need_filter,
-                   join_features.need_replication,
-                   join_features.need_flags,
-                   join_features.add_missing,
-                   mark_per_row_used>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
+           return mapv.size() > 1 ? joinRightColumnsWithAddtitionalFilter<KeyGetter, Map, join_features.need_replication>(
+                      std::forward<std::vector<KeyGetter>>(key_getter_vector),
+                      mapv,
+                      added_columns,
+                      used_flags,
+                      need_filter,
+                      join_features.need_flags,
+                      join_features.add_missing,
+                      true)
+                                  : joinRightColumnsWithAddtitionalFilter<KeyGetter, Map, join_features.need_replication>(
+                                      std::forward<std::vector<KeyGetter>>(key_getter_vector),
+                                      mapv,
+                                      added_columns,
+                                      used_flags,
+                                      need_filter,
+                                      join_features.need_flags,
+                                      join_features.add_missing,
+                                      mark_per_row_used);
         }
         else
         {
@@ -2141,7 +2181,7 @@ Block HashJoin::joinBlockImpl(
         savedBlockSample(),
         *this,
         std::move(join_on_keys),
-        table_join->getFullJoinExpression(),
+        table_join->getMixedJoinExpression(),
         join_features.is_asof_join,
         is_join_get);
 
@@ -2788,7 +2828,7 @@ bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table
     if (!table_join_->oneDisjunct())
         return true;
     /// If it'a a all right join with inequal conditions, we need to mark each row
-    if (table_join_->getFullJoinExpression() && isRightOrFull(table_join_->kind()))
+    if (table_join_->getMixedJoinExpression() && isRightOrFull(table_join_->kind()))
         return true;
     return false;
 }

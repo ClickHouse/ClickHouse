@@ -10,8 +10,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 
-#include <Processors/Formats/IOutputFormat.h>
-
 #include <iterator>
 
 #include <boost/algorithm/string.hpp>
@@ -428,16 +426,6 @@ std::string Block::dumpIndex() const
         out << name << ' ' << pos;
     }
     return out.str();
-}
-
-std::string Block::dumpContent() const
-{
-    WriteBufferFromOwnString buf;
-    auto output_format = Context::getGlobalContextInstance()->getOutputFormat("PrettyCompact", buf, *this);
-    output_format->write(materializeBlock(*this));
-    output_format->flush();
-    buf.finalize();
-    return buf.str();
 }
 
 Block Block::cloneEmpty() const

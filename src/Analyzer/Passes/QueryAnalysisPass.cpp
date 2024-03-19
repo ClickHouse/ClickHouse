@@ -3651,7 +3651,8 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         }
     }
 
-    if (join_node_in_resolve_process || !resolved_identifier)
+    // if (join_node_in_resolve_process || !resolved_identifier)
+    if (!resolved_identifier)
         return resolved_identifier;
 
     if (scope.join_use_nulls)
