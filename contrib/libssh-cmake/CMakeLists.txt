@@ -1,4 +1,27 @@
-option (ENABLE_SSH "Enable support for SSH keys and protocol" ${ENABLE_LIBRARIES})
+set(LIB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libssh")
+set(LIB_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/libssh")
+add_compile_definitions(WITH_SFTP)
+# Specify search path for CMake modules to be loaded by include()
+# and find_package()
+list(APPEND CMAKE_MODULE_PATH "${LIB_SOURCE_DIR}/cmake/Modules")
+
+include(DefineCMakeDefaults)
+include(DefineCompilerFlags)
+
+project(libssh VERSION 0.9.7 LANGUAGES C)
+
+# global needed variable
+set(APPLICATION_NAME ${PROJECT_NAME})
+
+# SOVERSION scheme: CURRENT.AGE.REVISION
+#   If there was an incompatible interface change:
+#     Increment CURRENT. Set AGE and REVISION to 0
+#   If there was a compatible interface change:
+#     Increment AGE. Set REVISION to 0
+#   If the source code was changed, but there were no interface changes:
+#     Increment REVISION.
+set(LIBRARY_VERSION "4.8.7")
+set(LIBRARY_SOVERSION "4")
 
 if (NOT ENABLE_SSH)
     message(STATUS "Not using SSH")

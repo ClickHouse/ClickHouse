@@ -139,6 +139,7 @@
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
+
 #include <incbin.h>
 /// A minimal file used when the server is run without installation
 INCBIN(resource_embedded_xml, SOURCE_DIR "/programs/server/embedded.xml");

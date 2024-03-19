@@ -114,8 +114,11 @@ class IColumn;
     M(Bool, enable_s3_requests_logging, false, "Enable very explicit logging of S3 requests. Makes sense for debug only.", 0) \
     M(String, s3queue_default_zookeeper_path, "/clickhouse/s3queue/", "Default zookeeper path prefix for S3Queue engine", 0) \
     M(Bool, s3queue_enable_logging_to_s3queue_log, false, "Enable writing to system.s3queue_log. The value can be overwritten per table with table settings", 0) \
+    M(Bool, sftp_truncate_on_insert, false, "Enables or disables truncate before insert in sftp engine tables", 0) \
+    M(Bool, sftp_create_new_file_on_insert, false, "Enables or disables creating a new file on each insert in sftp engine tables", 0) \
+    M(Bool, sftp_skip_empty_files, false, "Allow to skip empty files in sftp table engine", 0) \
     M(UInt64, hdfs_replication, 0, "The actual number of replications can be specified when the hdfs file is created.", 0) \
-    M(Bool, hdfs_truncate_on_insert, false, "Enables or disables truncate before insert in s3 engine tables", 0) \
+    M(Bool, hdfs_truncate_on_insert, false, "Enables or disables truncate before insert in hdfs engine tables", 0) \
     M(Bool, hdfs_create_new_file_on_insert, false, "Enables or disables creating a new file on each insert in hdfs engine tables", 0) \
     M(Bool, hdfs_skip_empty_files, false, "Allow to skip empty files in hdfs table engine", 0) \
     M(UInt64, hsts_max_age, 0, "Expired time for hsts. 0 means disable HSTS.", 0) \
@@ -820,6 +823,7 @@ class IColumn;
     M(Bool, schema_inference_use_cache_for_file, true, "Use cache in schema inference while using file table function", 0) \
     M(Bool, schema_inference_use_cache_for_s3, true, "Use cache in schema inference while using s3 table function", 0) \
     M(Bool, schema_inference_use_cache_for_azure, true, "Use cache in schema inference while using azure table function", 0) \
+    M(Bool, schema_inference_use_cache_for_sftp, true, "Use cache in schema inference while using sftp table function", 0) \
     M(Bool, schema_inference_use_cache_for_hdfs, true, "Use cache in schema inference while using hdfs table function", 0) \
     M(Bool, schema_inference_use_cache_for_url, true, "Use cache in schema inference while using url table function", 0) \
     M(Bool, schema_inference_cache_require_modification_time_for_url, true, "Use schema from cache for URL with last modification time validation (for urls with Last-Modified header)", 0) \

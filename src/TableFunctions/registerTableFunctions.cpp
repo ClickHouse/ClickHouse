@@ -28,6 +28,8 @@ void registerTableFunctions()
     registerTableFunctionFuzzJSON(factory);
 #endif
 
+    registerTableFunctionSFTP(factory);
+
 #if USE_AWS_S3
     registerTableFunctionS3(factory);
     registerTableFunctionS3Cluster(factory);

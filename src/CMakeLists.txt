@@ -135,6 +135,8 @@ if (TARGET ch_contrib::rocksdb)
     add_headers_and_sources(dbms Storages/RocksDB)
 endif()
 
+add_headers_and_sources(dbms Storages/SFTP)
+
 if (TARGET ch_contrib::aws_s3)
     add_headers_and_sources(dbms Common/S3)
     add_headers_and_sources(dbms Disks/ObjectStorages/S3)
