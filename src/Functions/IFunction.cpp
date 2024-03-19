@@ -116,19 +116,10 @@ void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
 ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
-    ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
-
-    /// Check that these arguments are really constant.
-    for (auto arg_num : arguments_to_remain_constants)
-        if (arg_num < args.size() && !isColumnConst(*args[arg_num].column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Argument at index {} for function {} must be constant",
-                arg_num,
-                getName());
-
     if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(args))
         return nullptr;
 
+    ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
     ColumnsWithTypeAndName temporary_columns;
     bool have_converted_columns = false;
 
@@ -311,6 +302,13 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
 
 ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
+    /// Check arguments that should be constant.
+    for (auto arg_num : getArgumentsThatAreAlwaysConstant())
+        if (arg_num < arguments.size() && !isColumnConst(*arguments[arg_num].column))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Argument at index {} for function {} must be constant",
+                arg_num, getName());
+
     bool use_default_implementation_for_sparse_columns = useDefaultImplementationForSparseColumns();
     /// DataTypeFunction does not support obtaining default (isDefaultAt())
     /// ColumnFunction does not support getting specific values.
