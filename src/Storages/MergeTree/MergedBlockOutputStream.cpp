@@ -50,6 +50,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     data_part->storeVersionMetadata();
 
     writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, statistics, default_codec, writer_settings, computed_index_granularity);
+
+    LOG_WARNING(getLogger("MergedBlockOutputStream()"), "called c-tor");
 }
 
 /// If data is pre-sorted.
@@ -329,6 +331,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
 void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {
+    LOG_WARNING(getLogger("MergedBlockOutputStream()"), "writeImpl block rows {} size {} getPartDirectory {}",
+                block.rows(), block.bytes(), data_part_storage->getPartDirectory());
+
     block.checkNumberOfRows();
     size_t rows = block.rows();
     if (!rows)

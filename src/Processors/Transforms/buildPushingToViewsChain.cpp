@@ -223,6 +223,8 @@ std::optional<Chain> generateViewChain(
     else if (insert_settings.update_insert_deduplication_token_in_dependent_materialized_views &&
         !insert_settings.insert_deduplication_token.value.empty())
     {
+
+        /// TODO!
         /** Update deduplication token passed to dependent MV with current view id. So it is possible to properly handle
               * deduplication in complex INSERT flows.
               *
@@ -251,6 +253,8 @@ std::optional<Chain> generateViewChain(
             insert_deduplication_token += "_" + toString(view_id.uuid);
         else
             insert_deduplication_token += "_" + view_id.getFullNameNotQuoted();
+
+        LOG_DEBUG(getLogger("PushingToViews"), "insert_deduplication_token {}", insert_deduplication_token);
 
         insert_context->setSetting("insert_deduplication_token", insert_deduplication_token);
     }
@@ -480,6 +484,8 @@ Chain buildPushingToViewsChain(
 
     for (const auto & view_id : views)
     {
+        LOG_ERROR(&Poco::Logger::get("PushingToViews"), "dependent view: {}.{}", view_id.database_name, view_id.table_name);
+
         try
         {
             auto out = generateViewChain(
