@@ -10,9 +10,9 @@ namespace DB {
   * Result: SELECT * from test where x = 1;
   *
   */
-class ConvertInToEqualsPass final : public IQueryTreePass {
+class ConvertInToEqualPass final : public IQueryTreePass {
 public:
-    String getName() override { return "ConvertInToEqualsPass"; }
+    String getName() override { return "ConvertInToEqualPass"; }
 
     String getDescription() override { return "Convert in to equal"; }
 

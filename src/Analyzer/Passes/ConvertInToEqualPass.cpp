@@ -2,7 +2,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/Passes/ConvertInToEqualsPass.h>
+#include <Analyzer/Passes/ConvertInToEqualPass.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -11,10 +11,10 @@ namespace DB
 
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
 
-class ConvertInToEqualsPassVisitor : public InDepthQueryTreeVisitorWithContext<ConvertInToEqualsPassVisitor>
+class ConvertInToEqualPassVisitor : public InDepthQueryTreeVisitorWithContext<ConvertInToEqualPassVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<ConvertInToEqualsPassVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<ConvertInToEqualPassVisitor>;
     using Base::Base;
 
     FunctionOverloadResolverPtr createInternalFunctionEqualOverloadResolver()
@@ -47,9 +47,9 @@ public:
     }
 };
 
-void ConvertInToEqualsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void ConvertInToEqualPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    ConvertInToEqualsPassVisitor visitor(std::move(context));
+    ConvertInToEqualPassVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }
 }

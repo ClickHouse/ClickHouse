@@ -28,7 +28,7 @@
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/IfChainToMultiIfPass.h>
-#include <Analyzer/Passes/ConvertInToEqualsPass.h>
+#include <Analyzer/Passes/ConvertInToEqualPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
 #include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>
@@ -264,7 +264,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<SumIfToCountIfPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
-    manager.addPass(std::make_unique<ConvertInToEqualsPass>());
+    manager.addPass(std::make_unique<ConvertInToEqualPass>());
 
     /// should before AggregateFunctionsArithmericOperationsPass
     manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>());
