@@ -16,6 +16,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
@@ -180,6 +181,64 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                                                          "to execute ALTERs of different types (replicated and non replicated) in single query");
     }
 
+    NameSet all_key_columns;
+    if (const auto * merge_tree_table = dynamic_cast<const MergeTreeData *>(table.get()))
+        all_key_columns = merge_tree_table->getAllKeyColumns();
+
+    /// Mutations that should be executed before altering metadata.
+    MutationCommands before_mutation_commands;
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+
+    for (auto & command : alter_commands)
+    {
+        /** If we are altering a key column, we should first materialize it.
+          * For instance, when we modify the DEFAULT expression, the order might change (e.g., when the expression depends on another column),
+          * while all other columns expect an order corresponding to the current column default.
+          */
+        if (command.type == AlterCommand::MODIFY_COLUMN && all_key_columns.contains(command.column_name))
+        {
+            if (!command.data_type)
+            {
+                /** If the type is not specified, we don't treat it as a mutation (isRequireMutationStage is set to false, etc.)
+                  * We could update all places to force the mutation stage for such cases, or rewrite the command query ourselves, adding the current type.
+                  * However, this may be error-prone, so we prefer to ask the user to specify the type explicitly, providing a hint in the error message.
+                  */
+                ASTAlterCommand * alter_command = command.ast->as<ASTAlterCommand>();
+                if (alter_command && alter_command->col_decl)
+                {
+                    ASTColumnDeclaration * col_decl = alter_command->col_decl->as<ASTColumnDeclaration>();
+                    for (const auto & current_column : metadata_snapshot->getColumns().getAllPhysical())
+                    {
+                        if (col_decl && current_column.name == command.column_name)
+                        {
+                            col_decl->type = std::make_shared<ASTIdentifier>(current_column.type->getName());
+                            break;
+                        }
+                    }
+                }
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MODIFY key column '{}' without specifying new type{}",
+                    command.column_name, alter_command ? fmt::format(", you may try to use '{}' command", alter_command->formatForErrorMessage()) : "");
+            }
+
+            before_mutation_commands.push_back(MutationCommand{.ast = command.ast, .type = MutationCommand::READ_COLUMN, .column_name = command.column_name});
+        }
+    }
+
+    if (before_mutation_commands.hasNonEmptyMutationCommands())
+    {
+        auto context_ = Context::createCopy(getContext());
+        context_->setSetting("mutations_sync", 2);
+        table->checkMutationIsPossible(before_mutation_commands, context_->getSettingsRef());
+        MutationsInterpreter::Settings settings(false);
+        MutationsInterpreter(table, metadata_snapshot, before_mutation_commands, context_, settings).validate();
+        table->mutate(before_mutation_commands, context_);
+    }
+
+    /** Note: Could there be an issue where other modifications occur between materialization and alteration?
+      * Likely not, as any other modifications to key columns would also necessitate materialization,
+      * and mutations are executed in sequence.
+      */
+
     if (!alter_commands.empty())
     {
         auto alter_lock = table->lockForAlter(getContext()->getSettingsRef().lock_acquire_timeout);
@@ -192,7 +251,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     /// Get newest metadata_snapshot after execute ALTER command, in order to
     /// support like materialize index in the same ALTER query that creates it.
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    metadata_snapshot = table->getInMemoryMetadataPtr();
 
     if (mutation_commands.hasNonEmptyMutationCommands())
     {
@@ -202,7 +261,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             if (command.type == MutationCommand::MATERIALIZE_TTL && !metadata_snapshot->hasAnyTTL())
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}",
                     table->getStorageID().getNameForLogs());
-
         }
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter::Settings settings(false);

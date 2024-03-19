@@ -105,7 +105,7 @@ DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 
     if constexpr (nullptr_on_error)
         return nullptr;
-    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for data type.");
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for data type {}", ast ? ast->formatForErrorMessage() : "nullptr");
 }
 
 DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const

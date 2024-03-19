@@ -702,6 +702,18 @@ public:
     /// Also rename log names.
     void renameInMemory(const StorageID & new_table_id) override;
 
+    /// Returns union of all key columns
+    NameSet getAllKeyColumns(
+        /// Set of columns that shouldn't be altered.
+        NameSet & columns_alter_type_forbidden,
+        /// Primary key columns can be ALTERed only if they are used in the key as-is
+        /// (and not as a part of some expression) and if the ALTER only affects column metadata.
+        NameSet & columns_alter_type_metadata_only,
+        /// Columns to check that the type change is safe for partition key.
+        NameSet & columns_alter_type_check_safe_for_partition) const;
+
+    NameSet getAllKeyColumns() const;
+
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
     /// - all type conversions can be done.

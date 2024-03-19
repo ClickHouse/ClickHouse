@@ -2967,6 +2967,62 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
 
 }
 
+NameSet MergeTreeData::getAllKeyColumns(
+    NameSet & columns_alter_type_forbidden,
+    NameSet & columns_alter_type_metadata_only,
+    NameSet & columns_alter_type_check_safe_for_partition) const
+{
+    const auto & metadata = getInMemoryMetadata();
+
+    if (metadata.hasPartitionKey())
+    {
+        /// Forbid altering columns inside partition key expressions because it can change partition ID format.
+        auto partition_key_expr = metadata.getPartitionKey().expression;
+        for (const auto & action : partition_key_expr->getActions())
+        {
+            for (const auto * child : action.node->children)
+                columns_alter_type_forbidden.insert(child->result_name);
+        }
+
+        /// But allow to alter columns without expressions under certain condition.
+        for (const String & col : partition_key_expr->getRequiredColumns())
+            columns_alter_type_check_safe_for_partition.insert(col);
+    }
+
+    if (metadata.hasSortingKey())
+    {
+        auto sorting_key_expr = metadata.getSortingKey().expression;
+        for (const auto & action : sorting_key_expr->getActions())
+        {
+            for (const auto * child : action.node->children)
+                columns_alter_type_forbidden.insert(child->result_name);
+        }
+        for (const String & col : sorting_key_expr->getRequiredColumns())
+            columns_alter_type_metadata_only.insert(col);
+
+        /// We don't process sample_by_ast separately because it must be among the primary key columns
+        /// and we don't process primary_key_expr separately because it is a prefix of sorting_key_expr.
+    }
+
+    if (!merging_params.sign_column.empty())
+        columns_alter_type_forbidden.insert(merging_params.sign_column);
+
+    /// All of the above.
+    NameSet columns_in_keys;
+    columns_in_keys.insert(columns_alter_type_forbidden.begin(), columns_alter_type_forbidden.end());
+    columns_in_keys.insert(columns_alter_type_metadata_only.begin(), columns_alter_type_metadata_only.end());
+    columns_in_keys.insert(columns_alter_type_check_safe_for_partition.begin(), columns_alter_type_check_safe_for_partition.end());
+    return columns_in_keys;
+}
+
+NameSet MergeTreeData::getAllKeyColumns() const
+{
+    NameSet columns_alter_type_forbidden;
+    NameSet columns_alter_type_metadata_only;
+    NameSet columns_alter_type_check_safe_for_partition;
+    return getAllKeyColumns(columns_alter_type_forbidden, columns_alter_type_metadata_only, columns_alter_type_check_safe_for_partition);
+}
+
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
@@ -2993,53 +3049,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Experimental Inverted Index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
 
-    /// Set of columns that shouldn't be altered.
     NameSet columns_alter_type_forbidden;
-
-    /// Primary key columns can be ALTERed only if they are used in the key as-is
-    /// (and not as a part of some expression) and if the ALTER only affects column metadata.
     NameSet columns_alter_type_metadata_only;
-
-    /// Columns to check that the type change is safe for partition key.
     NameSet columns_alter_type_check_safe_for_partition;
 
-    if (old_metadata.hasPartitionKey())
-    {
-        /// Forbid altering columns inside partition key expressions because it can change partition ID format.
-        auto partition_key_expr = old_metadata.getPartitionKey().expression;
-        for (const auto & action : partition_key_expr->getActions())
-        {
-            for (const auto * child : action.node->children)
-                columns_alter_type_forbidden.insert(child->result_name);
-        }
-
-        /// But allow to alter columns without expressions under certain condition.
-        for (const String & col : partition_key_expr->getRequiredColumns())
-            columns_alter_type_check_safe_for_partition.insert(col);
-    }
-
-    if (old_metadata.hasSortingKey())
-    {
-        auto sorting_key_expr = old_metadata.getSortingKey().expression;
-        for (const auto & action : sorting_key_expr->getActions())
-        {
-            for (const auto * child : action.node->children)
-                columns_alter_type_forbidden.insert(child->result_name);
-        }
-        for (const String & col : sorting_key_expr->getRequiredColumns())
-            columns_alter_type_metadata_only.insert(col);
-
-        /// We don't process sample_by_ast separately because it must be among the primary key columns
-        /// and we don't process primary_key_expr separately because it is a prefix of sorting_key_expr.
-    }
-    if (!merging_params.sign_column.empty())
-        columns_alter_type_forbidden.insert(merging_params.sign_column);
-
-    /// All of the above.
-    NameSet columns_in_keys;
-    columns_in_keys.insert(columns_alter_type_forbidden.begin(), columns_alter_type_forbidden.end());
-    columns_in_keys.insert(columns_alter_type_metadata_only.begin(), columns_alter_type_metadata_only.end());
-    columns_in_keys.insert(columns_alter_type_check_safe_for_partition.begin(), columns_alter_type_check_safe_for_partition.end());
+    NameSet columns_in_keys = getAllKeyColumns(columns_alter_type_forbidden, columns_alter_type_metadata_only, columns_alter_type_check_safe_for_partition);
 
     std::unordered_map<String, String> columns_in_indices;
     for (const auto & index : old_metadata.getSecondaryIndices())

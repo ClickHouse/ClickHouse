@@ -74,6 +74,11 @@ static void splitAndModifyMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
+    NameSet sorting_key_set;
+    {
+        const auto & sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
+        sorting_key_set.insert(sorting_key_columns.begin(), sorting_key_columns.end());
+    }
 
     if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
@@ -93,13 +98,15 @@ static void splitAndModifyMutationCommands(
                     mutated_columns.emplace(command.column_name);
                 }
             }
+
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE
-                || command.type == MutationCommand::Type::APPLY_DELETED_MASK)
+                || command.type == MutationCommand::Type::APPLY_DELETED_MASK
+                || (command.type == MutationCommand::Type::READ_COLUMN && sorting_key_set.contains(command.column_name)))
             {
                 for_interpreter.push_back(command);
                 for (const auto & [column_name, expr] : command.column_to_update_expression)
@@ -238,7 +245,8 @@ static void splitAndModifyMutationCommands(
                 for_file_renames.push_back(command);
             }
             /// If we don't have this column in source part, we don't need to materialize it.
-            else if (part_columns.has(command.column_name))
+            /// Except the case when column in sorting key, because modification can change default expression and thus the order
+            else if (part_columns.has(command.column_name) || sorting_key_set.contains(command.column_name))
             {
                 if (command.type == MutationCommand::Type::READ_COLUMN)
                     for_interpreter.push_back(command);
