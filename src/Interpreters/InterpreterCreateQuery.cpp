@@ -1087,6 +1087,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
+        // In case of an ON CLUSTER query, the database may not be present on the initiator node
         auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (database && database->shouldReplicateQuery(getContext(), query_ptr))
         {
@@ -1253,6 +1254,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
+    // In case of an ON CLUSTER query, the database may not be present on the initiator node
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
@@ -1273,7 +1275,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "CREATE AS SELECT is not supported with Replicated databases. Use separate CREATE and INSERT queries");
     }
 
-    if (need_add_to_database && database && database->shouldReplicateQuery(getContext(), query_ptr))
+    if (database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
