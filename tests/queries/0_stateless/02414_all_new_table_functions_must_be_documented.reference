@@ -4,6 +4,7 @@ dictionary
 executable
 file
 generateRandom
+generateSeries
 generate_series
 input
 jdbc
