@@ -57,7 +57,7 @@ template <typename Result, typename T>
 std::future<Result> scheduleFromThreadPool(T && task, ThreadPool & pool, const std::string & thread_name, Priority priority = {})
 {
     auto schedule = threadPoolCallbackRunner<Result, T>(pool, thread_name);
-    return schedule(std::move(task), priority);
+    return schedule(std::move(task), priority); /// NOLINT
 }
 
 }

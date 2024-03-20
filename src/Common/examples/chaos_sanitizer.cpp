@@ -12,7 +12,7 @@
 /** Proves that ThreadFuzzer helps to find concurrency bugs.
   *
   * for i in {1..10}; do ./chaos_sanitizer 1000000; done
-  * for i in {1..10}; do THREAD_FUZZER_CPU_TIME_PERIOD_US=1000 THREAD_FUZZER_SLEEP_PROBABILITY=0.1 THREAD_FUZZER_SLEEP_TIME_US=100000 ./chaos_sanitizer 1000000; done
+  * for i in {1..10}; do THREAD_FUZZER_CPU_TIME_PERIOD_US=1000 THREAD_FUZZER_SLEEP_PROBABILITY=0.1 THREAD_FUZZER_SLEEP_TIME_US_MAX=100000 ./chaos_sanitizer 1000000; done
   */
 int main(int argc, char ** argv)
 {
