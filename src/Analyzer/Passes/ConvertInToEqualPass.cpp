@@ -36,11 +36,10 @@ public:
             return ;
         if (constant_node->getValue().getType() == Field::Types::Which::Tuple)
             return;
-        auto const_value = std::make_shared<ConstantNode>(constant_node->getValue());
 
         auto equal_resolver = createInternalFunctionEqualOverloadResolver();
         auto equal = std::make_shared<FunctionNode>("equals");
-        QueryTreeNodes arguments{column_node->clone(), const_value};
+        QueryTreeNodes arguments{column_node->clone(), constant_node->clone()};
         equal->getArguments().getNodes() = std::move(arguments);
         equal->resolveAsFunction(equal_resolver);
         node = equal;
