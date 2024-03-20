@@ -457,8 +457,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
                 auto old_sorting_key_ast = old_metadata.getSortingKey().definition_ast;
-                new_metadata.primary_key = KeyDescription::Builder().buildFromAST(
-                    old_sorting_key_ast, new_metadata.columns, context);
+                new_metadata.primary_key.recalculateWithNewAST(old_sorting_key_ast, new_metadata.columns, context);
             }
         }
 
@@ -521,7 +520,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     }
     else
     {
-        new_metadata.primary_key = KeyDescription::Builder().buildFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, context);
+        new_metadata.primary_key.recalculateWithNewAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, context);
         new_metadata.primary_key.definition_ast = nullptr;
     }
 
