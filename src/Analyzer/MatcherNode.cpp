@@ -53,7 +53,7 @@ MatcherNode::MatcherNode(Identifier qualified_identifier_, ColumnTransformersNod
 {
 }
 
-MatcherNode::MatcherNode(const String & pattern_, ColumnTransformersNodes column_transformers_)
+MatcherNode::MatcherNode(String pattern_, ColumnTransformersNodes column_transformers_)
     : MatcherNode(MatcherNodeType::COLUMNS_REGEXP,
         {} /*qualified_identifier*/,
         {} /*columns_identifiers*/,
@@ -62,7 +62,7 @@ MatcherNode::MatcherNode(const String & pattern_, ColumnTransformersNodes column
 {
 }
 
-MatcherNode::MatcherNode(Identifier qualified_identifier_, const String & pattern_, ColumnTransformersNodes column_transformers_)
+MatcherNode::MatcherNode(Identifier qualified_identifier_, String pattern_, ColumnTransformersNodes column_transformers_)
     : MatcherNode(MatcherNodeType::COLUMNS_REGEXP,
         std::move(qualified_identifier_),
         {} /*columns_identifiers*/,
@@ -92,7 +92,7 @@ MatcherNode::MatcherNode(Identifier qualified_identifier_, Identifiers columns_i
 MatcherNode::MatcherNode(MatcherNodeType matcher_type_,
     Identifier qualified_identifier_,
     Identifiers columns_identifiers_,
-    const String & pattern_,
+    String pattern_,
     ColumnTransformersNodes column_transformers_)
     : IQueryTreeNode(children_size)
     , matcher_type(matcher_type_)

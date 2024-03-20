@@ -59,10 +59,10 @@ public:
     explicit MatcherNode(Identifier qualified_identifier_, ColumnTransformersNodes column_transformers_ = {});
 
     /// Variant unqualified COLUMNS('regexp')
-    explicit MatcherNode(const String & pattern_, ColumnTransformersNodes column_transformers_ = {});
+    explicit MatcherNode(String pattern_, ColumnTransformersNodes column_transformers_ = {});
 
     /// Variant qualified COLUMNS('regexp')
-    explicit MatcherNode(Identifier qualified_identifier_, const String & pattern_, ColumnTransformersNodes column_transformers_ = {});
+    explicit MatcherNode(Identifier qualified_identifier_, String pattern_, ColumnTransformersNodes column_transformers_ = {});
 
     /// Variant unqualified COLUMNS(column_name_1, ...)
     explicit MatcherNode(Identifiers columns_identifiers_, ColumnTransformersNodes column_transformers_ = {});
@@ -147,7 +147,7 @@ private:
     explicit MatcherNode(MatcherNodeType matcher_type_,
         Identifier qualified_identifier_,
         Identifiers columns_identifiers_,
-        const String & pattern_,
+        String pattern_,
         ColumnTransformersNodes column_transformers_);
 
     MatcherNodeType matcher_type;
