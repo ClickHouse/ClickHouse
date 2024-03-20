@@ -6,10 +6,11 @@ cd /ClickHouse/utils/check-style || echo -e "failure\tRepo not found" > /test_ou
 
 start_total=$(date +%s)
 
-start=$(date +%s)
-./check-duplicate-includes.sh |& tee /test_output/duplicate_includes_output.txt
-runtime=$(($(date +%s)-start))
-echo "Check duplicates. Done. $runtime seconds."
+# We decided to have the regexp-based check disabled in favor of clang-tidy
+# start=$(date +%s)
+# ./check-duplicate-includes.sh |& tee /test_output/duplicate_includes_output.txt
+# runtime=$(($(date +%s)-start))
+# echo "Check duplicates. Done. $runtime seconds."
 
 start=$(date +%s)
 ./check-style -n              |& tee /test_output/style_output.txt
