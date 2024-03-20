@@ -576,76 +576,8 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
-    /// Do not replace Array/Tuple/etc. with not Array/Tuple too often.
-    const auto * type_array = typeid_cast<const DataTypeArray *>(type.get());
-    if (type_array && fuzz_rand() % 4 != 0)
-        return std::make_shared<DataTypeArray>(fuzzDataType(type_array->getNestedType()));
-
-    const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get());
-    if (type_tuple && fuzz_rand() % 4 != 0)
-    {
-        DataTypes elements;
-        for (const auto & element : type_tuple->getElements())
-            elements.push_back(fuzzDataType(element));
-
-        return type_tuple->haveExplicitNames()
-            ? std::make_shared<DataTypeTuple>(elements, type_tuple->getElementNames())
-            : std::make_shared<DataTypeTuple>(elements);
-    }
-
-    const auto * type_map = typeid_cast<const DataTypeMap *>(type.get());
-    if (type_map && fuzz_rand() % 4 != 0)
-    {
-        auto key_type = fuzzDataType(type_map->getKeyType());
-        auto value_type = fuzzDataType(type_map->getValueType());
-        if (!DataTypeMap::checkKeyType(key_type))
-            key_type = type_map->getKeyType();
-
-        return std::make_shared<DataTypeMap>(key_type, value_type);
-    }
-
-    const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get());
-    if (type_nullable)
-    {
-        size_t tmp = fuzz_rand() % 3;
-        if (tmp == 0)
-            return fuzzDataType(type_nullable->getNestedType());
-
-        if (tmp == 1)
-        {
-            auto nested_type = fuzzDataType(type_nullable->getNestedType());
-            if (nested_type->canBeInsideNullable())
-                return std::make_shared<DataTypeNullable>(nested_type);
-        }
-    }
-
-    const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get());
-    if (type_low_cardinality)
-    {
-        size_t tmp = fuzz_rand() % 3;
-        if (tmp == 0)
-            return fuzzDataType(type_low_cardinality->getDictionaryType());
-
-        if (tmp == 1)
-        {
-            auto nested_type = fuzzDataType(type_low_cardinality->getDictionaryType());
-            if (nested_type->canBeInsideLowCardinality())
-                return std::make_shared<DataTypeLowCardinality>(nested_type);
-        }
-    }
-
-    size_t tmp = fuzz_rand() % 8;
-    if (tmp == 0)
-        return std::make_shared<DataTypeArray>(type);
-
-    if (tmp <= 1 && type->canBeInsideNullable())
-        return std::make_shared<DataTypeNullable>(type);
-
-    if (tmp <= 2 && type->canBeInsideLowCardinality())
+    if (type->canBeInsideLowCardinality())
         return std::make_shared<DataTypeLowCardinality>(type);
-
-    if (tmp <= 3)
-        return getRandomType();
 
     return type;
 }
@@ -952,7 +884,7 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
     if (fuzz_rand() % 7 == 0)
         child = makeASTFunction("toNullable", child);
 
-    if (fuzz_rand() % 7 == 0)
+    if (fuzz_rand() % 2 == 0)
         child = makeASTFunction("toLowCardinality", child);
 
     if (fuzz_rand() % 7 == 0)
