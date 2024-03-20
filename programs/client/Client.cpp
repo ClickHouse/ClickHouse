@@ -6,7 +6,6 @@
 #include <iomanip>
 #include <memory>
 #include <optional>
-#include "Common/thread_local_rng.h"
 #include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
