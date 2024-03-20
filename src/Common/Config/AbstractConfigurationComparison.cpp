@@ -41,7 +41,7 @@ namespace
 #if defined(ABORT_ON_LOGICAL_ERROR)
             /// Compound `ignore_keys` are not yet implemented.
             for (const auto & ignore_key : *ignore_keys)
-                chassert(ignore_key.find(".") == std::string_view::npos);
+                chassert(ignore_key.find('.') == std::string_view::npos);
 #endif
         }
 
