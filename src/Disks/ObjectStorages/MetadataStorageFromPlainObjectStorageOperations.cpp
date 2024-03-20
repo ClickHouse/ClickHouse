@@ -24,8 +24,11 @@ constexpr auto PREFIX_PATH_FILE_NAME = "prefix.path";
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
-    std::filesystem::path && path_, MetadataStorageFromPlainObjectStorage::PathMap & path_map_, ObjectStoragePtr object_storage_)
-    : path(std::move(path_)), path_map(path_map_), object_storage(object_storage_)
+    std::filesystem::path && path_,
+    std::string && key_prefix_,
+    MetadataStorageFromPlainObjectStorage::PathMap & path_map_,
+    ObjectStoragePtr object_storage_)
+    : path(std::move(path_)), key_prefix(key_prefix_), path_map(path_map_), object_storage(object_storage_)
 {
 }
 
@@ -36,7 +39,6 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Creating metadata for directory '{}'", path);
 
-    auto key_prefix = object_storage->generateObjectKeyPrefixForDirectoryPath(path / "");
     auto object_key = ObjectStorageKey::createAsRelative(key_prefix, PREFIX_PATH_FILE_NAME);
 
     auto object = StoredObject(object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
