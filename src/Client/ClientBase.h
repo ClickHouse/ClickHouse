@@ -78,10 +78,8 @@ protected:
     void runInteractive();
     void runNonInteractive();
 
-#if defined(FUZZING_MODE)
-    std::vector<char *> fuzzer_args;
+    char * argv0 = nullptr;
     void runLibFuzzer();
-#endif
 
     virtual bool processWithFuzzing(const String &)
     {

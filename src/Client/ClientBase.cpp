@@ -7,7 +7,6 @@
 
 #include <base/argsToConfig.h>
 #include <base/safeExit.h>
-#include <base/scope_guard.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
@@ -16,7 +15,6 @@
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/typeid_cast.h>
-#include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -70,6 +68,7 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <iostream>
 #include <filesystem>
 #include <limits>
@@ -2638,6 +2637,16 @@ ClientBase * app;
 void ClientBase::runLibFuzzer()
 {
     app = this;
+    std::vector<String> fuzzer_args_holder;
+
+    if (const char * fuzzer_args_env = getenv("FUZZER_ARGS")) // NOLINT(concurrency-mt-unsafe)
+        boost::split(fuzzer_args_holder, fuzzer_args_env, isWhitespaceASCII, boost::token_compress_on);
+
+    std::vector<char *> fuzzer_args;
+    fuzzer_args.push_back(argv0);
+    for (auto & arg : fuzzer_args_holder)
+        fuzzer_args.emplace_back(arg.data());
+
     int fuzzer_argc = fuzzer_args.size();
     char ** fuzzer_argv = fuzzer_args.data();
 
@@ -2656,6 +2665,8 @@ void ClientBase::runLibFuzzer()
         return 0;
     });
 }
+#else
+void ClientBase::runLibFuzzer() {}
 #endif
 
 
@@ -2828,6 +2839,8 @@ void ClientBase::init(int argc, char ** argv)
     Arguments common_arguments = {""}; /// 0th argument is ignored.
     std::vector<Arguments> hosts_and_ports_arguments;
 
+    if (argc)
+        argv0 = argv[0];
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
     /// Support for Unicode dashes
@@ -2892,6 +2905,8 @@ void ClientBase::init(int argc, char ** argv)
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
+
+        ("fuzzer-args", po::value<std::string>(), "Command line arguments for the LLVM's libFuzzer driver. Only relevant if the application is compiled with libFuzzer.")
     ;
 
     addOptions(options_description);
