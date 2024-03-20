@@ -593,7 +593,6 @@ class IColumn;
     M(Bool, optimize_functions_to_subcolumns, false, "Transform functions to subcolumns, if possible, to reduce amount of read data. E.g. 'length(arr)' -> 'arr.size0', 'col IS NULL' -> 'col.null' ", 0) \
     M(Bool, optimize_using_constraints, false, "Use constraints for query optimization", 0)                                                                                                                                           \
     M(Bool, optimize_substitute_columns, false, "Use constraints for column substitution", 0)                                                                                                                                         \
-    M(Bool, optimize_in_to_equal, true, "Convert the constant in to equal", 0)   \
     M(Bool, optimize_append_index, false, "Use constraints in order to append index condition (indexHint)", 0) \
     M(Bool, optimize_time_filter_with_preimage, true, "Optimize Date and DateTime predicates by converting functions into equivalent comparisons without conversions (e.g. toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31')", 0) \
     M(Bool, normalize_function_names, true, "Normalize function names to their canonical names", 0) \

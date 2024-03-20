@@ -24,8 +24,6 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_in_to_equal)
-            return;
         auto * func_node = node->as<FunctionNode>();
         if (!func_node || func_node->getFunctionName() != "in" || func_node->getArguments().getNodes().size() != 2)
             return ;
