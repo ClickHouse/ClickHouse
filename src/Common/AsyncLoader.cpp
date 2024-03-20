@@ -6,6 +6,7 @@
 #include <base/defines.h>
 #include <base/scope_guard.h>
 #include <Common/ErrorCodes.h>
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
