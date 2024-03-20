@@ -63,7 +63,11 @@ public:
 
     virtual size_t getSize(const CachePriorityGuard::Lock &) const = 0;
 
+    virtual size_t getSizeApprox() const = 0;
+
     virtual size_t getElementsCount(const CachePriorityGuard::Lock &) const = 0;
+
+    virtual size_t getElementsCountApprox() const = 0;
 
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
