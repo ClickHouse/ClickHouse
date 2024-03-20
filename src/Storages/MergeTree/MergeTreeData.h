@@ -1378,7 +1378,7 @@ protected:
                 latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
             }
 
-            bool partCanBeMutated()
+            bool partCanBeMutated() const
             {
                 if (max_postpone_time_ms == 0)
                     return true;
