@@ -25,7 +25,8 @@ from report import (
     read_test_results,
 )
 from stopwatch import Stopwatch
-from tee_popen import TeePopen
+
+import ci_runner
 
 
 def get_json_params_dict(
@@ -208,9 +209,8 @@ def main():
 
     output_path_log = result_path / "main_script_log.txt"
 
-    runner_path = repo_path / "tests" / "integration" / "ci-runner.py"
-    run_command = f"sudo -E {runner_path}"
-    logging.info("Going to run command: `%s`", run_command)
+    for k, v in my_env.items():
+        os.environ[k] = v
     logging.info(
         "ENV parameters for runner:\n%s",
         "\n".join(
@@ -218,31 +218,13 @@ def main():
         ),
     )
 
-    integration_infrastructure_fail = False
-    with TeePopen(run_command, output_path_log, my_env) as process:
-        retcode = process.wait()
-        if retcode == 0:
-            logging.info("Run tests successfully")
-        elif retcode == 13:
-            logging.warning(
-                "There were issues with infrastructure. Not writing status report to restart job."
-            )
-            integration_infrastructure_fail = True
-            sys.exit(1)
-        else:
-            logging.info("Some tests failed")
-
-    # subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-
-    if not integration_infrastructure_fail:
-        state, description, test_results, additional_logs = process_results(result_path)
+    try:
+        ci_runner.run()
+    except Exception as e:
+        logging.error("Exception: %s", e)
+        state, description, test_results, additional_logs = ERROR, "no description", [TestResult("infrastructure error", ERROR, stopwatch.duration_seconds)], []  # type: ignore
     else:
-        state, description, test_results, additional_logs = (
-            ERROR,
-            "no description",
-            [TestResult("infrastructure error", ERROR, stopwatch.duration_seconds)],
-            [],
-        )
+        state, description, test_results, additional_logs = process_results(result_path)
 
     JobReport(
         description=description,
