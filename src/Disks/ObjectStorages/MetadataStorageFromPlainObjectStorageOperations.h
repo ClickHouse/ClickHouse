@@ -13,6 +13,7 @@ class MetadataStorageFromPlainObjectStorageCreateDirectoryOperation final : publ
 {
 private:
     std::filesystem::path path;
+    std::string key_prefix;
     MetadataStorageFromPlainObjectStorage::PathMap & path_map;
     ObjectStoragePtr object_storage;
 
@@ -21,7 +22,10 @@ private:
 public:
     // Assuming that paths are normalized.
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
-        std::filesystem::path && path_, MetadataStorageFromPlainObjectStorage::PathMap & path_map_, ObjectStoragePtr object_storage_);
+        std::filesystem::path && path_,
+        std::string && key_prefix_,
+        MetadataStorageFromPlainObjectStorage::PathMap & path_map_,
+        ObjectStoragePtr object_storage_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo() override;
