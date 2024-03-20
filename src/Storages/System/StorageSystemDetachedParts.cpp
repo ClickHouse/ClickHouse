@@ -4,10 +4,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/SharedThreadPools.h>
@@ -320,7 +322,7 @@ protected:
     std::shared_ptr<StorageSystemDetachedParts> storage;
     std::vector<UInt8> columns_mask;
 
-    const ActionsDAG::Node * predicate = nullptr;
+    ActionsDAGPtr filter;
     const size_t max_block_size;
     const size_t num_streams;
 };
@@ -328,8 +330,25 @@ protected:
 void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
+    {
+        const auto * predicate = filter_actions_dag->getOutputs().at(0);
+
+        Block block;
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "database"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "table"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "engine"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), "active"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), "uuid"));
+
+        filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
+        if (filter)
+        {
+            auto empty_block = block.cloneWithColumns(block.cloneEmptyColumns());
+            VirtualColumnUtils::filterBlockWithDAG(filter, empty_block, context);
+        }
+    }
 }
 
 void StorageSystemDetachedParts::read(
@@ -358,7 +377,7 @@ void StorageSystemDetachedParts::read(
 
 void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto state = std::make_shared<SourceState>(StoragesInfoStream(predicate, context));
+    auto state = std::make_shared<SourceState>(StoragesInfoStream(nullptr, filter, context));
 
     Pipe pipe;
 
