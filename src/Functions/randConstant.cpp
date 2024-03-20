@@ -88,6 +88,14 @@ public:
         return std::make_unique<RandomConstantOverloadResolver<ToType, Name>>();
     }
 
+    RandomConstantOverloadResolver()
+    {
+        typename ColumnVector<ToType>::Container vec_to(1);
+
+        TargetSpecific::Default::RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(ToType));
+        value = vec_to[0];
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
     {
         size_t number_of_arguments = data_types.size();
@@ -105,13 +113,11 @@ public:
         if (!arguments.empty())
             argument_types.emplace_back(arguments.back().type);
 
-        typename ColumnVector<ToType>::Container vec_to(1);
-
-        TargetSpecific::Default::RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(ToType));
-        ToType value = vec_to[0];
-
         return std::make_unique<FunctionBaseRandomConstant<ToType, Name>>(value, argument_types, return_type);
     }
+
+private:
+    ToType value;
 };
 
 struct NameRandConstant { static constexpr auto name = "randConstant"; };

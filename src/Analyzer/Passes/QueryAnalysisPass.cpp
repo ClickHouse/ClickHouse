@@ -799,6 +799,8 @@ struct IdentifierResolveScope
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
+    std::map<IQueryTreeNode::Hash, FunctionOverloadResolverPtr> rand_constant_cache;
+
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const
     {
         const IdentifierResolveScope * scope_to_check = this;
@@ -5534,7 +5536,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     if (!function)
     {
-        function = FunctionFactory::instance().tryGet(function_name, scope.context);
+        /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
+        /// Function randConstant() would return the same value for the same arguments (in scope).
+        if (function_name == "randConstant")
+        {
+            auto hash = function_node_ptr->getTreeHash();
+            auto & func = scope.rand_constant_cache[hash];
+            if (!func)
+                func = FunctionFactory::instance().tryGet(function_name, scope.context);
+
+            function = func;
+        }
+        else
+            function = FunctionFactory::instance().tryGet(function_name, scope.context);
+
         is_executable_udf = false;
     }
 
