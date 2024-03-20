@@ -7428,7 +7428,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                         if (projection_node->hasAlias() && identifier_full_name == projection_node->getAlias())
                         {
                             extra_message = fmt::format(
-                                " , but alias '{}' is present in SELECT list."
+                                ", but alias '{}' is present in SELECT list."
                                 " You may try to SET analyzer_compatibility_join_using_top_level_identifier = 1, to allow to use it in USING clause",
                                 projection_node->formatASTForErrorMessage());
                             break;
