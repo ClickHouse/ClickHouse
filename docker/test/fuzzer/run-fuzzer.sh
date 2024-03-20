@@ -86,7 +86,7 @@ function download
 
     chmod +x clickhouse
     # clickhouse may be compressed - run once to decompress
-    ./clickhouse --query "SELECT 1" ||:
+    ./clickhouse ||:
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
     ln -s ./clickhouse ./clickhouse-local
@@ -174,14 +174,7 @@ function fuzz
     mkdir -p /var/run/clickhouse-server
 
     # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    # server.log -> CH logs
-    # stderr.log -> Process logs (sanitizer)
-    clickhouse-server \
-        --config-file db/config.xml \
-        --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
-        --  --path db \
-            --logger.console=0 \
-            --logger.log=server.log > stderr.log 2>&1 &
+    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > server.log 2>&1 &
     server_pid=$!
 
     kill -0 $server_pid
@@ -249,16 +242,10 @@ quit
         --create-query-fuzzer-runs=50 \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         $NEW_TESTS_OPT \
-        > fuzzer.log \
+        > >(tail -n 100000 > fuzzer.log) \
         2>&1 &
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
-
-    # The fuzzer_pid belongs to the timeout process.
-    actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
-
-    echo "Attaching gdb to the fuzzer itself"
-    gdb -batch -command script.gdb -p $actual_fuzzer_pid &
 
     # Wait for the fuzzer to complete.
     # Note that the 'wait || ...' thing is required so that the script doesn't
@@ -310,7 +297,7 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
-        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log stderr.log > description.txt
+        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
@@ -350,9 +337,10 @@ quit
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        echo "Let op!" > description.txt
-        echo "Fuzzer went wrong with error code: ($fuzzer_exit_code). Its process died somehow when the server stayed alive. The server log probably won't tell you much so try to find information in other files." >>description.txt
-        { rg -ao "Found error:.*" fuzzer.log || rg -ao "Exception:.*" fuzzer.log; } | tail -1 >>description.txt
+        { rg -ao "Found error:.*" fuzzer.log \
+            || rg -ao "Exception:.*" fuzzer.log \
+            || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
+            | tail -1 > description.txt
     fi
 
     if test -f core.*; then
@@ -398,17 +386,10 @@ if [ -f core.zst ]; then
     CORE_LINK='<a href="core.zst">core.zst</a>'
 fi
 
-# Keep all the lines in the paragraphs containing <Fatal> that either contain <Fatal> or don't start with 20... (year)
-sed -n '/<Fatal>/,/^$/p' server.log | awk '/<Fatal>/ || !/^20/' > fatal.log ||:
-FATAL_LINK=''
-if [ -s fatal.log ]; then
-    FATAL_LINK='<a href="fatal.log">fatal.log</a>'
-fi
-
+rg --text -F '<Fatal>' server.log > fatal.log ||:
 dmesg -T > dmesg.log ||:
 
-zstd --threads=0 --rm server.log
-zstd --threads=0 --rm fuzzer.log
+zstd --threads=0 server.log
 
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
@@ -432,13 +413,11 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
 <h1>AST Fuzzer for PR <a href="https://github.com/ClickHouse/ClickHouse/pull/${PR_TO_TEST}">#${PR_TO_TEST}</a> @ ${SHA_TO_TEST}</h1>
 <p class="links">
   <a href="run.log">run.log</a>
-  <a href="fuzzer.log.zst">fuzzer.log.zst</a>
+  <a href="fuzzer.log">fuzzer.log</a>
   <a href="server.log.zst">server.log.zst</a>
-  <a href="stderr.log">stderr.log</a>
   <a href="main.log">main.log</a>
   <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}
-  ${FATAL_LINK}
 </p>
 <table>
 <tr>

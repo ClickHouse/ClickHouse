@@ -58,7 +58,7 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
         ProfileEvents::Counters part_counters;
 
         Partition() = default;
-        Partition(LoggerPtr log_,
+        Partition(Poco::Logger * log_,
                   MergeTreeDataWriter::TemporaryPart && temp_part_,
                   UInt64 elapsed_ns_,
                   BlockIDsType && block_id_,
@@ -92,7 +92,7 @@ std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size
     BlockWithPartition block1(std::move(block), Row(), std::move(offsets), std::move(tokens));
     ProfileEvents::Counters profile_counters;
     ReplicatedMergeTreeSinkImpl<true>::DelayedChunk::Partition part(
-        getLogger("testSelfDeduplicate"), MergeTreeDataWriter::TemporaryPart(), 0, std::move(hashes), std::move(block1), std::nullopt, std::move(profile_counters));
+        &Poco::Logger::get("testSelfDeduplicate"), MergeTreeDataWriter::TemporaryPart(), 0, std::move(hashes), std::move(block1), std::nullopt, std::move(profile_counters));
 
     part.filterSelfDuplicate();
 
@@ -138,7 +138,7 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     , is_attach(is_attach_)
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
-    , log(getLogger(storage.getLogName() + " (Replicated OutputStream)"))
+    , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
 {
@@ -288,7 +288,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No chunk info for async inserts");
     }
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context, async_insert_info);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context, async_insert_info);
 
     using DelayedPartition = typename ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk::Partition;
     using DelayedPartitions = std::vector<DelayedPartition>;
@@ -322,9 +322,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         /// and we didn't create part.
         if (!temp_part.part)
             continue;
-
-        if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
-            support_parallel_write = true;
 
         BlockIDsType block_id;
 
@@ -368,13 +365,9 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         profile_events_scope.reset();
         UInt64 elapsed_ns = watch.elapsed();
 
-        size_t max_insert_delayed_streams_for_parallel_write;
-        if (settings.max_insert_delayed_streams_for_parallel_write.changed)
+        size_t max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
+        if (!support_parallel_write || settings.max_insert_delayed_streams_for_parallel_write.changed)
             max_insert_delayed_streams_for_parallel_write = settings.max_insert_delayed_streams_for_parallel_write;
-        else if (support_parallel_write)
-            max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
-        else
-            max_insert_delayed_streams_for_parallel_write = 0;
 
         /// In case of too much columns/parts in block, flush explicitly.
         streams += temp_part.streams.size();
@@ -390,12 +383,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
             partitions = DelayedPartitions{};
         }
 
-        if constexpr (!async_insert)
-        {
-            /// Reset earlier to free memory.
-            current_block.block.clear();
-            current_block.partition.clear();
-        }
 
         partitions.emplace_back(DelayedPartition(
             log,
@@ -789,7 +776,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             if (!writing_existing_part)
             {
                 retries_ctl.setUserError(
-                    Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path));
+                    ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
                 return CommitRetryContext::LOCK_AND_COMMIT;
             }
         }
@@ -1088,10 +1075,10 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             new_retry_controller.actionAfterLastFailedRetry([&]
             {
                 /// We do not know whether or not data has been inserted in other replicas
-                new_retry_controller.setUserError(Exception(
+                new_retry_controller.setUserError(
                     ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
                     "Unknown quorum status. The data was inserted in the local replica but we could not verify quorum. Reason: {}",
-                    new_retry_controller.getLastKeeperErrorMessage()));
+                    new_retry_controller.getLastKeeperErrorMessage());
             });
 
             new_retry_controller.retryLoop([&]()
@@ -1102,7 +1089,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     retry_context.actual_part_name,
                     quorum_info.status_path,
                     quorum_info.is_active_node_version,
-                    quorum_info.host_node_version,
                     replicas_num);
             });
         }
@@ -1131,8 +1117,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const std::string & part_name,
     const std::string & quorum_path,
-    int is_active_node_version,
-    int host_node_version,
+    Int32 is_active_node_version,
     size_t replicas_num) const
 {
     /// We are waiting for quorum to be satisfied.
@@ -1168,16 +1153,12 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
 
     /// And what if it is possible that the current replica at this time has ceased to be active
     /// and the quorum is marked as failed and deleted?
-    /// Note: checking is_active is not enough since it's ephemeral, and the version can be the same after recreation,
-    /// so need to check host node as well
-    auto get_results = zookeeper->tryGet(Strings{storage.replica_path + "/is_active", storage.replica_path + "/host"});
-    const auto & is_active = get_results[0];
-    const auto & host = get_results[1];
-    if ((is_active.error == Coordination::Error::ZNONODE || is_active.stat.version != is_active_node_version)
-        || (host.error == Coordination::Error::ZNONODE || host.stat.version != host_node_version))
+    Coordination::Stat stat;
+    String value;
+    if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat) || stat.version != is_active_node_version)
         throw Exception(
             ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
-            "Unknown quorum status. The data was inserted in the local replica, but we could not verify the quorum. Reason: "
+            "Unknown quorum status. The data was inserted in the local replica but we could not verify quorum. Reason: "
             "Replica became inactive while waiting for quorum");
 
     LOG_TRACE(log, "Quorum '{}' for part {} satisfied", quorum_path, part_name);

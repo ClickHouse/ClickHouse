@@ -1,7 +1,6 @@
 #include <Parsers/ASTRenameQuery.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -47,12 +46,12 @@ BlockIO InterpreterRenameQuery::execute()
       */
 
     RenameDescriptions descriptions;
-    descriptions.reserve(rename.getElements().size());
+    descriptions.reserve(rename.elements.size());
 
     /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
     TableGuards table_guards;
 
-    for (const auto & elem : rename.getElements())
+    for (const auto & elem : rename.elements)
     {
         descriptions.emplace_back(elem, current_database);
         const auto & description = descriptions.back();
@@ -186,7 +185,7 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
 {
     AccessRightsElements required_access;
     const auto & rename = query_ptr->as<const ASTRenameQuery &>();
-    for (const auto & elem : rename.getElements())
+    for (const auto & elem : rename.elements)
     {
         if (type == RenameType::RenameTable)
         {
@@ -214,7 +213,7 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
 void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const
 {
     const auto & rename = ast->as<const ASTRenameQuery &>();
-    for (const auto & element : rename.getElements())
+    for (const auto & element : rename.elements)
     {
         {
             String database = backQuoteIfNeed(!element.from.database ? getContext()->getCurrentDatabase() : element.from.getDatabase());
@@ -227,15 +226,6 @@ void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
             elem.query_tables.insert(database + "." + backQuoteIfNeed(element.to.getTable()));
         }
     }
-}
-
-void registerInterpreterRenameQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterRenameQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterRenameQuery", create_fn);
 }
 
 }

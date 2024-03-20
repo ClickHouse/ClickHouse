@@ -23,6 +23,7 @@ public:
 
     String getEngineName() const override { return "Overlay"; }
 
+public:
     bool isTableExist(const String & table_name, ContextPtr context) const override;
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
@@ -59,7 +60,7 @@ public:
 
 protected:
     std::vector<DatabasePtr> databases;
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

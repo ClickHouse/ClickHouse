@@ -195,8 +195,6 @@ CREATE TABLE system.disks
     `unreserved_space` UInt64,
     `keep_free_space` UInt64,
     `type` String,
-    `object_storage_type` String,
-    `metadata_type` String,
     `is_encrypted` UInt8,
     `is_read_only` UInt8,
     `is_write_once` UInt8,
@@ -764,8 +762,7 @@ CREATE TABLE system.quota_limits
     `max_read_rows` Nullable(UInt64),
     `max_read_bytes` Nullable(UInt64),
     `max_execution_time` Nullable(Float64),
-    `max_written_bytes` Nullable(UInt64),
-    `max_failed_sequential_authentications` Nullable(UInt64)
+    `max_written_bytes` Nullable(UInt64)
 )
 ENGINE = SystemQuotaLimits
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -795,9 +792,7 @@ CREATE TABLE system.quota_usage
     `execution_time` Nullable(Float64),
     `max_execution_time` Nullable(Float64),
     `written_bytes` Nullable(UInt64),
-    `max_written_bytes` Nullable(UInt64),
-    `failed_sequential_authentications` Nullable(UInt64),
-    `max_failed_sequential_authentications` Nullable(UInt64)
+    `max_written_bytes` Nullable(UInt64)
 )
 ENGINE = SystemQuotaUsage
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -841,9 +836,7 @@ CREATE TABLE system.quotas_usage
     `execution_time` Nullable(Float64),
     `max_execution_time` Nullable(Float64),
     `written_bytes` Nullable(UInt64),
-    `max_written_bytes` Nullable(UInt64),
-    `failed_sequential_authentications` Nullable(UInt64),
-    `max_failed_sequential_authentications` Nullable(UInt64)
+    `max_written_bytes` Nullable(UInt64)
 )
 ENGINE = SystemQuotasUsage
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -1082,7 +1075,6 @@ CREATE TABLE system.tables
     `data_paths` Array(String),
     `metadata_path` String,
     `metadata_modification_time` DateTime,
-    `metadata_version` Int32,
     `dependencies_database` Array(String),
     `dependencies_table` Array(String),
     `create_table_query` String,

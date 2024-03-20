@@ -73,12 +73,12 @@ private:
         return promise.get_future();
     }
 
-    const LoggerPtr log;
+    const Poco::Logger * log;
 
 public:
-    explicit IOUringReader(uint32_t entries_);
+    IOUringReader(uint32_t entries_);
 
-    bool isSupported() const { return is_supported; }
+    inline bool isSupported() { return is_supported; }
     std::future<Result> submit(Request request) override;
     Result execute(Request /* request */) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for IOUringReader"); }
 

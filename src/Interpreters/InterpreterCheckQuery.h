@@ -19,7 +19,7 @@ public:
 private:
     ASTPtr query_ptr;
 
-    LoggerPtr log = getLogger("InterpreterCheckQuery");
+    Poco::Logger * log = &Poco::Logger::get("InterpreterCheckQuery");
 };
 
 }

@@ -5,7 +5,6 @@
 #cmakedefine01 USE_CPUID
 #cmakedefine01 USE_BASE64
 #cmakedefine01 USE_SSL
-#cmakedefine01 USE_SSH
 #cmakedefine01 USE_HDFS
 #cmakedefine01 USE_AWS_S3
 #cmakedefine01 USE_AZURE_BLOB_STORAGE
@@ -29,7 +28,6 @@
 #cmakedefine01 USE_S2_GEOMETRY
 #cmakedefine01 USE_FASTOPS
 #cmakedefine01 USE_SQIDS
-#cmakedefine01 USE_IDNA
 #cmakedefine01 USE_NLP
 #cmakedefine01 USE_VECTORSCAN
 #cmakedefine01 USE_LIBURING

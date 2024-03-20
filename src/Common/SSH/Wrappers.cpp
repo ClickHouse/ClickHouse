@@ -1,14 +1,14 @@
 #include <Common/SSH/Wrappers.h>
-# if USE_SSH
+# if USE_SSL
 #    include <stdexcept>
 
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wreserved-macro-identifier"
-#    pragma clang diagnostic ignored "-Wreserved-identifier"
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wreserved-macro-identifier"
+#    pragma GCC diagnostic ignored "-Wreserved-identifier"
 
 #    include <libssh/libssh.h>
 
-#    pragma clang diagnostic pop
+#    pragma GCC diagnostic pop
 
 namespace
 {

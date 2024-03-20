@@ -5,8 +5,6 @@
 #include <vector>
 #include "Entries.h"
 
-namespace DB
-{
 
 // Iterates over all regions in data source
 class IRegionsHierarchyReader
@@ -14,7 +12,7 @@ class IRegionsHierarchyReader
 public:
     virtual bool readNext(RegionEntry & entry) = 0;
 
-    virtual ~IRegionsHierarchyReader() = default;
+    virtual ~IRegionsHierarchyReader() {}
 };
 
 using IRegionsHierarchyReaderPtr = std::unique_ptr<IRegionsHierarchyReader>;
@@ -48,5 +46,3 @@ public:
 };
 
 using IRegionsHierarchiesDataProviderPtr = std::shared_ptr<IRegionsHierarchiesDataProvider>;
-
-}

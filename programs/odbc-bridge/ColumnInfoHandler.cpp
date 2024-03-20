@@ -8,11 +8,13 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/parseQuery.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/NumberParser.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/quoteString.h>
 #include "getIdentifierQuote.h"
@@ -67,7 +69,7 @@ namespace
 }
 
 
-void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
@@ -76,7 +78,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            *response.send() << message << '\n';
+            *response.send() << message << std::endl;
         LOG_WARNING(log, fmt::runtime(message));
     };
 

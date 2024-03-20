@@ -1,6 +1,5 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUndropQuery.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTUndropQuery.h>
@@ -17,16 +16,14 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-InterpreterUndropQuery::InterpreterUndropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
-    : WithMutableContext(context_)
-    , query_ptr(query_ptr_)
+InterpreterUndropQuery::InterpreterUndropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
 {
 }
+
 
 BlockIO InterpreterUndropQuery::execute()
 {
     getContext()->checkAccess(AccessType::UNDROP_TABLE);
-
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
     if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
@@ -74,14 +71,5 @@ AccessRightsElements InterpreterUndropQuery::getRequiredAccessForDDLOnCluster() 
 
     required_access.emplace_back(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
     return required_access;
-}
-
-void registerInterpreterUndropQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterUndropQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterUndropQuery", create_fn);
 }
 }

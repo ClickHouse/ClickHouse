@@ -1,5 +1,4 @@
 #include <Databases/DatabaseDictionary.h>
-#include <Databases/DatabaseFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -51,7 +50,7 @@ namespace
 
 DatabaseDictionary::DatabaseDictionary(const String & name_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext())
-    , log(getLogger("DatabaseDictionary(" + database_name + ")"))
+    , log(&Poco::Logger::get("DatabaseDictionary(" + database_name + ")"))
 {
 }
 
@@ -115,7 +114,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message,
-        /* hilite = */ false, "", /* allow_multi_statements = */ false, 0, settings.max_parser_depth, settings.max_parser_backtracks, true);
+            /* hilite = */ false, "", /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
 
     if (!ast && throw_on_error)
         throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -134,21 +133,11 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
     }
     auto settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
 }
 
 void DatabaseDictionary::shutdown()
 {
 }
 
-void registerDatabaseDictionary(DatabaseFactory & factory)
-{
-    auto create_fn = [](const DatabaseFactory::Arguments & args)
-    {
-        return make_shared<DatabaseDictionary>(
-            args.database_name,
-            args.context);
-    };
-    factory.registerDatabase("Dictionary", create_fn);
-}
 }

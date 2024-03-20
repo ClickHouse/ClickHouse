@@ -66,7 +66,7 @@ namespace
 
         String error_message;
         const char * pos = string_query.data();
-        auto ast = tryParseQuery(parser, pos, pos + string_query.size(), error_message, false, "", false, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
+        auto ast = tryParseQuery(parser, pos, pos + string_query.size(), error_message, false, "", false, 0, 0);
 
         if (!ast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse grant query. Error: {}", error_message);
@@ -209,7 +209,7 @@ namespace
         }
         else if (has_ssh_keys)
         {
-#if USE_SSH
+#if USE_SSL
             user->auth_data = AuthenticationData{AuthenticationType::SSH_KEY};
 
             Poco::Util::AbstractConfiguration::Keys entries;

@@ -18,7 +18,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeVariant.h>
 
 
 namespace DB
@@ -384,7 +383,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 return throwOrReturn<on_error>(types, "because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
             auto keys_common_type = getLeastSupertype<on_error>(key_types);
-
             auto values_common_type = getLeastSupertype<on_error>(value_types);
             /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype for keys or values,
             /// keys_common_type or values_common_type will be nullptr, we should return nullptr in this case.
@@ -426,7 +424,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             else
             {
                 auto nested_type = getLeastSupertype<on_error>(nested_types);
-
                 /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
                 /// nested_type will be nullptr, we should return nullptr in this case.
                 if (!nested_type)
@@ -474,18 +471,16 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         type_ids.insert(type->getTypeId());
 
     /// For String and FixedString, or for different FixedStrings, the common type is String.
-    /// If there are Enums and any type of Strings, the common type is String.
-    /// No other types are compatible with Strings.
+    /// No other types are compatible with Strings. TODO Enums?
     {
         size_t have_string = type_ids.count(TypeIndex::String);
         size_t have_fixed_string = type_ids.count(TypeIndex::FixedString);
-        size_t have_enums = type_ids.count(TypeIndex::Enum8) + type_ids.count(TypeIndex::Enum16);
 
         if (have_string || have_fixed_string)
         {
-            bool all_compatible_with_string = type_ids.size() == (have_string + have_fixed_string + have_enums);
-            if (!all_compatible_with_string)
-                return throwOrReturn<on_error>(types, "because some of them are String/FixedString/Enum and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+            bool all_strings = type_ids.size() == (have_string + have_fixed_string);
+            if (!all_strings)
+                return throwOrReturn<on_error>(types, "because some of them are String/FixedString and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
             return std::make_shared<DataTypeString>();
         }
@@ -640,38 +635,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 DataTypePtr getLeastSupertypeOrString(const DataTypes & types)
 {
     return getLeastSupertype<LeastSupertypeOnError::String>(types);
-}
-
-template<>
-DataTypePtr getLeastSupertype<LeastSupertypeOnError::Variant>(const DataTypes & types)
-{
-    auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types);
-    if (common_type)
-        return common_type;
-
-    /// Create Variant with provided arguments as variants.
-    DataTypes variants;
-    for (const auto & type : types)
-    {
-        /// Nested Variant types are not supported. If we have Variant type
-        /// we use all its variants in the result Variant.
-        if (isVariant(type))
-        {
-            const DataTypes & nested_variants = assert_cast<const DataTypeVariant &>(*type).getVariants();
-            variants.insert(variants.end(), nested_variants.begin(), nested_variants.end());
-        }
-        else
-        {
-            variants.push_back(removeNullableOrLowCardinalityNullable(type));
-        }
-    }
-
-    return std::make_shared<DataTypeVariant>(variants);
-}
-
-DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
-{
-    return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
 }
 
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)

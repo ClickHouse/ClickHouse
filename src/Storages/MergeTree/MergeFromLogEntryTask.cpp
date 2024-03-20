@@ -28,7 +28,7 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
     StorageReplicatedMergeTree & storage_,
     IExecutableTask::TaskResultCallback & task_result_callback_)
     : ReplicatedMergeMutateTaskBase(
-        getLogger(
+        &Poco::Logger::get(
             storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MergeFromLogEntryTask)"),
         storage_,
         selected_entry_,
@@ -43,18 +43,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
 
-    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
-    int32_t metadata_version = metadata_snapshot->getMetadataVersion();
     const auto storage_settings_ptr = storage.getSettings();
-
-    stopwatch_ptr = std::make_unique<Stopwatch>();
-    auto part_log_writer = [this, stopwatch = *stopwatch_ptr](const ExecutionStatus & execution_status)
-    {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
-        storage.writePartLog(
-            PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
-    };
 
     if (storage_settings_ptr->always_fetch_merged_part)
     {
@@ -62,7 +51,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         return PrepareResult{
             .prepared_successfully = false,
             .need_to_check_missing_part_in_fetch = true,
-            .part_log_writer = part_log_writer,
+            .part_log_writer = {}
         };
     }
 
@@ -77,7 +66,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             return PrepareResult{
                 .prepared_successfully = false,
                 .need_to_check_missing_part_in_fetch = false,
-                .part_log_writer = part_log_writer,
+                .part_log_writer = {}
             };
     }
 
@@ -97,7 +86,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             return PrepareResult{
                 .prepared_successfully = false,
                 .need_to_check_missing_part_in_fetch = true,
-                .part_log_writer = part_log_writer,
+                .part_log_writer = {}
             };
         }
     }
@@ -116,7 +105,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             return PrepareResult{
                 .prepared_successfully = false,
                 .need_to_check_missing_part_in_fetch = true,
-                .part_log_writer = part_log_writer,
+                .part_log_writer = {}
             };
         }
 
@@ -136,19 +125,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             return PrepareResult{
                 .prepared_successfully = false,
                 .need_to_check_missing_part_in_fetch = true,
-                .part_log_writer = part_log_writer,
-            };
-        }
-
-        int32_t part_metadata_version = source_part_or_covering->getMetadataVersion();
-        if (part_metadata_version > metadata_version)
-        {
-            LOG_DEBUG(log, "Source part metadata version {} is newer then the table metadata version {}. ALTER_METADATA is still in progress.",
-                part_metadata_version, metadata_version);
-            return PrepareResult{
-                .prepared_successfully = false,
-                .need_to_check_missing_part_in_fetch = false,
-                .part_log_writer = part_log_writer,
+                .part_log_writer = {}
             };
         }
 
@@ -176,14 +153,14 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = false,
-                    .part_log_writer = part_log_writer,
+                    .part_log_writer = {}
                 };
             }
         }
     }
 
     /// Start to make the main work
-    size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts, true);
+    size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
     /// Can throw an exception while reserving space.
     IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -198,6 +175,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     /// It will live until the whole task is being destroyed
     table_lock_holder = storage.lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
+
+    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
 
     auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_format);
     if (future_merged_part->name != entry.new_part_name)
@@ -236,7 +215,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = false,
-                    .part_log_writer = part_log_writer,
+                    .part_log_writer = {}
                 };
             }
 
@@ -276,7 +255,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = false,
-                    .part_log_writer = part_log_writer,
+                    .part_log_writer = {}
                 };
             }
             else if (storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false))
@@ -293,7 +272,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = true,
-                    .part_log_writer = part_log_writer,
+                    .part_log_writer = {}
                 };
             }
             else
@@ -320,6 +299,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         task_context);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
+    stopwatch_ptr = std::make_unique<Stopwatch>();
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
             future_merged_part,
@@ -341,11 +321,13 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     for (auto & item : future_merged_part->parts)
         priority.value += item->getBytesOnDisk();
 
-    return PrepareResult{
-        .prepared_successfully = true,
-        .need_to_check_missing_part_in_fetch = true,
-        .part_log_writer = part_log_writer,
-    };
+    return {true, true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
+    {
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        storage.writePartLog(
+            PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
+            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
+    }};
 }
 
 

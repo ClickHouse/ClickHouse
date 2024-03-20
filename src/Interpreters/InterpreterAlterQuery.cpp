@@ -1,6 +1,4 @@
-#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/InterpreterFactory.h>
 
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/DatabaseFactory.h>
@@ -9,7 +7,6 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
@@ -62,7 +59,8 @@ BlockIO InterpreterAlterQuery::execute()
     {
         return executeToDatabase(alter);
     }
-    else if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE)
+    else if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE
+            || alter.alter_object == ASTAlterQuery::AlterObjectType::LIVE_VIEW)
     {
         return executeToTable(alter);
     }
@@ -72,17 +70,6 @@ BlockIO InterpreterAlterQuery::execute()
 
 BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
-    ASTSelectWithUnionQuery * modify_query = nullptr;
-
-    for (auto & child : alter.command_list->children)
-    {
-        auto * command_ast = child->as<ASTAlterCommand>();
-        if (command_ast->sql_security)
-            InterpreterCreateQuery::processSQLSecurityOption(getContext(), command_ast->sql_security->as<ASTSQLSecurity &>());
-        else if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
-            modify_query = command_ast->select->as<ASTSelectWithUnionQuery>();
-    }
-
     BlockIO res;
 
     if (!UserDefinedSQLFunctionFactory::instance().empty())
@@ -127,12 +114,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
-
-    if (modify_query)
-    {
-        // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor().visit(*modify_query);
-    }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
@@ -430,7 +411,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::APPLY_DELETED_MASK:
         case ASTAlterCommand::DROP_PARTITION:
         case ASTAlterCommand::DROP_DETACHED_PARTITION:
-        case ASTAlterCommand::FORGET_PARTITION:
         {
             required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
             break;
@@ -485,6 +465,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_REFRESH, database, table);
             break;
         }
+        case ASTAlterCommand::LIVE_VIEW_REFRESH:
+        {
+            required_access.emplace_back(AccessType::ALTER_VIEW_REFRESH, database, table);
+            break;
+        }
         case ASTAlterCommand::RENAME_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_RENAME_COLUMN, database, table, column_name());
@@ -499,11 +484,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MODIFY_COMMENT:
         {
             required_access.emplace_back(AccessType::ALTER_MODIFY_COMMENT, database, table);
-            break;
-        }
-        case ASTAlterCommand::MODIFY_SQL_SECURITY:
-        {
-            required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_SQL_SECURITY, database, table);
             break;
         }
     }
@@ -553,15 +533,6 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
             }
         }
     }
-}
-
-void registerInterpreterAlterQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterAlterQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterAlterQuery", create_fn);
 }
 
 }

@@ -307,7 +307,7 @@ private:
     std::condition_variable has_tasks TSA_GUARDED_BY(mutex);
     bool shutdown TSA_GUARDED_BY(mutex) = false;
     std::unique_ptr<ThreadPool> pool;
-    LoggerPtr log = getLogger("MergeTreeBackgroundExecutor");
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeBackgroundExecutor");
 };
 
 extern template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;

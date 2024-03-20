@@ -56,12 +56,9 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 #include <Common/checkStackSize.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageView.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-
-#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -265,7 +262,8 @@ struct ExistsExpressionData
         select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
         select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
-        auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
+        auto new_subquery = std::make_shared<ASTSubquery>();
+        new_subquery->children.push_back(select_with_union_query);
 
         auto function = makeASTFunction("in", std::make_shared<ASTLiteral>(1u), new_subquery);
         func = *function;
@@ -644,13 +642,13 @@ bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, Con
         if (eval_const_res.value())
         {
             /// JOIN ON 1 == 1
-            LOG_DEBUG(getLogger("TreeRewriter"), "Join on constant executed as cross join");
+            LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as cross join");
             analyzed_join.resetToCross();
         }
         else
         {
             /// JOIN ON 1 != 1
-            LOG_DEBUG(getLogger("TreeRewriter"), "Join on constant executed as empty join");
+            LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as empty join");
             analyzed_join.resetKeys();
         }
         return true;
@@ -779,7 +777,7 @@ void expandGroupByAll(ASTSelectQuery * select_query)
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_expression_list);
 }
 
-void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const TablesWithColumns & tables_with_columns)
+void expandOrderByAll(ASTSelectQuery * select_query)
 {
     auto * all_elem = select_query->orderBy()->children[0]->as<ASTOrderByElement>();
     if (!all_elem)
@@ -789,31 +787,15 @@ void expandOrderByAll(ASTSelectQuery * select_query, [[maybe_unused]] const Tabl
 
     for (const auto & expr : select_query->select()->children)
     {
-        /// Detect and reject ambiguous statements:
-        /// E.g. for a table with columns "all", "a", "b":
-        /// - SELECT all, a, b ORDER BY all;        -- should we sort by all columns in SELECT or by column "all"?
-        /// - SELECT a, b AS all ORDER BY all;      -- like before but "all" as alias
-        /// - SELECT func(...) AS all ORDER BY all; -- like before but "all" as function
-        /// - SELECT a, b ORDER BY all;             -- tricky in other way: does the user want to sort by columns in SELECT clause or by not SELECTed column "all"?
-
-        static const String all = "all";
         if (auto * identifier = expr->as<ASTIdentifier>(); identifier != nullptr)
-            if (boost::iequals(identifier->name(), all) || boost::iequals(identifier->alias, all))
+            if (Poco::toUpper(identifier->name()) == "ALL" || Poco::toUpper(identifier->alias) == "ALL")
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
                                 "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
 
         if (auto * function = expr->as<ASTFunction>(); function != nullptr)
-            if (boost::iequals(function->alias, all))
+            if (Poco::toUpper(function->alias) == "ALL")
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
                                 "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
-
-        for (const auto & table_with_columns : tables_with_columns)
-        {
-            const auto & columns = table_with_columns.columns;
-            if (columns.containsCaseInsensitive(all))
-                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
-        }
 
         auto elem = std::make_shared<ASTOrderByElement>();
         elem->direction = all_elem->direction;
@@ -991,7 +973,8 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
     {
         auto options = GetColumnsOptions(add_special ? GetColumnsOptions::All : GetColumnsOptions::AllPhysical);
         options.withExtendedObjects();
-        options.withSubcolumns(storage->supportsSubcolumns());
+        if (storage->supportsSubcolumns())
+            options.withSubcolumns();
 
         auto columns_from_storage = storage_snapshot->getColumns(options);
 
@@ -1001,7 +984,8 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
             source_columns.insert(source_columns.end(), columns_from_storage.begin(), columns_from_storage.end());
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        source_columns_ordinary = metadata_snapshot->getColumns().getOrdinary();
+        auto metadata_column_descriptions = metadata_snapshot->getColumns();
+        source_columns_ordinary = metadata_column_descriptions.getOrdinary();
     }
 
     source_columns_set = removeDuplicateColumns(source_columns);
@@ -1011,12 +995,13 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
 /// Calculate which columns are required to execute the expression.
 /// Then, delete all other columns from the list of available columns.
 /// After execution, columns will only contain the list of columns needed to read from the table.
-bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select, bool no_throw)
+bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select, bool visit_index_hint, bool no_throw)
 {
     /// We calculate required_source_columns with source_columns modifications and swap them on exit
     required_source_columns = source_columns;
 
     RequiredSourceColumnsVisitor::Data columns_context;
+    columns_context.visit_index_hint = visit_index_hint;
     RequiredSourceColumnsVisitor(columns_context).visit(query);
 
     NameSet source_column_names;
@@ -1108,16 +1093,16 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         const auto & partition_desc = storage_snapshot->metadata->getPartitionKey();
         if (partition_desc.expression)
         {
-            auto partition_columns = partition_desc.expression->getRequiredColumns();
-            NameSet partition_columns_set(partition_columns.begin(), partition_columns.end());
-
-            const auto & parititon_virtuals = MergeTreeData::virtuals_useful_for_filter;
-            partition_columns_set.insert(parititon_virtuals.begin(), parititon_virtuals.end());
-
+            auto partition_source_columns = partition_desc.expression->getRequiredColumns();
+            partition_source_columns.push_back("_part");
+            partition_source_columns.push_back("_partition_id");
+            partition_source_columns.push_back("_part_uuid");
+            partition_source_columns.push_back("_partition_value");
             optimize_trivial_count = true;
             for (const auto & required_column : required)
             {
-                if (!partition_columns_set.contains(required_column))
+                if (std::find(partition_source_columns.begin(), partition_source_columns.end(), required_column)
+                    == partition_source_columns.end())
                 {
                     optimize_trivial_count = false;
                     break;
@@ -1128,7 +1113,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
     NameSet unknown_required_source_columns = required;
 
-    for (auto it = source_columns.begin(); it != source_columns.end();)
+    for (NamesAndTypesList::iterator it = source_columns.begin(); it != source_columns.end();)
     {
         const String & column_name = it->name;
         unknown_required_source_columns.erase(column_name);
@@ -1142,23 +1127,32 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     has_virtual_shard_num = false;
     /// If there are virtual columns among the unknown columns. Remove them from the list of unknown and add
     /// in columns list, so that when further processing they are also considered.
-    if (storage_snapshot)
+    if (storage)
     {
-        const auto & virtuals = storage_snapshot->virtual_columns;
+        const auto storage_virtuals = storage->getVirtuals();
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
-            if (auto column = virtuals->tryGet(*it))
+            auto column = storage_virtuals.tryGetByName(*it);
+            if (column)
             {
                 source_columns.push_back(*column);
                 it = unknown_required_source_columns.erase(it);
             }
             else
-            {
                 ++it;
-            }
         }
 
-        has_virtual_shard_num = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->getMetadataForQuery()) && virtuals->has("_shard_num");
+        if (is_remote_storage)
+        {
+            for (const auto & name_type : storage_virtuals)
+            {
+                if (name_type.name == "_shard_num" && storage->isVirtualColumn("_shard_num", storage_snapshot->getMetadataForQuery()))
+                {
+                    has_virtual_shard_num = true;
+                    break;
+                }
+            }
+        }
     }
 
     /// Collect missed object subcolumns
@@ -1332,7 +1326,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     // expand ORDER BY ALL
     if (settings.enable_order_by_all && select_query->order_by_all)
-        expandOrderByAll(select_query, tables_with_columns);
+        expandOrderByAll(select_query);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -1391,7 +1385,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.window_function_asts = getWindowFunctions(query, *select_query);
     result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
 
-    result.collectUsedColumns(query, true);
+    result.collectUsedColumns(query, true, settings.query_plan_optimize_primary_key);
 
     if (!result.missed_subcolumns.empty())
     {
@@ -1428,7 +1422,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             result.aggregates = getAggregates(query, *select_query);
             result.window_function_asts = getWindowFunctions(query, *select_query);
             result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
-            result.collectUsedColumns(query, true);
+            result.collectUsedColumns(query, true, settings.query_plan_optimize_primary_key);
         }
     }
 
@@ -1505,7 +1499,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     else
         assertNoAggregates(query, "in wrong place");
 
-    bool is_ok = result.collectUsedColumns(query, false, no_throw);
+    bool is_ok = result.collectUsedColumns(query, false, settings.query_plan_optimize_primary_key, no_throw);
     if (!is_ok)
         return {};
 

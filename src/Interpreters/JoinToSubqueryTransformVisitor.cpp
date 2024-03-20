@@ -43,7 +43,7 @@ ASTPtr makeSubqueryTemplate(const String & table_alias)
     String query_template = "(select * from _t)";
     if (!table_alias.empty())
         query_template += " as " + table_alias;
-    ASTPtr subquery_template = parseQuery(parser, query_template, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    ASTPtr subquery_template = parseQuery(parser, query_template, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     if (!subquery_template)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse subquery template");
     return subquery_template;
@@ -168,7 +168,7 @@ private:
                 has_asterisks = true;
 
                 if (!qualified_asterisk->qualifier)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified asterisk must have a qualifier");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: qualified asterisk must have a qualifier");
 
                 auto & identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
 
@@ -183,7 +183,7 @@ private:
                             transformer->as<ASTColumnsReplaceTransformer>())
                             IASTColumnsTransformer::transform(transformer, columns);
                         else
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified asterisk must only have children of IASTColumnsTransformer type");
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: qualified asterisk must only have children of IASTColumnsTransformer type");
                     }
                 }
             }

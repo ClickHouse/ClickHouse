@@ -41,10 +41,10 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"timestamp", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+            {"timestamp", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"}
         };
         FunctionArgumentDescriptors optional_args{
-            {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+            {"time", &isString<IDataType>, nullptr, "String"}
         };
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 

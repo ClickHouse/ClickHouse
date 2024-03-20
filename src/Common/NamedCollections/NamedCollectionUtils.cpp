@@ -17,7 +17,6 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 
-#include <filesystem>
 
 namespace fs = std::filesystem;
 
@@ -136,7 +135,7 @@ public:
             else
             {
                 LOG_WARNING(
-                    getLogger("NamedCollectionsLoadFromSQL"),
+                    &Poco::Logger::get("NamedCollectionsLoadFromSQL"),
                     "Unexpected file {} in named collections directory",
                     current_path.filename().string());
             }
@@ -303,7 +302,7 @@ private:
         readStringUntilEOF(query, in);
 
         ParserCreateNamedCollectionQuery parser;
-        auto ast = parseQuery(parser, query, "in file " + path, 0, settings.max_parser_depth, settings.max_parser_backtracks);
+        auto ast = parseQuery(parser, query, "in file " + path, 0, settings.max_parser_depth);
         const auto & create_query = ast->as<const ASTCreateNamedCollectionQuery &>();
         return create_query;
     }
@@ -346,7 +345,7 @@ void loadFromConfigUnlocked(const Poco::Util::AbstractConfiguration & config, st
 {
     auto named_collections = LoadFromConfig(config).getAll();
     LOG_TRACE(
-        getLogger("NamedCollectionsUtils"),
+        &Poco::Logger::get("NamedCollectionsUtils"),
         "Loaded {} collections from config", named_collections.size());
 
     NamedCollectionFactory::instance().add(std::move(named_collections));
@@ -373,7 +372,7 @@ void loadFromSQLUnlocked(ContextPtr context, std::unique_lock<std::mutex> &)
 {
     auto named_collections = LoadFromSQL(context).getAll();
     LOG_TRACE(
-        getLogger("NamedCollectionsUtils"),
+        &Poco::Logger::get("NamedCollectionsUtils"),
         "Loaded {} collections from SQL", named_collections.size());
 
     NamedCollectionFactory::instance().add(std::move(named_collections));

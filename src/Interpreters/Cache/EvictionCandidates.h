@@ -11,7 +11,7 @@ public:
 
     void add(LockedKey & locked_key, const FileSegmentMetadataPtr & candidate);
 
-    void evict(FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock &);
+    void evict(FileCacheQueryLimit::QueryContext * query_context, const CacheGuard::Lock &);
 
     size_t size() const { return candidates_size; }
 

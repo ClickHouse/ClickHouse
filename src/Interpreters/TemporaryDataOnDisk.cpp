@@ -4,7 +4,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <Interpreters/Cache/FileCache.h>
 #include <Formats/NativeWriter.h>
 #include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
@@ -44,20 +43,20 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     }
 
     size_t new_consumprion = stat.compressed_size + compressed_delta;
-    if (compressed_delta > 0 && settings.max_size_on_disk && new_consumprion > settings.max_size_on_disk)
+    if (compressed_delta > 0 && limit && new_consumprion > limit)
         throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
-            "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumprion, settings.max_size_on_disk);
+            "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumprion, limit);
 
     stat.compressed_size += compressed_delta;
     stat.uncompressed_size += uncompressed_delta;
 }
 
 TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_)
-    : TemporaryDataOnDiskScope(parent_, parent_->getSettings())
+    : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
 {}
 
 TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Metric metric_scope)
-    : TemporaryDataOnDiskScope(parent_, parent_->getSettings())
+    : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
     , current_metric_scope(metric_scope)
 {}
 
@@ -106,9 +105,7 @@ FileSegmentsHolderPtr TemporaryDataOnDisk::createCacheFile(size_t max_file_size)
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
 
     const auto key = FileSegment::Key::random();
-    auto holder = file_cache->set(
-        key, 0, std::max(10_MiB, max_file_size),
-        CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true), FileCache::getCommonUser());
+    auto holder = file_cache->set(key, 0, std::max(10_MiB, max_file_size), CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true));
 
     chassert(holder->size() == 1);
     holder->back().getKeyMetadata()->createBaseDirectory();
@@ -153,19 +150,11 @@ bool TemporaryDataOnDisk::empty() const
     return streams.empty();
 }
 
-static inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings)
-{
-    if (settings.compression_codec.empty())
-        return CompressionCodecFactory::instance().get("NONE");
-
-    return CompressionCodecFactory::instance().get(settings.compression_codec);
-}
-
 struct TemporaryFileStream::OutputWriter
 {
-    OutputWriter(std::unique_ptr<WriteBuffer> out_buf_, const Block & header_, const TemporaryDataOnDiskSettings & settings)
+    OutputWriter(std::unique_ptr<WriteBuffer> out_buf_, const Block & header_)
         : out_buf(std::move(out_buf_))
-        , out_compressed_buf(*out_buf, getCodec(settings))
+        , out_compressed_buf(*out_buf)
         , out_writer(out_compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header_)
     {
     }
@@ -231,7 +220,7 @@ struct TemporaryFileStream::InputReader
         , in_compressed_buf(in_file_buf)
         , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
     {
-        LOG_TEST(getLogger("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
+        LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
     }
 
     explicit InputReader(const String & path, size_t size = 0)
@@ -239,7 +228,7 @@ struct TemporaryFileStream::InputReader
         , in_compressed_buf(in_file_buf)
         , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
     {
-        LOG_TEST(getLogger("TemporaryFileStream"), "Reading from {}", path);
+        LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Reading from {}", path);
     }
 
     Block read()
@@ -256,9 +245,9 @@ TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const 
     : parent(parent_)
     , header(header_)
     , file(std::move(file_))
-    , out_writer(std::make_unique<OutputWriter>(std::make_unique<WriteBufferFromFile>(file->getAbsolutePath()), header, parent->settings))
+    , out_writer(std::make_unique<OutputWriter>(std::make_unique<WriteBufferFromFile>(file->getAbsolutePath()), header))
 {
-    LOG_TEST(getLogger("TemporaryFileStream"), "Writing to temporary file {}", file->getAbsolutePath());
+    LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Writing to temporary file {}", file->getAbsolutePath());
 }
 
 TemporaryFileStream::TemporaryFileStream(FileSegmentsHolderPtr segments_, const Block & header_, TemporaryDataOnDisk * parent_)
@@ -270,8 +259,8 @@ TemporaryFileStream::TemporaryFileStream(FileSegmentsHolderPtr segments_, const 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream can be created only from single segment");
     auto out_buf = std::make_unique<WriteBufferToFileSegment>(&segment_holder->front());
 
-    LOG_TEST(getLogger("TemporaryFileStream"), "Writing to temporary file {}", out_buf->getFileName());
-    out_writer = std::make_unique<OutputWriter>(std::move(out_buf), header, parent_->settings);
+    LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Writing to temporary file {}", out_buf->getFileName());
+    out_writer = std::make_unique<OutputWriter>(std::move(out_buf), header);
 }
 
 size_t TemporaryFileStream::write(const Block & block)
@@ -388,7 +377,7 @@ String TemporaryFileStream::getPath() const
     if (file)
         return file->getAbsolutePath();
     if (segment_holder && !segment_holder->empty())
-        return segment_holder->front().getPath();
+        return segment_holder->front().getPathInLocalCache();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream has no file");
 }

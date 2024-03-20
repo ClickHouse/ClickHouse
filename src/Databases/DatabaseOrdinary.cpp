@@ -1,7 +1,6 @@
 #include <filesystem>
 
 #include <Core/Settings.h>
-#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
@@ -29,10 +28,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-#include <Core/Defines.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-
-#include <boost/algorithm/string/replace.hpp>
 
 namespace fs = std::filesystem;
 
@@ -42,13 +37,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_DATABASE_ENGINE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
-
-static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
 
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context_)
     : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
@@ -65,94 +56,6 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLev
 {
     // Because it supportsLoadingInTopologicalOrder, we don't need this loading method.
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-}
-
-static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr context)
-{
-    auto * storage = create_query->storage;
-
-    /// Get replicated engine
-    const auto & server_settings = context->getServerSettings();
-    String replica_path = server_settings.default_replica_path;
-    String replica_name = server_settings.default_replica_name;
-
-    auto args = std::make_shared<ASTExpressionList>();
-    args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
-    args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
-
-    /// Add old engine's arguments
-    if (storage->engine->arguments)
-    {
-        for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
-            args->children.push_back(storage->engine->arguments->children[i]->clone());
-    }
-
-    auto engine = std::make_shared<ASTFunction>();
-    engine->name = "Replicated" + storage->engine->name;
-    engine->arguments = args;
-
-    /// Set new engine for the old query
-    create_query->storage->set(create_query->storage->engine, engine->clone());
-}
-
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, bool tableStarted)
-{
-    fs::path data_path;
-    if (!tableStarted)
-    {
-        auto create_query = tryGetCreateTableQuery(name, getContext());
-        data_path = fs::path(getContext()->getPath()) / getTableDataPath(create_query->as<ASTCreateQuery &>());
-    }
-    else
-        data_path = fs::path(getContext()->getPath()) / getTableDataPath(name);
-
-    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME).string();
-}
-
-void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
-{
-    fs::path path(getMetadataPath());
-    fs::path file_path(file_name);
-    fs::path full_path = path / file_path;
-
-    auto * create_query = ast->as<ASTCreateQuery>();
-
-    if (!create_query->storage || !create_query->storage->engine->name.ends_with("MergeTree") || create_query->storage->engine->name.starts_with("Replicated") || create_query->storage->engine->name.starts_with("Shared"))
-        return;
-
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
-
-    if (!fs::exists(convert_to_replicated_flag_path))
-        return;
-
-    if (getUUID() == UUIDHelpers::Nil)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Table engine conversion to replicated is supported only for Atomic databases. Convert your database engine to Atomic first.");
-
-    LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
-
-    setReplicatedEngine(create_query, getContext());
-
-    /// Write changes to metadata
-    String table_metadata_path = full_path;
-    String table_metadata_tmp_path = table_metadata_path + ".tmp";
-    String statement = getObjectDefinitionFromCreateQuery(ast);
-    {
-        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
-        out.next();
-        if (getContext()->getSettingsRef().fsync_metadata)
-            out.sync();
-        out.close();
-    }
-    fs::rename(table_metadata_tmp_path, table_metadata_path);
-
-    LOG_INFO(
-        log,
-        "Engine of table {} is set to replicated in metadata. Not removing {} flag until table is loaded and metadata in zookeeper is restored.",
-        backQuote(qualified_name.getFullName()),
-        CONVERT_TO_REPLICATED_FLAG_NAME
-    );
 }
 
 void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
@@ -204,8 +107,6 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                 QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
 
-                convertMergeTreeToReplicatedIfNeeded(ast, qualified_name, file_name);
-
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
                 metadata.total_dictionaries += create_query->is_dictionary;
@@ -247,7 +148,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
             name.database,
             getTableDataPath(query),
             local_context,
-            mode);
+            LoadingStrictnessLevel::FORCE_RESTORE <= mode);
 
         attachTable(local_context, table_name, table, getTableDataPath(query));
     }
@@ -282,55 +183,6 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     return load_table[name.table] = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
-{
-    auto * rmt = table->as<StorageReplicatedMergeTree>();
-    if (!rmt)
-        return;
-
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
-    if (!fs::exists(convert_to_replicated_flag_path))
-        return;
-
-    fs::remove(convert_to_replicated_flag_path);
-    LOG_INFO
-    (
-        log,
-        "Removing convert to replicated flag for {}.",
-        backQuote(name.getFullName())
-    );
-
-    auto has_metadata = rmt->hasMetadataInZooKeeper();
-    if (!has_metadata.has_value())
-    {
-        LOG_WARNING
-        (
-            log,
-            "No connection to ZooKeeper, can't restore metadata for {} in ZooKeeper after conversion. Run SYSTEM RESTORE REPLICA while connected to ZooKeeper.",
-            backQuote(name.getFullName())
-        );
-    }
-    else if (*has_metadata)
-    {
-        LOG_INFO
-        (
-            log,
-            "Table {} already has metatada in ZooKeeper.",
-            backQuote(name.getFullName())
-        );
-    }
-    else
-    {
-        rmt->restoreMetadataInZooKeeper();
-        LOG_INFO
-        (
-            log,
-            "Metadata in ZooKeeper for {} is restored.",
-            backQuote(name.getFullName())
-        );
-    }
-}
-
 LoadTaskPtr DatabaseOrdinary::startupTableAsync(
     AsyncLoader & async_loader,
     LoadJobSet startup_after,
@@ -358,11 +210,6 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
                 /// until startup finished.
                 auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
                 table->startup();
-
-                /// If table is ReplicatedMergeTree after conversion from MergeTree,
-                /// it is in readonly mode due to metadata in zookeeper missing.
-                restoreMetadataAfterConvertingToReplicated(table, name);
-
                 logAboutProgress(log, ++tables_started, total_tables_to_startup, startup_watch);
             }
             else
@@ -378,18 +225,11 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
     LoadJobSet startup_after,
     LoadingStrictnessLevel /*mode*/)
 {
+    // NOTE: this task is empty, but it is required for correct dependency handling (startup should be done after tables loading)
     auto job = makeLoadJob(
         std::move(startup_after),
         TablesLoaderBackgroundStartupPoolId,
-        fmt::format("startup Ordinary database {}", getDatabaseName()),
-        ignoreDependencyFailure,
-        [] (AsyncLoader &, const LoadJobPtr &)
-        {
-            // NOTE: this job is no-op, but it is required for correct dependency handling
-            // 1) startup should be done after tables loading
-            // 2) load or startup errors for tables should not lead to not starting up the whole database
-        });
-    std::scoped_lock lock(mutex);
+        fmt::format("startup Ordinary database {}", getDatabaseName()));
     return startup_database_task = makeLoadTask(async_loader, {job});
 }
 
@@ -407,60 +247,24 @@ void DatabaseOrdinary::waitTableStarted(const String & name) const
         waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task);
 }
 
-void DatabaseOrdinary::waitDatabaseStarted() const
+void DatabaseOrdinary::waitDatabaseStarted(bool no_throw) const
 {
     /// Prioritize load and startup of all tables and database itself and wait for them synchronously
-    LoadTaskPtr task;
-    {
-        std::scoped_lock lock(mutex);
-        task = startup_database_task;
-    }
-    if (task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task);
-}
-
-void DatabaseOrdinary::stopLoading()
-{
-    std::unordered_map<String, LoadTaskPtr> stop_load_table;
-    std::unordered_map<String, LoadTaskPtr> stop_startup_table;
-    LoadTaskPtr stop_startup_database;
-    {
-        std::scoped_lock lock(mutex);
-        stop_load_table.swap(load_table);
-        stop_startup_table.swap(startup_table);
-        stop_startup_database.swap(startup_database_task);
-    }
-
-    // Cancel pending tasks and wait for currently running tasks
-    // Note that order must be backward of how it was created to make sure no dependent task is run after waiting for current task
-    stop_startup_database.reset();
-    stop_startup_table.clear();
-    stop_load_table.clear();
+    if (startup_database_task)
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_database_task, no_throw);
 }
 
 DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
 {
-    // Wait for every table (matching the filter) to be loaded and started up before we make the snapshot.
-    // It is important, because otherwise table might be:
-    //  - not attached and thus will be missed in the snapshot;
-    //  - not started, which is not good for DDL operations.
-    LoadTaskPtrs tasks_to_wait;
-    {
-        std::lock_guard lock(mutex);
-        if (!filter_by_table_name)
-            tasks_to_wait.reserve(startup_table.size());
-        for (const auto & [table_name, task] : startup_table)
-            if (!filter_by_table_name || filter_by_table_name(table_name))
-                tasks_to_wait.emplace_back(task);
-    }
-    waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), tasks_to_wait);
-
-    return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name);
+    auto result = DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name);
+    std::scoped_lock lock(mutex);
+    typeid_cast<DatabaseTablesSnapshotIterator &>(*result).setLoadTasks(startup_table);
+    return result;
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
-    waitDatabaseStarted();
+    waitDatabaseStarted(false);
 
     String table_name = table_id.table_name;
 
@@ -481,7 +285,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         statement.data() + statement.size(),
         "in file " + table_metadata_path,
         0,
-        local_context->getSettingsRef().max_parser_depth, local_context->getSettingsRef().max_parser_backtracks);
+        local_context->getSettingsRef().max_parser_depth);
 
     applyMetadataChangesToCreateQuery(ast, metadata);
 
@@ -517,22 +321,4 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     }
 }
 
-void registerDatabaseOrdinary(DatabaseFactory & factory)
-{
-    auto create_fn = [](const DatabaseFactory::Arguments & args)
-    {
-        if (!args.create_query.attach && !args.context->getSettingsRef().allow_deprecated_database_ordinary)
-            throw Exception(
-                ErrorCodes::UNKNOWN_DATABASE_ENGINE,
-                "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
-
-        args.context->addWarningMessageAboutDatabaseOrdinary(args.database_name);
-
-        return make_shared<DatabaseOrdinary>(
-            args.database_name,
-            args.metadata_path,
-            args.context);
-    };
-    factory.registerDatabase("Ordinary", create_fn);
-}
 }

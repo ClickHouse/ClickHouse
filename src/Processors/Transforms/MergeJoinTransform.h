@@ -230,9 +230,9 @@ public:
     explicit MergeJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_);
 
     const char * getName() const override { return "MergeJoinAlgorithm"; }
-    void initialize(Inputs inputs) override;
-    void consume(Input & input, size_t source_num) override;
-    Status merge() override;
+    virtual void initialize(Inputs inputs) override;
+    virtual void consume(Input & input, size_t source_num) override;
+    virtual Status merge() override;
 
     void logElapsed(double seconds);
 
@@ -269,7 +269,7 @@ private:
 
     Statistic stat;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 class MergeJoinTransform final : public IMergingTransform<MergeJoinAlgorithm>
@@ -289,7 +289,7 @@ public:
 protected:
     void onFinish() override;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

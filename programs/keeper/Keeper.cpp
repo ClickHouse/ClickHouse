@@ -10,12 +10,10 @@
 #include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
-#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Server/waitServersToFinish.h>
-#include <Server/CloudPlacementInfo.h>
 #include <base/getMemoryAmount.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
@@ -33,10 +31,9 @@
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
 #include <Server/HTTP/HTTPServer.h>
+#include <Server/TCPServer.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/KeeperReadinessHandler.h>
-#include <Server/PrometheusMetricsWriter.h>
-#include <Server/TCPServer.h>
 
 #include "Core/Defines.h"
 #include "config.h"
@@ -338,7 +335,7 @@ try
     else if (std::filesystem::is_directory(std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"))
     {
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                        "By default 'keeper_server.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper_server.storage_path' in the keeper configuration explicitly",
+                        "By default 'keeper.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper.storage_path' in the keeper configuration explicitly",
                         KEEPER_DEFAULT_PATH, String{std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"});
     }
     else
@@ -354,11 +351,6 @@ try
     DB::ServerUUID::load(path + "/uuid", log);
 
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
-
-    if (config().has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
-    {
-        PlacementInfo::PlacementInfo::instance().initialize(config());
-    }
 
     GlobalThreadPool::initialize(
         config().getUInt("max_thread_pool_size", 100),
@@ -490,28 +482,19 @@ try
 
         /// Prometheus (if defined and not setup yet with http_port)
         port_name = "prometheus.port";
-        createServer(
-            listen_host,
-            port_name,
-            listen_try,
-            [&, my_http_context = std::move(http_context)](UInt16 port) mutable
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port);
-                socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
-                socket.setSendTimeout(my_http_context->getSendTimeout());
-                auto metrics_writer = std::make_shared<KeeperPrometheusMetricsWriter>(config, "prometheus", async_metrics);
-                servers->emplace_back(
-                    listen_host,
-                    port_name,
-                    "Prometheus: http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        std::move(my_http_context),
-                        createPrometheusMainHandlerFactory(*this, config_getter(), metrics_writer, "PrometheusHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-            });
+        createServer(listen_host, port_name, listen_try, [&, my_http_context = std::move(http_context)](UInt16 port) mutable
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port);
+            socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
+            socket.setSendTimeout(my_http_context->getSendTimeout());
+            servers->emplace_back(
+                listen_host,
+                port_name,
+                "Prometheus: http://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    std::move(my_http_context), createPrometheusMainHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+        });
 
         /// HTTP control endpoints
         port_name = "keeper_server.http_control.port";
@@ -561,7 +544,7 @@ try
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
-        config().getString("path", KEEPER_DEFAULT_PATH),
+        config().getString("path", ""),
         std::move(unused_cache),
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
@@ -624,25 +607,6 @@ try
     buildLoggers(config(), logger());
     main_config_reloader->start();
 
-    std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
-    try
-    {
-        auto wait_time = config().getUInt64("keeper_server.cgroups_memory_observer_wait_time", 15);
-        if (wait_time != 0)
-        {
-            cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
-            /// Not calling cgroups_memory_usage_observer->setLimits() here (as for the normal ClickHouse server) because Keeper controls
-            /// its memory usage by other means (via setting 'max_memory_usage_soft_limit').
-            cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]() { main_config_reloader->reload(); });
-            cgroups_memory_usage_observer->startThread();
-        }
-    }
-    catch (Exception &)
-    {
-        tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
-    }
-
-
     LOG_INFO(log, "Ready for connections.");
 
     waitForTerminationRequest();
@@ -660,7 +624,7 @@ catch (...)
 
 void Keeper::logRevision() const
 {
-    LOG_INFO(getLogger("Application"),
+    LOG_INFO(&Poco::Logger::get("Application"),
         "Starting ClickHouse Keeper {} (revision: {}, git hash: {}, build id: {}), PID {}",
         VERSION_STRING,
         ClickHouseRevision::getVersionRevision(),

@@ -42,25 +42,25 @@
 
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
-        M(arrow::Type::UINT8, UInt8) \
-        M(arrow::Type::INT8, Int8) \
-        M(arrow::Type::INT16, Int16) \
-        M(arrow::Type::UINT64, UInt64) \
-        M(arrow::Type::INT64, Int64) \
-        M(arrow::Type::DURATION, Int64) \
-        M(arrow::Type::HALF_FLOAT, Float32) \
-        M(arrow::Type::FLOAT, Float32) \
-        M(arrow::Type::DOUBLE, Float64)
+        M(arrow::Type::UINT8, DB::UInt8) \
+        M(arrow::Type::INT8, DB::Int8) \
+        M(arrow::Type::INT16, DB::Int16) \
+        M(arrow::Type::UINT64, DB::UInt64) \
+        M(arrow::Type::INT64, DB::Int64) \
+        M(arrow::Type::DURATION, DB::Int64) \
+        M(arrow::Type::HALF_FLOAT, DB::Float32) \
+        M(arrow::Type::FLOAT, DB::Float32) \
+        M(arrow::Type::DOUBLE, DB::Float64)
 
 #define FOR_ARROW_INDEXES_TYPES(M) \
-        M(arrow::Type::UINT8, UInt8) \
-        M(arrow::Type::INT8, UInt8) \
-        M(arrow::Type::UINT16, UInt16) \
-        M(arrow::Type::INT16, UInt16) \
-        M(arrow::Type::UINT32, UInt32) \
-        M(arrow::Type::INT32, UInt32) \
-        M(arrow::Type::UINT64, UInt64) \
-        M(arrow::Type::INT64, UInt64)
+        M(arrow::Type::UINT8, DB::UInt8) \
+        M(arrow::Type::INT8, DB::UInt8) \
+        M(arrow::Type::UINT16, DB::UInt16) \
+        M(arrow::Type::INT16, DB::UInt16) \
+        M(arrow::Type::UINT32, DB::UInt32) \
+        M(arrow::Type::INT32, DB::UInt32) \
+        M(arrow::Type::UINT64, DB::UInt64) \
+        M(arrow::Type::INT64, DB::UInt64)
 
 namespace DB
 {

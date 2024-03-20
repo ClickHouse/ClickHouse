@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
@@ -56,7 +57,7 @@ bool isNotEnoughMemoryErrorCode(int code)
         || code == ErrorCodes::CANNOT_MREMAP;
 }
 
-bool isRetryableException(std::exception_ptr exception_ptr)
+bool isRetryableException(const std::exception_ptr exception_ptr)
 {
     try
     {
@@ -253,7 +254,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
-        if (isGinFile(file_name))
+        if (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"))
             continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
@@ -309,11 +310,22 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     return checksums_data;
 }
 
+IMergeTreeDataPart::Checksums checkDataPartInMemory(const DataPartInMemoryPtr & data_part)
+{
+    IMergeTreeDataPart::Checksums data_checksums;
+    data_checksums.files["data.bin"] = data_part->calculateBlockChecksum();
+    data_part->checksums.checkEqual(data_checksums, true);
+    return data_checksums;
+}
+
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
     std::function<bool()> is_cancelled)
 {
+    if (auto part_in_memory = asInMemoryPart(data_part))
+        return checkDataPartInMemory(part_in_memory);
+
     /// If check of part has failed and it is stored on disk with cache
     /// try to drop cache and check it once again because maybe the cache
     /// is broken not the part itself.
@@ -326,7 +338,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             throw;
 
         LOG_DEBUG(
-            getLogger("checkDataPart"),
+            &Poco::Logger::get("checkDataPart"),
             "Will drop cache for data part {} and will check it once again", data_part->name);
 
         auto & cache = *FileCacheFactory::instance().getByName(*cache_name)->cache;
@@ -336,7 +348,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             if (!data_part_storage.isDirectory(file_name))
             {
                 auto remote_path = data_part_storage.getRemotePath(file_name);
-                cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
+                cache.removePathIfExists(remote_path);
             }
         }
 

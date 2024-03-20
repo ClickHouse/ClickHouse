@@ -39,7 +39,7 @@ ISystemLog::~ISystemLog() = default;
 
 template <typename LogElement>
 SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settings_)
-    : log(getLogger("SystemLogQueue (" + settings_.database + "." +settings_.table + ")"))
+    : log(&Poco::Logger::get("SystemLogQueue (" + settings_.database + "." +settings_.table + ")"))
     , settings(settings_)
 
 {

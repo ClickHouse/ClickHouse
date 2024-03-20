@@ -140,11 +140,9 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 
 
 /// The methods can be virtual or not depending on the template parameter. See IStringSource.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsuggest-override"
-#pragma clang diagnostic ignored "-Wsuggest-destructor-override"
-
-/// NOLINTBEGIN(hicpp-use-override)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-override"
+#pragma GCC diagnostic ignored "-Wsuggest-destructor-override"
 
 template <typename Base>
 struct ConstSource : public Base
@@ -233,9 +231,7 @@ struct ConstSource : public Base
     }
 };
 
-/// NOLINTEND(hicpp-use-override)
-
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
 
 struct StringSource
 {

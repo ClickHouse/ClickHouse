@@ -1,12 +1,14 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Common/CurrentThread.h>
+#include <Common/typeid_cast.h>
+#include "Core/UUID.h"
 #include <Core/SortDescription.h>
-#include <Core/UUID.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/Executors/PipelineExecutor.h>
@@ -23,14 +25,11 @@
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
+#include <Processors/Transforms/PasteJoinTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Transforms/PasteJoinTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/narrowPipe.h>
-#include <Common/CurrentThread.h>
-#include <Common/iota.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -622,7 +621,8 @@ void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
     bool has_extremes = pipe.getExtremesPort();
     size_t num_extra_ports = (has_totals ? 1 : 0) + (has_extremes ? 1 : 0);
     IProcessor::PortNumbers delayed_streams(pipe.numOutputPorts() + num_extra_ports);
-    iota(delayed_streams.data(), delayed_streams.size(), IProcessor::PortNumbers::value_type(0));
+    for (size_t i = 0; i < delayed_streams.size(); ++i)
+        delayed_streams[i] = i;
 
     auto * collected_processors = pipe.collected_processors;
 

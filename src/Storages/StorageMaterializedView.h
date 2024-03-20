@@ -18,7 +18,7 @@ public:
         ContextPtr local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        LoadingStrictnessLevel mode,
+        bool attach_,
         const String & comment);
 
     std::string getName() const override { return "MaterializedView"; }
@@ -73,12 +73,12 @@ public:
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
-    StorageID getTargetTableId() const;
+
+    /// Get the virtual column of the target table;
+    NamesAndTypesList getVirtuals() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
     void onActionLockRemove(StorageActionBlockType action_type) override;
-
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -119,6 +119,7 @@ private:
     std::tuple<ContextMutablePtr, std::shared_ptr<ASTInsertQuery>> prepareRefresh() const;
     StorageID exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context);
 
+    StorageID getTargetTableId() const;
     void setTargetTableId(StorageID id);
     void updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name);
 };

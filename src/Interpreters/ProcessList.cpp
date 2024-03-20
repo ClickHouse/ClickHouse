@@ -86,7 +86,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
         {
             if (queue_max_wait_ms)
-                LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
+                LOG_WARNING(&Poco::Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return processes.size() < max_size; }))
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries. Maximum: {}", max_size);
         }
@@ -208,13 +208,8 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {
-                TemporaryDataOnDiskSettings temporary_data_on_disk_settings
-                {
-                    .max_size_on_disk = settings.max_temporary_data_on_disk_size_for_query,
-                    .compression_codec = settings.temporary_files_codec
-                };
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
-                    user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
+                    user_process_list.user_temp_data_on_disk, settings.max_temporary_data_on_disk_size_for_query));
             }
 
             /// Set query-level memory trackers
@@ -259,7 +254,6 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         res = std::make_shared<Entry>(*this, process_it);
 
         (*process_it)->setUserProcessList(&user_process_list);
-        (*process_it)->setProcessListEntry(res);
 
         user_process_list.queries.emplace(client_info.current_query_id, res->getQueryStatus());
         queries_to_user.emplace(client_info.current_query_id, client_info.current_user);
@@ -300,7 +294,7 @@ ProcessListEntry::~ProcessListEntry()
     auto user_process_list_it = parent.user_to_queries.find(user);
     if (user_process_list_it == parent.user_to_queries.end())
     {
-        LOG_ERROR(getLogger("ProcessList"), "Cannot find user in ProcessList");
+        LOG_ERROR(&Poco::Logger::get("ProcessList"), "Logical error: cannot find user in ProcessList");
         std::terminate();
     }
 
@@ -328,7 +322,7 @@ ProcessListEntry::~ProcessListEntry()
 
     if (!found)
     {
-        LOG_ERROR(getLogger("ProcessList"), "Cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
+        LOG_ERROR(&Poco::Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
     }
 
@@ -487,22 +481,6 @@ void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
 }
 
 
-void QueryStatus::setProcessListEntry(std::weak_ptr<ProcessListEntry> process_list_entry_)
-{
-    /// Synchronization is not required here because this function is only called from ProcessList::insert()
-    /// when `ProcessList::mutex` is locked.
-    if (!process_list_entry.expired() && !process_list_entry_.expired())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Two entries in the process list cannot both use the same query status");
-    process_list_entry = process_list_entry_;
-}
-
-
-std::shared_ptr<ProcessListEntry> QueryStatus::getProcessListEntry() const
-{
-    return process_list_entry.lock();
-}
-
-
 ThrottlerPtr QueryStatus::getUserNetworkThrottler()
 {
     if (!user_process_list)
@@ -548,28 +526,6 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
         elem = tryGetProcessListElement(current_query_id, current_user);
         if (!elem)
             return CancellationCode::NotFound;
-        elem->is_cancelling = true;
-    }
-
-    SCOPE_EXIT({
-        DENY_ALLOCATIONS_IN_SCOPE;
-
-        auto lock = unsafeLock();
-        elem->is_cancelling = false;
-        cancelled_cv.notify_all();
-    });
-
-    return elem->cancelQuery(kill);
-}
-
-
-CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem, bool kill)
-{
-    /// Cancelling the query should be done without the lock.
-    /// So here we first set is_cancelling, and later reset it.
-    /// The ProcessListEntry cannot be destroy if is_cancelling is true.
-    {
-        auto lock = safeLock();
         elem->is_cancelling = true;
     }
 
@@ -687,15 +643,8 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
 
     if (global_context)
     {
-        const auto & settings = global_context->getSettingsRef();
-        TemporaryDataOnDiskSettings temporary_data_on_disk_settings
-        {
-            .max_size_on_disk = settings.max_temporary_data_on_disk_size_for_user,
-            .compression_codec = settings.temporary_files_codec
-        };
-
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),
-            std::move(temporary_data_on_disk_settings));
+        size_t size_limit = global_context->getSettingsRef().max_temporary_data_on_disk_size_for_user;
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(), size_limit);
     }
 }
 

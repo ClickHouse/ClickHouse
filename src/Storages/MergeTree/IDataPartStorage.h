@@ -151,12 +151,12 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
-        LoggerPtr log) = 0;
+        Poco::Logger * log) = 0;
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
     virtual std::optional<String> getRelativePathForPrefix(
-        LoggerPtr log, const String & prefix, bool detached, bool broken) const = 0;
+        Poco::Logger * log, const String & prefix, bool detached, bool broken) const = 0;
 
     /// Reset part directory, used for in-memory parts.
     /// TODO: remove it.
@@ -263,7 +263,7 @@ public:
         const DiskPtr & disk,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
-        LoggerPtr log,
+        Poco::Logger * log,
         const std::function<void()> & cancellation_hook
         ) const = 0;
 
@@ -314,7 +314,7 @@ public:
     virtual void rename(
         std::string new_root_path,
         std::string new_part_dir,
-        LoggerPtr log,
+        Poco::Logger * log,
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) = 0;
 

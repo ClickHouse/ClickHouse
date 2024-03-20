@@ -24,7 +24,7 @@ public:
         StorageNATS & storage_,
         std::vector<String> & subjects_,
         const String & subscribe_queue_name,
-        LoggerPtr log_,
+        Poco::Logger * log_,
         uint32_t queue_size_,
         const std::atomic<bool> & stopped_);
 
@@ -58,7 +58,7 @@ private:
     StorageNATS & storage;
     std::vector<SubscriptionPtr> subscriptions;
     std::vector<String> subjects;
-    LoggerPtr log;
+    Poco::Logger * log;
     const std::atomic<bool> & stopped;
 
     bool subscribed = false;
