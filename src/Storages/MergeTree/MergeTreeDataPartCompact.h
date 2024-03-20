@@ -32,6 +32,7 @@ public:
         const NamesAndTypesList & columns,
         const StorageSnapshotPtr & storage_snapshot,
         const MarkRanges & mark_ranges,
+        const VirtualFields & virtual_fields,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const AlterConversionsPtr & alter_conversions,
@@ -67,14 +68,14 @@ protected:
          MergeTreeIndexGranularity & index_granularity_, const MergeTreeIndexGranularityInfo & index_granularity_info_,
          size_t columns_count, const IDataPartStorage & data_part_storage_);
 
+     void doCheckConsistency(bool require_part_metadata) const override;
+
 private:
-    void checkConsistency(bool require_part_metadata) const override;
+     /// Loads marks index granularity into memory
+     void loadIndexGranularity() override;
 
-    /// Loads marks index granularity into memory
-    void loadIndexGranularity() override;
-
-    /// Compact parts doesn't support per column size, only total size
-    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+     /// Compact parts doesn't support per column size, only total size
+     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 
 }

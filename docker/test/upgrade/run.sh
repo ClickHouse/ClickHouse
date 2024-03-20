@@ -16,7 +16,9 @@ ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_pre
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
+# shellcheck source=../stateless/attach_gdb.lib
 source /attach_gdb.lib
+# shellcheck source=../stateless/stress_tests.lib
 source /stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
@@ -65,10 +67,7 @@ configure
 
 function remove_keeper_config()
 {
-  sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
-    | sed "/<$1>$2<\/$1>/d" \
-    > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
-  sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+  sudo sed -i "/<$1>$2<\/$1>/d" /etc/clickhouse-server/config.d/keeper_port.xml
 }
 
 # async_replication setting doesn't exist on some older versions
@@ -77,11 +76,25 @@ remove_keeper_config "async_replication" "1"
 # create_if_not_exists feature flag doesn't exist on some older versions
 remove_keeper_config "create_if_not_exists" "[01]"
 
+#todo: remove these after 24.3 released.
+sudo sed -i "s|<object_storage_type>azure<|<object_storage_type>azure_blob_storage<|" /etc/clickhouse-server/config.d/azure_storage_conf.xml
+
+#todo: remove these after 24.3 released.
+sudo sed -i "s|<object_storage_type>local<|<object_storage_type>local_blob_storage<|" /etc/clickhouse-server/config.d/storage_conf.xml
+
+# latest_logs_cache_size_threshold setting doesn't exist on some older versions
+remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
+
+# commit_logs_cache_size_threshold setting doesn't exist on some older versions
+remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
+
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 rm /etc/clickhouse-server/config.d/storage_conf_02963.xml
+rm /etc/clickhouse-server/config.d/backoff_failed_mutation.xml
+rm /etc/clickhouse-server/config.d/handlers.yaml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 rm /etc/clickhouse-server/users.d/s3_cache_new.xml
 rm /etc/clickhouse-server/users.d/replicated_ddl_entry.xml
@@ -98,10 +111,13 @@ export ZOOKEEPER_FAULT_INJECTION=0
 configure
 
 # force_sync=false doesn't work correctly on some older versions
-sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
-  | sed "s|<force_sync>false</force_sync>|<force_sync>true</force_sync>|" \
-  > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
-sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+sudo sed -i "s|<force_sync>false</force_sync>|<force_sync>true</force_sync>|" /etc/clickhouse-server/config.d/keeper_port.xml
+
+#todo: remove these after 24.3 released.
+sudo sed -i "s|<object_storage_type>azure<|<object_storage_type>azure_blob_storage<|" /etc/clickhouse-server/config.d/azure_storage_conf.xml
+
+#todo: remove these after 24.3 released.
+sudo sed -i "s|<object_storage_type>local<|<object_storage_type>local_blob_storage<|" /etc/clickhouse-server/config.d/storage_conf.xml
 
 # async_replication setting doesn't exist on some older versions
 remove_keeper_config "async_replication" "1"
@@ -109,11 +125,14 @@ remove_keeper_config "async_replication" "1"
 # create_if_not_exists feature flag doesn't exist on some older versions
 remove_keeper_config "create_if_not_exists" "[01]"
 
+# latest_logs_cache_size_threshold setting doesn't exist on some older versions
+remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
+
+# commit_logs_cache_size_threshold setting doesn't exist on some older versions
+remove_keeper_config "commit_logs_cache_size_threshold" "[[:digit:]]\+"
+
 # But we still need default disk because some tables loaded only into it
-sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
-  | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
-  > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
-mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
@@ -122,6 +141,9 @@ rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 rm /etc/clickhouse-server/config.d/storage_conf_02963.xml
+rm /etc/clickhouse-server/config.d/backoff_failed_mutation.xml
+rm /etc/clickhouse-server/config.d/handlers.yaml
+rm /etc/clickhouse-server/config.d/block_number.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 rm /etc/clickhouse-server/users.d/s3_cache_new.xml
 rm /etc/clickhouse-server/users.d/replicated_ddl_entry.xml
@@ -213,10 +235,7 @@ then
 fi
 
 # Just in case previous version left some garbage in zk
-sudo cat /etc/clickhouse-server/config.d/lost_forever_check.xml \
-  | sed "s|>1<|>0<|g" \
-  > /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp
-sudo mv /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp /etc/clickhouse-server/config.d/lost_forever_check.xml
+sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml \
 rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
 start 500
@@ -320,7 +339,7 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 (test like '%Changed settings%') DESC,
 (test like '%New settings%') DESC,
 rowNumberInAllBlocks()
-LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # But OOMs in stress test are allowed

@@ -623,6 +623,15 @@ void DataPartStorageOnDiskBase::remove(
             }
         }
 
+        if (!disk->exists(from))
+        {
+            LOG_ERROR(log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(disk, from));
+            /// We will never touch this part again, so unlocking it from zero-copy
+            if (!can_remove_description)
+                can_remove_description.emplace(can_remove_callback());
+            return;
+        }
+
         try
         {
             disk->moveDirectory(from, to);
@@ -672,7 +681,9 @@ void DataPartStorageOnDiskBase::remove(
             if (file_name.starts_with(proj_dir_name))
                 files_not_to_remove_for_projection.emplace(fs::path(file_name).filename());
 
-        LOG_DEBUG(log, "Will not remove files [{}] for projection {}", fmt::join(files_not_to_remove_for_projection, ", "), projection.name);
+        if (!files_not_to_remove_for_projection.empty())
+            LOG_DEBUG(
+                log, "Will not remove files [{}] for projection {}", fmt::join(files_not_to_remove_for_projection, ", "), projection.name);
 
         CanRemoveDescription proj_description
         {
@@ -751,8 +762,12 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
-            request.emplace_back(fs::path(dir) / file);
+        {
+            if (isGinFile(file) && (!disk->isFile(fs::path(dir) / file)))
+                continue;
 
+            request.emplace_back(fs::path(dir) / file);
+        }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / "txn_version.txt", true);

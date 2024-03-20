@@ -30,6 +30,7 @@ public:
         AzureClientPtr blob_container_client_,
         const String & blob_path_,
         size_t max_single_part_upload_size_,
+        size_t max_unexpected_write_error_retries_,
         size_t buf_size_,
         const WriteSettings & write_settings_);
 
@@ -48,6 +49,7 @@ private:
     LoggerPtr log;
 
     const size_t max_single_part_upload_size;
+    const size_t max_unexpected_write_error_retries;
     const std::string blob_path;
     const WriteSettings write_settings;
 

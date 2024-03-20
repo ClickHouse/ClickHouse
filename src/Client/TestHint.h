@@ -53,7 +53,7 @@ class TestHint
 {
 public:
     using ErrorVector = std::vector<int>;
-    TestHint(const String & query_);
+    explicit TestHint(const String & query_);
 
     const auto & serverErrors() const { return server_errors; }
     const auto & clientErrors() const { return client_errors; }
@@ -77,12 +77,12 @@ private:
     {
         if (actual_server_error && std::find(server_errors.begin(), server_errors.end(), actual_server_error) == server_errors.end())
             return false;
-        if (!actual_server_error && server_errors.size())
+        if (!actual_server_error && !server_errors.empty())
             return false;
 
         if (actual_client_error && std::find(client_errors.begin(), client_errors.end(), actual_client_error) == client_errors.end())
             return false;
-        if (!actual_client_error && client_errors.size())
+        if (!actual_client_error && !client_errors.empty())
             return false;
 
         return true;
@@ -90,7 +90,7 @@ private:
 
     bool lostExpectedError(int actual_server_error, int actual_client_error) const
     {
-        return (server_errors.size() && !actual_server_error) || (client_errors.size() && !actual_client_error);
+        return (!server_errors.empty() && !actual_server_error) || (!client_errors.empty() && !actual_client_error);
     }
 };
 

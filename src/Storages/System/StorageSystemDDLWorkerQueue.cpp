@@ -78,7 +78,8 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
     ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     ASTPtr query = parseQuery(parser_query, begin, end, description,
                               settings.max_query_size,
-                              settings.max_parser_depth);
+                              settings.max_parser_depth,
+                              settings.max_parser_backtracks);
 
     String cluster_name;
     if (const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(query.get()))
@@ -204,7 +205,7 @@ static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
 }
 
 
-void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto& ddl_worker = context->getDDLWorker();
     fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();

@@ -6,15 +6,66 @@ sidebar_label: Configuration Files
 
 # Configuration Files
 
-The ClickHouse server can be configured with configuration files in XML or YAML syntax. In most installation types, the ClickHouse server runs with `/etc/clickhouse-server/config.xml` as default configuration file but it is also possible to specify the location of the configuration file manually at server startup using command line option `--config-file=` or `-C`. Additional configuration files may be placed into directory `config.d/` relative to the main configuration file, for example into directory `/etc/clickhouse-server/config.d/`. Files in this directory and the main configuration are merged in a preprocessing step before the configuration is applied in ClickHouse server. Configuration files are merged in alphabetical order. To simplify updates and improve modularization, it is best practice to keep the default `config.xml` file unmodified and place additional customization into `config.d/`.
+The ClickHouse server can be configured with configuration files in XML or YAML syntax. In most installation types, the ClickHouse server runs with `/etc/clickhouse-server/config.xml` as default configuration file, but it is also possible to specify the location of the configuration file manually at server startup using command line option `--config-file=` or `-C`. Additional configuration files may be placed into directory `config.d/` relative to the main configuration file, for example into directory `/etc/clickhouse-server/config.d/`. Files in this directory and the main configuration are merged in a preprocessing step before the configuration is applied in ClickHouse server. Configuration files are merged in alphabetical order. To simplify updates and improve modularization, it is best practice to keep the default `config.xml` file unmodified and place additional customization into `config.d/`.
 
 It is possible to mix XML and YAML configuration files, for example you could have a main configuration file `config.xml` and additional configuration files `config.d/network.xml`, `config.d/timezone.yaml` and `config.d/keeper.yaml`. Mixing XML and YAML within a single configuration file is not supported. XML configuration files should use `<clickhouse>...</clickhouse>` as top-level tag. In YAML configuration files, `clickhouse:` is optional, the parser inserts it implicitly if absent.
 
-## Overriding Configuration {#override}
+## Merging Configuration {#merging}
 
-The merge of configuration files behaves as one intuitively expects: The contents of both files are combined recursively, children with the same name are replaced by the element of the more specific configuration file. The merge can be customized using attributes `replace` and `remove`.
-- Attribute `replace` means that the element is replaced by the specified one.
-- Attribute `remove` means that the element is deleted.
+Two configuration files (usually the main configuration file and another configuration files from `config.d/`) are merged as follows:
+
+- If a node (i.e. a path leading to an element) appears in both files and does not have attributes `replace` or `remove`, it is included in the merged configuration file and children from both nodes are included and merged recursively.
+- If one of both nodes contains attribute `replace`, it is included in the merged configuration file but only children from the node with attribute `replace` are included.
+- If one of both nodes contains attribute `remove`, the node is not included in the merged configuration file (if it exists already, it is deleted).
+
+Example:
+
+
+```xml
+<!-- config.xml -->
+<clickhouse>
+    <config_a>
+        <setting_1>1</setting_1>
+    </config_a>
+    <config_b>
+        <setting_2>2</setting_2>
+    </config_b>
+    <config_c>
+        <setting_3>3</setting_3>
+    </config_c>
+</clickhouse>
+```
+
+and
+
+```xml
+<!-- config.d/other_config.xml -->
+<clickhouse>
+    <config_a>
+        <setting_4>4</setting_4>
+    </config_a>
+    <config_b replace="replace">
+        <setting_5>5</setting_5>
+    </config_b>
+    <config_c remove="remove">
+        <setting_6>6</setting_6>
+    </config_c>
+</clickhouse>
+```
+
+generates merged configuration file:
+
+```xml
+<clickhouse>
+    <config_a>
+        <setting_1>1</setting_1>
+        <setting_4>4</setting_4>
+    </config_a>
+    <config_b>
+        <setting_5>5</setting_5>
+    </config_b>
+</clickhouse>
+```
 
 To specify that a value of an element should be replaced by the value of an environment variable, you can use attribute `from_env`.
 
@@ -36,7 +87,7 @@ which is equal to
 <clickhouse>
     <profiles>
         <default>
-            <max_query_size/>150000</max_query_size>
+            <max_query_size>150000</max_query_size>
         </default>
     </profiles>
 </clickhouse>
@@ -44,9 +95,11 @@ which is equal to
 
 ## Substituting Configuration {#substitution}
 
-The config can also define “substitutions”. If an element has the `incl` attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [include_from](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify the `optional="true"` attribute (for example, settings for [macros](../operations/server-configuration-parameters/settings.md#macros)).
+The config can define substitutions. There are two types of substitutions:
 
-If you want to replace an entire element with a substitution use `include` as the element name.
+- If an element has the `incl` attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [include_from](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify the `optional="true"` attribute (for example, settings for [macros](../operations/server-configuration-parameters/settings.md#macros)).
+
+- If you want to replace an entire element with a substitution, use `include` as the element name. Substitutions can also be performed from ZooKeeper by specifying attribute `from_zk = "/path/to/node"`. In this case, the element value is replaced with the contents of the Zookeeper node at `/path/to/node`. This also works with you store an entire XML subtree as a Zookeeper node, it will be fully inserted into the source element.
 
 XML substitution example:
 
@@ -63,7 +116,7 @@ XML substitution example:
 </clickhouse>
 ```
 
-Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node and it will be fully inserted into the source element.
+If you want to merge the substituting content with the existing configuration instead of appending you can use attribute `merge="true"`, for example: `<include from_zk="/some_path" merge="true">`. In this case, the existing configuration will be merged with the content from the substitution and the existing configuration settings will be replaced with values from substitution.
 
 ## Encrypting and Hiding Configuration {#encryption}
 
@@ -125,7 +178,7 @@ Users configuration can be split into separate files similar to `config.xml` and
 Directory name is defined as `users_config` setting without `.xml` postfix concatenated with `.d`.
 Directory `users.d` is used by default, as `users_config` defaults to `users.xml`.
 
-Note that configuration files are first merged taking into account [Override](#override) settings and includes are processed after that.
+Note that configuration files are first [merged](#merging) taking into account settings, and includes are processed after that.
 
 ## XML example {#example}
 
@@ -163,7 +216,7 @@ key: value
 
 Corresponding XML:
 ``` xml
-<key>value</value>
+<key>value</key>
 ```
 
 A nested XML node is represented by a YAML map:

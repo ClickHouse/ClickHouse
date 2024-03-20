@@ -37,11 +37,8 @@ RUN apt-get update \
     libkrb5-dev \
     krb5-user \
     g++ \
-    && rm -rf \
-        /var/lib/apt/lists/* \
-        /var/cache/debconf \
-        /tmp/* \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -62,47 +59,49 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
     && dockerd --version; docker --version
 
 
+# kazoo 2.10.0 is broken
+# https://s3.amazonaws.com/clickhouse-test-reports/59337/524625a1d2f4cc608a3f1059e3df2c30f353a649/integration_tests__asan__analyzer__[5_6].html
 RUN python3 -m pip install --no-cache-dir \
-    PyMySQL \
-    aerospike==11.1.0 \
-    asyncio \
+    PyMySQL==1.1.0 \
+    asyncio==3.4.3 \
     avro==1.10.2 \
-    azure-storage-blob \
-    boto3 \
-    cassandra-driver \
-    confluent-kafka==1.9.2 \
+    azure-storage-blob==12.19.0 \
+    boto3==1.34.24 \
+    cassandra-driver==3.29.0 \
+    confluent-kafka==2.3.0 \
     delta-spark==2.3.0 \
-    dict2xml \
-    dicttoxml \
+    dict2xml==1.7.4 \
+    dicttoxml==1.7.16 \
     docker==6.1.3 \
     docker-compose==1.29.2 \
-    grpcio \
-    grpcio-tools \
-    kafka-python \
-    kazoo \
-    lz4 \
-    minio \
-    nats-py \
-    protobuf \
+    grpcio==1.60.0 \
+    grpcio-tools==1.60.0 \
+    kafka-python==2.0.2 \
+    lz4==4.3.3 \
+    minio==7.2.3 \
+    nats-py==2.6.0 \
+    protobuf==4.25.2 \
+    kazoo==2.9.0 \
     psycopg2-binary==2.9.6 \
-    pyhdfs \
+    pyhdfs==0.3.1 \
     pymongo==3.11.0 \
     pyspark==3.3.2 \
-    pytest \
+    pytest==7.4.4 \
     pytest-order==1.0.0 \
-    pytest-random \
-    pytest-repeat \
-    pytest-timeout \
-    pytest-xdist \
-    pytz \
+    pytest-random==0.2 \
+    pytest-repeat==0.9.3 \
+    pytest-timeout==2.2.0 \
+    pytest-xdist==3.5.0 \
+    pytest-reportlog==0.4.0 \
+    pytz==2023.3.post1 \
     pyyaml==5.3.1 \
-    redis \
-    requests-kerberos \
+    redis==5.0.1 \
+    requests-kerberos==0.14.0 \
     tzlocal==2.1 \
-    retry \
-    bs4 \
-    lxml \
-    urllib3
+    retry==0.9.2 \
+    bs4==0.0.2 \
+    lxml==5.1.0 \
+    urllib3==2.0.7
 # bs4, lxml are for cloud tests, do not delete
 
 # Hudi supports only spark 3.3.*, not 3.4
@@ -127,7 +126,6 @@ RUN set -x \
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
-COPY compose/ /compose/
 COPY misc/ /misc/
 
 
