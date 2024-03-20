@@ -1,6 +1,10 @@
 import pytest
 from helpers.cluster import ClickHouseCluster, is_arm
 
+if is_arm():
+    pytestmark = pytest.mark.skip
+
+
 cluster = ClickHouseCluster(__file__)
 instance1 = cluster.add_instance(
     "instance1",
@@ -62,12 +66,10 @@ def make_auth(instance):
     )
 
 
-@pytest.mark.skipif(is_arm(), reason="skip for ARM")
 def test_kerberos_auth_with_keytab(kerberos_cluster):
     assert make_auth(instance1) == "kuser\n"
 
 
-@pytest.mark.skipif(is_arm(), reason="skip for ARM")
 def test_kerberos_auth_without_keytab(kerberos_cluster):
     assert (
         "DB::Exception: : Authentication failed: password is incorrect, or there is no user with such name."
@@ -75,7 +77,6 @@ def test_kerberos_auth_without_keytab(kerberos_cluster):
     )
 
 
-@pytest.mark.skipif(is_arm(), reason="skip for ARM")
 def test_bad_path_to_keytab(kerberos_cluster):
     assert (
         "DB::Exception: : Authentication failed: password is incorrect, or there is no user with such name."

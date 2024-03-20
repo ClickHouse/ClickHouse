@@ -13,6 +13,7 @@ disk_types = {
 if is_arm():
     pytestmark = pytest.mark.skip
 
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
