@@ -10,7 +10,7 @@ node_oldest = cluster.add_instance(
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
-    allow_analyzer=False,
+    use_old_analyzer=True,
 )
 old_nodes = [node_oldest]
 new_node = cluster.add_instance("node_new")

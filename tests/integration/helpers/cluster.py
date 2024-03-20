@@ -1606,7 +1606,7 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
-        allow_analyzer=True,
+        use_old_analyzer=False,
         hostname=None,
         env_variables=None,
         instance_env_variables=False,
@@ -1705,7 +1705,7 @@ class ClickHouseCluster:
             with_coredns=with_coredns,
             with_cassandra=with_cassandra,
             with_ldap=with_ldap,
-            allow_analyzer=allow_analyzer,
+            use_old_analyzer=use_old_analyzer,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
@@ -3267,7 +3267,7 @@ class ClickHouseInstance:
         with_coredns,
         with_cassandra,
         with_ldap,
-        allow_analyzer,
+        use_old_analyzer,
         server_bin_path,
         odbc_bridge_bin_path,
         library_bridge_bin_path,
@@ -3361,7 +3361,7 @@ class ClickHouseInstance:
         self.with_hive = with_hive
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
-        self.allow_analyzer = allow_analyzer
+        self.use_old_analyzer = use_old_analyzer
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
@@ -4409,7 +4409,7 @@ class ClickHouseInstance:
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
         if (
             os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
-            or self.allow_analyzer
+            or self.use_old_analyzer
         ):
             write_embedded_config("0_common_enable_analyzer.xml", users_d_dir)
 
