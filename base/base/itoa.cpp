@@ -250,9 +250,24 @@ inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
 
 namespace
 {
-ALWAYS_INLINE inline void outTwoDigits(char * p, uint8_t value)
+// Using a lookup table to convert binary numbers from 0 to 99
+// into ascii characters as described by Andrei Alexandrescu in
+// https://www.facebook.com/notes/facebook-engineering/three-optimization-tips-for-c/10151361643253920/
+const char digits[201] = "00010203040506070809"
+                         "10111213141516171819"
+                         "20212223242526272829"
+                         "30313233343536373839"
+                         "40414243444546474849"
+                         "50515253545556575859"
+                         "60616263646566676869"
+                         "70717273747576777879"
+                         "80818283848586878889"
+                         "90919293949596979899";
+ALWAYS_INLINE inline char * outTwoDigits(char * p, uint8_t value)
 {
-    *reinterpret_cast<jeaiii::pair *>(p) = jeaiii::digits.fd[value];
+    memcpy(p, &digits[value * 2], 2);
+    p += 2;
+    return p;
 }
 
 const uint64_t max_multiple_of_hundred_that_fits_in_64_bits = 1'00'00'00'00'00'00'00'00'00ull;
