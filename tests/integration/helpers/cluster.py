@@ -488,6 +488,7 @@ class ClickHouseCluster:
         self.with_mysql8 = False
         self.with_mysql_cluster = False
         self.with_postgres = False
+        self.with_postgres11 = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
         self.with_kafka = False
@@ -638,6 +639,9 @@ class ClickHouseCluster:
         self.postgres3_logs_dir = os.path.join(self.postgres_dir, "postgres3")
         self.postgres4_logs_dir = os.path.join(self.postgres_dir, "postgres4")
         self.postgres_id = self.get_instance_docker_id(self.postgres_host)
+
+        # available when with_postgres == True
+        self.postgres11_host = "postgres11"
 
         # available when with_postgresql_java_client = True
         self.postgresql_java_client_host = "java"
@@ -1139,6 +1143,56 @@ class ClickHouseCluster:
         ]
         return self.base_postgres_cmd
 
+    def setup_postgres11_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_postgres_11.yml")]
+        )
+        env_variables["POSTGRES_PORT"] = str(self.postgres_port)
+        env_variables["POSTGRES_DIR"] = self.postgres_logs_dir
+        env_variables["POSTGRES_LOGS_FS"] = "bind"
+
+        self.with_postgres11 = True
+        self.base_postgres_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgres_11.yml"),
+        ]
+        return self.base_postgres_cmd
+
+    def setup_postgres_and_postgres11_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_postgres.yml"),
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_postgres_11.yml"),
+            ]
+        )
+        env_variables["POSTGRES_PORT"] = str(self.postgres_port)
+        env_variables["POSTGRES_DIR"] = self.postgres_logs_dir
+        env_variables["POSTGRES_LOGS_FS"] = "bind"
+
+        self.with_postgres = True
+        self.with_postgres11 = True
+        self.base_postgres_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgres.yml"),
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgres_11.yml"),
+        ]
+        return self.base_postgres_cmd
+
     def setup_postgres_cluster_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1589,6 +1643,7 @@ class ClickHouseCluster:
         clickhouse_path_dir=None,
         with_odbc_drivers=False,
         with_postgres=False,
+        with_postgres11=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
@@ -1712,6 +1767,7 @@ class ClickHouseCluster:
             clickhouse_path_dir=clickhouse_path_dir,
             with_odbc_drivers=with_odbc_drivers,
             with_postgres=with_postgres,
+            with_postgres11=with_postgres11,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
             clickhouse_start_command=clickhouse_start_command,
@@ -1791,9 +1847,28 @@ class ClickHouseCluster:
                 )
             )
 
-        if with_postgres and not self.with_postgres:
+        if (
+            with_postgres
+            and not self.with_postgres
+            and with_postgres11
+            and not self.with_postgres11
+        ):
+            cmds.append(
+                self.setup_postgres_and_postgres11_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        elif with_postgres and not self.with_postgres:
             cmds.append(
                 self.setup_postgres_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        elif with_postgres11 and not self.with_postgres11:
+            cmds.append(
+                self.setup_postgres11_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         if with_postgres_cluster and not self.with_postgres_cluster:
@@ -1822,6 +1897,13 @@ class ClickHouseCluster:
             if not self.with_postgres:
                 cmds.append(
                     self.setup_postgres_cmd(
+                        instance, env_variables, docker_compose_yml_dir
+                    )
+                )
+
+            if not self.with_postgres11:
+                cmds.append(
+                    self.setup_postgres11_cmd(
                         instance, env_variables, docker_compose_yml_dir
                     )
                 )
@@ -2243,6 +2325,28 @@ class ClickHouseCluster:
                 return
             except Exception as ex:
                 logging.debug("Can't connect to Postgres " + str(ex))
+                time.sleep(0.5)
+
+        raise Exception("Cannot wait Postgres container")
+
+    def wait_postgres11_to_start(self, timeout=260):
+        self.postgres_ip = self.get_instance_ip(self.postgres11_host)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                self.postgres_conn = psycopg2.connect(
+                    host=self.postgres_ip,
+                    port=self.postgres_port,
+                    database=pg_db,
+                    user=pg_user,
+                    password=pg_pass,
+                )
+                self.postgres_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                self.postgres_conn.autocommit = True
+                logging.debug("Postgres 11 Started")
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to Postgres 11" + str(ex))
                 time.sleep(0.5)
 
         raise Exception("Cannot wait Postgres container")
@@ -2789,8 +2893,8 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_mysql_cluster_to_start()
 
-            if self.with_postgres and self.base_postgres_cmd:
-                logging.debug("Setup Postgres")
+            if self.with_postgres and self.with_postgres11 and self.base_postgres_cmd:
+                logging.debug("Setup Postgres 11 and Postgres 16")
                 if os.path.exists(self.postgres_dir):
                     shutil.rmtree(self.postgres_dir)
                 os.makedirs(self.postgres_logs_dir)
@@ -2799,6 +2903,29 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
                 self.up_called = True
                 self.wait_postgres_to_start()
+                self.wait_postgres11_to_start()
+
+            elif self.with_postgres and self.base_postgres_cmd:
+                logging.debug("Setup Postgres 16")
+                if os.path.exists(self.postgres_dir):
+                    shutil.rmtree(self.postgres_dir)
+                os.makedirs(self.postgres_logs_dir)
+                os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                subprocess_check_call(self.base_postgres_cmd + common_opts)
+                self.up_called = True
+                self.wait_postgres_to_start()
+
+            elif self.with_postgres11 and self.base_postgres_cmd:
+                logging.debug("Setup Postgres 11")
+                if os.path.exists(self.postgres_dir):
+                    shutil.rmtree(self.postgres_dir)
+                os.makedirs(self.postgres_logs_dir)
+                os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                subprocess_check_call(self.base_postgres_cmd + common_opts)
+                self.up_called = True
+                self.wait_postgres11_to_start()
 
             if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
                 logging.debug("Setup Postgres")
@@ -3274,6 +3401,7 @@ class ClickHouseInstance:
         clickhouse_path_dir,
         with_odbc_drivers,
         with_postgres,
+        with_postgres11,
         with_postgres_cluster,
         with_postgresql_java_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
@@ -3341,6 +3469,7 @@ class ClickHouseInstance:
         self.with_mysql8 = with_mysql8
         self.with_mysql_cluster = with_mysql_cluster
         self.with_postgres = with_postgres
+        self.with_postgres11 = with_postgres11
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
         self.with_kafka = with_kafka
