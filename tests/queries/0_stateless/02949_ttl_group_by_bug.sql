@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS ttl_group_by_bug;
 
 CREATE TABLE ttl_group_by_bug
 (key UInt32, ts DateTime, value UInt32, min_value UInt32 default value, max_value UInt32 default value)
-ENGINE = MergeTree()
+ENGINE = MergeTree() PARTITION BY toYYYYMM(ts)
 ORDER BY (key, toStartOfInterval(ts, toIntervalMinute(3)), ts)
 TTL ts + INTERVAL 5 MINUTE GROUP BY key, toStartOfInterval(ts, toIntervalMinute(3))
 SET value = sum(value), min_value = min(min_value), max_value = max(max_value),  ts=min(toStartOfInterval(ts, toIntervalMinute(3)));

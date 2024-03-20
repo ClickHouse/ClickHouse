@@ -40,7 +40,6 @@ using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 /// construct a Field of Array or a Tuple type. An alternative approach would be
 /// to construct both of these types from FieldVector, and have the caller
 /// specify the desired Field type explicitly.
-/// NOLINTBEGIN(modernize-type-traits)
 #define DEFINE_FIELD_VECTOR(X) \
 struct X : public FieldVector \
 { \
@@ -49,7 +48,6 @@ struct X : public FieldVector \
 
 DEFINE_FIELD_VECTOR(Array);
 DEFINE_FIELD_VECTOR(Tuple);
-/// NOLINTEND(modernize-type-traits)
 
 /// An array with the following structure: [(key1, value1), (key2, value2), ...]
 DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
@@ -218,8 +216,9 @@ using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
 template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<is_signed_v<char>, Int64, UInt64>; };
 template <> struct NearestFieldTypeImpl<signed char> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<unsigned char> { using Type = UInt64; };
+#ifdef __cpp_char8_t
 template <> struct NearestFieldTypeImpl<char8_t> { using Type = UInt64; };
-template <> struct NearestFieldTypeImpl<Int8> { using Type = Int64; };
+#endif
 
 template <> struct NearestFieldTypeImpl<UInt16> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<UInt32> { using Type = UInt64; };
@@ -499,7 +498,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:    return get<Null>() < rhs.get<Null>();
+            case Types::Null:    return false;
             case Types::Bool:    [[fallthrough]];
             case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
@@ -543,7 +542,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:    return get<Null>() <= rhs.get<Null>();
+            case Types::Null:    return true;
             case Types::Bool: [[fallthrough]];
             case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
@@ -592,7 +591,7 @@ public:
 
         switch (which)
         {
-            case Types::Null: return get<Null>() == rhs.get<Null>();
+            case Types::Null: return true;
             case Types::Bool: [[fallthrough]];
             case Types::UInt64: return get<UInt64>() == rhs.get<UInt64>();
             case Types::Int64:   return get<Int64>() == rhs.get<Int64>();

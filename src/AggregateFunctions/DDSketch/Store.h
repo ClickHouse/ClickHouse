@@ -38,7 +38,7 @@ public:
         offset = other->offset;
     }
 
-    int length() const
+    int length()
     {
         return static_cast<int>(bins.size());
     }

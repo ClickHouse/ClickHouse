@@ -174,14 +174,12 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         ast_storage->settings = nullptr;
     }
 
-    const Settings & settings = getContext()->getSettingsRef();
-    auto create_table_query = DB::getCreateQueryFromStorage(
-        storage,
-        table_storage_define,
-        true,
-        static_cast<unsigned>(settings.max_parser_depth),
-        static_cast<unsigned>(settings.max_parser_backtracks),
-        throw_on_error);
+    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
+    auto create_table_query = DB::getCreateQueryFromStorage(storage,
+                                                            table_storage_define,
+                                                            true,
+                                                            max_parser_depth,
+                                                            throw_on_error);
     return create_table_query;
 }
 

@@ -159,7 +159,7 @@ private:
     size_t requested_connections_count = 0;
 
     const size_t max_parallel_replicas = 0;
-    const bool skip_unavailable_shards = false;
+    const bool skip_unavailable_shards = 0;
 };
 
 }

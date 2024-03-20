@@ -9,7 +9,7 @@ namespace DB
 class StorageMongoDBSocketFactory : public Poco::MongoDB::Connection::SocketFactory
 {
 public:
-    Poco::Net::StreamSocket createSocket(const std::string & host, int port, Poco::Timespan connectTimeout, bool secure) override;
+    virtual Poco::Net::StreamSocket createSocket(const std::string & host, int port, Poco::Timespan connectTimeout, bool secure) override;
 
 private:
     static Poco::Net::StreamSocket createPlainSocket(const std::string & host, int port, Poco::Timespan connectTimeout);

@@ -195,10 +195,6 @@ public:
         ReconfigCallback callback) final;
 
     void multi(
-        std::span<const RequestPtr> requests,
-        MultiCallback callback) override;
-
-    void multi(
         const Requests & requests,
         MultiCallback callback) override;
 
@@ -291,7 +287,7 @@ private:
     class ThreadReference
     {
     public:
-        ThreadReference & operator = (ThreadFromGlobalPool && thread_)
+        const ThreadReference & operator = (ThreadFromGlobalPool && thread_)
         {
             std::lock_guard<std::mutex> l(lock);
             thread = std::move(thread_);

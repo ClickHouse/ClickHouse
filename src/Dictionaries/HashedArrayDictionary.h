@@ -29,7 +29,6 @@ struct HashedArrayDictionaryStorageConfiguration
     size_t shards = 1;
     size_t shard_load_queue_backlog = 10000;
     bool use_async_executor = false;
-    std::chrono::seconds load_timeout{0};
 };
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
@@ -58,14 +57,14 @@ public:
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load();
+        size_t queries = query_count.load(std::memory_order_relaxed);
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
     }
 
     double getHitRate() const override { return 1.0; }
@@ -93,18 +92,18 @@ public:
     DictionaryKeyType getKeyType() const override { return dictionary_key_type; }
 
     ColumnPtr getColumn(
-        const std::string & attribute_name,
-        const DataTypePtr & attribute_type,
+        const std::string& attribute_name,
+        const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultOrFilter default_or_filter) const override;
+        const ColumnPtr & default_values_column) const override;
 
     Columns getColumns(
         const Strings & attribute_names,
-        const DataTypes & attribute_types,
+        const DataTypes & result_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        DefaultsOrFilter defaults_or_filter) const override;
+        const Columns & default_values_columns) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -217,7 +216,7 @@ private:
         const Attribute & attribute,
         const DictionaryAttribute & dictionary_attribute,
         size_t keys_size,
-        DefaultOrFilter default_or_filter,
+        ColumnPtr default_values_column,
         KeysProvider && keys_object) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
@@ -227,12 +226,6 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    size_t getItemsShortCircuitImpl(
-        const Attribute & attribute,
-        DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
-        ValueSetter && set_value,
-        IColumn::Filter & default_mask) const;
 
     using KeyIndexToElementIndex = std::conditional_t<sharded, PaddedPODArray<std::pair<ssize_t, UInt8>>, PaddedPODArray<ssize_t>>;
 
@@ -242,13 +235,6 @@ private:
         const KeyIndexToElementIndex & key_index_to_element_index,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
-
-    template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    size_t getItemsShortCircuitImpl(
-        const Attribute & attribute,
-        const KeyIndexToElementIndex & key_index_to_element_index,
-        ValueSetter && set_value,
-        IColumn::Filter & default_mask [[maybe_unused]]) const;
 
     template <typename GetContainerFunc>
     void getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func);

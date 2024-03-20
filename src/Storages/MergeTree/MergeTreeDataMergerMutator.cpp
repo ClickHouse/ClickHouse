@@ -85,7 +85,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t max_coun
     if (scheduled_tasks_count > max_count)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Invalid argument passed to getMaxSourcePartsSize: scheduled_tasks_count = {} > max_count = {}",
+            "Logical error: invalid argument passed to getMaxSourcePartsSize: scheduled_tasks_count = {} > max_count = {}",
             scheduled_tasks_count, max_count);
     }
 
@@ -405,7 +405,7 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
         }
 
         IMergeSelector::Part part_info;
-        part_info.size = part->getExistingBytesOnDisk();
+        part_info.size = part->getBytesOnDisk();
         part_info.age = res.current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
@@ -511,7 +511,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
         /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
         if (parts_to_merge.size() == 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge selector returned only one part to merge");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: merge selector returned only one part to merge");
 
         if (parts_to_merge.empty())
         {
@@ -611,7 +611,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
             return SelectPartsDecision::CANNOT_SELECT;
         }
 
-        sum_bytes += (*it)->getExistingBytesOnDisk();
+        sum_bytes += (*it)->getBytesOnDisk();
 
         prev_it = it;
         ++it;
@@ -793,7 +793,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
 }
 
 
-size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts, const bool & account_for_deleted)
+size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts)
 {
     size_t res = 0;
     time_t current_time = std::time(nullptr);
@@ -804,10 +804,7 @@ size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::
         if (part_max_ttl && part_max_ttl <= current_time)
             continue;
 
-        if (account_for_deleted)
-            res += part->getExistingBytesOnDisk();
-        else
-            res += part->getBytesOnDisk();
+        res += part->getBytesOnDisk();
     }
 
     return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);

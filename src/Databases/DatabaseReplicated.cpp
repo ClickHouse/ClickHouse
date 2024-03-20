@@ -29,7 +29,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/SharedThreadPools.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -812,8 +811,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     ParserCreateQuery parser;
     auto size = context->getSettingsRef().max_query_size;
     auto depth = context->getSettingsRef().max_parser_depth;
-    auto backtracks = context->getSettingsRef().max_parser_backtracks;
-    ASTPtr query = parseQuery(parser, metadata, size, depth, backtracks);
+    ASTPtr query = parseQuery(parser, metadata, size, depth);
     const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
     if (!create.storage || !create.storage->engine)
         return UUIDHelpers::Nil;
@@ -1093,57 +1091,31 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     }
 
     tables_dependencies.checkNoCyclicDependencies();
+    auto tables_to_create = tables_dependencies.getTablesSortedByDependency();
 
-    auto allow_concurrent_table_creation = getContext()->getServerSettings().max_database_replicated_create_table_thread_pool_size > 1;
-    auto tables_to_create_by_level = tables_dependencies.getTablesSplitByDependencyLevel();
-
-    auto create_tables_runner = threadPoolCallbackRunner<void>(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
-    std::vector<std::future<void>> create_table_futures;
-
-    for (const auto & tables_to_create : tables_to_create_by_level)
+    for (const auto & table_id : tables_to_create)
     {
-        for (const auto & table_id : tables_to_create)
+        auto table_name = table_id.getTableName();
+        auto metadata_it = table_name_to_metadata.find(table_name);
+        if (metadata_it == table_name_to_metadata.end())
         {
-            auto task = [&]()
-            {
-                auto table_name = table_id.getTableName();
-                auto metadata_it = table_name_to_metadata.find(table_name);
-                if (metadata_it == table_name_to_metadata.end())
-                {
-                    /// getTablesSortedByDependency() may return some not existing tables or tables from other databases
-                    LOG_WARNING(log, "Got table name {} when resolving table dependencies, "
-                                "but database {} does not have metadata for that table. Ignoring it", table_id.getNameForLogs(), getDatabaseName());
-                    return;
-                }
-
-                const auto & create_query_string = metadata_it->second;
-                if (isTableExist(table_name, getContext()))
-                {
-                    assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
-                    return;
-                }
-
-                auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
-                LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
-                auto create_query_context = make_query_context();
-                InterpreterCreateQuery(query_ast, create_query_context).execute();
-            };
-
-            if (allow_concurrent_table_creation)
-                create_table_futures.push_back(create_tables_runner(task, Priority{0}));
-            else
-                task();
+            /// getTablesSortedByDependency() may return some not existing tables or tables from other databases
+            LOG_WARNING(log, "Got table name {} when resolving table dependencies, "
+                        "but database {} does not have metadata for that table. Ignoring it", table_id.getNameForLogs(), getDatabaseName());
+            continue;
         }
 
-        /// First wait for all tasks to finish.
-        for (auto & future : create_table_futures)
-            future.wait();
+        const auto & create_query_string = metadata_it->second;
+        if (isTableExist(table_name, getContext()))
+        {
+            assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
+            continue;
+        }
 
-        /// Now rethrow the first exception if any.
-        for (auto & future : create_table_futures)
-            future.get();
-
-        create_table_futures.clear();
+        auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
+        LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
+        auto create_query_context = make_query_context();
+        InterpreterCreateQuery(query_ast, create_query_context).execute();
     }
     LOG_INFO(log, "All tables are created successfully");
 
@@ -1235,7 +1207,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 {
     ParserCreateQuery parser;
     String description = "in ZooKeeper " + zookeeper_path + "/metadata/" + node_name;
-    auto ast = parseQuery(parser, query, description, 0, getContext()->getSettingsRef().max_parser_depth, getContext()->getSettingsRef().max_parser_backtracks);
+    auto ast = parseQuery(parser, query, description, 0, getContext()->getSettingsRef().max_parser_depth);
 
     auto & create = ast->as<ASTCreateQuery &>();
     if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
@@ -1560,7 +1532,7 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     for (const auto & [table_name, metadata] : snapshot)
     {
         ParserCreateQuery parser;
-        auto create_table_query = parseQuery(parser, metadata, 0, getContext()->getSettingsRef().max_parser_depth, getContext()->getSettingsRef().max_parser_backtracks);
+        auto create_table_query = parseQuery(parser, metadata, 0, getContext()->getSettingsRef().max_parser_depth);
 
         auto & create = create_table_query->as<ASTCreateQuery &>();
         create.attach = false;

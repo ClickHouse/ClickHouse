@@ -10,8 +10,6 @@ sidebar_label: Nullable
 
 Returns whether the argument is [NULL](../../sql-reference/syntax.md#null).
 
-See also operator [`IS NULL`](../operators/index.md#is_null).
-
 ``` sql
 isNull(x)
 ```
@@ -55,8 +53,6 @@ Result:
 ## isNotNull
 
 Returns whether the argument is not [NULL](../../sql-reference/syntax.md#null-literal).
-
-See also operator [`IS NOT NULL`](../operators/index.md#is_not_null).
 
 ``` sql
 isNotNull(x)

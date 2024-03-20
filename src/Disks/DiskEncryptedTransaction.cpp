@@ -6,7 +6,6 @@
 #include <Common/Exception.h>
 #include <boost/algorithm/hex.hpp>
 #include <IO/ReadBufferFromEncryptedFile.h>
-#include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <Common/quoteString.h>

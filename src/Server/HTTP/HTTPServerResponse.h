@@ -90,7 +90,7 @@ public:
         resizeIfNeeded(buf_size);
     }
 
-    bool isChunked() const
+    bool isChunked()
     {
         return chunked;
     }
@@ -103,7 +103,7 @@ public:
         resizeIfNeeded(length);
     }
 
-    size_t isFixedLength() const
+    size_t isFixedLength()
     {
         return chunked ? 0 : fixed_length;
     }
@@ -116,7 +116,7 @@ public:
         resizeIfNeeded(buf_size);
     }
 
-    bool isPlain() const
+    bool isPlain()
     {
         return !(isChunked() || isFixedLength());
     }
@@ -230,16 +230,6 @@ public:
 
     /// Returns true if the response (header) has been sent.
     bool sent() const { return !!stream; }
-
-    /// Sets the status code, which must be one of
-    /// HTTP_MOVED_PERMANENTLY (301), HTTP_FOUND (302),
-    /// or HTTP_SEE_OTHER (303),
-    /// and sets the "Location" header field
-    /// to the given URI, which according to
-    /// the HTTP specification, must be absolute.
-    ///
-    /// Must not be called after send() has been called.
-    void redirect(const std::string & uri, HTTPStatus status = HTTP_FOUND);
 
     Poco::Net::StreamSocket & getSocket() { return session.socket(); }
 

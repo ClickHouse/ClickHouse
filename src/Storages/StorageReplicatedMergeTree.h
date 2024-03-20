@@ -99,7 +99,7 @@ public:
     StorageReplicatedMergeTree(
         const String & zookeeper_path_,
         const String & replica_name_,
-        LoadingStrictnessLevel mode,
+        bool attach,
         const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata_,
@@ -107,6 +107,7 @@ public:
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
+        bool has_force_restore_data_flag,
         RenamingRestrictions renaming_restrictions_,
         bool need_check_structure);
 
@@ -141,6 +142,9 @@ public:
     void shutdown(bool is_drop) override;
 
     ~StorageReplicatedMergeTree() override;
+
+    static String getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config);
+    static String getDefaultReplicaName(const Poco::Util::AbstractConfiguration & config);
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
 
@@ -231,6 +235,14 @@ public:
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;
 
+    /// Returns the default path to the table in ZooKeeper.
+    /// It's used if not set in engine's arguments while creating a replicated table.
+    static String getDefaultReplicaPath(const ContextPtr & context_);
+
+    /// Returns the default replica name in ZooKeeper.
+    /// It's used if not set in engine's arguments while creating a replicated table.
+    static String getDefaultReplicaName(const ContextPtr & context_);
+
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
     void adjustCreateQueryForBackup(ASTPtr & create_query) const override;
 
@@ -241,12 +253,11 @@ public:
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     /** Remove a specific replica from zookeeper.
-     * returns true if there are no replicas left
      */
-    static bool dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
+    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
                             LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
 
-    bool dropReplica(const String & drop_zookeeper_path, const String & drop_replica, LoggerPtr logger);
+    void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, LoggerPtr logger);
 
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
@@ -352,8 +363,6 @@ public:
     bool canUseZeroCopyReplication() const;
 
     bool isTableReadOnly () { return is_readonly; }
-
-    std::optional<bool> hasMetadataInZooKeeper () { return has_metadata_in_zookeeper; }
 
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
@@ -903,8 +912,6 @@ private:
         const String & from,
         bool fetch_part,
         ContextPtr query_context) override;
-    void forgetPartition(const ASTPtr & partition, ContextPtr query_context) override;
-
 
     /// NOTE: there are no guarantees for concurrent merges. Dropping part can
     /// be concurrently merged into some covering part and dropPart will do
@@ -934,7 +941,7 @@ private:
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
 
-    MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
 
@@ -983,10 +990,6 @@ private:
     bool waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait) override;
 
     void startupImpl(bool from_attach_thread);
-
-    std::vector<String> getZookeeperZeroCopyLockPaths() const;
-    static void dropZookeeperZeroCopyLockPaths(zkutil::ZooKeeperPtr zookeeper,
-                                               std::vector<String> zero_copy_locks_paths, LoggerPtr logger);
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {

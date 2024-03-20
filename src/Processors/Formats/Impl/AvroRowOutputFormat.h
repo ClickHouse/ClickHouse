@@ -48,16 +48,16 @@ class AvroRowOutputFormat final : public IRowOutputFormat
 {
 public:
     AvroRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
-    ~AvroRowOutputFormat() override;
+    virtual ~AvroRowOutputFormat() override;
 
     String getName() const override { return "AvroRowOutputFormat"; }
 
 private:
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
-    void writePrefix() override;
-    void finalizeImpl() override;
-    void resetFormatterImpl() override;
+    virtual void writePrefix() override;
+    virtual void finalizeImpl() override;
+    virtual void resetFormatterImpl() override;
 
     void createFileWriter();
 

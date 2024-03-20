@@ -38,7 +38,6 @@ public:
     Impl impls[NUM_BUCKETS];
 
     TwoLevelStringHashTable() = default;
-    TwoLevelStringHashTable(size_t ) {} /// NOLINT
 
     template <typename Source>
     explicit TwoLevelStringHashTable(const Source & src)

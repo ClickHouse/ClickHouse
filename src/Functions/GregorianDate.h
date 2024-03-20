@@ -13,7 +13,7 @@ class WriteBuffer;
 class GregorianDate
 {
 public:
-    GregorianDate() = default;
+    GregorianDate() {}
 
     void init(ReadBuffer & in);
     bool tryInit(ReadBuffer & in);
@@ -84,7 +84,7 @@ private:
 class OrdinalDate
 {
 public:
-    OrdinalDate() = default;
+    OrdinalDate() {}
 
     void init(int32_t year, uint16_t day_of_year);
     bool tryInit(int32_t year, uint16_t day_of_year);

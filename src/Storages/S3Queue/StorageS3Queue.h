@@ -11,8 +11,12 @@
 #include <Storages/StorageS3.h>
 #include <Interpreters/Context.h>
 #include <IO/S3/BlobStorageLogWriter.h>
-#include <Storages/StorageFactory.h>
 
+
+namespace Aws::S3
+{
+class Client;
+}
 
 namespace DB
 {
@@ -31,9 +35,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        std::optional<FormatSettings> format_settings_,
-        ASTStorage * engine_args,
-        LoadingStrictnessLevel mode);
+        std::optional<FormatSettings> format_settings_);
 
     String getName() const override { return "S3Queue"; }
 
@@ -46,6 +48,8 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
+
+    NamesAndTypesList getVirtuals() const override { return virtual_columns; }
 
     const auto & getFormatName() const { return configuration.format; }
 
@@ -65,6 +69,7 @@ private:
     Configuration configuration;
 
     const std::optional<FormatSettings> format_settings;
+    NamesAndTypesList virtual_columns;
 
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
@@ -86,7 +91,6 @@ private:
     std::shared_ptr<StorageS3QueueSource> createSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageS3Queue::FileIterator> file_iterator,
-        size_t processing_id,
         size_t max_block_size,
         ContextPtr local_context);
 

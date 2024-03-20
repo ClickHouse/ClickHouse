@@ -427,29 +427,10 @@ void ColumnVariant::insertData(const char *, size_t)
 
 void ColumnVariant::insert(const Field & x)
 {
-    if (!tryInsert(x))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert field {} into column {}", toString(x), getName());
-}
-
-bool ColumnVariant::tryInsert(const DB::Field & x)
-{
     if (x.isNull())
-    {
         insertDefault();
-        return true;
-    }
-
-    for (size_t i = 0; i != variants.size(); ++i)
-    {
-        if (variants[i]->tryInsert(x))
-        {
-            getLocalDiscriminators().push_back(i);
-            getOffsets().push_back(variants[i]->size() - 1);
-            return true;
-        }
-    }
-
-    return false;
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert field {} to column {}", toString(x), getName());
 }
 
 void ColumnVariant::insertFrom(const IColumn & src_, size_t n)
@@ -643,7 +624,7 @@ void ColumnVariant::popBack(size_t n)
     offsets->popBack(n);
 }
 
-StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr = globalDiscriminatorAt(n);
@@ -780,7 +761,7 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     const size_t num_variants = variants.size();
     std::vector<Filter> nested_filters(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
-        nested_filters[i].reserve_exact(variants[i]->size());
+        nested_filters[i].reserve(variants[i]->size());
 
     /// As we will iterate through local_discriminators anyway, we can count
     /// result size for each variant.
@@ -824,13 +805,7 @@ ColumnPtr ColumnVariant::permute(const Permutation & perm, size_t limit) const
 {
     /// If we have only NULLs, permutation will take no effect, just return resized column.
     if (hasOnlyNulls())
-    {
-        if (limit)
-            return cloneResized(limit);
-
-        /// If no limit, we can just return current immutable column.
-        return this->getPtr();
-    }
+        return cloneResized(limit);
 
     /// Optimization when we have only one non empty variant and no NULLs.
     /// In this case local_discriminators column is filled with identical values and offsets column
@@ -902,7 +877,7 @@ ColumnPtr ColumnVariant::indexImpl(const PaddedPODArray<Type> & indexes, size_t 
     if (limit == 0)
     {
         for (size_t i = 0; i != num_variants; ++i)
-            nested_perms[i].reserve_exact(variants[i]->size());
+            nested_perms[i].reserve(variants[i]->size());
     }
 
     for (size_t i = 0; i != new_local_discriminators_data.size(); ++i)
@@ -965,7 +940,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
         size_t old_size = offsets->size();
         if (new_size > old_size)
         {
-            new_offsets_data.reserve_exact(new_size);
+            new_offsets_data.reserve(new_size);
             for (size_t i = old_size; i < new_size; ++i)
                 new_offsets_data.push_back(i);
         }
@@ -981,7 +956,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     /// local_discriminators column.
     std::vector<Offsets> nested_replicated_offsets(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
-        nested_replicated_offsets[i].reserve_exact(variants[i]->size());
+        nested_replicated_offsets[i].reserve(variants[i]->size());
 
     const auto & local_discriminators_data = getLocalDiscriminators();
     for (size_t i = 0; i != local_discriminators_data.size(); ++i)
@@ -1055,7 +1030,7 @@ MutableColumns ColumnVariant::scatter(ColumnIndex num_columns, const Selector & 
     /// Create selector for each variant according to local_discriminators.
     std::vector<Selector> nested_selectors(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
-        nested_selectors[i].reserve_exact(variants[i]->size());
+        nested_selectors[i].reserve(variants[i]->size());
 
     const auto & local_discriminators_data = getLocalDiscriminators();
     for (size_t i = 0; i != local_discriminators_data.size(); ++i)
@@ -1085,6 +1060,11 @@ MutableColumns ColumnVariant::scatter(ColumnIndex num_columns, const Selector & 
     return result;
 }
 
+void ColumnVariant::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
+}
+
 bool ColumnVariant::hasEqualValues() const
 {
     if (local_discriminators->empty() || hasOnlyNulls())
@@ -1093,70 +1073,16 @@ bool ColumnVariant::hasEqualValues() const
     return local_discriminators->hasEqualValues() && variants[localDiscriminatorAt(0)]->hasEqualValues();
 }
 
-int ColumnVariant::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+void ColumnVariant::getPermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability, size_t, int, IColumn::Permutation & res) const
 {
-    const auto & rhs_variant = assert_cast<const ColumnVariant &>(rhs);
-    Discriminator left_discr = globalDiscriminatorAt(n);
-    Discriminator right_discr = rhs_variant.globalDiscriminatorAt(m);
-
-    /// Check if we have NULLs and return result based on nan_direction_hint.
-    if (left_discr == NULL_DISCRIMINATOR && right_discr == NULL_DISCRIMINATOR)
-        return 0;
-    else if (left_discr == NULL_DISCRIMINATOR)
-        return nan_direction_hint;
-    else if (right_discr == NULL_DISCRIMINATOR)
-        return -nan_direction_hint;
-
-    /// If rows have different discriminators, row with least discriminator is considered the least.
-    if (left_discr != right_discr)
-        return left_discr < right_discr ? -1 : 1;
-
-    /// If rows have the same discriminators, compare actual values from corresponding variants.
-    return getVariantByGlobalDiscriminator(left_discr).compareAt(offsetAt(n), rhs_variant.offsetAt(m), rhs_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
+    size_t s = local_discriminators->size();
+    res.resize(s);
+    for (size_t i = 0; i < s; ++i)
+        res[i] = i;
 }
 
-struct ColumnVariant::ComparatorBase
+void ColumnVariant::updatePermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability, size_t, int, IColumn::Permutation &, DB::EqualRanges &) const
 {
-    const ColumnVariant & parent;
-    int nan_direction_hint;
-
-    ComparatorBase(const ColumnVariant & parent_, int nan_direction_hint_)
-        : parent(parent_), nan_direction_hint(nan_direction_hint_)
-    {
-    }
-
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
-    {
-        int res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
-
-        return res;
-    }
-};
-
-void ColumnVariant::getPermutation(PermutationSortDirection direction, PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res) const
-{
-    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorAscendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorDescendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-}
-
-void ColumnVariant::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, IColumn::Permutation & res, DB::EqualRanges & equal_ranges) const
-{
-    auto comparator_equal = ComparatorEqual(*this, nan_direction_hint);
-
-    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
 void ColumnVariant::reserve(size_t n)
@@ -1290,14 +1216,7 @@ UInt64 ColumnVariant::getNumberOfDefaultRows() const
 
 void ColumnVariant::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
-    size_t to = limit && from + limit < size() ? from + limit : size();
-    indices.reserve(indices.size() + to - from);
-
-    for (size_t i = from; i < to; ++i)
-    {
-        if (!isDefaultAt(i))
-            indices.push_back(i);
-    }
+    return getIndicesOfNonDefaultRowsImpl<ColumnVariant>(indices, from, limit);
 }
 
 void ColumnVariant::finalize()
@@ -1369,7 +1288,7 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
         else
         {
             ColumnVector<UInt8>::Container filter;
-            filter.reserve_exact(null_map.size());
+            filter.reserve(null_map.size());
             for (size_t i = 0; i != local_discriminators_data.size(); ++i)
             {
                if (null_map[i])

@@ -26,6 +26,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
+#include "Interpreters/Context_fwd.h"
 #include "config.h"
 
 #if USE_MYSQL
@@ -1093,7 +1094,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             create->setTable(table_id.table_name);
             try
             {
-                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), LoadingStrictnessLevel::FORCE_RESTORE).second;
+                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), /* force_restore */ true).second;
                 table->is_dropped = true;
             }
             catch (...)
@@ -1142,7 +1143,7 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
     TableMarkedAsDropped dropped_table;
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
-        auto latest_drop_time = std::numeric_limits<time_t>::min();
+        time_t latest_drop_time = std::numeric_limits<time_t>::min();
         auto it_dropped_table = tables_marked_dropped.end();
         for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
         {
@@ -1167,7 +1168,7 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
         }
         if (it_dropped_table == tables_marked_dropped.end())
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
+                "The drop task of table {} is in progress, has been dropped or the database engine doesn't support it",
                 table_id.getNameForLogs());
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);

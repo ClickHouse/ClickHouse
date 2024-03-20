@@ -20,7 +20,7 @@ struct StreamSettings
     bool fetch_by_name;
     size_t default_num_tries_on_connection_loss;
 
-    explicit StreamSettings(const Settings & settings, bool auto_close_ = false, bool fetch_by_name_ = false, size_t max_retry_ = 5);
+    StreamSettings(const Settings & settings, bool auto_close_ = false, bool fetch_by_name_ = false, size_t max_retry_ = 5);
 
 };
 

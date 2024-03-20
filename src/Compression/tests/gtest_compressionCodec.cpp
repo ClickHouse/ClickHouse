@@ -442,7 +442,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 {
     const std::string codec_statement = "(" + codec_string + ")";
     Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
-    IParser::Pos token_iterator(tokens, 0, 0);
+    IParser::Pos token_iterator(tokens, 0);
 
     Expected expected;
     ASTPtr codec_ast;

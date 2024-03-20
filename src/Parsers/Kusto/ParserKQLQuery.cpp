@@ -33,20 +33,20 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-bool ParserKQLBase::parseByString(String expr, ASTPtr & node, uint32_t max_depth, uint32_t max_backtracks)
+bool ParserKQLBase::parseByString(const String expr, ASTPtr & node, const uint32_t max_depth)
 {
     Expected expected;
 
     Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
-    IParser::Pos pos(tokens, max_depth, max_backtracks);
+    IParser::Pos pos(tokens, max_depth);
     return parse(pos, node, expected);
 }
 
-bool ParserKQLBase::parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks)
+bool ParserKQLBase::parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, int32_t max_depth)
 {
     Expected expected;
     Tokens token_subquery(query.c_str(), query.c_str() + query.size());
-    IParser::Pos pos_subquery(token_subquery, max_depth, max_backtracks);
+    IParser::Pos pos_subquery(token_subquery, max_depth);
     if (!parser->parse(pos_subquery, select_node, expected))
         return false;
     return true;
@@ -121,10 +121,10 @@ bool ParserKQLBase::setSubQuerySource(ASTPtr & select_query, ASTPtr & source, bo
     return true;
 }
 
-String ParserKQLBase::getExprFromToken(const String & text, uint32_t max_depth, uint32_t max_backtracks)
+String ParserKQLBase::getExprFromToken(const String & text, const uint32_t max_depth)
 {
     Tokens tokens(text.c_str(), text.c_str() + text.size());
-    IParser::Pos pos(tokens, max_depth, max_backtracks);
+    IParser::Pos pos(tokens, max_depth);
 
     return getExprFromToken(pos);
 }
@@ -399,7 +399,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     if (!isValidKQLPos(pos))
                         return false;
 
-                    ParserKeyword s_by(Keyword::BY);
+                    ParserKeyword s_by("by");
                     if (s_by.ignore(pos, expected))
                     {
                         kql_operator = "order by";
@@ -523,7 +523,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             String sub_query = std::format("({})", String(operation_pos.front().second->begin, last_pos->end));
             Tokens token_subquery(sub_query.c_str(), sub_query.c_str() + sub_query.size());
-            IParser::Pos pos_subquery(token_subquery, pos.max_depth, pos.max_backtracks);
+            IParser::Pos pos_subquery(token_subquery, pos.max_depth);
 
             if (!ParserKQLSubquery().parse(pos_subquery, tables, expected))
                 return false;
@@ -544,7 +544,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (oprator)
             {
                 Tokens token_clause(op_calsue.c_str(), op_calsue.c_str() + op_calsue.size());
-                IParser::Pos pos_clause(token_clause, pos.max_depth, pos.max_backtracks);
+                IParser::Pos pos_clause(token_clause, pos.max_depth);
                 if (!oprator->parse(pos_clause, node, expected))
                     return false;
             }
@@ -577,7 +577,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         auto expr = String("*");
         Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
-        IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
+        IParser::Pos new_pos(tokens, pos.max_depth);
         if (!std::make_unique<ParserKQLProject>()->parse(new_pos, node, expected))
             return false;
     }
@@ -592,19 +592,20 @@ bool ParserKQLSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!ParserKQLTableFunction().parse(pos, select_node, expected))
         return false;
 
-    ASTPtr node_subquery = std::make_shared<ASTSubquery>(std::move(select_node));
+    ASTPtr node_subquery = std::make_shared<ASTSubquery>();
+    node_subquery->children.push_back(select_node);
 
     ASTPtr node_table_expr = std::make_shared<ASTTableExpression>();
     node_table_expr->as<ASTTableExpression>()->subquery = node_subquery;
 
     node_table_expr->children.emplace_back(node_subquery);
 
-    ASTPtr node_table_in_select_query_element = std::make_shared<ASTTablesInSelectQueryElement>();
-    node_table_in_select_query_element->as<ASTTablesInSelectQueryElement>()->table_expression = node_table_expr;
+    ASTPtr node_table_in_select_query_emlement = std::make_shared<ASTTablesInSelectQueryElement>();
+    node_table_in_select_query_emlement->as<ASTTablesInSelectQueryElement>()->table_expression = node_table_expr;
 
     ASTPtr res = std::make_shared<ASTTablesInSelectQuery>();
 
-    res->children.emplace_back(node_table_in_select_query_element);
+    res->children.emplace_back(node_table_in_select_query_emlement);
 
     node = res;
     return true;
@@ -633,7 +634,8 @@ bool ParserSimpleCHSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             ASTSelectQuery::Expression::TABLES, parent_select_node->as<ASTSelectQuery>()->tables());
     }
 
-    ASTPtr node_subquery = std::make_shared<ASTSubquery>(std::move(sub_select_node));
+    ASTPtr node_subquery = std::make_shared<ASTSubquery>();
+    node_subquery->children.push_back(sub_select_node);
 
     ASTPtr node_table_expr = std::make_shared<ASTTableExpression>();
     node_table_expr->as<ASTTableExpression>()->subquery = node_subquery;

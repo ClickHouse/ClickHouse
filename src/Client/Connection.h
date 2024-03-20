@@ -19,6 +19,7 @@
 
 #include <Storages/MergeTree/RequestResponse.h>
 
+#include <atomic>
 #include <optional>
 
 #include "config.h"

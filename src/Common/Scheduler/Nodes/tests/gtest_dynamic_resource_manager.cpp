@@ -38,6 +38,7 @@ TEST(SchedulerDynamicResourceManager, Smoke)
     {
         ResourceGuard gA(cA->get("res1"), ResourceGuard::PostponeLocking);
         gA.lock();
+        gA.setFailure();
         gA.unlock();
 
         ResourceGuard gB(cB->get("res1"));
@@ -55,7 +56,7 @@ TEST(SchedulerDynamicResourceManager, Fairness)
         EXPECT_NEAR(cur_unfairness, 0, 1);
     };
 
-    constexpr size_t threads_per_queue = 2;
+    constexpr size_t threads_per_queue = 3;
     int requests_per_thread = 100;
     ResourceTest t(2 * threads_per_queue + 1);
 

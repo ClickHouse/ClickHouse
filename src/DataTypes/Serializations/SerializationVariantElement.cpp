@@ -205,8 +205,8 @@ void SerializationVariantElement::removeVariantFromPath(DB::ISerialization::Subs
 SerializationVariantElement::VariantSubcolumnCreator::VariantSubcolumnCreator(
     const ColumnPtr & local_discriminators_,
     const String & variant_element_name_,
-    ColumnVariant::Discriminator global_variant_discriminator_,
-    ColumnVariant::Discriminator local_variant_discriminator_)
+    const ColumnVariant::Discriminator global_variant_discriminator_,
+    const ColumnVariant::Discriminator local_variant_discriminator_)
     : local_discriminators(local_discriminators_)
     , variant_element_name(variant_element_name_)
     , global_variant_discriminator(global_variant_discriminator_)

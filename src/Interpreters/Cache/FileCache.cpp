@@ -27,7 +27,6 @@ namespace ProfileEvents
     extern const Event FilesystemCacheReserveMicroseconds;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
-    extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
 }
 
 namespace DB
@@ -183,15 +182,10 @@ void FileCache::initialize()
     is_initialized = true;
 }
 
-CachePriorityGuard::Lock FileCache::lockCache() const
+CacheGuard::Lock FileCache::lockCache() const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
     return cache_guard.lock();
-}
-
-CachePriorityGuard::Lock FileCache::tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout) const
-{
-    return acquire_timeout.has_value() ? cache_guard.tryLockFor(acquire_timeout.value()) : cache_guard.tryLock();
 }
 
 FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const
@@ -706,7 +700,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     size_t size,
     FileSegment::State state,
     const CreateFileSegmentSettings & create_settings,
-    const CachePriorityGuard::Lock * lock)
+    const CacheGuard::Lock * lock)
 {
     /// Create a file_segment_metadata and put it in `files` map by [key][offset].
 
@@ -777,29 +771,12 @@ bool FileCache::tryReserve(
     FileSegment & file_segment,
     const size_t size,
     FileCacheReserveStat & reserve_stat,
-    const UserInfo & user,
-    size_t lock_wait_timeout_milliseconds)
+    const UserInfo & user)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
 
     assertInitialized();
-
-    /// A logical race on cache_is_being_resized is still possible,
-    /// in this case we will try to lock cache with timeout, this is ok, timeout is small
-    /// and as resizing of cache can take a long time then this small chance of a race is
-    /// ok compared to the number of cases this check will help.
-    if (cache_is_being_resized.load(std::memory_order_relaxed))
-    {
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
-        return false;
-    }
-
-    auto cache_lock = tryLockCache(std::chrono::milliseconds(lock_wait_timeout_milliseconds));
-    if (!cache_lock)
-    {
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
-        return false;
-    }
+    auto cache_lock = lockCache();
 
     LOG_TEST(
         log, "Trying to reserve space ({} bytes) for {}:{}, current usage {}/{}",
@@ -1275,14 +1252,12 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
 
 size_t FileCache::getUsedCacheSize() const
 {
-    /// We use this method for metrics, so it is ok to get approximate result.
-    return main_priority->getSizeApprox();
+    return main_priority->getSize(lockCache());
 }
 
 size_t FileCache::getFileSegmentsNum() const
 {
-    /// We use this method for metrics, so it is ok to get approximate result.
-    return main_priority->getElementsCountApprox();
+    return main_priority->getElementsCount(lockCache());
 }
 
 void FileCache::assertCacheCorrectness()
@@ -1340,12 +1315,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
     if (new_settings.max_size != actual_settings.max_size
         || new_settings.max_elements != actual_settings.max_elements)
     {
-        cache_is_being_resized.store(true, std::memory_order_relaxed);
-        SCOPE_EXIT({
-            cache_is_being_resized.store(false, std::memory_order_relaxed);
-        });
-
         auto cache_lock = lockCache();
+
         bool updated = false;
         try
         {

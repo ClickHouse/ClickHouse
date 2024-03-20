@@ -1,7 +1,6 @@
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Context.h>
 #include <IO/SwapHelper.h>
 #include <IO/ReadBufferFromFile.h>
 
@@ -19,22 +18,9 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
 }
 
-namespace
-{
-    size_t getCacheLockWaitTimeout()
-    {
-        auto query_context = CurrentThread::getQueryContext();
-        if (query_context)
-            return query_context->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
-        else
-            return Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
-    }
-}
-
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
     : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_segment_->getPath()))
     , file_segment(file_segment_)
-    , reserve_space_lock_wait_timeout_milliseconds(getCacheLockWaitTimeout())
 {
 }
 
@@ -45,7 +31,6 @@ WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment
         : throw Exception(ErrorCodes::LOGICAL_ERROR, "WriteBufferToFileSegment can be created only from single segment"))
     , file_segment(&segment_holder_->front())
     , segment_holder(std::move(segment_holder_))
-    , reserve_space_lock_wait_timeout_milliseconds(getCacheLockWaitTimeout())
 {
 }
 
@@ -64,7 +49,7 @@ void WriteBufferToFileSegment::nextImpl()
     FileCacheReserveStat reserve_stat;
     /// In case of an error, we don't need to finalize the file segment
     /// because it will be deleted soon and completed in the holder's destructor.
-    bool ok = file_segment->reserve(bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, &reserve_stat);
+    bool ok = file_segment->reserve(bytes_to_write, &reserve_stat);
 
     if (!ok)
     {

@@ -8,7 +8,7 @@ namespace DB
 StoragePtr StorageIceberg::create(
     const DB::StorageIceberg::Configuration & base_configuration,
     DB::ContextPtr context_,
-    LoadingStrictnessLevel mode,
+    bool attach,
     const DB::StorageID & table_id_,
     const DB::ColumnsDescription & columns_,
     const DB::ConstraintsDescription & constraints_,
@@ -27,7 +27,7 @@ StoragePtr StorageIceberg::create(
     }
     catch (...)
     {
-        if (mode <= LoadingStrictnessLevel::CREATE)
+        if (!attach)
             throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
@@ -61,7 +61,7 @@ StorageIceberg::StorageIceberg(
 ColumnsDescription StorageIceberg::getTableStructureFromData(
     Configuration & base_configuration,
     const std::optional<FormatSettings> &,
-    const ContextPtr & local_context)
+    ContextPtr local_context)
 {
     auto configuration{base_configuration};
     configuration.update(local_context);
@@ -69,7 +69,7 @@ ColumnsDescription StorageIceberg::getTableStructureFromData(
     return ColumnsDescription(metadata->getTableSchema());
 }
 
-void StorageIceberg::updateConfigurationImpl(const ContextPtr & local_context)
+void StorageIceberg::updateConfigurationImpl(ContextPtr local_context)
 {
     const bool updated = base_configuration.update(local_context);
     auto new_metadata = parseIcebergMetadata(base_configuration, local_context);

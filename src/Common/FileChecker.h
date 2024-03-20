@@ -19,7 +19,7 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class FileChecker
 {
 public:
-    explicit FileChecker(const String & file_info_path_);
+    FileChecker(const String & file_info_path_);
     FileChecker(DiskPtr disk_, const String & file_info_path_);
 
     void setPath(const String & file_info_path_);
@@ -50,7 +50,7 @@ public:
 
     struct DataValidationTasks
     {
-        explicit DataValidationTasks(const std::map<String, size_t> & map_)
+        DataValidationTasks(const std::map<String, size_t> & map_)
             : map(map_), it(map.begin())
         {}
 

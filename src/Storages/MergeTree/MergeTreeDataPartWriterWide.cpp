@@ -6,10 +6,12 @@
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
+    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
 
 namespace ErrorCodes
 {
@@ -89,11 +91,15 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
            indices_to_recalc_, stats_to_recalc_, marks_file_extension_,
            default_codec_, settings_, index_granularity_)
 {
-    auto storage_snapshot = std::make_shared<StorageSnapshot>(data_part->storage, metadata_snapshot);
-    for (const auto & column : columns_list)
+    const auto & columns = metadata_snapshot->getColumns();
+    for (const auto & it : columns_list)
     {
-        auto compression = storage_snapshot->getCodecDescOrDefault(column.name, default_codec);
-        addStreams(column, compression);
+        ASTPtr compression;
+        if (it.name == BlockNumberColumn::name)
+            compression = BlockNumberColumn::compression_codec->getFullCodecDesc();
+        else
+            compression = columns.getCodecDescOrDefault(it.name, default_codec);
+        addStreams(it, compression);
     }
 }
 
@@ -135,7 +141,7 @@ void MergeTreeDataPartWriterWide::addStreams(
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
         ParserCodec codec_parser;
-        auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
         const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());

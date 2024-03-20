@@ -47,7 +47,7 @@ public:
 REGISTER_FUNCTION(FQDN)
 {
     factory.registerFunction<FunctionFQDN>({}, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("fullHostName", "FQDN");
+    factory.registerFunction<FunctionFQDN>("fullHostName");
 }
 
 }

@@ -47,7 +47,7 @@ public:
         bool created = false;
 
         SimpleAggregateDescription(
-            AggregateFunctionPtr function_, size_t column_number_,
+            AggregateFunctionPtr function_, const size_t column_number_,
             DataTypePtr nested_type_, DataTypePtr real_type_);
 
         void createState();
