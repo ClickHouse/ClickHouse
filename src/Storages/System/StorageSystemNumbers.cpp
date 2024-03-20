@@ -11,7 +11,6 @@
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -26,6 +25,8 @@ StorageSystemNumbers::StorageSystemNumbers(
     : IStorage(table_id), multithreaded(multithreaded_), limit(limit_), offset(offset_), column_name(column_name_), step(step_)
 {
     StorageInMemoryMetadata storage_metadata;
+    /// This column doesn't have a comment, because otherwise it will be added to all the tables which were created via
+    /// CREATE TABLE test as numbers(5)
     storage_metadata.setColumns(ColumnsDescription({{column_name_, std::make_shared<DataTypeUInt64>()}}));
     setInMemoryMetadata(storage_metadata);
 }

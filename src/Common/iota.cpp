@@ -37,7 +37,7 @@ MULTITARGET_FUNCTION_AVX2_SSE42(
 )
 
 template <iota_supported_types T>
-void iota_with_step(T * begin, size_t count, T first_value, T step)
+void iotaWithStep(T * begin, size_t count, T first_value, T step)
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::AVX2))
@@ -56,10 +56,10 @@ template void iota(UInt64 * begin, size_t count, UInt64 first_value);
 template void iota(size_t * begin, size_t count, size_t first_value);
 #endif
 
-template void iota_with_step(UInt8 * begin, size_t count, UInt8 first_value, UInt8 step);
-template void iota_with_step(UInt32 * begin, size_t count, UInt32 first_value, UInt32 step);
-template void iota_with_step(UInt64 * begin, size_t count, UInt64 first_value, UInt64 step);
+template void iotaWithStep(UInt8 * begin, size_t count, UInt8 first_value, UInt8 step);
+template void iotaWithStep(UInt32 * begin, size_t count, UInt32 first_value, UInt32 step);
+template void iotaWithStep(UInt64 * begin, size_t count, UInt64 first_value, UInt64 step);
 #if defined(OS_DARWIN)
-template void iota_with_step(size_t * begin, size_t count, size_t first_value, size_t step);
+template void iotaWithStep(size_t * begin, size_t count, size_t first_value, size_t step);
 #endif
 }

@@ -12,10 +12,7 @@
 #include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
-
-#include <Common/logger_useful.h>
 #include "Core/Types.h"
-#include "base/Decimal_fwd.h"
 #include "base/types.h"
 
 namespace DB
@@ -30,12 +27,12 @@ namespace
 {
 
 template <iota_supported_types T>
-inline void iota_with_step_optimized(T * begin, size_t count, T first_value, T step)
+inline void iotaWithStepOptimized(T * begin, size_t count, T first_value, T step)
 {
     if (step == 1)
         iota(begin, count, first_value);
     else
-        iota_with_step(begin, count, first_value, step);
+        iotaWithStep(begin, count, first_value, step);
 }
 
 class NumbersSource : public ISource
@@ -76,7 +73,7 @@ protected:
 
         UInt64 * current_end = &vec[real_block_size];
 
-        iota_with_step_optimized(pos, static_cast<size_t>(current_end - pos), curr, step);
+        iotaWithStepOptimized(pos, static_cast<size_t>(current_end - pos), curr, step);
 
         next += chunk_step;
 
@@ -102,7 +99,7 @@ struct RangeWithStep
 
 using RangesWithStep = std::vector<RangeWithStep>;
 
-std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 step, UInt64 remainder)
+std::optional<RangeWithStep> steppedRangeFromRange(const Range & r, UInt64 step, UInt64 remainder)
 {
     if ((r.right.get<UInt64>() == 0) && (!r.right_included))
         return std::nullopt;
@@ -124,7 +121,7 @@ std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 st
     return std::optional{RangeWithStep{begin, step, static_cast<UInt128>(right_edge_included - begin) / step + 1}};
 }
 
-[[maybe_unused]] auto sizeOfRanges(const RangesWithStep & rs)
+auto sizeOfRanges(const RangesWithStep & rs)
 {
     UInt128 total_size{};
     for (const RangeWithStep & r : rs)
@@ -138,7 +135,7 @@ std::optional<RangeWithStep> stepped_range_from_range(const Range & r, UInt64 st
 /// Generate numbers according to ranges.
 /// Numbers generated is ordered in one stream.
 /// Notice that we will not generate additional numbers out of ranges.
-class [[maybe_unused]] NumbersRangedSource : public ISource
+class NumbersRangedSource : public ISource
 {
 public:
     /// Represent a position in Ranges list.
@@ -269,7 +266,7 @@ protected:
                     auto start_value_64 = static_cast<UInt64>(start_value);
                     auto end_value_64 = static_cast<UInt64>(end_value);
                     auto size = (end_value_64 - start_value_64) / this->step;
-                    iota_with_step_optimized(pos, static_cast<size_t>(size), start_value_64, step);
+                    iotaWithStepOptimized(pos, static_cast<size_t>(size), start_value_64, step);
                     pos += size;
                 }
             };
@@ -278,7 +275,7 @@ protected:
             {
                 UInt64 start_value = range.left + cursor.offset_in_range * step;
                 /// end_value will never overflow
-                iota_with_step_optimized(pos, static_cast<size_t>(need), start_value, step);
+                iotaWithStepOptimized(pos, static_cast<size_t>(need), start_value, step);
                 pos += need;
                 provided += need;
                 cursor.offset_in_range += need;
@@ -331,7 +328,7 @@ private:
 namespace
 {
 /// Whether we should push limit down to scan.
-[[maybe_unused]] bool shouldPushdownLimit(SelectQueryInfo & query_info, UInt64 limit_length)
+bool shouldPushdownLimit(SelectQueryInfo & query_info, UInt64 limit_length)
 {
     const auto & query = query_info.query->as<ASTSelectQuery &>();
     /// Just ignore some minor cases, such as:
@@ -344,7 +341,7 @@ namespace
 
 /// Shrink ranges to size.
 ///     For example: ranges: [1, 5], [8, 100]; size: 7, we will get [1, 5], [8, 9]
-[[maybe_unused]] void shrinkRanges(RangesWithStep & ranges, size_t size)
+void shrinkRanges(RangesWithStep & ranges, size_t size)
 {
     size_t last_range_idx = 0;
     for (size_t i = 0; i < ranges.size(); i++)
@@ -480,8 +477,8 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             auto intersected_range = table_range->intersectWith(r);
             if (intersected_range.has_value())
             {
-                auto range_with_step = stepped_range_from_range(
-                    intersected_range.value(), numbers_storage.step, numbers_storage.offset % numbers_storage.step);
+                auto range_with_step
+                    = steppedRangeFromRange(intersected_range.value(), numbers_storage.step, numbers_storage.offset % numbers_storage.step);
                 if (range_with_step.has_value())
                     intersected_ranges.push_back(*range_with_step);
             }
@@ -496,7 +493,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
                 auto intersected_range = overflowed_table_range->intersectWith(r);
                 if (intersected_range)
                 {
-                    auto range_with_step = stepped_range_from_range(
+                    auto range_with_step = steppedRangeFromRange(
                         intersected_range.value(),
                         numbers_storage.step,
                         static_cast<UInt64>(
@@ -518,7 +515,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         const auto & limit_length = limit_length_and_offset.first;
         const auto & limit_offset = limit_length_and_offset.second;
 
-        /// If intersected ranges is limited or we can pushdown limit.
         UInt128 total_size = sizeOfRanges(intersected_ranges);
         UInt128 query_limit = limit_length + limit_offset;
 
