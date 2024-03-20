@@ -122,8 +122,6 @@ ZooKeeperWithFaultInjectionPtr DiskObjectStorageVFS::zookeeper() const
 bool DiskObjectStorageVFS::tryDownloadMetadata(std::string_view from_remote_file, const String & to_folder)
 {
     auto buf = object_storage->readObject(getMetadataObject(from_remote_file));
-    auto tx = metadata_storage->createTransaction();
-    tx->createDirectoryRecursive(to_folder);
 
     try
     {
@@ -152,6 +150,9 @@ bool DiskObjectStorageVFS::tryDownloadMetadata(std::string_view from_remote_file
     }
 
     String str;
+    auto tx = std::static_pointer_cast<DiskObjectStorageTransaction>(createObjectStorageTransaction());
+    tx->createDirectories(to_folder);
+
     while (!buf->eof())
     {
         str.clear();
@@ -160,7 +161,7 @@ bool DiskObjectStorageVFS::tryDownloadMetadata(std::string_view from_remote_file
         LOG_TRACE(log, "Metadata: downloading {} to {}", str, full_path);
         str.clear();
         readNullTerminated(str, *buf);
-        tx->writeStringToFile(full_path, str);
+        tx->writeMetadataFile(full_path, str);
     }
     tx->commit();
     return true;

@@ -336,6 +336,12 @@ String revisionToString(UInt64 revision)
 
 }
 
+void DiskObjectStorageTransaction::writeMetadataFile(const String & path, const String & data)
+{
+    operations_to_execute.emplace_back(std::make_unique<PureMetadataObjectStorageOperation>(
+        object_storage, metadata_storage, [path, data](MetadataTransactionPtr tx) { tx->writeStringToFile(path, data); }));
+}
+
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile( /// NOLINT
     const String & path,
     size_t buf_size,

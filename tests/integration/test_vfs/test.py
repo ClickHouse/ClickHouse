@@ -8,7 +8,7 @@ from helpers.network import PartitionManager
 from .utils import get_remote_paths
 
 
-DISK_NAME = "reacquire"
+DISK_NAME = "vfs"
 GC_SLEEP_SEC = 5
 GC_LOCK_PATH = f"vfs/{DISK_NAME}/gc_lock"
 
@@ -101,6 +101,50 @@ def test_optimistic_lock(started_cluster):
     node2.start_clickhouse()
 
 
+def test_moving_to_vfs(started_cluster):
+    node1: ClickHouseInstance = started_cluster.instances["node1"]
+    node2: ClickHouseInstance = started_cluster.instances["node2"]
+    bucket = started_cluster.minio_bucket
+    minio = started_cluster.minio_client
+    table = "test_moving"
+
+    # Upload some files to the object storage
+    node1.query(
+        f"CREATE TABLE {table} (i UInt32, val UInt32) ENGINE=ReplicatedMergeTree("
+        f"'/test/{table}', 'replica_1') ORDER BY i PARTITION BY i%10 SETTINGS storage_policy='with_local'"
+    )
+    node2.query(
+        f"CREATE TABLE {table} (i UInt32, val UInt32) ENGINE=ReplicatedMergeTree("
+        f"'/test/{table}', 'replica_2') ORDER BY i PARTITION BY i%10 SETTINGS storage_policy='with_local'"
+    )
+    node1.query(f"INSERT INTO {table} VALUES (0, 0)")
+
+    # Move objects to S3 disk and write log item
+    node1.query(f"ALTER TABLE {table} MOVE PARTITION '0' TO DISK '{DISK_NAME}'")
+    # Just download metadata and write log items
+    node2.query(f"ALTER TABLE {table} MOVE PARTITION '0' TO DISK '{DISK_NAME}'")
+
+    node1.wait_for_log_line("Metadata: uploading")
+    node2.wait_for_log_line("Metadata: downloading")
+
+    table_objects = get_remote_paths(node1, table)
+    bucket_objects = {
+        obj.object_name for obj in minio.list_objects(bucket, "data/", recursive=True)
+    }
+    # All objects related to the table are present in bucket
+    assert all([obj in bucket_objects for obj in table_objects])
+
+    # Remove table related objects from object storage
+    node1.query(f"TRUNCATE TABLE {table} SYNC")
+    time.sleep(GC_SLEEP_SEC * 1.5)
+
+    bucket_objects = {
+        obj.object_name for obj in minio.list_objects(bucket, "data/", recursive=True)
+    }
+    # Check that all objects related to the table were deleted by GC
+    assert not any([obj in bucket_objects for obj in table_objects])
+
+
 # TODO myrrc check possible errors on merge and move
 def test_session_breaks(started_cluster):
     node: ClickHouseInstance = started_cluster.instances["node1"]
@@ -117,7 +161,7 @@ def test_session_breaks(started_cluster):
     time.sleep(2)  # Wait for CH to reconnect to ZK before next GC run
 
     assert (
-        int(node.count_in_log("VFSGC(reacquire): GC iteration finished")) > 1
+        int(node.count_in_log(f"VFSGC({DISK_NAME}): GC iteration finished")) > 1
     ), "GC must run at least twice"
     assert (
         int(node.count_in_log("Trying to establish a new connection with ZooKeeper"))
@@ -145,7 +189,7 @@ def test_ch_disks(started_cluster):
         user="root",
     )
     print(listing)
-    assert listing == "default\nreacquire\n"
+    assert listing == f"default\n{DISK_NAME}\n"
 
     listing = node.exec_in_container(
         [
@@ -154,7 +198,7 @@ def test_ch_disks(started_cluster):
             "--config-file=/etc/clickhouse-server/config.xml",
             "--loglevel=trace",
             "--save-logs",
-            "--disk=reacquire",
+            f"--disk={DISK_NAME}",
             "list",
             "/",
         ],

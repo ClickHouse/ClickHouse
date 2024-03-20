@@ -168,6 +168,12 @@ VFSTransaction::writeFile(const String & path, size_t buf_size, WriteMode mode, 
     return buffer;
 }
 
+void VFSTransaction::writeMetadataFile(const String & path, const String & data)
+{
+    DiskObjectStorageTransaction::writeMetadataFile(path, data);
+    addStoredObjectsOp(metadata_storage.getStorageObjectsFromString(path, data), {});
+}
+
 void VFSTransaction::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
     // TODO myrrc right now this function isn't used in data parts exchange protocol but can we be sure

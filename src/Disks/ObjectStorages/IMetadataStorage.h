@@ -225,6 +225,11 @@ public:
         throwNotImplemented();
     }
 
+    virtual StoredObjects getStorageObjectsFromString(const std::string & /* path */, const std::string & /* data */) const
+    {
+        throwNotImplemented();
+    }
+
     /// Return object information (absolute_path, bytes_size, ...) for metadata path.
     /// object_storage_path is absolute.
     virtual StoredObjects getStorageObjects(const std::string & path) const = 0;

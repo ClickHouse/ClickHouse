@@ -147,6 +147,22 @@ StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & pat
     return objects;
 }
 
+StoredObjects MetadataStorageFromDisk::getStorageObjectsFromString(const std::string & path, const std::string & data) const
+{
+    DiskObjectStorageMetadata metadata(compatible_key_prefix, path);
+    metadata.deserializeFromString(data);
+    const auto & keys_with_meta = metadata.getKeysWithMeta();
+
+    StoredObjects objects;
+    objects.reserve(keys_with_meta.size());
+    for (const auto & [object_key, object_meta] : keys_with_meta)
+    {
+        objects.emplace_back(object_key.serialize(), path, object_meta.size_bytes);
+    }
+
+    return objects;
+}
+
 uint32_t MetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
 {
     auto metadata = readMetadata(path);

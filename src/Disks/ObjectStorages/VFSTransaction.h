@@ -21,6 +21,7 @@ struct VFSTransaction : DiskObjectStorageTransaction, private VFSLogItem
 
     std::unique_ptr<WriteBufferFromFileBase>
     writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings, bool autocommit) override;
+    void writeMetadataFile(const String & path, const String & data) override;
 
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 

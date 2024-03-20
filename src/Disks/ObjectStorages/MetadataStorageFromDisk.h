@@ -67,6 +67,7 @@ public:
     DiskPtr getDisk() const { return disk; }
 
     StoredObjects getStorageObjects(const std::string & path) const override;
+    StoredObjects getStorageObjectsFromString(const std::string & path, const std::string & data) const override;
 
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
 
