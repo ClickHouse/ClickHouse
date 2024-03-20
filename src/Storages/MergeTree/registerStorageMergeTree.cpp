@@ -543,6 +543,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 metadata.columns.add(std::move(column));
             };
 
+            add_column(QueuePartitionIdColumn::name, QueuePartitionIdColumn::type);
             add_column(QueueBlockNumberColumn::name, QueueBlockNumberColumn::type, QueueBlockNumberColumn::codec);
             add_column(QueueBlockOffsetColumn::name, QueueBlockOffsetColumn::type, QueueBlockOffsetColumn::codec);
 
@@ -553,10 +554,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             chassert(!additional_sorting_key_settings.has_value());
 
             additional_sorting_key_settings = KeyDescription::AdditionalSettings{};
-            additional_sorting_key_settings->ext_columns_front = {QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
+            additional_sorting_key_settings->ext_columns_front = {QueuePartitionIdColumn::name, QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
 
             additional_primary_key_settings = KeyDescription::AdditionalSettings{};
-            additional_primary_key_settings->ext_columns_front = {QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
+            additional_primary_key_settings->ext_columns_front = {QueuePartitionIdColumn::name, QueueBlockNumberColumn::name, QueueBlockOffsetColumn::name};
 
             if (replicated)
             {

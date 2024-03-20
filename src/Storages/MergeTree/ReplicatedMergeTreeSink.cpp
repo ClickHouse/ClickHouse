@@ -343,7 +343,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
             lock_holder = storage.allocateBlockNumber(partition_id, zookeeper, /*zookeeper_block_id_path=*/String{});
 
             /// after block_number is allocated let's materialize queue sorting key
-            materializeQueueSortingColumns(current_block.block, lock_holder->getNumber());
+            materializeQueueSortingColumns(current_block.block, partition_id, lock_holder->getNumber());
         }
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.

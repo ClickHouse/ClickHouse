@@ -81,7 +81,8 @@ void MergeTreeSink::consume(Chunk chunk)
         if (storage.getSettings()->queue_mode)
         {
             block_number = storage.increment.get();
-            materializeQueueSortingColumns(current_block.block, block_number.value());
+            auto partition_id = MergeTreePartition(current_block.partition).getID(metadata_snapshot->getPartitionKey().sample_block);
+            materializeQueueSortingColumns(current_block.block, partition_id, block_number.value());
         }
 
         ProfileEvents::Counters part_counters;
