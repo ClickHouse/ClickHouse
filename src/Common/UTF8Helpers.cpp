@@ -222,7 +222,8 @@ bool isAllASCII(const UInt8 * data, size_t size)
 
 DECLARE_SSE42_SPECIFIC_CODE(
 /// Copy from https://github.com/lemire/fastvalidate-utf-8/blob/master/include/simdasciicheck.h
-bool isAllASCII(const UInt8 * data, size_t size) {
+bool isAllASCII(const UInt8 * data, size_t size)
+{
     size_t i = 0;
     __m128i masks = _mm_setzero_si128();
     if (size >= 16)
