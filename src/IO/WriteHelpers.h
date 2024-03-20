@@ -19,7 +19,6 @@
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
 #include <base/DecomposedFloat.h>
-#include <base/EnumReflection.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
