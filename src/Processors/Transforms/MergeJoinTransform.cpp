@@ -305,7 +305,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         left_to_right_key_remap[left_idx] = right_idx;
     }
 
-    auto smjPtr = typeid_cast<const FullSortingMergeJoin *>(table_join.get());
+    const auto *smjPtr = typeid_cast<const FullSortingMergeJoin *>(table_join.get());
     if (smjPtr)
     {
         null_direction_hint = smjPtr->getNullDirection();
