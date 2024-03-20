@@ -836,8 +836,6 @@ void StorageDistributed::read(
 {
     Block header;
 
-    LOG_DEBUG(&Poco::Logger::get("read"), "{}", query_info.additional_filter_ast != nullptr);
-
     SelectQueryInfo modified_query_info = query_info;
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)

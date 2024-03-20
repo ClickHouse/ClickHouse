@@ -1,26 +1,26 @@
 
 #include <Storages/buildQueryTreeForShard.h>
 
-#include <Analyzer/createUniqueTableAliases.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/createUniqueTableAliases.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/TableNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Planner/Utils.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
-#include <Planner/Utils.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include "Analyzer/QueryNode.h"
 
 namespace DB
 {

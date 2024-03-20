@@ -127,7 +127,6 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     ///
     /// Here we don't try to analyze setting again. In case if query_info->additional_filter_ast is not empty, some filter was applied.
     /// It's just easier to add this filter for a source table.
-    LOG_DEBUG(&Poco::Logger::get("updateSettings"), "{}", additional_filter_ast != nullptr);
     if (additional_filter_ast)
     {
         Tuple tuple;
