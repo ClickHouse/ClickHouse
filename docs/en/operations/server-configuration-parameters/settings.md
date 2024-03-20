@@ -74,7 +74,7 @@ The maximum number of threads that will be used for fetching data parts from ano
 
 Type: UInt64
 
-Default: 8
+Default: 16
 
 ## background_merges_mutations_concurrency_ratio
 
@@ -136,7 +136,7 @@ The maximum number of threads that will be used for constantly executing some li
 
 Type: UInt64
 
-Default: 128
+Default: 512
 
 ## backup_threads
 
@@ -199,6 +199,16 @@ Type: Bool
 
 Default: 0
 
+
+## dns_cache_max_entries
+
+Internal DNS cache max entries.
+
+Type: UInt64
+
+Default: 10000
+
+
 ## dns_cache_update_period
 
 Internal DNS cache update period in seconds.
@@ -214,7 +224,7 @@ Max consecutive resolving failures before dropping a host from ClickHouse DNS ca
 
 Type: UInt32
 
-Default: 1024
+Default: 10
 
 
 ## index_mark_cache_policy
@@ -458,6 +468,38 @@ Type: Double
 
 Default: 0.9
 
+## cgroups_memory_usage_observer_wait_time
+
+Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups. (see
+settings `cgroup_memory_watcher_hard_limit_ratio` and `cgroup_memory_watcher_soft_limit_ratio`).
+
+Type: UInt64
+
+Default: 15
+
+## cgroup_memory_watcher_hard_limit_ratio
+
+Specifies the "hard" threshold with regards to the memory consumption of the server process according to cgroups after which the server's
+maximum memory consumption is adjusted to the threshold value.
+
+See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watcher_soft_limit_ratio`
+
+Type: Double
+
+Default: 0.95
+
+## cgroup_memory_watcher_soft_limit_ratio
+
+Specifies the "soft" threshold with regards to the memory consumption of the server process according to cgroups after which arenas in
+jemalloc are purged.
+
+
+See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watcher_hard_limit_ratio`
+
+Type: Double
+
+Default: 0.95
+
 ## max_table_size_to_drop
 
 Restriction on deleting tables.
@@ -472,6 +514,39 @@ The value 0 means that you can delete all tables without any restrictions.
 ``` xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
+
+
+## max\_database\_num\_to\_warn {#max-database-num-to-warn}
+If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 1000
+
+**Example**
+
+``` xml
+<max_database_num_to_warn>50</max_database_num_to_warn>
+```
+
+## max\_table\_num\_to\_warn {#max-table-num-to-warn}
+If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 5000
+
+**Example**
+
+``` xml
+<max_table_num_to_warn>400</max_table_num_to_warn>
+```
+
+
+## max\_part\_num\_to\_warn {#max-part-num-to-warn}
+If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 100000
+
+**Example**
+
+``` xml
+<max_part_num_to_warn>400</max_part_num_to_warn>
+```
+
 
 ## max_temporary_data_on_disk_size
 
@@ -858,9 +933,9 @@ Hard limit is configured via system tools
 
 ## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
-Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignored.
+The delay before a table data is dropped in seconds. If the `DROP TABLE` query has a `SYNC` modifier, this setting is ignored.
 
-Default value: `480` (8 minute).
+Default value: `480` (8 minutes).
 
 ## database_catalog_unused_dir_hide_timeout_sec {#database_catalog_unused_dir_hide_timeout_sec}
 
@@ -961,9 +1036,11 @@ See also “[Executable User Defined Functions](../../sql-reference/functions/in
 
 Lazy loading of dictionaries.
 
-If `true`, then each dictionary is created on first use. If dictionary creation failed, the function that was using the dictionary throws an exception.
+If `true`, then each dictionary is loaded on the first use. If the loading is failed, the function that was using the dictionary throws an exception.
 
-If `false`, all dictionaries are created when the server starts, if the dictionary or dictionaries are created too long or are created with errors, then the server boots without of these dictionaries and continues to try to create these dictionaries.
+If `false`, then the server loads all dictionaries at startup.
+The server will wait at startup until all the dictionaries finish their loading before receiving any connections
+(exception: if `wait_dictionaries_load_at_startup` is set to `false` - see below).
 
 The default is `true`.
 
@@ -1395,6 +1472,23 @@ For more information, see the section [Creating replicated tables](../../engines
 <macros incl="macros" optional="true" />
 ```
 
+## replica_group_name {#replica_group_name}
+
+Replica group name for database Replicated.
+
+The cluster created by Replicated database will consist of replicas in the same group.
+DDL queries will only wait for the replicas in the same group.
+
+Empty by default.
+
+**Example**
+
+``` xml
+<replica_group_name>backups</replica_group_name>
+```
+
+Default value: ``.
+
 ## max_open_files {#max-open-files}
 
 The maximum number of open files.
@@ -1627,6 +1721,45 @@ Default value: `0.5`.
 
 
 
+## async_load_databases {#async_load_databases}
+
+Asynchronous loading of databases and tables.
+
+If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up.
+
+If `false`, all databases are loaded when the server starts.
+
+The default is `false`.
+
+**Example**
+
+``` xml
+<async_load_databases>true</async_load_databases>
+```
+
+## tables_loader_foreground_pool_size {#tables_loader_foreground_pool_size}
+
+Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
+
+Possible values:
+
+-   Any positive integer.
+-   Zero. Use all available CPUs.
+
+Default value: 0.
+
+
+## tables_loader_background_pool_size {#tables_loader_background_pool_size}
+
+Sets the number of threads performing asynchronous load jobs in background pool. The background pool is used for loading tables asynchronously after server start in case there are no queries waiting for the table. It could be beneficial to keep low number of threads in background pool if there are a lot of tables. It will reserve CPU resources for concurrent query execution.
+
+Possible values:
+
+-   Any positive integer.
+-   Zero. Use all available CPUs.
+
+Default value: 0.
+
 
 ## merge_tree {#merge_tree}
 
@@ -1806,15 +1939,20 @@ The trailing slash is mandatory.
 
 ## Prometheus {#prometheus}
 
+:::note
+ClickHouse Cloud does not currently support connecting to Prometheus. To be notified when this feature is supported, please contact support@clickhouse.com.
+:::
+
 Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
 Settings:
 
 - `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
 - `port` – Port for `endpoint`.
-- `metrics` – Flag that sets to expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
-- `events` – Flag that sets to expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
-- `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
+- `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
 
 **Example**
 
@@ -1830,6 +1968,7 @@ Settings:
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
     </prometheus>
     <!-- highlight-end -->
 </clickhouse>
@@ -1912,7 +2051,7 @@ Data for the query cache is allocated in DRAM. If memory is scarce, make sure to
 
 ## query_thread_log {#query_thread_log}
 
-Setting for logging threads of queries received with the [log_query_threads=1](../../operations/settings/settings.md#settings-log-query-threads) setting.
+Setting for logging threads of queries received with the [log_query_threads=1](../../operations/settings/settings.md#log-query-threads) setting.
 
 Queries are logged in the [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -1954,7 +2093,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 ## query_views_log {#query_views_log}
 
-Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views) setting.
+Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#log-query-views) setting.
 
 Queries are logged in the [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -2234,7 +2373,7 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 
 **See Also**
 
-- [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
+- [skip_unavailable_shards](../../operations/settings/settings.md#skip_unavailable_shards)
 - [Cluster Discovery](../../operations/cluster-discovery.md)
 - [Replicated database engine](../../engines/database-engines/replicated.md)
 
@@ -2327,7 +2466,7 @@ Path on the local filesystem to store temporary data for processing large querie
 
 ## user_files_path {#user_files_path}
 
-The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md).
+The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md), [fileCluster()](../../sql-reference/table-functions/fileCluster.md).
 
 **Example**
 
@@ -2370,6 +2509,28 @@ Path to the file that contains:
 <users_config>users.xml</users_config>
 ```
 
+## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
+
+This setting allows to specify behavior if `dictionaries_lazy_load` is `false`.
+(If `dictionaries_lazy_load` is `true` this setting doesn't affect anything.)
+
+If `wait_dictionaries_load_at_startup` is `false`, then the server
+will start loading all the dictionaries at startup and it will receive connections in parallel with that loading.
+When a dictionary is used in a query for the first time then the query will wait until the dictionary is loaded if it's not loaded yet.
+Setting `wait_dictionaries_load_at_startup` to `false` can make ClickHouse start faster, however some queries can be executed slower
+(because they will have to wait for some dictionaries to be loaded).
+
+If `wait_dictionaries_load_at_startup` is `true`, then the server will wait at startup
+until all the dictionaries finish their loading (successfully or not) before receiving any connections.
+
+The default is `true`.
+
+**Example**
+
+``` xml
+<wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
+```
+
 ## zookeeper {#server-settings_zookeeper}
 
 Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
@@ -2406,6 +2567,8 @@ This section contains the following parameters:
   * hostname_levenshtein_distance - just like nearest_hostname, but it compares hostname in a levenshtein distance manner.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
+- `use_compression` — If set to true, enables compression in Keeper protocol.
+
 
 **Example configuration**
 
@@ -2695,7 +2858,7 @@ ClickHouse will use it to form the proxy URI using the following template: `{pro
             <proxy_cache_time>10</proxy_cache_time>
         </resolver>
     </http>
-    
+
     <https>
         <resolver>
             <endpoint>http://resolver:8080/hostname</endpoint>
@@ -2741,3 +2904,34 @@ Proxy settings are determined in the following order:
 ClickHouse will check the highest priority resolver type for the request protocol. If it is not defined,
 it will check the next highest priority resolver type, until it reaches the environment resolver.
 This also allows a mix of resolver types can be used.
+
+### disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
+
+By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
+
+## max_materialized_views_count_for_table {#max_materialized_views_count_for_table}
+
+A limit on the number of materialized views attached to a table.
+Note that only directly dependent views are considered here, and the creation of one view on top of another view is not considered.
+
+Default value: `0`.
+
+## format_alter_operations_with_parentheses {#format_alter_operations_with_parentheses}
+
+If set to true, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.
+
+Type: Bool
+
+Default: 0
+
+## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
+
+If true, ClickHouse doesn't write defaults for empty SQL security statement in CREATE VIEW queries. 
+
+:::note
+This setting is only necessary for the migration period and will become obsolete in 24.4
+:::
+
+Type: Bool
+
+Default: 1

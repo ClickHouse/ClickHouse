@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int LOGICAL_ERROR;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
 using RawHandle = unzFile;
@@ -285,23 +286,27 @@ public:
         if (new_pos > static_cast<off_t>(file_info.uncompressed_size))
             throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bound");
 
-        if (file_info.compression_method == MZ_COMPRESS_METHOD_STORE)
-        {
-            /// unzSeek64() works only for non-compressed files.
-            checkResult(unzSeek64(raw_handle, off, whence));
-            return unzTell64(raw_handle);
-        }
+        /// unzSeek64() works only for non-compressed files.
+        ///
+        /// We used to have a fallback here, where we would:
+        ///  * ignore() to "seek" forward,
+        ///  * unzCloseCurrentFile(raw_handle) + unzOpenCurrentFile(raw_handle) to seek to the
+        ///    beginning of the file.
+        /// But the close+open didn't work: after closing+reopening once, the second
+        /// unzCloseCurrentFile() was failing with MZ_CRC_ERROR in mz_zip_entry_read_close(). Maybe
+        /// it's a bug in minizip where some state was inadvertently left over after close+reopen.
+        /// Didn't investigate because re-reading the whole file should be avoided anyway.
+        if (file_info.compression_method != MZ_COMPRESS_METHOD_STORE)
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek in compressed archive is not supported.");
 
-        /// As a last try we go slow way, we're going to simply ignore all data before the new position.
-        if (new_pos < current_pos)
-        {
-            checkResult(unzCloseCurrentFile(raw_handle));
-            checkResult(unzOpenCurrentFile(raw_handle));
-            current_pos = 0;
-        }
+        checkResult(unzSeek64(raw_handle, off, whence));
+        return unzTell64(raw_handle);
+    }
 
-        ignore(new_pos - current_pos);
-        return new_pos;
+    bool checkIfActuallySeekable() override
+    {
+        /// The library doesn't support seeking in compressed files.
+        return handle.getFileInfo().compression_method == MZ_COMPRESS_METHOD_STORE;
     }
 
     off_t getPosition() override
@@ -575,6 +580,15 @@ std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::nextFile(std
     auto handle = std::move(*read_buffer_from_zip).releaseHandle();
     if (!handle.nextFile())
         return nullptr;
+    return std::make_unique<FileEnumeratorImpl>(std::move(handle));
+}
+
+std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::currentFile(std::unique_ptr<ReadBuffer> read_buffer)
+{
+    if (!dynamic_cast<ReadBufferFromZipArchive *>(read_buffer.get()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong ReadBuffer passed to nextFile()");
+    auto read_buffer_from_zip = std::unique_ptr<ReadBufferFromZipArchive>(static_cast<ReadBufferFromZipArchive *>(read_buffer.release()));
+    auto handle = std::move(*read_buffer_from_zip).releaseHandle();
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 

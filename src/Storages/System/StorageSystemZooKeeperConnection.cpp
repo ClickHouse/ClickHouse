@@ -11,7 +11,7 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemZooKeeperConnection::getNamesAndTypes()
+ColumnsDescription StorageSystemZooKeeperConnection::getColumnsDescription()
 {
     DataTypeEnum16::Values feature_flags_enum_values;
     feature_flags_enum_values.reserve(magic_enum::enum_count<KeeperFeatureFlag>());
@@ -20,23 +20,26 @@ NamesAndTypesList StorageSystemZooKeeperConnection::getNamesAndTypes()
 
     auto feature_flags_enum = std::make_shared<DataTypeEnum16>(std::move(feature_flags_enum_values));
 
-    return {
-        /* 0 */ {"name", std::make_shared<DataTypeString>()},
-        /* 1 */ {"host", std::make_shared<DataTypeString>()},
-        /* 2 */ {"port", std::make_shared<DataTypeUInt16>()},
-        /* 3 */ {"index", std::make_shared<DataTypeUInt8>()},
-        /* 4 */ {"connected_time", std::make_shared<DataTypeDateTime>()},
-        /* 5 */ {"session_uptime_elapsed_seconds", std::make_shared<DataTypeUInt64>()},
-        /* 6 */ {"is_expired", std::make_shared<DataTypeUInt8>()},
-        /* 7 */ {"keeper_api_version", std::make_shared<DataTypeUInt8>()},
-        /* 8 */ {"client_id", std::make_shared<DataTypeInt64>()},
-        /* 9 */ {"xid", std::make_shared<DataTypeInt32>()},
-        /* 10*/ {"enabled_feature_flags", std::make_shared<DataTypeArray>(std::move(feature_flags_enum))}
+    return ColumnsDescription
+    {
+        /* 0 */ {"name", std::make_shared<DataTypeString>(), "ZooKeeper cluster's name."},
+        /* 1 */ {"host", std::make_shared<DataTypeString>(), "The hostname/IP of the ZooKeeper node that ClickHouse connected to."},
+        /* 2 */ {"port", std::make_shared<DataTypeUInt16>(), "The port of the ZooKeeper node that ClickHouse connected to."},
+        /* 3 */ {"index", std::make_shared<DataTypeUInt8>(), "The index of the ZooKeeper node that ClickHouse connected to. The index is from ZooKeeper config."},
+        /* 4 */ {"connected_time", std::make_shared<DataTypeDateTime>(), "When the connection was established."},
+        /* 5 */ {"session_uptime_elapsed_seconds", std::make_shared<DataTypeUInt64>(), "Seconds elapsed since the connection was established."},
+        /* 6 */ {"is_expired", std::make_shared<DataTypeUInt8>(), "Is the current connection expired."},
+        /* 7 */ {"keeper_api_version", std::make_shared<DataTypeUInt8>(), "Keeper API version."},
+        /* 8 */ {"client_id", std::make_shared<DataTypeInt64>(), "Session id of the connection."},
+        /* 9 */ {"xid", std::make_shared<DataTypeInt32>(), "XID of the current session."},
+        /* 10*/ {"enabled_feature_flags", std::make_shared<DataTypeArray>(std::move(feature_flags_enum)),
+            "Feature flags which are enabled. Only applicable to ClickHouse Keeper."
+        }
     };
 }
 
 void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, ContextPtr context,
-    const SelectQueryInfo &) const
+    const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto add_enabled_feature_flags = [&](const auto & zookeeper)
     {
@@ -67,13 +70,13 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
             UInt16 port = static_cast<UInt16>(Poco::NumberParser::parseUnsigned(host_port.substr(offset + 1)));
 
             UInt32 uptime = zookeeper->getSessionUptime();
-            time_t time = timeInSeconds(std::chrono::system_clock::now()) - uptime;
+            time_t connected_time = time(nullptr) - uptime;
 
             columns[0]->insert(name);
             columns[1]->insert(host);
             columns[2]->insert(port);
             columns[3]->insert(index);
-            columns[4]->insert(time);
+            columns[4]->insert(connected_time);
             columns[5]->insert(uptime);
             columns[6]->insert(zookeeper->expired());
             columns[7]->insert(0);

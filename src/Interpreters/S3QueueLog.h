@@ -4,6 +4,7 @@
 #include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -11,7 +12,11 @@ namespace DB
 struct S3QueueLogElement
 {
     time_t event_time{};
-    std::string table_uuid;
+
+    std::string database;
+    std::string table;
+    std::string uuid;
+
     std::string file_name;
     size_t rows_processed = 0;
 
@@ -28,11 +33,10 @@ struct S3QueueLogElement
 
     static std::string name() { return "S3QueueLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class S3QueueLog : public SystemLog<S3QueueLogElement>

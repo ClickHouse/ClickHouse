@@ -6,7 +6,7 @@ sidebar_label: Arrays
 
 # Array Functions
 
-## empty
+## empty {#empty}
 
 Checks whether the input array is empty.
 
@@ -19,7 +19,7 @@ empty([x])
 An array is considered empty if it does not contain any elements.
 
 :::note
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
 :::
 
 The function also works for [strings](string-functions.md#empty) or [UUID](uuid-functions.md#empty).
@@ -50,7 +50,7 @@ Result:
 └────────────────┘
 ```
 
-## notEmpty
+## notEmpty {#notempty}
 
 Checks whether the input array is non-empty.
 
@@ -104,17 +104,416 @@ Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operat
 
 Alias: `OCTET_LENGTH`
 
-## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64
+## emptyArrayUInt8
 
-## emptyArrayInt8, emptyArrayInt16, emptyArrayInt32, emptyArrayInt64
+Returns an empty UInt8 array.
 
-## emptyArrayFloat32, emptyArrayFloat64
+**Syntax**
 
-## emptyArrayDate, emptyArrayDateTime
+```sql
+emptyArrayUInt8()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayUInt8();
+```
+
+Result:
+
+```response
+[]
+```
+
+## emptyArrayUInt16
+
+Returns an empty UInt16 array.
+
+**Syntax**
+
+```sql
+emptyArrayUInt16()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayUInt16();
+
+```
+
+Result:
+
+```response
+[]
+```
+
+## emptyArrayUInt32
+
+Returns an empty UInt32 array.
+
+**Syntax**
+
+```sql
+emptyArrayUInt32()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayUInt32();
+```
+
+Result:
+
+```response
+[]
+```
+
+## emptyArrayUInt64
+
+Returns an empty UInt64 array.
+
+**Syntax**
+
+```sql
+emptyArrayUInt64()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayUInt64();
+```
+
+Result:
+
+```response
+[]
+```
+
+## emptyArrayInt8
+
+Returns an empty Int8 array.
+
+**Syntax**
+
+```sql
+emptyArrayInt8()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayInt8();
+```
+
+Result:
+
+```response
+[]
+```
+
+## emptyArrayInt16
+
+Returns an empty Int16 array.
+
+**Syntax**
+
+```sql
+emptyArrayInt16()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayInt16();
+```
+
+Result:
+
+```response
+[]
+```
+
+## emptyArrayInt32
+
+Returns an empty Int32 array.
+
+**Syntax**
+
+```sql
+emptyArrayInt32()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayInt32();
+```
+
+Result:
+
+```response
+[]
+```
+
+## emptyArrayInt64
+
+Returns an empty Int64 array.
+
+**Syntax**
+
+```sql
+emptyArrayInt64()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayInt64();
+```
+
+Result:
+
+```response
+[]
+```
+
+## emptyArrayFloat32 
+
+Returns an empty Float32 array.
+
+**Syntax**
+
+```sql
+emptyArrayFloat32()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayFloat32();
+```
+
+Result:
+
+```response
+[]
+```
+
+## emptyArrayFloat64
+
+Returns an empty Float64 array.
+
+**Syntax**
+
+```sql
+emptyArrayFloat64()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayFloat64();
+```
+
+Result:
+
+```response
+[]
+```
+
+## emptyArrayDate
+
+Returns an empty Date array.
+
+**Syntax**
+
+```sql
+emptyArrayDate()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayDate();
+```
+
+## emptyArrayDateTime
+
+Returns an empty DateTime array.
+
+**Syntax**
+
+```sql
+[]
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayDateTime();
+```
+
+Result:
+
+```response
+[]
+```
 
 ## emptyArrayString
 
-Accepts zero arguments and returns an empty array of the appropriate type.
+Returns an empty String array.
+
+**Syntax**
+
+```sql
+emptyArrayString()
+```
+
+**Arguments**
+
+None.
+
+**Returned value**
+
+An empty array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT emptyArrayString();
+```
+
+Result:
+
+```response
+[]
+```
 
 ## emptyArrayToSingle
 
@@ -143,7 +542,7 @@ range([start, ] end [, step])
 **Implementation details**
 
 - All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments.
-- An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
+- An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#function_range_max_elements_in_block) setting.
 - Returns Null if any argument has Nullable(Nothing) type. An exception is thrown if any argument has Null value (Nullable(T) type).
 
 **Examples**
@@ -221,7 +620,7 @@ SELECT has([1, 2, NULL], NULL)
 └─────────────────────────┘
 ```
 
-## hasAll
+## hasAll {#hasall}
 
 Checks whether one array is a subset of another.
 
@@ -261,7 +660,7 @@ Raises an exception `NO_COMMON_TYPE` if the set and subset elements do not share
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` returns 0.
 
-## hasAny
+## hasAny {#hasany}
 
 Checks whether two arrays have intersection by some elements.
 
@@ -656,6 +1055,43 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 ```
 
 Array elements set to `NULL` are handled as normal values.
+
+## arrayShingles
+
+Generates an array of "shingles", i.e. consecutive sub-arrays with specified length of the input array.
+
+**Syntax**
+
+``` sql
+arrayShingles(array, length)
+```
+
+**Arguments**
+
+- `array` — Input array [Array](../../sql-reference/data-types/array.md).
+- `length` — The length of each shingle.
+
+**Returned value**
+
+- An array of generated shingles.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayShingles([1,2,3,4], 3) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────────┐
+│ [[1,2,3],[2,3,4]] │
+└───────────────────┘
+```
 
 ## arraySort(\[func,\] arr, …) {#sort}
 
@@ -1081,6 +1517,10 @@ Result:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**See also**
+
+- [arrayFold](#arrayfold)
+
 ## arrayReduceInRanges
 
 Applies an aggregate function to array elements in given ranges and returns an array containing the result corresponding to each range. The function will return the same result as multiple `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
@@ -1138,16 +1578,40 @@ arrayFold(lambda_function, arr1, arr2, ..., accumulator)
 Query:
 
 ``` sql
-SELECT arrayFold( x,acc -> acc + x*2,  [1, 2, 3, 4], toInt64(3)) AS res;
+SELECT arrayFold( acc,x -> acc + x*2,  [1, 2, 3, 4], toInt64(3)) AS res;
 ```
 
 Result:
 
 ``` text
-┌─arrayFold(lambda(tuple(x, acc), plus(acc, multiply(x, 2))), [1, 2, 3, 4], toInt64(3))─┐
-│                                                                                     3 │
-└───────────────────────────────────────────────────────────────────────────────────────┘
+┌─res─┐
+│  23 │
+└─────┘
 ```
+
+**Example with the Fibonacci sequence**
+
+```sql
+SELECT arrayFold( acc,x -> (acc.2, acc.2 + acc.1), range(number), (1::Int64, 0::Int64)).1 AS fibonacci
+FROM numbers(1,10);
+
+┌─fibonacci─┐
+│         0 │
+│         1 │
+│         1 │
+│         2 │
+│         3 │
+│         5 │
+│         8 │
+│        13 │
+│        21 │
+│        34 │
+└───────────┘
+```
+
+**See also**
+
+- [arrayReduce](#arrayreduce)
 
 ## arrayReverse(arr)
 
@@ -2147,7 +2611,7 @@ Result:
 
 ## arrayRandomSample
 
-Function `arrayRandomSample` returns a subset with `samples`-many random elements of an input array. If `samples` exceeds the size of the input array, the sample size is limited to the size of the array. In this case, all elements of the input array are returned, but the order is not guaranteed. The function can handle both flat arrays and nested arrays.
+Function `arrayRandomSample` returns a subset with `samples`-many random elements of an input array. If `samples` exceeds the size of the input array, the sample size is limited to the size of the array, i.e. all array elements are returned but their order is not guaranteed. The function can handle both flat arrays and nested arrays.
 
 **Syntax**
 
@@ -2157,12 +2621,14 @@ arrayRandomSample(arr, samples)
 
 **Arguments**
 
-- `arr` — The input array from which to sample elements. This may be flat or nested arrays.
-- `samples` — An unsigned integer specifying the number of elements to include in the random sample.
+- `arr` — The input array from which to sample elements. ([Array(T)](../data-types/array.md))
+- `samples` — The number of elements to include in the random sample ([UInt*](../data-types/int-uint.md))
 
 **Returned Value**
 
 - An array containing a random sample of elements from the input array.
+
+Type: [Array](../data-types/array.md).
 
 **Examples**
 
@@ -2173,9 +2639,10 @@ SELECT arrayRandomSample(['apple', 'banana', 'cherry', 'date'], 2) as res;
 ```
 
 Result:
+
 ```
 ┌─res────────────────┐
-│ ['banana','apple'] │
+│ ['cherry','apple'] │
 └────────────────────┘
 ```
 
@@ -2186,6 +2653,7 @@ SELECT arrayRandomSample([[1, 2], [3, 4], [5, 6]], 2) as res;
 ```
 
 Result:
+
 ```
 ┌─res───────────┐
 │ [[3,4],[5,6]] │
@@ -2195,23 +2663,11 @@ Result:
 Query:
 
 ```sql
-SELECT arrayRandomSample([1, 2, 3, 4, 5], 0) as res;
-```
-
-Result:
-```
-┌─res─┐
-│ []  │
-└─────┘
-```
-
-Query:
-
-```sql
 SELECT arrayRandomSample([1, 2, 3], 5) as res;
 ```
 
 Result:
+
 ```
 ┌─res─────┐
 │ [3,1,2] │

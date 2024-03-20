@@ -85,15 +85,6 @@ public:
     /// Pipeline will be completed after this transformation.
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
 
-    /// Activate building separate pipeline for sending partial result.
-    void activatePartialResult(UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
-    {
-        pipe.activatePartialResult(partial_result_limit, partial_result_duration_ms);
-    }
-
-    /// Check if building of a pipeline for sending partial result active.
-    bool isPartialResultActive() { return pipe.isPartialResultActive(); }
-
     /// Add totals which returns one chunk with single row with defaults.
     void addDefaultTotals();
 
@@ -197,7 +188,7 @@ public:
         concurrency_control = concurrency_control_;
     }
 
-    bool getConcurrencyControl()
+    bool getConcurrencyControl() const
     {
         return concurrency_control;
     }

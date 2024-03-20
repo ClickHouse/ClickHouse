@@ -35,7 +35,7 @@
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 #include "config.h"
 
 #if USE_SSL
@@ -153,6 +153,12 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 current_resolved_address = *it;
                 break;
             }
+            catch (DB::NetException &)
+            {
+                if (++it == addresses.end())
+                    throw;
+                continue;
+            }
             catch (Poco::Net::NetException &)
             {
                 if (++it == addresses.end())
@@ -199,6 +205,17 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);
     }
+    catch (DB::NetException & e)
+    {
+        disconnect();
+
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
+
+        /// Add server address to exception. Exception will preserve stack trace.
+        e.addMessage("({})", getDescription());
+        throw;
+    }
     catch (Poco::Net::NetException & e)
     {
         disconnect();
@@ -206,7 +223,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
 
-        /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
+        /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription());
     }
     catch (Poco::TimeoutException & e)
@@ -216,7 +233,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         /// Remove this possible stale entry from cache
         DNSResolver::instance().removeHostFromCache(host);
 
-        /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
+        /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
         throw NetException(
@@ -296,7 +313,7 @@ void Connection::sendHello()
                         "Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters");
 
     writeVarUInt(Protocol::Client::Hello, *out);
-    writeStringBinary((VERSION_NAME " ") + client_name, *out);
+    writeStringBinary(std::string(VERSION_NAME) + " " + client_name, *out);
     writeVarUInt(VERSION_MAJOR, *out);
     writeVarUInt(VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
@@ -316,7 +333,7 @@ void Connection::sendHello()
                         "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
     }
-#if USE_SSL
+#if USE_SSH
     /// Just inform server that we will authenticate using SSH keys.
     else if (!ssh_private_key.isEmpty())
     {
@@ -346,7 +363,7 @@ void Connection::sendAddendum()
 
 void Connection::performHandshakeForSSHAuth()
 {
-#if USE_SSL
+#if USE_SSH
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -651,7 +668,13 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs, settings->enable_deflate_qpl_codec);
+        CompressionCodecFactory::instance().validateCodec(
+            method,
+            level,
+            !settings->allow_suspicious_codecs,
+            settings->allow_experimental_codecs,
+            settings->enable_deflate_qpl_codec,
+            settings->enable_zstd_qat_codec);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else

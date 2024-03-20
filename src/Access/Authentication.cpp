@@ -73,7 +73,7 @@ namespace
         return checkPasswordDoubleSHA1MySQL(scramble, scrambled_password, Util::encodeDoubleSHA1(password_plaintext));
     }
 
-#if USE_SSL
+#if USE_SSH
     bool checkSshSignature(const std::vector<ssh::SSHKey> & keys, std::string_view signature, std::string_view original)
     {
         for (const auto & key: keys)
@@ -243,7 +243,7 @@ bool Authentication::areCredentialsValid(
                 throw Authentication::Require<SSLCertificateCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::SSH_KEY:
-#if USE_SSL
+#if USE_SSH
                 return checkSshSignature(auth_data.getSSHKeys(), ssh_credentials->getSignature(), ssh_credentials->getOriginal());
 #else
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");

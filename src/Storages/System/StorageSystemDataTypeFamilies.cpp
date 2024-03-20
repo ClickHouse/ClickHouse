@@ -7,16 +7,17 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemDataTypeFamilies::getNamesAndTypes()
+ColumnsDescription StorageSystemDataTypeFamilies::getColumnsDescription()
 {
-    return {
-        {"name", std::make_shared<DataTypeString>()},
-        {"case_insensitive", std::make_shared<DataTypeUInt8>()},
-        {"alias_to", std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Data type name."},
+        {"case_insensitive", std::make_shared<DataTypeUInt8>(), "Property that shows whether you can use a data type name in a query in case insensitive manner or not. For example, `Date` and `date` are both valid."},
+        {"alias_to", std::make_shared<DataTypeString>(), "Data type name for which `name` is an alias."},
     };
 }
 
-void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & factory = DataTypeFactory::instance();
     auto names = factory.getAllRegisteredNames();

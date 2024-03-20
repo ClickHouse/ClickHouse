@@ -1,8 +1,13 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsStringArray.h>
+#include <Functions/FunctionTokens.h>
 
 namespace DB
 {
+
+namespace
+{
+
+using Pos = const char *;
 
 class URLHierarchyImpl
 {
@@ -13,15 +18,16 @@ private:
 
 public:
     static constexpr auto name = "URLHierarchy";
-    static String getName() { return name; }
 
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {}; }
+
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"URL", &isString<IDataType>, nullptr, "String"},
+            {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
         validateFunctionArgumentTypes(func, arguments, mandatory_args);
@@ -97,8 +103,9 @@ public:
 };
 
 
-struct NameURLHierarchy { static constexpr auto name = "URLHierarchy"; };
 using FunctionURLHierarchy = FunctionTokens<URLHierarchyImpl>;
+
+}
 
 REGISTER_FUNCTION(URLHierarchy)
 {

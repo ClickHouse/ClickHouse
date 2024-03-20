@@ -16,7 +16,7 @@ QUERY id: 0
           LIST id: 7, nodes: 1
             COLUMN id: 8, column_name: value, result_type: String, source_id: 5
   JOIN TREE
-    TABLE id: 5, table_name: default.test_table
+    TABLE id: 5, alias: __table1, table_name: default.test_table
   GROUP BY
     LIST id: 9, nodes: 2
       COLUMN id: 4, column_name: id, result_type: UInt64, source_id: 5
@@ -42,7 +42,7 @@ QUERY id: 0, group_by_type: rollup
             COLUMN id: 9, column_name: __grouping_set, result_type: UInt64
             COLUMN id: 10, column_name: value, result_type: String, source_id: 6
   JOIN TREE
-    TABLE id: 6, table_name: default.test_table
+    TABLE id: 6, alias: __table1, table_name: default.test_table
   GROUP BY
     LIST id: 11, nodes: 2
       COLUMN id: 5, column_name: id, result_type: UInt64, source_id: 6
@@ -70,7 +70,7 @@ QUERY id: 0, group_by_type: cube
             COLUMN id: 9, column_name: __grouping_set, result_type: UInt64
             COLUMN id: 10, column_name: value, result_type: String, source_id: 6
   JOIN TREE
-    TABLE id: 6, table_name: default.test_table
+    TABLE id: 6, alias: __table1, table_name: default.test_table
   GROUP BY
     LIST id: 11, nodes: 2
       COLUMN id: 5, column_name: id, result_type: UInt64, source_id: 6
@@ -99,7 +99,7 @@ QUERY id: 0, group_by_type: grouping_sets
             COLUMN id: 9, column_name: __grouping_set, result_type: UInt64
             COLUMN id: 10, column_name: value, result_type: String, source_id: 6
   JOIN TREE
-    TABLE id: 6, table_name: default.test_table
+    TABLE id: 6, alias: __table1, table_name: default.test_table
   GROUP BY
     LIST id: 11, nodes: 2
       LIST id: 12, nodes: 1
@@ -128,7 +128,7 @@ QUERY id: 0, group_by_type: grouping_sets
             COLUMN id: 9, column_name: __grouping_set, result_type: UInt64
             COLUMN id: 10, column_name: value, result_type: String, source_id: 6
   JOIN TREE
-    TABLE id: 6, table_name: default.test_table
+    TABLE id: 6, alias: __table1, table_name: default.test_table
   GROUP BY
     LIST id: 11, nodes: 2
       LIST id: 12, nodes: 1

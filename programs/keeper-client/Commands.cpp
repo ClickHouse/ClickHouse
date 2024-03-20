@@ -2,6 +2,7 @@
 #include "Commands.h"
 #include <queue>
 #include "KeeperClient.h"
+#include "Parsers/CommonParsers.h"
 
 
 namespace DB
@@ -106,16 +107,16 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
 
     int mode = zkutil::CreateMode::Persistent;
 
-    if (ParserKeyword{"PERSISTENT"}.ignore(pos, expected))
+    if (ParserKeyword(Keyword::PERSISTENT).ignore(pos, expected))
         mode = zkutil::CreateMode::Persistent;
-    else if (ParserKeyword{"EPHEMERAL"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::EPHEMERAL).ignore(pos, expected))
         mode = zkutil::CreateMode::Ephemeral;
-    else if (ParserKeyword{"EPHEMERAL SEQUENTIAL"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::EPHEMERAL_SEQUENTIAL).ignore(pos, expected))
         mode = zkutil::CreateMode::EphemeralSequential;
-    else if (ParserKeyword{"PERSISTENT SEQUENTIAL"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::PERSISTENT_SEQUENTIAL).ignore(pos, expected))
         mode = zkutil::CreateMode::PersistentSequential;
 
-    node->args.push_back(mode);
+    node->args.push_back(std::move(mode));
 
     return true;
 }
@@ -382,12 +383,16 @@ void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
 
 bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
 {
+    ParserKeyword s_add(Keyword::ADD);
+    ParserKeyword s_remove(Keyword::REMOVE);
+    ParserKeyword s_set(Keyword::SET);
+
     ReconfigCommand::Operation operation;
-    if (ParserKeyword{"ADD"}.ignore(pos, expected))
+    if (s_add.ignore(pos, expected))
         operation = ReconfigCommand::Operation::ADD;
-    else if (ParserKeyword{"REMOVE"}.ignore(pos, expected))
+    else if (s_remove.ignore(pos, expected))
         operation = ReconfigCommand::Operation::REMOVE;
-    else if (ParserKeyword{"SET"}.ignore(pos, expected))
+    else if (s_set.ignore(pos, expected))
         operation = ReconfigCommand::Operation::SET;
     else
         return false;
@@ -413,13 +418,13 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
     switch (operation)
     {
         case static_cast<UInt8>(ReconfigCommand::Operation::ADD):
-            joining = query->args[1].safeGet<DB::String>();
+            joining = query->args[1].safeGet<String>();
             break;
         case static_cast<UInt8>(ReconfigCommand::Operation::REMOVE):
-            leaving = query->args[1].safeGet<DB::String>();
+            leaving = query->args[1].safeGet<String>();
             break;
         case static_cast<UInt8>(ReconfigCommand::Operation::SET):
-            new_members = query->args[1].safeGet<DB::String>();
+            new_members = query->args[1].safeGet<String>();
             break;
         default:
             UNREACHABLE();
@@ -473,6 +478,27 @@ bool FourLetterWordCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQ
 void FourLetterWordCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     std::cout << client->executeFourLetterCommand(query->args[0].safeGet<String>()) << "\n";
+}
+
+bool GetDirectChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
+        path = ".";
+
+    node->args.push_back(std::move(path));
+
+    return true;
+}
+
+void GetDirectChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
+
+    Coordination::Stat stat;
+    client->zookeeper->get(path, &stat);
+
+    std::cout << stat.numChildren << "\n";
 }
 
 bool GetAllChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const

@@ -18,12 +18,12 @@ class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase, private WithCo
 public:
     MergeTreePrefetchedReadPool(
         RangesInDataParts && parts_,
+        VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
-        const Names & virtual_column_names_,
         const PoolSettings & settings_,
         const ContextPtr & context_);
 
@@ -48,15 +48,16 @@ private:
         size_t required_readers_num = 0;
     };
 
-    class PrefetechedReaders
+    class PrefetchedReaders
     {
     public:
-        PrefetechedReaders() = default;
-        PrefetechedReaders(MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & pool_);
+        PrefetchedReaders() = default;
+        PrefetchedReaders(MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & pool_);
 
         void wait();
         MergeTreeReadTask::Readers get();
         bool valid() const { return is_valid; }
+        ~PrefetchedReaders();
 
     private:
         bool is_valid = false;
@@ -66,7 +67,7 @@ private:
 
     struct ThreadTask
     {
-        using InfoPtr = MergeTreeReadTask::InfoPtr;
+        using InfoPtr = MergeTreeReadTaskInfoPtr;
 
         ThreadTask(InfoPtr read_info_, MarkRanges ranges_, Priority priority_)
             : read_info(std::move(read_info_)), ranges(std::move(ranges_)), priority(priority_)
@@ -75,14 +76,19 @@ private:
 
         ~ThreadTask()
         {
-            if (readers_future.valid())
-                readers_future.wait();
+            if (readers_future && readers_future->valid())
+                readers_future->wait();
+        }
+
+        bool isValidReadersFuture() const
+        {
+            return readers_future && readers_future->valid();
         }
 
         InfoPtr read_info;
         MarkRanges ranges;
         Priority priority;
-        PrefetechedReaders readers_future;
+        std::unique_ptr<PrefetchedReaders> readers_future;
     };
 
     struct TaskHolder
@@ -116,7 +122,7 @@ private:
     TasksPerThread per_thread_tasks;
     std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
     bool started_prefetches = false;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// A struct which allows to track max number of tasks which were in the
     /// threadpool simultaneously (similar to CurrentMetrics, but the result

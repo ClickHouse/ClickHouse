@@ -10,6 +10,8 @@ sidebar_label: Nullable
 
 Returns whether the argument is [NULL](../../sql-reference/syntax.md#null).
 
+See also operator [`IS NULL`](../operators/index.md#is_null).
+
 ``` sql
 isNull(x)
 ```
@@ -53,6 +55,8 @@ Result:
 ## isNotNull
 
 Returns whether the argument is not [NULL](../../sql-reference/syntax.md#null-literal).
+
+See also operator [`IS NOT NULL`](../operators/index.md#is_not_null).
 
 ``` sql
 isNotNull(x)
@@ -164,7 +168,7 @@ Consider a list of contacts that may specify multiple ways to contact a customer
 └──────────┴──────┴───────────┴───────────┘
 ```
 
-The `mail` and `phone` fields are of type String, but the `icq` field is `UInt32`, so it needs to be converted to `String`.
+The `mail` and `phone` fields are of type String, but the `telegram` field is `UInt32`, so it needs to be converted to `String`.
 
 Get the first available contact method for the customer from the contact list:
 

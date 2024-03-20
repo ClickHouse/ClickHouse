@@ -3,14 +3,16 @@
 #include <cstring>
 #include <memory>
 #include <vector>
-#include <boost/noncopyable.hpp>
 #include <Core/Defines.h>
+#include <boost/noncopyable.hpp>
+#include <Common/Allocator.h>
+#include <Common/ProfileEvents.h>
+#include <Common/memcpySmall.h>
+#include <base/getPageSize.h>
+
 #if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
 #   include <sanitizer/asan_interface.h>
 #endif
-#include <Common/memcpySmall.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Allocator.h>
 
 
 namespace ProfileEvents
@@ -39,13 +41,34 @@ private:
     /// Contiguous MemoryChunk of memory and pointer to free space inside it. Member of single-linked list.
     struct alignas(16) MemoryChunk : private Allocator<false>    /// empty base optimization
     {
-        char * begin;
-        char * pos;
-        char * end; /// does not include padding.
+        char * begin = nullptr;
+        char * pos = nullptr;
+        char * end = nullptr; /// does not include padding.
 
-        MemoryChunk * prev;
+        std::unique_ptr<MemoryChunk> prev;
 
-        MemoryChunk(size_t size_, MemoryChunk * prev_)
+        MemoryChunk() = default;
+
+        void swap(MemoryChunk & other) noexcept
+        {
+            std::swap(begin, other.begin);
+            std::swap(pos, other.pos);
+            std::swap(end, other.end);
+            prev.swap(other.prev);
+        }
+
+        MemoryChunk(MemoryChunk && other) noexcept
+        {
+            *this = std::move(other);
+        }
+
+        MemoryChunk & operator=(MemoryChunk && other) noexcept
+        {
+            swap(other);
+            return *this;
+        }
+
+        explicit MemoryChunk(size_t size_)
         {
             ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
             ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
@@ -53,13 +76,15 @@ private:
             begin = reinterpret_cast<char *>(Allocator<false>::alloc(size_));
             pos = begin;
             end = begin + size_ - pad_right;
-            prev = prev_;
 
             ASAN_POISON_MEMORY_REGION(begin, size_);
         }
 
         ~MemoryChunk()
         {
+            if (empty())
+                return;
+
             /// We must unpoison the memory before returning to the allocator,
             /// because the allocator might not have asan integration, and the
             /// memory would stay poisoned forever. If the allocator supports
@@ -67,21 +92,21 @@ private:
             ASAN_UNPOISON_MEMORY_REGION(begin, size());
 
             Allocator<false>::free(begin, size());
-
-            delete prev;
         }
 
+        bool empty() const { return begin == end;}
         size_t size() const { return end + pad_right - begin; }
         size_t remaining() const { return end - pos; }
     };
 
+    size_t initial_size;
     size_t growth_factor;
     size_t linear_growth_threshold;
 
     /// Last contiguous MemoryChunk of memory.
-    MemoryChunk * head;
-    size_t allocated_bytes;
-    size_t used_bytes;
+    MemoryChunk head;
+    size_t allocated_bytes = 0;
+    size_t used_bytes = 0;
     size_t page_size;
 
     static size_t roundUpToPageSize(size_t s, size_t page_size)
@@ -95,9 +120,13 @@ private:
     {
         size_t size_after_grow = 0;
 
-        if (head->size() < linear_growth_threshold)
+        if (head.empty())
         {
-            size_after_grow = std::max(min_next_size, head->size() * growth_factor);
+            size_after_grow = std::max(min_next_size, initial_size);
+        }
+        else if (head.size() < linear_growth_threshold)
+        {
+            size_after_grow = std::max(min_next_size, head.size() * growth_factor);
         }
         else
         {
@@ -119,8 +148,18 @@ private:
     /// Add next contiguous MemoryChunk of memory with size not less than specified.
     void NO_INLINE addMemoryChunk(size_t min_size)
     {
-        head = new MemoryChunk(nextSize(min_size + pad_right), head);
-        allocated_bytes += head->size();
+        size_t next_size = nextSize(min_size + pad_right);
+        if (head.empty())
+        {
+            head = MemoryChunk(next_size);
+        }
+        else
+        {
+            auto chunk = std::make_unique<MemoryChunk>(next_size);
+            head.swap(*chunk);
+            head.prev = std::move(chunk);
+        }
+        allocated_bytes += head.size();
     }
 
     friend class ArenaAllocator;
@@ -128,29 +167,23 @@ private:
 
 public:
     explicit Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2, size_t linear_growth_threshold_ = 128 * 1024 * 1024)
-        : growth_factor(growth_factor_)
+        : initial_size(initial_size_)
+        , growth_factor(growth_factor_)
         , linear_growth_threshold(linear_growth_threshold_)
-        , head(new MemoryChunk(initial_size_, nullptr))
-        , allocated_bytes(head->size())
-        , used_bytes(0)
         , page_size(static_cast<size_t>(::getPageSize()))
     {
     }
 
-    ~Arena()
-    {
-        delete head;
-    }
-
     /// Get piece of memory, without alignment.
+    /// Note: we expect it will return a non-nullptr even if the size is zero.
     char * alloc(size_t size)
     {
         used_bytes += size;
-        if (unlikely(static_cast<std::ptrdiff_t>(size) > head->end - head->pos))
+        if (unlikely(head.empty() || size > head.remaining()))
             addMemoryChunk(size);
 
-        char * res = head->pos;
-        head->pos += size;
+        char * res = head.pos;
+        head.pos += size;
         ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
         return res;
     }
@@ -159,16 +192,19 @@ public:
     char * alignedAlloc(size_t size, size_t alignment)
     {
         used_bytes += size;
+        if (unlikely(head.empty() || size > head.remaining()))
+            addMemoryChunk(size + alignment);
+
         do
         {
-            void * head_pos = head->pos;
-            size_t space = head->end - head->pos;
+            void * head_pos = head.pos;
+            size_t space = head.end - head.pos;
 
             auto * res = static_cast<char *>(std::align(alignment, size, head_pos, space));
             if (res)
             {
-                head->pos = static_cast<char *>(head_pos);
-                head->pos += size;
+                head.pos = static_cast<char *>(head_pos);
+                head.pos += size;
                 ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
                 return res;
             }
@@ -191,9 +227,9 @@ public:
     void * rollback(size_t size)
     {
         used_bytes -= size;
-        head->pos -= size;
-        ASAN_POISON_MEMORY_REGION(head->pos, size + pad_right);
-        return head->pos;
+        head.pos -= size;
+        ASAN_POISON_MEMORY_REGION(head.pos, size + pad_right);
+        return head.pos;
     }
 
     /** Begin or expand a contiguous range of memory.
@@ -234,10 +270,10 @@ public:
         // This method only works for extending the last allocation. For lack of
         // original size, check a weaker condition: that 'begin' is at least in
         // the current MemoryChunk.
-        assert(range_start >= head->begin);
-        assert(range_start < head->end);
+        assert(range_start >= head.begin);
+        assert(range_start < head.end);
 
-        if (head->pos + additional_bytes <= head->end)
+        if (head.pos + additional_bytes <= head.end)
         {
             // The new size fits into the last MemoryChunk, so just alloc the
             // additional size. We can alloc without alignment here, because it
@@ -254,7 +290,7 @@ public:
         // solved not by complicating this method, but by rethinking the
         // approach to memory management for aggregate function states, so that
         // we can provide a proper realloc().
-        const size_t existing_bytes = head->pos - range_start;
+        const size_t existing_bytes = head.pos - range_start;
         const size_t new_bytes = existing_bytes + additional_bytes;
         const char * old_range = range_start;
 
@@ -317,12 +353,11 @@ public:
     /// yourself having to use this method, probably you're doing something wrong.
     size_t remainingSpaceInCurrentMemoryChunk() const
     {
-        return head->remaining();
+        return head.remaining();
     }
 };
 
 using ArenaPtr = std::shared_ptr<Arena>;
 using Arenas = std::vector<ArenaPtr>;
-
 
 }

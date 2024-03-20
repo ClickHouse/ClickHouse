@@ -8,6 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/BinStringDecodeHelper.h>
+#include "Parsers/CommonParsers.h"
 
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
@@ -123,7 +124,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
 
         /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
-        /// with `(SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...))`
+        /// with `(SELECT * FROM viewExplain('<kind>', '<explain_settings>', (SELECT ...)))`
 
         String kind_str = ASTExplainQuery::toString(explain_query.getKind());
 
@@ -141,7 +142,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             auto view_explain = makeASTFunction("viewExplain",
                 std::make_shared<ASTLiteral>(kind_str),
                 std::make_shared<ASTLiteral>(settings_str),
-                explained_ast);
+                std::make_shared<ASTSubquery>(explained_ast));
             result_node = buildSelectFromTableFunction(view_explain);
         }
         else
@@ -161,8 +162,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    node = std::make_shared<ASTSubquery>();
-    node->children.push_back(result_node);
+    node = std::make_shared<ASTSubquery>(std::move(result_node));
     return true;
 }
 
@@ -250,7 +250,7 @@ bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, E
     ReadBufferFromMemory in(pos->begin, pos->size());
     String s;
 
-    if (!tryReadQuotedStringInto(s, in))
+    if (!tryReadQuotedString(s, in))
     {
         expected.add(pos, "string literal");
         return false;
@@ -291,7 +291,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             params.push_back(child->as<ASTIdentifier>()->getParam());
     }
 
-    ParserKeyword s_uuid("UUID");
+    ParserKeyword s_uuid(Keyword::UUID);
     UUID uuid = UUIDHelpers::Nil;
 
     if (table_name_with_optional_uuid)
@@ -338,7 +338,7 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         return false;
     }
 
-    ParserKeyword parser_where("WHERE");
+    ParserKeyword parser_where(Keyword::WHERE);
     if (!parser_where.ignore(pos, expected))
     {
         return false;
@@ -392,9 +392,9 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & pos,
     Expected & expected)
 {
-    ParserKeyword keyword_rows("ROWS");
-    ParserKeyword keyword_groups("GROUPS");
-    ParserKeyword keyword_range("RANGE");
+    ParserKeyword keyword_rows(Keyword::ROWS);
+    ParserKeyword keyword_groups(Keyword::GROUPS);
+    ParserKeyword keyword_range(Keyword::RANGE);
 
     node->frame_is_default = false;
     if (keyword_rows.ignore(pos, expected))
@@ -416,12 +416,12 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         return true;
     }
 
-    ParserKeyword keyword_between("BETWEEN");
-    ParserKeyword keyword_unbounded("UNBOUNDED");
-    ParserKeyword keyword_preceding("PRECEDING");
-    ParserKeyword keyword_following("FOLLOWING");
-    ParserKeyword keyword_and("AND");
-    ParserKeyword keyword_current_row("CURRENT ROW");
+    ParserKeyword keyword_between(Keyword::BETWEEN);
+    ParserKeyword keyword_unbounded(Keyword::UNBOUNDED);
+    ParserKeyword keyword_preceding(Keyword::PRECEDING);
+    ParserKeyword keyword_following(Keyword::FOLLOWING);
+    ParserKeyword keyword_and(Keyword::AND);
+    ParserKeyword keyword_current_row(Keyword::CURRENT_ROW);
 
     // There are two variants of grammar for the frame:
     // 1) ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
@@ -525,10 +525,10 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 static bool parseWindowDefinitionParts(IParser::Pos & pos,
     ASTWindowDefinition & node, Expected & expected)
 {
-    ParserKeyword keyword_partition_by("PARTITION BY");
+    ParserKeyword keyword_partition_by(Keyword::PARTITION_BY);
     ParserNotEmptyExpressionList columns_partition_by(
         false /* we don't allow declaring aliases here*/);
-    ParserKeyword keyword_order_by("ORDER BY");
+    ParserKeyword keyword_order_by(Keyword::ORDER_BY);
     ParserOrderByExpressionList columns_order_by;
 
     if (keyword_partition_by.ignore(pos, expected))
@@ -627,7 +627,7 @@ bool ParserWindowList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         elem->name = getIdentifierName(window_name_identifier);
 
-        ParserKeyword keyword_as("AS");
+        ParserKeyword keyword_as(Keyword::AS);
         if (!keyword_as.ignore(pos, expected))
         {
             return false;
@@ -678,6 +678,33 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = "CODEC";
     function_node->arguments = expr_list_args;
+    function_node->children.push_back(function_node->arguments);
+
+    node = function_node;
+    return true;
+}
+
+bool ParserStatisticType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserList stat_type_parser(std::make_unique<ParserIdentifierWithOptionalParameters>(),
+        std::make_unique<ParserToken>(TokenType::Comma), false);
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ASTPtr stat_type;
+
+    ++pos;
+
+    if (!stat_type_parser.parse(pos, stat_type, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto function_node = std::make_shared<ASTFunction>();
+    function_node->name = "STATISTIC";
+    function_node->arguments = stat_type;
     function_node->children.push_back(function_node->arguments);
 
     node = function_node;
@@ -828,7 +855,7 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword nested_parser("NULL");
+    ParserKeyword nested_parser(Keyword::NULL_KEYWORD);
     if (nested_parser.parse(pos, node, expected))
     {
         node = std::make_shared<ASTLiteral>(Null());
@@ -841,12 +868,12 @@ bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (ParserKeyword("true").parse(pos, node, expected))
+    if (ParserKeyword(Keyword::TRUE_KEYWORD).parse(pos, node, expected))
     {
         node = std::make_shared<ASTLiteral>(true);
         return true;
     }
-    else if (ParserKeyword("false").parse(pos, node, expected))
+    else if (ParserKeyword(Keyword::FALSE_KEYWORD).parse(pos, node, expected))
     {
         node = std::make_shared<ASTLiteral>(false);
         return true;
@@ -908,7 +935,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (float_value < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Logical error: token number cannot begin with minus, "
+                                "Token number cannot begin with minus, "
                                 "but parsed float number is less than zero.");
 
             if (negative)
@@ -1424,6 +1451,7 @@ const char * ParserAlias::restricted_keywords[] =
     "ASOF",
     "BETWEEN",
     "CROSS",
+    "PASTE",
     "FINAL",
     "FORMAT",
     "FROM",
@@ -1461,7 +1489,7 @@ const char * ParserAlias::restricted_keywords[] =
 
 bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_as("AS");
+    ParserKeyword s_as(Keyword::AS);
     ParserIdentifier id_p;
 
     bool has_as_word = s_as.ignore(pos, expected);
@@ -1492,11 +1520,11 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword apply("APPLY");
-    ParserKeyword except("EXCEPT");
-    ParserKeyword replace("REPLACE");
-    ParserKeyword as("AS");
-    ParserKeyword strict("STRICT");
+    ParserKeyword apply(Keyword::APPLY);
+    ParserKeyword except(Keyword::EXCEPT);
+    ParserKeyword replace(Keyword::REPLACE);
+    ParserKeyword as(Keyword::AS);
+    ParserKeyword strict(Keyword::STRICT);
 
     if (allowed_transformers.isSet(ColumnTransformer::APPLY) && apply.ignore(pos, expected))
     {
@@ -1820,7 +1848,7 @@ static bool parseColumnsMatcherBody(IParser::Pos & pos, ASTPtr & node, Expected 
 
 bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword columns("COLUMNS");
+    ParserKeyword columns(Keyword::COLUMNS);
 
     if (!columns.ignore(pos, expected))
         return false;
@@ -2025,18 +2053,18 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserExpressionWithOptionalAlias elem_p(false);
-    ParserKeyword ascending("ASCENDING");
-    ParserKeyword descending("DESCENDING");
-    ParserKeyword asc("ASC");
-    ParserKeyword desc("DESC");
-    ParserKeyword nulls("NULLS");
-    ParserKeyword first("FIRST");
-    ParserKeyword last("LAST");
-    ParserKeyword collate("COLLATE");
-    ParserKeyword with_fill("WITH FILL");
-    ParserKeyword from("FROM");
-    ParserKeyword to("TO");
-    ParserKeyword step("STEP");
+    ParserKeyword ascending(Keyword::ASCENDING);
+    ParserKeyword descending(Keyword::DESCENDING);
+    ParserKeyword asc(Keyword::ASC);
+    ParserKeyword desc(Keyword::DESC);
+    ParserKeyword nulls(Keyword::NULLS);
+    ParserKeyword first(Keyword::FIRST);
+    ParserKeyword last(Keyword::LAST);
+    ParserKeyword collate(Keyword::COLLATE);
+    ParserKeyword with_fill(Keyword::WITH_FILL);
+    ParserKeyword from(Keyword::FROM);
+    ParserKeyword to(Keyword::TO);
+    ParserKeyword step(Keyword::STEP);
     ParserStringLiteral collate_locale_parser;
     ParserExpressionWithOptionalAlias exp_parser(false);
 
@@ -2112,7 +2140,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
 bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword as("AS");
+    ParserKeyword as(Keyword::AS);
     ParserExpression element_p;
     ParserIdentifier ident_p;
 
@@ -2183,18 +2211,18 @@ bool ParserFunctionWithKeyValueArguments::parseImpl(Pos & pos, ASTPtr & node, Ex
 
 bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_to_disk("TO DISK");
-    ParserKeyword s_to_volume("TO VOLUME");
-    ParserKeyword s_if_exists("IF EXISTS");
-    ParserKeyword s_delete("DELETE");
-    ParserKeyword s_where("WHERE");
-    ParserKeyword s_group_by("GROUP BY");
-    ParserKeyword s_set("SET");
-    ParserKeyword s_recompress("RECOMPRESS");
-    ParserKeyword s_codec("CODEC");
-    ParserKeyword s_materialize("MATERIALIZE");
-    ParserKeyword s_remove("REMOVE");
-    ParserKeyword s_modify("MODIFY");
+    ParserKeyword s_to_disk(Keyword::TO_DISK);
+    ParserKeyword s_to_volume(Keyword::TO_VOLUME);
+    ParserKeyword s_if_exists(Keyword::IF_EXISTS);
+    ParserKeyword s_delete(Keyword::DELETE);
+    ParserKeyword s_where(Keyword::WHERE);
+    ParserKeyword s_group_by(Keyword::GROUP_BY);
+    ParserKeyword s_set(Keyword::SET);
+    ParserKeyword s_recompress(Keyword::RECOMPRESS);
+    ParserKeyword s_codec(Keyword::CODEC);
+    ParserKeyword s_materialize(Keyword::MATERIALIZE);
+    ParserKeyword s_remove(Keyword::REMOVE);
+    ParserKeyword s_modify(Keyword::MODIFY);
 
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;

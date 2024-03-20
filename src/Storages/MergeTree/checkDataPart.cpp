@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
@@ -16,6 +15,7 @@
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -56,7 +56,7 @@ bool isNotEnoughMemoryErrorCode(int code)
         || code == ErrorCodes::CANNOT_MREMAP;
 }
 
-bool isRetryableException(const std::exception_ptr exception_ptr)
+bool isRetryableException(std::exception_ptr exception_ptr)
 {
     try
     {
@@ -75,6 +75,16 @@ bool isRetryableException(const std::exception_ptr exception_ptr)
         return true;
     }
 #endif
+    catch (const ErrnoException & e)
+    {
+        if (e.getErrno() == EMFILE)
+            return true;
+    }
+    catch (const Coordination::Exception  & e)
+    {
+        if (Coordination::isHardwareError(e.code))
+            return true;
+    }
     catch (const Exception & e)
     {
         if (isNotEnoughMemoryErrorCode(e.code()))
@@ -243,7 +253,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
-        if (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"))
+        if (isGinFile(file_name))
             continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
@@ -299,22 +309,11 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     return checksums_data;
 }
 
-IMergeTreeDataPart::Checksums checkDataPartInMemory(const DataPartInMemoryPtr & data_part)
-{
-    IMergeTreeDataPart::Checksums data_checksums;
-    data_checksums.files["data.bin"] = data_part->calculateBlockChecksum();
-    data_part->checksums.checkEqual(data_checksums, true);
-    return data_checksums;
-}
-
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
     std::function<bool()> is_cancelled)
 {
-    if (auto part_in_memory = asInMemoryPart(data_part))
-        return checkDataPartInMemory(part_in_memory);
-
     /// If check of part has failed and it is stored on disk with cache
     /// try to drop cache and check it once again because maybe the cache
     /// is broken not the part itself.
@@ -327,17 +326,17 @@ IMergeTreeDataPart::Checksums checkDataPart(
             throw;
 
         LOG_DEBUG(
-            &Poco::Logger::get("checkDataPart"),
+            getLogger("checkDataPart"),
             "Will drop cache for data part {} and will check it once again", data_part->name);
 
-        auto & cache = *FileCacheFactory::instance().getByName(*cache_name).cache;
+        auto & cache = *FileCacheFactory::instance().getByName(*cache_name)->cache;
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
         {
             auto file_name = it->name();
             if (!data_part_storage.isDirectory(file_name))
             {
                 auto remote_path = data_part_storage.getRemotePath(file_name);
-                cache.removePathIfExists(remote_path);
+                cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
             }
         }
 

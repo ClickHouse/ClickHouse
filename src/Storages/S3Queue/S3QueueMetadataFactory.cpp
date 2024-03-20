@@ -43,6 +43,7 @@ void S3QueueMetadataFactory::remove(const std::string & zookeeper_path)
     if (it == metadata_by_path.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata with zookeeper path {} does not exist", zookeeper_path);
 
+    chassert(it->second.ref_count > 0);
     if (--it->second.ref_count == 0)
     {
         try

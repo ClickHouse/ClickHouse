@@ -17,17 +17,15 @@
 #include "Core/Protocol.h"
 #include "Parsers/formatAST.h"
 
-#include <base/find_symbols.h>
-
 #include <Access/AccessControl.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
-#include <Common/Config/configReadClient.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/getClientConfigPath.h>
 
-#include <Core/QueryProcessingStage.h>
 #include <Columns/ColumnString.h>
 #include <Poco/Util/Application.h>
 
@@ -52,10 +50,7 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
-
-#ifndef __clang__
-#pragma GCC optimize("-fno-var-tracking-assignments")
-#endif
+#include <Formats/FormatFactory.h>
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -131,69 +126,64 @@ void Client::showWarnings()
     }
 }
 
-void Client::parseConnectionsCredentials()
+void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name)
 {
-    /// It is not possible to correctly handle multiple --host --port options.
-    if (hosts_and_ports.size() >= 2)
-        return;
-
-    std::optional<String> host;
+    std::optional<String> default_connection_name;
     if (hosts_and_ports.empty())
     {
-        if (config().has("host"))
-            host = config().getString("host");
+        if (config.has("host"))
+            default_connection_name = config.getString("host");
     }
     else
     {
-        host = hosts_and_ports.front().host;
+        default_connection_name = hosts_and_ports.front().host;
     }
 
     String connection;
-    if (config().has("connection"))
-        connection = config().getString("connection");
+    if (!connection_name.empty())
+        connection = connection_name;
     else
-        connection = host.value_or("localhost");
+        connection = default_connection_name.value_or("localhost");
 
     Strings keys;
-    config().keys("connections_credentials", keys);
+    config.keys("connections_credentials", keys);
     bool connection_found = false;
     for (const auto & key : keys)
     {
         const String & prefix = "connections_credentials." + key;
 
-        const String & connection_name = config().getString(prefix + ".name", "");
-        if (connection_name != connection)
+        const String & name = config.getString(prefix + ".name", "");
+        if (name != connection)
             continue;
         connection_found = true;
 
         String connection_hostname;
-        if (config().has(prefix + ".hostname"))
-            connection_hostname = config().getString(prefix + ".hostname");
+        if (config.has(prefix + ".hostname"))
+            connection_hostname = config.getString(prefix + ".hostname");
         else
-            connection_hostname = connection_name;
+            connection_hostname = name;
 
-        if (hosts_and_ports.empty())
-            config().setString("host", connection_hostname);
-        if (config().has(prefix + ".port") && hosts_and_ports.empty())
-            config().setInt("port", config().getInt(prefix + ".port"));
-        if (config().has(prefix + ".secure") && !config().has("secure"))
-            config().setBool("secure", config().getBool(prefix + ".secure"));
-        if (config().has(prefix + ".user") && !config().has("user"))
-            config().setString("user", config().getString(prefix + ".user"));
-        if (config().has(prefix + ".password") && !config().has("password"))
-            config().setString("password", config().getString(prefix + ".password"));
-        if (config().has(prefix + ".database") && !config().has("database"))
-            config().setString("database", config().getString(prefix + ".database"));
-        if (config().has(prefix + ".history_file") && !config().has("history_file"))
+        config.setString("host", connection_hostname);
+        if (config.has(prefix + ".port"))
+            config.setInt("port", config.getInt(prefix + ".port"));
+        if (config.has(prefix + ".secure"))
+            config.setBool("secure", config.getBool(prefix + ".secure"));
+        if (config.has(prefix + ".user"))
+            config.setString("user", config.getString(prefix + ".user"));
+        if (config.has(prefix + ".password"))
+            config.setString("password", config.getString(prefix + ".password"));
+        if (config.has(prefix + ".database"))
+            config.setString("database", config.getString(prefix + ".database"));
+        if (config.has(prefix + ".history_file"))
         {
-            String history_file = config().getString(prefix + ".history_file");
+            String history_file = config.getString(prefix + ".history_file");
             if (history_file.starts_with("~") && !home_path.empty())
                 history_file = home_path + "/" + history_file.substr(1);
-            config().setString("history_file", history_file);
+            config.setString("history_file", history_file);
         }
     }
 
-    if (config().has("connection") && !connection_found)
+    if (!connection_name.empty() && !connection_found)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No such connection '{}' in connections_credentials", connection);
 }
 
@@ -263,7 +253,20 @@ void Client::initialize(Poco::Util::Application & self)
     if (home_path_cstr)
         home_path = home_path_cstr;
 
-    configReadClient(config(), home_path);
+    std::optional<std::string> config_path;
+    if (config().has("config-file"))
+        config_path.emplace(config().getString("config-file"));
+    else
+        config_path = getClientConfigPath(home_path);
+    if (config_path.has_value())
+    {
+        ConfigProcessor config_processor(*config_path);
+        auto loaded_config = config_processor.loadConfig();
+        parseConnectionsCredentials(*loaded_config.configuration, config().getString("connection", ""));
+        config().add(loaded_config.configuration);
+    }
+    else if (config().has("connection"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exists");
 
     /** getenv is thread-safe in Linux glibc and in all sane libc implementations.
       * But the standard does not guarantee that subsequent calls will not rewrite the value by returned pointer.
@@ -286,8 +289,6 @@ void Client::initialize(Poco::Util::Application & self)
     if (env_password && !config().has("password"))
         config().setString("password", env_password);
 
-    parseConnectionsCredentials();
-
     // global_context->setApplicationType(Context::ApplicationType::CLIENT);
     global_context->setQueryParameters(query_parameters);
 
@@ -302,6 +303,10 @@ void Client::initialize(Poco::Util::Application & self)
     /// Set path for format schema files
     if (config().has("format_schema_path"))
         global_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+
+    /// Set the path for google proto files
+    if (config().has("google_protos_path"))
+        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
 }
 
 
@@ -321,7 +326,8 @@ try
 
     processConfig();
     adjustSettings();
-    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()
@@ -418,7 +424,7 @@ void Client::connect()
     if (hosts_and_ports.empty())
     {
         String host = config().getString("host", "localhost");
-        UInt16 port = ConnectionParameters::getPortFromConfig(config());
+        UInt16 port = ConnectionParameters::getPortFromConfig(config(), host);
         hosts_and_ports.emplace_back(HostAndPort{host, port});
     }
 
@@ -485,8 +491,7 @@ void Client::connect()
 
     if (is_interactive)
     {
-        std::cout << "Connected to " << server_name << " server version " << server_version << " revision " << server_revision << "."
-                    << std::endl << std::endl;
+        std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
@@ -497,7 +502,7 @@ void Client::connect()
                         << "It may lack support for new features." << std::endl
                         << std::endl;
         }
-        else if (client_version_tuple > server_version_tuple)
+        else if (client_version_tuple > server_version_tuple && server_display_name != "clickhouse-cloud")
         {
             std::cout << "ClickHouse server version is older than ClickHouse client. "
                         << "It may indicate that the server is out of date and can be upgraded." << std::endl
@@ -838,83 +843,7 @@ bool Client::processWithFuzzing(const String & full_query)
             have_error = true;
         }
 
-        // Check that after the query is formatted, we can parse it back,
-        // format again and get the same result. Unfortunately, we can't
-        // compare the ASTs, which would be more sensitive to errors. This
-        // double formatting check doesn't catch all errors, e.g. we can
-        // format query incorrectly, but to a valid SQL that we can then
-        // parse and format into the same SQL.
-        // There are some complicated cases where we can generate the SQL
-        // which we can't parse:
-        // * first argument of lambda() replaced by fuzzer with
-        //   something else, leading to constructs such as
-        //   arrayMap((min(x) + 3) -> x + 1, ....)
-        // * internals of Enum replaced, leading to:
-        //   Enum(equals(someFunction(y), 3)).
-        // And there are even the cases when we can parse the query, but
-        // it's logically incorrect and its formatting is a mess, such as
-        // when `lambda()` function gets substituted into a wrong place.
-        // To avoid dealing with these cases, run the check only for the
-        // queries we were able to successfully execute.
-        // Another caveat is that sometimes WITH queries are not executed,
-        // if they are not referenced by the main SELECT, so they can still
-        // have the aforementioned problems. Disable this check for such
-        // queries, for lack of a better solution.
-        // There is also a problem that fuzzer substitutes positive Int64
-        // literals or Decimal literals, which are then parsed back as
-        // UInt64, and suddenly duplicate alias substitution starts or stops
-        // working (ASTWithAlias::formatImpl) or something like that.
-        // So we compare not even the first and second formatting of the
-        // query, but second and third.
-        // If you have to add any more workarounds to this check, just remove
-        // it altogether, it's not so useful.
-        if (ast_to_process && !have_error && !queryHasWithClause(*ast_to_process))
-        {
-            ASTPtr ast_2;
-            try
-            {
-                const auto * tmp_pos = query_to_execute.c_str();
-                ast_2 = parseQuery(tmp_pos, tmp_pos + query_to_execute.size(), false /* allow_multi_statements */);
-            }
-            catch (Exception & e)
-            {
-                if (e.code() != ErrorCodes::SYNTAX_ERROR &&
-                    e.code() != ErrorCodes::TOO_DEEP_RECURSION)
-                    throw;
-            }
-
-            if (ast_2)
-            {
-                const auto text_2 = ast_2->formatForErrorMessage();
-                const auto * tmp_pos = text_2.c_str();
-                const auto ast_3 = parseQuery(tmp_pos, tmp_pos + text_2.size(),
-                    false /* allow_multi_statements */);
-                const auto text_3 = ast_3 ? ast_3->formatForErrorMessage() : "";
-
-                if (text_3 != text_2)
-                {
-                    fmt::print(stderr, "Found error: The query formatting is broken.\n");
-
-                    printChangedSettings();
-
-                    fmt::print(stderr,
-                        "Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
-                        text_3, text_2);
-                    fmt::print(stderr, "In more detail:\n");
-                    fmt::print(stderr, "AST-1 (generated by fuzzer):\n'{}'\n", ast_to_process->dumpTree());
-                    fmt::print(stderr, "Text-1 (AST-1 formatted):\n'{}'\n", query_to_execute);
-                    fmt::print(stderr, "AST-2 (Text-1 parsed):\n'{}'\n", ast_2->dumpTree());
-                    fmt::print(stderr, "Text-2 (AST-2 formatted):\n'{}'\n", text_2);
-                    fmt::print(stderr, "AST-3 (Text-2 parsed):\n'{}'\n", ast_3 ? ast_3->dumpTree() : "");
-                    fmt::print(stderr, "Text-3 (AST-3 formatted):\n'{}'\n", text_3);
-                    fmt::print(stderr, "Text-3 must be equal to Text-2, but it is not.\n");
-
-                    _exit(1);
-                }
-            }
-        }
-
-        // The server is still alive so we're going to continue fuzzing.
+        // The server is still alive, so we're going to continue fuzzing.
         // Determine what we're going to use as the starting AST.
         if (have_error)
         {
@@ -993,6 +922,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
     std::cout << options_description.external_description.value() << "\n";
     std::cout << options_description.hosts_and_ports_description.value() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    std::cout << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
 
 
@@ -1003,6 +933,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
         ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
         ("secure,s", "Use TLS connection")
+        ("no-secure,s", "Don't use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
@@ -1144,6 +1075,8 @@ void Client::processOptions(const OptionsDescription & options_description,
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
     if (options.count("secure"))
         config().setBool("secure", true);
+    if (options.count("no-secure"))
+        config().setBool("no-secure", true);
     if (options.count("user") && !options["user"].defaulted())
         config().setString("user", options["user"].as<std::string>());
     if (options.count("password"))
@@ -1205,6 +1138,13 @@ void Client::processOptions(const OptionsDescription & options_description,
 }
 
 
+static bool checkIfStdoutIsRegularFile()
+{
+    struct stat file_stat;
+    return fstat(STDOUT_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
+}
+
+
 void Client::processConfig()
 {
     if (!queries.empty() && config().has("queries-file"))
@@ -1234,7 +1174,6 @@ void Client::processConfig()
             global_context->setCurrentQueryId(query_id);
     }
     print_stack_trace = config().getBool("stacktrace", false);
-    logging_initialized = true;
 
     if (config().has("multiquery"))
         is_multiquery = true;
@@ -1242,7 +1181,14 @@ void Client::processConfig()
     pager = config().getString("pager", "");
 
     is_default_format = !config().has("vertical") && !config().has("format");
-    if (config().has("vertical"))
+    if (is_default_format && checkIfStdoutIsRegularFile())
+    {
+        is_default_format = false;
+        std::optional<String> format_from_file_name;
+        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDOUT_FILENO);
+        format = format_from_file_name ? *format_from_file_name : "TabSeparated";
+    }
+    else if (config().has("vertical"))
         format = config().getString("format", "Vertical");
     else
         format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
@@ -1446,14 +1392,15 @@ void Client::readArguments(
 }
 
 
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
     try
     {
         DB::Client client;
+        // Initialize command line options
         client.init(argc, argv);
         return client.run();
     }

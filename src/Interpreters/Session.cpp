@@ -15,7 +15,6 @@
 #include <Interpreters/Cluster.h>
 
 #include <magic_enum.hpp>
-#include <Poco/Net/NameValueCollection.h>
 
 #include <atomic>
 #include <condition_variable>
@@ -113,8 +112,7 @@ public:
                 throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session {} not found", session_id);
 
             /// Create a new session from current context.
-            auto context = Context::createCopy(global_context);
-            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, context, timeout, *this))).first;
+            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, global_context, timeout, *this))).first;
             const auto & session = it->second;
 
             if (!thread.joinable())
@@ -129,7 +127,7 @@ public:
             /// Use existing session.
             const auto & session = it->second;
 
-            LOG_TEST(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
+            LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
             if (!session.unique())
                 throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
@@ -267,7 +265,7 @@ private:
     ThreadFromGlobalPool thread;
     bool quit = false;
 
-    Poco::Logger * log = &Poco::Logger::get("NamedSessionsStorage");
+    LoggerPtr log = getLogger("NamedSessionsStorage");
 };
 
 
@@ -284,7 +282,7 @@ void Session::shutdownNamedSessions()
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure, const std::string & certificate)
     : auth_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
-      log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session"))
+      log(getLogger(String{magic_enum::enum_name(interface_)} + "-Session"))
 {
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
@@ -351,10 +349,9 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host());
+        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedFor());
         user_id = auth_result.user_id;
         settings_from_auth_server = auth_result.settings;
-
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
     }
@@ -432,18 +429,17 @@ void Session::setClientConnectionId(uint32_t connection_id)
         prepared_client_info->connection_id = connection_id;
 }
 
-void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers)
+void Session::setHTTPClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
 {
     if (session_context)
     {
-        session_context->setHttpClientInfo(http_method, http_user_agent, http_referer, http_headers);
+        session_context->setHTTPClientInfo(http_method, http_user_agent, http_referer);
     }
     else
     {
         prepared_client_info->http_method = http_method;
         prepared_client_info->http_user_agent = http_user_agent;
         prepared_client_info->http_referer = http_referer;
-        prepared_client_info->headers = http_headers;
     }
 }
 
@@ -705,6 +701,10 @@ void Session::releaseSessionID()
 {
     if (!named_session)
         return;
+
+    prepared_client_info = getClientInfo();
+    session_context.reset();
+
     named_session->release();
     named_session = nullptr;
 }

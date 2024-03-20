@@ -1,11 +1,16 @@
+#include <Common/SipHash.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Common/escapeForFileName.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -21,11 +26,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
 {
@@ -82,8 +82,8 @@ StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, boo
     return data->getProjectionPartsVectorForInternalUsage({State::Active}, &state);
 }
 
-StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)
-    : query_id(context->getCurrentQueryId()), settings(context->getSettingsRef())
+StoragesInfoStream::StoragesInfoStream(const ActionsDAG::Node * predicate, ContextPtr context)
+    : StoragesInfoStreamBase(context)
 {
     /// Will apply WHERE to subset of columns and then add more columns.
     /// This is kind of complicated, but we use WHERE to do less work.
@@ -93,6 +93,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
     MutableColumnPtr table_column_mut = ColumnString::create();
     MutableColumnPtr engine_column_mut = ColumnString::create();
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
+    MutableColumnPtr storage_uuid_column_mut = ColumnUUID::create();
 
     const auto access = context->getAccess();
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
@@ -113,7 +114,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
             std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block_to_filter with column 'database'.
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
         rows = block_to_filter.rows();
 
         /// Block contains new columns, update database_column.
@@ -139,6 +140,14 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
                         continue;
 
                     String engine_name = storage->getName();
+                    UUID storage_uuid = storage->getStorageID().uuid;
+                    if (storage_uuid == UUIDHelpers::Nil)
+                    {
+                        SipHash hash;
+                        hash.update(database_name);
+                        hash.update(table_name);
+                        storage_uuid = hash.get128();
+                    }
 
 #if USE_MYSQL
                     if (auto * proxy = dynamic_cast<StorageMaterializedMySQL *>(storage.get()))
@@ -153,7 +162,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
                     if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                         continue;
 
-                    storages[std::make_pair(database_name, iterator->name())] = storage;
+                    storages[storage_uuid] = storage;
 
                     /// Add all combinations of flag 'active'.
                     for (UInt64 active : {0, 1})
@@ -161,6 +170,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
                         table_column_mut->insert(table_name);
                         engine_column_mut->insert(engine_name);
                         active_column_mut->insert(active);
+                        storage_uuid_column_mut->insert(storage_uuid);
                     }
 
                     offsets[i] += 2;
@@ -178,70 +188,76 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
     block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
     block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), "engine"));
     block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), "active"));
+    block_to_filter.insert(ColumnWithTypeAndName(std::move(storage_uuid_column_mut), std::make_shared<DataTypeUUID>(), "uuid"));
 
     if (rows)
     {
         /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
         rows = block_to_filter.rows();
     }
 
     database_column = block_to_filter.getByName("database").column;
     table_column = block_to_filter.getByName("table").column;
     active_column = block_to_filter.getByName("active").column;
-
-    next_row = 0;
+    storage_uuid_column = block_to_filter.getByName("uuid").column;
 }
 
-StoragesInfo StoragesInfoStream::next()
+class ReadFromSystemPartsBase : public SourceStepWithFilter
 {
-    while (next_row < rows)
-    {
-        StoragesInfo info;
+public:
+    std::string getName() const override { return "ReadFromSystemPartsBase"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-        info.database = (*database_column)[next_row].get<String>();
-        info.table = (*table_column)[next_row].get<String>();
+    ReadFromSystemPartsBase(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        Block sample_block,
+        std::shared_ptr<StorageSystemPartsBase> storage_,
+        std::vector<UInt8> columns_mask_,
+        bool has_state_column_);
 
-        auto is_same_table = [&info, this] (size_t row) -> bool
-        {
-            return (*database_column)[row].get<String>() == info.database &&
-                   (*table_column)[row].get<String>() == info.table;
-        };
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-        /// We may have two rows per table which differ in 'active' value.
-        /// If rows with 'active = 0' were not filtered out, this means we
-        /// must collect the inactive parts. Remember this fact in StoragesInfo.
-        for (; next_row < rows && is_same_table(next_row); ++next_row)
-        {
-            const auto active = (*active_column)[next_row].get<UInt64>();
-            if (active == 0)
-                info.need_inactive_parts = true;
-        }
+protected:
+    std::shared_ptr<StorageSystemPartsBase> storage;
+    std::vector<UInt8> columns_mask;
+    const bool has_state_column;
+    const ActionsDAG::Node * predicate = nullptr;
+};
 
-        info.storage = storages.at(std::make_pair(info.database, info.table));
-
-        /// For table not to be dropped and set of columns to remain constant.
-        info.table_lock = info.storage->tryLockForShare(query_id, settings.lock_acquire_timeout);
-
-        if (info.table_lock == nullptr)
-        {
-            // Table was dropped while acquiring the lock, skipping table
-            continue;
-        }
-
-        info.engine = info.storage->getName();
-
-        info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
-        if (!info.data)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
-
-        return info;
-    }
-
-    return {};
+ReadFromSystemPartsBase::ReadFromSystemPartsBase(
+    const Names & column_names_,
+    const SelectQueryInfo & query_info_,
+    const StorageSnapshotPtr & storage_snapshot_,
+    const ContextPtr & context_,
+    Block sample_block,
+    std::shared_ptr<StorageSystemPartsBase> storage_,
+    std::vector<UInt8> columns_mask_,
+    bool has_state_column_)
+    : SourceStepWithFilter(
+        DataStream{.header = std::move(sample_block)},
+        column_names_,
+        query_info_,
+        storage_snapshot_,
+        context_)
+    , storage(std::move(storage_))
+    , columns_mask(std::move(columns_mask_))
+    , has_state_column(has_state_column_)
+{
 }
 
-Pipe StorageSystemPartsBase::read(
+void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
+}
+
+void StorageSystemPartsBase::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -252,43 +268,53 @@ Pipe StorageSystemPartsBase::read(
 {
     bool has_state_column = hasStateColumn(column_names, storage_snapshot);
 
-    StoragesInfoStream stream(query_info, context);
-
     /// Create the result.
     Block sample = storage_snapshot->metadata->getSampleBlock();
 
     auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample, column_names);
 
-    MutableColumns res_columns = header.cloneEmptyColumns();
-    if (has_state_column)
-        res_columns.push_back(ColumnString::create());
-
-    while (StoragesInfo info = stream.next())
-    {
-        processNextStorage(context, res_columns, columns_mask, info, has_state_column);
-    }
-
     if (has_state_column)
         header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
+
+    auto this_ptr = std::static_pointer_cast<StorageSystemPartsBase>(shared_from_this());
+
+    auto reading = std::make_unique<ReadFromSystemPartsBase>(
+        column_names, query_info, storage_snapshot,
+        std::move(context), std::move(header), std::move(this_ptr), std::move(columns_mask), has_state_column);
+
+    query_plan.addStep(std::move(reading));
+}
+
+void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
+    auto stream = storage->getStoragesInfoStream(predicate, context);
+    auto header = getOutputStream().header;
+
+    MutableColumns res_columns = header.cloneEmptyColumns();
+
+    while (StoragesInfo info = stream->next())
+    {
+        storage->processNextStorage(context, res_columns, columns_mask, info, has_state_column);
+    }
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+    pipeline.init(Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk))));
 }
 
 
-StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_)
+StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, ColumnsDescription && columns)
     : IStorage(table_id_)
 {
-    ColumnsDescription tmp_columns(std::move(columns_));
-
     auto add_alias = [&](const String & alias_name, const String & column_name)
     {
-        ColumnDescription column(alias_name, tmp_columns.get(column_name).type);
+        if (!columns.has(column_name))
+            return;
+        ColumnDescription column(alias_name, columns.get(column_name).type);
         column.default_desc.kind = ColumnDefaultKind::Alias;
         column.default_desc.expression = std::make_shared<ASTIdentifier>(column_name);
-        tmp_columns.add(column);
+        columns.add(column);
     };
 
     /// Add aliases for old column names for backwards compatibility.
@@ -297,14 +323,12 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Name
     add_alias("part_name", "name");
 
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(tmp_columns);
+    storage_metadata.setColumns(columns);
     setInMemoryMetadata(storage_metadata);
+
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral("_state", std::make_shared<DataTypeString>(), "");
+    setVirtuals(std::move(virtuals));
 }
 
-NamesAndTypesList StorageSystemPartsBase::getVirtuals() const
-{
-    return NamesAndTypesList{
-        NameAndTypePair("_state", std::make_shared<DataTypeString>())
-    };
-}
 }

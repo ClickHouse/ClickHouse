@@ -1,6 +1,5 @@
 #include "CachedObjectStorage.h"
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
@@ -25,16 +24,9 @@ CachedObjectStorage::CachedObjectStorage(
     , cache(cache_)
     , cache_settings(cache_settings_)
     , cache_config_name(cache_config_name_)
-    , log(&Poco::Logger::get(getName()))
+    , log(getLogger(getName()))
 {
     cache->initialize();
-}
-
-DataSourceDescription CachedObjectStorage::getDataSourceDescription() const
-{
-    auto wrapped_object_storage_data_source = object_storage->getDataSourceDescription();
-    wrapped_object_storage_data_source.is_cached = true;
-    return wrapped_object_storage_data_source;
 }
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
@@ -42,19 +34,15 @@ FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
     return cache->createKeyForPath(path);
 }
 
-std::string CachedObjectStorage::generateBlobNameForPath(const std::string & path)
+ObjectStorageKey CachedObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
-    return object_storage->generateBlobNameForPath(path);
+    return object_storage->generateObjectKeyForPath(path);
 }
 
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
     ReadSettings modified_settings{read_settings};
     modified_settings.remote_fs_cache = cache;
-
-    if (!canUseReadThroughCache(read_settings))
-        modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
-
     return object_storage->patchSettings(modified_settings);
 }
 
@@ -98,7 +86,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
-        && FileCacheFactory::instance().getByName(cache_config_name).settings.cache_on_write_operations
+        && FileCacheFactory::instance().getByName(cache_config_name)->getSettings().cache_on_write_operations
         && fs::path(object.remote_path).extension() != ".tmp";
 
     /// Need to remove even if cache_on_write == false.
@@ -114,6 +102,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             key,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             modified_write_settings,
+            FileCache::getCommonUser(),
             Context::getGlobalContextInstance()->getFilesystemCacheLog());
     }
 
@@ -126,7 +115,7 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
         return;
 
     /// Add try catch?
-    cache->removeKeyIfExists(getCacheKey(path_key_for_cache));
+    cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
 }
 
 void CachedObjectStorage::removeObject(const StoredObject & object)
@@ -211,16 +200,6 @@ void CachedObjectStorage::applyNewSettings(
 String CachedObjectStorage::getObjectsNamespace() const
 {
     return object_storage->getObjectsNamespace();
-}
-
-bool CachedObjectStorage::canUseReadThroughCache(const ReadSettings & settings)
-{
-    if (!settings.avoid_readthrough_cache_outside_query_context)
-        return true;
-
-    return CurrentThread::isInitialized()
-        && CurrentThread::get().getQueryContext()
-        && !CurrentThread::getQueryId().empty();
 }
 
 }

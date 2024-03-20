@@ -2,9 +2,10 @@
 
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <mutex>
 #include <Common/CurrentMetrics.h>
+
 
 namespace DB
 {
@@ -15,8 +16,9 @@ public:
     IObjectStorageIteratorAsync(
         CurrentMetrics::Metric threads_metric,
         CurrentMetrics::Metric threads_active_metric,
+        CurrentMetrics::Metric threads_scheduled_metric,
         const std::string & thread_name)
-        : list_objects_pool(threads_metric, threads_active_metric, 1)
+        : list_objects_pool(threads_metric, threads_active_metric, threads_scheduled_metric, 1)
         , list_objects_scheduler(threadPoolCallbackRunner<BatchAndHasNext>(list_objects_pool, thread_name))
     {
     }

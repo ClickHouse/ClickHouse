@@ -48,10 +48,10 @@ private:
             set(b);
         }
 
-        MemoryToken(MemoryToken && t)
+        MemoryToken(MemoryToken && t) /// NOLINT
           : parent(std::exchange(t.parent, nullptr)), bytes(std::exchange(t.bytes, 0)) {}
 
-        MemoryToken & operator=(MemoryToken && t)
+        MemoryToken & operator=(MemoryToken && t) /// NOLINT
         {
             parent = std::exchange(t.parent, nullptr);
             bytes = std::exchange(t.bytes, 0);
@@ -79,7 +79,7 @@ private:
 
         MemoryToken mem;
 
-        ColumnChunk(ParquetBlockOutputFormat * p) : mem(p) {}
+        explicit ColumnChunk(ParquetBlockOutputFormat * p) : mem(p) {}
     };
 
     struct RowGroupState

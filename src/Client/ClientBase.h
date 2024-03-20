@@ -94,7 +94,7 @@ protected:
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
-    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth);
+    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
     static void setupSignalHandler();
 
@@ -185,7 +185,7 @@ protected:
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();
 
-    void initTtyBuffer(ProgressOption progress);
+    void initTTYBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -275,21 +275,6 @@ protected:
     size_t processed_rows = 0; /// How many rows have been read or written.
     bool print_num_processed_rows = false; /// Whether to print the number of processed rows at
 
-    enum class PartialResultMode: UInt8
-    {
-        /// Query doesn't show partial result before the first block with 0 rows.
-        /// The first block with 0 rows initializes the output table format using its header.
-        NotInit,
-
-        /// Query shows partial result after the first and before the second block with 0 rows.
-        /// The second block with 0 rows indicates that that receiving blocks with partial result has been completed and next blocks will be with the full result.
-        Active,
-
-        /// Query doesn't show partial result at all.
-        Inactive,
-    };
-    PartialResultMode partial_result_mode = PartialResultMode::Inactive;
-
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
     /// return code in batch mode.
@@ -337,7 +322,8 @@ protected:
 
     bool cancelled = false;
 
-    bool logging_initialized = false;
+    /// Does log_comment has specified by user?
+    bool has_log_comment = false;
 };
 
 }

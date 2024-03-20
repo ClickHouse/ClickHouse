@@ -193,7 +193,7 @@ public:
 
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.
-    static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts);
+    static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts, const bool & account_for_deleted = false);
 
 private:
     /** Select all parts belonging to the same partition.
@@ -213,7 +213,7 @@ public :
 private:
     MergeTreeData & data;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;

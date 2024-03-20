@@ -1,7 +1,6 @@
 -- Tags: no-ordinary-database, no-replicated-database, distributed, zookeeper
 
 set database_atomic_wait_for_drop_and_detach_synchronously = 0;
-set allow_experimental_undrop_table_query = 1;
 
 select 'test MergeTree undrop';
 drop table if exists 02681_undrop_mergetree sync;
@@ -86,5 +85,5 @@ drop table 02681_undrop_multiple;
 select table from system.dropped_tables where table = '02681_undrop_multiple' limit 1;
 undrop table 02681_undrop_multiple;
 select * from 02681_undrop_multiple order by id;
-undrop table 02681_undrop_multiple; -- { serverError 57 }
+undrop table 02681_undrop_multiple; -- { serverError TABLE_ALREADY_EXISTS }
 drop table 02681_undrop_multiple sync;

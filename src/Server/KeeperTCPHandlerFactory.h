@@ -17,7 +17,7 @@ class KeeperTCPHandlerFactory : public TCPServerConnectionFactory
 private:
     ConfigGetter config_getter;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
-    Poco::Logger * log;
+    LoggerPtr log;
     Poco::Timespan receive_timeout;
     Poco::Timespan send_timeout;
 
@@ -37,7 +37,7 @@ public:
         bool secure)
         : config_getter(config_getter_)
         , keeper_dispatcher(keeper_dispatcher_)
-        , log(&Poco::Logger::get(std::string{"KeeperTCP"} + (secure ? "S" : "") + "HandlerFactory"))
+        , log(getLogger(std::string{"KeeperTCP"} + (secure ? "S" : "") + "HandlerFactory"))
         , receive_timeout(/* seconds = */ receive_timeout_seconds, /* microseconds = */ 0)
         , send_timeout(/* seconds = */ send_timeout_seconds, /* microseconds = */ 0)
     {

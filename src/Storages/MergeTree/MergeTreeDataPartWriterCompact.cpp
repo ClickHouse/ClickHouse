@@ -1,22 +1,12 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/BlockNumberColumn.h>
 
 namespace DB
 {
 
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-static CompressionCodecPtr getMarksCompressionCodec(const String & marks_compression_codec)
-{
-    ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    return CompressionCodecFactory::instance().get(ast, nullptr);
 }
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
@@ -24,12 +14,13 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
+    const Statistics & stats_to_recalc,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
-        indices_to_recalc_, marks_file_extension_,
+        indices_to_recalc_, stats_to_recalc, marks_file_extension_,
         default_codec_, settings_, index_granularity_)
     , plain_file(data_part_->getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
@@ -48,20 +39,16 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     {
         marks_compressor = std::make_unique<CompressedWriteBuffer>(
             *marks_file_hashing,
-            getMarksCompressionCodec(settings_.marks_compression_codec),
+             CompressionCodecFactory::instance().get(settings_.marks_compression_codec),
             settings_.marks_compress_block_size);
 
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
     }
 
-    const auto & storage_columns = metadata_snapshot->getColumns();
+    auto storage_snapshot = std::make_shared<StorageSnapshot>(data_part->storage, metadata_snapshot);
     for (const auto & column : columns_list)
     {
-        ASTPtr compression;
-        if (column.name == BlockNumberColumn::name)
-            compression = BlockNumberColumn::compression_codec->getFullCodecDesc();
-        else
-            compression = storage_columns.getCodecDescOrDefault(column.name, default_codec);
+        auto compression = storage_snapshot->getCodecDescOrDefault(column.name, default_codec);
         addStreams(column, compression);
     }
 }
@@ -186,6 +173,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
         auto granules_to_write = getGranulesToWrite(index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
         setCurrentMark(getCurrentMark() + granules_to_write.size());
+        calculateAndSerializeStatistics(flushed_block);
     }
 }
 
@@ -433,6 +421,7 @@ void MergeTreeDataPartWriterCompact::fillChecksums(IMergeTreeDataPart::Checksums
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
+    fillStatisticsChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterCompact::finish(bool sync)
@@ -445,6 +434,7 @@ void MergeTreeDataPartWriterCompact::finish(bool sync)
         finishPrimaryIndexSerialization(sync);
 
     finishSkipIndicesSerialization(sync);
+    finishStatisticsSerialization(sync);
 }
 
 }

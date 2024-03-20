@@ -130,4 +130,5 @@ String TransformWithAdditionalColumns::getName() const
 {
     return "TransformWithAdditionalColumns";
 }
+
 }
