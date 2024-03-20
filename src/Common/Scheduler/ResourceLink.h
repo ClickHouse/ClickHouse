@@ -2,12 +2,10 @@
 
 #include <base/types.h>
 
-#include <Common/Scheduler/ResourceRequest.h>
-#include <Common/Scheduler/ISchedulerQueue.h>
-
-
 namespace DB
 {
+class ISchedulerQueue;
+using ResourceCost = Int64;
 
 /*
  * Everything required for resource consumption. Connection to a specific resource queue.
@@ -17,23 +15,11 @@ struct ResourceLink
     ISchedulerQueue * queue = nullptr;
     bool operator==(const ResourceLink &) const = default;
 
-    void adjust(ResourceCost estimated_cost, ResourceCost real_cost) const
-    {
-        if (queue)
-            queue->adjustBudget(estimated_cost, real_cost);
-    }
+    void adjust(ResourceCost estimated_cost, ResourceCost real_cost) const;
 
-    void consumed(ResourceCost cost) const
-    {
-        if (queue)
-            queue->consumeBudget(cost);
-    }
+    void consumed(ResourceCost cost) const;
 
-    void accumulate(ResourceCost cost) const
-    {
-        if (queue)
-            queue->accumulateBudget(cost);
-    }
+    void accumulate(ResourceCost cost) const;
 };
 
 }
