@@ -30,8 +30,22 @@ int CertificateReloader::setCertificate(SSL * ssl)
     if (!current)
         return -1;
 
-    SSL_use_certificate(ssl, const_cast<X509 *>(current->cert.certificate()));
-    SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current->key)));
+    if (current->certs_chain.size() < 1)
+        return -1;
+
+    int ret;
+    ret = SSL_clear_chain_certs(ssl);
+    if (!ret)
+        return ret;
+    ret = SSL_use_certificate(ssl, const_cast<X509 *>(current->certs_chain[0].certificate()));
+    if (!ret)
+        return ret;
+    for (auto cert = current->certs_chain.begin() + 1; cert != current->certs_chain.end(); cert++) {
+        ret = SSL_add1_chain_cert(ssl, const_cast<X509 *>(cert->certificate()));
+        if (!ret)
+        return ret;
+    }
+    ret = SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current->key)));
 
     int err = SSL_check_private_key(ssl);
     if (err != 1)
@@ -100,7 +114,7 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
 
 
 CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
-    : cert(cert_path), key(/* public key */ "", /* private key */ key_path, pass_phrase)
+    : certs_chain(Poco::Crypto::X509Certificate::readPEM(cert_path)), key(/* public key */ "", /* private key */ key_path, pass_phrase)
 {
 }
 
