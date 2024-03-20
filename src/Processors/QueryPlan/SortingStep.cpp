@@ -1,6 +1,7 @@
 #include <memory>
 #include <stdexcept>
 #include <IO/Operators.h>
+#include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/FinishSortingTransform.h>

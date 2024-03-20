@@ -1073,7 +1073,9 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
         setupTmpPath(shared->log, disk->getPath());
     }
 
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
+    TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
+    temporary_data_on_disk_settings.max_size_on_disk = max_size;
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(volume), std::move(temporary_data_on_disk_settings));
 }
 
 void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_size)
@@ -1093,7 +1095,7 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
     VolumePtr volume = tmp_policy->getVolume(0);
 
     if (volume->getDisks().empty())
-         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No disks volume for temporary files");
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No disks volume for temporary files");
 
     for (const auto & disk : volume->getDisks())
     {
@@ -1119,7 +1121,9 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
     if (shared->root_temp_data_on_disk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
 
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, max_size);
+    TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
+    temporary_data_on_disk_settings.max_size_on_disk = max_size;
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(volume), std::move(temporary_data_on_disk_settings));
 }
 
 void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
@@ -1140,7 +1144,10 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     shared->tmp_path = file_cache->getBasePath();
     VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, shared->getConfigRefWithLock(lock));
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(volume, file_cache.get(), max_size);
+
+    TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
+    temporary_data_on_disk_settings.max_size_on_disk = max_size;
+    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(volume), file_cache.get(), std::move(temporary_data_on_disk_settings));
 }
 
 void Context::setFlagsPath(const String & path)
@@ -5166,6 +5173,7 @@ ReadSettings Context::getReadSettings() const
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
     res.filesystem_cache_segments_batch_size = settings.filesystem_cache_segments_batch_size;
+    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
     res.filesystem_cache_max_download_size = settings.filesystem_cache_max_download_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
@@ -5214,6 +5222,7 @@ WriteSettings Context::getWriteSettings() const
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
     res.throw_on_error_from_cache = settings.throw_on_error_from_cache_on_write_operations;
+    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
     res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
 

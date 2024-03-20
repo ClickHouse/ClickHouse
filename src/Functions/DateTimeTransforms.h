@@ -2094,7 +2094,6 @@ struct Transformer
                     || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                 {
                     bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
-
                     if (!is_valid_input)
                     {
                         if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
