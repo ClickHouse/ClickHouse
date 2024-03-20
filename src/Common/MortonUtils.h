@@ -27,7 +27,7 @@
   */
 
 
-namespace
+namespace impl
 {
     /// After the most significant bit 1, set all subsequent less significant bits to 1 as well.
     inline UInt64 toMask(UInt64 n)
@@ -85,7 +85,7 @@ void intervalBinaryPartition(UInt64 first, UInt64 last, F && callback)
     /// split = 15:   00001111
 
     UInt64 diff = first ^ last;
-    UInt64 mask = toMask(diff) >> 1;
+    UInt64 mask = impl::toMask(diff) >> 1;
 
     /// The current interval represents a whole range with fixed prefix.
     if ((first & mask) == 0 && (last & mask) == mask)

@@ -23,9 +23,9 @@ public:
         : map(std::move(map_))
     {
         for (const auto & name : key_columns)
-            if (!map.count(name)) map[name] = 0;
+            if (!map.contains(name)) map[name] = 0;
         for (const auto & name : ordinary_columns)
-            if (!map.count(name)) map[name] = 0;
+            if (!map.contains(name)) map[name] = 0;
 
         for (const auto & name : key_columns)
             sum_index_columns += map.at(name);

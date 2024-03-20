@@ -402,10 +402,17 @@ MutationsInterpreter::MutationsInterpreter(
     , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
     , available_columns(std::move(available_columns_))
-    , context(Context::createCopy(context_))
     , settings(std::move(settings_))
     , select_limits(SelectQueryOptions().analyze(!settings.can_execute).ignoreLimits())
 {
+    auto new_context = Context::createCopy(context_);
+    if (new_context->getSettingsRef().allow_experimental_analyzer)
+    {
+        new_context->setSetting("allow_experimental_analyzer", false);
+        LOG_DEBUG(&Poco::Logger::get("MutationsInterpreter"), "Will use old analyzer to prepare mutation");
+    }
+    context = std::move(new_context);
+
     prepare(!settings.can_execute);
 }
 

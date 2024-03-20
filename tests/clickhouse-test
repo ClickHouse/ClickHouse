@@ -2900,7 +2900,7 @@ def get_additional_client_options(args):
     if args.client_option:
         client_options = " ".join("--" + option for option in args.client_option)
         if "CLICKHOUSE_CLIENT_OPT" in os.environ:
-            return os.environ["CLICKHOUSE_CLIENT_OPT"] + client_options
+            return os.environ["CLICKHOUSE_CLIENT_OPT"] + " " + client_options
         else:
             return client_options
     else:
@@ -3360,7 +3360,6 @@ if __name__ == "__main__":
         else:
             os.environ["CLICKHOUSE_CLIENT_OPT"] = ""
 
-        os.environ["CLICKHOUSE_CLIENT_OPT"] += get_additional_client_options(args)
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
 

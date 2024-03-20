@@ -10,12 +10,12 @@ namespace DB
 {
 bool ParserShowGrantsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"SHOW GRANTS"}.ignore(pos, expected))
+    if (!ParserKeyword{Keyword::SHOW_GRANTS}.ignore(pos, expected))
         return false;
 
     std::shared_ptr<ASTRolesOrUsersSet> for_roles;
 
-    if (ParserKeyword{"FOR"}.ignore(pos, expected))
+    if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
     {
         ASTPtr for_roles_ast;
         ParserRolesOrUsersSet for_roles_p;

@@ -73,6 +73,8 @@ struct ToStartOfTransform;
     TRANSFORM_TIME(Second)
 #undef TRANSFORM_TIME
 
+/// NOLINTBEGIN(bugprone-macro-parentheses)
+
 #define TRANSFORM_SUBSECONDS(INTERVAL_KIND, DEF_SCALE) \
 template<> \
     struct ToStartOfTransform<IntervalKind::Kind::INTERVAL_KIND> \
@@ -155,6 +157,8 @@ template <> \
     ADD_SUBSECONDS(Microsecond, 6)
     ADD_SUBSECONDS(Nanosecond, 9)
 #undef ADD_SUBSECONDS
+
+/// NOLINTEND(bugprone-macro-parentheses)
 
 template <TimeWindowFunctionName type>
 struct TimeWindowImpl

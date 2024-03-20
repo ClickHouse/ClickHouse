@@ -54,7 +54,7 @@ public:
         return batch;
     }
 
-    virtual std::optional<RelativePathsWithMetadata> getCurrrentBatchAndScheduleNext() override
+    std::optional<RelativePathsWithMetadata> getCurrrentBatchAndScheduleNext() override
     {
         return std::nullopt;
     }

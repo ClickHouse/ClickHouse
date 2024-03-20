@@ -15,8 +15,8 @@ namespace
         for (auto i : collections::range(AccessEntityType::MAX))
         {
             const auto & type_info = AccessEntityTypeInfo::get(i);
-            if (ParserKeyword{type_info.plural_name}.ignore(pos, expected)
-                || (!type_info.plural_alias.empty() && ParserKeyword{type_info.plural_alias}.ignore(pos, expected)))
+            if (ParserKeyword::createDeprecated(type_info.plural_name).ignore(pos, expected)
+                || (!type_info.plural_alias.empty() && ParserKeyword::createDeprecated(type_info.plural_alias).ignore(pos, expected)))
             {
                 type = i;
                 return true;
@@ -29,7 +29,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected)
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected)
                 && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, any_database, table, any_table);
         });
     }
@@ -38,7 +38,7 @@ namespace
 
 bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"SHOW"}.ignore(pos, expected))
+    if (!ParserKeyword{Keyword::SHOW}.ignore(pos, expected))
         return false;
 
     AccessEntityType type;
@@ -51,17 +51,17 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     {
         all = true;
     }
-    else if (ParserKeyword{"CURRENT ROLES"}.ignore(pos, expected))
+    else if (ParserKeyword{Keyword::CURRENT_ROLES}.ignore(pos, expected))
     {
         type = AccessEntityType::ROLE;
         current_roles = true;
     }
-    else if (ParserKeyword{"ENABLED ROLES"}.ignore(pos, expected))
+    else if (ParserKeyword{Keyword::ENABLED_ROLES}.ignore(pos, expected))
     {
         type = AccessEntityType::ROLE;
         enabled_roles = true;
     }
-    else if (ParserKeyword{"CURRENT QUOTA"}.ignore(pos, expected) || ParserKeyword{"QUOTA"}.ignore(pos, expected))
+    else if (ParserKeyword{Keyword::CURRENT_QUOTA}.ignore(pos, expected) || ParserKeyword{Keyword::QUOTA}.ignore(pos, expected))
     {
         type = AccessEntityType::QUOTA;
         current_quota = true;

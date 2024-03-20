@@ -77,7 +77,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"Logout",                 static_cast<Int8>(SESSION_LOGOUT)}
         });
 
-#define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(AuthenticationTypeInfo::get(v).raw_name, static_cast<Int8>(v))
+#define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(toString(v), static_cast<Int8>(v))
     auto identified_with_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {

@@ -61,6 +61,18 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     rm /etc/clickhouse-server/users.d/s3_cache_new.xml
     rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 
+    #todo: remove these after 24.3 released.
+    sudo cat /etc/clickhouse-server/config.d/azure_storage_conf.xml \
+      | sed "s|<object_storage_type>azure|<object_storage_type>azure_blob_storage|" \
+      > /etc/clickhouse-server/config.d/azure_storage_conf.xml.tmp
+    sudo mv /etc/clickhouse-server/config.d/azure_storage_conf.xml.tmp /etc/clickhouse-server/config.d/azure_storage_conf.xml
+
+    #todo: remove these after 24.3 released.
+    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
+      | sed "s|<object_storage_type>local|<object_storage_type>local_blob_storage|" \
+      > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
+    sudo mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
+
     function remove_keeper_config()
     {
         sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
@@ -77,7 +89,7 @@ fi
 if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
     export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
-    export THREAD_FUZZER_SLEEP_TIME_US=100000
+    export THREAD_FUZZER_SLEEP_TIME_US_MAX=100000
 
     export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
     export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
@@ -88,10 +100,10 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
     export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
     export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
-    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
-    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
-    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX=10000
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX=10000
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX=10000
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=10000
 
     mkdir -p /var/run/clickhouse-server
     # simplest way to forward env variables to server

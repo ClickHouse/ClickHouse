@@ -10,7 +10,7 @@ namespace DB
 
 bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_use("USE");
+    ParserKeyword s_use(Keyword::USE);
     ParserIdentifier name_p{/*allow_query_parameter*/ true};
 
     if (!s_use.ignore(pos, expected))

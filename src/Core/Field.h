@@ -40,6 +40,7 @@ using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 /// construct a Field of Array or a Tuple type. An alternative approach would be
 /// to construct both of these types from FieldVector, and have the caller
 /// specify the desired Field type explicitly.
+/// NOLINTBEGIN(modernize-type-traits)
 #define DEFINE_FIELD_VECTOR(X) \
 struct X : public FieldVector \
 { \
@@ -48,6 +49,7 @@ struct X : public FieldVector \
 
 DEFINE_FIELD_VECTOR(Array);
 DEFINE_FIELD_VECTOR(Tuple);
+/// NOLINTEND(modernize-type-traits)
 
 /// An array with the following structure: [(key1, value1), (key2, value2), ...]
 DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.

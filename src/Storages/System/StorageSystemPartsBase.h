@@ -94,7 +94,7 @@ protected:
         // nullptr means table was dropped while acquiring the lock
         return info.table_lock != nullptr;
     }
-protected:
+
     String query_id;
     Settings settings;
 

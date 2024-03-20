@@ -25,6 +25,10 @@ public:
 
     size_t getElementsCount(const CachePriorityGuard::Lock &) const override;
 
+    size_t getSizeApprox() const override;
+
+    size_t getElementsCountApprox() const override;
+
     bool canFit( /// NOLINT
         size_t size,
         const CachePriorityGuard::Lock &,

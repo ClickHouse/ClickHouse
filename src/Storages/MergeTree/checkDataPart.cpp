@@ -56,7 +56,7 @@ bool isNotEnoughMemoryErrorCode(int code)
         || code == ErrorCodes::CANNOT_MREMAP;
 }
 
-bool isRetryableException(const std::exception_ptr exception_ptr)
+bool isRetryableException(std::exception_ptr exception_ptr)
 {
     try
     {

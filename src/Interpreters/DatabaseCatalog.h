@@ -22,9 +22,6 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {

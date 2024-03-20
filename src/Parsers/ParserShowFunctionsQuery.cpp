@@ -13,10 +13,10 @@ bool ParserShowFunctionsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ASTPtr like;
 
     auto query = std::make_shared<ASTShowFunctionsQuery>();
-    if (!ParserKeyword("SHOW FUNCTIONS").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::SHOW_FUNCTIONS).ignore(pos, expected))
         return false;
 
-    if (bool insensitive = ParserKeyword("ILIKE").ignore(pos, expected); insensitive || ParserKeyword("LIKE").ignore(pos, expected))
+    if (bool insensitive = ParserKeyword(Keyword::ILIKE).ignore(pos, expected); insensitive || ParserKeyword(Keyword::LIKE).ignore(pos, expected))
     {
         if (insensitive)
             query->case_insensitive_like = true;

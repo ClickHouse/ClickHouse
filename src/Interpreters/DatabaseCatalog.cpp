@@ -26,7 +26,6 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
-#include "Interpreters/Context_fwd.h"
 #include "config.h"
 
 #if USE_MYSQL

@@ -273,7 +273,7 @@ void RestorerFromBackup::findRootPathsInBackup()
     root_paths_in_backup.push_back(root_path);
 
     /// Add shard-related part to the root path.
-    Strings shards_in_backup = backup->listFiles(root_path / "shards");
+    Strings shards_in_backup = backup->listFiles(root_path / "shards", /*recursive*/ false);
     if (shards_in_backup.empty())
     {
         if (restore_settings.shard_num_in_backup > 1)
@@ -295,7 +295,7 @@ void RestorerFromBackup::findRootPathsInBackup()
     }
 
     /// Add replica-related part to the root path.
-    Strings replicas_in_backup = backup->listFiles(root_path / "replicas");
+    Strings replicas_in_backup = backup->listFiles(root_path / "replicas", /*recursive*/ false);
     if (replicas_in_backup.empty())
     {
         if (restore_settings.replica_num_in_backup > 1)
@@ -514,7 +514,7 @@ void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_i
         if (!metadata_path && !try_metadata_path.empty() && backup->fileExists(try_metadata_path))
             metadata_path = try_metadata_path;
 
-        Strings file_names = backup->listFiles(try_tables_metadata_path);
+        Strings file_names = backup->listFiles(try_tables_metadata_path, /*recursive*/ false);
         for (const String & file_name : file_names)
         {
             if (!file_name.ends_with(".sql"))
@@ -575,7 +575,7 @@ void RestorerFromBackup::findEverythingInBackup(const std::set<String> & except_
 
     for (const auto & root_path_in_backup : root_paths_in_backup)
     {
-        Strings file_names = backup->listFiles(root_path_in_backup / "metadata");
+        Strings file_names = backup->listFiles(root_path_in_backup / "metadata", /*recursive*/ false);
         for (String & file_name : file_names)
         {
             if (file_name.ends_with(".sql"))

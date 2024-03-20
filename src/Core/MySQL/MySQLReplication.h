@@ -546,7 +546,7 @@ namespace MySQLReplication
         virtual void setGTIDSets(GTIDSets sets) = 0;
         virtual void setChecksumSignatureLength(size_t checksum_signature_length_) = 0;
 
-        virtual ~IFlavor() override = default;
+        ~IFlavor() override = default;
     };
 
     class MySQLFlavor : public IFlavor

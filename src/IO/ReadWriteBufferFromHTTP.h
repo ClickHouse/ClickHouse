@@ -210,10 +210,11 @@ class BuilderRWBufferFromHTTP
     bool delay_initialization = true;
 
 public:
-    BuilderRWBufferFromHTTP(Poco::URI uri_)
+    explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
         : uri(uri_)
     {}
 
+/// NOLINTBEGIN(bugprone-macro-parentheses)
 #define setterMember(name, member) \
     BuilderRWBufferFromHTTP & name(decltype(BuilderRWBufferFromHTTP::member) arg_##member) \
     { \
@@ -235,6 +236,7 @@ public:
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
 #undef setterMember
+/// NOLINTEND(bugprone-macro-parentheses)
 
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_)
     {

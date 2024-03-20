@@ -254,6 +254,7 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
+/// NOLINTBEGIN(bugprone-macro-parentheses)
         using MappedType = Mapped;
         std::unique_ptr<FixedHashMap<UInt8, Mapped>>                  key8;
         std::unique_ptr<FixedHashMap<UInt16, Mapped>>                 key16;
@@ -342,6 +343,7 @@ public:
 
             UNREACHABLE();
         }
+/// NOLINTEND(bugprone-macro-parentheses)
     };
 
     using MapsOne = MapsTemplate<RowRef>;
