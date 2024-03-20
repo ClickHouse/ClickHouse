@@ -63,6 +63,8 @@ public:
     PushResult pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
 
+    /// This method should be called manually because it's not flushed automatically in dtor
+    /// because all tables may be already unloaded when we destroy AsynchronousInsertQueue
     void flushAndShutdown();
 
 private:
