@@ -1,26 +1,26 @@
 start
 insert some data
 optimize table to create single part
-0	0	1	0
-1	1	1	1
-0	0	2	0
-1	1	2	1
-2	2	2	2
-0	0	3	0
-1	1	3	1
-2	2	3	2
-3	3	3	3
-0	0	4	0
-1	1	4	1
-2	2	4	2
-3	3	4	3
-4	4	4	4
+0	0	all	1	0
+1	1	all	1	1
+0	0	all	2	0
+1	1	all	2	1
+2	2	all	2	2
+0	0	all	3	0
+1	1	all	3	1
+2	2	all	3	2
+3	3	all	3	3
+0	0	all	4	0
+1	1	all	4	1
+2	2	all	4	2
+3	3	all	4	3
+4	4	all	4	4
 cursor lookup
-2	2	3	2
-3	3	3	3
-0	0	4	0
-1	1	4	1
-2	2	4	2
-3	3	4	3
-4	4	4	4
+2	2	all	3	2
+3	3	all	3	3
+0	0	all	4	0
+1	1	all	4	1
+2	2	all	4	2
+3	3	all	4	3
+4	4	all	4	4
 end
