@@ -44,6 +44,16 @@ size_t SLRUFileCachePriority::getElementsCount(const CachePriorityGuard::Lock & 
     return protected_queue.getElementsCount(lock) + probationary_queue.getElementsCount(lock);
 }
 
+size_t SLRUFileCachePriority::getSizeApprox() const
+{
+    return protected_queue.getSizeApprox() + probationary_queue.getSizeApprox();
+}
+
+size_t SLRUFileCachePriority::getElementsCountApprox() const
+{
+    return protected_queue.getElementsCountApprox() + probationary_queue.getElementsCountApprox();
+}
+
 bool SLRUFileCachePriority::canFit( /// NOLINT
     size_t size,
     const CachePriorityGuard::Lock & lock,
