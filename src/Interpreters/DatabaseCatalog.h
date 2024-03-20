@@ -418,7 +418,9 @@ public:
 
     Names getAllRegisteredNames() const override
     {
-        return database ? database->getAllTableNames(context) : {};
+        if (database)
+            return database->getAllTableNames(context);
+        return {};
     }
 
 private:
