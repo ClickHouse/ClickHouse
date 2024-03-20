@@ -3,7 +3,7 @@ import pytest
 
 import os
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 import subprocess
 
 cluster = ClickHouseCluster(__file__)
@@ -29,6 +29,7 @@ def started_cluster():
         cluster.shutdown()
 
 
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
 def test_read_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -44,6 +45,7 @@ def test_read_table(started_cluster):
     assert select_read == data
 
 
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
 def test_read_write_storage(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -59,6 +61,7 @@ def test_read_write_storage(started_cluster):
     assert select_read == "1\tMark\t72.53\n"
 
 
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
 def test_write_storage_not_expired(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -76,6 +79,7 @@ def test_write_storage_not_expired(started_cluster):
     assert select_read == "1\tMark\t72.53\n"
 
 
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
 def test_two_users(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -98,6 +102,7 @@ def test_two_users(started_cluster):
     )
 
 
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
 def test_read_table_expired(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -118,6 +123,7 @@ def test_read_table_expired(started_cluster):
     started_cluster.unpause_container("hdfskerberos")
 
 
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
 def test_prohibited(started_cluster):
     node1.query(
         "create table HDFSStorTwoProhibited (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://suser@kerberizedhdfs1:9010/storage_user_two_prohibited', 'TSV')"
@@ -132,6 +138,7 @@ def test_prohibited(started_cluster):
         )
 
 
+@pytest.mark.skipif(is_arm(), reason="skip for ARM")
 def test_cache_path(started_cluster):
     node1.query(
         "create table HDFSStorCachePath (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://dedicatedcachepath@kerberizedhdfs1:9010/storage_dedicated_cache_path', 'TSV')"
