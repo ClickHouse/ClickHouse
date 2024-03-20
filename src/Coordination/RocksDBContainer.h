@@ -71,13 +71,11 @@ public:
 
         std::shared_ptr<const KVPair> pair;
 
-        const_iterator()
-        {
-        }
+        const_iterator() = default;
 
-        const_iterator(std::shared_ptr<KVPair> pair_) : pair(std::move(pair_)) {}
+        explicit const_iterator(std::shared_ptr<KVPair> pair_) : pair(std::move(pair_)) {}
 
-        const_iterator(rocksdb::Iterator * iter_) : iter(iter_)
+        explicit const_iterator(rocksdb::Iterator * iter_) : iter(iter_)
         {
             iter->SeekToFirst();
         }
@@ -112,7 +110,7 @@ public:
             return iter != nullptr;
         }
 
-        operator bool() const
+        explicit operator bool() const
         {
             return iter != nullptr;
         }
