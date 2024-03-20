@@ -279,26 +279,24 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
         sleep_time_with_backoff_milliseconds *= 2;
     };
 
-    Azure::Storage::Blobs::DownloadBlobOptions download_options;
-    download_options.Range = {static_cast<int64_t>(range_begin), range_begin+n};
 
-    for (size_t i = 0; i < max_single_download_retries; ++i)
+
+    for (size_t i = 0; i < max_single_download_retries && n > 0; ++i)
     {
         size_t bytes_copied = 0;
         try
         {
+            Azure::Storage::Blobs::DownloadBlobOptions download_options;
+            download_options.Range = {static_cast<int64_t>(range_begin), n};
             auto download_response = blob_client->Download(download_options);
+
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
-            auto length = body_stream->Length();
-            char buffer[length];
-            body_stream->Read(reinterpret_cast<uint8_t *>(buffer), length);
-            std::istringstream string_stream(String(static_cast<char *>(buffer),length)); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            auto bytes = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(data_ptr), body_stream->Length());
+            std::istringstream string_stream(String(static_cast<char *>(data_ptr),bytes)); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             copyFromIStreamWithProgressCallback(string_stream, to, n, progress_callback, &bytes_copied);
 
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->add(bytes_copied, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
-
-            break;
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
