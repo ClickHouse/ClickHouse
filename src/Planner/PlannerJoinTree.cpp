@@ -585,6 +585,28 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     return 0;
 }
 
+std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
+    const std::unordered_map<std::string, ActionsDAGPtr> & alias_column_expressions, const DataStream & current_data_stream)
+{
+    ActionsDAGPtr merged_alias_columns_actions_dag = std::make_shared<ActionsDAG>(current_data_stream.header.getColumnsWithTypeAndName());
+    ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag->getInputs();
+
+    for (const auto & [column_name, alias_column_actions_dag] : alias_column_expressions)
+    {
+        const auto & current_outputs = alias_column_actions_dag->getOutputs();
+        action_dag_outputs.insert(action_dag_outputs.end(), current_outputs.begin(), current_outputs.end());
+        merged_alias_columns_actions_dag->mergeNodes(std::move(*alias_column_actions_dag));
+    }
+
+    for (const auto * output_node : action_dag_outputs)
+        merged_alias_columns_actions_dag->addOrReplaceInOutputs(*output_node);
+    merged_alias_columns_actions_dag->removeUnusedActions(false);
+
+    auto alias_column_step = std::make_unique<ExpressionStep>(current_data_stream, std::move(merged_alias_columns_actions_dag));
+    alias_column_step->setStepDescription("Compute alias columns");
+    return alias_column_step;
+}
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
@@ -865,22 +887,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
                 if (!alias_column_expressions.empty() && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
                 {
-                    ActionsDAGPtr merged_alias_columns_actions_dag = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
-                    ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag->getInputs();
-
-                    for (const auto & [column_name, alias_column_actions_dag] : alias_column_expressions)
-                    {
-                        const auto & current_outputs = alias_column_actions_dag->getOutputs();
-                        action_dag_outputs.insert(action_dag_outputs.end(), current_outputs.begin(), current_outputs.end());
-                        merged_alias_columns_actions_dag->mergeNodes(std::move(*alias_column_actions_dag));
-                    }
-
-                    for (const auto * output_node : action_dag_outputs)
-                        merged_alias_columns_actions_dag->addOrReplaceInOutputs(*output_node);
-                    merged_alias_columns_actions_dag->removeUnusedActions(false);
-
-                    auto alias_column_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(merged_alias_columns_actions_dag));
-                    alias_column_step->setStepDescription("Compute alias columns");
+                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentDataStream());
                     query_plan.addStep(std::move(alias_column_step));
                 }
 
@@ -960,6 +967,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             const auto & mapping = subquery_planner.getQueryNodeToPlanStepMapping();
             query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
             query_plan = std::move(subquery_planner).extractQueryPlan();
+        }
+
+        const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
+        if (!alias_column_expressions.empty() && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
+        {
+            auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentDataStream());
+            query_plan.addStep(std::move(alias_column_step));
         }
     }
     else
