@@ -13,7 +13,7 @@ namespace MySQLParser
 
 bool ParserDeclareSubPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"SUBPARTITION"}.ignore(pos, expected))
+    if (!ParserKeyword{Keyword::SUBPARTITION}.ignore(pos, expected))
         return false;
 
     ASTPtr options;
