@@ -218,7 +218,6 @@ public:
 
     const MergeTreeData & storage;
 
-public:
     const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
 
