@@ -211,19 +211,18 @@ namespace
 
                 pad_string = column_pad_const->getValue<String>();
             }
-            PaddingChars<is_utf8> padding_chars{pad_string};
 
             auto col_res = ColumnString::create();
             StringSink res_sink{*col_res, input_rows_count};
 
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
-                executeForSource(StringSource{*col}, column_length, padding_chars, res_sink);
+                executeForSource(StringSource{*col}, column_length, pad_string, res_sink);
             else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
-                executeForSource(FixedStringSource{*col_fixed}, column_length, padding_chars, res_sink);
+                executeForSource(FixedStringSource{*col_fixed}, column_length, pad_string, res_sink);
             else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
-                executeForSource(ConstSource<StringSource>{*col_const}, column_length, padding_chars, res_sink);
+                executeForSource(ConstSource<StringSource>{*col_const}, column_length, pad_string, res_sink);
             else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
-                executeForSource(ConstSource<FixedStringSource>{*col_const_fixed}, column_length, padding_chars, res_sink);
+                executeForSource(ConstSource<FixedStringSource>{*col_const_fixed}, column_length, pad_string, res_sink);
             else
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
@@ -236,23 +235,39 @@ namespace
 
     private:
         template <typename SourceStrings>
-        void executeForSource(
-            SourceStrings && strings,
-            const ColumnPtr & column_length,
-            const PaddingChars<is_utf8> & padding_chars,
-            StringSink & res_sink) const
+        void executeForSource(SourceStrings && strings, const ColumnPtr & column_length, const String & pad_string, StringSink & res_sink) const
         {
-            if (const auto * col_const = checkAndGetColumn<ColumnConst>(column_length.get()))
-                executeForSourceAndLength(std::forward<SourceStrings>(strings), ConstSource<GenericValueSource>{*col_const}, padding_chars, res_sink);
+            const auto & chars = strings.getElements();
+            bool all_ascii = UTF8::isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
+                && UTF8::isAllASCII(chars.data(), chars.size());
+
+            if (all_ascii)
+            {
+                PaddingChars<false> padding_chars{pad_string};
+                if (const auto * col_const = checkAndGetColumn<ColumnConst>(column_length.get()))
+                    executeForSourceAndLength<true>(
+                        std::forward<SourceStrings>(strings), ConstSource<GenericValueSource>{*col_const}, padding_chars, res_sink);
+                else
+                    executeForSourceAndLength<true>(
+                        std::forward<SourceStrings>(strings), GenericValueSource{*column_length}, padding_chars, res_sink);
+            }
             else
-                executeForSourceAndLength(std::forward<SourceStrings>(strings), GenericValueSource{*column_length}, padding_chars, res_sink);
+            {
+                PaddingChars<true> padding_chars{pad_string};
+                if (const auto * col_const = checkAndGetColumn<ColumnConst>(column_length.get()))
+                    executeForSourceAndLength<false>(
+                        std::forward<SourceStrings>(strings), ConstSource<GenericValueSource>{*col_const}, padding_chars, res_sink);
+                else
+                    executeForSourceAndLength<false>(
+                        std::forward<SourceStrings>(strings), GenericValueSource{*column_length}, padding_chars, res_sink);
+            }
         }
 
-        template <typename SourceStrings, typename SourceLengths>
+        template <bool all_ascii, typename SourceStrings, typename SourceLengths>
         void executeForSourceAndLength(
             SourceStrings && strings,
             SourceLengths && lengths,
-            const PaddingChars<is_utf8> & padding_chars,
+            const PaddingChars<!all_ascii> & padding_chars,
             StringSink & res_sink) const
         {
             bool is_const_new_length = lengths.isConst();
@@ -264,7 +279,7 @@ namespace
             for (; !res_sink.isEnd(); res_sink.next(), strings.next(), lengths.next())
             {
                 auto str = strings.getWhole();
-                ssize_t current_length = getLengthOfSlice<is_utf8>(str);
+                ssize_t current_length = getLengthOfSlice<!all_ascii>(str);
 
                 if (!res_sink.rowNum() || !is_const_new_length)
                 {
@@ -294,7 +309,7 @@ namespace
                 }
                 else if (new_length < current_length)
                 {
-                    str = removeSuffixFromSlice<is_utf8>(str, current_length - new_length);
+                    str = removeSuffixFromSlice<!all_ascii>(str, current_length - new_length);
                     writeSlice(str, res_sink);
                 }
                 else if (new_length > current_length)

@@ -14,7 +14,7 @@ struct ReverseImpl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        res_data.resize(data.size());
+        res_data.resize_exact(data.size());
         res_offsets.assign(offsets);
         size_t size = offsets.size();
 
@@ -30,7 +30,7 @@ struct ReverseImpl
 
     static void vectorFixed(const ColumnString::Chars & data, size_t n, ColumnString::Chars & res_data)
     {
-        res_data.resize(data.size());
+        res_data.resize_exact(data.size());
         size_t size = data.size() / n;
 
         for (size_t i = 0; i < size; ++i)
