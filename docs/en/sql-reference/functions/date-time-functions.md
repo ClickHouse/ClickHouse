@@ -1686,17 +1686,17 @@ age('unit', startdate, enddate, [timezone])
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
-    - `nanosecond` `nanoseconds` `ns`
-    - `microsecond` `microseconds` `us` `u`
-    - `millisecond` `milliseconds` `ms`
-    - `second` `seconds` `ss` `s`
-    - `minute` `minutes` `mi` `n`
-    - `hour` `hours` `hh` `h`
-    - `day` `days` `dd` `d`
-    - `week` `weeks` `wk` `ww`
-    - `month` `months` `mm` `m`
-    - `quarter` `quarters` `qq` `q`
-    - `year` `years` `yyyy` `yy`
+    - `nanosecond`, `nanoseconds`, `ns`
+    - `microsecond`, `microseconds`, `us`, `u`
+    - `millisecond`, `milliseconds`, `ms`
+    - `second`, `seconds`, `ss`, `s`
+    - `minute`, `minutes`, `mi`, `n`
+    - `hour`, `hours`, `hh`, `h`
+    - `day`, `days`, `dd`, `d`
+    - `week`, `weeks`, `wk`, `ww`
+    - `month`, `months`, `mm`, `m`
+    - `quarter`, `quarters`, `qq`, `q`
+    - `year`, `years`, `yyyy`, `yy`
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -1764,17 +1764,17 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
-    - `nanosecond` `nanoseconds` `ns`
-    - `microsecond` `microseconds` `us` `u`
-    - `millisecond` `milliseconds` `ms`
-    - `second` `seconds` `ss` `s`
-    - `minute` `minutes` `mi` `n`
-    - `hour` `hours` `hh` `h`
-    - `day` `days` `dd` `d`
-    - `week` `weeks` `wk` `ww`
-    - `month` `months` `mm` `m`
-    - `quarter` `quarters` `qq` `q`
-    - `year` `years` `yyyy` `yy`
+    - `nanosecond`, `nanoseconds`, `ns`
+    - `microsecond`, `microseconds`, `us`, `u`
+    - `millisecond`, `milliseconds`, `ms`
+    - `second`, `seconds`, `ss`, `s`
+    - `minute`, `minutes`, `mi`, `n`
+    - `hour`, `hours`, `hh`, `h`
+    - `day`, `days`, `dd`, `d`
+    - `week`, `weeks`, `wk`, `ww`
+    - `month`, `months`, `mm`, `m`
+    - `quarter`, `quarters`, `qq`, `q`
+    - `year`, `years`, `yyyy`, `yy`
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 

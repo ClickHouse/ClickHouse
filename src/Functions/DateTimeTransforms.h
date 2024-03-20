@@ -21,9 +21,9 @@
 namespace DB
 {
 
-static constexpr auto nanosecond_multiplier = 1000000000;
-static constexpr auto microsecond_multiplier = 1000000;
-static constexpr auto millisecond_multiplier = 1000;
+static constexpr auto millisecond_multiplier = 1'000;
+static constexpr auto microsecond_multiplier = 1'000'000;
+static constexpr auto nanosecond_multiplier = 1'000'000'000;
 
 static constexpr FormatSettings::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
 
