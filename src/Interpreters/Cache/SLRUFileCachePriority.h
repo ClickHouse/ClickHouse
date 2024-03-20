@@ -29,6 +29,12 @@ public:
 
     size_t getElementsCountApprox() const override;
 
+    QueueEntryType getDefaultQueueEntryType() const override { return FileCacheQueueEntryType::SLRU_Probationary; }
+
+    std::string getStateInfoForLog(const CachePriorityGuard::Lock & lock) const override;
+
+    void check(const CachePriorityGuard::Lock &) const override;
+
     bool canFit( /// NOLINT
         size_t size,
         size_t elements,
@@ -68,8 +74,15 @@ private:
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock);
 
-    void holdImpl(size_t size, size_t elements, IteratorPtr reservee, const CachePriorityGuard::Lock & lock) override;
-    void releaseImpl(size_t size, size_t elements, IteratorPtr reservee) override;
+    void holdImpl(
+        size_t size,
+        size_t elements,
+        QueueEntryType queue_entry_type,
+        const CachePriorityGuard::Lock & lock) override;
+
+    void releaseImpl(size_t size, size_t elements, QueueEntryType queue_entry_type) override;
+
+    void downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock &);
 };
 
 class SLRUFileCachePriority::SLRUIterator : public IFileCachePriority::Iterator

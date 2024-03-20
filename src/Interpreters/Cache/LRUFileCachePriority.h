@@ -22,7 +22,11 @@ protected:
     using StatePtr = std::shared_ptr<State>;
 
 public:
-    LRUFileCachePriority(size_t max_size_, size_t max_elements_, StatePtr state_ = nullptr);
+    LRUFileCachePriority(
+        size_t max_size_,
+        size_t max_elements_,
+        StatePtr state_ = nullptr,
+        const std::string & description_ = "none");
 
     size_t getSize(const CachePriorityGuard::Lock &) const override { return state->current_size; }
 
@@ -31,6 +35,10 @@ public:
     size_t getSizeApprox() const override { return state->current_size; }
 
     size_t getElementsCountApprox() const override { return state->current_elements_num; }
+
+    QueueEntryType getDefaultQueueEntryType() const override { return FileCacheQueueEntryType::LRU; }
+
+    std::string getStateInfoForLog(const CachePriorityGuard::Lock & lock) const override;
 
     bool canFit( /// NOLINT
         size_t size,
@@ -77,6 +85,7 @@ private:
     friend class SLRUFileCachePriority;
 
     LRUQueue queue;
+    const std::string description;
     LoggerPtr log = getLogger("LRUFileCachePriority");
     StatePtr state;
 
@@ -106,8 +115,13 @@ private:
     LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::Lock &);
     LRUIterator add(EntryPtr entry, const CachePriorityGuard::Lock &);
 
-    void holdImpl(size_t size, size_t elements, IteratorPtr, const CachePriorityGuard::Lock & lock) override;
-    void releaseImpl(size_t size, size_t elements, IteratorPtr) override;
+    void holdImpl(
+        size_t size,
+        size_t elements,
+        QueueEntryType queue_entry_type,
+        const CachePriorityGuard::Lock & lock) override;
+
+    void releaseImpl(size_t size, size_t elements, QueueEntryType queue_entry_type) override;
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator

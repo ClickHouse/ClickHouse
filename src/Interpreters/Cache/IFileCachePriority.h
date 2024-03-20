@@ -39,6 +39,8 @@ public:
         std::atomic<size_t> size;
         size_t hits = 0;
 
+        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size); }
+
         bool isEvicting(const CachePriorityGuard::Lock &) const { return evicting; }
         bool isEvicting(const LockedKey &) const { return evicting; }
         /// This does not look good to have isEvicting with two options for locks,
@@ -103,6 +105,12 @@ public:
 
     virtual size_t getElementsCountApprox() const = 0;
 
+    virtual QueueEntryType getDefaultQueueEntryType() const = 0;
+
+    virtual std::string getStateInfoForLog(const CachePriorityGuard::Lock &) const = 0;
+
+    virtual void check(const CachePriorityGuard::Lock &) const;
+
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
         KeyMetadataPtr key_metadata,
@@ -144,31 +152,52 @@ public:
 
     virtual bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) = 0;
 
-    struct HoldSpace : boost::noncopyable
+    struct HoldSpace : private boost::noncopyable
     {
-        HoldSpace(size_t size_, size_t elements_, IteratorPtr reservee_, IFileCachePriority & priority_, const CachePriorityGuard::Lock & lock)
-            : size(size_), elements(elements_), reservee(reservee_), priority(priority_)
+        HoldSpace(
+            size_t size_,
+            size_t elements_,
+            QueueEntryType queue_entry_type_,
+            IFileCachePriority & priority_,
+            const CachePriorityGuard::Lock & lock)
+            : size(size_), elements(elements_), queue_entry_type(queue_entry_type_), priority(priority_)
         {
-            priority.holdImpl(size, elements, reservee, lock);
+            priority.holdImpl(size, elements, queue_entry_type, lock);
+        }
+
+        void release()
+        {
+            if (released)
+                return;
+            released = true;
+            priority.releaseImpl(size, elements, queue_entry_type);
         }
 
         ~HoldSpace()
         {
-            priority.releaseImpl(size, elements, reservee);
+            if (!released)
+                release();
         }
 
-        size_t size;
-        size_t elements;
-        IteratorPtr reservee;
+    private:
+        const size_t size;
+        const size_t elements;
+        const QueueEntryType queue_entry_type;
         IFileCachePriority & priority;
+        bool released = false;
     };
     HoldSpace takeHold();
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
 
-    virtual void holdImpl(size_t size, size_t elements, IteratorPtr reservee, const CachePriorityGuard::Lock & lock) = 0;
-    virtual void releaseImpl(size_t size, size_t elements, IteratorPtr) = 0;
+    virtual void holdImpl(
+        size_t size,
+        size_t elements,
+        QueueEntryType queue_entry_type,
+        const CachePriorityGuard::Lock & lock) = 0;
+
+    virtual void releaseImpl(size_t size, size_t elements, QueueEntryType queue_entry_type) = 0;
 
     size_t max_size = 0;
     size_t max_elements = 0;

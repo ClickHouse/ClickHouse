@@ -22,7 +22,7 @@ public:
     auto end() const { return candidates.end(); }
 
     using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
-    void setFinalizeEvictionFunc(FinalizeEvictionFunc && func) { finalize_eviction_func = func; }
+    void setFinalizeEvictionFunc(FinalizeEvictionFunc && func) { finalize_eviction_func = std::move(func); }
 
 private:
     struct KeyCandidates

@@ -839,10 +839,15 @@ bool FileCache::tryReserve(
     if (query_priority)
     {
         if (!query_priority->collectCandidatesForEviction(
-                size, reserve_stat, eviction_candidates, {}, user.user_id, reached_size_limit, reached_elements_limit, cache_lock))
+                size, reserve_stat, eviction_candidates, {}, user.user_id,
+                reached_size_limit, reached_elements_limit, cache_lock))
+        {
             return false;
+        }
 
-        LOG_TEST(log, "Query limits satisfied (while reserving for {}:{})", file_segment.key(), file_segment.offset());
+        LOG_TEST(log, "Query limits satisfied (while reserving for {}:{})",
+                 file_segment.key(), file_segment.offset());
+
         /// If we have enough space in query_priority, we are not interested about stat there anymore.
         /// Clean the stat before iterating main_priority to avoid calculating any segment stat twice.
         reserve_stat.stat_by_kind.clear();
@@ -853,8 +858,11 @@ bool FileCache::tryReserve(
     chassert(!queue_iterator || file_segment.getReservedSize() > 0);
 
     if (!main_priority->collectCandidatesForEviction(
-            size, reserve_stat, eviction_candidates, queue_iterator, user.user_id, reached_size_limit, reached_elements_limit, cache_lock))
+            size, reserve_stat, eviction_candidates, queue_iterator, user.user_id,
+            reached_size_limit, reached_elements_limit, cache_lock))
+    {
         return false;
+    }
 
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
         return false;
@@ -875,8 +883,20 @@ bool FileCache::tryReserve(
         /// If we reached the elements limit - we will evict at least 1 element,
         /// then we do not need to hold anything, otherwise (if we reached limit only by size)
         /// we will also evict at least one element, so hold elements count is awlays zero here.
-        auto hold_space = std::make_unique<IFileCachePriority::HoldSpace>(
-            hold_size, /* hold_elements */0, queue_iterator, *main_priority, cache_lock);
+
+        std::unique_ptr<IFileCachePriority::HoldSpace> hold_space;
+        if (hold_size)
+        {
+            const auto queue_entry_type = queue_iterator
+                ? queue_iterator->getType()
+                : main_priority->getDefaultQueueEntryType();
+
+            hold_space = std::make_unique<IFileCachePriority::HoldSpace>(
+                hold_size, /* hold_elements */0, queue_entry_type, *main_priority, cache_lock);
+        }
+
+        LOG_TEST(log, "Eviction candidates: {}, hold space: {}. {}",
+                 eviction_candidates.size(), hold_size, main_priority->getStateInfoForLog(cache_lock));
 
         cache_lock.unlock();
         try
@@ -893,8 +913,17 @@ bool FileCache::tryReserve(
         }
 
         cache_lock.lock();
+
         /// Invalidate and remove queue entries and execute (only for SLRU) finalize func.
         eviction_candidates.finalize(query_context.get(), cache_lock);
+    }
+    else if (!main_priority->canFit(size, /* elements */queue_iterator ? 0 : 1, cache_lock, queue_iterator))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot fit {} in cache, but collection of eviction candidates succeeded. "
+                        "This is a bug. Queue entry type: {}. Cache info: {}",
+                        size, queue_iterator ? queue_iterator->getType() : FileCacheQueueEntryType::None,
+                        main_priority->getStateInfoForLog(cache_lock));
     }
 
     /// Space reservation is incremental, so file_segment_metadata is created first (with state Empty),
@@ -904,13 +933,17 @@ bool FileCache::tryReserve(
     {
         /// Increase size of queue entry.
         queue_iterator->incrementSize(size, cache_lock);
+        main_priority->check(cache_lock);
     }
     else
     {
         /// Create a new queue entry and assign currently reserved size to it.
         queue_iterator = main_priority->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_lock);
         file_segment.setQueueIterator(queue_iterator);
+        main_priority->check(cache_lock);
     }
+
+    main_priority->check(cache_lock);
 
     if (query_context)
     {
