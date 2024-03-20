@@ -3,13 +3,11 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/ConvertInToEqualPass.h>
-#include <Functions/FunctionsComparison.h>
-#include <Functions/IFunctionAdaptors.h>
+#include <Functions/equals.h>
+#include <Functions/notEquals.h>
 
 namespace DB
 {
-
-using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
 
 class ConvertInToEqualPassVisitor : public InDepthQueryTreeVisitorWithContext<ConvertInToEqualPassVisitor>
 {
@@ -17,15 +15,16 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<ConvertInToEqualPassVisitor>;
     using Base::Base;
 
-    FunctionOverloadResolverPtr createInternalFunctionEqualOverloadResolver()
-    {
-        return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(getContext()->getSettings().decimal_check_overflow));
-    }
-
     void enterImpl(QueryTreeNodePtr & node)
     {
+        static const std::unordered_map<String, String> MAPPING = {
+            {"in", "equals"},
+            {"notIn", "notEquals"}
+        };
         auto * func_node = node->as<FunctionNode>();
-        if (!func_node || func_node->getFunctionName() != "in" || func_node->getArguments().getNodes().size() != 2)
+        if (!func_node
+            || !MAPPING.contains(func_node->getFunctionName())
+            || func_node->getArguments().getNodes().size() != 2)
             return ;
         auto args = func_node->getArguments().getNodes();
         auto * column_node = args[0]->as<ColumnNode>();
@@ -38,13 +37,26 @@ public:
         // x IN null not equivalent to x = null
         if (constant_node->hasSourceExpression() || constant_node->getValue().isNull())
             return ;
-        auto equal_resolver = createInternalFunctionEqualOverloadResolver();
-        auto equal = std::make_shared<FunctionNode>("equals");
+        auto result_func_name = MAPPING.at(func_node->getFunctionName());
+        auto equal = std::make_shared<FunctionNode>(result_func_name);
         QueryTreeNodes arguments{column_node->clone(), constant_node->clone()};
         equal->getArguments().getNodes() = std::move(arguments);
-        equal->resolveAsFunction(equal_resolver);
+        FunctionOverloadResolverPtr resolver;
+        bool decimal_check_overflow = getContext()->getSettingsRef().decimal_check_overflow;
+        if (result_func_name == "equals")
+        {
+            resolver = createInternalFunctionEqualOverloadResolver(decimal_check_overflow);
+        }
+        else
+        {
+            resolver = createInternalFunctionNotEqualOverloadResolver(decimal_check_overflow);
+        }
+        equal->resolveAsFunction(resolver);
         node = equal;
     }
+private:
+    FunctionOverloadResolverPtr equal_resolver;
+    FunctionOverloadResolverPtr not_equal_resolver;
 };
 
 void ConvertInToEqualPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
