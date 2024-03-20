@@ -67,8 +67,8 @@ public:
     class Entry
     {
     public:
-        explicit Entry(Entry && entry) = default;
-        explicit Entry(Entry & entry) = delete;
+        Entry(Entry && entry) = default;
+        Entry(Entry & entry) = delete;
 
         // no access as r-value
         const String * operator->() && = delete;
@@ -89,7 +89,7 @@ public:
 
         Entry(HostResolver & pool_, Poco::Net::IPAddress address_)
             : pool(pool_.getWeakFromThis())
-            , address(std::move(address_))
+            , address(address_)
             , resolved_host(address.toString())
         { }
 
@@ -126,14 +126,14 @@ protected:
     struct Record
     {
         Record(Poco::Net::IPAddress address_, Poco::Timestamp resolve_time_)
-            : address(std::move(address_))
+            : address(address_)
             , resolve_time(resolve_time_)
         {}
 
-        explicit Record(Record && rec) = default;
+        Record(Record && rec) = default;
         Record& operator=(Record && s) = default;
 
-        explicit Record(const Record & rec) = default;
+        Record(const Record & rec) = default;
         Record& operator=(const Record & s) = default;
 
         Poco::Net::IPAddress address;
@@ -198,10 +198,11 @@ class HostResolversPool
 {
 private:
     HostResolversPool() = default;
+
+public:
     HostResolversPool(const HostResolversPool &) = delete;
     HostResolversPool & operator=(const HostResolversPool &) = delete;
 
-public:
     static HostResolversPool & instance();
 
     void dropCache();
