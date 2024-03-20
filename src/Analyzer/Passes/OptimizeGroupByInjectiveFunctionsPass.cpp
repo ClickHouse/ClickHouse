@@ -66,15 +66,15 @@ public:
             for (auto & set : group_by)
             {
                 auto & grouping_set = set->as<ListNode>()->getNodes();
-                optimizeGroupingSet(grouping_set, getSettings().group_by_use_nulls);
+                optimizeGroupingSet(grouping_set);
             }
         }
         else
-            optimizeGroupingSet(group_by, getSettings().group_by_use_nulls);
+            optimizeGroupingSet(group_by);
     }
 
 private:
-    void optimizeGroupingSet(QueryTreeNodes & grouping_set, bool)
+    void optimizeGroupingSet(QueryTreeNodes & grouping_set)
     {
         auto context = getContext();
 
@@ -104,20 +104,12 @@ private:
 
                 if (can_be_eliminated)
                 {
-                    bool all_arguments_are_constants = true;
                     for (auto const & argument : function_node->getArguments())
                     {
                         // We can skip constants here because aggregation key is already not a constant.
                         if (argument->getNodeType() != QueryTreeNodeType::CONSTANT)
-                        {
-                            all_arguments_are_constants = false;
                             nodes_to_process.push(argument);
-                        }
                     }
-
-                    /// We cannot optimize function if it has only constant arguments (for example, materialize(const_value)).
-                    if (all_arguments_are_constants)
-                        new_group_by_keys.push_back(node_to_process);
                 }
                 else
                     new_group_by_keys.push_back(node_to_process);
