@@ -4408,8 +4408,8 @@ class ClickHouseInstance:
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
         if (
-            os.environ.get("CLICKHOUSE_USE_NEW_ANALYZER") is not None
-            and self.allow_analyzer
+            os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
+            or self.allow_analyzer
         ):
             write_embedded_config("0_common_enable_analyzer.xml", users_d_dir)
 

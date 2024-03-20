@@ -39,7 +39,7 @@ def get_additional_envs(
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
         result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
     if "analyzer" in check_name:
-        result.append("USE_NEW_ANALYZER=1")
+        result.append("USE_OLD_ANALYZER=1")
 
     if run_by_hash_total != 0:
         result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")
@@ -94,7 +94,7 @@ def get_run_command(
     env_str = " ".join(envs)
     volume_with_broken_test = (
         f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt "
-        if "analyzer" in check_name
+        if "analyzer" not in check_name
         else ""
     )
 
