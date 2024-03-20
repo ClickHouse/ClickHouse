@@ -40,6 +40,7 @@ void RewriteOrderBy::visit(ASTPtr & ast, Data &)
             // clone w/o children
             auto clone = std::make_shared<ASTOrderByElement>(*order_by_elem);
             clone->children.clear();
+            clone->forEachPointerToChild([](void ** ptr) mutable { *ptr = nullptr; });
 
             clone->children.emplace_back(identifier);
             new_order_by->children.emplace_back(clone);

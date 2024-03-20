@@ -65,7 +65,9 @@ void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & stat
 
 bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
 {
-    if (auto * ast_with_output = typeid_cast<ASTQueryWithOutput *>(&ast))
+    /// The usage of dynamic_cast is important here, because typeid_cast cannot cast to the type which is 
+    /// in a middle of inheritance.
+    if (auto * ast_with_output = dynamic_cast<ASTQueryWithOutput *>(&ast))
     {
         ast_with_output->reset(ast_with_output->out_file);
         ast_with_output->reset(ast_with_output->format);
