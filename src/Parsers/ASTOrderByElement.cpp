@@ -7,38 +7,18 @@
 namespace DB
 {
 
-ASTPtr ASTOrderByElement::clone() const
-{
-    auto res = std::make_shared<ASTOrderByElement>(*this);
-    res->children.clear();
-    /// Push the expression, because it should be always the first.
-    res->children.emplace_back(children.front());
-
-    if (collation)
-        res->set(res->collation, collation->clone());
-    if (fill_from)
-        res->set(res->fill_from, fill_from->clone());
-    if (fill_to)
-        res->set(res->fill_to, fill_to->clone());
-    if (fill_step)
-        res->set(res->fill_step, fill_step->clone());
-
-    return res;
-}
-
 void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    // hash_state.update(direction);
-    // hash_state.update(nulls_direction);
-    // hash_state.update(nulls_direction_was_explicitly_specified);
-    // hash_state.update(with_fill);
+    hash_state.update(direction);
+    hash_state.update(nulls_direction);
+    hash_state.update(nulls_direction_was_explicitly_specified);
+    hash_state.update(with_fill);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     children.front()->formatImpl(settings, state, frame);
-
     settings.ostr << (settings.hilite ? hilite_keyword : "")
         << (direction == -1 ? " DESC" : " ASC")
         << (settings.hilite ? hilite_none : "");
@@ -76,14 +56,6 @@ void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState 
             fill_step->formatImpl(settings, state, frame);
         }
     }
-}
-
-void ASTOrderByElement::forEachPointerToChild(std::function<void(void**)> f)
-{
-    f(reinterpret_cast<void **>(&collation));
-    f(reinterpret_cast<void **>(&fill_from));
-    f(reinterpret_cast<void **>(&fill_to));
-    f(reinterpret_cast<void **>(&fill_step));
 }
 
 }

@@ -1169,12 +1169,12 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
     FillColumnDescription descr;
 
     if (order_by_elem.fill_from)
-        std::tie(descr.fill_from, descr.fill_from_type) = getWithFillFieldValue(order_by_elem.fill_from->ptr(), context);
+        std::tie(descr.fill_from, descr.fill_from_type) = getWithFillFieldValue(order_by_elem.fill_from, context);
     if (order_by_elem.fill_to)
-        std::tie(descr.fill_to, descr.fill_to_type) = getWithFillFieldValue(order_by_elem.fill_to->ptr(), context);
+        std::tie(descr.fill_to, descr.fill_to_type) = getWithFillFieldValue(order_by_elem.fill_to, context);
 
     if (order_by_elem.fill_step)
-        std::tie(descr.fill_step, descr.step_kind) = getWithFillStep(order_by_elem.fill_step->ptr(), context);
+        std::tie(descr.fill_step, descr.step_kind) = getWithFillStep(order_by_elem.fill_step, context);
     else
         descr.fill_step = order_by_elem.direction;
 

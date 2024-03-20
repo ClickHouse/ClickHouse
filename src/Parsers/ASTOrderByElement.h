@@ -6,14 +6,7 @@
 namespace DB
 {
 /** Element of expression with ASC or DESC,
-  * and possibly with COLLATE, WITH FILL.
-  * Important note: ORDER BY expression should be ALWAYS
-  * the first in the list of children - other parts of code rely on it heavily
-  * and it simplified the code a bit - there is no need to update the raw pointer
-  * stored in the field each time we change the expression.
-  *
-  * So, expression is always the first and the order of other children doesn't matter
-  * taking into account the raw pointer stored in fields always point to them.
+  *  and possibly with COLLATE.
   */
 class ASTOrderByElement : public IAST
 {
@@ -23,20 +16,26 @@ public:
     bool nulls_direction_was_explicitly_specified = false;
 
     /** Collation for locale-specific string comparison. If empty, then sorting done by bytes. */
-    IAST * collation = nullptr;
+    ASTPtr collation;
 
     bool with_fill = false;
-    IAST * fill_from = nullptr;
-    IAST * fill_to = nullptr;
-    IAST * fill_step = nullptr;
+    ASTPtr fill_from;
+    ASTPtr fill_to;
+    ASTPtr fill_step;
 
     String getID(char) const override { return "OrderByElement"; }
-    ASTPtr clone() const override;
+
+    ASTPtr clone() const override
+    {
+        auto clone = std::make_shared<ASTOrderByElement>(*this);
+        clone->cloneChildren();
+        return clone;
+    }
+
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    void forEachPointerToChild(std::function<void(void**)> f) override;
 };
 
 }

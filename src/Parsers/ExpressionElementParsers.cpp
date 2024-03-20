@@ -2068,8 +2068,8 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserStringLiteral collate_locale_parser;
     ParserExpressionWithOptionalAlias exp_parser(false);
 
-    ASTPtr expression;
-    if (!elem_p.parse(pos, expression, expected))
+    ASTPtr expr_elem;
+    if (!elem_p.parse(pos, expr_elem, expected))
         return false;
 
     int direction = 1;
@@ -2121,17 +2121,17 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     auto elem = std::make_shared<ASTOrderByElement>();
 
-    /// We have an invariant that expression is always the first child.
-    elem->children.emplace_back(expression);
-
     elem->direction = direction;
     elem->nulls_direction = nulls_direction;
     elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
-    elem->set(elem->collation, locale_node);
+    elem->collation = locale_node;
     elem->with_fill = has_with_fill;
-    elem->set(elem->fill_from, locale_node);
-    elem->set(elem->fill_to, locale_node);
-    elem->set(elem->fill_step, locale_node);
+    elem->fill_from = fill_from;
+    elem->fill_to = fill_to;
+    elem->fill_step = fill_step;
+    elem->children.push_back(expr_elem);
+    if (locale_node)
+        elem->children.push_back(locale_node);
 
     node = elem;
 

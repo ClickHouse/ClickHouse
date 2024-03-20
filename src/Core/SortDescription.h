@@ -116,8 +116,6 @@ using SortDescriptionWithPositions = std::vector<SortColumnDescriptionWithColumn
 class SortDescription : public std::vector<SortColumnDescription>
 {
 public:
-    using std::vector<SortColumnDescription>::reserve;
-    using std::vector<SortColumnDescription>::emplace_back;
     /// Can be safely casted into JITSortDescriptionFunc
     void * compiled_sort_description = nullptr;
     std::shared_ptr<CompiledSortDescriptionFunctionHolder> compiled_sort_description_holder;
