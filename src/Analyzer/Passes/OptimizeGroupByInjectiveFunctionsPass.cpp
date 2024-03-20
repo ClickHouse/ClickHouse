@@ -43,6 +43,13 @@ public:
         if (!getSettings().optimize_injective_functions_in_group_by)
             return;
 
+        /// Don't optimize injective functions when group_by_use_nulls=true,
+        /// because in this case we make initial group by keys Nullable
+        /// and eliminating some functions can cause issues with arguments Nullability
+        /// during their execution. See examples in https://github.com/ClickHouse/ClickHouse/pull/61567#issuecomment-2008181143
+        if (getSettings().group_by_use_nulls)
+            return;
+
         auto * query = node->as<QueryNode>();
         if (!query)
             return;
@@ -59,15 +66,15 @@ public:
             for (auto & set : group_by)
             {
                 auto & grouping_set = set->as<ListNode>()->getNodes();
-                optimizeGroupingSet(grouping_set);
+                optimizeGroupingSet(grouping_set, getSettings().group_by_use_nulls);
             }
         }
         else
-            optimizeGroupingSet(group_by);
+            optimizeGroupingSet(group_by, getSettings().group_by_use_nulls);
     }
 
 private:
-    void optimizeGroupingSet(QueryTreeNodes & grouping_set)
+    void optimizeGroupingSet(QueryTreeNodes & grouping_set, bool)
     {
         auto context = getContext();
 
