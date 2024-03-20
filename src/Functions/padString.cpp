@@ -241,7 +241,7 @@ namespace
             bool all_ascii = UTF8::isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
                 && UTF8::isAllASCII(chars.data(), chars.size());
 
-            if (all_ascii)
+            if (!is_utf8 || all_ascii)
             {
                 PaddingChars<false> padding_chars{pad_string};
                 if (const auto * col_const = checkAndGetColumn<ColumnConst>(column_length.get()))
