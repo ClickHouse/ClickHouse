@@ -59,7 +59,6 @@ private:
 
     struct PartData;
     void hidePartialData();
-    void allocateFirstBuffer();
     void reallocateFirstBuffer();
     void detachBuffer();
     void allocateBuffer();

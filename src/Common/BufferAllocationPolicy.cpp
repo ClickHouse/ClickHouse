@@ -73,7 +73,7 @@ public:
 
         if (1 == buffer_number)
         {
-            current_size = first_size;
+            current_size =  std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), first_size);
             return;
         }
 

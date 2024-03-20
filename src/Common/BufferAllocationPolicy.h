@@ -9,6 +9,7 @@
 namespace DB
 {
 
+///  Buffer number starts with 0
 class IBufferAllocationPolicy
 {
 public:
@@ -20,7 +21,7 @@ public:
         size_t max_size = 5ULL * 1024 * 1024 * 1024;
         size_t multiply_factor = 2;
         size_t multiply_parts_count_threshold = 500;
-        size_t max_single_size = 32 * 1024 * 1024;
+        size_t max_single_size = 32 * 1024 * 1024; /// Max size for a single buffer/block
     };
 
 

@@ -74,6 +74,19 @@ struct WriteBufferFromS3::PartData
     }
 };
 
+IBufferAllocationPolicy::IBufferAllocationPolicyPtr createBufferAllocationPolicy(const S3Settings::RequestSettings::PartUploadSettings & settings)
+{
+    IBufferAllocationPolicy::Settings allocation_settings;
+    allocation_settings.strict_size = settings.strict_upload_part_size;
+    allocation_settings.min_size = settings.min_upload_part_size;
+    allocation_settings.max_size = settings.max_upload_part_size;
+    allocation_settings.multiply_factor = settings.upload_part_size_multiply_factor;
+    allocation_settings.multiply_parts_count_threshold = settings.upload_part_size_multiply_parts_count_threshold;
+    allocation_settings.max_single_size = settings.max_single_part_upload_size;
+
+    return IBufferAllocationPolicy::create(allocation_settings);
+}
+
 
 WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<const S3::Client> client_ptr_,
@@ -93,12 +106,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , buffer_allocation_policy(IBufferAllocationPolicy::create({upload_settings.strict_upload_part_size,
-                                                                upload_settings.min_upload_part_size,
-                                                                upload_settings.max_upload_part_size,
-                                                                upload_settings.upload_part_size_multiply_factor,
-                                                                upload_settings.upload_part_size_multiply_parts_count_threshold,
-                                                                upload_settings.max_single_part_upload_size}))
+    , buffer_allocation_policy(createBufferAllocationPolicy(upload_settings))
     , task_tracker(
           std::make_unique<TaskTracker>(
               std::move(schedule_),
@@ -327,22 +335,10 @@ void WriteBufferFromS3::detachBuffer()
     detached_part_data.push_back({std::move(buf), data_size});
 }
 
-void WriteBufferFromS3::allocateFirstBuffer()
-{
-    const auto max_first_buffer = buffer_allocation_policy->getBufferSize();
-    const auto size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), max_first_buffer);
-    memory = Memory(size);
-    WriteBuffer::set(memory.data(), memory.size());
-}
-
 void WriteBufferFromS3::allocateBuffer()
 {
     buffer_allocation_policy->nextBuffer();
     chassert(0 == hidden_size);
-
-    if (buffer_allocation_policy->getBufferNumber() == 1)
-        return allocateFirstBuffer();
-
     memory = Memory(buffer_allocation_policy->getBufferSize());
     WriteBuffer::set(memory.data(), memory.size());
 }

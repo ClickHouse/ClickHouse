@@ -18,6 +18,25 @@ namespace ProfileEvents
 namespace DB
 {
 
+struct WriteBufferFromAzureBlobStorage::PartData
+{
+    Memory<> memory;
+    size_t data_size = 0;
+};
+
+IBufferAllocationPolicy::IBufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureObjectStorageSettings & settings)
+{
+    IBufferAllocationPolicy::Settings allocation_settings;
+    allocation_settings.strict_size = settings.strict_upload_part_size;
+    allocation_settings.min_size = settings.min_upload_part_size;
+    allocation_settings.max_size = settings.max_upload_part_size;
+    allocation_settings.multiply_factor = settings.upload_part_size_multiply_factor;
+    allocation_settings.multiply_parts_count_threshold = settings.upload_part_size_multiply_parts_count_threshold;
+    allocation_settings.max_single_size = settings.max_single_part_upload_size;
+
+    return IBufferAllocationPolicy::create(allocation_settings);
+}
+
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
@@ -27,12 +46,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     ThreadPoolCallbackRunner<void> schedule_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
-    , buffer_allocation_policy(IBufferAllocationPolicy::create({settings_->strict_upload_part_size,
-                                                                settings_->min_upload_part_size,
-                                                                settings_->max_upload_part_size,
-                                                                settings_->upload_part_size_multiply_factor,
-                                                                settings_->upload_part_size_multiply_parts_count_threshold,
-                                                                settings_->max_single_part_upload_size}))
+    , buffer_allocation_policy(createBufferAllocationPolicy(*settings_.get()))
     , max_single_part_upload_size(settings_->max_single_part_upload_size)
     , max_unexpected_write_error_retries(settings_->max_unexpected_write_error_retries)
     , blob_path(blob_path_)
@@ -91,6 +105,8 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
+    /// If there is only one block and size is less than or equal to max_single_part_upload_size
+    /// then we use single part upload instead of multi part upload
     if (buffer_allocation_policy->getBufferNumber() == 1)
     {
         size_t data_size = size_t(position() - memory.data());
@@ -124,39 +140,30 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
 {
     buffer_allocation_policy->nextBuffer();
     auto size = buffer_allocation_policy->getBufferSize();
-
-    if (buffer_allocation_policy->getBufferNumber() == 1)
-    {
-        size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size);
-    }
-
-    LOG_INFO(log, "allocateBuffer size = {}", size);
-
     memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
 
 void WriteBufferFromAzureBlobStorage::writePart()
 {
-    size_t data_size = size_t(position() - memory.data());
-    auto data = std::move(memory);
+    std::shared_ptr<PartData> part_data;
+    auto data_size = size_t(position() - memory.data());
+    part_data = std::make_shared<PartData>(std::move(memory), data_size);
     WriteBuffer::set(nullptr, 0);
 
-    if (data_size == 0)
+    if (part_data->data_size == 0)
         return;
 
-    LOG_TRACE(log, "writePart data size `{}`", data_size);
-
-    auto upload_worker = [&] ()
+    auto upload_worker = [&, part_data] ()
     {
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
         const std::string & block_id = block_ids.emplace_back(getRandomASCIIString(64));
 
-        Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(data.data()), data_size);
-        execWithRetry([&](){ block_blob_client.StageBlock(block_id, memory_stream); }, max_unexpected_write_error_retries, data_size);
+        Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(part_data->memory.data()), part_data->data_size);
+        execWithRetry([&](){ block_blob_client.StageBlock(block_id, memory_stream); }, max_unexpected_write_error_retries, part_data->data_size);
 
         if (write_settings.remote_throttler)
-            write_settings.remote_throttler->add(data_size, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+            write_settings.remote_throttler->add(part_data->data_size, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
     };
 
     task_tracker->add(std::move(upload_worker));
