@@ -487,7 +487,14 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
             partition.temp_part.finalize();
             auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false).first;
             if (conflict_block_ids.empty())
+            {
+                auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
+                PartLog::addNewPart(
+                    storage.getContext(),
+                    PartLog::PartLogEntry(partition.temp_part.part, partition.elapsed_ns, counters_snapshot),
+                    ExecutionStatus(0));
                 break;
+            }
 
             storage.async_block_ids_cache.triggerCacheUpdate();
             ++retry_times;
@@ -495,7 +502,14 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
             /// partition clean conflict
             partition.filterBlockDuplicate(conflict_block_ids, false);
             if (partition.block_with_partition.block.rows() == 0)
+            {
+                auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
+                PartLog::addNewPart(
+                    storage.getContext(),
+                    PartLog::PartLogEntry(partition.temp_part.part, partition.elapsed_ns, counters_snapshot),
+                    ExecutionStatus(ErrorCodes::INSERT_WAS_DEDUPLICATED));
                 break;
+            }
             partition.block_with_partition.partition = std::move(partition.temp_part.part->partition.value);
             /// partition.temp_part is already finalized, no need to call cancel
             partition.temp_part = storage.writer.writeTempPart(partition.block_with_partition, metadata_snapshot, context);
