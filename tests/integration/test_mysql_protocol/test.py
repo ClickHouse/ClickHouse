@@ -12,10 +12,19 @@ from typing import Literal
 import docker
 import pymysql.connections
 import pytest
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
+from helpers.cluster import (
+    ClickHouseCluster,
+    get_docker_compose_path,
+    is_arm,
+    run_and_check,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
+
+if is_arm():
+    pytestmark = pytest.mark.skip
+
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
