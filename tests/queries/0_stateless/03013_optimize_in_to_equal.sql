@@ -5,6 +5,8 @@ INSERT INTO test VALUES ('a', 1), ('b', 2), ('c', 3), ('d', 4), ('e', 5);
 
 select * from test where x in ('a') SETTINGS allow_experimental_analyzer = 1;
 select '-------------------';
+select x in Null from test;
+select '-------------------';
 explain query tree select * from test where x in ('a') SETTINGS allow_experimental_analyzer = 1;
 select '-------------------';
 explain query tree select * from test where x in ('a','b') SETTINGS allow_experimental_analyzer = 1;

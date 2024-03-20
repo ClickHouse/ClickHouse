@@ -32,9 +32,12 @@ public:
         auto * constant_node = args[1]->as<ConstantNode>();
         if (!column_node || !constant_node)
             return ;
+        // IN multiple values is not supported
         if (constant_node->getValue().getType() == Field::Types::Which::Tuple)
-            return;
-
+            return ;
+        // x IN null not equivalent to x = null
+        if (constant_node->hasSourceExpression() || constant_node->getValue().isNull())
+            return ;
         auto equal_resolver = createInternalFunctionEqualOverloadResolver();
         auto equal = std::make_shared<FunctionNode>("equals");
         QueryTreeNodes arguments{column_node->clone(), constant_node->clone()};
