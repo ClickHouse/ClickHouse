@@ -8,9 +8,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
-#include "Columns/ColumnsNumber.h"
-#include "DataTypes/IDataType.h"
-#include "Functions/IFunctionDateOrDateTime.h"
+#include <Functions/IFunctionDateOrDateTime.h>
 
 
 namespace DB
