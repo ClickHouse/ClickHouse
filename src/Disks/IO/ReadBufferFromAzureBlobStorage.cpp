@@ -259,7 +259,7 @@ size_t ReadBufferFromAzureBlobStorage::getFileSize()
     return *file_size;
 }
 
-size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const
+size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & /*progress_callback*/) const
 {
     size_t initial_n = n;
 
@@ -275,9 +275,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             auto download_response = blob_client->Download(download_options);
 
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
-            auto bytes = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(data_ptr), body_stream->Length());
-            std::istringstream string_stream(String(static_cast<char *>(data_ptr),bytes)); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            copyFromIStreamWithProgressCallback(string_stream, to, n, progress_callback, &bytes_copied);
+            bytes_copied = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(to), body_stream->Length());
 
             LOG_INFO(log, "AzureBlobStorage readBigAt read bytes {}", bytes_copied);
 
