@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -24,6 +25,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
@@ -363,14 +365,31 @@ void StorageBuffer::read(
     /** If the sources from the table were processed before some non-initial stage of query execution,
       * then sources from the buffers must also be wrapped in the processing pipeline before the same stage.
       */
+    /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
-        /// TODO: Find a way to support projections for StorageBuffer
-        auto interpreter = InterpreterSelectQuery(
-                query_info.query, local_context, std::move(pipe_from_buffers),
-                SelectQueryOptions(processed_stage));
-        interpreter.addStorageLimits(*query_info.storage_limits);
-        interpreter.buildQueryPlan(buffers_plan);
+        if (local_context->getSettingsRef().allow_experimental_analyzer)
+        {
+            auto storage = std::make_shared<StorageValues>(
+                    getStorageID(),
+                    storage_snapshot->getAllColumnsDescription(),
+                    std::move(pipe_from_buffers),
+                    *getVirtualsPtr());
+
+            auto interpreter = InterpreterSelectQueryAnalyzer(
+                    query_info.query, local_context, storage,
+                    SelectQueryOptions(processed_stage));
+            interpreter.addStorageLimits(*query_info.storage_limits);
+            buffers_plan = std::move(interpreter).extractQueryPlan();
+        }
+        else
+        {
+            auto interpreter = InterpreterSelectQuery(
+                    query_info.query, local_context, std::move(pipe_from_buffers),
+                    SelectQueryOptions(processed_stage));
+            interpreter.addStorageLimits(*query_info.storage_limits);
+            interpreter.buildQueryPlan(buffers_plan);
+        }
     }
     else
     {

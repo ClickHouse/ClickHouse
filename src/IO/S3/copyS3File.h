@@ -14,6 +14,7 @@
 
 namespace DB
 {
+struct ReadSettings;
 class SeekableReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
