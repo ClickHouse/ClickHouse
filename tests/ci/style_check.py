@@ -8,9 +8,8 @@ import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
-import magic
 from docker_images_helper import get_docker_image, pull_image
 from env_helper import CI, REPO_COPY, TEMP_PATH
 from git_helper import GIT_PREFIX, git_runner
@@ -96,32 +95,34 @@ def commit_push_staged(pr_info: PRInfo) -> None:
     git_runner(push_cmd)
 
 
-def is_python(file: Union[Path, str]) -> bool:
+def is_python(file: str) -> bool:
     """returns if the changed file in the repository is python script"""
     # WARNING: python-magic v2:0.4.24-2 is used in ubuntu 22.04,
     # and `Support os.PathLike values in magic.from_file` is only from 0.4.25
-    try:
-        return bool(
-            magic.from_file(os.path.join(REPO_COPY, file), mime=True)
-            == "text/x-script.python"
-        )
-    except IsADirectoryError:
-        # Process submodules w/o errors
-        return False
+    # try:
+    #     return bool(
+    #         magic.from_file(os.path.join(REPO_COPY, file), mime=True)
+    #         == "text/x-script.python"
+    #     )
+    # except IsADirectoryError:
+    #     # Process submodules w/o errors
+    #     return False
+    return file.endswith(".py")
 
 
-def is_shell(file: Union[Path, str]) -> bool:
+def is_shell(file: str) -> bool:
     """returns if the changed file in the repository is shell script"""
     # WARNING: python-magic v2:0.4.24-2 is used in ubuntu 22.04,
     # and `Support os.PathLike values in magic.from_file` is only from 0.4.25
-    try:
-        return bool(
-            magic.from_file(os.path.join(REPO_COPY, file), mime=True)
-            == "text/x-shellscript"
-        )
-    except IsADirectoryError:
-        # Process submodules w/o errors
-        return False
+    # try:
+    #     return bool(
+    #         magic.from_file(os.path.join(REPO_COPY, file), mime=True)
+    #         == "text/x-shellscript"
+    #     )
+    # except IsADirectoryError:
+    #     # Process submodules w/o errors
+    #     return False
+    return file.endswith(".sh")
 
 
 def main():
