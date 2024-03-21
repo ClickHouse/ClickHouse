@@ -29,7 +29,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
 ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & path_,
@@ -57,7 +56,6 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
         data_capacity = tmp_buffer_size;
     }
 }
-
 
 void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
 {
@@ -141,7 +139,6 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     return true;
 }
 
-
 off_t ReadBufferFromAzureBlobStorage::seek(off_t offset_, int whence)
 {
     if (offset_ == getPosition() && whence == SEEK_SET)
@@ -195,12 +192,10 @@ off_t ReadBufferFromAzureBlobStorage::seek(off_t offset_, int whence)
     return offset;
 }
 
-
 off_t ReadBufferFromAzureBlobStorage::getPosition()
 {
     return offset - available();
 }
-
 
 void ReadBufferFromAzureBlobStorage::initialize()
 {
@@ -278,8 +273,6 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
         sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
         sleep_time_with_backoff_milliseconds *= 2;
     };
-
-
 
     for (size_t i = 0; i < max_single_download_retries && n > 0; ++i)
     {
