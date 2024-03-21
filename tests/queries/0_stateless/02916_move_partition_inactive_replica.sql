@@ -32,7 +32,7 @@ drop table if exists shard_0.from_1;
 drop table if exists shard_1.from_1;
 OPTIMIZE TABLE shard_0.to;
 OPTIMIZE TABLE shard_0.to;
-select name, active from system.parts where database='shard_0' and table='to' order by name;
+select name, active from system.parts where database='shard_0' and table='to' and active order by name;
 
 system restart replica shard_0.to;
 
