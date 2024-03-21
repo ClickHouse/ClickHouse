@@ -308,9 +308,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
     bool support_parallel_write = false;
 
     /// Simple filter to not update hash in block_id calculation for auxiliary columns
-    std::function auxiliary_columns_filter = [&storage_settings](const String& column_name) {
-        return !storage_settings->queue_mode || !isQueueModeColumn(column_name);
-    };
+    std::function auxiliary_columns_filter
+        = [&storage_settings](const String & column_name) { return !storage_settings->queue_mode || !isQueueModeColumn(column_name); };
 
     for (auto & current_block : part_blocks)
     {
