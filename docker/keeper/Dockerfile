@@ -85,6 +85,6 @@ RUN arch=${TARGETARCH:-amd64} \
 
 EXPOSE 2181 10181 44444 9181
 
-VOLUME /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
+VOLUME /var/lib/clickhouse
 
 ENTRYPOINT ["/entrypoint.sh"]
