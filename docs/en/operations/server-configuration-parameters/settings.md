@@ -933,9 +933,9 @@ Hard limit is configured via system tools
 
 ## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
-The delay before a table data is dropped in seconds. If the `DROP TABLE` query has a `SYNC` modifier, this setting is ignored.
+Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignored.
 
-Default value: `480` (8 minutes).
+Default value: `480` (8 minute).
 
 ## database_catalog_unused_dir_hide_timeout_sec {#database_catalog_unused_dir_hide_timeout_sec}
 

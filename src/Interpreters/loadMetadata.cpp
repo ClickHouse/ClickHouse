@@ -6,11 +6,12 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/loadMetadata.h>
 
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
