@@ -258,6 +258,7 @@ public:
         bool surround_each_list_element_with_parens = false;
         size_t list_element_index = 0;
         const IAST * current_select = nullptr;
+        bool function_always_print_name = false;
     };
 
     void format(const FormatSettings & settings) const

@@ -79,6 +79,7 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
 
         FormatStateStacked type_frame = frame;
         type_frame.indent = 0;
+        type_frame.function_always_print_name = true;
 
         type->formatImpl(format_settings, state, type_frame);
     }
