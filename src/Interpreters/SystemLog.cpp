@@ -11,6 +11,7 @@
 #include <Interpreters/BlobStorageLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/CrashLog.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>

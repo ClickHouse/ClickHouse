@@ -1,6 +1,8 @@
 #include <Common/IntervalKind.h>
 #include <Common/Exception.h>
 
+#include <base/EnumReflection.h>
+
 
 namespace DB
 {
@@ -8,6 +10,11 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+std::string_view IntervalKind::toString() const
+{
+    return magic_enum::enum_name(kind);
 }
 
 Int64 IntervalKind::toAvgNanoseconds() const

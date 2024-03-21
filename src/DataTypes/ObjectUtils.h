@@ -13,6 +13,7 @@ namespace DB
 
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+class ColumnsDescription;
 
 /// Returns number of dimensions in Array type. 0 if type is not array.
 size_t getNumberOfDimensions(const IDataType & type);
