@@ -119,7 +119,7 @@ template<> \
     struct AddTime<IntervalKind::Kind::INTERVAL_KIND> \
     { \
         static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &) \
-        { return static_cast<UInt32>(t + delta * INTERVAL); } \
+        { return static_cast<UInt32>(t + delta * (INTERVAL)); } \
     };
     ADD_TIME(Day, 86400)
     ADD_TIME(Hour, 3600)
