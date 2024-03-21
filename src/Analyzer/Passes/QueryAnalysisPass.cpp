@@ -3569,7 +3569,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
             /// Set the same projection name for new nullable node
             if (projection_name_it != node_to_projection_name.end())
             {
-                node_to_projection_name.erase(projection_name_it);
                 node_to_projection_name.emplace(resolved_identifier, projection_name_it->second);
             }
         }
@@ -4692,7 +4691,6 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     /// Set the same projection name for new nullable node
                     if (projection_name_it != node_to_projection_name.end())
                     {
-                        node_to_projection_name.erase(projection_name_it);
                         node_to_projection_name.emplace(node, projection_name_it->second);
                     }
                 }
