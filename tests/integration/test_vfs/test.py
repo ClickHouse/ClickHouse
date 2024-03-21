@@ -86,14 +86,16 @@ def test_optimistic_lock(started_cluster):
     node1.query(f"CREATE TABLE {table} (i UInt32) ENGINE=MergeTree ORDER BY i")
     node1.query(f"INSERT INTO {table} VALUES (0)")
 
-    node1.wait_for_log_line("GC acquired lock")
+    node1.wait_for_log_line(
+        f"VFSGC\({DISK_NAME}\): Failpoint vfs_gc_optimistic_lock_delay",
+    )
 
     # Update lock node version
     value, _ = zk.get(GC_LOCK_PATH)
     zk.set(GC_LOCK_PATH, value)
 
     node1.wait_for_log_line(
-        "Skip GC transaction because optimistic lock node was already updated"
+        f"VFSGC\({DISK_NAME}\): Skip GC transaction because optimistic lock node was already updated",
     )
 
     node1.query(f"DROP TABLE {table} SYNC")
