@@ -3302,6 +3302,21 @@ QueryTreeNodePtr checkIsMissedObjectJSONSubcolumn(const QueryTreeNodePtr & left_
     return {};
 }
 
+/// Compare resolved identifiers considering columns that become nullable after JOIN
+static bool resolvedIdenfiersFromJoinAreEquals(
+    const QueryTreeNodePtr & left_resolved_identifier,
+    const QueryTreeNodePtr & right_resolved_identifier,
+    const IdentifierResolveScope & scope)
+{
+    auto lit = scope.nullable_join_columns.find(left_resolved_identifier);
+    const auto & left_resolved_to_compare = lit != scope.nullable_join_columns.end() ? lit->second : left_resolved_identifier;
+
+    auto rit = scope.nullable_join_columns.find(right_resolved_identifier);
+    const auto & right_resolved_to_compare = rit != scope.nullable_join_columns.end() ? rit->second : right_resolved_identifier;
+
+    return left_resolved_to_compare->isEqual(*right_resolved_to_compare, IQueryTreeNode::CompareOptions{.compare_aliases = false});
+}
+
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -3438,7 +3453,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
             resolved_identifier = std::move(result_column_node);
         }
-        else if (left_resolved_identifier->isEqual(*right_resolved_identifier, IQueryTreeNode::CompareOptions{.compare_aliases = false}))
+        else if (resolvedIdenfiersFromJoinAreEquals(left_resolved_identifier, right_resolved_identifier, scope))
         {
             const auto & identifier_path_part = identifier_lookup.identifier.front();
             auto * left_resolved_identifier_column = left_resolved_identifier->as<ColumnNode>();

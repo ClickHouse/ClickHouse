@@ -1,5 +1,7 @@
 SET join_use_nulls = 1;
 
+SELECT '--';
+
 select c FROM (
     select
         d2.c
@@ -8,6 +10,8 @@ select c FROM (
         on (d1.a = d2.a)
 )
 ;
+
+SELECT '--';
 
 with d1 as (
     select
@@ -29,3 +33,49 @@ joined as (
 )
 select c
 from joined;
+
+SELECT '--';
+
+WITH
+    a AS ( SELECT 0 AS key, 'a' AS acol ),
+    b AS ( SELECT 2 AS key )
+SELECT a.key
+FROM b
+LEFT JOIN a ON 1
+LEFT JOIN a AS a1 ON 1
+;
+
+SELECT '--';
+
+WITH
+    a AS ( SELECT 0 AS key, 'a' AS acol ),
+    b AS ( SELECT 2 AS key )
+SELECT a.acol, a1.acol
+FROM b
+LEFT JOIN a ON a.key = b.key
+LEFT JOIN a AS a1 ON a1.key = a.key
+;
+SELECT '--';
+
+WITH
+    a AS ( SELECT 0 AS key, 'a' AS acol ),
+    b AS ( SELECT 2 AS key )
+SELECT a.acol, a1.acol
+FROM b
+FULL JOIN a ON a.key = b.key
+FULL JOIN a AS a1 ON a1.key = a.key
+ORDER BY 1
+SETTINGS join_use_nulls = 0
+;
+
+SELECT '--';
+
+WITH
+    a AS ( SELECT 0 AS key, 'a' AS acol ),
+    b AS ( SELECT 2 AS key )
+SELECT a.acol, a1.acol
+FROM b
+FULL JOIN a ON a.key = b.key
+FULL JOIN a AS a1 ON a1.key = a.key
+ORDER BY 1
+;
