@@ -99,6 +99,11 @@ public:
         return settings_changes;
     }
 
+    void clearSettingsChanges()
+    {
+        settings_changes.clear();
+    }
+
     /// Returns true if query node is subquery, false otherwise
     bool isSubquery() const
     {

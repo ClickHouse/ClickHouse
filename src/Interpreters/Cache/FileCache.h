@@ -173,8 +173,8 @@ public:
 
     void deactivateBackgroundOperations();
 
-    CacheGuard::Lock lockCache() const;
-    CacheGuard::Lock tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout = std::nullopt) const;
+    CachePriorityGuard::Lock lockCache() const;
+    CachePriorityGuard::Lock tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout = std::nullopt) const;
 
     std::vector<FileSegment::Info> sync();
 
@@ -202,13 +202,14 @@ private:
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
+    std::atomic<bool> cache_is_being_resized = false;
 
     std::mutex apply_settings_mutex;
 
     CacheMetadata metadata;
 
     FileCachePriorityPtr main_priority;
-    mutable CacheGuard cache_guard;
+    mutable CachePriorityGuard cache_guard;
 
     struct HitsCountStash
     {
@@ -280,7 +281,7 @@ private:
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
-        const CacheGuard::Lock *);
+        const CachePriorityGuard::Lock *);
 };
 
 }
