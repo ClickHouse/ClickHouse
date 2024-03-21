@@ -7134,7 +7134,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                             ColumnDescription column = insert_columns.get(*insert_column_name_it);
                             /// Change ephemeral columns to default columns.
                             column.default_desc.kind = ColumnDefaultKind::Default;
-                            structure_hint.add(insert_columns.get(*insert_column_name_it));
+                            structure_hint.add(std::move(column));
                         }
                     }
 
