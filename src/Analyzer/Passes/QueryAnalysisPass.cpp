@@ -3560,13 +3560,17 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
     if (scope.join_use_nulls)
     {
-        auto it = node_to_projection_name.find(resolved_identifier);
+        auto projection_name_it = node_to_projection_name.find(resolved_identifier);
         auto nullable_resolved_identifier = convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side, scope);
         if (nullable_resolved_identifier)
         {
             resolved_identifier = nullable_resolved_identifier;
-            if (it != node_to_projection_name.end())
-                node_to_projection_name.emplace(resolved_identifier, it->second);
+            /// Set the same projection name for new nullable node
+            if (projection_name_it != node_to_projection_name.end())
+            {
+                node_to_projection_name.erase(projection_name_it);
+                node_to_projection_name.emplace(resolved_identifier, projection_name_it->second);
+            }
         }
     }
 
@@ -4686,7 +4690,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     node = nullable_node;
                     /// Set the same projection name for new nullable node
                     if (projection_name_it != node_to_projection_name.end())
+                    {
+                        node_to_projection_name.erase(projection_name_it);
                         node_to_projection_name.emplace(node, projection_name_it->second);
+                    }
                 }
             }
         }
