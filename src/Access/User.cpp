@@ -1,4 +1,5 @@
 #include <Access/User.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Core/Protocol.h>
 #include <base/insertAtEnd.h>
 

@@ -120,13 +120,13 @@ def set_capacity(
         # Let's calculate a new desired capacity
         # (capacity_deficit + scale_up - 1) // scale_up : will increase min by 1
         # if there is any capacity_deficit
-        desired_capacity = (
+        new_capacity = (
             asg["DesiredCapacity"] + (capacity_deficit + scale_up - 1) // scale_up
         )
-        desired_capacity = max(desired_capacity, asg["MinSize"])
-        desired_capacity = min(desired_capacity, asg["MaxSize"])
+        new_capacity = max(new_capacity, asg["MinSize"])
+        new_capacity = min(new_capacity, asg["MaxSize"])
         # Finally, should the capacity be even changed
-        stop = stop or asg["DesiredCapacity"] == desired_capacity
+        stop = stop or asg["DesiredCapacity"] == new_capacity
         if stop:
             logging.info(
                 "Do not increase ASG %s capacity, current capacity=%s, effective "
@@ -144,9 +144,9 @@ def set_capacity(
             "The ASG %s capacity will be increased to %s, current capacity=%s, "
             "effective capacity=%s, maximum capacity=%s, running jobs=%s, queue size=%s",
             asg["AutoScalingGroupName"],
-            desired_capacity,
-            effective_capacity,
+            new_capacity,
             asg["DesiredCapacity"],
+            effective_capacity,
             asg["MaxSize"],
             running,
             queued,
@@ -154,16 +154,16 @@ def set_capacity(
         if not dry_run:
             client.set_desired_capacity(
                 AutoScalingGroupName=asg["AutoScalingGroupName"],
-                DesiredCapacity=desired_capacity,
+                DesiredCapacity=new_capacity,
             )
         return
 
     # Now we will calculate if we need to scale down
     stop = stop or asg["DesiredCapacity"] == asg["MinSize"]
-    desired_capacity = asg["DesiredCapacity"] - (capacity_reserve // scale_down)
-    desired_capacity = max(desired_capacity, asg["MinSize"])
-    desired_capacity = min(desired_capacity, asg["MaxSize"])
-    stop = stop or asg["DesiredCapacity"] == desired_capacity
+    new_capacity = asg["DesiredCapacity"] - (capacity_reserve // scale_down)
+    new_capacity = max(new_capacity, asg["MinSize"])
+    new_capacity = min(new_capacity, asg["MaxSize"])
+    stop = stop or asg["DesiredCapacity"] == new_capacity
     if stop:
         logging.info(
             "Do not decrease ASG %s capacity, current capacity=%s, effective "
@@ -181,7 +181,7 @@ def set_capacity(
         "The ASG %s capacity will be decreased to %s, current capacity=%s, effective "
         "capacity=%s, minimum capacity=%s, running jobs=%s, queue size=%s",
         asg["AutoScalingGroupName"],
-        desired_capacity,
+        new_capacity,
         asg["DesiredCapacity"],
         effective_capacity,
         asg["MinSize"],
@@ -191,7 +191,7 @@ def set_capacity(
     if not dry_run:
         client.set_desired_capacity(
             AutoScalingGroupName=asg["AutoScalingGroupName"],
-            DesiredCapacity=desired_capacity,
+            DesiredCapacity=new_capacity,
         )
 
 

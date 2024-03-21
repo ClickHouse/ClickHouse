@@ -1,6 +1,7 @@
-#include <DataTypes/Serializations/SerializationBool.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/SerializationBool.h>
 
 namespace DB
 {
