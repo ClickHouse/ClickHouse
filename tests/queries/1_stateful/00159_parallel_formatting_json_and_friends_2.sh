@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 
-FORMATS=('TSV' 'TSVWithNames' 'TSKV')
+FORMATS=('JSONCompactStringsEachRowWithNames' 'JSONCompactEachRowWithNamesAndTypes' 'JSONCompactStringsEachRowWithNamesAndTypes')
 
 for format in "${FORMATS[@]}"
 do
