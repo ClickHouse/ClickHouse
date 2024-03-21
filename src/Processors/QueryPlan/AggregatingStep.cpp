@@ -473,7 +473,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     skip_merging);
             });
 
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, true /* force */);
+        ///TBD: need to parallel aggregate if there is `order by` operation.
+        pipeline.resize(1, true /* force */);
 
         aggregating = collector.detachProcessors(0);
     }
