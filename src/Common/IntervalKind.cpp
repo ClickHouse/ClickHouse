@@ -1,6 +1,8 @@
 #include <Common/IntervalKind.h>
 #include <Common/Exception.h>
 
+#include <base/EnumReflection.h>
+
 
 namespace DB
 {
@@ -8,6 +10,11 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+std::string_view IntervalKind::toString() const
+{
+    return magic_enum::enum_name(kind);
 }
 
 Int64 IntervalKind::toAvgNanoseconds() const
@@ -240,7 +247,7 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
             return "toDayOfMonth";
         case IntervalKind::Kind::Week:
             // TODO: SELECT toRelativeWeekNum(toDate('2017-06-15')) - toRelativeWeekNum(toStartOfYear(toDate('2017-06-15')))
-            // else if (ParserKeyword("WEEK").ignore(pos, expected))
+            // else if (ParserKeyword(Keyword::WEEK).ignore(pos, expected))
             //    function_name = "toRelativeWeekNum";
             throw Exception(ErrorCodes::SYNTAX_ERROR, "The syntax 'EXTRACT(WEEK FROM date)' is not supported, cannot extract the number of a week");
         case IntervalKind::Kind::Month:

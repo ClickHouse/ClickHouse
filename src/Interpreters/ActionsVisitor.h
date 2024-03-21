@@ -1,13 +1,14 @@
 #pragma once
 
 #include <string_view>
+#include <Core/ColumnNumbers.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/PreparedSets.h>
 #include <Parsers/IAST.h>
-#include <Core/ColumnNumbers.h>
-#include <Core/ColumnWithTypeAndName.h>
+#include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {

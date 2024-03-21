@@ -11,6 +11,7 @@
 #include <IO/copyData.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
@@ -148,19 +149,25 @@ AsynchronousInsertQueue::InsertData::Entry::Entry(
 {
 }
 
+void AsynchronousInsertQueue::InsertData::Entry::resetChunk()
+{
+    if (chunk.empty())
+        return;
+
+    // To avoid races on counter of user's MemoryTracker we should free memory at this moment.
+    // Entries data must be destroyed in context of user who runs async insert.
+    // Each entry in the list may correspond to a different user,
+    // so we need to switch current thread's MemoryTracker.
+    MemoryTrackerSwitcher switcher(user_memory_tracker);
+    chunk = {};
+}
+
 void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr exception_)
 {
     if (finished.exchange(true))
         return;
 
-    {
-        // To avoid races on counter of user's MemoryTracker we should free memory at this moment.
-        // Entries data must be destroyed in context of user who runs async insert.
-        // Each entry in the list may correspond to a different user,
-        // so we need to switch current thread's MemoryTracker.
-        MemoryTrackerSwitcher switcher(user_memory_tracker);
-        chunk = {};
-    }
+    resetChunk();
 
     if (exception_)
     {
@@ -224,7 +231,7 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
             auto & shard = queue_shards[i];
 
             shard.are_tasks_available.notify_one();
-            assert(dump_by_first_update_threads[i].joinable());
+            chassert(dump_by_first_update_threads[i].joinable());
             dump_by_first_update_threads[i].join();
 
             if (flush_on_shutdown)
@@ -510,14 +517,13 @@ void AsynchronousInsertQueue::validateSettings(const Settings & settings, Logger
     /// Adaptive timeout settings.
     const auto min_ms = std::chrono::milliseconds(settings.async_insert_busy_timeout_min_ms);
 
-    if (min_ms > max_ms)
-        if (log)
-            LOG_WARNING(
-                log,
-                "Setting 'async_insert_busy_timeout_min_ms'={} is greater than 'async_insert_busy_timeout_max_ms'={}. Ignoring "
-                "'async_insert_busy_timeout_min_ms'",
-                min_ms.count(),
-                max_ms.count());
+    if (min_ms > max_ms && log)
+        LOG_WARNING(
+            log,
+            "Setting 'async_insert_busy_timeout_min_ms'={} is greater than 'async_insert_busy_timeout_max_ms'={}. Ignoring "
+            "'async_insert_busy_timeout_min_ms'",
+            min_ms.count(),
+            max_ms.count());
 
     if (settings.async_insert_busy_timeout_increase_rate <= 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_increase_rate' must be greater than zero");
@@ -953,14 +959,18 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
                 "Expected entry with data kind Parsed. Got: {}", entry->chunk.getDataKind());
 
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
+
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer);
+
         total_rows += num_rows;
         chunk_info->offsets.push_back(total_rows);
         chunk_info->tokens.push_back(entry->async_dedup_token);
 
         add_to_async_insert_log(entry, query_for_logging, current_exception, num_rows, num_bytes, data->timeout_ms);
+
         current_exception.clear();
+        entry->resetChunk();
     }
 
     Chunk chunk(executor.getResultColumns(), total_rows);
@@ -1011,6 +1021,8 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
 
         const auto & query_for_logging = get_query_by_format(entry->format);
         add_to_async_insert_log(entry, query_for_logging, "", block->rows(), block->bytes(), data->timeout_ms);
+
+        entry->resetChunk();
     }
 
     Chunk chunk(std::move(result_columns), total_rows);
