@@ -264,10 +264,7 @@ void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
 
         filter_by_database = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
         if (filter_by_database)
-        {
-            auto empty_block = block.cloneWithColumns(block.cloneEmptyColumns());
-            VirtualColumnUtils::filterBlockWithDAG(filter_by_database, empty_block, context);
-        }
+            VirtualColumnUtils::buildSetsForDAG(filter_by_database, context);
 
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "table"));
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "engine"));
@@ -276,10 +273,7 @@ void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
 
         filter_by_other_columns = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
         if (filter_by_other_columns)
-        {
-            auto empty_block = block.cloneWithColumns(block.cloneEmptyColumns());
-            VirtualColumnUtils::filterBlockWithDAG(filter_by_database, empty_block, context);
-        }
+            VirtualColumnUtils::buildSetsForDAG(filter_by_other_columns, context);
     }
 }
 

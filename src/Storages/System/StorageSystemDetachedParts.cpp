@@ -330,7 +330,6 @@ protected:
 void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     if (filter_actions_dag)
     {
         const auto * predicate = filter_actions_dag->getOutputs().at(0);
@@ -344,10 +343,7 @@ void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes
 
         filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
         if (filter)
-        {
-            auto empty_block = block.cloneWithColumns(block.cloneEmptyColumns());
-            VirtualColumnUtils::filterBlockWithDAG(filter, empty_block, context);
-        }
+            VirtualColumnUtils::buildSetsForDAG(filter, context);
     }
 }
 
