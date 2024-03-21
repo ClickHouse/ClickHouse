@@ -3,6 +3,7 @@
 #include <IO/PeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Storages/IStorage.h>
 #include <Common/assert_cast.h>

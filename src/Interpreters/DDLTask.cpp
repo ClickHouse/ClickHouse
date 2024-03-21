@@ -2,6 +2,8 @@
 #include <base/sort.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -14,7 +16,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-#include <Databases/DatabaseReplicated.h>
 
 
 namespace DB
