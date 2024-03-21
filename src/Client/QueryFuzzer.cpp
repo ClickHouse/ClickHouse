@@ -1384,7 +1384,7 @@ void QueryFuzzer::crossover(ASTPtr main, const ASTPtr & donor)
 
         for (auto expression : ASTSelectQuery::All)
         {
-            if (!rollTheDice(2))
+            if (!rollTheDice(5))
                 continue;
 
             if (auto organ = donor_p->getExpression(expression, true))
