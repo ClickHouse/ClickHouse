@@ -1,6 +1,8 @@
 #include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Cache/Metadata.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
@@ -34,39 +36,67 @@ void EvictionCandidates::add(LockedKey & locked_key, const FileSegmentMetadataPt
 
 void EvictionCandidates::evict(FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock & lock)
 {
+    evictImpl(false, query_context, lock);
+}
+
+std::vector<std::string> EvictionCandidates::evictFromMemory(
+    FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock & lock)
+{
+    return evictImpl(true, query_context, lock);
+}
+
+std::vector<std::string> EvictionCandidates::evictImpl(
+        bool remove_only_metadata,
+        FileCacheQueryLimit::QueryContext * query_context,
+        const CachePriorityGuard::Lock & lock)
+{
     if (candidates.empty())
-        return;
+        return {};
 
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::FilesystemCacheEvictMicroseconds);
 
-    for (auto & [key, key_candidates] : candidates)
+    std::vector<std::string> evicted_paths;
+    try
     {
-        auto locked_key = key_candidates.key_metadata->tryLock();
-        if (!locked_key)
-            continue; /// key could become invalid after we released the key lock above, just skip it.
-
-        auto & to_evict = key_candidates.candidates;
-        while (!to_evict.empty())
+        for (auto & [key, key_candidates] : candidates)
         {
-            auto & candidate = to_evict.back();
-            chassert(candidate->releasable());
+            auto locked_key = key_candidates.key_metadata->tryLock();
+            if (!locked_key)
+                continue; /// key could become invalid after we released the key lock above, just skip it.
 
-            const auto segment = candidate->file_segment;
-            auto queue_it = segment->getQueueIterator();
-            chassert(queue_it);
+            auto & to_evict = key_candidates.candidates;
+            while (!to_evict.empty())
+            {
+                auto & candidate = to_evict.back();
+                chassert(candidate->releasable());
 
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
+                const auto segment = candidate->file_segment;
+                auto queue_it = segment->getQueueIterator();
+                chassert(queue_it);
 
-            locked_key->removeFileSegment(segment->offset(), segment->lock());
-            queue_it->remove(lock);
+                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
 
-            if (query_context)
-                query_context->remove(segment->key(), segment->offset(), lock);
+                if (remove_only_metadata)
+                    evicted_paths.push_back(segment->getPath());
 
-            to_evict.pop_back();
+                locked_key->removeFileSegment(
+                    segment->offset(), segment->lock(), /* can_be_broken */false, remove_only_metadata);
+
+                queue_it->remove(lock);
+                if (query_context)
+                    query_context->remove(segment->key(), segment->offset(), lock);
+
+                to_evict.pop_back();
+            }
         }
     }
+    catch (...)
+    {
+        for (const auto & path : evicted_paths)
+            fs::remove(path);
+        throw;
+    }
+    return evicted_paths;
 }
-
 }

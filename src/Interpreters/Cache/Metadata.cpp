@@ -899,32 +899,34 @@ bool LockedKey::removeAllFileSegments(bool if_releasable)
     return removed_all;
 }
 
-KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken)
+KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_broken, bool remove_only_metadata)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {}", offset);
 
     auto file_segment = it->second->file_segment;
-    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken);
+    return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken, remove_only_metadata);
 }
 
 KeyMetadata::iterator LockedKey::removeFileSegment(
     size_t offset,
     const FileSegmentGuard::Lock & segment_lock,
-    bool can_be_broken)
+    bool can_be_broken,
+    bool remove_only_metadata)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {} in key {}", offset, getKey());
 
-    return removeFileSegmentImpl(it, segment_lock, can_be_broken);
+    return removeFileSegmentImpl(it, segment_lock, can_be_broken, remove_only_metadata);
 }
 
 KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     KeyMetadata::iterator it,
     const FileSegmentGuard::Lock & segment_lock,
-    bool can_be_broken)
+    bool can_be_broken,
+    bool remove_only_metadata)
 {
     auto file_segment = it->second->file_segment;
 
@@ -939,47 +941,50 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
     file_segment->detach(segment_lock, *this);
 
-    try
+    if (!remove_only_metadata)
     {
-        const auto path = key_metadata->getFileSegmentPath(*file_segment);
-        if (file_segment->segment_kind == FileSegmentKind::Temporary)
+        try
         {
-            /// FIXME: For temporary file segment the requirement is not as strong because
-            /// the implementation of "temporary data in cache" creates files in advance.
-            if (fs::exists(path))
+            const auto path = key_metadata->getFileSegmentPath(*file_segment);
+            if (file_segment->segment_kind == FileSegmentKind::Temporary)
+            {
+                /// FIXME: For temporary file segment the requirement is not as strong because
+                /// the implementation of "temporary data in cache" creates files in advance.
+                if (fs::exists(path))
+                    fs::remove(path);
+            }
+            else if (file_segment->downloaded_size == 0)
+            {
+                chassert(!fs::exists(path));
+            }
+            else if (fs::exists(path))
+            {
                 fs::remove(path);
-        }
-        else if (file_segment->downloaded_size == 0)
-        {
-            chassert(!fs::exists(path));
-        }
-        else if (fs::exists(path))
-        {
-            fs::remove(path);
 
-            /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
-            int flags = file_segment->getFlagsForLocalRead();
-            /// Files are created with flags from file_segment->getFlagsForLocalRead()
-            /// plus optionally O_DIRECT is added, depends on query setting, so remove both.
-            OpenedFileCache::instance().remove(path, flags);
-            OpenedFileCache::instance().remove(path, flags | O_DIRECT);
+                /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
+                int flags = file_segment->getFlagsForLocalRead();
+                /// Files are created with flags from file_segment->getFlagsForLocalRead()
+                /// plus optionally O_DIRECT is added, depends on query setting, so remove both.
+                OpenedFileCache::instance().remove(path, flags);
+                OpenedFileCache::instance().remove(path, flags | O_DIRECT);
 
-            LOG_TEST(key_metadata->logger(), "Removed file segment at path: {}", path);
-        }
-        else if (!can_be_broken)
-        {
+                LOG_TEST(key_metadata->logger(), "Removed file segment at path: {}", path);
+            }
+            else if (!can_be_broken)
+            {
 #ifdef ABORT_ON_LOGICAL_ERROR
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
 #else
-            LOG_WARNING(key_metadata->logger(), "Expected path {} to exist, while removing {}:{}",
-                        path, getKey(), file_segment->offset());
+                LOG_WARNING(key_metadata->logger(), "Expected path {} to exist, while removing {}:{}",
+                            path, getKey(), file_segment->offset());
 #endif
+            }
         }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        chassert(false);
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            chassert(false);
+        }
     }
 
     return key_metadata->erase(it);

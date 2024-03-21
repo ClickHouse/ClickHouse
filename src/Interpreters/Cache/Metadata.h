@@ -269,8 +269,16 @@ struct LockedKey : private boost::noncopyable
 
     bool removeAllFileSegments(bool if_releasable = true);
 
-    KeyMetadata::iterator removeFileSegment(size_t offset, const FileSegmentGuard::Lock &, bool can_be_broken = false);
-    KeyMetadata::iterator removeFileSegment(size_t offset, bool can_be_broken = false);
+    KeyMetadata::iterator removeFileSegment(
+        size_t offset,
+        const FileSegmentGuard::Lock &,
+        bool can_be_broken = false,
+        bool remove_only_metadata = false);
+
+    KeyMetadata::iterator removeFileSegment(
+        size_t offset,
+        bool can_be_broken = false,
+        bool remove_only_metadata = false);
 
     void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &);
 
@@ -289,7 +297,11 @@ struct LockedKey : private boost::noncopyable
     std::string toString() const;
 
 private:
-    KeyMetadata::iterator removeFileSegmentImpl(KeyMetadata::iterator it, const FileSegmentGuard::Lock &, bool can_be_broken = false);
+    KeyMetadata::iterator removeFileSegmentImpl(
+        KeyMetadata::iterator it,
+        const FileSegmentGuard::Lock &,
+        bool can_be_broken = false,
+        bool remove_only_metadata_ = false);
 
     const std::shared_ptr<KeyMetadata> key_metadata;
     KeyGuard::Lock lock; /// `lock` must be destructed before `key_metadata`.

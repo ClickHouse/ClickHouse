@@ -55,6 +55,13 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::Lock &) override;
 
+    EvictionCandidates collectCandidatesForEviction(
+        size_t desired_size,
+        size_t desired_elements_count,
+        size_t max_candidates_to_evict,
+        FileCacheReserveStat & stat,
+        const CachePriorityGuard::Lock &) override;
+
     void shuffle(const CachePriorityGuard::Lock &) override;
 
     struct LRUPriorityDump : public IPriorityDump
@@ -81,7 +88,14 @@ private:
     void updateElementsCount(int64_t num);
     void updateSize(int64_t size);
 
-    bool canFit(size_t size, size_t released_size_assumption, size_t released_elements_assumption, const CachePriorityGuard::Lock &) const;
+    bool canFit(
+        size_t size,
+        size_t elements,
+        size_t released_size_assumption,
+        size_t released_elements_assumption,
+        const CachePriorityGuard::Lock &,
+        const size_t * max_size_ = nullptr,
+        const size_t * max_elements_ = nullptr) const;
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
 
@@ -96,6 +110,13 @@ private:
 
     LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::Lock &);
     LRUIterator add(EntryPtr entry, const CachePriorityGuard::Lock &);
+
+    using StopConditionFunc = std::function<bool()>;
+    void iterateForEviction(
+        EvictionCandidates & res,
+        FileCacheReserveStat & stat,
+        StopConditionFunc stop_condition,
+        const CachePriorityGuard::Lock &);
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator
