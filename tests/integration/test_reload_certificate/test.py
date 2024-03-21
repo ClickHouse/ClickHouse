@@ -166,10 +166,12 @@ def test_chain_reload():
     """Check cert chain reload"""
     check_certificate_switch("first", "WithChain")
     assert (
-        node.exec_in_container([
-            "bash",
-            "-c",
-            "openssl s_client -showcerts -servername localhost -connect localhost:8443 </dev/null 2>/dev/null | grep 'BEGIN CERTIFICATE' | wc -l",
-        ])
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "openssl s_client -showcerts -servername localhost -connect localhost:8443 </dev/null 2>/dev/null | grep 'BEGIN CERTIFICATE' | wc -l",
+            ]
+        )
         == "2\n"
     )

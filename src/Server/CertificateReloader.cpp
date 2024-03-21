@@ -22,7 +22,6 @@ int callSetCertificate(SSL * ssl, [[maybe_unused]] void * arg)
 
 }
 
-
 /// This is callback for OpenSSL. It will be called on every connection to obtain a certificate and private key.
 int CertificateReloader::setCertificate(SSL * ssl)
 {
@@ -30,31 +29,37 @@ int CertificateReloader::setCertificate(SSL * ssl)
     if (!current)
         return -1;
 
-    if (current->certs_chain.size() < 1)
+    if (current->certs_chain.empty())
         return -1;
 
-    int ret;
-    ret = SSL_clear_chain_certs(ssl);
-    if (!ret)
-        return ret;
-    ret = SSL_use_certificate(ssl, const_cast<X509 *>(current->certs_chain[0].certificate()));
-    if (!ret)
-        return ret;
-    for (auto cert = current->certs_chain.begin() + 1; cert != current->certs_chain.end(); cert++) {
-        ret = SSL_add1_chain_cert(ssl, const_cast<X509 *>(cert->certificate()));
-        if (!ret)
-        return ret;
-    }
-    ret = SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current->key)));
-
-    int err = SSL_check_private_key(ssl);
-    if (err != 1)
+    if (auto err = SSL_clear_chain_certs(ssl))
     {
-        std::string msg = Poco::Net::Utility::getLastError();
-        LOG_ERROR(log, "Unusable key-pair {}", msg);
+        LOG_ERROR(log, "Clear certificates {}", Poco::Net::Utility::getLastError());
         return -1;
     }
-
+    if (auto err = SSL_use_certificate(ssl, const_cast<X509 *>(current->certs_chain[0].certificate())))
+    {
+        LOG_ERROR(log, "Use certificate {}", Poco::Net::Utility::getLastError());
+        return -1;
+    }
+    for (auto cert = current->certs_chain.begin() + 1; cert != current->certs_chain.end(); cert++)
+    {
+        if (auto err = SSL_add1_chain_cert(ssl, const_cast<X509 *>(cert->certificate())))
+        {
+            LOG_ERROR(log, "Add certificate to chain {}", Poco::Net::Utility::getLastError());
+            return -1;
+        }
+    }
+    if (auto err = SSL_use_PrivateKey(ssl, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(current->key))))
+    {
+        LOG_ERROR(log, "Use private key {}", Poco::Net::Utility::getLastError());
+        return -1;
+    }
+    if (auto err = SSL_check_private_key(ssl))
+    {
+        LOG_ERROR(log, "Unusable key-pair {}", Poco::Net::Utility::getLastError());
+        return -1;
+    }
     return 1;
 }
 
