@@ -100,6 +100,8 @@ def is_python(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is python script"""
     # WARNING: python-magic v2:0.4.24-2 is used in ubuntu 22.04,
     # and `Support os.PathLike values in magic.from_file` is only from 0.4.25
+    if not os.path.exists(os.path.join(REPO_COPY, file)):
+        return False
     return bool(
         magic.from_file(os.path.join(REPO_COPY, file), mime=True)
         == "text/x-script.python"
@@ -110,6 +112,8 @@ def is_shell(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is shell script"""
     # WARNING: python-magic v2:0.4.24-2 is used in ubuntu 22.04,
     # and `Support os.PathLike values in magic.from_file` is only from 0.4.25
+    if not os.path.exists(os.path.join(REPO_COPY, file)):
+        return False
     return bool(
         magic.from_file(os.path.join(REPO_COPY, file), mime=True)
         == "text/x-shellscript"
