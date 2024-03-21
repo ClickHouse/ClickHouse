@@ -160,9 +160,8 @@ std::optional<time_t> MergeTreeDataPartCompact::getColumnModificationTime(const 
     return getDataPartStorage().getFileLastModified(DATA_FILE_NAME_WITH_EXTENSION).epochTime();
 }
 
-void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) const
+void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) const
 {
-    checkConsistencyBase();
     String mrk_file_name = DATA_FILE_NAME + getMarksFileExtension();
 
     if (!checksums.empty())
