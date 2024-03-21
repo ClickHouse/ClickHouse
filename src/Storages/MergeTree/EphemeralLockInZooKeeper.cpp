@@ -98,13 +98,13 @@ std::optional<String> checkLockAndDeduplicate(const EphemeralLockInZooKeeper& lo
 {
     static constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
 
-    // check has zookeeper
+    /// check has zookeeper
     lock.checkCreated();
     auto zookeeper = lock.getZooKeeper();
 
     Coordination::Requests ops;
 
-    // add check deduplication
+    /// add check deduplication
     if constexpr (async_insert)
     {
         for (const auto & single_dedup_path : deduplication_path)
@@ -115,14 +115,14 @@ std::optional<String> checkLockAndDeduplicate(const EphemeralLockInZooKeeper& lo
         zkutil::addCheckNotExistsRequest(ops, *zookeeper, deduplication_path);
     }
 
-    // add check current node request
+    /// add check current node request
     ops.push_back(zkutil::makeCheckRequest(lock.getPath(), -1));
 
-    // execute
+    /// execute
     Coordination::Responses responses;
     Coordination::Error e = zookeeper->tryMulti(ops, responses);
 
-    // ZNODEEXISTS if has duplication
+    /// ZNODEEXISTS if has duplication
     if (e == Coordination::Error::ZNODEEXISTS)
     {
         if constexpr (async_insert)
@@ -134,7 +134,7 @@ std::optional<String> checkLockAndDeduplicate(const EphemeralLockInZooKeeper& lo
             return deduplication_path;
     }
 
-    // ZNONODE if current node is destroyed, via disconnect
+    /// ZNONODE if current node is destroyed, via disconnect
     if (e == Coordination::Error::ZNONODE)
         throw Exception(
             ErrorCodes::LOST_CONNECTION_TO_ZOOKEEPER,

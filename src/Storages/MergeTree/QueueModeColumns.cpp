@@ -89,8 +89,8 @@ bool isQueueModeColumn(const String & column_name)
 
 void materializeQueueSortingColumns(Block & block, const String & partition_id, int64_t block_number)
 {
-    // because queue columns are materialized
-    // in insert they will be filled with default value
+    /// because queue columns are materialized
+    /// in insert they will be filled with default value
     block.erase(QueuePartitionIdColumn::name);
     block.erase(QueueBlockNumberColumn::name);
     block.erase(QueueBlockOffsetColumn::name);

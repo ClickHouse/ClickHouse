@@ -554,7 +554,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (replicated)
                 add_column(QueueReplicaColumn::name, QueueReplicaColumn::type);
 
-            // mode is ordinary -> additional_sorting_key_settings must be empty
+            /// mode is ordinary -> additional_sorting_key_settings must be empty
             chassert(!additional_sorting_key_settings.has_value());
 
             additional_sorting_key_settings = KeyDescription::AdditionalSettings{};
