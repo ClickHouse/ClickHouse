@@ -685,6 +685,16 @@ LIMIT 10
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KB, MB, etc.) as string.
 
+**Syntax**
+
+```sql
+formatReadableDecimalSize(x[, precision])
+```
+**Arguments**
+
+- `x` — A numeric value.
+- `precision` — Optional. Number of digits after decimal point to show.
+
 Example:
 
 ```sql
@@ -696,15 +706,39 @@ SELECT
 ```text
 ┌─filesize_bytes─┬─filesize───┐
 │              1 │ 1.00 B     │
-│           1024 │ 1.02 KB   │
-│        1048576 │ 1.05 MB   │
-│      192851925 │ 192.85 MB │
+│           1024 │ 1.02 KB    │
+│        1048576 │ 1.05 MB    │
+│      192851925 │ 192.85 MB  │
 └────────────────┴────────────┘
+```
+```sql
+SELECT
+    arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
+    formatReadableDecimalSize(filesize_bytes, 6) AS filesize
+```
+
+```text
+┌─filesize_bytes─┬─filesize───────┐
+│              1 │ 1.000000 B     │
+│           1024 │ 1.024000 KB    │
+│        1048576 │ 1.048576 MB    │
+│      192851925 │ 192.851925 MB  │
+└────────────────┴────────────────┘
 ```
 
 ## formatReadableSize(x)
 
 Given a size (number of bytes), this function returns a readable, rounded size with suffix (KiB, MiB, etc.) as string.
+
+**Syntax**
+
+```sql
+formatReadableSize(x[, precision])
+```
+**Arguments**
+
+- `x` — A numeric value.
+- `precision` — Optional. Number of digits after decimal point to show.
 
 Example:
 
@@ -724,10 +758,33 @@ Alias: `FORMAT_BYTES`.
 │      192851925 │ 183.92 MiB │
 └────────────────┴────────────┘
 ```
+```sql
+SELECT
+    arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
+    formatReadableSize(filesize_bytes, 6) AS filesize
+```
+```text
+┌─filesize_bytes─┬─filesize───────┐
+│              1 │ 1.000000 B     │
+│           1024 │ 1.000000 KiB   │
+│        1048576 │ 1.000000 MiB   │
+│      192851925 │ 183.917928 MiB │
+└────────────────┴────────────────┘
+```
 
 ## formatReadableQuantity(x)
 
 Given a number, this function returns a rounded number with suffix (thousand, million, billion, etc.) as string.
+
+**Syntax**
+
+```sql
+formatReadableQuantity(x[, precision])
+```
+**Arguments**
+
+- `x` — A numeric value.
+- `precision` — Optional. Number of digits after decimal point to show.
 
 Example:
 
@@ -744,6 +801,20 @@ SELECT
 │     4567000000 │ 4.57 billion      │
 │ 98765432101234 │ 98.77 trillion    │
 └────────────────┴───────────────────┘
+```
+```sql
+SELECT
+    arrayJoin([1024, 1234 * 1000, (4567 * 1000) * 1000, 98765432101234]) AS number,
+    formatReadableQuantity(number, 6) AS number_for_humans
+```
+
+```text
+┌─────────number─┬─number_for_humans─────┐
+│           1024 │ 1.024000 thousand     │
+│        1234000 │ 1.234000 million      │
+│     4567000000 │ 4.567000 billion      │
+│ 98765432101234 │ 98.765432 trillion    │
+└────────────────┴───────────────────────┘
 ```
 
 ## formatReadableTimeDelta
