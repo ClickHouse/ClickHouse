@@ -865,11 +865,9 @@ struct JSONExtractTree
         explicit LowCardinalityFixedStringNode(const size_t fixed_length_) : fixed_length(fixed_length_) { }
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            // If element is an object we delegate the insertion to JSONExtractRawImpl
-            if (element.isObject())
+            // For types other than string, delegate the insertion to JSONExtractRawImpl.
+            if (!element.isString())
                 return JSONExtractRawImpl<JSONParser>::insertResultToLowCardinalityFixedStringColumn(dest, element, fixed_length);
-            else if (!element.isString())
-                return false;
 
             auto str = element.getString();
             if (str.size() > fixed_length)
@@ -1484,9 +1482,6 @@ public:
     // We use insertResultToLowCardinalityFixedStringColumn in case we are inserting raw data in a Low Cardinality FixedString column
     static bool insertResultToLowCardinalityFixedStringColumn(IColumn & dest, const Element & element, size_t fixed_length)
     {
-        if (element.getObject().size() > fixed_length)
-            return false;
-
         ColumnFixedString::Chars chars;
         WriteBufferFromVector<ColumnFixedString::Chars> buf(chars, AppendModeTag());
         traverse(element, buf);
