@@ -32,7 +32,8 @@ public:
         if (!column_node || !constant_node)
             return ;
         // IN multiple values is not supported
-        if (constant_node->getValue().getType() == Field::Types::Which::Tuple)
+        if (constant_node->getValue().getType() == Field::Types::Which::Tuple
+            || constant_node->getValue().getType() == Field::Types::Which::Array)
             return ;
         // x IN null not equivalent to x = null
         if (constant_node->hasSourceExpression() || constant_node->getValue().isNull())
@@ -51,12 +52,17 @@ public:
         {
             resolver = createInternalFunctionNotEqualOverloadResolver(decimal_check_overflow);
         }
-        equal->resolveAsFunction(resolver);
+        try
+        {
+            equal->resolveAsFunction(resolver);
+        }
+        catch (...)
+        {
+            // When function resolver fails, we should not replace the function node
+            return;
+        }
         node = equal;
     }
-private:
-    FunctionOverloadResolverPtr equal_resolver;
-    FunctionOverloadResolverPtr not_equal_resolver;
 };
 
 void ConvertInToEqualPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
