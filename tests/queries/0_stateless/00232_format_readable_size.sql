@@ -14,3 +14,4 @@ WITH round(exp(number), 6) AS x, x > 0xFFFFFFFFFFFFFFFF ? 0xFFFFFFFFFFFFFFFF : t
 SELECT FORMAT_BYTES(x, 256), format_bytes(y, 256), formatReadableSize(z, 256)
 FROM system.numbers
 LIMIT 70; -- { serverError 43 }
+SELECT arrayJoin([3.4, NaN, null, inf]) as number, 3 as prec, formatReadableSize(number, prec);

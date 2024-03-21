@@ -88,3 +88,7 @@
 1739.27 quadrillion	1739.274942 quadrillion	2.147483647000 billion
 4727.84 quadrillion	4727.839468 quadrillion	2.147483647000 billion
 12851.60 quadrillion	12851.600114 quadrillion	2.147483647000 billion
+3.4	3	3.400
+nan	3	nan
+\N	3	\N
+inf	3	inf quadrillion
