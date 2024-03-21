@@ -799,7 +799,13 @@ struct IdentifierResolveScope
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
-    std::map<IQueryTreeNode::Hash, FunctionOverloadResolverPtr> rand_constant_cache;
+    struct ResolvedFunctionsCache
+    {
+        FunctionOverloadResolverPtr resolver;
+        std::map<IQueryTreeNode::Hash, FunctionBasePtr> cache;
+    };
+
+    std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
 
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const
     {
@@ -924,6 +930,24 @@ struct IdentifierResolveScope
         return buffer.str();
     }
 };
+
+IQueryTreeNode::Hash getHashForFunctionArguments(const ColumnsWithTypeAndName & arguments)
+{
+    SipHash hash;
+    for (const auto & arg : arguments)
+    {
+        auto type_name = arg.type->getName();
+        hash.update(type_name.c_str(), type_name.size());
+
+        if (arg.column)
+        {
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(arg.column.get()))
+                col_const->updateHashWithValue(0, hash);
+        }
+    }
+
+    return getSipHash128AsPair(hash);
+}
 
 
 /** Visitor that extracts expression and function aliases from node and initialize scope tables with it.
@@ -5534,21 +5558,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters);
     bool is_executable_udf = true;
 
+    IdentifierResolveScope::ResolvedFunctionsCache * function_cache = nullptr;
+
     if (!function)
     {
         /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
         /// Function randConstant() would return the same value for the same arguments (in scope).
-        if (function_name == "randConstant")
-        {
-            auto hash = function_node_ptr->getTreeHash();
-            auto & func = scope.rand_constant_cache[hash];
-            if (!func)
-                func = FunctionFactory::instance().tryGet(function_name, scope.context);
 
-            function = func;
-        }
-        else
-            function = FunctionFactory::instance().tryGet(function_name, scope.context);
+        auto hash = function_node_ptr->getTreeHash();
+        function_cache = &scope.functions_cache[hash];
+        if (!function_cache->resolver)
+            function_cache->resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
+
+        function = function_cache->resolver;
 
         is_executable_udf = false;
     }
@@ -5773,7 +5795,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     try
     {
-        auto function_base = function->build(argument_columns);
+        FunctionBasePtr function_base;
+        if (function_cache)
+        {
+            auto args_hash = getHashForFunctionArguments(argument_columns);
+            auto & cached_function = function_cache->cache[args_hash];
+            if (!cached_function)
+                cached_function = function->build(argument_columns);
+
+            function_base = cached_function;
+        }
+        else
+            function_base = function->build(argument_columns);
 
         /// Do not constant fold get scalar functions
         bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
