@@ -43,30 +43,29 @@ At a minimum, the following information should be added (but add more as needed)
 
 ---
 ### Modify your CI run:
-##### NOTE:
-- if your merge the PR with modified CI you **MUST** know what you are doing.
-- modifiers can be applied only if set before CI starts
-- remove `!` to apply
-- return all `!` to restore defaults
-```
-!#ci_set_<SET_NAME> - to run only preconfigured set of tests, e.g.:
-!#ci_set_arm - to run only integration tests on ARM
-!#ci_set_integration - to run only integration tests on AMD
-!#ci_set_analyzer - to run only tests for analyzer
-NOTE: you can configure your own ci set
-```
-```
-!#job_<JOB NAME> - to run only specified job, e.g.:
-!#job_stateless_tests_release
-!#job_package_debug
-!#job_style_check
-!#job_integration_tests_asan
-```
-```
-!#batch_2 - to run only 2nd batch for all multi-batch jobs
-!#btach_1_2_3 - to run only 1, 2, 3rd batch for all multi-batch jobs
-```
-```
-!#no_merge_commit - to disable merge commit (no merge from master)
-!#do_not_test - to disable whole CI (except style check)
-```
+**NOTE:** If your merge the PR with modified CI you **MUST KNOW** what you are doing
+**NOTE:** Set desired options before CI starts or re-push after updates
+
+#### Run only:
+- [ ] <!---ci_set_integration--> Integration tests
+- [ ] <!---ci_set_arm--> Integration tests (arm64)
+- [ ] <!---ci_set_stateless--> Stateless tests (release)
+- [ ] <!---ci_set_stateless_asan--> Stateless tests (asan)
+- [ ] <!---ci_set_stateful--> Stateful tests (release)
+- [ ] <!---ci_set_stateful_asan--> Stateful tests (asan)
+- [ ] <!---ci_set_reduced--> No sanitizers
+- [ ] <!---ci_set_analyzer--> Tests with analyzer
+- [ ] <!---ci_set_fast--> Fast tests
+- [ ] <!---job_package_debug--> Only package_debug build
+- [ ] <!---PLACE_YOUR_TAG_CONFIGURED_IN_ci_config.py_FILE_HERE--> Add your CI variant description here
+
+#### CI options:
+- [ ] <!---do_not_test--> do not test (only style check)
+- [ ] <!---no_merge_commit--> disable merge-commit (no merge from master before tests)
+- [ ] <!---no_ci_cache--> disable CI cache (job reuse)
+
+#### Only specified batches in multi-batch jobs:
+- [ ] <!---batch_0--> 1
+- [ ] <!---batch_1--> 2
+- [ ] <!---batch_2--> 3
+- [ ] <!---batch_3--> 4
