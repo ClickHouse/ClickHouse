@@ -264,15 +264,6 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
     size_t initial_n = n;
 
     size_t sleep_time_with_backoff_milliseconds = 100;
-    auto handle_exception = [&, this](const auto & e, size_t i)
-    {
-        LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
-        if (i + 1 == max_single_download_retries)
-            throw;
-
-        sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
-        sleep_time_with_backoff_milliseconds *= 2;
-    };
 
     for (size_t i = 0; i < max_single_download_retries && n > 0; ++i)
     {
@@ -288,12 +279,19 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             std::istringstream string_stream(String(static_cast<char *>(data_ptr),bytes)); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             copyFromIStreamWithProgressCallback(string_stream, to, n, progress_callback, &bytes_copied);
 
+            LOG_INFO(log, "AzureBlobStorage readBigAt read bytes {}", bytes_copied);
+
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->add(bytes_copied, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            handle_exception(e,i);
+            LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
+            if (i + 1 == max_single_download_retries)
+                throw;
+
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+            sleep_time_with_backoff_milliseconds *= 2;
         }
 
         range_begin += bytes_copied;
