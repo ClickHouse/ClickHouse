@@ -40,3 +40,33 @@ At a minimum, the following information should be added (but add more as needed)
 
 
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
+
+---
+### Modify your CI run:
+##### NOTE:
+- if your merge the PR with modified CI you **MUST** know what you are doing.
+- modifiers can be applied only if set before CI starts
+- remove `!` to apply
+- return all `!` to restore defaults
+```
+!#ci_set_<SET_NAME> - to run only preconfigured set of tests, e.g.:
+!#ci_set_arm - to run only integration tests on ARM
+!#ci_set_integration - to run only integration tests on AMD
+!#ci_set_analyzer - to run only tests for analyzer
+NOTE: you can configure your own ci set
+```
+```
+!#job_<JOB NAME> - to run only specified job, e.g.:
+!#job_stateless_tests_release
+!#job_package_debug
+!#job_style_check
+!#job_integration_tests_asan
+```
+```
+!#batch_2 - to run only 2nd batch for all multi-batch jobs
+!#btach_1_2_3 - to run only 1, 2, 3rd batch for all multi-batch jobs
+```
+```
+!#no_merge_commit - to disable merge commit (no merge from master)
+!#do_not_test - to disable whole CI (except style check)
+```
