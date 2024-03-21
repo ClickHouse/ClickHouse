@@ -110,6 +110,17 @@ bool checkIntervalOrTimeZoneArgument(const ColumnWithTypeAndName & argument, con
     return true;
 }
 
+enum TimeWindowFunctionName
+{
+    TUMBLE,
+    TUMBLE_START,
+    TUMBLE_END,
+    HOP,
+    HOP_START,
+    HOP_END,
+    WINDOW_ID
+};
+
 template <TimeWindowFunctionName type>
 struct TimeWindowImpl
 {

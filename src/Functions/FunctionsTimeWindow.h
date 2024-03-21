@@ -21,16 +21,6 @@ namespace DB
   * hopEnd(window_id)
   * hopEnd(time_attr, hop_interval, window_interval [, timezone])
   */
-enum TimeWindowFunctionName
-{
-    TUMBLE,
-    TUMBLE_START,
-    TUMBLE_END,
-    HOP,
-    HOP_START,
-    HOP_END,
-    WINDOW_ID
-};
 
 template <IntervalKind::Kind unit>
 struct ToStartOfTransform;
@@ -73,17 +63,15 @@ struct ToStartOfTransform;
     TRANSFORM_TIME(Second)
 #undef TRANSFORM_TIME
 
-/// NOLINTBEGIN(bugprone-macro-parentheses)
-
 #define TRANSFORM_SUBSECONDS(INTERVAL_KIND, DEF_SCALE) \
 template<> \
     struct ToStartOfTransform<IntervalKind::Kind::INTERVAL_KIND> \
     { \
         static Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
         { \
-            if (scale <= DEF_SCALE) \
+            if (scale <= (DEF_SCALE)) \
             { \
-                auto val = t * DecimalUtils::scaleMultiplier<DateTime64>(DEF_SCALE - scale); \
+                auto val = t * DecimalUtils::scaleMultiplier<DateTime64>((DEF_SCALE) - scale); \
                 if (delta == 1) \
                     return val; \
                 else \
@@ -91,7 +79,7 @@ template<> \
             } \
             else \
             { \
-                return t - (t % (delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - DEF_SCALE))) ; \
+                return t - (t % (delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - (DEF_SCALE)))) ; \
             } \
         } \
     };
@@ -145,55 +133,17 @@ template <> \
     { \
         static inline NO_SANITIZE_UNDEFINED Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
         { \
-            if (scale < DEF_SCALE) \
+            if (scale < (DEF_SCALE)) \
             { \
-                return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(DEF_SCALE - scale); \
+                return t + delta * DecimalUtils::scaleMultiplier<DateTime64>((DEF_SCALE) - scale); \
             } \
             else \
-                return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - DEF_SCALE); \
+                return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - (DEF_SCALE)); \
         } \
     };
     ADD_SUBSECONDS(Millisecond, 3)
     ADD_SUBSECONDS(Microsecond, 6)
     ADD_SUBSECONDS(Nanosecond, 9)
 #undef ADD_SUBSECONDS
-
-/// NOLINTEND(bugprone-macro-parentheses)
-
-template <TimeWindowFunctionName type>
-struct TimeWindowImpl
-{
-    static constexpr auto name = "UNKNOWN";
-
-    static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name);
-
-    static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name);
-};
-
-template <TimeWindowFunctionName type>
-class FunctionTimeWindow : public IFunction
-{
-public:
-    static constexpr auto name = TimeWindowImpl<type>::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeWindow>(); }
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override;
-};
-
-using FunctionTumble = FunctionTimeWindow<TUMBLE>;
-using FunctionTumbleStart = FunctionTimeWindow<TUMBLE_START>;
-using FunctionTumbleEnd = FunctionTimeWindow<TUMBLE_END>;
-using FunctionHop = FunctionTimeWindow<HOP>;
-using FunctionWindowId = FunctionTimeWindow<WINDOW_ID>;
-using FunctionHopStart = FunctionTimeWindow<HOP_START>;
-using FunctionHopEnd = FunctionTimeWindow<HOP_END>;
 
 }
