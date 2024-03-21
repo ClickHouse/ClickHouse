@@ -1,4 +1,3 @@
-#include <optional>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
@@ -9,7 +8,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
-#include "base/types.h"
 #include "registerTableFunctions.h"
 
 
@@ -18,22 +16,22 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 namespace
 {
 
-/* numbers(limit), numbers_mt(limit)
- * - the same as SELECT number FROM system.numbers LIMIT limit.
- * Used for testing purposes, as a simple example of table function.
- */
-template <bool multithreaded>
-class TableFunctionNumbers : public ITableFunction
+constexpr std::array<const char *, 2> names = {"generate_series", "generateSeries"};
+
+template <size_t alias_num>
+class TableFunctionGenerateSeries : public ITableFunction
 {
 public:
-    static constexpr auto name = multithreaded ? "numbers_mt" : "numbers";
+    static_assert(alias_num < names.size());
+    static constexpr auto name = names[alias_num];
     std::string getName() const override { return name; }
     bool hasStaticStructure() const override { return true; }
 
@@ -51,15 +49,15 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 };
 
-template <bool multithreaded>
-ColumnsDescription TableFunctionNumbers<multithreaded>::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
+template <size_t alias_num>
+ColumnsDescription TableFunctionGenerateSeries<alias_num>::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
 {
     /// NOTE: https://bugs.llvm.org/show_bug.cgi?id=47418
-    return ColumnsDescription{{{"number", std::make_shared<DataTypeUInt64>()}}};
+    return ColumnsDescription{{{"generate_series", std::make_shared<DataTypeUInt64>()}}};
 }
 
-template <bool multithreaded>
-StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
+template <size_t alias_num>
+StoragePtr TableFunctionGenerateSeries<alias_num>::executeImpl(
     const ASTPtr & ast_function,
     ContextPtr context,
     const std::string & table_name,
@@ -70,24 +68,28 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
     {
         auto arguments = function->arguments->children;
 
-        if ((arguments.empty()) || (arguments.size() >= 4))
+        if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'length' or 'offset, length'.", getName());
 
-        UInt64 offset = arguments.size() >= 2 ? evaluateArgument(context, arguments[0]) : 0;
-        UInt64 length = arguments.size() >= 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
-        UInt64 step = arguments.size() == 3 ? evaluateArgument(context, arguments[2]) : 1;
-
-        auto res = std::make_shared<StorageSystemNumbers>(
-            StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"}, length, offset, step);
+        UInt64 start = evaluateArgument(context, arguments[0]);
+        UInt64 stop = evaluateArgument(context, arguments[1]);
+        UInt64 step = (arguments.size() == 3) ? evaluateArgument(context, arguments[2]) : UInt64{1};
+        if (step == UInt64{0})
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Table function '{}' requires step to be a positive number", getName());
+        auto res = (start > stop)
+            ? std::make_shared<StorageSystemNumbers>(
+                StorageID(getDatabaseName(), table_name), false, std::string{"generate_series"}, 0, 0, 1)
+            : std::make_shared<StorageSystemNumbers>(
+                StorageID(getDatabaseName(), table_name), false, std::string{"generate_series"}, (stop - start) + 1, start, step);
         res->startup();
         return res;
     }
     throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'limit' or 'offset, limit'.", getName());
 }
 
-template <bool multithreaded>
-UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
+template <size_t alias_num>
+UInt64 TableFunctionGenerateSeries<alias_num>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
 {
     const auto & [field, type] = evaluateConstantExpression(argument, context);
 
@@ -104,12 +106,13 @@ UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(ContextPtr context,
     return converted.safeGet<UInt64>();
 }
 
+
 }
 
-void registerTableFunctionNumbers(TableFunctionFactory & factory)
+void registerTableFunctionGenerateSeries(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNumbers<true>>({.documentation = {}, .allow_readonly = true});
-    factory.registerFunction<TableFunctionNumbers<false>>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateSeries<0>>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateSeries<1>>({.documentation = {}, .allow_readonly = true});
 }
 
 }
