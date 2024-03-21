@@ -13,7 +13,7 @@ namespace DB
 bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier s_ident;
-    ParserKeyword s_as("AS");
+    ParserKeyword s_as(Keyword::AS);
     ParserSubquery s_subquery;
 
     auto old_pos = pos;

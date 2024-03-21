@@ -22,6 +22,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB

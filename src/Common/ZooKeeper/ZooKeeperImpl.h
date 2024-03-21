@@ -291,7 +291,7 @@ private:
     class ThreadReference
     {
     public:
-        const ThreadReference & operator = (ThreadFromGlobalPool && thread_)
+        ThreadReference & operator = (ThreadFromGlobalPool && thread_)
         {
             std::lock_guard<std::mutex> l(lock);
             thread = std::move(thread_);
