@@ -531,6 +531,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
             auto add_column = [&](const String & name, const DataTypePtr & type, const ASTPtr & codec = nullptr)
             {
+                /// after alter table columns can be saved in metadata
+                if (metadata.columns.has(name))
+                    return;
+
                 ColumnDescription column(name, type);
 
                 if (codec != nullptr)
