@@ -7,6 +7,7 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 
 namespace DB
 {
@@ -222,7 +223,10 @@ DictionaryPtr createCacheDictionaryLayout(
         if (created_from_ddl && !pathStartsWith(storage_configuration.file_path, user_files_path))
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", storage_configuration.file_path, user_files_path);
 
-        storage = std::make_shared<SSDCacheDictionaryStorage<dictionary_key_type>>(storage_configuration);
+        auto file_cache = FileCacheFactory::instance().getByName("s3_cache")->cache;
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: file_cache: {}", __FILE__, __LINE__, file_cache ? "true" : "false");
+
+        storage = std::make_shared<SSDCacheDictionaryStorage<dictionary_key_type>>(dictionary_identifier, storage_configuration, file_cache);
     }
 #endif
     ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);

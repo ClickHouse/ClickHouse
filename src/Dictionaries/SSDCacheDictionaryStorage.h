@@ -26,7 +26,8 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 #include <Dictionaries/DictionaryHelpers.h>
-
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/WriteBufferToFileSegment.h>
 
 namespace ProfileEvents
 {
@@ -453,7 +454,28 @@ private:
 template <typename SSDCacheKeyType>
 class SSDCacheFileBuffer : private boost::noncopyable
 {
-    static constexpr auto BIN_FILE_EXT = ".bin";
+    FileSegmentsHolderPtr createCacheFile(FileCachePtr & file_cache, size_t max_file_size)
+    {
+        if (!file_cache || max_file_size == 0)
+            return {};
+
+        auto holder = file_cache->set(
+            FileSegment::Key::random(),
+            0, max_file_size,
+            CreateFileSegmentSettings(FileSegmentKind::Regular, /* unbounded */ true),
+            FileCache::getCommonUser());
+
+        chassert(holder->size() == 1);
+        holder->back().getKeyMetadata()->createBaseDirectory();
+        return holder;
+    }
+
+    static String getCacheFilePath(const std::string & file_path_, const FileSegmentsHolderPtr & filesystem_cache_holder_)
+    {
+        if (filesystem_cache_holder_ && filesystem_cache_holder_->size() == 1)
+            return filesystem_cache_holder_->front().getPath();
+        return file_path_ + ".bin";
+    }
 
 public:
 
@@ -462,8 +484,10 @@ public:
     explicit SSDCacheFileBuffer(
         const std::string & file_path_,
         size_t block_size_,
-        size_t file_blocks_size_)
-        : file_path(file_path_ + BIN_FILE_EXT)
+        size_t file_blocks_size_,
+        FileCachePtr file_cache)
+        : filesystem_cache_holder(createCacheFile(file_cache, block_size_ * file_blocks_size_))
+        , file_path(getCacheFilePath(file_path_, filesystem_cache_holder))
         , block_size(block_size_)
         , file_blocks_size(file_blocks_size_)
     {
@@ -489,7 +513,18 @@ public:
 
     void allocateSizeForNextPartition()
     {
-        if (preallocateDiskSpace(file.fd, current_blocks_size * block_size, block_size * file_blocks_size) < 0)
+        size_t size_to_allocate = block_size * file_blocks_size;
+
+        std::optional<FilesystemCacheSizeAllocator> filesystem_cache_allocator;
+        if (filesystem_cache_holder && filesystem_cache_holder->size() == 1)
+        {
+            filesystem_cache_allocator.emplace(filesystem_cache_holder->front());
+            bool is_ok = filesystem_cache_allocator->reserve(size_to_allocate);
+            if (!is_ok)
+                throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot preallocate space for the file {} in filesystem cache", file_path);
+        }
+
+        if (preallocateDiskSpace(file.fd, current_blocks_size * block_size, size_to_allocate) < 0)
             ErrnoException::throwFromPath(
                 ErrorCodes::CANNOT_ALLOCATE_MEMORY, file_path, "Cannot preallocate space for the file {}", file_path);
 
@@ -757,6 +792,9 @@ public:
     {
         current_block_index = 0;
     }
+
+    const std::string & getFilePath() const { return file_path; }
+
 private:
     struct FileDescriptor : private boost::noncopyable
     {
@@ -824,6 +862,8 @@ private:
         return bytes_written;
     }
 
+    /// Set only when file is stored in filesystem cache
+    FileSegmentsHolderPtr filesystem_cache_holder;
     String file_path;
     size_t block_size;
     size_t file_blocks_size;
@@ -847,11 +887,13 @@ public:
     using SSDCacheKeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, SSDCacheSimpleKey, SSDCacheComplexKey>;
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
-    explicit SSDCacheDictionaryStorage(const SSDCacheDictionaryStorageConfiguration & configuration_)
+    explicit SSDCacheDictionaryStorage(const StorageID & dict_id_, const SSDCacheDictionaryStorageConfiguration & configuration_, FileCachePtr file_cache)
         : configuration(configuration_)
-        , file_buffer(configuration_.file_path, configuration.block_size, configuration.file_blocks_size)
+        , dict_id(dict_id_)
+        , file_buffer(configuration_.file_path, configuration.block_size, configuration.file_blocks_size, file_cache)
         , rnd_engine(randomSeed())
     {
+        LOG_DEBUG(getLogger("SSDCacheDictionaryStorage"), "XXXX Writing dictionary '{}' ssd cache to '{}'", dict_id.getFullNameNotQuoted(), file_buffer.getFilePath());
         memory_buffer_partitions.emplace_back(configuration.block_size, configuration.write_buffer_blocks_size);
     }
 
@@ -1401,6 +1443,7 @@ private:
     }
 
     SSDCacheDictionaryStorageConfiguration configuration;
+    StorageID dict_id;
 
     SSDCacheFileBuffer<SSDCacheKeyType> file_buffer;
 

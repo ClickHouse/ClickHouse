@@ -5,7 +5,7 @@
 #include <IO/SwapHelper.h>
 #include <IO/ReadBufferFromFile.h>
 
-#include <base/scope_guard.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Common/CurrentThread.h>
 #include <Common/formatReadable.h>
@@ -50,6 +50,38 @@ WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment
 {
 }
 
+FilesystemCacheSizeAllocator::FilesystemCacheSizeAllocator(FileSegment & file_segment_, size_t lock_wait_timeout_)
+    : file_segment(file_segment_)
+    , lock_wait_timeout(lock_wait_timeout_)
+{
+    auto downloader [[maybe_unused]] = file_segment.getOrSetDownloader();
+    chassert(downloader == FileSegment::getCallerId());
+}
+
+bool FilesystemCacheSizeAllocator::reserve(size_t size_in_bytes, FileCacheReserveStat * reserve_stat)
+{
+    total_size_in_bytes += size_in_bytes;
+    return file_segment.reserve(size_in_bytes, lock_wait_timeout, reserve_stat);
+}
+
+void FilesystemCacheSizeAllocator::commit()
+{
+    file_segment.setDownloadedSize(total_size_in_bytes);
+}
+
+FilesystemCacheSizeAllocator::~FilesystemCacheSizeAllocator()
+{
+    try
+    {
+        /// Can throw LOGICAL_ERROR if some invariant is broken
+        file_segment.completePartAndResetDownloader();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 /// If it throws an exception, the file segment will be incomplete, so you should not use it in the future.
 void WriteBufferToFileSegment::nextImpl()
 {
@@ -69,12 +101,15 @@ void WriteBufferToFileSegment::nextImpl()
     });
 
     size_t bytes_to_write = offset();
+    if (bytes_to_write == 0)
+        return;
+
+    FilesystemCacheSizeAllocator cache_allocator(*file_segment, reserve_space_lock_wait_timeout_milliseconds);
 
     FileCacheReserveStat reserve_stat;
     /// In case of an error, we don't need to finalize the file segment
     /// because it will be deleted soon and completed in the holder's destructor.
-    bool ok = file_segment->reserve(bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, &reserve_stat);
-
+    bool ok = cache_allocator.reserve(bytes_to_write, &reserve_stat);
     if (!ok)
     {
         String reserve_stat_msg;
@@ -105,7 +140,7 @@ void WriteBufferToFileSegment::nextImpl()
         throw;
     }
 
-    file_segment->setDownloadedSize(bytes_to_write);
+    cache_allocator.commit();
 }
 
 std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()

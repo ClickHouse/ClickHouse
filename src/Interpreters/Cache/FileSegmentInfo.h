@@ -41,13 +41,13 @@ namespace DB
     enum class FileSegmentKind
     {
         /**
-         * `Regular` file segment is still in cache after usage, and can be evicted
+         * Regular file segment is still in cache after usage, and can be evicted
          * (unless there're some holders).
          */
         Regular,
 
         /**
-         * Temporary` file segment is removed right after releasing.
+         * Temporary file segment is removed right after releasing.
          * Also corresponding files are removed during cache loading (if any).
          */
         Temporary,

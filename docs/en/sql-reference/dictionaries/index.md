@@ -742,14 +742,23 @@ The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) 
     <ssd_cache>
         <!-- Size of elementary read block in bytes. Recommended to be equal to SSD's page size. -->
         <block_size>4096</block_size>
-        <!-- Max cache file size in bytes. -->
+        <!-- Initial cache file size in bytes. -->
         <file_size>16777216</file_size>
+        <!--
+            Specifies the maximum number of partitions in the cache file.
+            Each partition has a size of `file_size`, so the maximum file size is calculated as `file_size * max_partitions_count`.
+            When we run out of space we allocate a new partition of `file_size` and start writing to it.
+            If current number of partitions is greater than `max_partitions_count` then we will start reusing old partitions.
+        -->
+        <max_partitions_count>16</max_partitions_count>
         <!-- Size of RAM buffer in bytes for reading elements from SSD. -->
         <read_buffer_size>131072</read_buffer_size>
         <!-- Size of RAM buffer in bytes for aggregating elements before flushing to SSD. -->
         <write_buffer_size>1048576</write_buffer_size>
         <!-- Path where cache file will be stored. -->
         <path>/var/lib/clickhouse/user_files/test_dict</path>
+        <!-- Alternatively you may store cache file in filesystem cache. The `disk_cache` should be disk with type `cache`. -->
+        <!-- <store_in_filesystem_cache>disk_cache</store_in_filesystem_cache> -->
     </ssd_cache>
 </layout>
 ```
@@ -758,7 +767,10 @@ or
 
 ``` sql
 LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH '/var/lib/clickhouse/user_files/test_dict'))
+    PATH '/var/lib/clickhouse/user_files/test_dict'
+    -- or:
+    -- STORE_IN_FILESYSTEM_CACHE 'disk_cache'
+    ))
 ```
 
 ### complex_key_ssd_cache

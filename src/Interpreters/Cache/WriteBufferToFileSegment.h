@@ -9,6 +9,7 @@ namespace DB
 
 class FileSegment;
 
+/// Writes data to filesystem cache
 class WriteBufferToFileSegment : public WriteBufferFromFileDecorator, public IReadableWriteBuffer
 {
 public:
@@ -32,5 +33,26 @@ private:
     const size_t reserve_space_lock_wait_timeout_milliseconds;
 };
 
+/// Allocates space in filesystem cache for file segment
+/// Maintains invariants for file segment that should be kept during before and after `reserve` call
+class FilesystemCacheSizeAllocator
+{
+public:
+    explicit FilesystemCacheSizeAllocator(FileSegment & file_segment_, size_t lock_wait_timeout_ = 1000);
+
+    /// Should be called before actual write to the file
+    /// Returns true if space was successfully reserved
+    bool reserve(size_t size_in_bytes, FileCacheReserveStat * reserve_stat = nullptr);
+
+    /// Should be called after sucessful reserve and actual write to the file
+    void commit();
+
+    ~FilesystemCacheSizeAllocator();
+
+private:
+    FileSegment & file_segment;
+    size_t lock_wait_timeout;
+    size_t total_size_in_bytes = 0;
+};
 
 }
