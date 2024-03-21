@@ -100,20 +100,28 @@ def is_python(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is python script"""
     # WARNING: python-magic v2:0.4.24-2 is used in ubuntu 22.04,
     # and `Support os.PathLike values in magic.from_file` is only from 0.4.25
-    return bool(
-        magic.from_file(os.path.join(REPO_COPY, file), mime=True)
-        == "text/x-script.python"
-    )
+    try:
+        return bool(
+            magic.from_file(os.path.join(REPO_COPY, file), mime=True)
+            == "text/x-script.python"
+        )
+    except IsADirectoryError:
+        # Process submodules w/o errors
+        return False
 
 
 def is_shell(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is shell script"""
     # WARNING: python-magic v2:0.4.24-2 is used in ubuntu 22.04,
     # and `Support os.PathLike values in magic.from_file` is only from 0.4.25
-    return bool(
-        magic.from_file(os.path.join(REPO_COPY, file), mime=True)
-        == "text/x-shellscript"
-    )
+    try:
+        return bool(
+            magic.from_file(os.path.join(REPO_COPY, file), mime=True)
+            == "text/x-shellscript"
+        )
+    except IsADirectoryError:
+        # Process submodules w/o errors
+        return False
 
 
 def main():
@@ -135,8 +143,8 @@ def main():
     run_python_check = True
     if CI and pr_info.number > 0:
         pr_info.fetch_changed_files()
-        run_cpp_check = not any(
-            is_python(file) or is_shell(file) for file in pr_info.changed_files
+        run_cpp_check = any(
+            not (is_python(file) or is_shell(file)) for file in pr_info.changed_files
         )
         run_shell_check = any(is_shell(file) for file in pr_info.changed_files)
         run_python_check = any(is_python(file) for file in pr_info.changed_files)
