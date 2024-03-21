@@ -61,9 +61,14 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
 
-    # -fsanitize=memory and address are too heavy
+    # Sanitizers are too heavy
     if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE)
        set (RLIMIT_DATA 10000000000) # 10G
+    endif()
+
+    # For some files currently building RISCV64 might be too slow. TODO: Improve compilation times per file
+    if (ARCH_RISCV64)
+        set (RLIMIT_CPU 1800)
     endif()
 
     set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
