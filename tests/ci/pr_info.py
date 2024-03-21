@@ -44,11 +44,12 @@ RETRY_SLEEP = 0
 
 
 class EventType:
-    UNKNOWN = 0
-    PUSH = 1
-    PULL_REQUEST = 2
-    SCHEDULE = 3
-    DISPATCH = 4
+    UNKNOWN = "unknown"
+    PUSH = "commits"
+    PULL_REQUEST = "pull_request"
+    SCHEDULE = "schedule"
+    DISPATCH = "dispatch"
+    MERGE_QUEUE = "merge_group"
 
 
 def get_pr_for_commit(sha, ref):
@@ -114,6 +115,12 @@ class PRInfo:
         # release_pr and merged_pr are used for docker images additional cache
         self.release_pr = 0
         self.merged_pr = 0
+        self.labels = set()
+
+        repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
+        self.task_url = GITHUB_RUN_URL
+        self.repo_full_name = GITHUB_REPOSITORY
+
         self.event_type = EventType.UNKNOWN
         ref = github_event.get("ref", "refs/heads/master")
         if ref and ref.startswith("refs/heads/"):
@@ -154,10 +161,6 @@ class PRInfo:
             else:
                 self.sha = github_event["pull_request"]["head"]["sha"]
 
-            repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
-            self.task_url = GITHUB_RUN_URL
-
-            self.repo_full_name = GITHUB_REPOSITORY
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
@@ -176,7 +179,7 @@ class PRInfo:
             self.body = github_event["pull_request"]["body"]
             self.labels = {
                 label["name"] for label in github_event["pull_request"]["labels"]
-            }  # type: Set[str]
+            }
 
             self.user_login = github_event["pull_request"]["user"]["login"]  # type: str
             self.user_orgs = set()  # type: Set[str]
@@ -191,6 +194,28 @@ class PRInfo:
 
             self.diff_urls.append(self.compare_pr_url(github_event["pull_request"]))
 
+        elif (
+            EventType.MERGE_QUEUE in github_event
+        ):  # pull request and other similar events
+            self.event_type = EventType.MERGE_QUEUE
+            # FIXME: need pr? we can parse it from ["head_ref": "refs/heads/gh-readonly-queue/test-merge-queue/pr-6751-4690229995a155e771c52e95fbd446d219c069bf"]
+            self.number = 0
+            self.sha = github_event[EventType.MERGE_QUEUE]["head_sha"]
+            self.base_ref = github_event[EventType.MERGE_QUEUE]["base_ref"]
+            base_sha = github_event[EventType.MERGE_QUEUE]["base_sha"]  # type: str
+            # ClickHouse/ClickHouse
+            self.base_name = github_event["repository"]["full_name"]
+            # any_branch-name - the name of working branch name
+            self.head_ref = github_event[EventType.MERGE_QUEUE]["head_ref"]
+            # UserName/ClickHouse or ClickHouse/ClickHouse
+            self.head_name = self.base_name
+            self.user_login = github_event["sender"]["login"]
+            self.diff_urls.append(
+                github_event["repository"]["compare_url"]
+                .replace("{base}", base_sha)
+                .replace("{head}", self.sha)
+            )
+
         elif "commits" in github_event:
             self.event_type = EventType.PUSH
             # `head_commit` always comes with `commits`
@@ -203,10 +228,8 @@ class PRInfo:
                     logging.error("Failed to convert %s to integer", merged_pr)
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
-            repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
-            self.task_url = GITHUB_RUN_URL
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
-            self.repo_full_name = GITHUB_REPOSITORY
+
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
                 self.number = 0
@@ -272,11 +295,7 @@ class PRInfo:
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
             self.number = 0
-            self.labels = set()
-            repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
-            self.task_url = GITHUB_RUN_URL
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
-            self.repo_full_name = GITHUB_REPOSITORY
             self.pr_html_url = f"{repo_prefix}/commits/{ref}"
             self.base_ref = ref
             self.base_name = self.repo_full_name
@@ -300,6 +319,9 @@ class PRInfo:
     def is_scheduled(self):
         return self.event_type == EventType.SCHEDULE
 
+    def is_merge_queue(self):
+        return self.event_type == EventType.MERGE_QUEUE
+
     def is_dispatched(self):
         return self.event_type == EventType.DISPATCH
 
@@ -315,6 +337,9 @@ class PRInfo:
         )
 
     def fetch_changed_files(self):
+        if self.changed_files_requested:
+            return
+
         if not getattr(self, "diff_urls", False):
             raise TypeError("The event does not have diff URLs")
 

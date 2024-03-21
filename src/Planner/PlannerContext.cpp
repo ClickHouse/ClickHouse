@@ -48,6 +48,12 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerCo
     , is_ast_level_optimization_allowed(!(query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY || select_query_options_.ignore_ast_optimizations))
 {}
 
+PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_)
+    : query_context(std::move(query_context_))
+    , global_planner_context(planner_context_->global_planner_context)
+    , is_ast_level_optimization_allowed(planner_context_->is_ast_level_optimization_allowed)
+{}
+
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)
 {
     auto [it, _] = table_expression_node_to_data.emplace(table_expression_node, TableExpressionData());

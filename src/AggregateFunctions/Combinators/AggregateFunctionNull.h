@@ -152,6 +152,7 @@ public:
     }
 
     bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+    bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
     {
@@ -520,7 +521,7 @@ public:
             }
         }
 
-        chassert(nullable_filters.size() > 0);
+        chassert(!nullable_filters.empty());
         bool found_one = false;
         if (nullable_filters.size() == 1)
         {
