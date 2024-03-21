@@ -20,6 +20,13 @@ VFSTransaction::VFSTransaction(DiskObjectStorageVFS & disk_)
 {
 }
 
+VFSTransaction::VFSTransaction(DiskObjectStorageVFS & disk_, MetadataTransactionPtr metadata_transaction_)
+    : DiskObjectStorageTransaction(*disk_.object_storage, *disk_.metadata_storage, nullptr, metadata_transaction_)
+    , disk(disk_)
+    , item(*leftIfNonNull(disk.get(), this))
+{
+}
+
 const int pers_seq = zkutil::CreateMode::PersistentSequential;
 void VFSTransaction::commit()
 {
@@ -243,8 +250,9 @@ void VFSTransaction::addStoredObjectsOp(StoredObjects && link, StoredObjects && 
         item.remove(obj);
 }
 
-MultipleDisksVFSTransaction::MultipleDisksVFSTransaction(DiskObjectStorageVFS & disk_, IObjectStorage & destination_object_storage_)
-    : VFSTransaction(disk_), destination_object_storage(destination_object_storage_)
+MultipleDisksVFSTransaction::MultipleDisksVFSTransaction(
+    DiskObjectStorageVFS & disk_, IObjectStorage & destination_object_storage_, IMetadataStorage & destination_metadata_storage_)
+    : VFSTransaction(disk_, destination_metadata_storage_.createTransaction()), destination_object_storage(destination_object_storage_)
 {
 }
 

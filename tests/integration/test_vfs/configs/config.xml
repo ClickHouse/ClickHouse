@@ -10,6 +10,14 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
             </vfs>
+            <vfs_2>
+                <type>s3</type>
+                <allow_vfs>true</allow_vfs>
+                <vfs_gc_sleep_ms>5000</vfs_gc_sleep_ms>
+                <endpoint>http://minio1:9001/root/data2/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </vfs_2>
         </disks>
         <policies>
             <default>
@@ -21,6 +29,7 @@
                 <volumes>
                     <local><disk>default</disk></local>
                     <remote><disk>vfs</disk></remote>
+                    <remote_2><disk>vfs_2</disk></remote_2>
                 </volumes>
             </with_local>
         </policies>

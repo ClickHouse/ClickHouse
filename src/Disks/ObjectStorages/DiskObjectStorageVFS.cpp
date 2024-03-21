@@ -205,6 +205,6 @@ DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()
 
 DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
 {
-    return std::make_shared<MultipleDisksVFSTransaction>(*this, *to_disk.getObjectStorage());
+    return std::make_shared<MultipleDisksVFSTransaction>(*this, *to_disk.getObjectStorage(), *to_disk.getMetadataStorage());
 }
 }

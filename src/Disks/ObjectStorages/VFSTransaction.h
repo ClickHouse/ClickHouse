@@ -9,6 +9,8 @@ class DiskObjectStorageVFS;
 struct VFSTransaction : DiskObjectStorageTransaction, private VFSLogItem
 {
     VFSTransaction(DiskObjectStorageVFS & disk_); // NOLINT
+    VFSTransaction(DiskObjectStorageVFS & disk_, MetadataTransactionPtr metadata_transaction_); // NOLINT
+
     void commit() override;
 
     void replaceFile(const String & from_path, const String & to_path) override;
@@ -46,7 +48,8 @@ protected:
 struct MultipleDisksVFSTransaction final : VFSTransaction
 {
     IObjectStorage & destination_object_storage;
-    MultipleDisksVFSTransaction(DiskObjectStorageVFS & disk_, IObjectStorage & destination_object_storage_);
+    MultipleDisksVFSTransaction(
+        DiskObjectStorageVFS & disk_, IObjectStorage & destination_object_storage_, IMetadataStorage & destination_metadata_storage_);
 
     auto shared_from_this() { return std::static_pointer_cast<MultipleDisksVFSTransaction>(VFSTransaction::shared_from_this()); }
 

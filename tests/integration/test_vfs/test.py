@@ -124,8 +124,8 @@ def test_moving_to_vfs(started_cluster):
     # Just download metadata and write log items
     node2.query(f"ALTER TABLE {table} MOVE PARTITION '0' TO DISK '{DISK_NAME}'")
 
-    node1.wait_for_log_line("Metadata: uploading")
-    node2.wait_for_log_line("Metadata: downloading")
+    node1.wait_for_log_line("Metadata: uploading", look_behind_lines=10000)
+    node2.wait_for_log_line("Metadata: downloading", look_behind_lines=10000)
 
     table_objects = get_remote_paths(node1, table)
     bucket_objects = {
@@ -143,6 +143,59 @@ def test_moving_to_vfs(started_cluster):
     }
     # Check that all objects related to the table were deleted by GC
     assert not any([obj in bucket_objects for obj in table_objects])
+
+
+def test_moving_from_vfs(started_cluster):
+    node1: ClickHouseInstance = started_cluster.instances["node1"]
+    node2: ClickHouseInstance = started_cluster.instances["node2"]
+    bucket = started_cluster.minio_bucket
+    minio = started_cluster.minio_client
+    table = "test_moving_from_vfs"
+
+    # Upload some files to the object storage
+    node1.query(
+        f"CREATE TABLE {table} (i UInt32, val UInt32) ENGINE=ReplicatedMergeTree("
+        f"'/test/{table}', 'replica_1') ORDER BY i PARTITION BY i%10 SETTINGS storage_policy='with_local'"
+    )
+    node2.query(
+        f"CREATE TABLE {table} (i UInt32, val UInt32) ENGINE=ReplicatedMergeTree("
+        f"'/test/{table}', 'replica_2') ORDER BY i PARTITION BY i%10 SETTINGS storage_policy='with_local'"
+    )
+    node1.query(f"INSERT INTO {table} VALUES (0, 0)")
+
+    # Move to 1 vfs disk
+    node1.query(f"ALTER TABLE {table} MOVE PARTITION '0' TO DISK '{DISK_NAME}'")
+    node2.query(f"ALTER TABLE {table} MOVE PARTITION '0' TO DISK '{DISK_NAME}'")
+
+    # All objects related to the table are present in bucket of 1 vfs disk
+    table_objects_1 = get_remote_paths(node1, table)
+    bucket_objects_1 = {
+        obj.object_name for obj in minio.list_objects(bucket, "data/", recursive=True)
+    }
+    assert all([obj in bucket_objects_1 for obj in table_objects_1])
+
+    # Move to 2 vfs disk
+    node1.query(f"ALTER TABLE {table} MOVE PARTITION '0' TO DISK 'vfs_2'")
+    node2.query(f"ALTER TABLE {table} MOVE PARTITION '0' TO DISK 'vfs_2'")
+
+    # All objects related to the table are present in bucket of 2 vfs disk
+    table_objects_2 = get_remote_paths(node1, table)
+    bucket_objects_2 = {
+        obj.object_name for obj in minio.list_objects(bucket, "data2/", recursive=True)
+    }
+    assert all([obj in bucket_objects_2 for obj in table_objects_2])
+
+    # Wait GC iteration
+    time.sleep(GC_SLEEP_SEC * 1.5)
+
+    # Check that all objects related to the table were deleted from bucket of 1 vfs disk
+    bucket_objects_1 = {
+        obj.object_name for obj in minio.list_objects(bucket, "data/", recursive=True)
+    }
+    assert not any([obj in bucket_objects_1 for obj in table_objects_1])
+
+    # Read data from table
+    assert node1.query(f"SELECT i, val from {table}") == "0\t0\n"
 
 
 # TODO myrrc check possible errors on merge and move
@@ -189,7 +242,7 @@ def test_ch_disks(started_cluster):
         user="root",
     )
     print(listing)
-    assert listing == f"default\n{DISK_NAME}\n"
+    assert listing == f"default\nvfs\nvfs_2\n"
 
     listing = node.exec_in_container(
         [
