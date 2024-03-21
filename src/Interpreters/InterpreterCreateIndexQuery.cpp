@@ -1,10 +1,11 @@
-#include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterCreateIndexQuery.h>
 
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterCreateIndexQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>

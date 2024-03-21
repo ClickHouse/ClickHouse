@@ -231,7 +231,6 @@ private:
         value->next = nullptr;
     }
 
-private:
     void schedulerThread()
     {
         while (!stop_flag.load())
@@ -253,7 +252,6 @@ private:
         request->execute();
     }
 
-private:
     TResource * current = nullptr; // round-robin pointer
     std::unordered_map<ISchedulerNode *, TResource> children; // resources by pointer
     std::atomic<bool> stop_flag = false;
