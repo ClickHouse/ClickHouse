@@ -48,6 +48,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
@@ -7527,18 +7528,40 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             if (!result_left_table_expression)
                 result_left_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope);
 
-            /// Here we may try to resolve identifier from projection in case it's not resolved from left table expression
-            /// and analyzer_compatibility_join_using_top_level_identifier is disabled.
-            /// For now we do not do this, because not all corner cases are clear.
+            /** Here we may try to resolve identifier from projection in case it's not resolved from left table expression
+              * and analyzer_compatibility_join_using_top_level_identifier is disabled.
+              * For now we do not do this, because not all corner cases are clear.
+              * But let's at least mention it in error message
+              */
             /// if (!settings.analyzer_compatibility_join_using_top_level_identifier && !result_left_table_expression)
             ///     result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpression(), scope);
 
             if (!result_left_table_expression)
+            {
+                String extra_message;
+                const QueryNode * query_node = scope.scope_node ? scope.scope_node->as<QueryNode>() : nullptr;
+                if (settings.analyzer_compatibility_join_using_top_level_identifier && query_node)
+                {
+                    for (const auto & projection_node : query_node->getProjection().getNodes())
+                    {
+                        if (projection_node->hasAlias() && identifier_full_name == projection_node->getAlias())
+                        {
+                            extra_message = fmt::format(
+                                ", but alias '{}' is present in SELECT list."
+                                " You may try to SET analyzer_compatibility_join_using_top_level_identifier = 1, to allow to use it in USING clause",
+                                projection_node->formatASTForErrorMessage());
+                            break;
+                        }
+                    }
+                }
+
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                    "JOIN {} using identifier '{}' cannot be resolved from left table expression. In scope {}",
+                    "JOIN {} using identifier '{}' cannot be resolved from left table expression{}. In scope {}",
                     join_node_typed.formatASTForErrorMessage(),
                     identifier_full_name,
+                    extra_message,
                     scope.scope_node->formatASTForErrorMessage());
+            }
 
             if (result_left_table_expression->getNodeType() != QueryTreeNodeType::COLUMN)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,

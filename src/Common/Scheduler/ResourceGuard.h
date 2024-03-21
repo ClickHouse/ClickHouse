@@ -2,9 +2,10 @@
 
 #include <base/types.h>
 
+#include <Common/Scheduler/ISchedulerConstraint.h>
+#include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Scheduler/ResourceRequest.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/Scheduler/ISchedulerConstraint.h>
 
 #include <condition_variable>
 #include <mutex>
