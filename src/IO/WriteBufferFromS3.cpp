@@ -74,9 +74,9 @@ struct WriteBufferFromS3::PartData
     }
 };
 
-IBufferAllocationPolicy::IBufferAllocationPolicyPtr createBufferAllocationPolicy(const S3Settings::RequestSettings::PartUploadSettings & settings)
+BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3Settings::RequestSettings::PartUploadSettings & settings)
 {
-    IBufferAllocationPolicy::Settings allocation_settings;
+    BufferAllocationPolicy::Settings allocation_settings;
     allocation_settings.strict_size = settings.strict_upload_part_size;
     allocation_settings.min_size = settings.min_upload_part_size;
     allocation_settings.max_size = settings.max_upload_part_size;
@@ -84,7 +84,7 @@ IBufferAllocationPolicy::IBufferAllocationPolicyPtr createBufferAllocationPolicy
     allocation_settings.multiply_parts_count_threshold = settings.upload_part_size_multiply_parts_count_threshold;
     allocation_settings.max_single_size = settings.max_single_part_upload_size;
 
-    return IBufferAllocationPolicy::create(allocation_settings);
+    return BufferAllocationPolicy::create(allocation_settings);
 }
 
 

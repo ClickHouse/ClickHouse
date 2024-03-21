@@ -5,13 +5,13 @@
 namespace DB
 {
 
-class FixedSizeBufferAllocationPolicy : public IBufferAllocationPolicy
+class FixedSizeBufferAllocationPolicy : public BufferAllocationPolicy
 {
     const size_t buffer_size = 0;
     size_t buffer_number = 0;
 
 public:
-    explicit FixedSizeBufferAllocationPolicy(const IBufferAllocationPolicy::Settings & settings_)
+    explicit FixedSizeBufferAllocationPolicy(const BufferAllocationPolicy::Settings & settings_)
         : buffer_size(settings_.strict_size)
     {
         chassert(buffer_size > 0);
@@ -32,7 +32,7 @@ public:
 };
 
 
-class ExpBufferAllocationPolicy : public DB::IBufferAllocationPolicy
+class ExpBufferAllocationPolicy : public DB::BufferAllocationPolicy
 {
     const size_t first_size = 0;
     const size_t second_size = 0;
@@ -45,7 +45,7 @@ class ExpBufferAllocationPolicy : public DB::IBufferAllocationPolicy
     size_t buffer_number = 0;
 
 public:
-    explicit ExpBufferAllocationPolicy(const IBufferAllocationPolicy::Settings & settings_)
+    explicit ExpBufferAllocationPolicy(const BufferAllocationPolicy::Settings & settings_)
         : first_size(std::max(settings_.max_single_size, settings_.min_size))
         , second_size(settings_.min_size)
         , multiply_factor(settings_.multiply_factor)
@@ -89,9 +89,9 @@ public:
 };
 
 
-IBufferAllocationPolicy::~IBufferAllocationPolicy() = default;
+BufferAllocationPolicy::~BufferAllocationPolicy() = default;
 
-IBufferAllocationPolicy::IBufferAllocationPolicyPtr IBufferAllocationPolicy::create(IBufferAllocationPolicy::Settings settings_)
+BufferAllocationPolicyPtr BufferAllocationPolicy::create(BufferAllocationPolicy::Settings settings_)
 {
     if (settings_.strict_size > 0)
         return std::make_unique<FixedSizeBufferAllocationPolicy>(settings_);

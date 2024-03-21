@@ -58,7 +58,7 @@ private:
     LoggerPtr log;
     LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
-    IBufferAllocationPolicy::IBufferAllocationPolicyPtr buffer_allocation_policy;
+    BufferAllocationPolicyPtr buffer_allocation_policy;
 
     const size_t max_single_part_upload_size;
     const size_t max_unexpected_write_error_retries;

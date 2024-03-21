@@ -9,8 +9,11 @@
 namespace DB
 {
 
+class BufferAllocationPolicy;
+using BufferAllocationPolicyPtr = std::unique_ptr<BufferAllocationPolicy>;
+
 ///  Buffer number starts with 0
-class IBufferAllocationPolicy
+class BufferAllocationPolicy
 {
 public:
 
@@ -24,15 +27,12 @@ public:
         size_t max_single_size = 32 * 1024 * 1024; /// Max size for a single buffer/block
     };
 
-
     virtual size_t getBufferNumber() const = 0;
     virtual size_t getBufferSize() const = 0;
     virtual void nextBuffer() = 0;
-    virtual ~IBufferAllocationPolicy() = 0;
+    virtual ~BufferAllocationPolicy() = 0;
 
-    using IBufferAllocationPolicyPtr = std::unique_ptr<IBufferAllocationPolicy>;
-
-    static IBufferAllocationPolicyPtr create(Settings settings_);
+    static BufferAllocationPolicyPtr create(Settings settings_);
 
 };
 

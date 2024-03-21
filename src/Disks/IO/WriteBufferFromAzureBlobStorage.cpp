@@ -22,11 +22,12 @@ struct WriteBufferFromAzureBlobStorage::PartData
 {
     Memory<> memory;
     size_t data_size = 0;
+    std::string block_id;
 };
 
-IBufferAllocationPolicy::IBufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureObjectStorageSettings & settings)
+BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureObjectStorageSettings & settings)
 {
-    IBufferAllocationPolicy::Settings allocation_settings;
+    BufferAllocationPolicy::Settings allocation_settings;
     allocation_settings.strict_size = settings.strict_upload_part_size;
     allocation_settings.min_size = settings.min_upload_part_size;
     allocation_settings.max_size = settings.max_upload_part_size;
@@ -34,7 +35,7 @@ IBufferAllocationPolicy::IBufferAllocationPolicyPtr createBufferAllocationPolicy
     allocation_settings.multiply_parts_count_threshold = settings.upload_part_size_multiply_parts_count_threshold;
     allocation_settings.max_single_size = settings.max_single_part_upload_size;
 
-    return IBufferAllocationPolicy::create(allocation_settings);
+    return BufferAllocationPolicy::create(allocation_settings);
 }
 
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
@@ -146,21 +147,20 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
 
 void WriteBufferFromAzureBlobStorage::writePart()
 {
-    std::shared_ptr<PartData> part_data;
     auto data_size = size_t(position() - memory.data());
-    part_data = std::make_shared<PartData>(std::move(memory), data_size);
-    WriteBuffer::set(nullptr, 0);
-
-    if (part_data->data_size == 0)
+    if (data_size == 0)
         return;
 
-    auto upload_worker = [&, part_data] ()
+    const std::string & block_id = block_ids.emplace_back(getRandomASCIIString(64));
+    std::shared_ptr<PartData> part_data = std::make_shared<PartData>(std::move(memory), data_size, block_id);
+    WriteBuffer::set(nullptr, 0);
+
+    auto upload_worker = [this, part_data] ()
     {
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
-        const std::string & block_id = block_ids.emplace_back(getRandomASCIIString(64));
 
         Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(part_data->memory.data()), part_data->data_size);
-        execWithRetry([&](){ block_blob_client.StageBlock(block_id, memory_stream); }, max_unexpected_write_error_retries, part_data->data_size);
+        execWithRetry([&](){ block_blob_client.StageBlock(part_data->block_id, memory_stream); }, max_unexpected_write_error_retries, part_data->data_size);
 
         if (write_settings.remote_throttler)
             write_settings.remote_throttler->add(part_data->data_size, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
