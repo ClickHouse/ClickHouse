@@ -11,6 +11,7 @@
 #include <IO/copyData.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>

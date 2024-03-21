@@ -193,7 +193,7 @@ arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_
 {
     try
     {
-        return in.readBigAt(reinterpret_cast<char *>(out), nbytes, position);
+        return in.readBigAt(reinterpret_cast<char *>(out), nbytes, position, nullptr);
     }
     catch (...)
     {
