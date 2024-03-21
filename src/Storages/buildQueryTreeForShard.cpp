@@ -10,6 +10,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/Utils.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
