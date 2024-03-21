@@ -7063,7 +7063,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
     return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot);
 }
 
-std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPartOnSameDisk(
+std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPart(
     const MergeTreeData::DataPartPtr & src_part,
     const String & tmp_part_prefix,
     const MergeTreePartInfo & dst_part_info,
@@ -7073,22 +7073,16 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     const WriteSettings & write_settings)
 {
     chassert(!isStaticStorage());
-
-    /// Check that the storage policy contains the disk where the src_part is located.
-    bool does_storage_policy_allow_same_disk = false;
-    for (const DiskPtr & disk : getStoragePolicy()->getDisks())
+    bool on_same_disk = false;
+    for (const DiskPtr & disk : this->getStoragePolicy()->getDisks())
     {
         if (disk->getName() == src_part->getDataPartStorage().getDiskName())
         {
-            does_storage_policy_allow_same_disk = true;
+            on_same_disk = true;
             break;
         }
     }
-    if (!does_storage_policy_allow_same_disk)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Could not clone and load part {} because disk does not belong to storage policy",
-            quoteString(src_part->getDataPartStorage().getFullPath()));
+
 
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
@@ -7103,11 +7097,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
 
     String with_copy;
-    if (params.copy_instead_of_hardlink)
+    if (params.copy_instead_of_hardlink || !on_same_disk)
         with_copy = " (copying data)";
 
+
     std::shared_ptr<IDataPartStorage> dst_part_storage{};
-    try
+    if (on_same_disk && !params.copy_instead_of_hardlink)
     {
         dst_part_storage = src_part_storage->freeze(
             relative_data_path,
@@ -7117,34 +7112,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             /* save_metadata_callback= */ {},
             params);
     }
-    catch (...)
+    else
     {
-        /// Hardlink fail. Try copy.
-        LOG_WARNING(
-            &Poco::Logger::get("MergeTreeData"),
-            "Hard link fail, try tp copy directly. to:{}, path:{}",
-            this->getRelativeDataPath(),
-            tmp_dst_part_name);
-        bool copy_successful = false;
-        for (const DiskPtr & disk : this->getStoragePolicy()->getDisks())
-        {
-            try
-            {
-                auto reservation_space = src_part_storage->reserve(src_part->getBytesOnDisk());
-                if (!reservation_space)
-                    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space on disk.");
-                dst_part_storage = src_part_storage->clonePart(
-                    this->getRelativeDataPath(), tmp_dst_part_name, disk, read_settings, write_settings, {}, {});
-                copy_successful = true;
-                break;
-            }
-            catch (Exception & e)
-            {
-                LOG_TRACE(&Poco::Logger::get("MergeTreeData"), "Clone part on disk {} fail: {}", disk->getName(), e.what());
-            }
-        }
-        if (!copy_successful)
-            LOG_ERROR(&Poco::Logger::get("MergeTreeData"), "Hard link fail, clone fail.");
+        auto reservation_on_dst = getStoragePolicy()->reserve(src_part->getBytesOnDisk());
+        if (!reservation_on_dst)
+            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space on disk.");
+        dst_part_storage = src_part_storage->clonePart(
+            this->getRelativeDataPath(), tmp_dst_part_name, reservation_on_dst->getDisk(), read_settings, write_settings, {}, {});
     }
 
 
@@ -7168,117 +7142,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         .withPartFormatFromDisk()
         .build();
 
-    if (!params.copy_instead_of_hardlink && params.hardlinked_files)
-    {
-        params.hardlinked_files->source_part_name = src_part->name;
-        params.hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
-
-        for (auto it = src_part->getDataPartStorage().iterate(); it->isValid(); it->next())
-        {
-            if (!params.files_to_copy_instead_of_hardlinks.contains(it->name())
-                && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
-                && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
-            {
-                params.hardlinked_files->hardlinks_from_source_part.insert(it->name());
-            }
-        }
-
-        auto projections = src_part->getProjectionParts();
-        for (const auto & [name, projection_part] : projections)
-        {
-            const auto & projection_storage = projection_part->getDataPartStorage();
-            for (auto it = projection_storage.iterate(); it->isValid(); it->next())
-            {
-                auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
-                if (!params.files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
-                    && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
-                    && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
-                {
-                    params.hardlinked_files->hardlinks_from_source_part.insert(file_name_with_projection_prefix);
-                }
-            }
-        }
-    }
-
-    /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-    TransactionID tid = params.txn ? params.txn->tid : Tx::PrehistoricTID;
-    dst_data_part->version.setCreationTID(tid, nullptr);
-    dst_data_part->storeVersionMetadata();
-
-    dst_data_part->is_temp = true;
-
-    dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
-    dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
-    return std::make_pair(dst_data_part, std::move(temporary_directory_lock));
-}
-
-std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPartOnOtherDisk(
-    const MergeTreeData::DataPartPtr & src_part,
-    const String & tmp_part_prefix,
-    const MergeTreePartInfo & dst_part_info,
-    const StorageMetadataPtr & metadata_snapshot,
-    const IDataPartStorage::ClonePartParams & params,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings)
-{
-    chassert(!isStaticStorage());
-
-    String dst_part_name = src_part->getNewName(dst_part_info);
-    String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
-    auto temporary_directory_lock = getTemporaryPartDirectoryHolder(tmp_dst_part_name);
-
-    auto reservation = src_part->getDataPartStorage().reserve(src_part->getBytesOnDisk());
-    auto src_part_storage = src_part->getDataPartStoragePtr();
-
-    scope_guard src_flushed_tmp_dir_lock;
-    MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
-
-    String with_copy;
-    if (params.copy_instead_of_hardlink)
-        with_copy = " (copying data)";
-
-    std::shared_ptr<IDataPartStorage> dst_part_storage{};
-    bool copy_successful = false;
-    for (const DiskPtr & disk : this->getStoragePolicy()->getDisks())
-    {
-        try
-        {
-            auto reservation_space = src_part_storage->reserve(src_part->getBytesOnDisk());
-            if (!reservation_space)
-                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space on disk.");
-            dst_part_storage
-                = src_part_storage->clonePart(this->getRelativeDataPath(), tmp_dst_part_name, disk, read_settings, write_settings, {}, {});
-            copy_successful = true;
-            break;
-        }
-        catch (...)
-        {
-            LOG_TRACE(&Poco::Logger::get("MergeTreeData"), "Clone part on disk {} fail", disk->getName());
-        }
-    }
-    if (!copy_successful)
-        LOG_FATAL(&Poco::Logger::get("MergeTreeData"), "Hard link fail, clone fail.");
-    if (params.metadata_version_to_write.has_value())
-    {
-        chassert(!params.keep_metadata_version);
-        auto out_metadata = dst_part_storage->writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, getContext()->getWriteSettings());
-        writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
-        out_metadata->finalize();
-        if (getSettings()->fsync_after_insert)
-            out_metadata->sync();
-    }
-
-    LOG_DEBUG(log, "Clone{} part {} to {}{}",
-              src_flushed_tmp_part ? " flushed" : "",
-              src_part_storage->getFullPath(),
-              std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
-              with_copy);
-
-    auto dst_data_part = MergeTreeDataPartBuilder(*this, dst_part_name, dst_part_storage)
-        .withPartFormatFromDisk()
-        .build();
-
-    if (!params.copy_instead_of_hardlink && params.hardlinked_files)
+    if (on_same_disk && !params.copy_instead_of_hardlink && params.hardlinked_files)
     {
         params.hardlinked_files->source_part_name = src_part->name;
         params.hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();

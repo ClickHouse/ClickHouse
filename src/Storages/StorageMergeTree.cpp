@@ -2099,37 +2099,16 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
-        bool on_same_disk = false;
-        for (const DiskPtr & disk : this->getStoragePolicy()->getDisks())
-            if (disk->getName() == src_part->getDataPartStorage().getDiskName())
-                on_same_disk = true;
-        if (on_same_disk && !clone_params.copy_instead_of_hardlink)
-        {
-
-            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
-                src_part,
-                TMP_PREFIX,
-                dst_part_info,
-                my_metadata_snapshot,
-                clone_params,
-                local_context->getReadSettings(),
-                local_context->getWriteSettings());
-            dst_parts.emplace_back(std::move(dst_part));
-            dst_parts_locks.emplace_back(std::move(part_lock));
-        }
-        else
-        {
-            auto [dst_part, part_lock] = cloneAndLoadDataPartOnOtherDisk(
-                src_part,
-                TMP_PREFIX,
-                dst_part_info,
-                my_metadata_snapshot,
-                clone_params,
-                local_context->getReadSettings(),
-                local_context->getWriteSettings());
-            dst_parts.emplace_back(std::move(dst_part));
-            dst_parts_locks.emplace_back(std::move(part_lock));
-        }
+        auto [dst_part, part_lock] = cloneAndLoadDataPart(
+            src_part,
+            TMP_PREFIX,
+            dst_part_info,
+            my_metadata_snapshot,
+            clone_params,
+            local_context->getReadSettings(),
+            local_context->getWriteSettings());
+        dst_parts.emplace_back(std::move(dst_part));
+        dst_parts_locks.emplace_back(std::move(part_lock));
     }
 
     /// ATTACH empty part set
@@ -2231,7 +2210,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
         };
 
-        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
+        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
             src_part,
             TMP_PREFIX,
             dst_part_info,
