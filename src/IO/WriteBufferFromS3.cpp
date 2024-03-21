@@ -339,7 +339,19 @@ void WriteBufferFromS3::allocateBuffer()
 {
     buffer_allocation_policy->nextBuffer();
     chassert(0 == hidden_size);
+
+    if (buffer_allocation_policy->getBufferNumber() == 1)
+        return allocateFirstBuffer();
+
     memory = Memory(buffer_allocation_policy->getBufferSize());
+    WriteBuffer::set(memory.data(), memory.size());
+}
+
+void WriteBufferFromS3::allocateFirstBuffer()
+{
+    const auto max_first_buffer = buffer_allocation_policy->getBufferSize();
+    const auto size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), max_first_buffer);
+    memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
 

@@ -141,6 +141,10 @@ void WriteBufferFromAzureBlobStorage::allocateBuffer()
 {
     buffer_allocation_policy->nextBuffer();
     auto size = buffer_allocation_policy->getBufferSize();
+
+    if (buffer_allocation_policy->getBufferNumber() == 1)
+        size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size);
+
     memory = Memory(size);
     WriteBuffer::set(memory.data(), memory.size());
 }
