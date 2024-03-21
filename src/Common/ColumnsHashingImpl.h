@@ -67,7 +67,7 @@ template <typename Value, bool nullable> struct LastElementCache;
 template <typename Value>
 struct LastElementCache<Value, true> : public LastElementCacheBase
 {
-    Value value;
+    Value value{};
     bool is_null = false;
 
     template <typename Key>
@@ -79,7 +79,7 @@ struct LastElementCache<Value, true> : public LastElementCacheBase
 template <typename Value>
 struct LastElementCache<Value, false> : public LastElementCacheBase
 {
-    Value value;
+    Value value{};
 
     template <typename Key>
     bool check(const Key & key) const { return value.first == key; }
