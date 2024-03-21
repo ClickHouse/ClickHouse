@@ -26,7 +26,7 @@ from report import (
 )
 from stopwatch import Stopwatch
 
-import ci_runner
+import integration_tests_runner as runner
 
 
 def get_json_params_dict(
@@ -207,8 +207,6 @@ def main():
         json_params.write(params_text)
         logging.info("Parameters file %s is written: %s", json_path, params_text)
 
-    output_path_log = result_path / "main_script_log.txt"
-
     for k, v in my_env.items():
         os.environ[k] = v
     logging.info(
@@ -219,10 +217,10 @@ def main():
     )
 
     try:
-        ci_runner.run()
+        runner.run()
     except Exception as e:
         logging.error("Exception: %s", e)
-        state, description, test_results, additional_logs = ERROR, "no description", [TestResult("infrastructure error", ERROR, stopwatch.duration_seconds)], []  # type: ignore
+        state, description, test_results, additional_logs = ERROR, "infrastructure error", [TestResult("infrastructure error", ERROR, stopwatch.duration_seconds)], []  # type: ignore
     else:
         state, description, test_results, additional_logs = process_results(result_path)
 
@@ -232,7 +230,7 @@ def main():
         status=state,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
-        additional_files=[output_path_log] + additional_logs,
+        additional_files=additional_logs,
     ).dump(to_file=args.report_to_file if args.report_to_file else None)
 
     if state != SUCCESS:

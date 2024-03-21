@@ -387,8 +387,8 @@ upgrade_check_digest = DigestConfig(
 integration_check_digest = DigestConfig(
     include_paths=[
         "./tests/ci/integration_test_check.py",
-        "./tests/ci/ci_runner.py",
-        "./tests/integration",
+        "./tests/ci/integration_tests_runner.py",
+        "./tests/integration/",
     ],
     exclude_files=[".md"],
     docker=IMAGES.copy(),
