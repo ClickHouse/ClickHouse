@@ -92,19 +92,19 @@ MatcherNode::MatcherNode(Identifier qualified_identifier_, Identifiers columns_i
 MatcherNode::MatcherNode(MatcherNodeType matcher_type_,
     Identifier qualified_identifier_,
     Identifiers columns_identifiers_,
-    String pattern_,
+    std::optional<String> pattern_,
     ColumnTransformersNodes column_transformers_)
     : IQueryTreeNode(children_size)
     , matcher_type(matcher_type_)
     , qualified_identifier(qualified_identifier_)
     , columns_identifiers(columns_identifiers_)
 {
-    if (!pattern_.empty())
+    if (pattern_)
     {
-        columns_matcher = std::make_shared<re2::RE2>(pattern_, re2::RE2::Quiet);
+        columns_matcher = std::make_shared<re2::RE2>(*pattern_, re2::RE2::Quiet);
         if (!columns_matcher->ok())
             throw DB::Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "COLUMNS pattern {} cannot be compiled: {}", pattern_, columns_matcher->error());
+                "COLUMNS pattern {} cannot be compiled: {}", *pattern_, columns_matcher->error());
     }
 
     auto column_transformers_list_node = std::make_shared<ListNode>();

@@ -147,7 +147,7 @@ private:
     explicit MatcherNode(MatcherNodeType matcher_type_,
         Identifier qualified_identifier_,
         Identifiers columns_identifiers_,
-        String pattern_,
+        std::optional<String> pattern_,
         ColumnTransformersNodes column_transformers_);
 
     MatcherNodeType matcher_type;

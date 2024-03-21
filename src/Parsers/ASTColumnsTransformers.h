@@ -84,7 +84,7 @@ public:
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-    String pattern;
+    std::optional<String> pattern;
 };
 
 class ASTColumnsReplaceTransformer : public IASTColumnsTransformer

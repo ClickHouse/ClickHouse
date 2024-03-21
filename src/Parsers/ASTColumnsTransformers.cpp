@@ -180,8 +180,8 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
         (*it)->formatImpl(settings, state, frame);
     }
 
-    if (!pattern.empty())
-        settings.ostr << quoteString(pattern);
+    if (pattern)
+        settings.ostr << quoteString(*pattern);
 
     if (children.size() > 1)
         settings.ostr << ")";
@@ -203,8 +203,8 @@ void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
         (*it)->appendColumnName(ostr);
     }
 
-    if (!pattern.empty())
-        writeQuotedString(pattern, ostr);
+    if (pattern)
+        writeQuotedString(*pattern, ostr);
 
     if (children.size() > 1)
         writeChar(')', ostr);
@@ -213,8 +213,11 @@ void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
 void ASTColumnsExceptTransformer::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(is_strict);
-    hash_state.update(pattern.size());
-    hash_state.update(pattern);
+    if (pattern)
+    {
+        hash_state.update(pattern->size());
+        hash_state.update(*pattern);
+    }
 
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
@@ -222,7 +225,7 @@ void ASTColumnsExceptTransformer::updateTreeHashImpl(SipHash & hash_state, bool 
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
 {
     std::set<String> expected_columns;
-    if (pattern.empty())
+    if (!pattern)
     {
         for (const auto & child : children)
             expected_columns.insert(child->as<const ASTIdentifier &>().name());
@@ -278,13 +281,13 @@ void ASTColumnsExceptTransformer::setPattern(String pattern_)
 
 std::shared_ptr<re2::RE2> ASTColumnsExceptTransformer::getMatcher() const
 {
-    if (pattern.empty())
+    if (!pattern)
         return {};
 
-    auto regexp = std::make_shared<re2::RE2>(pattern, re2::RE2::Quiet);
+    auto regexp = std::make_shared<re2::RE2>(*pattern, re2::RE2::Quiet);
     if (!regexp->ok())
         throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "COLUMNS pattern {} cannot be compiled: {}", pattern, regexp->error());
+            "COLUMNS pattern {} cannot be compiled: {}", *pattern, regexp->error());
     return regexp;
 }
 
