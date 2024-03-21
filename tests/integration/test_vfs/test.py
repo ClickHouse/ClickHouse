@@ -129,11 +129,11 @@ def test_moving_to_vfs(started_cluster):
     node1.wait_for_log_line("Metadata: uploading", look_behind_lines=10000)
     node2.wait_for_log_line("Metadata: downloading", look_behind_lines=10000)
 
+    # All objects related to the table are present in bucket
     table_objects = get_remote_paths(node1, table)
     bucket_objects = {
         obj.object_name for obj in minio.list_objects(bucket, "data/", recursive=True)
     }
-    # All objects related to the table are present in bucket
     assert all([obj in bucket_objects for obj in table_objects])
 
     # Remove table related objects from object storage
