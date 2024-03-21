@@ -18,13 +18,6 @@ Tokens::Tokens(const char * begin, const char * end, size_t max_query_size, bool
     } while (!stop);
 }
 
-std::optional<Token> Tokens::getError() const
-{
-    if (!data.empty() && data.back().isError())
-        return data.back();
-    return {};
-}
-
 UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
 {
     /// We have just two kind of parentheses: () and [].

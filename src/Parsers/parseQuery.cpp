@@ -4,6 +4,7 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/CommonParsers.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/TokenIterator.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -258,10 +259,27 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
-    if (auto error = tokens.getError(); error)
+    /** A shortcut - if Lexer found invalid tokens, fail early without full parsing.
+      * But there are certain cases when invalid tokens are permitted:
+      * 1. INSERT queries can have arbitrary data after the FORMAT clause, that is parsed by a different parser.
+      * 2. It can also be the case when there are multiple queries separated by semicolons, and the first queries are ok
+      * while subsequent queries have syntax errors.
+      *
+      * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
+      */
+    IParser::Pos lookahead = token_iterator;
+    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
-        out_error_message = getLexicalErrorMessage(query_begin, all_queries_end, *error, hilite, query_description);
-        return nullptr;
+        while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
+        {
+            if (lookahead->isError())
+            {
+                out_error_message = getLexicalErrorMessage(query_begin, all_queries_end, *lookahead, hilite, query_description);
+                return nullptr;
+            }
+
+            ++lookahead;
+        }
     }
 
     Expected expected;
