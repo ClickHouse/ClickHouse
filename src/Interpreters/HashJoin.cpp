@@ -1560,6 +1560,20 @@ ColumnPtr buildAdditionalFilter(
         }
         executed_block.insert({std::move(new_col), src_col->type, col_name});
     }
+    if (!executed_block)
+    {
+        WriteBufferFromOwnString buf;
+        for (const auto & col : required_cols)
+        {
+            buf << col.name << ", ";
+        }
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "required columns: {}. but not found any in left/right table. right table: {}, left table: {}",
+            buf.str(),
+            sample_right_block.dumpNames(),
+            added_columns.left_block.dumpNames());
+    }
     LOG_TRACE(getLogger("HashJoin"), "Additional filter execute block:\n{}", executed_block.dumpContent());
     added_columns.additional_filter_expression->execute(executed_block);
     LOG_TRACE(getLogger("HashJoin"), "Addition filter execute result block:\n{}", executed_block.dumpContent());
