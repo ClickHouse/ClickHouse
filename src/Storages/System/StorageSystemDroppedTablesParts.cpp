@@ -4,6 +4,7 @@
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB

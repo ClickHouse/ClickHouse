@@ -1,12 +1,13 @@
 #pragma once
 
-#include <Core/SettingsFields.h>
 #include <Core/Joins.h>
-#include <QueryPipeline/SizeLimits.h>
+#include <Core/LogsLevel.h>
+#include <Core/SettingsFields.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
-#include <Common/ShellCommandSettings.h>
 #include <Parsers/ASTSQLSecurity.h>
+#include <QueryPipeline/SizeLimits.h>
+#include <Common/ShellCommandSettings.h>
 
 
 namespace DB
@@ -89,18 +90,6 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeO
 DECLARE_SETTING_ENUM_WITH_RENAME(IntervalOutputFormat, FormatSettings::IntervalOutputFormat)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
-
-enum class LogsLevel
-{
-    none = 0,    /// Disable
-    fatal,
-    error,
-    warning,
-    information,
-    debug,
-    trace,
-    test,
-};
 
 DECLARE_SETTING_ENUM(LogsLevel)
 

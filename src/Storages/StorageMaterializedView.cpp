@@ -5,14 +5,15 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
-#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Access/Common/AccessFlags.h>
+#include <Interpreters/getTableExpressions.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>

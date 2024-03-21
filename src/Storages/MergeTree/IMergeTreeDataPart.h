@@ -511,7 +511,7 @@ public:
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 
     /// Checks the consistency of this data part.
-    virtual void checkConsistency(bool require_part_metadata) const;
+    void checkConsistency(bool require_part_metadata) const;
 
     /// Checks the consistency of this data part, and check the consistency of its projections (if any) as well.
     void checkConsistencyWithProjections(bool require_part_metadata) const;
@@ -599,8 +599,6 @@ protected:
 
     void removeIfNeeded();
 
-    void checkConsistencyBase() const;
-
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
@@ -622,6 +620,8 @@ protected:
     void initializePartMetadataManager();
 
     void initializeIndexGranularityInfo();
+
+    virtual void doCheckConsistency(bool require_part_metadata) const;
 
 private:
     String mutable_name;
@@ -712,6 +712,8 @@ private:
 
     void incrementStateMetric(MergeTreeDataPartState state) const;
     void decrementStateMetric(MergeTreeDataPartState state) const;
+
+    void checkConsistencyBase() const;
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;

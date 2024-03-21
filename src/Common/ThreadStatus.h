@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
-#include <Interpreters/Context_fwd.h>
+#include <Core/LogsLevel.h>
 #include <IO/Progress.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/StringRef.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <base/StringRef.h>
 
 #include <boost/noncopyable.hpp>
 

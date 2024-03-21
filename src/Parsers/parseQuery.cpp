@@ -92,7 +92,9 @@ void writeQueryWithHighlightedErrorPositions(
         }
         else
         {
-            size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
+            ssize_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
+            if (bytes_to_hilite > end - current_position_to_hilite)
+                bytes_to_hilite = end - current_position_to_hilite;
 
             /// Bright on red background.
             out << "\033[41;1m";

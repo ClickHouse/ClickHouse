@@ -37,6 +37,7 @@ list (APPEND PUBLIC_LIBS
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         ch_contrib::consistent_hashing
+        common
         dbms
         ch_contrib::metrohash
         ch_contrib::murmurhash

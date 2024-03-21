@@ -19,9 +19,8 @@
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Common/Scheduler/IResourceManager.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
@@ -148,6 +147,18 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
+
+struct TemporaryTableHolder;
+using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
+
+class LoadTask;
+using LoadTaskPtr = std::shared_ptr<LoadTask>;
+using LoadTaskPtrs = std::vector<LoadTaskPtr>;
+
+class IClassifier;
+using ClassifierPtr = std::shared_ptr<IClassifier>;
+class IResourceManager;
+using ResourceManagerPtr = std::shared_ptr<IResourceManager>;
 
 /// Scheduling policy can be changed using `background_merges_mutations_scheduling_policy` config option.
 /// By default concurrent merges are scheduled using "round_robin" to ensure fair and starvation-free operation.

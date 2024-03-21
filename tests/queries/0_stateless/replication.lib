@@ -26,12 +26,15 @@ function try_sync_replicas()
         done
     done
 
-    i=0
     for t in "${tables_arr[@]}"
     do
         # Do not start new merges (it can make SYNC a bit faster)
         $CLICKHOUSE_CLIENT -q "ALTER TABLE $t MODIFY SETTING max_replicated_merges_in_queue=0"
+    done
 
+    i=0
+    for t in "${tables_arr[@]}"
+    do
         $CLICKHOUSE_CLIENT --receive_timeout $time_left -q "SYSTEM SYNC REPLICA $t STRICT" || ($CLICKHOUSE_CLIENT -q \
             "select 'sync failed, queue:', * from system.replication_queue where database=currentDatabase() and table='$t' order by database, table, node_name" && exit 1) &
         pids[${i}]=$!

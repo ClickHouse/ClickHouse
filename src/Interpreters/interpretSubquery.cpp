@@ -10,9 +10,10 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
-#include <Interpreters/interpretSubquery.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/interpretSubquery.h>
 
 namespace DB
 {

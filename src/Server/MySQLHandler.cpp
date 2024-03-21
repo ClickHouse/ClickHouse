@@ -15,6 +15,7 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Server/TCPServer.h>
@@ -22,10 +23,10 @@
 #include <base/scope_guard.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
-#include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 #include <Common/config_version.h>
+#include <Common/logger_useful.h>
 #include <Common/re2.h>
+#include <Common/setThreadName.h>
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>

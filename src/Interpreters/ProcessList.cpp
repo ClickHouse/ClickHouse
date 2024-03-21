@@ -208,8 +208,13 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {
+                TemporaryDataOnDiskSettings temporary_data_on_disk_settings
+                {
+                    .max_size_on_disk = settings.max_temporary_data_on_disk_size_for_query,
+                    .compression_codec = settings.temporary_files_codec
+                };
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
-                    user_process_list.user_temp_data_on_disk, settings.max_temporary_data_on_disk_size_for_query));
+                    user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
             }
 
             /// Set query-level memory trackers
@@ -682,8 +687,15 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
 
     if (global_context)
     {
-        size_t size_limit = global_context->getSettingsRef().max_temporary_data_on_disk_size_for_user;
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(), size_limit);
+        const auto & settings = global_context->getSettingsRef();
+        TemporaryDataOnDiskSettings temporary_data_on_disk_settings
+        {
+            .max_size_on_disk = settings.max_temporary_data_on_disk_size_for_user,
+            .compression_codec = settings.temporary_files_codec
+        };
+
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),
+            std::move(temporary_data_on_disk_settings));
     }
 }
 
