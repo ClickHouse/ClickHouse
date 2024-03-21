@@ -1867,7 +1867,12 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
     if (data.empty())
     {
         auto && out_cols = prepareOutputBlockColumns(params, aggregate_functions, getHeader(final), aggregates_pools, final, rows);
-        return {finalizeBlock(params, getHeader(final), std::move(out_cols), final, rows)};
+        auto finalized_block = finalizeBlock(params, getHeader(final), std::move(out_cols), final, rows);
+
+        if (return_single_block)
+            return std::move(finalized_block);
+
+        return BlocksList{std::move(finalized_block)};
     }
     ConvertToBlockResVariant res;
     bool use_compiled_functions = false;
