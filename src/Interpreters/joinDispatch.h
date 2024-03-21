@@ -113,10 +113,9 @@ inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, std::vector<c
         {
             using MapType = typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map;
             std::vector<const MapType *> v;
+            v.reserve(mapsv.size());
             for (const auto & el : mapsv)
-            {
                 v.push_back(&std::get<MapType>(*el));
-            }
 
             func(
                 std::integral_constant<JoinKind, KINDS[i]>(),

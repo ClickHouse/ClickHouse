@@ -173,9 +173,15 @@ function fuzz
 
     mkdir -p /var/run/clickhouse-server
 
-    # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml --pid-file /var/run/clickhouse-server/clickhouse-server.pid -- --path db > server.log 2>&1 &
-    server_pid=$!
+    # server.log -> All server logs, including sanitizer
+    # stderr.log -> Process logs (sanitizer) only
+    clickhouse-server \
+        --config-file db/config.xml \
+        --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
+        --  --path db \
+            --logger.console=0 \
+            --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1 &
+    server_pid=$(pidof clickhouse-server)
 
     kill -0 $server_pid
 
@@ -427,6 +433,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
   <a href="run.log">run.log</a>
   <a href="fuzzer.log.zst">fuzzer.log.zst</a>
   <a href="server.log.zst">server.log.zst</a>
+  <a href="stderr.log">stderr.log</a>
   <a href="main.log">main.log</a>
   <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}
