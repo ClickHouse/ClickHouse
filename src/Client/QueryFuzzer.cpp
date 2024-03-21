@@ -1405,10 +1405,10 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     debug_top_ast = &ast;
 
     collectFuzzInfoMain(ast);
-    if (coinToss())
-        fuzz(ast);
-    else
+    if (rollTheDice(5))
         crossover(ast, *(std::next(donors.begin(), fuzz_rand() % donors.size())));
+    else
+        fuzz(ast);
 
     std::cout << std::endl;
     WriteBufferFromOStream ast_buf(std::cout, 4096);
