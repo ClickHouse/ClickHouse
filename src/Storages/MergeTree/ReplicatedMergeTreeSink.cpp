@@ -307,6 +307,11 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
     size_t streams = 0;
     bool support_parallel_write = false;
 
+    /// Simple filter to not update hash in block_id calculation for auxiliary columns
+    std::function auxiliary_columns_filter = [&storage_settings](const String& column_name) {
+        return !storage_settings->queue_mode || !isQueueModeColumn(column_name);
+    };
+
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;
@@ -328,16 +333,11 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         /// If storage is in queue mode, correctly configured block_number is essential for global order of rows
         /// That is why here(before writeTempPart) we create block_number_lock explicitly to materialize sorting queue key
         std::optional<EphemeralLockInZooKeeper> lock_holder;
-        BlockIDsType block_id;
 
         if (storage_settings->queue_mode)
         {
-            /// _replica column is already configured in block
+            /// _queue_replica column is already configured in block
             auto partition_id = MergeTreePartition(current_block.partition).getID(metadata_snapshot->getPartitionKey().sample_block);
-
-            /// calculate block_id here, before columns materialization, to not include _block_offset into hash or checksums
-            if constexpr (!async_insert)
-                block_id = SyncInsertBlockInfo::getHashForBlock(current_block, partition_id);
 
             /// turn off deduplication at this point, it will be performed in commitPart
             lock_holder = storage.allocateBlockNumber(partition_id, zookeeper, /*zookeeper_block_id_path=*/String{});
@@ -357,11 +357,13 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
+        BlockIDsType block_id;
+
         if constexpr (async_insert)
         {
             auto get_block_id = [&](BlockWithPartition & block_)
             {
-                block_id = AsyncInsertBlockInfo::getHashesForBlocks(block_, temp_part.part->info.partition_id);
+                block_id = AsyncInsertBlockInfo::getHashesForBlocks(block_, temp_part.part->info.partition_id, auxiliary_columns_filter);
                 LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(block_.offsets), block_.offsets.size());
             };
             get_block_id(unmerged_block ? *unmerged_block : current_block);
@@ -386,7 +388,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
                 }
 
                 if (storage_settings->queue_mode)
-                    chassert(!block_id.empty());
+                    block_id = SyncInsertBlockInfo::getHashForBlock(current_block, block_dedup_token, temp_part.part->info.partition_id, auxiliary_columns_filter);
                 else
                     block_id = temp_part.part->getZeroLevelPartBlockID(block_dedup_token);
 
