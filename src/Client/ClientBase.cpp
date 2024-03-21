@@ -9,6 +9,7 @@
 #include <base/safeExit.h>
 #include <base/scope_guard.h>
 #include <Core/Block.h>
+#include <Core/BaseSettingsProgramOptions.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
@@ -345,7 +346,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     if (dialect == Dialect::kusto)
         parser = std::make_unique<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
     else if (dialect == Dialect::prql)
-        parser = std::make_unique<ParserPRQLQuery>(max_length, settings.max_parser_depth);
+        parser = std::make_unique<ParserPRQLQuery>(max_length, settings.max_parser_depth, settings.max_parser_backtracks);
     else
         parser = std::make_unique<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
 
@@ -353,9 +354,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     {
         String message;
         if (dialect == Dialect::kusto)
-            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks, true);
         else
-            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks, true);
 
         if (!res)
         {
@@ -366,9 +367,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     else
     {
         if (dialect == Dialect::kusto)
-            res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks);
         else
-            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks);
     }
 
     if (is_interactive)
@@ -385,12 +386,12 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
 
 
 /// Consumes trailing semicolons and tries to consume the same-line trailing comment.
-void ClientBase::adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth)
+void ClientBase::adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks)
 {
     // We have to skip the trailing semicolon that might be left
     // after VALUES parsing or just after a normal semicolon-terminated query.
     Tokens after_query_tokens(this_query_end, all_queries_end);
-    IParser::Pos after_query_iterator(after_query_tokens, max_parser_depth);
+    IParser::Pos after_query_iterator(after_query_tokens, max_parser_depth, max_parser_backtracks);
     while (after_query_iterator.isValid() && after_query_iterator->type == TokenType::Semicolon)
     {
         this_query_end = after_query_iterator->end;
@@ -1984,6 +1985,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         return MultiQueryProcessingStage::QUERIES_END;
 
     unsigned max_parser_depth = static_cast<unsigned>(global_context->getSettingsRef().max_parser_depth);
+    unsigned max_parser_backtracks = static_cast<unsigned>(global_context->getSettingsRef().max_parser_backtracks);
 
     // If there are only comments left until the end of file, we just
     // stop. The parser can't handle this situation because it always
@@ -1994,7 +1996,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // and it makes more sense to treat them as such.
     {
         Tokens tokens(this_query_begin, all_queries_end);
-        IParser::Pos token_iterator(tokens, max_parser_depth);
+        IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
         if (!token_iterator.isValid())
             return MultiQueryProcessingStage::QUERIES_END;
     }
@@ -2015,7 +2017,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         if (ignore_error)
         {
             Tokens tokens(this_query_begin, all_queries_end);
-            IParser::Pos token_iterator(tokens, max_parser_depth);
+            IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
             while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                 ++token_iterator;
             this_query_begin = token_iterator->end;
@@ -2055,7 +2057,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // after we have processed the query. But even this guess is
     // beneficial so that we see proper trailing comments in "echo" and
     // server log.
-    adjustQueryEnd(this_query_end, all_queries_end, max_parser_depth);
+    adjustQueryEnd(this_query_end, all_queries_end, max_parser_depth, max_parser_backtracks);
     return MultiQueryProcessingStage::EXECUTE_QUERY;
 }
 
@@ -2251,7 +2253,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     this_query_end = insert_ast->end;
                     adjustQueryEnd(
                         this_query_end, all_queries_end,
-                        static_cast<unsigned>(global_context->getSettingsRef().max_parser_depth));
+                        static_cast<unsigned>(global_context->getSettingsRef().max_parser_depth),
+                        static_cast<unsigned>(global_context->getSettingsRef().max_parser_backtracks));
                 }
 
                 // Report error.
@@ -2712,9 +2715,9 @@ private:
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
     if (allow_repeated_settings)
-        cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+        addProgramOptionsAsMultitokens(cmd_settings, options_description.main_description.value());
     else
-        cmd_settings.addProgramOptions(options_description.main_description.value());
+        addProgramOptions(cmd_settings, options_description.main_description.value());
 
     if (allow_merge_tree_settings)
     {
@@ -2735,9 +2738,9 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
                     return;
 
                 if (allow_repeated_settings)
-                    cmd_merge_tree_settings.addProgramOptionAsMultitoken(main_options, name, setting);
+                    addProgramOptionAsMultitoken(cmd_merge_tree_settings, main_options, name, setting);
                 else
-                    cmd_merge_tree_settings.addProgramOption(main_options, name, setting);
+                    addProgramOption(cmd_merge_tree_settings, main_options, name, setting);
             };
 
             const auto & setting_name = setting.getName();

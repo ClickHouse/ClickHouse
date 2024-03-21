@@ -13,6 +13,8 @@
 #include <optional>
 #include <vector>
 
+#include <boost/noncopyable.hpp>
+
 
 namespace Poco { class Logger; }
 namespace Poco::Net { class IPAddress; }
@@ -228,7 +230,7 @@ protected:
     static UUID generateRandomID();
     LoggerPtr getLogger() const;
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
-    static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const LoggerPtr log_);
+    static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, LoggerPtr log_);
     [[noreturn]] void throwNotFound(const UUID & id) const;
     [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);

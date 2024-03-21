@@ -22,6 +22,7 @@ public:
         KILL,
         SUSPEND,
         DROP_DNS_CACHE,
+        DROP_CONNECTIONS_CACHE,
         DROP_MARK_CACHE,
         DROP_UNCOMPRESSED_CACHE,
         DROP_INDEX_MARK_CACHE,

@@ -187,7 +187,7 @@ ASTPtr DatabaseFilesystem::getCreateDatabaseQuery() const
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(getDatabaseName()), path);
 
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {

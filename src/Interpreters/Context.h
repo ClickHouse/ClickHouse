@@ -19,9 +19,8 @@
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Common/Scheduler/IResourceManager.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
@@ -129,7 +128,6 @@ using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
 class AccessControl;
-class Credentials;
 class GSSAcceptorContext;
 struct SettingsConstraintsAndProfileIDs;
 class SettingsProfileElements;
@@ -150,6 +148,18 @@ template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
 
+struct TemporaryTableHolder;
+using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
+
+class LoadTask;
+using LoadTaskPtr = std::shared_ptr<LoadTask>;
+using LoadTaskPtrs = std::vector<LoadTaskPtr>;
+
+class IClassifier;
+using ClassifierPtr = std::shared_ptr<IClassifier>;
+class IResourceManager;
+using ResourceManagerPtr = std::shared_ptr<IResourceManager>;
+
 /// Scheduling policy can be changed using `background_merges_mutations_scheduling_policy` config option.
 /// By default concurrent merges are scheduled using "round_robin" to ensure fair and starvation-free operation.
 /// Previously in heavily overloaded shards big merges could possibly be starved by smaller
@@ -164,7 +174,6 @@ using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
-class Session;
 struct WriteSettings;
 
 class IInputFormat;
@@ -205,9 +214,6 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
-
-class PooledSessionFactory;
-using PooledSessionFactoryPtr = std::shared_ptr<PooledSessionFactory>;
 
 class SessionTracker;
 
@@ -333,7 +339,7 @@ protected:
             return *this;
         }
 
-        void swap(QueryAccessInfo & rhs)
+        void swap(QueryAccessInfo & rhs) noexcept
         {
             std::swap(databases, rhs.databases);
             std::swap(tables, rhs.tables);
@@ -683,7 +689,7 @@ public:
     void addSpecialScalar(const String & name, const Block & block);
 
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
-    const QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
+    QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
     void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
 
     void addQueryAccessInfo(
@@ -1226,7 +1232,6 @@ public:
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
     OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
-    PooledSessionFactoryPtr getCommonFetchesSessionFactory() const;
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 #if USE_LIBURING

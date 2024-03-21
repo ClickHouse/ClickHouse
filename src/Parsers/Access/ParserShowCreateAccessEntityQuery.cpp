@@ -25,8 +25,8 @@ namespace
         for (auto i : collections::range(AccessEntityType::MAX))
         {
             const auto & type_info = AccessEntityTypeInfo::get(i);
-            if (ParserKeyword{type_info.name}.ignore(pos, expected)
-                || (!type_info.alias.empty() && ParserKeyword{type_info.alias}.ignore(pos, expected)))
+            if (ParserKeyword::createDeprecated(type_info.name).ignore(pos, expected)
+                || (!type_info.alias.empty() && ParserKeyword::createDeprecated(type_info.alias).ignore(pos, expected)))
             {
                 type = i;
                 plural = false;
@@ -37,8 +37,8 @@ namespace
         for (auto i : collections::range(AccessEntityType::MAX))
         {
             const auto & type_info = AccessEntityTypeInfo::get(i);
-            if (ParserKeyword{type_info.plural_name}.ignore(pos, expected)
-                || (!type_info.plural_alias.empty() && ParserKeyword{type_info.plural_alias}.ignore(pos, expected)))
+            if (ParserKeyword::createDeprecated(type_info.plural_name).ignore(pos, expected)
+                || (!type_info.plural_alias.empty() && ParserKeyword::createDeprecated(type_info.plural_alias).ignore(pos, expected)))
             {
                 type = i;
                 plural = true;
@@ -53,7 +53,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected)
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected)
                 && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, any_database, table, any_table);
         });
     }
@@ -62,7 +62,7 @@ namespace
 
 bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"SHOW CREATE"}.ignore(pos, expected))
+    if (!ParserKeyword{Keyword::SHOW_CREATE}.ignore(pos, expected))
         return false;
 
     AccessEntityType type;

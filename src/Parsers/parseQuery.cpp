@@ -92,7 +92,9 @@ void writeQueryWithHighlightedErrorPositions(
         }
         else
         {
-            size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
+            ssize_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
+            if (bytes_to_hilite > end - current_position_to_hilite)
+                bytes_to_hilite = end - current_position_to_hilite;
 
             /// Bright on red background.
             out << "\033[41;1m";
@@ -234,12 +236,13 @@ ASTPtr tryParseQuery(
     bool allow_multi_statements,
     size_t max_query_size,
     size_t max_parser_depth,
+    size_t max_parser_backtracks,
     bool skip_insignificant)
 {
     const char * query_begin = _out_query_end;
     Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
-    IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth));
+    IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
 
     if (token_iterator->isEnd()
         || token_iterator->type == TokenType::Semicolon)
@@ -356,10 +359,13 @@ ASTPtr parseQueryAndMovePosition(
     const std::string & query_description,
     bool allow_multi_statements,
     size_t max_query_size,
-    size_t max_parser_depth)
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
 {
     std::string error_message;
-    ASTPtr res = tryParseQuery(parser, pos, end, error_message, false, query_description, allow_multi_statements, max_query_size, max_parser_depth);
+    ASTPtr res = tryParseQuery(
+        parser, pos, end, error_message, false, query_description, allow_multi_statements,
+        max_query_size, max_parser_depth, max_parser_backtracks, true);
 
     if (res)
         return res;
@@ -374,9 +380,10 @@ ASTPtr parseQuery(
     const char * end,
     const std::string & query_description,
     size_t max_query_size,
-    size_t max_parser_depth)
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
 {
-    return parseQueryAndMovePosition(parser, begin, end, query_description, false, max_query_size, max_parser_depth);
+    return parseQueryAndMovePosition(parser, begin, end, query_description, false, max_query_size, max_parser_depth, max_parser_backtracks);
 }
 
 
@@ -385,9 +392,10 @@ ASTPtr parseQuery(
     const std::string & query,
     const std::string & query_description,
     size_t max_query_size,
-    size_t max_parser_depth)
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
 {
-    return parseQuery(parser, query.data(), query.data() + query.size(), query_description, max_query_size, max_parser_depth);
+    return parseQuery(parser, query.data(), query.data() + query.size(), query_description, max_query_size, max_parser_depth, max_parser_backtracks);
 }
 
 
@@ -395,9 +403,10 @@ ASTPtr parseQuery(
     IParser & parser,
     const std::string & query,
     size_t max_query_size,
-    size_t max_parser_depth)
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
 {
-    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth);
+    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth, max_parser_backtracks);
 }
 
 
@@ -406,6 +415,7 @@ std::pair<const char *, bool> splitMultipartQuery(
     std::vector<std::string> & queries_list,
     size_t max_query_size,
     size_t max_parser_depth,
+    size_t max_parser_backtracks,
     bool allow_settings_after_format_in_insert)
 {
     ASTPtr ast;
@@ -422,7 +432,7 @@ std::pair<const char *, bool> splitMultipartQuery(
     {
         begin = pos;
 
-        ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth);
+        ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth, max_parser_backtracks);
 
         auto * insert = ast->as<ASTInsertQuery>();
 

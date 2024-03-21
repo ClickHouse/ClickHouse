@@ -296,7 +296,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     switch (global_ctx->chosen_merge_algorithm)
     {
-        case MergeAlgorithm::Horizontal :
+        case MergeAlgorithm::Horizontal:
         {
             global_ctx->merging_columns = global_ctx->storage_columns;
             global_ctx->merging_column_names = global_ctx->all_column_names;
@@ -304,12 +304,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             global_ctx->gathering_column_names.clear();
             break;
         }
-        case MergeAlgorithm::Vertical :
+        case MergeAlgorithm::Vertical:
         {
             ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->createRawStream();
             ctx->rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*ctx->rows_sources_uncompressed_write_buf);
 
-            MergeTreeDataPartInMemory::ColumnToSize local_merged_column_to_size;
+            std::map<String, UInt64> local_merged_column_to_size;
             for (const MergeTreeData::DataPartPtr & part : global_ctx->future_part->parts)
                 part->accumulateColumnSizes(local_merged_column_to_size);
 

@@ -10,6 +10,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <rocksdb/statistics.h>
 
