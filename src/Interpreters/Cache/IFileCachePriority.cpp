@@ -10,6 +10,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 IFileCachePriority::IFileCachePriority(size_t max_size_, size_t max_elements_)
     : max_size(max_size_), max_elements(max_elements_)
 {

@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
     size_t getRatio(size_t total, double ratio)
@@ -174,6 +179,8 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
         return false;
     }
 
+    chassert(downgrade_candidates->size() > 0);
+
     const size_t size_to_downgrade = stat.stat.releasable_size;
     const size_t elements_to_downgrade = stat.stat.releasable_count;
 
@@ -182,39 +189,39 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     FileCacheReserveStat probationary_stat;
     bool downgrade_reached_size_limit = false;
     bool downgrade_reached_elements_limit = false;
-    if (!probationary_queue.canFit(size_to_downgrade, elements_to_downgrade, lock)
-        && !probationary_queue.collectCandidatesForEviction(
+
+    if (!probationary_queue.collectCandidatesForEviction(
             size_to_downgrade, probationary_stat, res, reservee, user_id,
             downgrade_reached_size_limit, downgrade_reached_elements_limit, lock))
     {
         return false;
     }
 
-    if (downgrade_candidates->size() == 0)
-    {
-        return true;
-    }
+    const size_t size_to_evict_from_probationary = probationary_stat.stat.releasable_size;
+    const size_t elements_to_evict_from_probationary = probationary_stat.stat.releasable_count;
+
+    std::shared_ptr<HoldSpace> hold_space;
 
     const bool downgrade_after_eviction = res.size() > 0;
-    auto take_space_hold = [&]()
+    if (downgrade_after_eviction)
     {
         const size_t hold_size = downgrade_reached_size_limit
-            ? size_to_downgrade > probationary_stat.stat.releasable_size ? size - probationary_stat.stat.releasable_size : 0
+            ? size_to_downgrade > size_to_evict_from_probationary ? size_to_downgrade - size_to_evict_from_probationary : 0
             : size_to_downgrade;
 
         const size_t hold_elements = downgrade_reached_elements_limit
-            ? elements_to_downgrade > probationary_stat.stat.releasable_count ? size - probationary_stat.stat.releasable_count : 0
+            ? elements_to_downgrade > elements_to_evict_from_probationary ? elements_to_downgrade - elements_to_evict_from_probationary : 0
             : elements_to_downgrade;
 
-        return std::make_shared<HoldSpace>(
+        hold_space = std::make_shared<HoldSpace>(
             hold_size, hold_elements, QueueEntryType::SLRU_Probationary, probationary_queue, lock);
-    };
+    }
 
-    auto downgrade_func = [=, holder = downgrade_after_eviction ? take_space_hold() : nullptr, this]
+    auto downgrade_func = [=, this]
         (const CachePriorityGuard::Lock & lk)
     {
-        if (holder)
-            holder->release();
+        if (hold_space)
+            hold_space->release();
 
         LOG_TEST(log, "Downgrading {} elements from protected to probationary. "
                  "Total size: {}",
