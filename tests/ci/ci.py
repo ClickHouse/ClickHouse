@@ -1407,15 +1407,25 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
     print("... CI report update - done")
 
 
-def _fetch_commit_tokens(message: str) -> List[str]:
-    pattern = r"#[\w-]+"
-    matches = [match[1:] for match in re.findall(pattern, message)]
+def _fetch_commit_tokens(message: str, pr_info: PRInfo) -> List[str]:
+    pattern = r"([^!]|^)#(\w+)"
+    matches = [match[-1] for match in re.findall(pattern, message)]
     res = [
         match
         for match in matches
         if match in Labels or match.startswith("job_") or match.startswith("batch_")
     ]
-    return res
+    print(f"CI modifyers from commit message: [{res}]")
+    res_2 = []
+    if pr_info.is_pr():
+        matches = [match[-1] for match in re.findall(pattern, pr_info.body)]
+        res_2 = [
+            match
+            for match in matches
+            if match in Labels or match.startswith("job_") or match.startswith("batch_")
+        ]
+        print(f"CI modifyers from PR body: [{res_2}]")
+    return list(set(res + res_2))
 
 
 def _upload_build_artifacts(
@@ -1701,8 +1711,7 @@ def main() -> int:
             message = args.commit_message or git_runner.run(
                 f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1"
             )
-            tokens = _fetch_commit_tokens(message)
-            print(f"Commit message tokens: [{tokens}]")
+            tokens = _fetch_commit_tokens(message, pr_info)
             if Labels.NO_MERGE_COMMIT in tokens and CI:
                 git_runner.run(f"{GIT_PREFIX} checkout {pr_info.sha}")
                 git_ref = git_runner.run(f"{GIT_PREFIX} rev-parse HEAD")
