@@ -37,6 +37,7 @@ LRUFileCachePriority::LRUFileCachePriority(
     const std::string & description_)
     : IFileCachePriority(max_size_, max_elements_)
     , description(description_)
+    , log(getLogger("LRUFileCachePriority{}" + (description.empty() ? "" : "(" + description + ")")))
 {
     if (state_)
         state = state_;

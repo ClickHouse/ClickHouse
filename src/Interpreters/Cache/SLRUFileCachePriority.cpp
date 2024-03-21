@@ -215,7 +215,16 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
 
         hold_space = std::make_shared<HoldSpace>(
             hold_size, hold_elements, QueueEntryType::SLRU_Probationary, probationary_queue, lock);
+
+        LOG_TEST(log, "Eviction candidates: {}, hold space: {} in size and {} in elements. {}",
+                 res.size(), hold_size, hold_elements, getStateInfoForLog(lock));
     }
+    else
+    {
+        LOG_TEST(log, "Eviction candidates: {}, hold space: none. {}",
+                 res.size(), getStateInfoForLog(lock));
+    }
+
 
     auto downgrade_func = [=, this]
         (const CachePriorityGuard::Lock & lk)

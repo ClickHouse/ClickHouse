@@ -86,7 +86,7 @@ private:
 
     LRUQueue queue;
     const std::string description;
-    LoggerPtr log = getLogger("LRUFileCachePriority");
+    LoggerPtr log;
     StatePtr state;
 
     void updateElementsCount(int64_t num);
