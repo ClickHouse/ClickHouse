@@ -73,7 +73,7 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
     ParserNameTypePairList parser;
     const auto * pos = argument.data();
     String error;
-    ASTPtr columns_list_raw = tryParseQuery(parser, pos, pos + argument.size(), error, false, "", false, 0, 0);
+    ASTPtr columns_list_raw = tryParseQuery(parser, pos, pos + argument.size(), error, false, "", false, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
 
     if (!columns_list_raw)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: {}", error);
@@ -93,7 +93,7 @@ void BaseExternalTable::parseStructureFromTypesField(const std::string & argumen
     ParserTypeList parser;
     const auto * pos = argument.data();
     String error;
-    ASTPtr type_list_raw = tryParseQuery(parser, pos, pos+argument.size(), error, false, "", false, 0, 0);
+    ASTPtr type_list_raw = tryParseQuery(parser, pos, pos+argument.size(), error, false, "", false, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
 
     if (!type_list_raw)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: {}", error);
