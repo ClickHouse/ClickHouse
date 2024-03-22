@@ -262,6 +262,9 @@ private:
     template <typename Func>
     MutableColumnPtr applyForSubcolumns(Func && func) const;
 
+    template <typename Func>
+    void applyForSubcolumnsInPlace(Func && func);
+
     /// It's used to get shared sized of Nested to insert correct default values.
     const Subcolumns::Node * getLeafOfTheSameNested(const Subcolumns::NodePtr & entry) const;
 };

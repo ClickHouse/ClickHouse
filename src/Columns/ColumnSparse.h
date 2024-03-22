@@ -90,6 +90,7 @@ public:
 
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t) const override;
+    void filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start) override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 

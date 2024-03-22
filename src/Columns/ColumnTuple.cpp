@@ -278,6 +278,13 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
     return ColumnTuple::create(new_columns);
 }
 
+void ColumnTuple::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->filterInPlace(indexes, start);
+}
+
 void ColumnTuple::expand(const Filter & mask, bool inverted)
 {
     for (auto & column : columns)

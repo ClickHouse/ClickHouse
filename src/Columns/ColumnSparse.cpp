@@ -444,6 +444,11 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     return ColumnSparse::create(std::move(res_values), std::move(res_offsets), limit);
 }
 
+void ColumnSparse::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+{
+
+}
+
 int ColumnSparse::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
 {
     if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs_))
