@@ -819,7 +819,6 @@ void LocalServer::addOptions(OptionsDescription & options_description)
         ("file,F", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
 
         ("input-format", po::value<std::string>(), "input format of the initial table data")
-        ("output-format", po::value<std::string>(), "default output format")
 
         ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")
