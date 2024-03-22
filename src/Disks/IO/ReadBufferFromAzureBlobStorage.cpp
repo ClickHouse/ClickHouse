@@ -10,8 +10,6 @@
 #include <Common/ProfileEvents.h>
 #include <IO/SeekableReadBuffer.h>
 
-#include <sstream>
-
 namespace ProfileEvents
 {
     extern const Event RemoteReadThrottlerBytes;
