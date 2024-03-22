@@ -86,6 +86,8 @@ elseif (OS_DARWIN)
     target_compile_definitions(_c-ares PRIVATE -D_DARWIN_C_SOURCE)
 elseif (OS_FREEBSD)
     target_include_directories(_c-ares SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/c-ares-cmake/freebsd")
+elseif (OS_SUNOS)
+    target_include_directories(_c-ares SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/c-ares-cmake/solaris")
 endif()
 
 add_library(ch_contrib::c-ares ALIAS _c-ares)

@@ -67,7 +67,6 @@ HedgedConnections::HedgedConnections(
     }
 
     active_connection_count = connections.size();
-    offsets_with_disabled_changing_replica = 0;
     pipeline_for_new_replicas.add([throttler_](ReplicaState & replica_) { replica_.connection->setThrottler(throttler_); });
 }
 

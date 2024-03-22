@@ -18,5 +18,6 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t shard_num,
-    size_t shard_count);
+    size_t shard_count,
+    bool has_missing_objects);
 }

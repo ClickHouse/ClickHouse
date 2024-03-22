@@ -316,6 +316,9 @@ class PRInfo:
     def is_release_branch(self) -> bool:
         return self.number == 0
 
+    def is_pr(self):
+        return self.event_type == EventType.PULL_REQUEST
+
     def is_scheduled(self):
         return self.event_type == EventType.SCHEDULE
 

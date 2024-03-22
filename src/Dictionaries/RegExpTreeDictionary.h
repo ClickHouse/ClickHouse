@@ -86,7 +86,7 @@ public:
 
     bool hasHierarchy() const override { return false; }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<RegExpTreeDictionary>(
             getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan, flag_case_insensitive, flag_dotall);
