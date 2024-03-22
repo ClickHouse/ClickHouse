@@ -353,6 +353,43 @@ void StorageSystemReplicas::read(
     query_plan.addStep(std::move(reading));
 }
 
+class SystemReplicasSource : public ISource
+{
+public:
+    SystemReplicasSource(
+        Block header_,
+        ColumnPtr col_database_,
+        ColumnPtr col_table_,
+        ColumnPtr col_engine_,
+        std::vector<std::shared_future<ReplicatedTableStatus>> futures_,
+        ContextPtr context_)
+        : ISource(header_)
+        , col_database(std::move(col_database_))
+        , col_table(std::move(col_table_))
+        , col_engine(std::move(col_engine_))
+        , futures(std::move(futures_))
+        , context(std::move(context_))
+    {
+    }
+
+    String getName() const override { return "SystemReplicas"; }
+
+protected:
+    Chunk generate() override;
+
+private:
+    /// Columns with table metadata.
+    ColumnPtr col_database;
+    ColumnPtr col_table;
+    ColumnPtr col_engine;
+    /// Futures for the status of each table.
+    std::vector<std::shared_future<ReplicatedTableStatus>> futures;
+    ContextPtr context;
+    /// Index (row number) of the next table to process.
+    size_t i = 0;
+};
+
+
 void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto header = getOutputStream().header;
@@ -398,8 +435,6 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
         col_engine = filtered_block.getByName("engine").column;
     }
 
-    MutableColumns res_columns = storage_snapshot->metadata->getSampleBlock().cloneEmptyColumns();
-
     size_t tables_size = col_database->size();
 
     /// Use separate queues for requests with and without ZooKeeper fields.
@@ -426,10 +461,32 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
     /// If there are more requests, they will be scheduled by the query that needs them.
     get_status_requests.scheduleRequests(max_request_id, query_status);
 
-    for (size_t i = 0; i < tables_size; ++i)
+    pipeline.init(Pipe(std::make_shared<SystemReplicasSource>(header, col_database, col_table, col_engine, std::move(futures), context)));
+}
+
+Chunk SystemReplicasSource::generate()
+{
+    if (i == futures.size())
+        return {};
+
+    QueryStatusPtr query_status = context ? context->getProcessListElement() : nullptr;
+
+    MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
+
+    bool rows_added = false;
+
+    for (; i < futures.size(); ++i)
     {
         if (query_status)
             query_status->checkTimeLimit();
+
+        /// Return current chunk if the next future is not ready yet
+        if (rows_added && futures[i].wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+            break;
+
+        res_columns[0]->insert((*col_database)[i]);
+        res_columns[1]->insert((*col_table)[i]);
+        res_columns[2]->insert((*col_engine)[i]);
 
         const auto & status = futures[i].get();
         size_t col_num = 3;
@@ -476,23 +533,12 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
         }
 
         res_columns[col_num++]->insert(std::move(replica_is_active_values));
+
+        rows_added = true;
     }
 
-    Columns fin_columns;
-    fin_columns.reserve(res_columns.size());
-
-    for (auto & col : res_columns)
-        fin_columns.emplace_back(std::move(col));
-
-    fin_columns[0] = std::move(col_database);
-    fin_columns[1] = std::move(col_table);
-    fin_columns[2] = std::move(col_engine);
-
-    UInt64 num_rows = fin_columns.at(0)->size();
-    Chunk chunk(std::move(fin_columns), num_rows);
-
-    pipeline.init(Pipe(std::make_shared<SourceFromSingleChunk>(header, std::move(chunk))));
+    UInt64 num_rows = res_columns.at(0)->size();
+    return Chunk(std::move(res_columns), num_rows);
 }
-
 
 }
