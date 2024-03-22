@@ -23,6 +23,7 @@
 
 #include <Columns/ColumnConst.h>
 
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
@@ -280,6 +281,17 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
     return (num_remote_shards + num_local_shards) * settings.max_parallel_replicas;
+}
+
+template <class F>
+void waitFutures(F & futures)
+{
+    for (auto & future : futures)
+        future.wait();
+    /// Make sure there is no exception.
+    for (auto & future : futures)
+        future.get();
+    futures.clear();
 }
 
 }
@@ -835,7 +847,8 @@ void StorageDistributed::read(
     const size_t /*num_streams*/)
 {
     Block header;
-    ASTPtr query_ast;
+
+    SelectQueryInfo modified_query_info = query_info;
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
@@ -843,7 +856,7 @@ void StorageDistributed::read(
         if (!remote_table_function_ptr)
             remote_storage_id = StorageID{remote_database, remote_table};
 
-        auto query_tree_distributed = buildQueryTreeDistributed(query_info,
+        auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
@@ -853,20 +866,24 @@ void StorageDistributed::read(
           */
         for (auto & column : header)
             column.column = column.column->convertToFullColumnIfConst();
-        query_ast = queryNodeToDistributedSelectQuery(query_tree_distributed);
+        modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_distributed);
+
+        modified_query_info.query_tree = std::move(query_tree_distributed);
     }
     else
     {
-        header = InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
-        query_ast = query_info.query;
+        header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
     }
 
-    const auto & modified_query_ast = ClusterProxy::rewriteSelectQuery(
-        local_context, query_ast,
-        remote_database, remote_table, remote_table_function_ptr);
+    if (!local_context->getSettingsRef().allow_experimental_analyzer)
+    {
+        modified_query_info.query = ClusterProxy::rewriteSelectQuery(
+            local_context, modified_query_info.query,
+            remote_database, remote_table, remote_table_function_ptr);
+    }
 
     /// Return directly (with correct header) if no shard to query.
-    if (query_info.getCluster()->getShardsInfo().empty())
+    if (modified_query_info.getCluster()->getShardsInfo().empty())
     {
         if (local_context->getSettingsRef().allow_experimental_analyzer)
             return;
@@ -894,7 +911,7 @@ void StorageDistributed::read(
     const auto & settings = local_context->getSettingsRef();
 
     ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
-    if (local_context->canUseParallelReplicasCustomKey(*query_info.getCluster()))
+    if (local_context->canUseParallelReplicasCustomKey(*modified_query_info.getCluster()))
     {
         if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *local_context))
         {
@@ -903,7 +920,7 @@ void StorageDistributed::read(
                  column_description = this->getInMemoryMetadataPtr()->columns,
                  custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
                  context = local_context,
-                 replica_count = query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
+                 replica_count = modified_query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
                     replica_count, replica_num - 1, my_custom_key_ast, custom_key_type, column_description, context);
@@ -919,12 +936,10 @@ void StorageDistributed::read(
         remote_table_function_ptr,
         select_stream_factory,
         log,
-        modified_query_ast,
         local_context,
-        query_info,
+        modified_query_info,
         sharding_key_expr,
         sharding_key_column_name,
-        query_info.cluster,
         distributed_settings,
         additional_shard_filter_generator);
 
@@ -1286,25 +1301,30 @@ void StorageDistributed::initializeFromDisk()
 
     /// Make initialization for large number of disks parallel.
     ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
+    std::vector<std::future<void>> futures;
 
     for (const DiskPtr & disk : disks)
     {
-        pool.scheduleOrThrowOnError([&]()
+        auto future = scheduleFromThreadPool<void>([this, disk_to_init = disk]
         {
-            initializeDirectoryQueuesForDisk(disk);
-        });
+            initializeDirectoryQueuesForDisk(disk_to_init);
+        }, pool, "DistInit");
+        futures.push_back(std::move(future));
     }
+    waitFutures(futures);
     pool.wait();
 
     const auto & paths = getDataPaths();
     std::vector<UInt64> last_increment(paths.size());
     for (size_t i = 0; i < paths.size(); ++i)
     {
-        pool.scheduleOrThrowOnError([&, i]()
+        auto future = scheduleFromThreadPool<void>([&paths, &last_increment, i]
         {
             last_increment[i] = getMaximumFileNumber(paths[i]);
-        });
+        }, pool, "DistInit");
+        futures.push_back(std::move(future));
     }
+    waitFutures(futures);
     pool.wait();
 
     for (const auto inc : last_increment)
@@ -1734,16 +1754,33 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
             directory_queues.push_back(node.second.directory_queue);
     }
 
-    bool need_flush = getDistributedSettingsRef().flush_on_detach;
-    if (!need_flush)
+    if (getDistributedSettingsRef().flush_on_detach)
+    {
+        LOG_INFO(log, "Flushing pending INSERT blocks");
+
+        Stopwatch watch;
+        ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, directory_queues.size());
+        std::vector<std::future<void>> futures;
+
+        for (const auto & node : directory_queues)
+        {
+            auto future = scheduleFromThreadPool<void>([node_to_flush = node]
+            {
+                node_to_flush->flushAllData();
+            }, pool, "DistFlush");
+            futures.push_back(std::move(future));
+        }
+
+        waitFutures(futures);
+        pool.wait();
+
+        LOG_INFO(log, "Pending INSERT blocks flushed, took {} ms.", watch.elapsedMilliseconds());
+    }
+    else
+    {
         LOG_INFO(log, "Skip flushing data (due to flush_on_detach=0)");
 
-    /// TODO: Maybe it should be executed in parallel
-    for (auto & node : directory_queues)
-    {
-        if (need_flush)
-            node->flushAllData();
-        else
+        for (auto & node : directory_queues)
             node->shutdownWithoutFlush();
     }
 }
