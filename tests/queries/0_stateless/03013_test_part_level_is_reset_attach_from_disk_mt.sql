@@ -1,3 +1,4 @@
+-- Tags: no-shared-merge-tree
 SET alter_sync = 2;
 -- {echoOn}
 DROP TABLE IF EXISTS test;
