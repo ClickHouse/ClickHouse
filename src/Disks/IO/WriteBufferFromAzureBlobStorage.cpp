@@ -47,7 +47,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     ThreadPoolCallbackRunner<void> schedule_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureBlobStorage"))
-    , buffer_allocation_policy(createBufferAllocationPolicy(*settings_.get()))
+    , buffer_allocation_policy(createBufferAllocationPolicy(*settings_))
     , max_single_part_upload_size(settings_->max_single_part_upload_size)
     , max_unexpected_write_error_retries(settings_->max_unexpected_write_error_retries)
     , blob_path(blob_path_)
