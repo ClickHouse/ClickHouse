@@ -20,7 +20,7 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_requests_with_keep_alive(start_cluster):
+def test_max_keep_alive_requests_on_user_side(start_cluster):
     # In this test we have `keep_alive_timeout` set to one hour to never trigger connection reset by timeout, `max_keep_alive_requests` is set to 5.
     # We expect server to close connection after each 5 requests. We detect connection reset by change in src port.
     # So the first 5 requests should come from the same port, the following 5 requests should come from another port.
