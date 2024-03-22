@@ -22,6 +22,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB
@@ -82,7 +83,7 @@ StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, boo
     return data->getProjectionPartsVectorForInternalUsage({State::Active}, &state);
 }
 
-StoragesInfoStream::StoragesInfoStream(const ActionsDAG::Node * predicate, ContextPtr context)
+StoragesInfoStream::StoragesInfoStream(const ActionsDAGPtr & filter_by_database, const ActionsDAGPtr & filter_by_other_columns, ContextPtr context)
     : StoragesInfoStreamBase(context)
 {
     /// Will apply WHERE to subset of columns and then add more columns.
@@ -114,7 +115,8 @@ StoragesInfoStream::StoragesInfoStream(const ActionsDAG::Node * predicate, Conte
             std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block_to_filter with column 'database'.
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
+        if (filter_by_database)
+            VirtualColumnUtils::filterBlockWithDAG(filter_by_database, block_to_filter, context);
         rows = block_to_filter.rows();
 
         /// Block contains new columns, update database_column.
@@ -188,19 +190,20 @@ StoragesInfoStream::StoragesInfoStream(const ActionsDAG::Node * predicate, Conte
     block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
     block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), "engine"));
     block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), "active"));
-    block_to_filter.insert(ColumnWithTypeAndName(std::move(storage_uuid_column_mut), std::make_shared<DataTypeUUID>(), "uuid"));
+    block_to_filter.insert(ColumnWithTypeAndName(std::move(storage_uuid_column_mut), std::make_shared<DataTypeUUID>(), "storage_uuid"));
 
     if (rows)
     {
         /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
+        if (filter_by_other_columns)
+            VirtualColumnUtils::filterBlockWithDAG(filter_by_other_columns, block_to_filter, context);
         rows = block_to_filter.rows();
     }
 
     database_column = block_to_filter.getByName("database").column;
     table_column = block_to_filter.getByName("table").column;
     active_column = block_to_filter.getByName("active").column;
-    storage_uuid_column = block_to_filter.getByName("uuid").column;
+    storage_uuid_column = block_to_filter.getByName("storage_uuid").column;
 }
 
 class ReadFromSystemPartsBase : public SourceStepWithFilter
@@ -225,7 +228,8 @@ protected:
     std::shared_ptr<StorageSystemPartsBase> storage;
     std::vector<UInt8> columns_mask;
     const bool has_state_column;
-    const ActionsDAG::Node * predicate = nullptr;
+    ActionsDAGPtr filter_by_database;
+    ActionsDAGPtr filter_by_other_columns;
 };
 
 ReadFromSystemPartsBase::ReadFromSystemPartsBase(
@@ -253,7 +257,25 @@ void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
+    {
+        const auto * predicate = filter_actions_dag->getOutputs().at(0);
+
+        Block block;
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "database"));
+
+        filter_by_database = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
+        if (filter_by_database)
+            VirtualColumnUtils::buildSetsForDAG(filter_by_database, context);
+
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "table"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "engine"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), "active"));
+        block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), "uuid"));
+
+        filter_by_other_columns = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
+        if (filter_by_other_columns)
+            VirtualColumnUtils::buildSetsForDAG(filter_by_other_columns, context);
+    }
 }
 
 void StorageSystemPartsBase::read(
@@ -287,7 +309,7 @@ void StorageSystemPartsBase::read(
 
 void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto stream = storage->getStoragesInfoStream(predicate, context);
+    auto stream = storage->getStoragesInfoStream(filter_by_database, filter_by_other_columns, context);
     auto header = getOutputStream().header;
 
     MutableColumns res_columns = header.cloneEmptyColumns();
