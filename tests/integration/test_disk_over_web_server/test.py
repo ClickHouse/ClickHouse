@@ -39,7 +39,6 @@ def cluster():
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
             tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
-            use_old_analyzer=True,
         )
 
         cluster.start()

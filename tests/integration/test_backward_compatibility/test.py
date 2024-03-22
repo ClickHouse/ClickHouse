@@ -10,7 +10,6 @@ node1 = cluster.add_instance(
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
-    use_old_analyzer=True,
 )
 node2 = cluster.add_instance(
     "node2",

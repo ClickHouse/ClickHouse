@@ -13,7 +13,6 @@ old_node = cluster.add_instance(
     image="clickhouse/clickhouse-server",
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
-    use_old_analyzer=True,
 )
 
 
