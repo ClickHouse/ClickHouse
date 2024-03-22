@@ -143,7 +143,7 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable ThrottlerPtr local_read_throttler;              /// A server-wide throttler for local IO reads
     mutable ThrottlerPtr local_write_throttler;             /// A server-wide throttler for local IO writes
-                                                            ///
+
     mutable std::mutex keeper_dispatcher_mutex;
     mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
 

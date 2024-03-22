@@ -435,6 +435,7 @@ struct ContextSharedPart : boost::noncopyable
 
     ~ContextSharedPart()
     {
+#if USE_NURAFT
         if (keeper_dispatcher)
         {
             try
@@ -446,6 +447,7 @@ struct ContextSharedPart : boost::noncopyable
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
+#endif
 
         /// Wait for thread pool for background reads and writes,
         /// since it may use per-user MemoryTracker which will be destroyed here.
