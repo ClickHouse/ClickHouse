@@ -6,6 +6,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_)
