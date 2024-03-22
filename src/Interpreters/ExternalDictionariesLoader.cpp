@@ -22,13 +22,12 @@ namespace ErrorCodes
 
 /// Must not acquire Context lock in constructor to avoid possibility of deadlocks.
 ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context_)
-    : ExternalLoader("external dictionary", getLogger("ExternalDictionariesLoader"))
+    : ExternalLoader("external dictionary", &Poco::Logger::get("ExternalDictionariesLoader"))
     , WithContext(global_context_)
 {
     setConfigSettings({"dictionary", "name", "database", "uuid"});
     enableAsyncLoading(true);
-    if (getContext()->getApplicationType() == Context::ApplicationType::SERVER)
-        enablePeriodicUpdates(true);
+    enablePeriodicUpdates(true);
 }
 
 ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(

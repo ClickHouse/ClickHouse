@@ -3,7 +3,6 @@
 #include <Functions/keyvaluepair/impl/Configuration.h>
 #include <base/find_symbols.h>
 
-#include <iterator>
 #include <vector>
 
 namespace DB

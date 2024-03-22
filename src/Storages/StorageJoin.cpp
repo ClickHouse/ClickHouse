@@ -16,7 +16,6 @@
 #include <Common/Exception.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/JoinUtils.h>
-#include <Formats/NativeWriter.h>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/ISource.h>
@@ -25,7 +24,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h>
 #include <filesystem>
-
 
 namespace fs = std::filesystem;
 
@@ -106,7 +104,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     if (disk->exists(path))
         disk->removeRecursive(path);
     else
-        LOG_INFO(getLogger("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
+        LOG_INFO(&Poco::Logger::get("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
 
     disk->createDirectories(path);
     disk->createDirectories(fs::path(path) / "tmp/");
@@ -502,7 +500,7 @@ protected:
         Chunk chunk;
         if (!joinDispatch(join->kind, join->strictness, join->data->maps.front(),
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown JOIN strictness");
         return chunk;
     }
 
@@ -537,7 +535,8 @@ private:
 #undef M
 
             default:
-                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys of type {} in StorageJoin", join->data->type);
+                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys in StorageJoin. Type: {}",
+                                static_cast<UInt32>(join->data->type));
         }
 
         if (!rows_added)

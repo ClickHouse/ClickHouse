@@ -1,11 +1,8 @@
 #pragma once
 
 #include <Storages/CheckResults.h>
-#include <Common/Logger.h>
 #include <map>
 #include <base/types.h>
-#include <memory>
-#include <mutex>
 
 namespace Poco { class Logger; }
 
@@ -19,7 +16,7 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class FileChecker
 {
 public:
-    explicit FileChecker(const String & file_info_path_);
+    FileChecker(const String & file_info_path_);
     FileChecker(DiskPtr disk_, const String & file_info_path_);
 
     void setPath(const String & file_info_path_);
@@ -31,11 +28,7 @@ public:
     bool empty() const { return map.empty(); }
 
     /// Check the files whose parameters are specified in sizes.json
-    /// See comment in IStorage::checkDataNext
-    struct DataValidationTasks;
-    using DataValidationTasksPtr = std::unique_ptr<DataValidationTasks>;
-    DataValidationTasksPtr getDataValidationTasks();
-    std::optional<CheckResult> checkNextEntry(DataValidationTasksPtr & check_data_tasks) const;
+    CheckResults check() const;
 
     /// Truncate files that have excessive size to the expected size.
     /// Throw exception if the file size is less than expected.
@@ -48,36 +41,6 @@ public:
     /// Returns total size of all files.
     size_t getTotalSize() const;
 
-    struct DataValidationTasks
-    {
-        explicit DataValidationTasks(const std::map<String, size_t> & map_)
-            : map(map_), it(map.begin())
-        {}
-
-        bool next(String & out_name, size_t & out_size)
-        {
-            std::lock_guard lock(mutex);
-            if (it == map.end())
-                return true;
-            out_name = it->first;
-            out_size = it->second;
-            ++it;
-            return false;
-        }
-
-        size_t size() const
-        {
-            std::lock_guard lock(mutex);
-            return std::distance(it, map.end());
-        }
-
-        const std::map<String, size_t> & map;
-
-        mutable std::mutex mutex;
-        using Iterator = std::map<String, size_t>::const_iterator;
-        Iterator it;
-    };
-
 private:
     void load();
 
@@ -85,7 +48,7 @@ private:
     size_t getRealFileSize(const String & path_) const;
 
     const DiskPtr disk;
-    const LoggerPtr log;
+    const Poco::Logger * log;
 
     String files_info_path;
     std::map<String, size_t> map;

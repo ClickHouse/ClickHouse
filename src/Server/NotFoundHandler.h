@@ -9,8 +9,8 @@ namespace DB
 class NotFoundHandler : public HTTPRequestHandler
 {
 public:
-    explicit NotFoundHandler(std::vector<std::string> hints_) : hints(std::move(hints_)) {}
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    NotFoundHandler(std::vector<std::string> hints_) : hints(std::move(hints_)) {}
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 private:
     std::vector<std::string> hints;
 };

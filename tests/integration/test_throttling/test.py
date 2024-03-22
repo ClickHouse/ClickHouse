@@ -33,17 +33,9 @@ def elapsed(func, *args, **kwargs):
 node = cluster.add_instance(
     "node",
     stay_alive=True,
-    main_configs=[
-        "configs/static_overrides.xml",
-        "configs/dynamic_overrides.xml",
-        "configs/ssl.xml",
-    ],
-    user_configs=[
-        "configs/users_overrides.xml",
-        "configs/users_overrides_persistent.xml",
-    ],
+    main_configs=["configs/server_backups.xml", "configs/server_overrides.xml"],
+    user_configs=["configs/users_overrides.xml"],
     with_minio=True,
-    minio_certs_dir="minio_certs",
 )
 
 
@@ -64,7 +56,7 @@ def revert_config():
         [
             "bash",
             "-c",
-            f"echo '<clickhouse></clickhouse>' > /etc/clickhouse-server/config.d/dynamic_overrides.xml",
+            f"echo '<clickhouse></clickhouse>' > /etc/clickhouse-server/config.d/server_overrides.xml",
         ]
     )
     node.exec_in_container(
@@ -96,7 +88,7 @@ def node_update_config(mode, setting, value=None):
     if mode is None:
         return
     if mode == "server":
-        config_path = "/etc/clickhouse-server/config.d/dynamic_overrides.xml"
+        config_path = "/etc/clickhouse-server/config.d/server_overrides.xml"
         config_content = f"""
         <clickhouse><{setting}>{value}</{setting}></clickhouse>
         """
@@ -125,13 +117,8 @@ def assert_took(took, should_took):
     # we need to decrease the lower limit because the server limits could
     # be enforced by throttling some server background IO instead of query IO
     # and we have no control over it
-    #
-    # and the same for upper limit, it can be slightly larger, due to for
-    # instance network latencies or CPU starvation
-    if should_took > 0:
-        assert took >= should_took * 0.85 and took <= should_took * 1.8
-    else:
-        assert took >= should_took * 0.85
+    # Note that throttler does not apply any restrictions on upper bound, so we can only tell how much time required "at least", not "at most"
+    assert took >= should_took * 0.85
 
 
 @pytest.mark.parametrize(
@@ -241,8 +228,6 @@ def assert_took(took, should_took):
         # - second for calculating the signature
         # - and finally to write the payload to S3
         # Hence the value should be multipled by 3.
-        #
-        # BUT: only in case of HTTP, HTTPS will not require this.
         pytest.param(
             "default",
             next_backup_name("remote"),
@@ -252,24 +237,24 @@ def assert_took(took, should_took):
             0,
             id="no_local_to_remote_throttling",
         ),
-        # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
+        # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds, but for S3Client it is 2x more
         pytest.param(
             "default",
             next_backup_name("remote"),
             "user",
             "max_backup_bandwidth",
             "1M",
-            7,
+            7 * 3,
             id="user_local_to_remote_throttling",
         ),
-        # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds
+        # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds, but for S3Client it is 2x more
         pytest.param(
             "default",
             next_backup_name("remote"),
             "server",
             "max_backup_bandwidth_for_server",
             "2M",
-            3,
+            3 * 3,
             id="server_local_to_remote_throttling",
         ),
     ],
@@ -430,32 +415,3 @@ def test_write_throttling(policy, mode, setting, value, should_took):
     )
     _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
     assert_took(took, should_took)
-
-
-def test_max_mutations_bandwidth_for_server():
-    node.query(
-        """
-        drop table if exists data;
-        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9;
-    """
-    )
-    node.query("insert into data select * from numbers(1e6)")
-    _, took = elapsed(
-        node.query,
-        "alter table data update key = -key where 1 settings mutations_sync = 1",
-    )
-    # reading 1e6*8 bytes with 1M/s bandwith should take (8-1)/1=7 seconds
-    assert_took(took, 7)
-
-
-def test_max_merges_bandwidth_for_server():
-    node.query(
-        """
-        drop table if exists data;
-        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9;
-    """
-    )
-    node.query("insert into data select * from numbers(1e6)")
-    _, took = elapsed(node.query, "optimize table data final")
-    # reading 1e6*8 bytes with 1M/s bandwith should take (8-1)/1=7 seconds
-    assert_took(took, 7)

@@ -7,7 +7,7 @@ namespace DB
 {
 
 ContextAccessParams::ContextAccessParams(
-    std::optional<UUID> user_id_,
+    const std::optional<UUID> user_id_,
     bool full_access_,
     bool use_default_roles_,
     const std::shared_ptr<const std::vector<UUID>> & current_roles_,

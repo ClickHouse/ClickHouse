@@ -10,17 +10,14 @@ from pathlib import Path
 from shutil import copy2
 from typing import List, Optional, Union
 
-# isort: off
 from github.Commit import Commit
-
-# isort: on
 
 from build_download_helper import download_build_with_progress
 from commit_status_helper import post_commit_status
 from compress_files import SUFFIX, compress_fast, decompress_fast
 from env_helper import CI, RUNNER_TEMP, S3_BUILDS_BUCKET
 from git_helper import SHA_REGEXP
-from report import FOOTER_HTML_TEMPLATE, HEAD_HTML_TEMPLATE, SUCCESS
+from report import HEAD_HTML_TEMPLATE, FOOTER_HTML_TEMPLATE
 from s3_helper import S3Helper
 
 ARTIFACTS_PATH = Path(RUNNER_TEMP) / "artifacts"
@@ -126,12 +123,16 @@ class ArtifactsHelper:
                 return fnmatch(key, glob)
             return True
 
-        results = filter(ignore, self.s3_helper.list_prefix(self.s3_prefix))
+        results = filter(
+            ignore, self.s3_helper.list_prefix(self.s3_prefix, S3_BUILDS_BUCKET)
+        )
         return list(results)
 
     @staticmethod
     def post_commit_status(commit: Commit, url: str) -> None:
-        post_commit_status(commit, SUCCESS, url, "Artifacts for workflow", "Artifacts")
+        post_commit_status(
+            commit, "success", url, "Artifacts for workflow", "Artifacts"
+        )
 
     def _regenerate_index(self) -> None:
         if CI:

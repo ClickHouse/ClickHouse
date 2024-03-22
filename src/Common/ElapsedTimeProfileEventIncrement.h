@@ -14,13 +14,12 @@ enum Time
     Seconds,
 };
 
-template <Time unit>
+template <Time time>
 struct ProfileEventTimeIncrement
 {
     explicit ProfileEventTimeIncrement<time>(ProfileEvents::Event event_)
         : event(event_), watch(CLOCK_MONOTONIC) {}
 
-    template <Time time = unit>
     UInt64 elapsed()
     {
         if constexpr (time == Time::Nanoseconds)

@@ -109,7 +109,7 @@ void JSONObjectEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, D
 
 void JSONObjectEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
 {
-    transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
+    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONObjectEachRow(FormatFactory & factory)

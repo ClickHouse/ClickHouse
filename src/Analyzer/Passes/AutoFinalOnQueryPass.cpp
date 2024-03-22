@@ -1,4 +1,4 @@
-#include <Analyzer/Passes/AutoFinalOnQueryPass.h>
+#include "AutoFinalOnQueryPass.h"
 
 #include <Storages/IStorage.h>
 
@@ -67,7 +67,7 @@ private:
 
 }
 
-void AutoFinalOnQueryPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void AutoFinalOnQueryPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     auto visitor = AutoFinalOnQueryPassVisitor(std::move(context));
     visitor.visit(query_tree_node);

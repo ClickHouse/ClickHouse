@@ -14,10 +14,9 @@ ClickHouse позволяет автоматически удалять данн
 
 Ключевое преимущество такого подхода в том, что не нужно использовать внешнюю систему, чтобы запустить процесс — когда заданы условия TTL, удаление данных выполняется автоматически в фоновом режиме.
 
-:::note Примечание
-TTL можно использовать не только для перемещения в [/dev/null](https://en.wikipedia.org/wiki/Null_device), но еще и между дисками, например, с SSD на HDD.
-:::
-
+    :::note
+    TTL можно использовать не только для перемещения в [/dev/null](https://en.wikipedia.org/wiki/Null_device), но еще и между дисками, например, с SSD на HDD.
+    :::
 [Подробнее о конфигурировании TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
 ## ALTER DELETE {#alter-delete}

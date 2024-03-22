@@ -19,10 +19,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        constexpr bool result_is_date_or_date32 = (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>);
-        this->checkArguments(arguments, result_is_date_or_date32);
+        this->checkArguments(arguments, (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>));
 
-        /// For DateTime results, if time zone is specified, attach it to type.
+        /// For DateTime, if time zone is specified, attach it to type.
         /// If the time zone is specified but empty, throw an exception.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
         {
@@ -35,7 +34,6 @@ public:
                     this->getName());
             return std::make_shared<ToDataType>(time_zone);
         }
-
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             Int64 scale = DataTypeDateTime64::default_scale;
@@ -44,11 +42,17 @@ public:
             auto source_scale = scale;
 
             if constexpr (std::is_same_v<ToStartOfMillisecondImpl, Transform>)
+            {
                 scale = std::max(source_scale, static_cast<Int64>(3));
+            }
             else if constexpr (std::is_same_v<ToStartOfMicrosecondImpl, Transform>)
+            {
                 scale = std::max(source_scale, static_cast<Int64>(6));
+            }
             else if constexpr (std::is_same_v<ToStartOfNanosecondImpl, Transform>)
+            {
                 scale = std::max(source_scale, static_cast<Int64>(9));
+            }
 
             return std::make_shared<ToDataType>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
         }
@@ -59,16 +63,18 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
+        WhichDataType which(from_type);
 
-        if (isDate(from_type))
+        if (which.isDate())
             return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
-        else if (isDate32(from_type))
+        else if (which.isDate32())
             return DateTimeTransformImpl<DataTypeDate32, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
-        else if (isDateTime(from_type))
+        else if (which.isDateTime())
             return DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
-        else if (isDateTime64(from_type))
+        else if (which.isDateTime64())
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
+
             const TransformDateTime64<Transform> transformer(scale);
             return DateTimeTransformImpl<DataTypeDateTime64, ToDataType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
@@ -80,7 +86,7 @@ public:
 
     bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
 
-    OptionalFieldInterval getPreimage(const IDataType & type, const Field & point) const override
+    RangeOrNull getPreimage(const IDataType & type, const Field & point) const override
     {
         if constexpr (Transform::hasPreimage())
             return Transform::getPreimage(type, point);

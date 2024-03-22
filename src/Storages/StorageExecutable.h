@@ -45,7 +45,7 @@ public:
 private:
     ExecutableSettings settings;
     std::vector<ASTPtr> input_queries;
-    LoggerPtr log;
+    Poco::Logger * log;
     std::unique_ptr<ShellCommandSourceCoordinator> coordinator;
 };
 

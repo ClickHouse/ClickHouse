@@ -14,7 +14,6 @@
 #include <Poco/Crypto/RSAKey.h>
 #include <Poco/Crypto/X509Certificate.h>
 #include <Common/MultiVersion.h>
-#include <Common/Logger.h>
 
 
 namespace DB
@@ -52,7 +51,7 @@ public:
 private:
     CertificateReloader() = default;
 
-    LoggerPtr log = getLogger("CertificateReloader");
+    Poco::Logger * log = &Poco::Logger::get("CertificateReloader");
 
     struct File
     {
@@ -62,7 +61,7 @@ private:
         std::string path;
         std::filesystem::file_time_type modification_time;
 
-        bool changeIfModified(std::string new_path, LoggerPtr logger);
+        bool changeIfModified(std::string new_path, Poco::Logger * logger);
     };
 
     File cert_file{"certificate"};

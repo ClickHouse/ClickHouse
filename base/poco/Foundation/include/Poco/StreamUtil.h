@@ -69,9 +69,6 @@
 // init() is called in the MyIOS constructor.
 // Therefore we replace each call to init() with
 // the poco_ios_init macro defined below.
-//
-// Also this macro will adjust exceptions() flags, since by default std::ios
-// will hide exceptions, while in ClickHouse it is better to pass them through.
 
 
 #if !defined(POCO_IOS_INIT_HACK)
@@ -82,10 +79,7 @@
 #if defined(POCO_IOS_INIT_HACK)
 #    define poco_ios_init(buf)
 #else
-#    define poco_ios_init(buf) do {                         \
-    init(buf);                                              \
-    this->exceptions(std::ios::failbit | std::ios::badbit); \
-} while (0)
+#    define poco_ios_init(buf) init(buf)
 #endif
 
 

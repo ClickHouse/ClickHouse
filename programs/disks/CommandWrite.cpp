@@ -21,10 +21,11 @@ public:
     {
         command_name = "write";
         command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "Write a file from `FROM_PATH` to `TO_PATH`";
-        usage = "write [OPTION]... [<FROM_PATH>] <TO_PATH>";
+        description = "Write File `from_path` or stdin to `to_path`";
+        usage = "write [OPTION]... <FROM_PATH> <TO_PATH>\nor\nstdin | write [OPTION]... <TO_PATH>\nPath should be in format './' or './path' or 'path'";
         command_option_description->add_options()
-            ("input", po::value<String>(), "file from which we are reading, defaults to `stdin`");
+            ("input", po::value<String>(), "set path to file to which we are write")
+            ;
     }
 
     void processOptions(
@@ -37,7 +38,7 @@ public:
 
     void execute(
         const std::vector<String> & command_arguments,
-        std::shared_ptr<DiskSelector> & disk_selector,
+        DB::ContextMutablePtr & global_context,
         Poco::Util::LayeredConfiguration & config) override
     {
         if (command_arguments.size() != 1)
@@ -50,7 +51,7 @@ public:
 
         const String & path = command_arguments[0];
 
-        DiskPtr disk = disk_selector->get(disk_name);
+        DiskPtr disk = global_context->getDisk(disk_name);
 
         String relative_path = validatePathAndGetAsRelative(path);
 

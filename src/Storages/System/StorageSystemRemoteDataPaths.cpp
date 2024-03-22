@@ -6,7 +6,6 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
 #include <Disks/IDisk.h>
 
@@ -20,14 +19,14 @@ StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & tab
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
     {
-        {"disk_name", std::make_shared<DataTypeString>(), "Disk name."},
-        {"path", std::make_shared<DataTypeString>(), "Disk path."},
-        {"cache_base_path", std::make_shared<DataTypeString>(), "Base directory of cache files."},
-        {"local_path", std::make_shared<DataTypeString>(), "Path of ClickHouse file, also used as metadata path."},
-        {"remote_path", std::make_shared<DataTypeString>(), "Blob path in object storage, with which ClickHouse file is associated with."},
-        {"size", std::make_shared<DataTypeUInt64>(), "Size of the file (compressed)."},
-        {"common_prefix_for_blobs", std::make_shared<DataTypeString>(), "Common prefix for blobs in object storage."},
-        {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Cache files for corresponding blob."},
+        {"disk_name", std::make_shared<DataTypeString>()},
+        {"path", std::make_shared<DataTypeString>()},
+        {"cache_base_path", std::make_shared<DataTypeString>()},
+        {"local_path", std::make_shared<DataTypeString>()},
+        {"remote_path", std::make_shared<DataTypeString>()},
+        {"size", std::make_shared<DataTypeUInt64>()},
+        {"common_prefix_for_blobs", std::make_shared<DataTypeString>()},
+        {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -64,9 +63,9 @@ Pipe StorageSystemRemoteDataPaths::read(
             FileCachePtr cache;
 
             if (disk->supportsCache())
-                cache = FileCacheFactory::instance().getByName(disk->getCacheName())->cache;
+                cache = FileCacheFactory::instance().getByName(disk->getCacheName()).cache;
 
-            for (const auto & [local_path, storage_objects] : remote_paths_by_local_path)
+            for (const auto & [local_path, common_prefox_for_objects, storage_objects] : remote_paths_by_local_path)
             {
                 for (const auto & object : storage_objects)
                 {
@@ -79,8 +78,7 @@ Pipe StorageSystemRemoteDataPaths::read(
                     col_local_path->insert(local_path);
                     col_remote_path->insert(object.remote_path);
                     col_size->insert(object.bytes_size);
-
-                    col_namespace->insertDefault();
+                    col_namespace->insert(common_prefox_for_objects);
 
                     if (cache)
                     {

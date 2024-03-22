@@ -31,7 +31,7 @@ public:
 
         IColumn::Permutation * permutation = nullptr;
 
-        void swap(Input & other) noexcept
+        void swap(Input & other)
         {
             chunk.swap(other.chunk);
             std::swap(skip_last_row, other.skip_last_row);
@@ -47,7 +47,6 @@ public:
 
     using Inputs = std::vector<Input>;
 
-    virtual const char * getName() const = 0;
     virtual void initialize(Inputs inputs) = 0;
     virtual void consume(Input & input, size_t source_num) = 0;
     virtual Status merge() = 0;

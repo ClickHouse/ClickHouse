@@ -13,7 +13,6 @@ const char * toString(JoinKind kind)
         case JoinKind::Full: return "FULL";
         case JoinKind::Cross: return "CROSS";
         case JoinKind::Comma: return "COMMA";
-        case JoinKind::Paste: return "PASTE";
     }
 };
 

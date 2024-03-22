@@ -111,7 +111,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUnique(const IDataTyp
 {
     auto creator = [&](auto x)
     {
-        using ColumnType = typename std::remove_pointer_t<decltype(x)>;
+        using ColumnType = typename std::remove_pointer<decltype(x)>::type;
         return ColumnUnique<ColumnType>::create(keys_type);
     };
     return createColumnUniqueImpl(keys_type, creator);
@@ -121,7 +121,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUnique(const IDataTyp
 {
     auto creator = [&](auto x)
     {
-        using ColumnType = typename std::remove_pointer_t<decltype(x)>;
+        using ColumnType = typename std::remove_pointer<decltype(x)>::type;
         return ColumnUnique<ColumnType>::create(std::move(keys), keys_type.isNullable());
     };
     return createColumnUniqueImpl(keys_type, creator);
@@ -153,12 +153,6 @@ SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const
     return std::make_shared<SerializationLowCardinality>(dictionary_type);
 }
 
-void DataTypeLowCardinality::forEachChild(const ChildCallback & callback) const
-{
-    callback(*dictionary_type);
-    dictionary_type->forEachChild(callback);
-}
-
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
@@ -182,8 +176,4 @@ DataTypePtr removeLowCardinality(const DataTypePtr & type)
     return type;
 }
 
-DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type)
-{
-    return removeNullable(removeLowCardinality(type));
-};
 }

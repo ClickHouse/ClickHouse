@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 
 
 namespace DB
@@ -9,7 +10,7 @@ namespace DB
 /* Allow to compute more accurate progress statistics */
 class ColumnSizeEstimator
 {
-    using ColumnToSize = std::map<String, UInt64>;
+    using ColumnToSize = MergeTreeDataPartInMemory::ColumnToSize;
     ColumnToSize map;
 public:
 
@@ -23,9 +24,9 @@ public:
         : map(std::move(map_))
     {
         for (const auto & name : key_columns)
-            if (!map.contains(name)) map[name] = 0;
+            if (!map.count(name)) map[name] = 0;
         for (const auto & name : ordinary_columns)
-            if (!map.contains(name)) map[name] = 0;
+            if (!map.count(name)) map[name] = 0;
 
         for (const auto & name : key_columns)
             sum_index_columns += map.at(name);

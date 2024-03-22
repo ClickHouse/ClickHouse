@@ -9,6 +9,14 @@
 
 #include <IO/S3/Client.h>
 
+namespace Aws
+{
+namespace S3
+{
+class Client;
+}
+}
+
 namespace DB
 {
 

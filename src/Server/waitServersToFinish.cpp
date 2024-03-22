@@ -16,7 +16,7 @@ size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, std
         current_connections = 0;
 
         {
-            std::lock_guard lock{mutex};
+            std::scoped_lock lock{mutex};
             for (auto & server : servers)
             {
                 server.stop();

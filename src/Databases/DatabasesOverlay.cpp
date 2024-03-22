@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 DatabasesOverlay::DatabasesOverlay(const String & name_, ContextPtr context_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger("DatabaseOverlay(" + name_ + ")"))
+    : IDatabase(name_), WithContext(context_->getGlobalContext()), log(&Poco::Logger::get("DatabaseOverlay(" + name_ + ")"))
 {
 }
 
@@ -149,9 +149,7 @@ ASTPtr DatabasesOverlay::getCreateTableQueryImpl(const String & name, ContextPtr
  */
 ASTPtr DatabasesOverlay::getCreateDatabaseQuery() const
 {
-    auto query = std::make_shared<ASTCreateQuery>();
-    query->setDatabase(getDatabaseName());
-    return query;
+    return std::make_shared<ASTCreateQuery>();
 }
 
 String DatabasesOverlay::getTableDataPath(const String & table_name) const

@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
 
 #include <Access/AccessControl.h>
@@ -147,15 +146,6 @@ AccessRightsElements InterpreterCreateRowPolicyQuery::getRequiredAccess() const
     for (const auto & row_policy_name : query.names->full_names)
         res.emplace_back(access_type, row_policy_name.database, row_policy_name.table_name);
     return res;
-}
-
-void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterCreateRowPolicyQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterCreateRowPolicyQuery", create_fn);
 }
 
 }

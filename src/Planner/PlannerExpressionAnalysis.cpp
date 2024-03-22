@@ -3,8 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 
-#include <Interpreters/Context.h>
-
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/WindowNode.h>
@@ -111,7 +109,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                             continue;
 
                         auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                        available_columns_after_aggregation.emplace_back(expression_dag_node->column, expression_type_after_aggregation, expression_dag_node->result_name);
+                        available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
                         aggregation_keys.push_back(expression_dag_node->result_name);
                         before_aggregation_actions->getOutputs().push_back(expression_dag_node);
                         before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
@@ -161,7 +159,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                         continue;
 
                     auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                    available_columns_after_aggregation.emplace_back(expression_dag_node->column, expression_type_after_aggregation, expression_dag_node->result_name);
+                    available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
                     aggregation_keys.push_back(expression_dag_node->result_name);
                     before_aggregation_actions->getOutputs().push_back(expression_dag_node);
                     before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
@@ -548,20 +546,6 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     auto project_names_input = chain_available_output_columns ? *chain_available_output_columns : current_output_columns;
-
-    /** For distributed query `isToAggregationState`, we do not project names on shards/replicas.
-      * However, constant columns from project_names_actions still can be required on the initiator.
-      * For example, for query:
-      *   SELECT hostName(), number from clusterAllReplicas(default, numbers_mt(3)) ORDER BY number;
-      * executed to stage `WithMergeableStateAfterAggregationAndLimit` on replicas
-      * we must send hostName() column to initiator.
-      */
-    if (planner_query_processing_info.isToAggregationState())
-    {
-        for (auto & column : project_names_input)
-            column.column = nullptr;
-    }
-
     bool has_with_fill = sort_analysis_result_optional.has_value() && sort_analysis_result_optional->has_with_fill;
 
     /** If there is WITH FILL we must use non constant projection columns.

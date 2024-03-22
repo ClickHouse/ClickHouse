@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -197,15 +196,6 @@ ASTs InterpreterShowGrantsQuery::getGrantQueries(const IAccessEntity & user_or_r
 ASTs InterpreterShowGrantsQuery::getAttachGrantQueries(const IAccessEntity & user_or_role)
 {
     return getGrantQueriesImpl(user_or_role, nullptr, true);
-}
-
-void registerInterpreterShowGrantsQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterShowGrantsQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterShowGrantsQuery", create_fn);
 }
 
 }

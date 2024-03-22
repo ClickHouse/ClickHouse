@@ -9,8 +9,6 @@ FROM ubuntu:20.04 as clickhouse-test-runner-base
 VOLUME /packages
 
 CMD apt-get update ;\
-    DEBIAN_FRONTEND=noninteractive \
-    apt install -y /packages/clickhouse-common-static_*.deb \
-        /packages/clickhouse-client_*.deb \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+	DEBIAN_FRONTEND=noninteractive \
+	apt install -y /packages/clickhouse-common-static_*.deb \
+		/packages/clickhouse-client_*.deb

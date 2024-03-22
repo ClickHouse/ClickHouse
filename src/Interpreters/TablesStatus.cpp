@@ -35,7 +35,7 @@ void TableStatus::read(ReadBuffer & in)
 void TablesStatusRequest::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method TablesStatusRequest::write is called for unsupported server revision");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: method TablesStatusRequest::write is called for unsupported server revision");
 
     writeVarUInt(tables.size(), out);
     for (const auto & table_name : tables)

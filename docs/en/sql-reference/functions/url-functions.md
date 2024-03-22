@@ -155,7 +155,7 @@ Configuration example:
 cutToFirstSignificantSubdomain(URL, TLD)
 ```
 
-**Arguments**
+**Parameters**
 
 - `URL` — URL. [String](../../sql-reference/data-types/string.md).
 - `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
@@ -209,7 +209,7 @@ Configuration example:
 cutToFirstSignificantSubdomainCustomWithWWW(URL, TLD)
 ```
 
-**Arguments**
+**Parameters**
 
 - `URL` — URL. [String](../../sql-reference/data-types/string.md).
 - `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
@@ -263,7 +263,7 @@ Configuration example:
 firstSignificantSubdomainCustom(URL, TLD)
 ```
 
-**Arguments**
+**Parameters**
 
 - `URL` — URL. [String](../../sql-reference/data-types/string.md).
 - `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).

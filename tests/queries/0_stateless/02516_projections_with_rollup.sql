@@ -1,3 +1,6 @@
+-- Tags: disabled
+-- FIXME https://github.com/ClickHouse/ClickHouse/issues/49552
+
 DROP TABLE IF EXISTS video_log;
 DROP TABLE IF EXISTS video_log_result__fuzz_0;
 DROP TABLE IF EXISTS rng;
@@ -13,8 +16,7 @@ CREATE TABLE video_log
 )
 ENGINE = MergeTree
 PARTITION BY toDate(datetime)
-ORDER BY (user_id, device_id)
-SETTINGS index_granularity_bytes=10485760, index_granularity=8192;
+ORDER BY (user_id, device_id);
 
 CREATE TABLE video_log_result__fuzz_0
 (
@@ -60,7 +62,7 @@ LIMIT 10;
 ALTER TABLE video_log
     ADD PROJECTION p_norm
     (
-        SELECT
+        SELECT 
             datetime,
             device_id,
             bytes,
@@ -75,12 +77,12 @@ SETTINGS mutations_sync = 1;
 ALTER TABLE video_log
     ADD PROJECTION p_agg
     (
-        SELECT
+        SELECT 
             toStartOfHour(datetime) AS hour,
             domain,
             sum(bytes),
             avg(duration)
-        GROUP BY
+        GROUP BY 
             hour,
             domain
     );

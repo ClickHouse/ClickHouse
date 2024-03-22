@@ -183,7 +183,7 @@ public:
     class SchemaRegistry;
 
 private:
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
 
     bool allowSyncAfterError() const override { return true; }

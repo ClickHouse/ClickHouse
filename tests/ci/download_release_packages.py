@@ -3,7 +3,7 @@
 import os
 import logging
 
-import requests
+import requests  # type: ignore
 
 from requests.adapters import HTTPAdapter  # type: ignore
 from urllib3.util.retry import Retry  # type: ignore

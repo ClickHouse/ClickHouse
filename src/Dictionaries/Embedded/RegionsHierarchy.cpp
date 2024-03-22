@@ -12,7 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
+}
 }
 
 
@@ -23,7 +23,7 @@ RegionsHierarchy::RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_) 
 
 void RegionsHierarchy::reload()
 {
-    LoggerPtr log = getLogger("RegionsHierarchy");
+    Poco::Logger * log = &Poco::Logger::get("RegionsHierarchy");
 
     if (!data_source->isModified())
         return;
@@ -54,8 +54,9 @@ void RegionsHierarchy::reload()
         if (region_entry.id > max_region_id)
         {
             if (region_entry.id > max_size)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA, "Region id is too large: {}, should be not more than {}", region_entry.id, max_size);
+                throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                    "Region id is too large: {}, should be not more than {}",
+                    DB::toString(region_entry.id), DB::toString(max_size));
 
             max_region_id = region_entry.id;
 
@@ -111,18 +112,16 @@ void RegionsHierarchy::reload()
             ++depth;
 
             if (depth == std::numeric_limits<RegionDepth>::max())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Logical error in regions hierarchy: region {} possible is inside infinite loop", current);
+                throw Poco::Exception(
+                    "Logical error in regions hierarchy: region " + DB::toString(current) + " possible is inside infinite loop");
 
             current = new_parents[current];
             if (current == 0)
                 break;
 
             if (current > max_region_id)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Logical error in regions hierarchy: region {} (specified as parent) doesn't exist",
-                    current);
+                throw Poco::Exception(
+                    "Logical error in regions hierarchy: region " + DB::toString(current) + " (specified as parent) doesn't exist");
 
             if (types[current] == RegionType::City)
                 new_city[i] = current;
@@ -156,6 +155,4 @@ void RegionsHierarchy::reload()
     top_continent.swap(new_top_continent);
     populations.swap(new_populations);
     depths.swap(new_depths);
-}
-
 }

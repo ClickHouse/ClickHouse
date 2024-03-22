@@ -69,7 +69,7 @@ const FinalCellWithSlabs * FinalCellWithSlabs::find(Coord, Coord) const
 
 SlabsPolygonIndex::SlabsPolygonIndex(
     const std::vector<Polygon> & polygons)
-    : log(getLogger("SlabsPolygonIndex")),
+    : log(&Poco::Logger::get("SlabsPolygonIndex")),
       sorted_x(uniqueX(polygons))
 {
     indexBuild(polygons);
@@ -267,7 +267,7 @@ bool SlabsPolygonIndex::find(const Point & point, size_t & id) const
     Coord y = point.y();
 
     /** Not in bounding box */
-    if (x < sorted_x.front() || x > sorted_x.back())
+    if (x < sorted_x[0] || x > sorted_x.back())
         return false;
 
     bool found = false;

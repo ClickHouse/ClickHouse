@@ -9,7 +9,6 @@
 #include <Parsers/TokenIterator.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -62,18 +61,11 @@ public:
         uint32_t depth = 0;
         uint32_t max_depth = 0;
 
-        uint32_t backtracks = 0;
-        uint32_t max_backtracks = 0;
-
-        Pos(Tokens & tokens_, uint32_t max_depth_, uint32_t max_backtracks_)
-            : TokenIterator(tokens_), max_depth(max_depth_), max_backtracks(max_backtracks_)
+        Pos(Tokens & tokens_, uint32_t max_depth_) : TokenIterator(tokens_), max_depth(max_depth_)
         {
         }
 
-        Pos(TokenIterator token_iterator_, uint32_t max_depth_, uint32_t max_backtracks_)
-            : TokenIterator(token_iterator_), max_depth(max_depth_), max_backtracks(max_backtracks_)
-        {
-        }
+        Pos(TokenIterator token_iterator_, uint32_t max_depth_) : TokenIterator(token_iterator_), max_depth(max_depth_) { }
 
         ALWAYS_INLINE void increaseDepth()
         {
@@ -81,21 +73,6 @@ public:
             if (unlikely(max_depth > 0 && depth > max_depth))
                 throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "Maximum parse depth ({}) exceeded. "
                     "Consider rising max_parser_depth parameter.", max_depth);
-
-            /** Sometimes the maximum parser depth can be set to a high value by the user,
-              * but we still want to avoid stack overflow.
-              * For this purpose, we can use the checkStackSize function, but it is too heavy.
-              * The solution is to check not too frequently.
-              * The frequency is arbitrary, but not too large, not too small,
-              * and a power of two to simplify the division.
-              */
-#if defined(USE_MUSL) || defined(SANITIZER) || !defined(NDEBUG)
-            static constexpr uint32_t check_frequency = 128;
-#else
-            static constexpr uint32_t check_frequency = 8192;
-#endif
-            if (depth % check_frequency == 0)
-                checkStackSize();
         }
 
         ALWAYS_INLINE void decreaseDepth()
@@ -104,10 +81,6 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in parser: incorrect calculation of parse depth");
             --depth;
         }
-
-        Pos(const Pos & rhs) = default;
-
-        Pos & operator=(const Pos & rhs);
     };
 
     /** Get the text of this parser parses. */

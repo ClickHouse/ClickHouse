@@ -2,7 +2,6 @@
 
 #include <Core/Defines.h>
 #include <algorithm>
-#include <memory>
 
 
 namespace DB
@@ -43,7 +42,7 @@ public:
         inline void resize(size_t size) { end_pos = begin_pos + size; }
         inline bool empty() const { return size() == 0; }
 
-        inline void swap(Buffer & other) noexcept
+        inline void swap(Buffer & other)
         {
             std::swap(begin_pos, other.begin_pos);
             std::swap(end_pos, other.end_pos);
@@ -60,9 +59,6 @@ public:
     BufferBase(Position ptr, size_t size, size_t offset)
         : pos(ptr + offset), working_buffer(ptr, ptr + size), internal_buffer(ptr, ptr + size) {}
 
-    /// Assign the buffers and pos.
-    /// Be careful when calling this from ReadBuffer::nextImpl() implementations: `offset` is
-    /// effectively ignored because ReadBuffer::next() reassigns `pos`.
     void set(Position ptr, size_t size, size_t offset)
     {
         internal_buffer = Buffer(ptr, ptr + size);
@@ -85,7 +81,7 @@ public:
     /// How many bytes are available for read/write
     inline size_t available() const { return size_t(working_buffer.end() - pos); }
 
-    inline void swap(BufferBase & other) noexcept
+    inline void swap(BufferBase & other)
     {
         internal_buffer.swap(other.internal_buffer);
         working_buffer.swap(other.working_buffer);

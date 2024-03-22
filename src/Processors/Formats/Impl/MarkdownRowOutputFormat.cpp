@@ -52,7 +52,7 @@ void MarkdownRowOutputFormat::writeRowEndDelimiter()
 
 void MarkdownRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    serialization.serializeTextMarkdown(column, row_num, out, format_settings);
+    serialization.serializeTextEscaped(column, row_num, out, format_settings);
 }
 
 void registerOutputFormatMarkdown(FormatFactory & factory)

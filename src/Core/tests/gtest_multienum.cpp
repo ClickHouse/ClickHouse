@@ -7,6 +7,7 @@
 namespace
 {
 
+using namespace DB;
 enum class TestEnum : UInt8
 {
     // name represents which bit is going to be set

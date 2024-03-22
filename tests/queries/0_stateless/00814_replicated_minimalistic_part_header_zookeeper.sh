@@ -7,9 +7,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-SHARD=$($CLICKHOUSE_CLIENT --query "Select getMacro('shard')")
-REPLICA=$($CLICKHOUSE_CLIENT --query "Select getMacro('replica')")
-
 $CLICKHOUSE_CLIENT -nm -q "
 
 DROP TABLE IF EXISTS part_header_r1;
@@ -57,8 +54,8 @@ elapsed=1
 until [ $elapsed -eq 5 ];
 do
     sleep $(( elapsed++ ))
-    count1=$($CLICKHOUSE_CLIENT --query="SELECT count(name) FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/$SHARD/replicas/1$REPLICA/parts'")
-    count2=$($CLICKHOUSE_CLIENT --query="SELECT count(name) FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/$SHARD/replicas/2$REPLICA/parts'")
+    count1=$($CLICKHOUSE_CLIENT --query="SELECT count(name) FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/s1/replicas/1r1/parts'")
+    count2=$($CLICKHOUSE_CLIENT --query="SELECT count(name) FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/s1/replicas/2r1/parts'")
     [[ $count1 == 1 && $count2 == 1 ]] && break
 done
 
@@ -67,10 +64,10 @@ $CLICKHOUSE_CLIENT -nm -q "
 SELECT '*** Test part removal ***';
 SELECT '*** replica 1 ***';
 SELECT name FROM system.parts WHERE active AND database = currentDatabase() AND table = 'part_header_r1';
-SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/$SHARD/replicas/1$REPLICA/parts';
+SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/s1/replicas/1r1/parts';
 SELECT '*** replica 2 ***';
 SELECT name FROM system.parts WHERE active AND database = currentDatabase() AND table = 'part_header_r2';
-SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/$SHARD/replicas/2$REPLICA/parts';
+SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/s1/replicas/2r1/parts';
 
 SELECT '*** Test ALTER ***';
 ALTER TABLE part_header_r1 MODIFY COLUMN y String;

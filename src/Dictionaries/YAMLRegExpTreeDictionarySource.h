@@ -64,7 +64,7 @@ private:
 
     ContextPtr context;
 
-    LoggerPtr logger;
+    Poco::Logger * logger;
     Poco::Timestamp last_modification;
 
     Poco::Timestamp getLastModification() const;

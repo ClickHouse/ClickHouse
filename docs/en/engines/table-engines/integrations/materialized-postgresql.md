@@ -2,19 +2,10 @@
 slug: /en/engines/table-engines/integrations/materialized-postgresql
 sidebar_position: 130
 sidebar_label: MaterializedPostgreSQL
+title: MaterializedPostgreSQL
 ---
 
-# [experimental] MaterializedPostgreSQL
-
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts replication process, i.e. executes background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
-
-:::note
-This table engine is experimental. To use it, set `allow_experimental_materialized_postgresql_table` to 1 in your configuration files or by using the `SET` command:
-```sql
-SET allow_experimental_materialized_postgresql_table=1
-```
-:::
-
 
 If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
 

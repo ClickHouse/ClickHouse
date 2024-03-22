@@ -6,12 +6,11 @@
 namespace DB
 {
 
-template<typename Name>
-class FunctionIdentityBase : public IFunction
+class FunctionIdentity : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIdentityBase<Name>>(); }
+    static constexpr auto name = "identity";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIdentity>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -28,18 +27,5 @@ public:
         return arguments.front().column;
     }
 };
-
-struct IdentityName
-{
-    static constexpr auto name = "identity";
-};
-
-struct ScalarSubqueryResultName
-{
-    static constexpr auto name = "__scalarSubqueryResult";
-};
-
-using FunctionIdentity = FunctionIdentityBase<IdentityName>;
-using FunctionScalarSubqueryResult = FunctionIdentityBase<ScalarSubqueryResultName>;
 
 }

@@ -2,7 +2,6 @@
 
 #include <random>
 #include <base/getThreadId.h>
-#include <Common/thread_local_rng.h>
 #include <Common/Exception.h>
 #include <base/hex.h>
 #include <Core/Settings.h>
@@ -386,7 +385,7 @@ TracingContextHolder::~TracingContextHolder()
                 /// it's helpful to record the thread_id so that we know the thread switching from the span log
                 this->root_span.addAttribute("clickhouse.thread_id", getThreadId());
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (...)
             {
                 /// It's acceptable that the attribute is not recorded in case of any exception,
                 /// so the exception is ignored to try to log the span.

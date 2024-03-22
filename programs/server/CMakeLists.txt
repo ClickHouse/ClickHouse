@@ -30,7 +30,3 @@ endif()
 clickhouse_program_add(server)
 
 install(FILES config.xml users.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)
-
-if (ENABLE_FUZZING)
-    add_subdirectory(fuzzers)
-endif()

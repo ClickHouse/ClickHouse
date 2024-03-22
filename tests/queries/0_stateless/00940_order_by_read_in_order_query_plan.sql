@@ -1,4 +1,4 @@
-SET optimize_read_in_order = 1, query_plan_read_in_order = 1, allow_experimental_analyzer = 0;
+SET optimize_read_in_order = 1, query_plan_read_in_order=1;
 
 drop table if exists tab;
 drop table if exists tab2;

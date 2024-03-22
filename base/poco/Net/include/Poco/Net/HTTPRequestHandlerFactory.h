@@ -30,6 +30,7 @@ namespace Net
 
 
     class HTTPServerRequest;
+    class HTTPServerResponse;
     class HTTPRequestHandler;
 
 

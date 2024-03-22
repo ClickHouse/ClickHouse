@@ -35,7 +35,7 @@ public:
         }
         const auto * query = path->jsonpath_query;
 
-        for (const auto & child_ast : query->children)
+        for (auto child_ast : query->children)
         {
             if (typeid_cast<ASTJSONPathRoot *>(child_ast.get()))
             {
@@ -103,16 +103,6 @@ public:
                 return status;
             }
         }
-    }
-
-    void reinitialize()
-    {
-        while (current_visitor >= 0)
-        {
-            visitors[current_visitor]->reinitialize();
-            current_visitor--;
-        }
-        current_visitor = 0;
     }
 
 private:

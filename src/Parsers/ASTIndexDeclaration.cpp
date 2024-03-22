@@ -36,7 +36,7 @@ void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & sta
                 s.ostr << ")";
             }
             else
-                expr->formatImpl(s, state, frame);
+            expr->formatImpl(s, state, frame);
         }
         else
         {
@@ -59,3 +59,4 @@ void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & sta
 }
 
 }
+

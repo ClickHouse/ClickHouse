@@ -53,12 +53,10 @@ class JoinClause
 {
 public:
     /// Add keys
-    void addKey(const ActionsDAG::Node * left_key_node, const ActionsDAG::Node * right_key_node, bool null_safe_comparison = false)
+    void addKey(const ActionsDAG::Node * left_key_node, const ActionsDAG::Node * right_key_node)
     {
         left_key_nodes.emplace_back(left_key_node);
         right_key_nodes.emplace_back(right_key_node);
-        if (null_safe_comparison)
-            nullsafe_compare_key_indexes.emplace(left_key_nodes.size() - 1);
     }
 
     void addASOFKey(const ActionsDAG::Node * left_key_node, const ActionsDAG::Node * right_key_node, ASOFJoinInequality asof_inequality)
@@ -97,11 +95,6 @@ public:
     ActionsDAG::NodeRawConstPtrs & getRightKeyNodes()
     {
         return right_key_nodes;
-    }
-
-    bool isNullsafeCompareKey(size_t idx) const
-    {
-        return nullsafe_compare_key_indexes.contains(idx);
     }
 
     /// Returns true if JOIN clause has ASOF conditions, false otherwise
@@ -154,8 +147,6 @@ private:
 
     ActionsDAG::NodeRawConstPtrs left_filter_condition_nodes;
     ActionsDAG::NodeRawConstPtrs right_filter_condition_nodes;
-
-    std::unordered_set<size_t> nullsafe_compare_key_indexes;
 };
 
 using JoinClauses = std::vector<JoinClause>;
@@ -165,8 +156,7 @@ struct JoinClausesAndActions
     /// Join clauses. Actions dag nodes point into join_expression_actions.
     JoinClauses join_clauses;
     /// Whole JOIN ON section expressions
-    ActionsDAGPtr left_join_tmp_expression_actions;
-    ActionsDAGPtr right_join_tmp_expression_actions;
+    ActionsDAGPtr join_expression_actions;
     /// Left join expressions actions
     ActionsDAGPtr left_join_expressions_actions;
     /// Right join expressions actions

@@ -16,7 +16,7 @@ class ASTCreateIndexQuery : public ASTQueryWithTableAndOutput, public ASTQueryWi
 public:
     ASTPtr index_name;
 
-    /// Stores the ASTIndexDeclaration here.
+    /// Stores the IndexDeclaration here.
     ASTPtr index_decl;
 
     bool if_not_exists{false};

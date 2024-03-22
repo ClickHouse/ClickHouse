@@ -105,7 +105,7 @@ CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std
 }
 
 
-bool CertificateReloader::File::changeIfModified(std::string new_path, LoggerPtr logger)
+bool CertificateReloader::File::changeIfModified(std::string new_path, Poco::Logger * logger)
 {
     std::error_code ec;
     std::filesystem::file_time_type new_modification_time = std::filesystem::last_write_time(new_path, ec);

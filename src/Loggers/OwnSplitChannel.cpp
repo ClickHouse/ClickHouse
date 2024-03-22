@@ -1,23 +1,25 @@
 #include "OwnSplitChannel.h"
 #include "OwnFormattingChannel.h"
 
+#include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/TextLog.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
+#include <sys/time.h>
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <base/getThreadId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/IO.h>
 
-
 namespace DB
 {
-
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
+
 #ifndef WITHOUT_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 
@@ -25,7 +27,7 @@ void OwnSplitChannel::log(const Poco::Message & msg)
         return;
 #endif
 
-    if (auto masker = SensitiveDataMasker::getInstance())
+    if (auto * masker = SensitiveDataMasker::getInstance())
     {
         auto message_text = msg.getText();
         auto matches = masker->wipeSensitiveData(message_text);

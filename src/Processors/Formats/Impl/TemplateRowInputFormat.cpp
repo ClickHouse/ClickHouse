@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 [[noreturn]] static void throwUnexpectedEof(size_t row_num)
 {
-    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected EOF while parsing row {}. "
+    throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected EOF while parsing row {}. "
                            "Maybe last row has wrong format or input doesn't contain specified suffix before EOF.",
                            std::to_string(row_num));
 }
@@ -121,7 +121,7 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
 
     updateDiagnosticInfo();
 
-    if (likely(getRowNum() != 0))
+    if (likely(row_num != 1))
         format_reader->skipRowBetweenDelimiter();
 
     extra.read_columns.assign(columns.size(), false);
@@ -160,7 +160,7 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type,
     catch (Exception & e)
     {
         if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
-            throwUnexpectedEof(getRowNum());
+            throwUnexpectedEof(row_num);
         throw;
     }
 }
@@ -198,7 +198,7 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
 
     out << "\nUsing format string (from format_schema_rows): " << row_format.dump() << "\n";
     out << "\nTrying to parse next row, because suffix does not match:\n";
-    if (likely(getRowNum() != 0) && !parseDelimiterWithDiagnosticInfo(out, *buf, row_between_delimiter, "delimiter between rows", ignore_spaces))
+    if (likely(row_num != 1) && !parseDelimiterWithDiagnosticInfo(out, *buf, row_between_delimiter, "delimiter between rows", ignore_spaces))
         return false;
 
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
@@ -609,9 +609,7 @@ void registerTemplateSchemaReader(FormatFactory & factory)
         {
             size_t index = 0;
             auto idx_getter = [&](const String &) -> std::optional<size_t> { return index++; };
-            ParsedTemplateFormatString row_format;
-            if (!settings.template_settings.row_format.empty())
-                row_format = fillRowFormat(settings, idx_getter, false);
+            auto row_format = fillRowFormat(settings, idx_getter, false);
             std::unordered_set<FormatSettings::EscapingRule> visited_escaping_rules;
             String result = fmt::format("row_format={}, resultset_format={}, row_between_delimiter={}",
                 settings.template_settings.row_format,

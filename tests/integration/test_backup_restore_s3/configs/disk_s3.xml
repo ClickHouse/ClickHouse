@@ -58,6 +58,5 @@
         <allowed_disk>disk_s3</allowed_disk>
         <allowed_disk>disk_s3_plain</allowed_disk>
         <allowed_disk>disk_s3_cache</allowed_disk>
-        <allowed_disk>disk_s3_other_bucket</allowed_disk>
     </backups>
 </clickhouse>

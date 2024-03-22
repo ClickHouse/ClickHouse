@@ -37,9 +37,7 @@ CREATE DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict_ipv4_trie
 PRIMARY KEY prefix
 SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db currentDatabase() table 'table_ipv4_trie'))
 LAYOUT(IP_TRIE())
-LIFETIME(MIN 10 MAX 100)
-SETTINGS(dictionary_use_async_executor=1, max_threads=8)
-;
+LIFETIME(MIN 10 MAX 100);
 
 -- fuzzer
 SELECT '127.0.0.0/24' = dictGetString({CLICKHOUSE_DATABASE:String} || '.dict_ipv4_trie', 'prefixprefixprefixprefix', tuple(IPv4StringToNumOrDefault('127.0.0.0127.0.0.0'))); -- { serverError 36 }

@@ -317,7 +317,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             String{},
             String{},
             DistributedSettings{},
-            LoadingStrictnessLevel::CREATE,
+            false,
             cluster)
         : std::make_shared<StorageDistributed>(
             StorageID(getDatabaseName(), table_name),
@@ -332,7 +332,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             String{},
             String{},
             DistributedSettings{},
-            LoadingStrictnessLevel::CREATE,
+            false,
             cluster);
 
     res->startup();

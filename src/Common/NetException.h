@@ -29,7 +29,7 @@ public:
     }
 
     NetException * clone() const override { return new NetException(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; }
 
 private:
     const char * name() const noexcept override { return "DB::NetException"; }

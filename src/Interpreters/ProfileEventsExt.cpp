@@ -99,7 +99,7 @@ static void dumpMemoryTracker(ProfileEventsSnapshot const & snapshot, DB::Mutabl
 }
 
 void getProfileEvents(
-    const String & host_name,
+    const String & server_display_name,
     DB::InternalProfileEventsQueuePtr profile_queue,
     DB::Block & block,
     ThreadIdToCountersSnapshot & last_sent_snapshots)
@@ -139,8 +139,8 @@ void getProfileEvents(
     }
     last_sent_snapshots = std::move(new_snapshots);
 
-    dumpProfileEvents(group_snapshot, columns, host_name);
-    dumpMemoryTracker(group_snapshot, columns, host_name);
+    dumpProfileEvents(group_snapshot, columns, server_display_name);
+    dumpMemoryTracker(group_snapshot, columns, server_display_name);
 
     Block curr_block;
 

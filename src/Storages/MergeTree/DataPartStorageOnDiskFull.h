@@ -48,7 +48,6 @@ public:
     void removeFileIfExists(const String & name) override;
 
     void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
-    void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
 
     void beginTransaction() override;
     void commitTransaction() override;

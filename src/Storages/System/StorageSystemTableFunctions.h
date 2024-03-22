@@ -6,12 +6,12 @@
 namespace DB
 {
 
-class StorageSystemTableFunctions final : public IStorageSystemOneBlock
+class StorageSystemTableFunctions final : public IStorageSystemOneBlock<StorageSystemTableFunctions>
 {
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
 public:
     std::string getName() const override
@@ -19,7 +19,7 @@ public:
         return "SystemTableFunctions";
     }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 };
 
 }

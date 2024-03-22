@@ -26,7 +26,6 @@ std::optional<String> ASTAuthenticationData::getPassword() const
 
     return {};
 }
-
 std::optional<String> ASTAuthenticationData::getSalt() const
 {
     if (type && *type == AuthenticationType::SHA256_PASSWORD && children.size() == 2)
@@ -55,7 +54,6 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
     bool salt = false;
     bool parameter = false;
     bool parameters = false;
-    bool scheme = false;
 
     if (type)
     {
@@ -117,20 +115,6 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
 
                 prefix = "BY";
                 password = true;
-                break;
-            }
-            case AuthenticationType::SSH_KEY:
-            {
-                prefix = "BY";
-                parameters = true;
-                break;
-            }
-            case AuthenticationType::HTTP:
-            {
-                prefix = "SERVER";
-                parameter = true;
-                if (children.size() == 2)
-                    scheme = true;
                 break;
             }
             case AuthenticationType::NO_PASSWORD: [[fallthrough]];
@@ -195,13 +179,6 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
             child->format(settings);
         }
     }
-
-    if (scheme)
-    {
-        settings.ostr << " SCHEME ";
-        children[1]->format(settings);
-    }
-
 }
 
 bool ASTAuthenticationData::hasSecretParts() const

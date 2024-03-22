@@ -109,26 +109,15 @@ def test_parallel_quorum_actually_quorum(started_cluster):
         def insert_value_to_node(node, settings):
             node.query("INSERT INTO q VALUES(3, 'Hi')", settings=settings)
 
-        def insert_fail_quorum_timeout(node, settings):
-            if "insert_quorum_timeout" not in settings:
-                settings["insert_quorum_timeout"] = "1000"
-            error = node.query_and_get_error(
-                "INSERT INTO q VALUES(3, 'Hi')", settings=settings
-            )
-            assert (
-                "DB::Exception: Unknown quorum status. The data was inserted in the local replica but we could not verify quorum. Reason: Timeout while waiting for quorum"
-                in error
-            ), error
-
         p = Pool(2)
         res = p.apply_async(
-            insert_fail_quorum_timeout,
+            insert_value_to_node,
             (
                 node1,
                 {
                     "insert_quorum": "3",
                     "insert_quorum_parallel": "1",
-                    "insert_quorum_timeout": "1000",
+                    "insert_quorum_timeout": "60000",
                 },
             ),
         )
@@ -150,19 +139,14 @@ def test_parallel_quorum_actually_quorum(started_cluster):
         )
 
         # Insert to the second to satisfy quorum
-        insert_fail_quorum_timeout(
-            node2,
-            {
-                "insert_quorum": "3",
-                "insert_quorum_parallel": "1",
-                "insert_quorum_timeout": "1000",
-            },
+        insert_value_to_node(
+            node2, {"insert_quorum": "3", "insert_quorum_parallel": "1"}
         )
 
         res.get()
 
         assert_eq_with_retry(node1, "SELECT COUNT() FROM q", "3")
-        assert_eq_with_retry(node2, "SELECT COUNT() FROM q", "0")
+        assert_eq_with_retry(node2, "SELECT COUNT() FROM q", "1")
         assert_eq_with_retry(node3, "SELECT COUNT() FROM q", "3")
 
         p.close()

@@ -91,7 +91,7 @@ private:
     std::mutex mutex;
     std::unique_ptr<RemoteFileCacheType> lru_caches;
 
-    LoggerPtr log = getLogger("ExternalDataSourceCache");
+    Poco::Logger * log = &Poco::Logger::get("ExternalDataSourceCache");
 
     String calculateLocalPath(IRemoteFileMetadataPtr meta) const;
 

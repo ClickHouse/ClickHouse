@@ -5,40 +5,12 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-void ASTPartition::setPartitionID(const ASTPtr & ast)
-{
-    if (children.empty())
-    {
-        children.push_back(ast);
-        id = children[0].get();
-    }
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot have multiple children for partition AST");
-}
-void ASTPartition::setPartitionValue(const ASTPtr & ast)
-{
-    if (children.empty())
-    {
-        children.push_back(ast);
-        value = children[0].get();
-    }
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot have multiple children for partition AST");
-}
-
-
 String ASTPartition::getID(char delim) const
 {
     if (value)
         return "Partition";
-
-    std::string id_string = id ? id->getID() : "";
-    return "Partition_ID" + (delim + id_string);
+    else
+        return "Partition_ID" + (delim + id);
 }
 
 ASTPtr ASTPartition::clone() const
@@ -48,14 +20,8 @@ ASTPtr ASTPartition::clone() const
 
     if (value)
     {
-        res->children.push_back(children[0]->clone());
-        res->value = res->children[0].get();
-    }
-
-    if (id)
-    {
-        res->children.push_back(children[0]->clone());
-        res->id = res->children[0].get();
+        res->value = value->clone();
+        res->children.push_back(res->value);
     }
 
     return res;
@@ -67,14 +33,18 @@ void ASTPartition::formatImpl(const FormatSettings & settings, FormatState & sta
     {
         value->formatImpl(settings, state, frame);
     }
-    else if (all)
-    {
-        settings.ostr << "ALL";
-    }
     else
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ID " << (settings.hilite ? hilite_none : "");
-        id->formatImpl(settings, state, frame);
+        if (all)
+            settings.ostr << "ALL";
+        else
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "ID " << (settings.hilite ? hilite_none : "");
+            WriteBufferFromOwnString id_buf;
+            writeQuoted(id, id_buf);
+            settings.ostr << id_buf.str();
+        }
     }
 }
+
 }

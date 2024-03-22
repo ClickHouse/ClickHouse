@@ -30,7 +30,7 @@ private:
         column.insertFrom(sample_column, 0);
     }
 
-    LoggerPtr log;
+    Poco::Logger * log;
     const UInt64 max_block_size;
     ExternalResultDescription description;
 

@@ -11,16 +11,10 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int TOO_LARGE_ARRAY_SIZE;
-}
-
 template <typename SingleLevelSet, typename TwoLevelSet>
 class UniqExactSet
 {
     static_assert(std::is_same_v<typename SingleLevelSet::value_type, typename TwoLevelSet::value_type>);
-    static_assert(std::is_same_v<typename SingleLevelSet::Cell::State, HashTableNoState>);
 
 public:
     using value_type = typename SingleLevelSet::value_type;
@@ -39,8 +33,8 @@ public:
     /// This method will convert all the SingleLevelSet to TwoLevelSet in parallel if the hashsets are not all singlelevel or not all twolevel.
     static void parallelizeMergePrepare(const std::vector<UniqExactSet *> & data_vec, ThreadPool & thread_pool)
     {
-        UInt64 single_level_set_num = 0;
-        UInt64 all_single_hash_size = 0;
+        unsigned long single_level_set_num = 0;
+        unsigned long all_single_hash_size = 0;
 
         for (auto ele : data_vec)
         {
@@ -153,36 +147,7 @@ public:
         }
     }
 
-    void read(ReadBuffer & in)
-    {
-        size_t new_size = 0;
-        readVarUInt(new_size, in);
-        if (new_size > 100'000'000'000)
-            throw DB::Exception(
-                DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized hash table is suspiciously large: {}", new_size);
-
-        if (worthConvertingToTwoLevel(new_size))
-        {
-            two_level_set = std::make_shared<TwoLevelSet>(new_size);
-            for (size_t i = 0; i < new_size; ++i)
-            {
-                typename SingleLevelSet::Cell x;
-                x.read(in);
-                asTwoLevel().insert(x.getValue());
-            }
-        }
-        else
-        {
-            asSingleLevel().reserve(new_size);
-
-            for (size_t i = 0; i < new_size; ++i)
-            {
-                typename SingleLevelSet::Cell x;
-                x.read(in);
-                asSingleLevel().insert(x.getValue());
-            }
-        }
-    }
+    void read(ReadBuffer & in) { asSingleLevel().read(in); }
 
     void write(WriteBuffer & out) const
     {
@@ -200,8 +165,6 @@ public:
     {
         return two_level_set ? two_level_set : std::make_shared<TwoLevelSet>(asSingleLevel());
     }
-
-    static bool worthConvertingToTwoLevel(size_t size) { return size > 100'000; }
 
     void convertToTwoLevel()
     {

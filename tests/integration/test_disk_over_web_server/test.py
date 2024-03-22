@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+from helpers.cluster import ClickHouseCluster
 
 uuids = []
 
@@ -13,7 +13,6 @@ def cluster():
             "node1",
             main_configs=["configs/storage_conf.xml"],
             with_nginx=True,
-            allow_analyzer=False,
         )
         cluster.add_instance(
             "node2",
@@ -21,14 +20,12 @@ def cluster():
             with_nginx=True,
             stay_alive=True,
             with_zookeeper=True,
-            allow_analyzer=False,
         )
         cluster.add_instance(
             "node3",
             main_configs=["configs/storage_conf_web.xml"],
             with_nginx=True,
             with_zookeeper=True,
-            allow_analyzer=False,
         )
 
         cluster.add_instance(
@@ -38,7 +35,7 @@ def cluster():
             stay_alive=True,
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
-            tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+            tag="22.8.14.53",
             allow_analyzer=False,
         )
 
@@ -142,14 +139,12 @@ def test_usage(cluster, node_name):
             )
         )
 
-        # to check right handling of paths in disk web
-        node2.query("SELECT count() FROM system.remote_data_paths")
-
         node2.query("DROP TABLE test{} SYNC".format(i))
         print(f"Ok {i}")
 
 
 def test_incorrect_usage(cluster):
+    node1 = cluster.instances["node1"]
     node2 = cluster.instances["node3"]
     global uuids
     node2.query(
@@ -172,7 +167,7 @@ def test_incorrect_usage(cluster):
     assert "Table is read-only" in result
 
     result = node2.query_and_get_error("OPTIMIZE TABLE test0 FINAL")
-    assert "Table is in readonly mode due to static storage" in result
+    assert "Only read-only operations are supported" in result
 
     node2.query("DROP TABLE test0 SYNC")
 
@@ -191,7 +186,7 @@ def test_cache(cluster, node_name):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'cached_web';
         """.format(
-                i, uuids[i]
+                i, uuids[i], i, i
             )
         )
 
@@ -278,7 +273,7 @@ def test_unavailable_server(cluster):
             "Caught exception while loading metadata.*Connection refused"
         )
         assert node2.contains_in_log(
-            "Failed to make request to 'http://nginx:8080/test1/.*'. Error: 'Connection refused'. Failed at try 10/10."
+            "HTTP request to \`http://nginx:8080/test1/.*\` failed at try 1/10 with bytes read: 0/unknown. Error: Connection refused."
         )
     finally:
         node2.exec_in_container(

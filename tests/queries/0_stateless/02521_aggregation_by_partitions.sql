@@ -1,12 +1,9 @@
--- Tags: long, no-s3-storage
+-- Tags: long
 
 set max_threads = 16;
 set allow_aggregate_partitions_independently = 1;
 set force_aggregate_partitions_independently = 1;
 set optimize_use_projections = 0;
-
-set allow_prefetched_read_pool_for_remote_filesystem = 0;
-set allow_prefetched_read_pool_for_local_filesystem = 0;
 
 create table t1(a UInt32) engine=MergeTree order by tuple() partition by a % 4 settings index_granularity = 8192, index_granularity_bytes = 10485760;
 
@@ -15,9 +12,7 @@ system stop merges t1;
 insert into t1 select number from numbers_mt(1e6);
 insert into t1 select number from numbers_mt(1e6);
 
--- { echoOn }
 explain pipeline select a from t1 group by a;
--- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t1 group by a);
 
@@ -30,9 +25,7 @@ system stop merges t2;
 insert into t2 select number from numbers_mt(1e6);
 insert into t2 select number from numbers_mt(1e6);
 
--- { echoOn }
 explain pipeline select a from t2 group by a;
--- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t2 group by a);
 
@@ -45,9 +38,7 @@ system stop merges t3;
 insert into t3 select number from numbers_mt(1e6);
 insert into t3 select number from numbers_mt(1e6);
 
--- { echoOn }
 explain pipeline select a from t3 group by a;
--- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t3 group by a);
 
@@ -69,9 +60,7 @@ system stop merges t4;
 insert into t4 select number from numbers_mt(1e6);
 insert into t4 select number from numbers_mt(1e6);
 
--- { echoOn }
 explain pipeline select a from t4 group by a settings read_in_order_two_level_merge_threshold = 1e12;
--- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t4 group by a);
 
@@ -84,9 +73,7 @@ system stop merges t5;
 insert into t5 select number from numbers_mt(1e6);
 insert into t5 select number from numbers_mt(1e6);
 
--- { echoOn }
 explain pipeline select a from t5 group by a settings read_in_order_two_level_merge_threshold = 1e12;
--- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t5 group by a);
 
@@ -99,9 +86,7 @@ system stop merges t6;
 insert into t6 select number from numbers_mt(1e6);
 insert into t6 select number from numbers_mt(1e6);
 
--- { echoOn }
 explain pipeline select a from t6 group by a settings read_in_order_two_level_merge_threshold = 1e12;
--- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t6 group by a);
 

@@ -4,7 +4,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
-#include <list>
 #include <optional>
 
 namespace DB

@@ -72,7 +72,7 @@ private:
     Block sample_block;
     std::shared_ptr<ShellCommandSourceCoordinator> coordinator;
     ContextPtr context;
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

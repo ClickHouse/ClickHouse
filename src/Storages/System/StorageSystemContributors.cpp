@@ -9,15 +9,14 @@ extern const char * auto_contributors[];
 
 namespace DB
 {
-ColumnsDescription StorageSystemContributors::getColumnsDescription()
+NamesAndTypesList StorageSystemContributors::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"name", std::make_shared<DataTypeString>(), "Contributor (author) name from git log."},
+    return {
+        {"name", std::make_shared<DataTypeString>()},
     };
 }
 
-void StorageSystemContributors::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemContributors::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     std::vector<const char *> contributors;
     for (auto * it = auto_contributors; *it; ++it)

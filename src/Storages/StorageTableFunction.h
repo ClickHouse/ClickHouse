@@ -72,11 +72,11 @@ public:
     }
 
     void startup() override { }
-    void shutdown(bool is_drop) override
+    void shutdown() override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            nested->shutdown(is_drop);
+            nested->shutdown();
     }
 
     void flushAndPrepareForShutdown() override

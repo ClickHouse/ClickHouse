@@ -35,7 +35,7 @@ public:
         reader->resetParser();
     }
 
-    Chunk read() override
+    Chunk generate() override
     {
         block_missing_values.clear();
         size_t block_start = getDataOffsetMaybeCompressed(*in);

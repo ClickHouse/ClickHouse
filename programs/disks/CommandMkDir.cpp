@@ -18,10 +18,11 @@ public:
     {
         command_name = "mkdir";
         command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "Create a directory";
+        description = "Create directory or directories recursively";
         usage = "mkdir [OPTION]... <PATH>";
         command_option_description->add_options()
-            ("recursive", "recursively create directories");
+            ("recursive", "recursively create directories")
+            ;
     }
 
     void processOptions(
@@ -34,7 +35,7 @@ public:
 
     void execute(
         const std::vector<String> & command_arguments,
-        std::shared_ptr<DiskSelector> & disk_selector,
+        DB::ContextMutablePtr & global_context,
         Poco::Util::LayeredConfiguration & config) override
     {
         if (command_arguments.size() != 1)
@@ -47,7 +48,7 @@ public:
 
         const String & path = command_arguments[0];
 
-        DiskPtr disk = disk_selector->get(disk_name);
+        DiskPtr disk = global_context->getDisk(disk_name);
 
         String relative_path = validatePathAndGetAsRelative(path);
         bool recursive = config.getBool("recursive", false);

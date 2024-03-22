@@ -93,7 +93,6 @@ private:
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
-    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     JSONCompactEachRowFormatReader reader;

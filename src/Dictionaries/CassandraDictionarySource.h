@@ -77,7 +77,7 @@ private:
     void maybeAllowFiltering(String & query) const;
     CassSessionShared getSession();
 
-    LoggerPtr log;
+    Poco::Logger * log;
     const DictionaryStructure dict_struct;
     const Configuration configuration;
     Block sample_block;

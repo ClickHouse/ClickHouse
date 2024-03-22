@@ -44,14 +44,12 @@ set (SRCS_IOSTREAMS
     "${LIBRARY_DIR}/libs/iostreams/src/gzip.cpp"
     "${LIBRARY_DIR}/libs/iostreams/src/mapped_file.cpp"
     "${LIBRARY_DIR}/libs/iostreams/src/zlib.cpp"
-    "${LIBRARY_DIR}/libs/iostreams/src/zstd.cpp"
 )
 
 add_library (_boost_iostreams ${SRCS_IOSTREAMS})
 add_library (boost::iostreams ALIAS _boost_iostreams)
 target_include_directories (_boost_iostreams PRIVATE ${LIBRARY_DIR})
 target_link_libraries (_boost_iostreams PRIVATE ch_contrib::zlib)
-target_link_libraries (_boost_iostreams PRIVATE ch_contrib::zstd)
 
 # program_options
 

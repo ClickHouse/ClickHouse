@@ -24,7 +24,7 @@ RabbitMQConsumer::RabbitMQConsumer(
         std::vector<String> & queues_,
         size_t channel_id_base_,
         const String & channel_base_,
-        LoggerPtr log_,
+        Poco::Logger * log_,
         uint32_t queue_size_)
         : event_handler(event_handler_)
         , queues(queues_)

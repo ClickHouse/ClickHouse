@@ -28,3 +28,5 @@ struct ContextHolder
 const ContextHolder & getContext();
 
 ContextHolder & getMutableContext();
+
+void destroyContext();

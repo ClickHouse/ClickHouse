@@ -66,7 +66,7 @@ private:
 
     /// it is super strange,
     /// but addition next call changes the data in serializeValueIntoArena result
-    void finalizeImpl() override { /* no op */ }
+    virtual void finalizeImpl() override { /* no op */ }
 };
 
 }

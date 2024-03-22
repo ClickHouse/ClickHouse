@@ -6,8 +6,8 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/Exception.h>
 #include <Common/Throttler.h>
-#include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 
 namespace DB
@@ -292,7 +292,7 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
     }
 }
 
-S3Settings StorageS3Settings::getSettings(const String & endpoint, const String & user) const
+S3Settings StorageS3Settings::getSettings(const String & endpoint) const
 {
     std::lock_guard lock(mutex);
     auto next_prefix_setting = s3_settings.upper_bound(endpoint);
@@ -301,8 +301,7 @@ S3Settings StorageS3Settings::getSettings(const String & endpoint, const String 
     for (auto possible_prefix_setting = next_prefix_setting; possible_prefix_setting != s3_settings.begin();)
     {
         std::advance(possible_prefix_setting, -1);
-        const auto & [endpoint_prefix, settings] = *possible_prefix_setting;
-        if (endpoint.starts_with(endpoint_prefix) && settings.auth_settings.canBeUsedByUser(user))
+        if (boost::algorithm::starts_with(endpoint, possible_prefix_setting->first))
             return possible_prefix_setting->second;
     }
 

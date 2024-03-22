@@ -1,12 +1,11 @@
+#include <Storages/MergeTree/extractZkPathFromCreateQuery.h>
+#include <Common/Macros.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Databases/IDatabase.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Storages/MergeTree/extractZkPathFromCreateQuery.h>
-#include <Common/Macros.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB

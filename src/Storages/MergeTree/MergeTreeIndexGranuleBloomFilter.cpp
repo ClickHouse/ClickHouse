@@ -16,11 +16,10 @@ namespace ErrorCodes
 }
 
 MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
-    : bits_per_row(bits_per_row_), hash_functions(hash_functions_), bloom_filters(index_columns_)
+    : bits_per_row(bits_per_row_), hash_functions(hash_functions_)
 {
     total_rows = 0;
-    for (size_t column = 0; column < index_columns_; ++column)
-        bloom_filters[column] = std::make_shared<BloomFilter>(bits_per_row, hash_functions, 0);
+    bloom_filters.resize(index_columns_);
 }
 
 MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
@@ -56,6 +55,8 @@ bool MergeTreeIndexGranuleBloomFilter::empty() const
 
 void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
+    if (!empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read data to a non-empty bloom filter index.");
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
 
@@ -66,7 +67,7 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, Merg
     size_t read_size = bytes_size;
     for (auto & filter : bloom_filters)
     {
-        filter->resize(bytes_size);
+        filter = std::make_shared<BloomFilter>(bytes_size, hash_functions, 0);
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
         read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
 #endif

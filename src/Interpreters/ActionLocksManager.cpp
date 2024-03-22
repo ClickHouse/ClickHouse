@@ -1,6 +1,5 @@
 #include "ActionLocksManager.h"
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 
@@ -18,8 +17,6 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsTTLMerge = 6;
     extern const StorageActionBlockType PartsMove = 7;
     extern const StorageActionBlockType PullReplicationLog = 8;
-    extern const StorageActionBlockType Cleanup = 9;
-    extern const StorageActionBlockType ViewRefresh = 10;
 }
 
 

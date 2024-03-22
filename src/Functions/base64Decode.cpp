@@ -7,9 +7,10 @@ namespace DB
 {
 REGISTER_FUNCTION(Base64Decode)
 {
+    tb64ini(0, 0);
     factory.registerFunction<FunctionBase64Conversion<Base64Decode>>();
 
-    /// MySQL compatibility alias.
+    /// MysQL compatibility alias.
     factory.registerAlias("FROM_BASE64", "base64Decode", FunctionFactory::CaseInsensitive);
 }
 }

@@ -125,7 +125,7 @@ private:
         static auto getHash(const Node & node)
         {
             if constexpr (with_ast)
-                return node->getTreeHash(/*ignore_aliases=*/ true);
+                return node->getTreeHash();
             else
                 return QueryTreeNodePtrWithHash{node};
         }

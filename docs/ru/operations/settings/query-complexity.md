@@ -108,15 +108,6 @@ sidebar_label: "Ограничения на сложность запроса"
 
 Значение по умолчанию — 0.
 
-## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
-
-Включает или отключает выполнение `ORDER BY` во внешней памяти. См. [Детали реализации ORDER BY](../../sql-reference/statements/select/order-by.md#implementation-details)
-
-- Максимальный объем оперативной памяти (в байтах), который может использоваться одной операцией [ORDER BY](../../sql-reference/statements/select/order-by.md). Рекомендуемое значение — половина доступной системной памяти.
-- 0 — `ORDER BY` во внешней памяти отключен.
-
-Значение по умолчанию: 0.
-
 ## max_rows_to_sort {#max-rows-to-sort}
 
 Максимальное количество строк до сортировки. Позволяет ограничить потребление оперативки при сортировке.

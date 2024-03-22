@@ -36,7 +36,9 @@ using namespace DB;
 namespace
 {
 
-template <class T> inline constexpr bool is_pod_v = std::is_trivial_v<std::is_standard_layout<T>>;
+template <class T> using is_pod = std::is_trivial<std::is_standard_layout<T>>;
+template <class T> inline constexpr bool is_pod_v = is_pod<T>::value;
+
 
 template <typename T>
 struct AsHexStringHelper
@@ -442,7 +444,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 {
     const std::string codec_statement = "(" + codec_string + ")";
     Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
-    IParser::Pos token_iterator(tokens, 0, 0);
+    IParser::Pos token_iterator(tokens, 0);
 
     Expected expected;
     ASTPtr codec_ast;

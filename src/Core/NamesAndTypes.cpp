@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <Core/NamesAndTypes.h>
 
 #include <base/sort.h>
@@ -11,8 +12,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
-#include <boost/algorithm/string.hpp>
-#include <cstddef>
 
 namespace DB
 {
@@ -219,16 +218,6 @@ bool NamesAndTypesList::contains(const String & name) const
     return false;
 }
 
-bool NamesAndTypesList::containsCaseInsensitive(const String & name) const
-{
-    for (const NameAndTypePair & column : *this)
-    {
-        if (boost::iequals(column.name, name))
-            return true;
-    }
-    return false;
-}
-
 std::optional<NameAndTypePair> NamesAndTypesList::tryGetByName(const std::string & name) const
 {
     for (const NameAndTypePair & column : *this)
@@ -249,21 +238,6 @@ size_t NamesAndTypesList::getPosByName(const std::string &name) const noexcept
         ++pos;
     }
     return pos;
-}
-
-String NamesAndTypesList::toNamesAndTypesDescription() const
-{
-    WriteBufferFromOwnString buf;
-    bool first = true;
-    for (const auto & name_and_type : *this)
-    {
-        if (!std::exchange(first, false))
-            writeCString(", ", buf);
-        writeBackQuotedString(name_and_type.name, buf);
-        writeChar(' ', buf);
-        writeString(name_and_type.type->getName(), buf);
-    }
-    return buf.str();
 }
 
 }

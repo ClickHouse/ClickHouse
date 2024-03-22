@@ -16,6 +16,8 @@ CREATE TABLE r2 (
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/01509_parallel_quorum_insert_no_replicas', '2')
 ORDER BY tuple();
 
+SET insert_keeper_fault_injection_probability=0;
+
 SET insert_quorum_parallel=1;
 
 SET insert_quorum=3;

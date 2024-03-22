@@ -10,8 +10,6 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
 
-#include <Storages/ReplaceAliasByExpressionVisitor.h>
-
 #include <Core/Defines.h>
 #include "Common/Exception.h"
 
@@ -22,11 +20,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -101,10 +94,6 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     if (index_definition->expr)
     {
         expr_list = extractKeyExpressionList(index_definition->expr->clone());
-
-        ReplaceAliasToExprVisitor::Data data{columns};
-        ReplaceAliasToExprVisitor{data}.visit(expr_list);
-
         result.expression_list_ast = expr_list->clone();
     }
     else
@@ -173,7 +162,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
         return result;
 
     ParserIndexDeclarationList parser;
-    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     for (const auto & index : list->children)
         result.emplace_back(IndexDescription::getIndexFromAST(index, columns, context));

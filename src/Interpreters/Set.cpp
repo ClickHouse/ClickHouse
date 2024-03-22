@@ -275,7 +275,7 @@ void Set::appendSetElements(SetKeyColumns & holder)
 void Set::checkIsCreated() const
 {
     if (!is_created.load())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Trying to use set before it has been built.");
 }
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
@@ -283,7 +283,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     size_t num_key_columns = columns.size();
 
     if (0 == num_key_columns)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns passed to Set::execute method.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no columns passed to Set::execute method.");
 
     auto res = ColumnUInt8::create();
     ColumnUInt8::Container & vec_res = res->getData();
@@ -324,11 +324,11 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         if (!transform_null_in && data_types[i]->canBeInsideNullable())
         {
-            result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
+            result = castColumnAccurateOrNull(column_to_cast, data_types[i]);
         }
         else
         {
-            result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
+            result = castColumnAccurate(column_to_cast, data_types[i]);
         }
 
         materialized_columns.emplace_back() = result;
@@ -346,24 +346,6 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     return res;
 }
 
-bool Set::hasNull() const
-{
-    checkIsCreated();
-
-    if (!transform_null_in)
-        return false;
-
-    if (data_types.size() != 1)
-        return false;
-
-    if (!data_types[0]->isNullable())
-        return false;
-
-    auto col = data_types[0]->createColumn();
-    col->insert(Field());
-    auto res = execute({ColumnWithTypeAndName(std::move(col), data_types[0], std::string())}, false);
-    return res->getBool(0);
-}
 
 bool Set::empty() const
 {

@@ -6,16 +6,15 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemMacros::getColumnsDescription()
+NamesAndTypesList StorageSystemMacros::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"macro", std::make_shared<DataTypeString>(), "The macro name."},
-        {"substitution", std::make_shared<DataTypeString>(), "The substitution string."},
+    return {
+        {"macro", std::make_shared<DataTypeString>()},
+        {"substitution", std::make_shared<DataTypeString>()},
     };
 }
 
-void StorageSystemMacros::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemMacros::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     auto macros = context->getMacros();
 

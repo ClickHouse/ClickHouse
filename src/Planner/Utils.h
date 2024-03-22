@@ -34,9 +34,6 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
 
-/// Convert query node to ASTSelectQuery for distributed processing
-ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
-
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);
 
@@ -68,11 +65,9 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
 /// Returns `and` function node that has condition nodes as its arguments
 QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context);
 
-/// Replace table expressions from query JOIN TREE with dummy tables
+/// Replace tables nodes and table function nodes with dummy table nodes
 using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
-QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
-    const QueryTreeNodePtr & query_node,
-    const QueryTreeNodes & table_nodes,
+QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
 
@@ -85,11 +80,6 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
 
 /// Build filter for specific table_expression
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
-        PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter = {});
-
-FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
         const QueryTreeNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter = {});

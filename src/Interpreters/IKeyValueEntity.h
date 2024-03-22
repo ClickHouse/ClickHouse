@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Core/Names.h>
 #include <Processors/Chunk.h>
 

@@ -1106,7 +1106,7 @@ public:
     {
         if (isInteger(data_type))
         {
-            if (isUInt(data_type))
+            if (isUnsignedInteger(data_type))
                 return std::make_unique<UnsignedIntegerModel>(seed);
             else
                 return std::make_unique<SignedIntegerModel>(seed);
@@ -1204,8 +1204,8 @@ public:
 
 }
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
@@ -1307,10 +1307,10 @@ try
         /// stdin must be seekable
         auto res = lseek(file->getFD(), 0, SEEK_SET);
         if (-1 == res)
-            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Input must be seekable file (it will be read twice)");
+            throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
         SingleReadBufferIterator read_buffer_iterator(std::move(file));
-        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, context_const);
+        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, false, context_const);
     }
     else
     {
@@ -1336,7 +1336,7 @@ try
         /// stdin must be seekable
         auto res = lseek(file_in.getFD(), 0, SEEK_SET);
         if (-1 == res)
-            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Input must be seekable file (it will be read twice)");
+            throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
     }
 
     Obfuscator obfuscator(header, seed, markov_model_params);

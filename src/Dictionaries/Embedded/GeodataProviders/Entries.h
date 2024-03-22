@@ -3,9 +3,6 @@
 #include <string>
 #include "Types.h"
 
-namespace DB
-{
-
 struct RegionEntry
 {
     RegionID id;
@@ -20,5 +17,3 @@ struct RegionNameEntry
     RegionID id;
     std::string name;
 };
-
-}

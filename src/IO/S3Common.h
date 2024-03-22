@@ -6,7 +6,6 @@
 
 #include <string>
 #include <optional>
-#include <unordered_set>
 
 #include "config.h"
 
@@ -17,7 +16,6 @@
 #include <Common/Throttler_fwd.h>
 
 #include <IO/S3/URI.h>
-#include <IO/S3/Credentials.h>
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Errors.h>
@@ -81,7 +79,6 @@ struct AuthSettings
 
     std::string access_key_id;
     std::string secret_access_key;
-    std::string session_token;
     std::string region;
     std::string server_side_encryption_customer_key_base64;
     ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
@@ -93,15 +90,9 @@ struct AuthSettings
     std::optional<uint64_t> expiration_window_seconds;
     std::optional<bool> no_sign_request;
 
-    std::unordered_set<std::string> users;
-
-    bool hasUpdates(const AuthSettings & other) const;
-    void updateFrom(const AuthSettings & from);
-
-    bool canBeUsedByUser(const String & user) const;
-
-private:
     bool operator==(const AuthSettings & other) const = default;
+
+    void updateFrom(const AuthSettings & from);
 };
 
 }

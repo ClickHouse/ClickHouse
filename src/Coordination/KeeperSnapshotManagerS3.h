@@ -45,7 +45,7 @@ private:
 
     std::atomic<bool> shutdown_called{false};
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     UUID uuid;
 

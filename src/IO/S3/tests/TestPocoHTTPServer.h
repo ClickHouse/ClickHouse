@@ -21,8 +21,8 @@ class MockRequestHandler : public Poco::Net::HTTPRequestHandler
     Poco::Net::MessageHeader & last_request_header;
 
 public:
-    explicit MockRequestHandler(Poco::Net::MessageHeader & last_request_header_)
-    : last_request_header(last_request_header_)
+    MockRequestHandler(Poco::Net::MessageHeader & last_request_header_)
+    : Poco::Net::HTTPRequestHandler(), last_request_header(last_request_header_)
     {
     }
 
@@ -38,18 +38,20 @@ class HTTPRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
     Poco::Net::MessageHeader & last_request_header;
 
-    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
+    virtual Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
     {
         return new MockRequestHandler(last_request_header);
     }
 
 public:
-    explicit HTTPRequestHandlerFactory(Poco::Net::MessageHeader & last_request_header_)
-    : last_request_header(last_request_header_)
+    HTTPRequestHandlerFactory(Poco::Net::MessageHeader & last_request_header_)
+    : Poco::Net::HTTPRequestHandlerFactory(), last_request_header(last_request_header_)
     {
     }
 
-    ~HTTPRequestHandlerFactory() override = default;
+    virtual ~HTTPRequestHandlerFactory() override
+    {
+    }
 };
 
 class TestPocoHTTPServer

@@ -30,7 +30,7 @@ public:
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 private:
-    Chunk read() override;
+    Chunk generate() override;
 
     void onCancel() override
     {

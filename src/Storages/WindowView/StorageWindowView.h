@@ -111,7 +111,7 @@ public:
         ContextPtr context_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        LoadingStrictnessLevel mode);
+        bool attach_);
 
     String getName() const override { return "WindowView"; }
 
@@ -142,7 +142,7 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     void startup() override;
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     void read(
         QueryPlan & query_plan,
@@ -177,7 +177,7 @@ public:
     const Block & getOutputHeader() const;
 
 private:
-    LoggerPtr log;
+    Poco::Logger * log;
 
     /// Stored query, e.g. SELECT * FROM * GROUP BY tumble(now(), *)
     ASTPtr select_query;

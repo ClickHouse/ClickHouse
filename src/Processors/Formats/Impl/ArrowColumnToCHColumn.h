@@ -8,7 +8,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <arrow/table.h>
-#include <Formats/FormatSettings.h>
+
 
 namespace DB
 {
@@ -26,9 +26,7 @@ public:
         const std::string & format_name_,
         bool allow_missing_columns_,
         bool null_as_default_,
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
-        bool case_insensitive_matching_ = false,
-        bool is_stream_ = false);
+        bool case_insensitive_matching_ = false);
 
     void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
 
@@ -57,9 +55,7 @@ private:
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
     bool case_insensitive_matching;
-    bool is_stream;
 
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary

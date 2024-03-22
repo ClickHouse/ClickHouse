@@ -4,7 +4,6 @@
 
 #include <Core/Types.h>
 
-
 namespace DB
 {
 
@@ -17,7 +16,7 @@ struct TypePair
 
 
 template <typename T, bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-static bool callOnBasicType(TypeIndex number, F && f)
+bool callOnBasicType(TypeIndex number, F && f)
 {
     if constexpr (_int)
     {
@@ -87,7 +86,7 @@ static bool callOnBasicType(TypeIndex number, F && f)
 
 /// Unroll template using TypeIndex
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-static inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
+inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
 {
     if constexpr (_int)
     {
@@ -171,7 +170,7 @@ template <is_decimal T> class DataTypeDecimal;
 
 
 template <typename T, typename F, typename... ExtraArgs>
-static bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
+bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
 {
     switch (number)
     {

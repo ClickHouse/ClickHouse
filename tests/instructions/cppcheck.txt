@@ -1,0 +1,22 @@
+# Install cppcheck
+
+mkdir cppcheck && cd cppcheck
+git clone git@github.com:danmar/cppcheck.git .
+mkdir build && cd build
+CC=gcc-7 CXX=g++-7 cmake -D CMAKE_BUILD_TYPE=Release ..
+make -j24
+sudo make install
+
+# Perform analysis
+
+cd ClickHouse_clean/build
+cppcheck -j24 --project=compile_commands.json --enable=all 2> cppcheck-errors.txt
+
+# or (from directory with sources)
+# cppcheck -i contrib -i build --enable=all . 2> cppcheck-errors.txt
+
+# Check is pretty fast.
+# It gives many false positives.
+# But the result is worth looking and at least few real errors found.
+
+grep -v -F 'contrib/' cppcheck-errors.txt

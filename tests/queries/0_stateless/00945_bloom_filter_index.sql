@@ -1,4 +1,3 @@
-SET allow_suspicious_low_cardinality_types=1;
 
 DROP TABLE IF EXISTS single_column_bloom_filter;
 

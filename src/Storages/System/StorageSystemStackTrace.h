@@ -2,6 +2,7 @@
 
 #ifdef OS_LINUX /// Because of 'sigqueue' functions and RT signals.
 
+#include <mutex>
 #include <Storages/IStorage.h>
 
 namespace Poco
@@ -25,20 +26,20 @@ public:
 
     String getName() const override { return "SystemStackTrace"; }
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
-        QueryProcessingStage::Enum /*processed_stage*/,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t /*num_streams*/) override;
+        size_t num_streams) override;
 
     bool isSystemStorage() const override { return true; }
 
 protected:
-    LoggerPtr log;
+    mutable std::mutex mutex;
+    Poco::Logger * log;
 };
 
 }

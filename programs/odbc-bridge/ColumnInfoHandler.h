@@ -18,15 +18,15 @@ class ODBCColumnsInfoHandler : public HTTPRequestHandler, WithContext
 public:
     ODBCColumnsInfoHandler(size_t keep_alive_timeout_, ContextPtr context_)
         : WithContext(context_)
-        , log(getLogger("ODBCColumnsInfoHandler"))
+        , log(&Poco::Logger::get("ODBCColumnsInfoHandler"))
         , keep_alive_timeout(keep_alive_timeout_)
     {
     }
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
 private:
-    LoggerPtr log;
+    Poco::Logger * log;
     size_t keep_alive_timeout;
 };
 

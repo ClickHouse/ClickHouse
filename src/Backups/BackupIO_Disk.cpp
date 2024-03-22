@@ -9,7 +9,7 @@ namespace DB
 {
 
 BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
-    : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderDisk"))
+    : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderDisk"))
     , disk(disk_)
     , root_path(root_path_)
     , data_source_description(disk->getDataSourceDescription())
@@ -46,7 +46,7 @@ void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file
         {
             /// Use more optimal way.
             LOG_TRACE(log, "Copying file {} from disk {} to disk {}", path_in_backup, disk->getName(), destination_disk->getName());
-            disk->copyFile(root_path / path_in_backup, *destination_disk, destination_path, read_settings, write_settings);
+            disk->copyFile(root_path / path_in_backup, *destination_disk, destination_path, write_settings);
             return; /// copied!
         }
     }
@@ -57,7 +57,7 @@ void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file
 
 
 BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
-    : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterDisk"))
+    : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterDisk"))
     , disk(disk_)
     , root_path(root_path_)
     , data_source_description(disk->getDataSourceDescription())
@@ -119,22 +119,13 @@ void BackupWriterDisk::copyFileFromDisk(const String & path_in_backup, DiskPtr s
             LOG_TRACE(log, "Copying file {} from disk {} to disk {}", src_path, src_disk->getName(), disk->getName());
             auto dest_file_path = root_path / path_in_backup;
             disk->createDirectories(dest_file_path.parent_path());
-            src_disk->copyFile(src_path, *disk, dest_file_path, read_settings, write_settings);
+            src_disk->copyFile(src_path, *disk, dest_file_path, write_settings);
             return; /// copied!
         }
     }
 
     /// Fallback to copy through buffers.
     BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
-}
-
-void BackupWriterDisk::copyFile(const String & destination, const String & source, size_t /*size*/)
-{
-    LOG_TRACE(log, "Copying file inside backup from {} to {} ", source, destination);
-    auto dest_file_path = root_path / destination;
-    auto src_file_path = root_path / source;
-    disk->createDirectories(dest_file_path.parent_path());
-    disk->copyFile(src_file_path, *disk, dest_file_path, read_settings, write_settings);
 }
 
 }

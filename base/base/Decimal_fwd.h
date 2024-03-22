@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <base/extended_types.h>
 
 namespace wide
 {
@@ -45,8 +44,3 @@ concept is_over_big_int =
     || std::is_same_v<T, Decimal128>
     || std::is_same_v<T, Decimal256>;
 }
-
-template <> struct is_signed<DB::Decimal32> { static constexpr bool value = true; };
-template <> struct is_signed<DB::Decimal64> { static constexpr bool value = true; };
-template <> struct is_signed<DB::Decimal128> { static constexpr bool value = true; };
-template <> struct is_signed<DB::Decimal256> { static constexpr bool value = true; };

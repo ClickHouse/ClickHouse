@@ -174,7 +174,7 @@ private:
 
     static void array(const UInt8 * src, const UInt8 * src_end, const ColumnString::Offsets & offsets, UInt8 * dst)
     {
-        const auto * offset_it = offsets.begin();
+        auto offset_it = offsets.begin();
         const UInt8 * begin = src;
 
 #ifdef __SSE2__

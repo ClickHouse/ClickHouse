@@ -3,7 +3,6 @@
 #include <IO/WriteBuffer.h>
 
 #include <Common/logger_useful.h>
-#include <Common/formatReadable.h>
 
 namespace DB
 {
@@ -53,7 +52,7 @@ void MergingSortedTransform::onFinish()
 
     const auto & merged_data = algorithm.getMergedData();
 
-    auto log = getLogger("MergingSortedTransform");
+    auto * log = &Poco::Logger::get("MergingSortedTransform");
 
     double seconds = total_stopwatch.elapsedSeconds();
 

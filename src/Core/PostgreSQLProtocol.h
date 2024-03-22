@@ -872,7 +872,7 @@ public:
 class AuthenticationManager
 {
 private:
-    LoggerPtr log = getLogger("AuthenticationManager");
+    Poco::Logger * log = &Poco::Logger::get("AuthenticationManager");
     std::unordered_map<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
 
 public:

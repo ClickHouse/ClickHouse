@@ -105,7 +105,7 @@ String prepareArrayAndGetProtobufTypeName(WriteBuffer & buf, const DataTypePtr &
 String prepareTupleAndGetProtobufTypeName(WriteBuffer & buf, const DataTypePtr & data_type, const String & column_name, size_t indent)
 {
     const auto & tuple_type = assert_cast<const DataTypeTuple &>(*data_type);
-    auto nested_names_and_types = getCollectedTupleElements(tuple_type, false, "Protobuf");
+    auto nested_names_and_types = getCollectedTupleElements(tuple_type);
 
     String message_name = getSchemaMessageName(column_name);
     startMessage(buf, message_name, indent);
@@ -202,7 +202,7 @@ String prepareAndGetProtobufTypeName(WriteBuffer & buf, const DataTypePtr & data
 
 void StructureToProtobufSchema::writeSchema(WriteBuffer & buf, const String & message_name, const NamesAndTypesList & names_and_types_)
 {
-    auto names_and_types = collectNested(names_and_types_, false, "Protobuf");
+    auto names_and_types = collectNested(names_and_types_);
     writeProtobufHeader(buf);
     startMessage(buf, getSchemaMessageName(message_name), 0);
     size_t field_index = 1;

@@ -62,7 +62,7 @@ StoragePtr StorageFactory::get(
     ContextMutablePtr context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    LoadingStrictnessLevel mode) const
+    bool has_force_restore_data_flag) const
 {
     String name, comment;
 
@@ -216,7 +216,8 @@ StoragePtr StorageFactory::get(
         .context = context,
         .columns = columns,
         .constraints = constraints,
-        .mode = mode,
+        .attach = query.attach,
+        .has_force_restore_data_flag = has_force_restore_data_flag,
         .comment = comment};
 
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
