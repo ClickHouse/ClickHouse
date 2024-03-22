@@ -248,6 +248,9 @@ Some of the files might not download fully. Check the file sizes and re-download
 
 ``` bash
 $ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
+# Validate the checksum
+$ md5sum trips_mergetree.tar
+# Checksum should be equal to: f3b8d469b41d9a82da064ded7245d12c
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart

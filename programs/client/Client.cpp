@@ -933,7 +933,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
         ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
         ("secure,s", "Use TLS connection")
-        ("no-secure,s", "Don't use TLS connection")
+        ("no-secure", "Don't use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
@@ -1392,8 +1392,8 @@ void Client::readArguments(
 }
 
 
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

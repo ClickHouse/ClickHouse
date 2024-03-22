@@ -46,9 +46,14 @@ class Labels(metaclass=WithIter):
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
     CI_SET_REDUCED = "ci_set_reduced"
+    CI_SET_FAST = "ci_set_fast"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_INTEGRATION = "ci_set_integration"
     CI_SET_ANALYZER = "ci_set_analyzer"
+    CI_SET_STATLESS = "ci_set_stateless"
+    CI_SET_STATEFUL = "ci_set_stateful"
+    CI_SET_STATLESS_ASAN = "ci_set_stateless_asan"
+    CI_SET_STATEFUL_ASAN = "ci_set_stateful_asan"
 
     libFuzzer = "libFuzzer"
 
@@ -380,7 +385,7 @@ upgrade_check_digest = DigestConfig(
     docker=["clickhouse/upgrade-check"],
 )
 integration_check_digest = DigestConfig(
-    include_paths=["./tests/ci/integration_test_check.py", "./tests/integration"],
+    include_paths=["./tests/ci/integration_test_check.py", "./tests/integration/"],
     exclude_files=[".md"],
     docker=IMAGES.copy(),
 )
@@ -809,9 +814,15 @@ class CIConfig:
 CI_CONFIG = CIConfig(
     label_configs={
         Labels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
+        Labels.CI_SET_FAST: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+            ]
+        ),
         Labels.CI_SET_ARM: LabelConfig(
             run_jobs=[
-                # JobNames.STYLE_CHECK,
+                JobNames.STYLE_CHECK,
                 Build.PACKAGE_AARCH64,
                 JobNames.INTEGRATION_TEST_ARM,
             ]
@@ -833,6 +844,38 @@ CI_CONFIG = CIConfig(
                 JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
             ]
         ),
+        Labels.CI_SET_STATLESS: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_RELEASE,
+                JobNames.STATELESS_TEST_RELEASE,
+            ]
+        ),
+        Labels.CI_SET_STATLESS_ASAN: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_ASAN,
+                JobNames.STATELESS_TEST_ASAN,
+            ]
+        ),
+        Labels.CI_SET_STATEFUL: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_RELEASE,
+                JobNames.STATEFUL_TEST_RELEASE,
+            ]
+        ),
+        Labels.CI_SET_STATEFUL_ASAN: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                JobNames.FAST_TEST,
+                Build.PACKAGE_ASAN,
+                JobNames.STATEFUL_TEST_ASAN,
+            ]
+        ),
         Labels.CI_SET_REDUCED: LabelConfig(
             run_jobs=[
                 job
@@ -844,6 +887,7 @@ CI_CONFIG = CIConfig(
                         "tsan",
                         "msan",
                         "ubsan",
+                        "coverage",
                         # skip build report jobs as not all builds will be done
                         "build check",
                     )
