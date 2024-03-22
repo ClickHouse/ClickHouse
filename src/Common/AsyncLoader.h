@@ -59,12 +59,26 @@ enum class LoadStatus
 class LoadJob : private boost::noncopyable
 {
 public:
-    template <class LoadJobSetType, class Func, class DFFunc>
+    // NOTE: makeLoadJob() helper should be used instead of direct ctor call
+    template <class LoadJobSetType, class DFFunc, class Func>
     LoadJob(LoadJobSetType && dependencies_, String name_, size_t pool_id_, DFFunc && dependency_failure_, Func && func_)
         : dependencies(std::forward<LoadJobSetType>(dependencies_))
         , name(std::move(name_))
         , execution_pool_id(pool_id_)
         , pool_id(pool_id_)
+        , dependency_failure(std::forward<DFFunc>(dependency_failure_))
+        , func(std::forward<Func>(func_))
+    {}
+
+    // NOTE: makeLoadJob() helper should be used instead of direct ctor call
+    template <class LoadJobSetType, class WIFunc, class WDFunc, class DFFunc, class Func>
+    LoadJob(LoadJobSetType && dependencies_, String name_, size_t pool_id_, WIFunc && on_waiters_increment_, WDFunc && on_waiters_decrement_, DFFunc && dependency_failure_, Func && func_)
+        : dependencies(std::forward<LoadJobSetType>(dependencies_))
+        , name(std::move(name_))
+        , execution_pool_id(pool_id_)
+        , pool_id(pool_id_)
+        , on_waiters_increment(std::forward<WIFunc>(on_waiters_increment_))
+        , on_waiters_decrement(std::forward<WDFunc>(on_waiters_decrement_))
         , dependency_failure(std::forward<DFFunc>(dependency_failure_))
         , func(std::forward<Func>(func_))
     {}
@@ -112,6 +126,13 @@ private:
     std::atomic<size_t> execution_pool_id;
     std::atomic<size_t> pool_id;
 
+    // Handlers that is called by every new waiting thread, just before going to sleep.
+    // If `on_waiters_increment` throws, then wait is canceled, and corresponding `on_waiters_decrement` will never be called.
+    // It can be used for counting and limits on number of waiters.
+    // Note that implementations are called under `LoadJob::mutex` and should be fast.
+    std::function<void(const LoadJobPtr & self)> on_waiters_increment;
+    std::function<void(const LoadJobPtr & self)> on_waiters_decrement;
+
     // Handler for failed or canceled dependencies.
     // If job needs to be canceled on `dependency` failure, then function should set `cancel` to a specific reason.
     // Note that implementation should be fast and cannot use AsyncLoader, because it is called under `AsyncLoader::mutex`.
@@ -140,7 +161,49 @@ void cancelOnDependencyFailure(const LoadJobPtr & self, const LoadJobPtr & depen
 void ignoreDependencyFailure(const LoadJobPtr & self, const LoadJobPtr & dependency, std::exception_ptr & cancel);
 
 template <class F> concept LoadJobDependencyFailure = std::invocable<F, const LoadJobPtr &, const LoadJobPtr &, std::exception_ptr &>;
+template <class F> concept LoadJobOnWaiters = std::invocable<F, const LoadJobPtr &>;
 template <class F> concept LoadJobFunc = std::invocable<F, AsyncLoader &, const LoadJobPtr &>;
+
+LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
+{
+    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), 0, on_waiters_increment, on_waiters_decrement, std::forward<decltype(dependency_failure)>(dependency_failure), std::forward<decltype(func)>(func));
+}
+
+LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
+{
+    return std::make_shared<LoadJob>(dependencies, std::move(name), 0, on_waiters_increment, on_waiters_decrement, std::forward<decltype(dependency_failure)>(dependency_failure), std::forward<decltype(func)>(func));
+}
+
+LoadJobPtr makeLoadJob(LoadJobSet && dependencies, size_t pool_id, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
+{
+    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), pool_id, on_waiters_increment, on_waiters_decrement, std::forward<decltype(dependency_failure)>(dependency_failure), std::forward<decltype(func)>(func));
+}
+
+LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, size_t pool_id, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
+{
+    return std::make_shared<LoadJob>(dependencies, std::move(name), pool_id, on_waiters_increment, on_waiters_decrement, std::forward<decltype(dependency_failure)>(dependency_failure), std::forward<decltype(func)>(func));
+}
+
+LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobFunc auto && func)
+{
+    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), 0, on_waiters_increment, on_waiters_decrement, cancelOnDependencyFailure, std::forward<decltype(func)>(func));
+}
+
+LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobFunc auto && func)
+{
+    return std::make_shared<LoadJob>(dependencies, std::move(name), 0, on_waiters_increment, on_waiters_decrement, cancelOnDependencyFailure, std::forward<decltype(func)>(func));
+}
+
+LoadJobPtr makeLoadJob(LoadJobSet && dependencies, size_t pool_id, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobFunc auto && func)
+{
+    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), pool_id, on_waiters_increment, on_waiters_decrement, cancelOnDependencyFailure, std::forward<decltype(func)>(func));
+}
+
+LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, size_t pool_id, String name, LoadJobOnWaiters auto && on_waiters_increment, LoadJobOnWaiters auto && on_waiters_decrement, LoadJobFunc auto && func)
+{
+    return std::make_shared<LoadJob>(dependencies, std::move(name), pool_id, on_waiters_increment, on_waiters_decrement, cancelOnDependencyFailure, std::forward<decltype(func)>(func));
+}
+
 
 LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
 {

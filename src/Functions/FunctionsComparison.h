@@ -283,7 +283,7 @@ struct StringComparisonImpl
         size_t size = a_data.size();
 
         for (size_t i = 0, j = 0; i < size; i += 16, ++j)
-            c[j] = Op::apply(memcmp16(&a_data[i], &b_data[0]), 0);
+            c[j] = Op::apply(memcmp16(&a_data[i], &b_data[0]), 0); /// NOLINT(readability-container-data-pointer)
     }
 
     static void NO_INLINE fixed_string_vector_fixed_string_vector( /// NOLINT

@@ -185,6 +185,18 @@ void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
         columns[i]->insertFrom(*src.columns[i], n);
 }
 
+void ColumnTuple::insertManyFrom(const IColumn & src, size_t position, size_t length)
+{
+    const ColumnTuple & src_tuple = assert_cast<const ColumnTuple &>(src);
+
+    const size_t tuple_size = columns.size();
+    if (src_tuple.columns.size() != tuple_size)
+        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        columns[i]->insertManyFrom(*src_tuple.columns[i], position, length);
+}
+
 void ColumnTuple::insertDefault()
 {
     for (auto & column : columns)

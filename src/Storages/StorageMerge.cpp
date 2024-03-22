@@ -678,13 +678,13 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (auto * column = node->as<ColumnNode>(); column != nullptr)
+        if (auto * column = node->as<ColumnNode>())
         {
             if (column->hasExpression())
             {
-                auto column_name = column->getColumnName();
-                node = column->getExpressionOrThrow();
-                node->setAlias(column_name);
+                QueryTreeNodePtr column_expression = column->getExpressionOrThrow();
+                column_expression->setAlias(column->getColumnName());
+                node = std::move(column_expression);
             }
             else
                 column->setColumnSource(replacement_table_expression);

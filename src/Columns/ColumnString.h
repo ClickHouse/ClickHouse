@@ -160,6 +160,8 @@ public:
         }
     }
 
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+
     void insertData(const char * pos, size_t length) override
     {
         const size_t old_size = chars.size();

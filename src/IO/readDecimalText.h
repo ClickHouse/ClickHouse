@@ -38,7 +38,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
         return false;
     }
 
-    switch (*buf.position())
+    switch (*buf.position()) /// NOLINT(bugprone-switch-missing-default-case)
     {
         case '-':
             sign = -1;

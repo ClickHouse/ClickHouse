@@ -4,6 +4,67 @@ sidebar_label: Polygons
 title: "Functions for Working with Polygons"
 ---
 
+## WKT
+
+Returns a WKT (Well Known Text) geometric object from various [Geo Data Types](../../data-types/geo.md). Supported WKT objects are: 
+
+- POINT
+- POLYGON
+- MULTIPOLYGON
+
+**Syntax**
+
+```sql
+WKT(geo_data)
+```
+
+**Parameters**
+
+`geo_data` can be one of the following [Geo Data Types](../../data-types/geo.md) or their underlying primitive types:
+
+- [Point](../../data-types/geo.md#point)
+- [Ring](../../data-types/geo.md#ring)
+- [Polygon](../../data-types/geo.md#polygon)
+- [MultiPolygon](../../data-types/geo.md#multipolygon)
+
+**Returned value**
+
+- WKT geometric object `POINT` is returned for a Point.
+- WKT geometric object `POLYGON` is returned for a Polygon
+- WKT geometric object `MULTIPOLYGON` is returned for a MultiPolygon. 
+
+**Examples**
+
+POINT from tuple:
+
+```sql
+SELECT wkt((0., 0.));
+```
+
+```response
+POINT(0 0)
+```
+
+POLYGON from an array of tuples or an array of tuple arrays:
+
+```sql
+SELECT wkt([(0., 0.), (10., 0.), (10., 10.), (0., 10.)]);
+```
+
+```response
+POLYGON((0 0,10 0,10 10,0 10))
+```
+
+MULTIPOLYGON from an array of multi-dimensional tuple arrays:
+
+```sql
+SELECT wkt([[[(0., 0.), (10., 0.), (10., 10.), (0., 10.)], [(4., 4.), (5., 4.), (5., 5.), (4., 5.)]], [[(-10., -10.), (-10., -9.), (-9., 10.)]]]);
+```
+
+```response
+MULTIPOLYGON(((0 0,10 0,10 10,0 10,0 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))
+```
+
 ## readWKTMultiPolygon
 
 Converts a WKT (Well Known Text) MultiPolygon into a MultiPolygon type.

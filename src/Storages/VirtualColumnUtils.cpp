@@ -53,9 +53,9 @@ namespace DB
 namespace VirtualColumnUtils
 {
 
-static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & context)
+void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context)
 {
-    for (const auto & node : actions->getNodes())
+    for (const auto & node : dag->getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
         {
@@ -78,8 +78,8 @@ static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & co
 
 void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
 {
+    buildSetsForDAG(dag, context);
     auto actions = std::make_shared<ExpressionActions>(dag);
-    makeSets(actions, context);
     Block block_with_filter = block;
     actions->execute(block_with_filter, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 

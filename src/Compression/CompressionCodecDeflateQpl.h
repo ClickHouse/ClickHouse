@@ -26,7 +26,7 @@ public:
 
     qpl_job * acquireJob(UInt32 & job_id);
     void releaseJob(UInt32 job_id);
-    const bool & isJobPoolReady() { return job_pool_ready; }
+    const bool & isJobPoolReady() const { return job_pool_ready; }
 
 private:
     bool tryLockJob(UInt32 index);

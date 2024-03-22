@@ -85,6 +85,20 @@ void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
     memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[n * index], n);
 }
 
+void ColumnFixedString::insertManyFrom(const IColumn & src, size_t position, size_t length)
+{
+    const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
+    if (n != src_concrete.getN())
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
+
+    const size_t old_size = chars.size();
+    const size_t new_size = old_size + n * length;
+    chars.resize(new_size);
+
+    for (size_t offset = old_size; offset < new_size; offset += n)
+        memcpySmallAllowReadWriteOverflow15(&chars[offset], &src_concrete.chars[n * position], n);
+}
+
 void ColumnFixedString::insertData(const char * pos, size_t length)
 {
     if (length > n)

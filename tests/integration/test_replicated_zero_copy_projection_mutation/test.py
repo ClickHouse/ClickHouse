@@ -131,14 +131,13 @@ def test_all_projection_files_are_dropped_when_part_is_dropped(
             """
         )
 
-        objects_empty_table = list_objects(cluster)
-
         node.query(
             "ALTER TABLE test_all_projection_files_are_dropped ADD projection b_order (SELECT a, b ORDER BY b)"
         )
         node.query(
             "ALTER TABLE test_all_projection_files_are_dropped MATERIALIZE projection b_order"
         )
+        objects_empty_table = list_objects(cluster)
 
         node.query(
             """

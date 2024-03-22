@@ -8,6 +8,10 @@ sidebar_label: PostgreSQL
 
 The PostgreSQL engine allows to perform `SELECT` and `INSERT` queries on data that is stored on a remote PostgreSQL server.
 
+:::note
+Currently, only PostgreSQL versions 12 and up are supported.
+:::
+
 ## Creating a Table {#creating-a-table}
 
 ``` sql

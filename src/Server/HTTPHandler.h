@@ -32,7 +32,7 @@ class HTTPHandler : public HTTPRequestHandler
 {
 public:
     HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_);
-    virtual ~HTTPHandler() override;
+    ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 

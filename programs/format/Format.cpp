@@ -17,6 +17,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/TerminalSize.h>
+#include <Core/BaseSettingsProgramOptions.h>
 
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
@@ -102,7 +103,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         {
             std::string_view name = field.getName();
             if (name == "max_parser_depth" || name == "max_query_size")
-                cmd_settings.addProgramOption(desc, name, field);
+                addProgramOption(cmd_settings, desc, name, field);
         }
 
         boost::program_options::variables_map options;

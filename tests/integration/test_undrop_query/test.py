@@ -29,39 +29,30 @@ def test_undrop_drop_and_undrop_loop(started_cluster):
         logging.info(
             "random_sec: " + random_sec.__str__() + ", table_uuid: " + table_uuid
         )
-
         node.query(
-            "CREATE TABLE test_undrop_loop"
+            "create table test_undrop_loop"
             + count.__str__()
             + " UUID '"
             + table_uuid
-            + "' (id Int32) ENGINE = MergeTree() ORDER BY id;"
+            + "' (id Int32) Engine=MergeTree() order by id;"
         )
-
-        node.query("DROP TABLE test_undrop_loop" + count.__str__() + ";")
-
+        node.query("drop table test_undrop_loop" + count.__str__() + ";")
         time.sleep(random_sec)
-
         if random_sec >= 5:
             error = node.query_and_get_error(
-                "UNDROP TABLE test_undrop_loop"
+                "undrop table test_undrop_loop"
                 + count.__str__()
-                + " UUID '"
+                + " uuid '"
                 + table_uuid
                 + "';"
             )
             assert "UNKNOWN_TABLE" in error
-        elif random_sec <= 3:
-            # (*)
+        else:
             node.query(
-                "UNDROP TABLE test_undrop_loop"
+                "undrop table test_undrop_loop"
                 + count.__str__()
-                + " UUID '"
+                + " uuid '"
                 + table_uuid
                 + "';"
             )
             count = count + 1
-        else:
-            pass
-            # ignore random_sec = 4 to account for communication delay with the database.
-            # if we don't do that, then the second case (*) may find the table already dropped and receive an unexpected exception from the database (Bug #55167)

@@ -11,7 +11,7 @@ namespace DB
 
 bool ParserShowSettingQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword("SHOW SETTING").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::SHOW_SETTING).ignore(pos, expected))
         return false;
 
     ASTPtr setting_name_identifier;

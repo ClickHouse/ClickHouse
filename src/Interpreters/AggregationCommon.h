@@ -94,7 +94,7 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
             if constexpr (std::endian::native == std::endian::big)
                 offset_to = sizeof(Key) - sizeof(T) - offset;
             T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset_to);
-            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest);
+            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest); /// NOLINT(bugprone-sizeof-expression)
             offset += sizeof(T);
         }
     }

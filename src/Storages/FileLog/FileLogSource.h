@@ -30,7 +30,7 @@ public:
 
     void onFinish();
 
-    virtual ~FileLogSource() override;
+    ~FileLogSource() override;
 
 protected:
     Chunk generate() override;

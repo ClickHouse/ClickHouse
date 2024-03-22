@@ -2,9 +2,12 @@ import os
 
 import pytest
 import time
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(

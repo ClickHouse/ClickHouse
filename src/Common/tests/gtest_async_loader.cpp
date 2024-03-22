@@ -643,6 +643,72 @@ TEST(AsyncLoader, CustomDependencyFailure)
     ASSERT_EQ(good_count.load(), 3);
 }
 
+TEST(AsyncLoader, WaitersLimit)
+{
+    AsyncLoaderTest t(16);
+
+    std::atomic<int> waiters_total{0};
+    int waiters_limit = 5;
+    auto waiters_inc = [&] (const LoadJobPtr &) {
+        int value = waiters_total.load();
+        while (true)
+        {
+            if (value >= waiters_limit)
+                throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "Too many waiters: {}", value);
+            if (waiters_total.compare_exchange_strong(value, value + 1))
+                break;
+        }
+    };
+    auto waiters_dec = [&] (const LoadJobPtr &) {
+        waiters_total.fetch_sub(1);
+    };
+
+    std::barrier sync(2);
+    t.loader.start();
+
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        sync.arrive_and_wait(); // (A)
+    };
+
+    auto job = makeLoadJob({}, "job", waiters_inc, waiters_dec, job_func);
+    auto task = t.schedule({job});
+
+    std::atomic<int> failure{0};
+    std::atomic<int> success{0};
+    std::vector<std::thread> waiters;
+    waiters.reserve(10);
+    auto waiter = [&] {
+        try
+        {
+            t.loader.wait(job);
+            success.fetch_add(1);
+        }
+        catch(...)
+        {
+            failure.fetch_add(1);
+        }
+    };
+
+    for (int i = 0; i < 10; i++)
+        waiters.emplace_back(waiter);
+
+    while (failure.load() != 5)
+        std::this_thread::yield();
+
+    ASSERT_EQ(job->waitersCount(), 5);
+
+    sync.arrive_and_wait(); // (A)
+
+    for (auto & thread : waiters)
+        thread.join();
+
+    ASSERT_EQ(success.load(), 5);
+    ASSERT_EQ(failure.load(), 5);
+    ASSERT_EQ(waiters_total.load(), 0);
+
+    t.loader.wait();
+}
+
 TEST(AsyncLoader, TestConcurrency)
 {
     AsyncLoaderTest t(10);

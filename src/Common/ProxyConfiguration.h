@@ -50,7 +50,7 @@ struct ProxyConfiguration
     bool tunneling = false;
     Protocol original_request_protocol = Protocol::HTTP;
 
-    bool isEmpty() const { return host.size() == 0; }
+    bool isEmpty() const { return host.empty(); }
 };
 
 }

@@ -144,6 +144,8 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 #pragma clang diagnostic ignored "-Wsuggest-override"
 #pragma clang diagnostic ignored "-Wsuggest-destructor-override"
 
+/// NOLINTBEGIN(hicpp-use-override)
+
 template <typename Base>
 struct ConstSource : public Base
 {
@@ -230,6 +232,8 @@ struct ConstSource : public Base
         return true;
     }
 };
+
+/// NOLINTEND(hicpp-use-override)
 
 #pragma clang diagnostic pop
 

@@ -7,6 +7,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/MemorySettings.h>
 
 #include <Common/MultiVersion.h>
 
@@ -30,7 +31,7 @@ public:
         ColumnsDescription columns_description_,
         ConstraintsDescription constraints_,
         const String & comment,
-        bool compress_ = false);
+        const MemorySettings & settings = MemorySettings());
 
     String getName() const override { return "Memory"; }
 
@@ -134,6 +135,11 @@ private:
     std::atomic<size_t> total_size_rows = 0;
 
     bool compress;
+    UInt64 min_rows_to_keep;
+    UInt64 max_rows_to_keep;
+    UInt64 min_bytes_to_keep;
+    UInt64 max_bytes_to_keep;
+
 
     friend class ReadFromMemoryStorageStep;
 };

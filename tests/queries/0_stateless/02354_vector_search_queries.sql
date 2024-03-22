@@ -8,8 +8,6 @@
 SET allow_experimental_annoy_index = 1;
 SET allow_experimental_usearch_index = 1;
 
-SET allow_experimental_analyzer = 0;
-
 SELECT 'ARRAY, 10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block';
 
 DROP TABLE IF EXISTS tab_annoy;

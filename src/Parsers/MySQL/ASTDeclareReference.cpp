@@ -13,15 +13,15 @@ namespace MySQLParser
 
 bool parseReferenceOption(IParser::Pos & pos, ASTDeclareReference::ReferenceOption & option, Expected & expected)
 {
-    if (ParserKeyword("RESTRICT").ignore(pos, expected))
+    if (ParserKeyword(Keyword::RESTRICT).ignore(pos, expected))
         option = ASTDeclareReference::RESTRICT;
-    else if (ParserKeyword("CASCADE").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::CASCADE).ignore(pos, expected))
         option = ASTDeclareReference::CASCADE;
-    else if (ParserKeyword("SET NULL").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::SET_NULL).ignore(pos, expected))
         option = ASTDeclareReference::SET_NULL;
-    else if (ParserKeyword("NO ACTION").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::NO_ACTION).ignore(pos, expected))
         option = ASTDeclareReference::NO_ACTION;
-    else if (ParserKeyword("SET DEFAULT").ignore(pos, expected))
+    else if (ParserKeyword(Keyword::SET_DEFAULT).ignore(pos, expected))
         option = ASTDeclareReference::SET_DEFAULT;
     else
         return false;
@@ -53,7 +53,7 @@ bool ParserDeclareReference::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     ASTDeclareReference::ReferenceOption delete_option = ASTDeclareReference::RESTRICT;
     ASTDeclareReference::ReferenceOption update_option = ASTDeclareReference::RESTRICT;
 
-    if (!ParserKeyword("REFERENCES").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::REFERENCES).ignore(pos, expected))
         return false;
 
     if (!p_identifier.parse(pos, table_name, expected))
@@ -62,13 +62,13 @@ bool ParserDeclareReference::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     if (!p_expression.parse(pos, expression, expected))
         return false;
 
-    if (ParserKeyword("MATCH").ignore(pos, expected))
+    if (ParserKeyword(Keyword::MATCH).ignore(pos, expected))
     {
-        if (ParserKeyword("FULL").ignore(pos, expected))
+        if (ParserKeyword(Keyword::FULL).ignore(pos, expected))
             match_kind = ASTDeclareReference::MATCH_FULL;
-        else if (ParserKeyword("SIMPLE").ignore(pos, expected))
+        else if (ParserKeyword(Keyword::SIMPLE).ignore(pos, expected))
             match_kind = ASTDeclareReference::MATCH_SIMPLE;
-        else if (ParserKeyword("PARTIAL").ignore(pos, expected))
+        else if (ParserKeyword(Keyword::PARTIAL).ignore(pos, expected))
             match_kind = ASTDeclareReference::MATCH_PARTIAL;
         else
             return false;
@@ -76,12 +76,12 @@ bool ParserDeclareReference::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
 
     while (true)
     {
-        if (ParserKeyword("ON DELETE").ignore(pos, expected))
+        if (ParserKeyword(Keyword::ON_DELETE).ignore(pos, expected))
         {
             if (!parseReferenceOption(pos, delete_option, expected))
                 return false;
         }
-        else if (ParserKeyword("ON UPDATE").ignore(pos, expected))
+        else if (ParserKeyword(Keyword::ON_UPDATE).ignore(pos, expected))
         {
             if (!parseReferenceOption(pos, update_option, expected))
                 return false;

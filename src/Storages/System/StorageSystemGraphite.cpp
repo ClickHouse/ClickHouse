@@ -1,6 +1,7 @@
 #include <Storages/System/StorageSystemGraphite.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB

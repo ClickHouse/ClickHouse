@@ -22,7 +22,7 @@ import kafka.errors
 import pytest
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
@@ -40,6 +40,8 @@ from . import kafka_pb2
 from . import social_pb2
 from . import message_with_repeated_pb2
 
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
 # TODO: add test for SELECT LIMIT is working.

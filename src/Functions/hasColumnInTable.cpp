@@ -7,6 +7,7 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/getStructureOfRemoteTable.h>
 
 

@@ -73,7 +73,7 @@ public:
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
         const DictionaryStorageFetchRequest & fetch_request,
-        IColumn::Filter * const default_mask = nullptr) override
+        IColumn::Filter * const default_mask) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request, default_mask);
@@ -110,7 +110,7 @@ public:
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
         const DictionaryStorageFetchRequest & column_fetch_requests,
-        IColumn::Filter * const default_mask = nullptr) override
+        IColumn::Filter * const default_mask) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, column_fetch_requests, default_mask);

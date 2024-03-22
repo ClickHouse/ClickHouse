@@ -15,11 +15,13 @@ function check_refcnt_for_table()
     local query_id
     query_id="$table-$(random_str 10)"
 
+    SETTINGS="--format Null --max_threads 1 --max_block_size 1  --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability 0.0"
+
     # Notes:
     # - query may sleep 1*(200/4)=50 seconds maximum, it is enough to check system.parts
     # - "part = 1" condition should prune all parts except first
     # - max_block_size=1 with index_granularity=1 will allow to cancel the query earlier
-    $CLICKHOUSE_CLIENT --format Null --max_threads 1 --max_block_size 1 --query_id "$query_id" -q "select sleepEachRow(1) from $table where part = 1" &
+    $CLICKHOUSE_CLIENT $SETTINGS --query_id "$query_id" -q "select sleepEachRow(1) from $table where part = 1" &
     PID=$!
 
     # wait for query to be started

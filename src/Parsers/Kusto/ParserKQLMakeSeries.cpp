@@ -34,7 +34,7 @@ bool ParserKQLMakeSeries ::parseAggregationColumns(AggregationColumns & aggregat
          "variance"});
 
     Expected expected;
-    ParserKeyword s_default("default");
+    ParserKeyword s_default(Keyword::DEFAULT);
     ParserToken equals(TokenType::Equals);
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
@@ -364,8 +364,8 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
 bool ParserKQLMakeSeries ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto begin = pos;
-    ParserKeyword s_on("on");
-    ParserKeyword s_by("by");
+    ParserKeyword s_on(Keyword::ON);
+    ParserKeyword s_by(Keyword::BY);
 
     ParserToken equals(TokenType::Equals);
     ParserToken comma(TokenType::Comma);
