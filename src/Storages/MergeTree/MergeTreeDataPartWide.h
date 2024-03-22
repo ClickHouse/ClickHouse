@@ -63,9 +63,9 @@ protected:
         MergeTreeIndexGranularity & index_granularity_, MergeTreeIndexGranularityInfo & index_granularity_info_,
         const IDataPartStorage & data_part_storage_, const std::string & any_column_file_name);
 
-private:
-    void checkConsistency(bool require_part_metadata) const override;
+    void doCheckConsistency(bool require_part_metadata) const override;
 
+private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 

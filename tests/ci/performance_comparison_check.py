@@ -155,7 +155,7 @@ def main():
     }
 
     download_builds_filter(
-        check_name, REPORT_PATH, TEMP_PATH, lambda url: "performance.tar.zst" in url
+        check_name, REPORT_PATH, temp_path, lambda url: "performance.tar.zst" in url
     )
     assert os.path.exists(f"{TEMP_PATH}/performance.tar.zst"), "Perf artifact not found"
 
