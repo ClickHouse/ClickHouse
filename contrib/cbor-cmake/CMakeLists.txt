@@ -17,7 +17,7 @@ set(SRCS
 )
 
 
-add_library(_cbor INTERFACE ${SRCS})
-target_include_directories(_cbor SYSTEM BEFORE INTERFACE "${LIBRARY_DIR}/src")
+add_library(_cbor ${SRCS})
+target_include_directories(_cbor SYSTEM PUBLIC "${LIBRARY_DIR}/src")
 add_library(ch_contrib::cbor ALIAS _cbor)
 
