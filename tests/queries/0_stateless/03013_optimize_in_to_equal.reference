@@ -20,7 +20,6 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: x, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: \'a\', constant_value_type: String
-  SETTINGS allow_experimental_analyzer=1
 -------------------
 QUERY id: 0
   PROJECTION COLUMNS
@@ -43,7 +42,6 @@ QUERY id: 0
                 ARGUMENTS
                   LIST id: 10, nodes: 1
                     CONSTANT id: 11, constant_value: \'a\', constant_value_type: String
-  SETTINGS allow_experimental_analyzer=1
 -------------------
 QUERY id: 0
   PROJECTION COLUMNS
@@ -61,7 +59,6 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: x, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: Tuple_(\'a\', \'b\'), constant_value_type: Tuple(String, String)
-  SETTINGS allow_experimental_analyzer=1
 -------------------
 QUERY id: 0
   PROJECTION COLUMNS
@@ -79,7 +76,6 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: x, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: Array_[\'a\', \'b\'], constant_value_type: Array(String)
-  SETTINGS allow_experimental_analyzer=1
 -------------------
 b	2
 c	3
@@ -100,7 +96,6 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: x, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: \'a\', constant_value_type: String
-  SETTINGS allow_experimental_analyzer=1
 -------------------
 QUERY id: 0
   PROJECTION COLUMNS
@@ -123,7 +118,6 @@ QUERY id: 0
                 ARGUMENTS
                   LIST id: 10, nodes: 1
                     CONSTANT id: 11, constant_value: \'a\', constant_value_type: String
-  SETTINGS allow_experimental_analyzer=1
 -------------------
 QUERY id: 0
   PROJECTION COLUMNS
@@ -141,7 +135,6 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: x, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: Tuple_(\'a\', \'b\'), constant_value_type: Tuple(String, String)
-  SETTINGS allow_experimental_analyzer=1
 -------------------
 QUERY id: 0
   PROJECTION COLUMNS
@@ -159,7 +152,6 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: x, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: Array_[\'a\', \'b\'], constant_value_type: Array(String)
-  SETTINGS allow_experimental_analyzer=1
 -------------------
 QUERY id: 0
   PROJECTION COLUMNS
@@ -177,7 +169,6 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: x, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: NULL, constant_value_type: Nullable(Nothing)
-  SETTINGS allow_experimental_analyzer=1
 -------------------
 QUERY id: 0
   PROJECTION COLUMNS
@@ -195,4 +186,3 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: x, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: NULL, constant_value_type: Nullable(Nothing)
-  SETTINGS allow_experimental_analyzer=1
