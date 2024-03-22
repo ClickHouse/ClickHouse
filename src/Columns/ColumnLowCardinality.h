@@ -112,6 +112,11 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
     }
 
+    void filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start) override
+    {
+        getIndexesPtr()->assumeMutable()->filterInPlace(indexes, start);
+    }
+
     void expand(const Filter & mask, bool inverted) override
     {
         idx.getPositionsPtr()->expand(mask, inverted);

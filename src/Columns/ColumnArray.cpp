@@ -634,6 +634,7 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
     return filterGeneric(filt, result_size_hint);
 }
 
+
 void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
 {
     auto & offsets_data = getOffsets();
@@ -888,6 +889,31 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
 }
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
+
+void ColumnArray::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+{
+    size_t nested_indexes_size = 0;
+    for (auto index : indexes)
+        nested_indexes_size += sizeAt(index);
+
+    size_t nested_start = offsetAt(start);
+    PaddedPODArray<UInt64> nested_indexes(nested_indexes_size);
+    size_t current_new_offset = nested_start;
+    auto & offsets_ref = getOffsets();
+    for (size_t i = 0; i < indexes.size(); ++i)
+    {
+        size_t index = indexes[i];
+        size_t nested_offset = offsetAt(index);
+        size_t nested_size = sizeAt(index);
+        for (size_t j = 0; j < nested_size; ++j)
+            nested_indexes[current_new_offset - nested_start + j] = nested_offset + j;
+
+        current_new_offset += nested_size;
+        offsets_ref[start + i]  = current_new_offset;
+    }
+    offsets_ref.resize_exact(start + indexes.size());
+    data->filterInPlace(nested_indexes, nested_start);
+}
 
 void ColumnArray::getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
                                 size_t limit, int nan_direction_hint, Permutation & res) const

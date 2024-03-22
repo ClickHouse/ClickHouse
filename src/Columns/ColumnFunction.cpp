@@ -135,10 +135,12 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
 
 void ColumnFunction::expand(const Filter & mask, bool inverted)
 {
-    for (auto & column : captured_columns)
+    size_t num_captured_columns = captured_columns.size();
+    for (size_t i = 0; i < num_captured_columns; ++i)
     {
-        column.column = column.column->cloneResized(column.column->size());
-        column.column->assumeMutable()->expand(mask, inverted);
+        auto mut_column = IColumn::mutate(std::move(captured_columns[i].column));
+        mut_column->expand(mask, inverted);
+        captured_columns[i].column = std::move(mut_column);
     }
 
     elements_size = mask.size();
@@ -174,6 +176,19 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         is_short_circuit_argument,
         is_function_compiled,
         recursively_convert_result_to_full_column_if_low_cardinality);
+}
+
+void ColumnFunction::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+{
+    size_t num_captured_columns = captured_columns.size();
+    for (size_t i = 0; i < num_captured_columns; ++i)
+    {
+        auto mut_column = IColumn::mutate(std::move(captured_columns[i].column));
+        mut_column->filterInPlace(indexes, start);
+        captured_columns[i].column = std::move(mut_column);
+    }
+
+    elements_size  = start + indexes.size();
 }
 
 std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_columns,

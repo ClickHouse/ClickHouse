@@ -286,6 +286,9 @@ public:
     using Filter = PaddedPODArray<UInt8>;
     [[nodiscard]] virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
+    /// Filter current column by indexes in-place.
+    virtual void filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start);
+
     /** Expand column by mask inplace. After expanding column will
       * satisfy the following: if we filter it by given mask, we will
       * get initial column. Values with indexes i: mask[i] = 0

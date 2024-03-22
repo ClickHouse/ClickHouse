@@ -189,6 +189,7 @@ public:
     void popBack(size_t n) override;
 
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
+    void filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start) override;
 
     void expand(const Filter & mask, bool inverted) override;
 

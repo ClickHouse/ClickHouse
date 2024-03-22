@@ -64,6 +64,18 @@ ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/)
     return ColumnConst::create(data, new_size);
 }
 
+void ColumnConst::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+{
+    if (indexes.size() + start > s)
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Size of filter ({}) is greater than size of column ({})",
+            indexes.size() + start,
+            toString(s));
+
+    s = start + indexes.size();
+}
+
 void ColumnConst::expand(const Filter & mask, bool inverted)
 {
     if (mask.size() < s)

@@ -270,6 +270,16 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     return res;
 }
 
+void ColumnFixedString::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+{
+    Chars & res_chars = chars;
+    size_t offset = 0;
+    for (size_t i = 0; i < indexes.size(); ++i, offset += n)
+        memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[indexes[i] * n], n);
+
+    res_chars.resize_exact(n * indexes.size());
+}
+
 void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
 {
     if (mask.size() < size())
@@ -319,7 +329,7 @@ ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, siz
 
     Chars & res_chars = res->chars;
 
-    res_chars.resize(n * limit);
+    res_chars.resize_exact(n * limit);
 
     size_t offset = 0;
     for (size_t i = 0; i < limit; ++i, offset += n)

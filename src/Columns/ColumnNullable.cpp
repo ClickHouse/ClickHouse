@@ -262,6 +262,12 @@ ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) 
     return ColumnNullable::create(filtered_data, filtered_null_map);
 }
 
+void ColumnNullable::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+{
+    getNestedColumn().filterInPlace(indexes, start);
+    getNullMapColumn().filterInPlace(indexes, start);
+}
+
 void ColumnNullable::expand(const IColumn::Filter & mask, bool inverted)
 {
     nested_column->expand(mask, inverted);

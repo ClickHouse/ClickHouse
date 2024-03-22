@@ -301,6 +301,27 @@ ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
     return selectIndexImpl(*this, indexes, limit);
 }
 
+void ColumnString::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+{
+    Chars & res_chars = chars;
+    Offsets & res_offsets = offsets;
+    Offset current_new_offset = res_offsets[start - 1];
+    for (size_t i = 0; i < indexes.size(); ++i)
+    {
+        size_t j = indexes[i];
+        size_t string_offset = offsets[j - 1];
+        size_t string_size = offsets[j] - string_offset;
+
+        memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
+
+        current_new_offset += string_size;
+        res_offsets[i] = current_new_offset;
+    }
+
+    res_chars.resize_exact(current_new_offset);
+    res_offsets.resize_exact(start + indexes.size());
+}
+
 template <typename Type>
 ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
@@ -316,12 +337,11 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     size_t new_chars_size = 0;
     for (size_t i = 0; i < limit; ++i)
         new_chars_size += sizeAt(indexes[i]);
-    res_chars.resize(new_chars_size);
 
-    res_offsets.resize(limit);
+    res_chars.resize_exact(new_chars_size);
+    res_offsets.resize_exact(limit);
 
     Offset current_new_offset = 0;
-
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = indexes[i];

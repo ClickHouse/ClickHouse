@@ -827,6 +827,11 @@ ColumnPtr ColumnObject::filter(const Filter & filter, ssize_t result_size_hint) 
     return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.filter(filter, result_size_hint); });
 }
 
+void ColumnObject::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+{
+    applyForSubcolumns([&](auto & subcolumn) { return subcolumn.filterInPlace(indexes, start); });
+}
+
 ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
 {
     return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.index(indexes, limit); });

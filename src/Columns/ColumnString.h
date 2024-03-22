@@ -33,11 +33,11 @@ private:
     friend class COWHelper<IColumnHelper<ColumnString>, ColumnString>;
 
     /// Maps i'th position to offset to i+1'th element. Last offset maps to the end of all chars (is the size of all chars).
-    Offsets offsets;
+    mutable Offsets offsets;
 
     /// Bytes of strings, placed contiguously.
     /// For convenience, every string ends with terminating zero byte. Note that strings could contain zero bytes in the middle.
-    Chars chars;
+    mutable Chars chars;
 
     size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return offsets[i - 1]; }
 
@@ -208,6 +208,8 @@ public:
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+
+    void filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start) override;
 
     void expand(const Filter & mask, bool inverted) override;
 

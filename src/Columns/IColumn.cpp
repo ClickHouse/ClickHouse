@@ -98,6 +98,17 @@ void IColumn::forEachSubcolumnRecursively(RecursiveColumnCallback callback) cons
     });
 }
 
+void IColumn::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+{
+    Filter filt(size(), 0);
+    for (size_t i = 0; i < start; ++i)
+        filt[i] = 1;
+    for (auto index : indexes)
+        filt[index] = 1;
+    auto res = filter(filt, start + indexes.size());
+    getPtr() = res->assumeMutable();
+}
+
 bool isColumnNullable(const IColumn & column)
 {
     return checkColumn<ColumnNullable>(column);

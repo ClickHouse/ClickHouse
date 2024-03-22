@@ -219,6 +219,7 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
+    void filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start) override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     MutableColumnPtr cloneResized(size_t new_size) const override;
