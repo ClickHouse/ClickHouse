@@ -97,12 +97,14 @@ public:
         if (!if_true_condition_constant_node || !if_false_condition_constant_node)
             return;
 
+        if (auto constant_type = if_true_condition_constant_node->getResultType(); !isNativeInteger(constant_type))
+            return;
+
+        if (auto constant_type = if_false_condition_constant_node->getResultType(); !isNativeInteger(constant_type))
+            return;
+
         const auto & if_true_condition_constant_value_literal = if_true_condition_constant_node->getValue();
         const auto & if_false_condition_constant_value_literal = if_false_condition_constant_node->getValue();
-
-        if (!isInt64OrUInt64FieldType(if_true_condition_constant_value_literal.getType()) ||
-            !isInt64OrUInt64FieldType(if_false_condition_constant_value_literal.getType()))
-            return;
 
         auto if_true_condition_value = if_true_condition_constant_value_literal.get<UInt64>();
         auto if_false_condition_value = if_false_condition_constant_value_literal.get<UInt64>();
