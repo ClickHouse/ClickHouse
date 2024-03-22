@@ -802,7 +802,7 @@ struct IdentifierResolveScope
     struct ResolvedFunctionsCache
     {
         FunctionOverloadResolverPtr resolver;
-        std::map<IQueryTreeNode::Hash, FunctionBasePtr> cache;
+        FunctionBasePtr function_base;
     };
 
     std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
@@ -930,24 +930,6 @@ struct IdentifierResolveScope
         return buffer.str();
     }
 };
-
-IQueryTreeNode::Hash getHashForFunctionArguments(const ColumnsWithTypeAndName & arguments)
-{
-    SipHash hash;
-    for (const auto & arg : arguments)
-    {
-        auto type_name = arg.type->getName();
-        hash.update(type_name.c_str(), type_name.size());
-
-        if (arg.column)
-        {
-            if (const auto * col_const = typeid_cast<const ColumnConst *>(arg.column.get()))
-                col_const->updateHashWithValue(0, hash);
-        }
-    }
-
-    return getSipHash128AsPair(hash);
-}
 
 
 /** Visitor that extracts expression and function aliases from node and initialize scope tables with it.
@@ -5798,8 +5780,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         FunctionBasePtr function_base;
         if (function_cache)
         {
-            auto args_hash = getHashForFunctionArguments(argument_columns);
-            auto & cached_function = function_cache->cache[args_hash];
+            auto & cached_function = function_cache->function_base;
             if (!cached_function)
                 cached_function = function->build(argument_columns);
 
