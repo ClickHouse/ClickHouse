@@ -221,10 +221,6 @@ struct ContextSharedPart : boost::noncopyable
 
     ConfigurationPtr sensitive_data_masker_config;
 
-#if USE_NURAFT
-    mutable std::mutex keeper_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
-#endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers TSA_GUARDED_BY(auxiliary_zookeepers_mutex);    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config TSA_GUARDED_BY(auxiliary_zookeepers_mutex);           /// Stores auxiliary zookeepers configs
@@ -417,6 +413,11 @@ struct ContextSharedPart : boost::noncopyable
 
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
 
+#if USE_NURAFT
+    mutable std::mutex keeper_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
+#endif
+
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
         , global_overcommit_tracker(&process_list)
@@ -432,9 +433,20 @@ struct ContextSharedPart : boost::noncopyable
         }
     }
 
-
     ~ContextSharedPart()
     {
+        if (keeper_dispatcher)
+        {
+            try
+            {
+                keeper_dispatcher->shutdown();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
         /// Wait for thread pool for background reads and writes,
         /// since it may use per-user MemoryTracker which will be destroyed here.
         if (asynchronous_remote_fs_reader)
