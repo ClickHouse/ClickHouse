@@ -36,7 +36,7 @@ public:
             || constant_node->getValue().getType() == Field::Types::Which::Array)
             return ;
         // x IN null not equivalent to x = null
-        if (constant_node->hasSourceExpression() || constant_node->getValue().isNull())
+        if (constant_node->getValue().isNull())
             return ;
         auto result_func_name = MAPPING.at(func_node->getFunctionName());
         auto equal = std::make_shared<FunctionNode>(result_func_name);
