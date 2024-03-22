@@ -4,9 +4,10 @@
 
 #include <Common/Exception.h>
 #include "Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h"
+#include "Passes/CaseWhenSimplifyPass.h"
 
-#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -265,6 +266,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
     manager.addPass(std::make_unique<ConvertInToEqualPass>());
+    manager.addPass(std::make_unique<CaseWhenSimplifyPass>());
 
     /// should before AggregateFunctionsArithmericOperationsPass
     manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>());
