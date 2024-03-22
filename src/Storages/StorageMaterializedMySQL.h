@@ -34,7 +34,6 @@ public:
 
     SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, bool) override { throwNotAllowed(); }
 
-    NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
 
     StoragePtr getNested() const override { return nested_storage; }

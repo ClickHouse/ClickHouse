@@ -77,7 +77,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"Logout",                 static_cast<Int8>(SESSION_LOGOUT)}
         });
 
-#define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(AuthenticationTypeInfo::get(v).raw_name, static_cast<Int8>(v))
+#define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(toString(v), static_cast<Int8>(v))
     auto identified_with_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
@@ -121,33 +121,36 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
 
     return ColumnsDescription
     {
-        {"hostname", lc_string_datatype},
-        {"type", std::move(event_type)},
-        {"auth_id", std::make_shared<DataTypeUUID>()},
-        {"session_id", std::make_shared<DataTypeString>()},
-        {"event_date", std::make_shared<DataTypeDate>()},
-        {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+        {"hostname", lc_string_datatype, "Hostname of the server executing the query."},
+        {"type", std::move(event_type), "Login/logout result. Possible values: "
+            "LoginFailure — Login error. "
+            "LoginSuccess — Successful login. "
+            "Logout — Logout from the system."},
+        {"auth_id", std::make_shared<DataTypeUUID>(), "Authentication ID, which is a UUID that is automatically generated each time user logins."},
+        {"session_id", std::make_shared<DataTypeString>(), "Session ID that is passed by client via HTTP interface."},
+        {"event_date", std::make_shared<DataTypeDate>(), "Login/logout date."},
+        {"event_time", std::make_shared<DataTypeDateTime>(), "Login/logout time."},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Login/logout starting time with microseconds precision."},
 
-        {"user", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"auth_type", std::make_shared<DataTypeNullable>(std::move(identified_with_column))},
+        {"user", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "User name."},
+        {"auth_type", std::make_shared<DataTypeNullable>(std::move(identified_with_column)), "The authentication type."},
 
-        {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype)},
-        {"roles", std::make_shared<DataTypeArray>(lc_string_datatype)},
-        {"settings", std::move(settings_type_column)},
+        {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype), "The list of profiles set for all roles and/or users."},
+        {"roles", std::make_shared<DataTypeArray>(lc_string_datatype), "The list of roles to which the profile is applied."},
+        {"settings", std::move(settings_type_column), "Settings that were changed when the client logged in/out."},
 
-        {"client_address", DataTypeFactory::instance().get("IPv6")},
-        {"client_port", std::make_shared<DataTypeUInt16>()},
-        {"interface", std::move(interface_type_column)},
+        {"client_address", DataTypeFactory::instance().get("IPv6"), "The IP address that was used to log in/out."},
+        {"client_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to log in/out."},
+        {"interface", std::move(interface_type_column), "The interface from which the login was initiated."},
 
-        {"client_hostname", std::make_shared<DataTypeString>()},
-        {"client_name", std::make_shared<DataTypeString>()},
-        {"client_revision", std::make_shared<DataTypeUInt32>()},
-        {"client_version_major", std::make_shared<DataTypeUInt32>()},
-        {"client_version_minor", std::make_shared<DataTypeUInt32>()},
-        {"client_version_patch", std::make_shared<DataTypeUInt32>()},
+        {"client_hostname", std::make_shared<DataTypeString>(), "The hostname of the client machine where the clickhouse-client or another TCP client is run."},
+        {"client_name", std::make_shared<DataTypeString>(), "The clickhouse-client or another TCP client name."},
+        {"client_revision", std::make_shared<DataTypeUInt32>(), "Revision of the clickhouse-client or another TCP client."},
+        {"client_version_major", std::make_shared<DataTypeUInt32>(), "The major version of the clickhouse-client or another TCP client."},
+        {"client_version_minor", std::make_shared<DataTypeUInt32>(), "The minor version of the clickhouse-client or another TCP client."},
+        {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
 
-        {"failure_reason", std::make_shared<DataTypeString>()},
+        {"failure_reason", std::make_shared<DataTypeString>(), "The exception message containing the reason for the login/logout failure."},
     };
 }
 

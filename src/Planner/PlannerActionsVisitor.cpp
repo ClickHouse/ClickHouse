@@ -44,6 +44,27 @@ namespace ErrorCodes
 namespace
 {
 
+/* Calculates Action node name for ConstantNode.
+ *
+ * If converting to AST will add a '_CAST' function call,
+ * the result action name will also include it.
+ */
+String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node)
+{
+    WriteBufferFromOwnString buffer;
+    if (constant_node.requiresCastCall())
+        buffer << "_CAST(";
+
+    buffer << calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
+
+    if (constant_node.requiresCastCall())
+    {
+        buffer << ", '" << constant_node.getResultType()->getName() << "'_String)";
+    }
+
+    return buffer.str();
+}
+
 class ActionNodeNameHelper
 {
 public:
@@ -88,7 +109,49 @@ public:
             case QueryTreeNodeType::CONSTANT:
             {
                 const auto & constant_node = node->as<ConstantNode &>();
-                result = calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
+                /* To ensure that headers match during distributed query we need to simulate action node naming on
+                * secondary servers. If we don't do that headers will mismatch due to constant folding.
+                *
+                *                                +--------+
+                *               -----------------| Server |----------------
+                *              /                 +--------+                \
+                *             /                                             \
+                *            v                                               v
+                *      +-----------+                                   +-----------+
+                *      | Initiator |                            ------ | Secondary |------
+                *      +-----------+                           /       +-----------+      \
+                *            |                                /                            \
+                *            |                               /                              \
+                *            v                              /                                \
+                *    +---------------+                     v                                  v
+                *    | Wrap in _CAST |      +----------------------------+        +----------------------+
+                *    | if needed     |      | Constant folded from _CAST |        | Constant folded from |
+                *    +---------------+      +----------------------------+        | another expression   |
+                *                                          |                      +----------------------+
+                *                                          v                                  |
+                *                           +----------------------------+                    v
+                *                           | Name ConstantNode the same |      +--------------------------+
+                *                           | as on initiator server     |      | Generate action name for |
+                *                           | (wrap in _CAST if needed)  |      | original expression      |
+                *                           +----------------------------+      +--------------------------+
+                */
+                if (planner_context.isASTLevelOptimizationAllowed())
+                {
+                    result = calculateActionNodeNameWithCastIfNeeded(constant_node);
+                }
+                else
+                {
+                    // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+                    if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+                    {
+                        if (constant_node.receivedFromInitiatorServer())
+                            result = calculateActionNodeNameWithCastIfNeeded(constant_node);
+                        else
+                            result = calculateActionNodeName(constant_node.getSourceExpression());
+                    }
+                    else
+                        result = calculateConstantActionNodeName(constant_node.getValue(), constant_node.getResultType());
+                }
                 break;
             }
             case QueryTreeNodeType::FUNCTION:
@@ -451,6 +514,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
     const PlannerContextPtr planner_context;
     ActionNodeNameHelper action_node_name_helper;
+    bool use_column_identifier_as_action_node_name;
 };
 
 PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(ActionsDAGPtr actions_dag,
@@ -458,6 +522,7 @@ PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(ActionsDAGPtr actions_dag,
     bool use_column_identifier_as_action_node_name_)
     : planner_context(planner_context_)
     , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_)
+    , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
 {
     actions_stack.emplace_back(std::move(actions_dag), nullptr);
 }
@@ -503,7 +568,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 {
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
     const auto & column_node = node->as<ColumnNode &>();
-
+    if (column_node.hasExpression() && !use_column_identifier_as_action_node_name)
+        return visitImpl(column_node.getExpression());
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
     for (Int64 i = actions_stack_size; i >= 0; --i)
     {
@@ -527,7 +593,52 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & constant_literal = constant_node.getValue();
     const auto & constant_type = constant_node.getResultType();
 
-    auto constant_node_name = calculateConstantActionNodeName(constant_literal, constant_type);
+    auto constant_node_name = [&]()
+    {
+        /* To ensure that headers match during distributed query we need to simulate action node naming on
+         * secondary servers. If we don't do that headers will mismatch due to constant folding.
+         *
+         *                                +--------+
+         *               -----------------| Server |----------------
+         *              /                 +--------+                \
+         *             /                                             \
+         *            v                                               v
+         *      +-----------+                                   +-----------+
+         *      | Initiator |                            ------ | Secondary |------
+         *      +-----------+                           /       +-----------+      \
+         *            |                                /                            \
+         *            |                               /                              \
+         *            v                              /                                \
+         *    +---------------+                     v                                  v
+         *    | Wrap in _CAST |      +----------------------------+        +----------------------+
+         *    | if needed     |      | Constant folded from _CAST |        | Constant folded from |
+         *    +---------------+      +----------------------------+        | another expression   |
+         *                                          |                      +----------------------+
+         *                                          v                                  |
+         *                           +----------------------------+                    v
+         *                           | Name ConstantNode the same |      +--------------------------+
+         *                           | as on initiator server     |      | Generate action name for |
+         *                           | (wrap in _CAST if needed)  |      | original expression      |
+         *                           +----------------------------+      +--------------------------+
+         */
+        if (planner_context->isASTLevelOptimizationAllowed())
+        {
+            return calculateActionNodeNameWithCastIfNeeded(constant_node);
+        }
+        else
+        {
+            // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+            if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+            {
+                if (constant_node.receivedFromInitiatorServer())
+                    return calculateActionNodeNameWithCastIfNeeded(constant_node);
+                else
+                    return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
+            }
+            else
+                return calculateConstantActionNodeName(constant_literal, constant_type);
+        }
+    }();
 
     ColumnWithTypeAndName column;
     column.name = constant_node_name;

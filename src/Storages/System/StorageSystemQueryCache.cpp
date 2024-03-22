@@ -24,11 +24,11 @@ ColumnsDescription StorageSystemQueryCache::getColumnsDescription()
 }
 
 StorageSystemQueryCache::StorageSystemQueryCache(const StorageID & table_id_)
-    : IStorageSystemOneBlock(table_id_)
+    : IStorageSystemOneBlock(table_id_, getColumnsDescription())
 {
 }
 
-void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     QueryCachePtr query_cache = context->getQueryCache();
 

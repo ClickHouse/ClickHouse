@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 
 import json
-import re
 import time
 from base64 import b64decode
 from collections import namedtuple
 from queue import Queue
 from threading import Thread
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-import requests  # type: ignore
-from lambda_shared.pr import CATEGORY_TO_LABEL, check_pr_description
+import requests
+from lambda_shared.pr import check_pr_description
 from lambda_shared.token import get_cached_access_token
 
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
@@ -48,16 +47,18 @@ class Worker(Thread):
 
 def _exec_get_with_retry(url: str, token: str) -> dict:
     headers = {"Authorization": f"token {token}"}
+    e = Exception()
     for i in range(MAX_RETRY):
         try:
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=30)
             response.raise_for_status()
             return response.json()  # type: ignore
         except Exception as ex:
             print("Got exception executing request", ex)
+            e = ex
             time.sleep(i + 1)
 
-    raise Exception("Cannot execute GET request with retries")
+    raise requests.HTTPError("Cannot execute GET request with retries") from e
 
 
 WorkflowDescription = namedtuple(
@@ -215,16 +216,18 @@ def get_workflow_description(workflow_url: str, token: str) -> WorkflowDescripti
 
 def _exec_post_with_retry(url: str, token: str, json: Optional[Any] = None) -> Any:
     headers = {"Authorization": f"token {token}"}
+    e = Exception()
     for i in range(MAX_RETRY):
         try:
-            response = requests.post(url, headers=headers, json=json)
+            response = requests.post(url, headers=headers, json=json, timeout=30)
             response.raise_for_status()
             return response.json()
         except Exception as ex:
             print("Got exception executing request", ex)
+            e = ex
             time.sleep(i + 1)
 
-    raise Exception("Cannot execute POST request with retry")
+    raise requests.HTTPError("Cannot execute POST request with retry") from e
 
 
 def exec_workflow_url(urls_to_post, token):
