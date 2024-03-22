@@ -3,7 +3,7 @@
 #include <Interpreters/registerInterpreters.h>
 #include "Processors/Executors/PullingPipelineExecutor.h"
 
-#include <Databases/registerDatabases.h>
+#include <Functions/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>

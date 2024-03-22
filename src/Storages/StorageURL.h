@@ -48,6 +48,9 @@ public:
 
     bool supportsPartitionBy() const override { return true; }
 
+    NamesAndTypesList getVirtuals() const override;
+    static Names getVirtualColumnNames();
+
     static ColumnsDescription getTableStructureFromData(
         const String & format,
         const String & uri,
@@ -102,6 +105,8 @@ protected:
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
     bool distributed_processing;
+
+    NamesAndTypesList virtual_columns;
 
     virtual std::string getReadMethod() const;
 

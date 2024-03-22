@@ -68,6 +68,7 @@ namespace ErrorCodes
     extern const int CANNOT_DETECT_FORMAT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+
 }
 
 namespace
@@ -166,7 +167,7 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
 
     auto is_format_arg = [] (const std::string & s) -> bool
     {
-        return s == "auto" || FormatFactory::instance().exists(s);
+        return s == "auto" || FormatFactory::instance().getAllFormats().contains(s);
     };
 
     if (engine_args.size() == 4)
@@ -199,7 +200,7 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
     else if (engine_args.size() == 6)
     {
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+        if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
         }
@@ -217,7 +218,7 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
     else if (engine_args.size() == 7)
     {
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+        if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
         }
@@ -491,11 +492,12 @@ StorageAzureBlob::StorageAzureBlob(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 
     StoredObjects objects;
     for (const auto & key : configuration.blobs_paths)
         objects.emplace_back(key);
+
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 void StorageAzureBlob::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
@@ -735,7 +737,7 @@ void StorageAzureBlob::read(
 
     auto this_ptr = std::static_pointer_cast<StorageAzureBlob>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
@@ -771,13 +773,13 @@ void ReadFromAzureBlob::createIterator(const ActionsDAG::Node * predicate)
         /// Iterate through disclosed globs and make a source for each file
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::GlobIterator>(
             storage->object_storage.get(), configuration.container, configuration.blob_path,
-            predicate, storage->getVirtualsList(), context, nullptr, context->getFileProgressCallback());
+            predicate, storage->virtual_columns, context, nullptr, context->getFileProgressCallback());
     }
     else
     {
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::KeysIterator>(
             storage->object_storage.get(), configuration.container, configuration.blobs_paths,
-            predicate, storage->getVirtualsList(), context, nullptr, context->getFileProgressCallback());
+            predicate, storage->virtual_columns, context, nullptr, context->getFileProgressCallback());
     }
 }
 
@@ -883,6 +885,16 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
             object_storage.get(),
             configuration.blobs_paths.back());
     }
+}
+
+NamesAndTypesList StorageAzureBlob::getVirtuals() const
+{
+    return virtual_columns;
+}
+
+Names StorageAzureBlob::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 bool StorageAzureBlob::supportsPartitionBy() const

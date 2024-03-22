@@ -6,7 +6,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
@@ -107,14 +106,16 @@ NameSet injectRequiredColumns(
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withExtendedObjects()
-        .withVirtuals()
-        .withSubcolumns(with_subcolumns);
+        .withSystemColumns();
+
+    if (with_subcolumns)
+        options.withSubcolumns();
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        /// We are going to fetch physical columns and system columns first
+        /// We are going to fetch only physical columns and system columns
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
-            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no physical column or subcolumn {} in table", columns[i]);
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
             columns[i], storage_snapshot, alter_conversions,
@@ -257,10 +258,11 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 }
 
 
-MergeTreeReadTaskColumns getReadTaskColumns(
+MergeTreeReadTask::Columns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
+    const Names & system_columns,
     const PrewhereInfoPtr & prewhere_info,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
@@ -268,29 +270,27 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 {
     Names column_to_read_after_prewhere = required_columns;
 
+    /// Read system columns such as lightweight delete mask "_row_exists" if it is persisted in the part
+    for (const auto & name : system_columns)
+        if (data_part_info_for_reader.getColumns().contains(name))
+            column_to_read_after_prewhere.push_back(name);
+
     /// Inject columns required for defaults evaluation
     injectRequiredColumns(
         data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
-    MergeTreeReadTaskColumns result;
+    MergeTreeReadTask::Columns result;
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withExtendedObjects()
-        .withVirtuals()
-        .withSubcolumns(with_subcolumns);
+        .withSystemColumns();
 
-    static const NameSet columns_to_read_at_first_step = {"_part_offset"};
+    if (with_subcolumns)
+        options.withSubcolumns();
 
     NameSet columns_from_previous_steps;
     auto add_step = [&](const PrewhereExprStep & step)
     {
         Names step_column_names;
-
-        if (columns_from_previous_steps.empty())
-        {
-            for (const auto & required_column : required_columns)
-                if (columns_to_read_at_first_step.contains(required_column))
-                    step_column_names.push_back(required_column);
-        }
 
         /// Computation results from previous steps might be used in the current step as well. In such a case these
         /// computed columns will be present in the current step inputs. They don't need to be read from the disk so

@@ -34,6 +34,8 @@ public:
 
     virtual bool isWidePart() const = 0;
 
+    virtual bool isInMemoryPart() const = 0;
+
     virtual bool isProjectionPart() const = 0;
 
     virtual DataPartStoragePtr getDataPartStorage() const = 0;

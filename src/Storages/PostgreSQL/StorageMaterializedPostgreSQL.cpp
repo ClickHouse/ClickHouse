@@ -72,7 +72,6 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL is allowed only for Atomic database");
 
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     replication_settings->materialized_postgresql_tables_list = remote_table_name_;
 
@@ -128,16 +127,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     , nested_table_id(nested_storage_->getStorageID())
 {
     setInMemoryMetadata(nested_storage_->getInMemoryMetadata());
-    setVirtuals(*nested_storage_->getVirtualsPtr());
 }
 
-VirtualColumnsDescription StorageMaterializedPostgreSQL::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_sign", std::make_shared<DataTypeInt8>(), "");
-    desc.addEphemeral("_version", std::make_shared<DataTypeUInt64>(), "");
-    return desc;
-}
 
 /// A temporary clone table might be created for current table in order to update its schema and reload
 /// all data in the background while current table will still handle read requests.
@@ -260,6 +251,15 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
     auto nested_table = tryGetNested() != nullptr;
     if (nested_table)
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), sync, /* ignore_sync_setting */ true);
+}
+
+
+NamesAndTypesList StorageMaterializedPostgreSQL::getVirtuals() const
+{
+    return NamesAndTypesList{
+            {"_sign", std::make_shared<DataTypeInt8>()},
+            {"_version", std::make_shared<DataTypeUInt64>()}
+    };
 }
 
 

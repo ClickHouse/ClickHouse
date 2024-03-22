@@ -336,6 +336,9 @@ public:
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
+    NamesAndTypesList getVirtuals() const override;
+    static Names getVirtualColumnNames();
+
     bool supportsPartitionBy() const override;
 
     static void processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection);
@@ -375,6 +378,7 @@ private:
 
     Configuration configuration;
     std::mutex configuration_update_mutex;
+    NamesAndTypesList virtual_columns;
 
     String name;
     const bool distributed_processing;

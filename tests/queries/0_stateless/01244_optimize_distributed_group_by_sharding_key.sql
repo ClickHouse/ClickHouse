@@ -42,7 +42,7 @@ select 'GROUP BY number ORDER BY number DESC';
 select count(), * from dist_01247 group by number order by number desc;
 
 select 'GROUP BY toString(number)';
-select count(), any(number) from dist_01247 group by toString(number);
+select count(), * from dist_01247 group by toString(number);
 
 select 'GROUP BY number%2';
 select count(), any(number) from dist_01247 group by number%2;

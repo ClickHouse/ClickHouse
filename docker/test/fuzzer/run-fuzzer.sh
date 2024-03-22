@@ -247,12 +247,6 @@ quit
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
 
-    # The fuzzer_pid belongs to the timeout process.
-    actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
-
-    echo "Attaching gdb to the fuzzer itself"
-    gdb -batch -command script.gdb -p $actual_fuzzer_pid &
-
     # Wait for the fuzzer to complete.
     # Note that the 'wait || ...' thing is required so that the script doesn't
     # exit because of 'set -e' when 'wait' returns nonzero code.
@@ -343,9 +337,10 @@ quit
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        echo "Let op!" > description.txt
-        echo "Fuzzer went wrong with error code: ($fuzzer_exit_code). Its process died somehow when the server stayed alive. The server log probably won't tell you much so try to find information in other files." >>description.txt
-        { rg -ao "Found error:.*" fuzzer.log || rg -ao "Exception:.*" fuzzer.log; } | tail -1 >>description.txt
+        { rg -ao "Found error:.*" fuzzer.log \
+            || rg -ao "Exception:.*" fuzzer.log \
+            || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
+            | tail -1 > description.txt
     fi
 
     if test -f core.*; then
@@ -391,8 +386,7 @@ if [ -f core.zst ]; then
     CORE_LINK='<a href="core.zst">core.zst</a>'
 fi
 
-# Keep all the lines in the paragraphs containing <Fatal> that either contain <Fatal> or don't start with 20... (year)
-sed -n '/<Fatal>/,/^$/p' server.log | awk '/<Fatal>/ || !/^20/' > fatal.log ||:
+rg --text -F '<Fatal>' server.log > fatal.log ||:
 FATAL_LINK=''
 if [ -s fatal.log ]; then
     FATAL_LINK='<a href="fatal.log">fatal.log</a>'

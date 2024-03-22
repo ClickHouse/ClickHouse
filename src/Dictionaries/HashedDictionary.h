@@ -67,7 +67,6 @@ struct HashedDictionaryConfiguration
     const bool require_nonempty;
     const DictionaryLifetime lifetime;
     bool use_async_executor = false;
-    const std::chrono::seconds load_timeout{0};
 };
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>

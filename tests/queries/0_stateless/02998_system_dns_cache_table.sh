@@ -5,14 +5,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # Retries are necessary because the DNS cache may be flushed before second statement is executed
-i=0
-retries=5
+i=0 retries=3
 while [[ $i -lt $retries ]]; do
-    ${CLICKHOUSE_CURL} -sS --fail --data "SELECT * FROM url('http://localhost:8123/ping', CSV, 'auto', headers())" "${CLICKHOUSE_URL}" | grep -oP -q 'Ok.' || continue
-
+    ${CLICKHOUSE_CURL} -sS --fail --data "SELECT * FROM url('http://localhost:8123/ping', CSV, 'auto', headers())" "${CLICKHOUSE_URL}" | grep -oP -q 'Ok.' && \
     RECORDS=$(${CLICKHOUSE_CURL} -sS --fail --data "SELECT hostname, ip_address, ip_family, (isNotNull(cached_at) AND cached_at > '1970-01-01 00:00:00') FROM system.dns_cache WHERE hostname = 'localhost' and ip_family = 'IPv4';" "${CLICKHOUSE_URL}")
 
-    if [[ -n "${RECORDS}" ]]; then
+    if [ "${RECORDS}" != "" ]; then
        echo "${RECORDS}"
        exit 0
     fi

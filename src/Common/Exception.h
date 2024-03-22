@@ -203,7 +203,7 @@ public:
     {
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
         e.message_format_string = fmt.message_format_string;
-        throw e; /// NOLINT
+        throw e;
     }
 
     template <typename... Args>
@@ -212,7 +212,7 @@ public:
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, errno);
         e.message_format_string = fmt.message_format_string;
         e.path = path;
-        throw e; /// NOLINT
+        throw e;
     }
 
     template <typename... Args>
@@ -222,7 +222,7 @@ public:
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
         e.message_format_string = fmt.message_format_string;
         e.path = path;
-        throw e; /// NOLINT
+        throw e;
     }
 
     ErrnoException * clone() const override { return new ErrnoException(*this); }

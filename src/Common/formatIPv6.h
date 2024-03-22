@@ -131,7 +131,7 @@ inline bool parseIPv4whole(const char * src, unsigned char * dst)
 * @return            - true if parsed successfully, false otherwise.
 */
 template <typename T, typename EOFfunction>
-requires (std::is_same_v<typename std::remove_cv_t<T>, char>)
+requires (std::is_same<typename std::remove_cv<T>::type, char>::value)
 inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst, int32_t first_block = -1)
 {
     const auto clear_dst = [dst]()
@@ -305,7 +305,7 @@ inline bool parseIPv6whole(const char * src, unsigned char * dst)
 * @return    - true if parsed successfully, false otherwise.
 */
 template <typename T, typename EOFfunction>
-requires (std::is_same_v<typename std::remove_cv_t<T>, char>)
+requires (std::is_same<typename std::remove_cv<T>::type, char>::value)
 inline bool parseIPv6orIPv4(T * &src, EOFfunction eof, unsigned char * dst)
 {
     const auto clear_dst = [dst]()

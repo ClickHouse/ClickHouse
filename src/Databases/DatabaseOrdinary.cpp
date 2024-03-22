@@ -513,9 +513,6 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
             throw Exception(
                 ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                 "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
-
-        args.context->addWarningMessageAboutDatabaseOrdinary(args.database_name);
-
         return make_shared<DatabaseOrdinary>(
             args.database_name,
             args.metadata_path,

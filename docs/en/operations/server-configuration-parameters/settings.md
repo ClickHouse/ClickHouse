@@ -200,13 +200,17 @@ Type: Bool
 Default: 0
 
 
-## dns_cache_max_entries
+## dns_cache_max_size
 
-Internal DNS cache max entries.
+Internal DNS cache max size in bytes.
+
+:::note
+ClickHouse also has a reverse cache, so the actual memory usage could be twice as much.
+:::
 
 Type: UInt64
 
-Default: 10000
+Default: 1024
 
 
 ## dns_cache_update_period

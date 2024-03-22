@@ -497,7 +497,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:    return get<Null>() < rhs.get<Null>();
+            case Types::Null:    return false;
             case Types::Bool:    [[fallthrough]];
             case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
@@ -541,7 +541,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:    return get<Null>() <= rhs.get<Null>();
+            case Types::Null:    return true;
             case Types::Bool: [[fallthrough]];
             case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
@@ -590,7 +590,7 @@ public:
 
         switch (which)
         {
-            case Types::Null: return get<Null>() == rhs.get<Null>();
+            case Types::Null: return true;
             case Types::Bool: [[fallthrough]];
             case Types::UInt64: return get<UInt64>() == rhs.get<UInt64>();
             case Types::Int64:   return get<Int64>() == rhs.get<Int64>();

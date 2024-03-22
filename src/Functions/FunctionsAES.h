@@ -154,21 +154,21 @@ private:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto optional_args = FunctionArgumentDescriptors{
-            {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
+            {"IV", &isStringOrFixedString<IDataType>, nullptr, "Initialization vector binary string"},
         };
 
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
         {
             optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Additional authenticated data binary string for GCM mode"
+                "AAD", &isStringOrFixedString<IDataType>, nullptr, "Additional authenticated data binary string for GCM mode"
             });
         }
 
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "encryption mode string"},
-                {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "plaintext"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "encryption key binary string"},
+                {"mode", &isStringOrFixedString<IDataType>, isColumnConst, "encryption mode string"},
+                {"input", &isStringOrFixedString<IDataType>, {}, "plaintext"},
+                {"key", &isStringOrFixedString<IDataType>, {}, "encryption key binary string"},
             },
             optional_args
         );
@@ -425,21 +425,21 @@ private:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto optional_args = FunctionArgumentDescriptors{
-            {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
+            {"IV", &isStringOrFixedString<IDataType>, nullptr, "Initialization vector binary string"},
         };
 
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
         {
             optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Additional authenticated data binary string for GCM mode"
+                "AAD", &isStringOrFixedString<IDataType>, nullptr, "Additional authenticated data binary string for GCM mode"
             });
         }
 
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "decryption mode string"},
-                {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "ciphertext"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "decryption key binary string"},
+                {"mode", &isStringOrFixedString<IDataType>, isColumnConst, "decryption mode string"},
+                {"input", &isStringOrFixedString<IDataType>, {}, "ciphertext"},
+                {"key", &isStringOrFixedString<IDataType>, {}, "decryption key binary string"},
             },
             optional_args
         );

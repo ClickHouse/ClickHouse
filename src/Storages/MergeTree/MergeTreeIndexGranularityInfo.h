@@ -18,7 +18,7 @@ class MergeTreeData;
   */
 struct MarkType
 {
-    explicit MarkType(std::string_view extension);
+    MarkType(std::string_view extension);
     MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Value part_type_);
 
     static bool isMarkFileExtension(std::string_view extension);

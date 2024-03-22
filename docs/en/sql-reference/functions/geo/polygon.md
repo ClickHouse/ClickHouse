@@ -53,62 +53,6 @@ String starting with `POLYGON`
 
 Polygon
 
-## readWKTPoint
-
-The `readWKTPoint` function in ClickHouse parses a Well-Known Text (WKT) representation of a Point geometry and returns a point in the internal ClickHouse format.
-
-### Syntax
-
-```sql
-readWKTPoint(wkt_string)
-```
-
-### Arguments
-
-- `wkt_string`: The input WKT string representing a Point geometry.
-
-### Returned value
-
-The function returns a ClickHouse internal representation of the Point geometry.
-
-### Example
-
-```sql
-SELECT readWKTPoint('POINT (1.2 3.4)');
-```
-
-```response
-(1.2,3.4)
-```
-
-## readWKTRing
-
-Parses a Well-Known Text (WKT) representation of a Polygon geometry and returns a ring (closed linestring) in the internal ClickHouse format.
-
-### Syntax
-
-```sql
-readWKTRing(wkt_string)
-```
-
-### Arguments
-
-- `wkt_string`: The input WKT string representing a Polygon geometry.
-
-### Returned value
-
-The function returns a ClickHouse internal representation of the ring (closed linestring) geometry.
-
-### Example
-
-```sql
-SELECT readWKTRing('LINESTRING (1 1, 2 2, 3 3, 1 1)');
-```
-
-```response
-[(1,1),(2,2),(3,3),(1,1)]
-```
-
 ## polygonsWithinSpherical
 
 Returns true or false depending on whether or not one polygon lies completely inside another polygon. Reference https://www.boost.org/doc/libs/1_62_0/libs/geometry/doc/html/geometry/reference/algorithms/within/within_2.html

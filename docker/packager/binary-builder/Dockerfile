@@ -1,6 +1,6 @@
 # docker build -t clickhouse/binary-builder .
 ARG FROM_TAG=latest
-FROM clickhouse/fasttest:$FROM_TAG
+FROM clickhouse/test-util:$FROM_TAG
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 

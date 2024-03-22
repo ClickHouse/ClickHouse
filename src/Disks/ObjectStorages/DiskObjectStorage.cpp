@@ -527,9 +527,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    const auto storage_objects = metadata_storage->getStorageObjects(path);
+    auto storage_objects = metadata_storage->getStorageObjects(path);
 
     const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
+
     if (storage_objects.empty() && file_can_be_empty)
         return std::make_unique<ReadBufferFromEmptyFile>();
 

@@ -141,19 +141,4 @@ ConnectionTimeouts ConnectionTimeouts::getAdaptiveTimeouts(const String & method
         .withReceiveTimeout(saturate(recv, receive_timeout));
 }
 
-void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
-{
-    session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
-    session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
-}
-
-ConnectionTimeouts getTimeouts(const Poco::Net::HTTPClientSession & session)
-{
-    return ConnectionTimeouts()
-            .withConnectionTimeout(session.getConnectionTimeout())
-            .withSendTimeout(session.getSendTimeout())
-            .withReceiveTimeout(session.getReceiveTimeout())
-            .withHTTPKeepAliveTimeout(session.getKeepAliveTimeout());
-}
-
 }

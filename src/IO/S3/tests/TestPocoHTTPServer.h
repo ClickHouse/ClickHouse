@@ -21,7 +21,7 @@ class MockRequestHandler : public Poco::Net::HTTPRequestHandler
     Poco::Net::MessageHeader & last_request_header;
 
 public:
-    explicit MockRequestHandler(Poco::Net::MessageHeader & last_request_header_)
+    MockRequestHandler(Poco::Net::MessageHeader & last_request_header_)
     : Poco::Net::HTTPRequestHandler(), last_request_header(last_request_header_)
     {
     }
@@ -44,7 +44,7 @@ class HTTPRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
     }
 
 public:
-    explicit HTTPRequestHandlerFactory(Poco::Net::MessageHeader & last_request_header_)
+    HTTPRequestHandlerFactory(Poco::Net::MessageHeader & last_request_header_)
     : Poco::Net::HTTPRequestHandlerFactory(), last_request_header(last_request_header_)
     {
     }

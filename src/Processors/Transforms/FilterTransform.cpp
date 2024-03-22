@@ -265,7 +265,6 @@ void FilterTransform::doTransform(Chunk & chunk)
 {
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
-    DataTypes types;
     auto select_final_indices_info = getSelectByFinalIndices(chunk);
 
     {
@@ -276,7 +275,6 @@ void FilterTransform::doTransform(Chunk & chunk)
             expression->execute(block, num_rows_before_filtration);
 
         columns = block.getColumns();
-        types = block.getDataTypes();
     }
 
     if (constant_filter_description.always_true || on_totals)
@@ -325,22 +323,14 @@ void FilterTransform::doTransform(Chunk & chunk)
       *  or calculate number of set bytes in the filter.
       */
     size_t first_non_constant_column = num_columns;
-    size_t min_size_in_memory = std::numeric_limits<size_t>::max();
     for (size_t i = 0; i < num_columns; ++i)
     {
-        DataTypePtr type_not_null = removeNullableOrLowCardinalityNullable(types[i]);
-        if (i != filter_column_position && !isColumnConst(*columns[i]) && type_not_null->isValueRepresentedByNumber())
+        if (i != filter_column_position && !isColumnConst(*columns[i]))
         {
-            size_t size_in_memory = type_not_null->getSizeOfValueInMemory() + (isNullableOrLowCardinalityNullable(types[i]) ? 1 : 0);
-            if (size_in_memory < min_size_in_memory)
-            {
-                min_size_in_memory = size_in_memory;
-                first_non_constant_column = i;
-            }
+            first_non_constant_column = i;
             break;
         }
     }
-    (void)min_size_in_memory; /// Suppress error of clang-analyzer-deadcode.DeadStores
 
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)

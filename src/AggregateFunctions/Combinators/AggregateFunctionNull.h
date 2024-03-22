@@ -43,8 +43,8 @@ template <bool result_is_nullable, bool serialize_flag, typename Derived>
 class AggregateFunctionNullBase : public IAggregateFunctionHelper<Derived>
 {
 protected:
-    const AggregateFunctionPtr nested_function;
-    const size_t prefix_size;
+    AggregateFunctionPtr nested_function;
+    size_t prefix_size;
 
     /** In addition to data for nested aggregate function, we keep a flag
       *  indicating - was there at least one non-NULL value accumulated.
@@ -55,18 +55,12 @@ protected:
 
     AggregateDataPtr nestedPlace(AggregateDataPtr __restrict place) const noexcept
     {
-        if constexpr (result_is_nullable)
-            return place + prefix_size;
-        else
-            return place;
+        return place + prefix_size;
     }
 
     ConstAggregateDataPtr nestedPlace(ConstAggregateDataPtr __restrict place) const noexcept
     {
-        if constexpr (result_is_nullable)
-            return place + prefix_size;
-        else
-            return place;
+        return place + prefix_size;
     }
 
     static void initFlag(AggregateDataPtr __restrict place) noexcept
@@ -93,8 +87,11 @@ public:
     AggregateFunctionNullBase(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : IAggregateFunctionHelper<Derived>(arguments, params, createResultType(nested_function_))
         , nested_function{nested_function_}
-        , prefix_size(result_is_nullable ? nested_function->alignOfData() : 0)
     {
+        if constexpr (result_is_nullable)
+            prefix_size = nested_function->alignOfData();
+        else
+            prefix_size = 0;
     }
 
     String getName() const override

@@ -310,11 +310,9 @@ public:
         {
             for (Field & element : values)
             {
-                /// We must initialize the Field type since some internal functions (like operator=) use them
-                new (&element) Field;
-                bool has_value = false;
-                readBinary(has_value, buf);
-                if (has_value)
+                UInt8 is_null = 0;
+                readBinary(is_null, buf);
+                if (!is_null)
                     serialization->deserializeBinary(element, buf, {});
             }
         }

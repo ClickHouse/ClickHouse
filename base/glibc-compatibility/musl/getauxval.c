@@ -20,7 +20,11 @@
 
 /// Suppress TSan since it is possible for this code to be called from multiple threads,
 /// and initialization is safe to be done multiple times from multiple threads.
-#define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
+#if defined(__clang__)
+#    define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
+#else
+#    define NO_SANITIZE_THREAD
+#endif
 
 // We don't have libc struct available here.
 // Compute aux vector manually (from /proc/self/auxv).

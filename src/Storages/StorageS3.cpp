@@ -68,10 +68,14 @@
 
 #include <boost/algorithm/string.hpp>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <re2/re2.h>
-#pragma clang diagnostic pop
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace fs = std::filesystem;
 
@@ -161,7 +165,7 @@ public:
         , num_streams(num_streams_)
     {
         query_configuration = storage.updateConfigurationAndGetCopy(context);
-        virtual_columns = storage.getVirtualsList();
+        virtual_columns = storage.getVirtuals();
     }
 
 private:
@@ -724,7 +728,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
     auto context = getContext();
     auto read_buffer_creator =
         [this, read_settings, object_size]
-        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
+        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromS3>(
             client,
@@ -735,24 +739,20 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
             read_settings,
             /* use_external_buffer */true,
             /* offset */0,
-            /* read_until_position */0,
-            restricted_seek,
+            read_until_position,
+            /* restricted_seek */true,
             object_size);
     };
-
-    auto modified_settings{read_settings};
-    /// User's S3 object may change, don't cache it.
-    modified_settings.use_page_cache_for_disks_without_file_cache = false;
-
-    /// FIXME: Changing this setting to default value breaks something around parquet reading
-    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
 
     auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
         StoredObjects{StoredObject{key, /* local_path */ "", object_size}},
-        "",
         read_settings,
         /* cache_log */nullptr, /* use_external_buffer */true);
+
+    auto modified_settings{read_settings};
+    /// FIXME: Changing this setting to default value breaks something around parquet reading
+    modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
 
     auto & pool_reader = context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
     auto async_reader = std::make_unique<AsynchronousBoundedReadBuffer>(
@@ -1084,7 +1084,8 @@ StorageS3::StorageS3(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
@@ -1151,7 +1152,7 @@ void StorageS3::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), virtual_columns);
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
@@ -1420,10 +1421,8 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
         url.uri.getScheme());
 
     client_configuration.endpointOverride = url.endpoint;
-    /// seems as we don't use it
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);
-    client_configuration.connectTimeoutMs = local_settings.s3_connect_timeout_ms;
-
+    client_configuration.http_connection_pool_size = global_settings.s3_http_connection_pool_size;
     auto headers = auth_settings.headers;
     if (!headers_from_ast.empty())
         headers.insert(headers.end(), headers_from_ast.begin(), headers_from_ast.end());
@@ -1538,7 +1537,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
                 no_sign_request = true;
                 engine_args_to_idx = {{"format", 2}};
             }
-            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
                 engine_args_to_idx = {{"format", 1}, {"compression_method", 2}};
             else
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
@@ -1559,7 +1558,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
             else
             {
                 auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
-                if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
                 {
                     engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
                 }
@@ -1575,7 +1574,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
         else if (count == 5)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
-            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"compression", 4}};
             }
@@ -1984,6 +1983,16 @@ void registerStorageCOS(StorageFactory & factory)
 void registerStorageOSS(StorageFactory & factory)
 {
     return registerStorageS3Impl("OSS", factory);
+}
+
+NamesAndTypesList StorageS3::getVirtuals() const
+{
+    return virtual_columns;
+}
+
+Names StorageS3::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 bool StorageS3::supportsPartitionBy() const

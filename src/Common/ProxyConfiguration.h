@@ -44,13 +44,11 @@ struct ProxyConfiguration
         }
     }
 
-    std::string host = std::string{};
-    Protocol protocol = Protocol::HTTP;
-    uint16_t port = 0;
-    bool tunneling = false;
-    Protocol original_request_protocol = Protocol::HTTP;
-
-    bool isEmpty() const { return host.size() == 0; }
+    std::string host;
+    Protocol protocol;
+    uint16_t port;
+    bool tunneling;
+    Protocol original_request_protocol;
 };
 
 }

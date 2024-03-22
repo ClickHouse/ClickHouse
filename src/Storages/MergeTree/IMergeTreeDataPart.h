@@ -1,12 +1,12 @@
 #pragma once
 
-#include <unordered_map>
 #include <IO/WriteSettings.h>
 #include <Core/Block.h>
 #include <base/types.h>
 #include <base/defines.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
@@ -48,8 +48,6 @@ class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
 
-struct MergeTreeReadTaskInfo;
-using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
 enum class DataPartRemovalState
 {
@@ -71,7 +69,6 @@ public:
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
     using ValueSizeMap = std::map<std::string, double>;
-    using VirtualFields = std::unordered_map<String, Field>;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
@@ -98,7 +95,6 @@ public:
         const NamesAndTypesList & columns_,
         const StorageSnapshotPtr & storage_snapshot,
         const MarkRanges & mark_ranges,
-        const VirtualFields & virtual_fields,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const AlterConversionsPtr & alter_conversions,
@@ -497,7 +493,7 @@ public:
     bool supportLightweightDeleteMutate() const;
 
     /// True if here is lightweight deleted mask file in part.
-    bool hasLightweightDelete() const;
+    bool hasLightweightDelete() const { return columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 
@@ -710,6 +706,7 @@ using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
+bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
 
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
 std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
