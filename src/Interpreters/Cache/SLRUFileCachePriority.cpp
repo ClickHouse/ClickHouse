@@ -132,6 +132,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
 
 bool SLRUFileCachePriority::collectCandidatesForEviction(
     size_t size,
+    size_t elements,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr reservee,
@@ -142,8 +143,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     /// for a corresponding file segment, so it will be directly put into probationary queue.
     if (!reservee)
     {
-        return probationary_queue.collectCandidatesForEviction(
-            size, stat, res, reservee, user_id, lock);
+        return probationary_queue.collectCandidatesForEviction(size, elements, stat, res, reservee, user_id, lock);
     }
 
     /// If `it` not nullptr (e.g. is already in some queue),
@@ -151,39 +151,45 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     /// (in order to know where we need to free space).
     if (!assert_cast<SLRUIterator *>(reservee.get())->is_protected)
     {
-        return probationary_queue.collectCandidatesForEviction(
-            size, stat, res, reservee, user_id, lock);
+        return probationary_queue.collectCandidatesForEviction(size, elements, stat, res, reservee, user_id, lock);
     }
 
     /// Entry is in protected queue.
     /// Check if we have enough space in protected queue to fit a new size of entry.
     /// `size` is the increment to the current entry.size we want to increase.
     /// Here `elements` is 0, because entry is already in the protected queue.
-    if (protected_queue.canFit(size, /* elements */0, lock))
+    return collectCandidatesForEvictionInProtected(size, elements, stat, res, reservee, user_id, lock);
+}
+
+bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
+    size_t size,
+    size_t elements,
+    FileCacheReserveStat & stat,
+    EvictionCandidates & res,
+    IFileCachePriority::IteratorPtr reservee,
+    const UserID & user_id,
+    const CachePriorityGuard::Lock & lock)
+{
+    if (protected_queue.canFit(size, elements, lock))
     {
         return true;
     }
 
-    /// If not enough space - we need to "downgrade" lowest priority entries from protected
-    /// queue to probationary queue.
-    /// The amount of such "downgraded" entries is equal to the amount
-    /// required to make space for additionary `size` bytes for entry.
-    auto downgrade_candidates = std::make_shared<EvictionCandidates>();
+    /// If not enough space - we need to "downgrade" lowest priority entries
+    /// from protected queue to probationary queue.
 
-    if (!protected_queue.collectCandidatesForEviction(
-            size, stat, *downgrade_candidates, reservee, user_id, lock))
+    auto downgrade_candidates = std::make_shared<EvictionCandidates>();
+    FileCacheReserveStat downgrade_stat;
+    if (!protected_queue.collectCandidatesForEviction(size, elements, downgrade_stat, *downgrade_candidates, reservee, user_id, lock))
     {
         return false;
     }
+    else
+        chassert(downgrade_candidates->size() > 0);
 
-    chassert(downgrade_candidates->size() > 0);
-
-    const size_t size_to_downgrade = stat.total_stat.releasable_size;
-    chassert(size_to_downgrade);
-
-    FileCacheReserveStat probationary_stat;
     if (!probationary_queue.collectCandidatesForEviction(
-            size_to_downgrade, probationary_stat, res, reservee, user_id, lock))
+            downgrade_stat.total_stat.releasable_size, downgrade_stat.total_stat.releasable_count,
+            stat, res, reservee, user_id, lock))
     {
         return false;
     }
@@ -192,7 +198,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     {
         LOG_TEST(log, "Downgrading {} elements from protected to probationary. "
                  "Total size: {}",
-                 downgrade_candidates->size(), stat.total_stat.releasable_size);
+                 downgrade_candidates->size(), downgrade_stat.total_stat.releasable_size);
 
         for (const auto & [key, key_candidates] : *downgrade_candidates)
         {
@@ -261,86 +267,77 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         return;
     }
 
-    /// Check if there is enough space in protected queue to move entry there.
-    /// If not - we need to "downgrade" lowest priority entries from protected
-    /// queue to probationary queue.
-    EvictionCandidates downgrade_candidates;
-    FileCacheReserveStat downgrade_stat;
-
-    if (!protected_queue.collectCandidatesForEviction(
-            entry_size, downgrade_stat, downgrade_candidates, {}, "", lock))
-    {
-        /// We cannot make space for entry to be moved to protected queue
-        /// (not enough releasable file segments).
-        /// Then just increase its priority within probationary queue.
-        iterator.lru_iterator.increasePriority(lock);
-        return;
-    }
-
-    const size_t downgrade_size = downgrade_stat.total_stat.releasable_size;
-    const size_t downgrade_count = downgrade_stat.total_stat.releasable_count;
-
-    /// Then we need to free up space in probationary for downgrade candidates,
-    /// but we take into account that we'll remove reservee from probationary
-    /// at the same time, so recalculate size which we need to free.
-    size_t size_to_free = 0;
-    if (downgrade_size && downgrade_size > entry_size)
-        size_to_free = downgrade_size - entry_size;
-
-    LOG_TEST(log, "Will free up {} from probationary", size_to_free);
-
-    /// Now we need to check if those "downgrade" candidates can actually
-    /// be moved to probationary queue.
-    EvictionCandidates eviction_candidates;
-    FileCacheReserveStat stat;
-
-    if (size_to_free)
-    {
-        if (!probationary_queue.collectCandidatesForEviction(
-                size_to_free, stat, eviction_candidates, {}, {}, lock))
-        {
-            /// "downgrade" candidates cannot be moved to probationary queue,
-            /// so entry cannot be moved to protected queue as well.
-            /// Then just increase its priority within probationary queue.
-            iterator.lru_iterator.increasePriority(lock);
-            return;
-        }
-        /// Make space for "downgrade" candidates.
-        eviction_candidates.evict();
-        eviction_candidates.finalize(nullptr, lock);
-    }
-
-    /// All checks passed, now we can move downgrade candidates to
-    /// probationary queue and our entry to protected queue.
-
     EntryPtr entry = iterator.getEntry();
     /// We need to remove the entry from probationary first
     /// in order to make space for downgrade from protected.
     iterator.lru_iterator.remove(lock);
 
-    if (!probationary_queue.canFit(downgrade_size, downgrade_count, lock))
+    EvictionCandidates eviction_candidates;
+    FileCacheReserveStat stat;
+    try
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot downgrade {} elements by total size of {}: not enough space: {}",
-                        downgrade_size, downgrade_count,
-                        probationary_queue.getStateInfoForLog(lock));
+        /// Check if there is enough space in protected queue to move entry there.
+        /// If not - we need to "downgrade" lowest priority entries from protected
+        /// queue to probationary queue.
+        ///
+        if (!collectCandidatesForEvictionInProtected(
+                entry->size, 1, stat, eviction_candidates, nullptr, FileCache::getInternalUser().user_id, lock))
+        {
+            /// "downgrade" candidates cannot be moved to probationary queue,
+            /// so entry cannot be moved to protected queue as well.
+            /// Then just increase its priority within probationary queue.
+            iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
+            return;
+        }
+
+        eviction_candidates.evict();
+        eviction_candidates.finalize(nullptr, lock);
+    }
+    catch (...)
+    {
+        iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
+        throw;
     }
 
-    for (const auto & [key, key_candidates] : downgrade_candidates)
-    {
-        LOG_TEST(log, "Downgrading {} elements from protected to probationary. "
-                 "Total size: {}, current probationary state: {}",
-                 downgrade_candidates.size(), downgrade_size,
-                 probationary_queue.getStateInfoForLog(lock));
-
-        for (const auto & candidate : key_candidates.candidates)
-            downgrade(candidate->getQueueIterator(), lock);
-    }
-
-    downgrade_candidates.finalize(nullptr, lock);
-
-    iterator.lru_iterator = protected_queue.add(entry, lock);
+    iterator.lru_iterator = addOrThrow(entry, protected_queue, lock);
     iterator.is_protected = true;
+}
+
+LRUFileCachePriority::LRUIterator SLRUFileCachePriority::addOrThrow(
+    EntryPtr entry, LRUFileCachePriority & queue, const CachePriorityGuard::Lock & lock)
+{
+    try
+    {
+        return queue.add(entry, lock);
+    }
+    catch (...)
+    {
+        const auto initial_exception = getCurrentExceptionMessage(true);
+        try
+        {
+            /// We cannot allow a situation that a file exists on filesystem, but
+            /// there is no corresponding entry in priority queue for it,
+            /// because it will mean that cache became inconsistent.
+            /// So let's try to fix the situation.
+            auto metadata = entry->key_metadata->tryLock();
+            chassert(metadata);
+            if (metadata)
+            {
+                auto segment_metadata = metadata->tryGetByOffset(entry->offset);
+                metadata->removeFileSegment(entry->offset, segment_metadata->file_segment->lock());
+            }
+        }
+        catch (...)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Unexpected exception: {} (Initial exception: {}). Cache will become inconsistent",
+                            getCurrentExceptionMessage(true), initial_exception);
+        }
+
+        /// Let's try to catch such cases in CI.
+        chassert(false);
+        throw;
+    }
 }
 
 IFileCachePriority::PriorityDumpPtr SLRUFileCachePriority::dump(const CachePriorityGuard::Lock & lock)

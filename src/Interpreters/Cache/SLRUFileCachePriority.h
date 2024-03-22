@@ -50,6 +50,7 @@ public:
 
     bool collectCandidatesForEviction(
         size_t size,
+        size_t elements,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
@@ -71,6 +72,20 @@ private:
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock);
 
     void downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock &);
+
+    bool collectCandidatesForEvictionInProtected(
+        size_t size,
+        size_t elements,
+        FileCacheReserveStat & stat,
+        EvictionCandidates & res,
+        IFileCachePriority::IteratorPtr reservee,
+        const UserID & user_id,
+        const CachePriorityGuard::Lock & lock);
+
+    LRUFileCachePriority::LRUIterator addOrThrow(
+        EntryPtr entry,
+        LRUFileCachePriority & queue,
+        const CachePriorityGuard::Lock & lock);
 };
 
 class SLRUFileCachePriority::SLRUIterator : public IFileCachePriority::Iterator

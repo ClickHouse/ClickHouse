@@ -11,6 +11,10 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 EvictionCandidates::~EvictionCandidates()
 {
@@ -88,8 +92,8 @@ void EvictionCandidates::evict()
 
 void EvictionCandidates::finalize(FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock & lock)
 {
-    for (auto & holder : hold_space)
-        holder->release();
+    if (hold_space)
+        hold_space->release();
 
     chassert(lock.owns_lock());
     while (!queue_entries_to_invalidate.empty())
@@ -110,7 +114,10 @@ void EvictionCandidates::finalize(FileCacheQueryLimit::QueryContext * query_cont
     }
 
     if (finalize_eviction_func)
+    {
         finalize_eviction_func(lock);
+        finalize_eviction_func = {};
+    }
 }
 
 void EvictionCandidates::setSpaceHolder(
@@ -119,8 +126,9 @@ void EvictionCandidates::setSpaceHolder(
     IFileCachePriority & priority,
     const CachePriorityGuard::Lock & lock)
 {
-    auto holder = std::make_unique<IFileCachePriority::HoldSpace>(size, elements, priority, lock);
-    hold_space.emplace_back(std::move(holder));
+    if (hold_space)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Space hold is already set");
+    hold_space = std::make_unique<IFileCachePriority::HoldSpace>(size, elements, priority, lock);
 }
 
 }

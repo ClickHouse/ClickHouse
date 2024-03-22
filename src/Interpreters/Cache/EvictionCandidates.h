@@ -41,7 +41,7 @@ private:
     size_t candidates_size = 0;
     FinalizeEvictionFunc finalize_eviction_func;
     std::vector<IFileCachePriority::IteratorPtr> queue_entries_to_invalidate;
-    std::vector<IFileCachePriority::HoldSpacePtr> hold_space;
+    IFileCachePriority::HoldSpacePtr hold_space;
 };
 
 using EvictionCandidatesPtr = std::unique_ptr<EvictionCandidates>;

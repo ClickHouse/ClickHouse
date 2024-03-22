@@ -836,7 +836,7 @@ bool FileCache::tryReserve(
     if (query_priority)
     {
         if (!query_priority->collectCandidatesForEviction(
-                size, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
+                size, 1, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
         {
             return false;
         }
@@ -854,7 +854,7 @@ bool FileCache::tryReserve(
     chassert(!queue_iterator || file_segment.getReservedSize() > 0);
 
     if (!main_priority->collectCandidatesForEviction(
-            size, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
+            size, 1, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
     {
         return false;
     }

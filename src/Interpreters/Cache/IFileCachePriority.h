@@ -140,6 +140,7 @@ public:
 
     virtual bool collectCandidatesForEviction(
         size_t size,
+        size_t elements,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IteratorPtr reservee,

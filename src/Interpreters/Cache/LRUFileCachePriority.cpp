@@ -247,13 +247,14 @@ bool LRUFileCachePriority::canFit(
 
 bool LRUFileCachePriority::collectCandidatesForEviction(
     size_t size,
+    size_t elements,
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr /* reservee */,
     const UserID &,
     const CachePriorityGuard::Lock & lock)
 {
-    if (canFit(size, 1, 0, 0, lock))
+    if (canFit(size, elements, 0, 0, lock))
     {
         return true;
     }
@@ -281,7 +282,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
     auto can_fit = [&]
     {
-        return canFit(size, 1, stat.total_stat.releasable_size, stat.total_stat.releasable_count, lock);
+        return canFit(size, elements, stat.total_stat.releasable_size, stat.total_stat.releasable_count, lock);
     };
 
     iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
@@ -291,23 +292,17 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
     if (can_fit())
     {
-        /// If we did not reach size limit (it means we reached only elements limit here)
-        /// then we need to make sure that this fact that we fit in cache by size
-        /// remains true after we release the lock and take it again.
-        /// For this purpose we create a HoldSpace holder which makes sure that the space is hold in the meantime.
-        /// We subtract reserve_stat.stat.releasable_size from the hold space,
-        /// because it is the space that will be released, so we do not need to take it into account.
         const size_t hold_size = size > stat.total_stat.releasable_size
             ? size - stat.total_stat.releasable_size
             : 0;
 
-        if (hold_size)
-        {
-            /// If we reached the elements limit - we will evict at least 1 element,
-            /// then we do not need to hold anything, otherwise (if we reached limit only by size)
-            /// we will also evict at least one element, so hold elements count is awlays zero here.
-            res.setSpaceHolder(hold_size, 0, *this, lock);
-        }
+        const size_t hold_elements = elements > stat.total_stat.releasable_count
+            ? elements - stat.total_stat.releasable_count
+            : 0;
+
+        if (hold_size || hold_elements)
+            res.setSpaceHolder(hold_size, hold_elements, *this, lock);
+
         return true;
     }
     else
