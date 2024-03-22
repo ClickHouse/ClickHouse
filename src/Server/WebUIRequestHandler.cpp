@@ -29,18 +29,15 @@ DashboardWebUIRequestHandler::DashboardWebUIRequestHandler(IServer & server_) : 
 BinaryWebUIRequestHandler::BinaryWebUIRequestHandler(IServer & server_) : server(server_) {}
 JavaScriptWebUIRequestHandler::JavaScriptWebUIRequestHandler(IServer & server_) : server(server_) {}
 
-static void handle(const IServer & server, HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
+static void handle(const IServer &, HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
 {
-    auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
-
     response.setContentType("text/html; charset=UTF-8");
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    setResponseDefaultHeaders(response, keep_alive_timeout);
+    setResponseDefaultHeaders(response);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(html.data(), html.size());
-
+    WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD).write(html.data(), html.size());
 }
 
 void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)

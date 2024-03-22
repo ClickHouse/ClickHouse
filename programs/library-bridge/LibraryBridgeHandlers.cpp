@@ -374,10 +374,8 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
 }
 
 
-ExternalDictionaryLibraryBridgeExistsHandler::ExternalDictionaryLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
-    : WithContext(context_)
-    , keep_alive_timeout(keep_alive_timeout_)
-    , log(getLogger("ExternalDictionaryLibraryBridgeExistsHandler"))
+ExternalDictionaryLibraryBridgeExistsHandler::ExternalDictionaryLibraryBridgeExistsHandler(ContextPtr context_)
+    : WithContext(context_), log(getLogger("ExternalDictionaryLibraryBridgeExistsHandler"))
 {
 }
 
@@ -401,7 +399,7 @@ void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerReque
 
         String res = library_handler ? "1" : "0";
 
-        setResponseDefaultHeaders(response, keep_alive_timeout);
+        setResponseDefaultHeaders(response);
         LOG_TRACE(log, "Sending ping response: {} (dictionary id: {})", res, dictionary_id);
         response.sendBuffer(res.data(), res.size());
     }
@@ -617,10 +615,8 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
 }
 
 
-CatBoostLibraryBridgeExistsHandler::CatBoostLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
-    : WithContext(context_)
-    , keep_alive_timeout(keep_alive_timeout_)
-    , log(getLogger("CatBoostLibraryBridgeExistsHandler"))
+CatBoostLibraryBridgeExistsHandler::CatBoostLibraryBridgeExistsHandler(ContextPtr context_)
+    : WithContext(context_), log(getLogger("CatBoostLibraryBridgeExistsHandler"))
 {
 }
 
@@ -634,7 +630,7 @@ void CatBoostLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & reque
 
         String res = "1";
 
-        setResponseDefaultHeaders(response, keep_alive_timeout);
+        setResponseDefaultHeaders(response);
         LOG_TRACE(log, "Sending ping response: {}", res);
         response.sendBuffer(res.data(), res.size());
     }
