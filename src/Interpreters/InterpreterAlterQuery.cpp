@@ -98,7 +98,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (table)
     {
         maybe_distributed = table->as<const StorageDistributed>();
-        if (maybe_distributed && maybe_distributed->supportsAlterRewriteToOncluster())
+        if (maybe_distributed
+            && maybe_distributed->supportsAlterRewriteToOncluster()
+            //support DROP/DETACHED partition only
+            && alter.isDropPartitionAlter())
         {
             do_rewrite_to_oncluster = true;
         }
@@ -138,10 +141,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     // Rewrite optimizing to corresponding local table with on cluster
     if (do_rewrite_to_oncluster)
     {
-        if (!alter.isDropPartitionAlter())
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Currently only DROP/DETACHED PARTITION is supported");
-        }
         auto query_clone = query_ptr->clone();
         auto * alter_ast_ptr = query_clone->as<ASTAlterQuery>();
         //change distributed table to remote table
