@@ -191,7 +191,7 @@ namespace VolnitskyTraits
                         if (length_l != length_r)
                             return false;
 
-                        if (length_l >= 2 && length_r >= 2)
+                        if (length_l < 2 || length_r < 2)
                             return false;  /// Some part of the given ngram contains an invalid UTF-8 sequence.
 
                         chars.c0 = seq_l[seq_ngram_offset];
