@@ -9,10 +9,11 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SetKeys.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
+
+class QueryPlan;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
@@ -106,6 +107,8 @@ public:
         String key,
         QueryTreeNodePtr query_tree_,
         const Settings & settings);
+
+    ~FutureSetFromSubquery() override;
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
