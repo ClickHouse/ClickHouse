@@ -33,7 +33,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <unordered_map>
 
 
 namespace Poco::Net { class IPAddress; }
