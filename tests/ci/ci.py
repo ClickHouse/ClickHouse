@@ -1248,9 +1248,7 @@ def _configure_jobs(
         for token_ in ci_controlling_tokens:
             label_config = CI_CONFIG.get_label_config(token_)
             assert label_config, f"Unknonwn token [{token_}]"
-            print(
-                f"NOTE: CI controlling token: [{ci_controlling_tokens}], add jobs: [{label_config.run_jobs}]"
-            )
+            print(f"NOTE: CI modifier: [{token_}], add jobs: [{label_config.run_jobs}]")
             jobs_to_do_requested += label_config.run_jobs
 
         # handle specific job requests
@@ -1264,7 +1262,7 @@ def _configure_jobs(
             for job in requested_jobs:
                 job_with_parents = CI_CONFIG.get_job_with_parents(job)
                 print(
-                    f"NOTE: CI controlling token: [#job_{job}], add jobs: [{job_with_parents}]"
+                    f"NOTE: CI modifier: [#job_{job}], add jobs: [{job_with_parents}]"
                 )
                 # always add requested job itself, even if it could be skipped
                 jobs_to_do_requested.append(job_with_parents[0])
@@ -1273,6 +1271,7 @@ def _configure_jobs(
                         jobs_to_do_requested.append(parent)
 
         if jobs_to_do_requested:
+            jobs_to_do_requested = list(set(jobs_to_do_requested))
             print(
                 f"NOTE: Only specific job(s) were requested by commit message tokens: [{jobs_to_do_requested}]"
             )
@@ -1408,7 +1407,7 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
 
 
 def _fetch_commit_tokens(message: str, pr_info: PRInfo) -> List[str]:
-    pattern = r"([^!]|^)#(\w+)"
+    pattern = r"(#|- \[x\] +<!---)(\w+)"
     matches = [match[-1] for match in re.findall(pattern, message)]
     res = [
         match
