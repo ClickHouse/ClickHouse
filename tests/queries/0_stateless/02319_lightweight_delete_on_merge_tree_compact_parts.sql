@@ -80,7 +80,7 @@ select table, partition, name, rows from system.parts where database = currentDa
 drop table t_light;
 
 SELECT '-----Test lightweight delete in multi blocks-----';
-CREATE TABLE t_large(a UInt32, b int) ENGINE=MergeTree order BY a settings min_bytes_for_wide_part=0, index_granularity=8192, index_granularity_bytes='10Mi';
+CREATE TABLE t_large(a UInt32, b int) ENGINE=MergeTree order BY a settings min_bytes_for_wide_part=0;
 INSERT INTO t_large SELECT number + 1, number + 1  FROM numbers(100000);
 
 DELETE FROM t_large WHERE a = 50000;

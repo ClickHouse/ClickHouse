@@ -16,7 +16,6 @@ struct ProfileEventsSnapshot
     UInt64 thread_id;
     CountersIncrement counters;
     Int64 memory_usage;
-    Int64 peak_memory_usage;
     time_t current_time;
 };
 
@@ -26,7 +25,7 @@ using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, Counters::Snapshot
 void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only = true);
 
 void getProfileEvents(
-    const String & host_name,
+    const String & server_display_name,
     DB::InternalProfileEventsQueuePtr profile_queue,
     DB::Block & block,
     ThreadIdToCountersSnapshot & last_sent_snapshots);

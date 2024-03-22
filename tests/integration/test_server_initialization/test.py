@@ -50,3 +50,17 @@ def test_partially_dropped_tables(started_cluster):
         )
         == "0\n"
     )
+
+
+def test_live_view_dependency(started_cluster):
+    instance = started_cluster.instances["dummy"]
+    instance.query("CREATE DATABASE a_load_first")
+    instance.query("CREATE DATABASE b_load_second")
+    instance.query(
+        "CREATE TABLE b_load_second.mt (a Int32) Engine=MergeTree order by tuple()"
+    )
+    instance.query(
+        "CREATE LIVE VIEW a_load_first.lv AS SELECT sum(a) FROM b_load_second.mt",
+        settings={"allow_experimental_live_view": 1},
+    )
+    instance.restart_clickhouse()

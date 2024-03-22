@@ -17,6 +17,5 @@ REGISTER_FUNCTION(HashingMurmur)
     factory.registerFunction<FunctionMurmurHash3_64>();
     factory.registerFunction<FunctionMurmurHash3_128>();
     factory.registerFunction<FunctionGccMurmurHash>();
-    factory.registerFunction<FunctionKafkaMurmurHash>();
 }
 }

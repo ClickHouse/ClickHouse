@@ -13,18 +13,14 @@ class AggregatingSortedTransform final : public IMergingTransform<AggregatingSor
 {
 public:
     AggregatingSortedTransform(
-        const Block & header,
-        size_t num_inputs,
-        SortDescription description_,
-        size_t max_block_size_rows,
-        size_t max_block_size_bytes)
+        const Block & header, size_t num_inputs,
+        SortDescription description_, size_t max_block_size)
         : IMergingTransform(
             num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
             header,
             num_inputs,
             std::move(description_),
-            max_block_size_rows,
-            max_block_size_bytes)
+            max_block_size)
     {
     }
 

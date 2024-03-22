@@ -13,18 +13,18 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int CANNOT_CLOCK_GETTIME;
-}
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_CLOCK_GETTIME;
+    }
 }
 
 
-UInt64 randomSeed()
+DB::UInt64 randomSeed()
 {
     struct timespec times;
     if (clock_gettime(CLOCK_MONOTONIC, &times))
-        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+        DB::throwFromErrno("Cannot clock_gettime.", DB::ErrorCodes::CANNOT_CLOCK_GETTIME);
 
     /// Not cryptographically secure as time, pid and stack address can be predictable.
 
@@ -39,7 +39,7 @@ UInt64 randomSeed()
 #if defined(__linux__)
     struct utsname sysinfo;
     if (uname(&sysinfo) == 0)
-        hash.update<std::identity>(sysinfo);
+        hash.update(sysinfo);
 #endif
 
     return hash.get64();

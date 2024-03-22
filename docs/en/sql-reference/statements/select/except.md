@@ -103,7 +103,7 @@ INSERT INTO holdings VALUES
    ('Bitcoin', 200),
    ('Ethereum', 250),
    ('Ethereum', 5000),
-   ('DOGEFI', 10),
+   ('DOGEFI', 10);
    ('Bitcoin Diamond', 5000);
 ```
 
@@ -149,5 +149,5 @@ Result:
 
 **See Also**
 
-- [UNION](union.md#union-clause)
-- [INTERSECT](intersect.md#intersect-clause)
+-   [UNION](union.md#union-clause)
+-   [INTERSECT](intersect.md#intersect-clause)

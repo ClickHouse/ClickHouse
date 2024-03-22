@@ -12,10 +12,8 @@ limitations under the License. */
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTWatchQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Interpreters/Context.h>
 #include <Access/Common/AccessFlags.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -63,7 +61,7 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
 
     if (!storage)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist.", table_id.getNameForLogs());
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist.", table_id.getNameForLogs());
 
     auto storage_name = storage->getName();
     if (storage_name == "LiveView"
@@ -103,15 +101,6 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     QueryPipelineBuilder pipeline;
     pipeline.init(std::move(pipe));
     return pipeline;
-}
-
-void registerInterpreterWatchQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterWatchQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterWatchQuery", create_fn);
 }
 
 }

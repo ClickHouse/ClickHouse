@@ -24,11 +24,11 @@ namespace ErrorCodes
 }
 
 ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
-    : IInputFormat(header_, &in_), stream{stream_}, format_settings(format_settings_)
+    : IInputFormat(header_, in_), stream{stream_}, format_settings(format_settings_)
 {
 }
 
-Chunk ArrowBlockInputFormat::read()
+Chunk ArrowBlockInputFormat::generate()
 {
     Chunk res;
     block_missing_values.clear();
@@ -45,9 +45,6 @@ Chunk ArrowBlockInputFormat::read()
         batch_result = stream_reader->Next();
         if (batch_result.ok() && !(*batch_result))
             return res;
-
-        if (need_only_count && batch_result.ok())
-            return getChunkForCount((*batch_result)->num_rows());
     }
     else
     {
@@ -60,25 +57,16 @@ Chunk ArrowBlockInputFormat::read()
         if (record_batch_current >= record_batch_total)
             return res;
 
-        if (need_only_count)
-        {
-            auto rows = file_reader->RecordBatchCountRows(record_batch_current++);
-            if (!rows.ok())
-                throw Exception(
-                    ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
-            return getChunkForCount(*rows);
-        }
-
         batch_result = file_reader->ReadRecordBatch(record_batch_current);
     }
 
     if (!batch_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
 
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", table_result.status().ToString());
 
     ++record_batch_current;
@@ -155,11 +143,10 @@ void ArrowBlockInputFormat::prepareReader()
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
         getPort().getHeader(),
         "Arrow",
+        format_settings.arrow.import_nested,
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,
-        format_settings.date_time_overflow_behavior,
-        format_settings.arrow.case_insensitive_column_matching,
-        stream);
+        format_settings.arrow.case_insensitive_column_matching);
 
     if (stream)
         record_batch_total = -1;
@@ -174,49 +161,23 @@ ArrowSchemaReader::ArrowSchemaReader(ReadBuffer & in_, bool stream_, const Forma
 {
 }
 
-void ArrowSchemaReader::initializeIfNeeded()
-{
-    if (file_reader || stream_reader)
-        return;
-
-    if (stream)
-        stream_reader = createStreamReader(in);
-    else
-    {
-        std::atomic<int> is_stopped = 0;
-        file_reader = createFileReader(in, format_settings, is_stopped);
-    }
-}
-
 NamesAndTypesList ArrowSchemaReader::readSchema()
 {
-    initializeIfNeeded();
-
     std::shared_ptr<arrow::Schema> schema;
 
     if (stream)
-        schema = stream_reader->schema();
+        schema = createStreamReader(in)->schema();
     else
-        schema = file_reader->schema();
+    {
+        std::atomic<int> is_stopped = 0;
+        schema = createFileReader(in, format_settings, is_stopped)->schema();
+    }
 
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema, stream ? "ArrowStream" : "Arrow", format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference);
     if (format_settings.schema_inference_make_columns_nullable)
         return getNamesAndRecursivelyNullableTypes(header);
-    return header.getNamesAndTypesList();
-}
-
-std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
-{
-    if (stream)
-        return std::nullopt;
-
-    auto rows = file_reader->CountRows();
-    if (!rows.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
-
-    return *rows;
-}
+    return header.getNamesAndTypesList();}
 
 void registerInputFormatArrow(FormatFactory & factory)
 {
@@ -229,6 +190,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
         });
+    factory.markFormatSupportsSubcolumns("Arrow");
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
         "ArrowStream",

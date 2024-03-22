@@ -72,18 +72,18 @@ public:
     }
 
     void startup() override { }
-    void shutdown(bool is_drop) override
+    void shutdown() override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            nested->shutdown(is_drop);
+            nested->shutdown();
     }
 
-    void flushAndPrepareForShutdown() override
+    void flush() override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            nested->flushAndPrepareForShutdown();
+            nested->flush();
     }
 
     void drop() override
@@ -130,8 +130,7 @@ public:
     SinkToStoragePtr write(
             const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
-            ContextPtr context,
-            bool async_insert) override
+            ContextPtr context) override
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();
@@ -140,7 +139,7 @@ public:
         {
             throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Source storage and table function have different structure");
         }
-        return storage->write(query, metadata_snapshot, context, async_insert);
+        return storage->write(query, metadata_snapshot, context);
     }
 
     void renameInMemory(const StorageID & new_table_id) override
@@ -153,7 +152,7 @@ public:
     }
 
     bool isView() const override { return false; }
-    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override {}
+    void checkTableCanBeDropped() const override {}
 
 private:
     mutable std::recursive_mutex nested_mutex;

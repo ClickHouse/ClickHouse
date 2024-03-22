@@ -44,7 +44,7 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
     }
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context)
 {
     if (storage_def.settings)
     {
@@ -64,8 +64,8 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr conte
                         auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
                         if (ast && isDiskFunction(ast))
                         {
-                            auto disk_name = getOrCreateDiskFromDiskAST(ast, context, is_attach);
-                            LOG_TRACE(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
+                            auto disk_name = getOrCreateDiskFromDiskAST(ast, context);
+                            LOG_TRACE(&Poco::Logger::get("MergeTreeSettings"), "Created custom disk {}", disk_name);
                             value = disk_name;
                         }
                     }
@@ -141,18 +141,6 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             background_pool_tasks);
     }
 
-    if (number_of_free_entries_in_pool_to_execute_optimize_entire_partition > background_pool_tasks)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' setting"
-            " ({}) (default values are defined in <merge_tree> section of config.xml"
-            " or the value can be specified per table in SETTINGS section of CREATE TABLE query)"
-            " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
-            " ({}) (the value is defined in users.xml for default profile)."
-            " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
-            number_of_free_entries_in_pool_to_execute_optimize_entire_partition,
-            background_pool_tasks);
-    }
-
     // Zero index_granularity is nonsensical.
     if (index_granularity < 1)
     {
@@ -187,60 +175,5 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             min_bytes_to_rebalance_partition_over_jbod,
             max_bytes_to_merge_at_max_space_in_pool / 1024);
     }
-
-    if (max_cleanup_delay_period < cleanup_delay_period)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The value of max_cleanup_delay_period setting ({}) must be greater than the value of cleanup_delay_period setting ({})",
-            max_cleanup_delay_period, cleanup_delay_period);
-    }
-
-    if (max_merge_selecting_sleep_ms < merge_selecting_sleep_ms)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The value of max_merge_selecting_sleep_ms setting ({}) must be greater than the value of merge_selecting_sleep_ms setting ({})",
-            max_merge_selecting_sleep_ms, merge_selecting_sleep_ms);
-    }
-
-    if (merge_selecting_sleep_slowdown_factor < 1.f)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
-            merge_selecting_sleep_slowdown_factor);
-    }
 }
-
-void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
-{
-    static const MergeTreeSettings merge_tree_settings;
-    static const std::set<String> allowed_column_level_settings =
-    {
-        "min_compress_block_size",
-        "max_compress_block_size"
-    };
-
-    for (const auto & change : changes)
-    {
-        if (!allowed_column_level_settings.contains(change.name))
-            throw Exception(
-                ErrorCodes::UNKNOWN_SETTING,
-                "Setting {} is unknown or not supported at column level, supported settings: {}",
-                change.name,
-                fmt::join(allowed_column_level_settings, ", "));
-        merge_tree_settings.checkCanSet(change.name, change.value);
-    }
-}
-
-
-std::vector<String> MergeTreeSettings::getAllRegisteredNames() const
-{
-    std::vector<String> all_settings;
-    for (const auto & setting_field : all())
-        all_settings.push_back(setting_field.getName());
-    return all_settings;
-}
-
 }

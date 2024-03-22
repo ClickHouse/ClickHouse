@@ -18,12 +18,9 @@ namespace DB
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 {
     QueryPlan query_plan;
-    return buildQueryPipeline(query_plan);
-}
 
-QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline(QueryPlan & query_plan)
-{
     buildQueryPlan(query_plan);
+
     return std::move(*query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
 }
@@ -54,7 +51,6 @@ static StreamLocalLimits getLimitsForStorage(const Settings & settings, const Se
     limits.speed_limits.max_execution_rps = settings.max_execution_speed;
     limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
     limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
-    limits.speed_limits.max_estimated_execution_time = settings.max_estimated_execution_time;
 
     return limits;
 }
@@ -96,7 +92,7 @@ static ASTPtr parseAdditionalPostFilter(const Context & context)
     ParserExpression parser;
     return parseQuery(
                 parser, filter.data(), filter.data() + filter.size(),
-                "additional filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+                "additional filter", settings.max_query_size, settings.max_parser_depth);
 }
 
 static ActionsDAGPtr makeAdditionalPostFilter(ASTPtr & ast, ContextPtr context, const Block & header)

@@ -26,11 +26,38 @@ static ActionsDAGPtr buildActionsForPlanPath(std::vector<ActionsDAGPtr> & dag_st
     return path_actions;
 }
 
+static const ActionsDAG::Node * getOriginalNodeForOutputAlias(const ActionsDAGPtr & actions, const String & output_name)
+{
+    /// find alias in output
+    const ActionsDAG::Node * output_alias = nullptr;
+    for (const auto * node : actions->getOutputs())
+    {
+        if (node->result_name == output_name)
+        {
+            output_alias = node;
+            break;
+        }
+    }
+    if (!output_alias)
+        return nullptr;
+
+    /// find original(non alias) node it refers to
+    const ActionsDAG::Node * node = output_alias;
+    while (node && node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        chassert(!node->children.empty());
+        node = node->children.front();
+    }
+    if (node && node->type != ActionsDAG::ActionType::INPUT)
+        return nullptr;
+
+    return node;
+}
+
 static std::set<std::string>
 getOriginalDistinctColumns(const ColumnsWithTypeAndName & distinct_columns, std::vector<ActionsDAGPtr> & dag_stack)
 {
     auto actions = buildActionsForPlanPath(dag_stack);
-    FindOriginalNodeForOutputName original_node_finder(actions);
     std::set<std::string> original_distinct_columns;
     for (const auto & column : distinct_columns)
     {
@@ -38,7 +65,7 @@ getOriginalDistinctColumns(const ColumnsWithTypeAndName & distinct_columns, std:
         if (isColumnConst(*column.column))
             continue;
 
-        const auto * input_node = original_node_finder.find(column.name);
+        const auto * input_node = getOriginalNodeForOutputAlias(actions, column.name);
         if (!input_node)
             break;
 

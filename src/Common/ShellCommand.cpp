@@ -54,9 +54,9 @@ ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd
 {
 }
 
-LoggerPtr ShellCommand::getLogger()
+Poco::Logger * ShellCommand::getLogger()
 {
-    return ::getLogger("ShellCommand");
+    return &Poco::Logger::get("ShellCommand");
 }
 
 ShellCommand::~ShellCommand()
@@ -101,12 +101,6 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     out.close();
     err.close();
 
-    for (auto & [_, fd] : write_fds)
-        fd.close();
-
-    for (auto & [_, fd] : read_fds)
-        fd.close();
-
     return waitForPid(pid, timeout_in_seconds);
 }
 
@@ -145,7 +139,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 #endif
 
     if (!real_vfork)
-        throw ErrnoException(ErrorCodes::CANNOT_DLSYM, "Cannot find symbol vfork in myself");
+        throwFromErrno("Cannot find symbol vfork in myself", ErrorCodes::CANNOT_DLSYM);
 
     PipeFDs pipe_stdin;
     PipeFDs pipe_stdout;
@@ -163,7 +157,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
 
     if (pid == -1)
-        throw ErrnoException(ErrorCodes::CANNOT_FORK, "Cannot vfork");
+        throwFromErrno("Cannot vfork", ErrorCodes::CANNOT_FORK);
 
     if (0 == pid)
     {
@@ -266,7 +260,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const ShellCommand::Co
 
     std::vector<char *> argv(arguments.size() + 2);
     std::vector<char> argv_data(argv_sum_size);
-    WriteBufferFromPointer writer(argv_data.data(), argv_sum_size);
+    WriteBuffer writer(argv_data.data(), argv_sum_size);
 
     argv[0] = writer.position();
     writer.write(path.data(), path.size() + 1);
@@ -276,8 +270,6 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const ShellCommand::Co
         argv[i + 1] = writer.position();
         writer.write(arguments[i].data(), arguments[i].size() + 1);
     }
-
-    writer.finalize();
 
     argv[arguments.size() + 1] = nullptr;
 
@@ -293,19 +285,13 @@ int ShellCommand::tryWait()
     out.close();
     err.close();
 
-    for (auto & [_, fd] : write_fds)
-        fd.close();
-
-    for (auto & [_, fd] : read_fds)
-        fd.close();
-
     LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
 
     int status = 0;
     while (waitpid(pid, &status, 0) < 0)
     {
         if (errno != EINTR)
-            throw ErrnoException(ErrorCodes::CANNOT_WAITPID, "Cannot waitpid");
+            throwFromErrno("Cannot waitpid", ErrorCodes::CANNOT_WAITPID);
     }
 
     LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);

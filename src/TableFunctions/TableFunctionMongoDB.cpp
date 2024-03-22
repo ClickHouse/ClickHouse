@@ -1,11 +1,12 @@
-#include <Storages/StorageMongoDB.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <TableFunctions/TableFunctionMongoDB.h>
 
 #include <Common/Exception.h>
 
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
@@ -24,34 +25,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace
-{
-
-class TableFunctionMongoDB : public ITableFunction
-{
-public:
-    static constexpr auto name = "mongodb";
-
-    std::string getName() const override { return name; }
-
-private:
-    StoragePtr executeImpl(
-            const ASTPtr & ast_function, ContextPtr context,
-            const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-
-    const char * getStorageTypeName() const override { return "MongoDB"; }
-
-    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-
-    std::optional<StorageMongoDB::Configuration> configuration;
-    String structure;
-};
 
 StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+        ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto columns = getActualTableStructure(context);
     auto storage = std::make_shared<StorageMongoDB>(
     StorageID(configuration->database, table_name),
     configuration->host,
@@ -68,7 +46,7 @@ StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
     return storage;
 }
 
-ColumnsDescription TableFunctionMongoDB::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionMongoDB::getActualTableStructure(ContextPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }
@@ -119,7 +97,6 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
     configuration = StorageMongoDB::getConfiguration(main_arguments, context);
 }
 
-}
 
 void registerTableFunctionMongoDB(TableFunctionFactory & factory)
 {

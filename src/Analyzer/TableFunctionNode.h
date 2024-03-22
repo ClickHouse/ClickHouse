@@ -98,18 +98,13 @@ public:
     }
 
     /// Resolve table function with table function, storage and context
-    void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, std::vector<size_t> unresolved_arguments_indexes_);
+    void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context);
 
     /// Get storage id, throws exception if function node is not resolved
     const StorageID & getStorageID() const;
 
     /// Get storage snapshot, throws exception if function node is not resolved
     const StorageSnapshotPtr & getStorageSnapshot() const;
-
-    const std::vector<size_t> & getUnresolvedArgumentIndexes() const
-    {
-        return unresolved_arguments_indexes;
-    }
 
     /// Return true if table function node has table expression modifiers, false otherwise
     bool hasTableExpressionModifiers() const
@@ -169,7 +164,6 @@ private:
     StoragePtr storage;
     StorageID storage_id;
     StorageSnapshotPtr storage_snapshot;
-    std::vector<size_t> unresolved_arguments_indexes;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     SettingsChanges settings_changes;
 

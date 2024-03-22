@@ -3,7 +3,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDescribeTableQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/ParserSetQuery.h>
 
 #include <Common/typeid_cast.h>
 
@@ -14,13 +13,11 @@ namespace DB
 
 bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_describe(Keyword::DESCRIBE);
-    ParserKeyword s_desc(Keyword::DESC);
-    ParserKeyword s_table(Keyword::TABLE);
-    ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_describe("DESCRIBE");
+    ParserKeyword s_desc("DESC");
+    ParserKeyword s_table("TABLE");
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p;
-    ParserSetQuery parser_settings(true);
 
     ASTPtr database;
     ASTPtr table;
@@ -32,21 +29,12 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     s_table.ignore(pos, expected);
 
-    if (!ParserTableExpression().parse(pos, query->table_expression, expected))
+    ASTPtr table_expression;
+    if (!ParserTableExpression().parse(pos, table_expression, expected))
         return false;
 
-    /// For compatibility with SELECTs, where SETTINGS can be in front of FORMAT
-    ASTPtr settings;
-    if (s_settings.ignore(pos, expected))
-    {
-        if (!parser_settings.parse(pos, query->settings_ast, expected))
-            return false;
-    }
-
-    query->children.push_back(query->table_expression);
-
-    if (query->settings_ast)
-        query->children.push_back(query->settings_ast);
+    query->children.push_back(std::move(table_expression));
+    query->table_expression = query->children.back();
 
     node = query;
 

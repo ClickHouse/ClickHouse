@@ -22,7 +22,7 @@ def test_access_rights_for_function():
     instance.query("CREATE USER A")
     instance.query("CREATE USER B")
     assert (
-        "it's necessary to have the grant CREATE FUNCTION ON *.*"
+        "it's necessary to have grant CREATE FUNCTION ON *.*"
         in instance.query_and_get_error(create_function_query, user="A")
     )
 
@@ -32,22 +32,19 @@ def test_access_rights_for_function():
     assert instance.query("SELECT MySum(1, 2)") == "3\n"
 
     assert (
-        "it's necessary to have the grant DROP FUNCTION ON *.*"
+        "it's necessary to have grant DROP FUNCTION ON *.*"
         in instance.query_and_get_error("DROP FUNCTION MySum", user="B")
     )
 
     instance.query("GRANT DROP FUNCTION ON *.* TO B")
     instance.query("DROP FUNCTION MySum", user="B")
-
-    function_resolution_error = instance.query_and_get_error("SELECT MySum(1, 2)")
-    assert (
-        "Unknown function MySum" in function_resolution_error
-        or "Function with name 'MySum' does not exists." in function_resolution_error
+    assert "Unknown function MySum" in instance.query_and_get_error(
+        "SELECT MySum(1, 2)"
     )
 
     instance.query("REVOKE CREATE FUNCTION ON *.* FROM A")
     assert (
-        "it's necessary to have the grant CREATE FUNCTION ON *.*"
+        "it's necessary to have grant CREATE FUNCTION ON *.*"
         in instance.query_and_get_error(create_function_query, user="A")
     )
 

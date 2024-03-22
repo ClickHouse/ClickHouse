@@ -1,6 +1,0 @@
-<clickhouse>
-    <logger>
-        <log>/var/log/clickhouse-server/clickhouse-server-%Y-%m.log</log>
-        <errorlog>/var/log/clickhouse-server/clickhouse-server-%Y-%m.err.log</errorlog>
-    </logger>
-</clickhouse>

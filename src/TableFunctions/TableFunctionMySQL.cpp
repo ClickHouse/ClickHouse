@@ -1,21 +1,22 @@
 #include "config.h"
 
 #if USE_MYSQL
-
-#include <Storages/StorageMySQL.h>
+#include <Databases/MySQL/FetchTablesColumnsList.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionMySQL.h>
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include "registerTableFunctions.h"
 
-#include <Databases/MySQL/DatabaseMySQL.h>
+#include <Databases/MySQL/DatabaseMySQL.h> // for fetchTablesColumnsList
 #include <Common/parseRemoteDescription.h>
 
 
@@ -25,33 +26,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
 }
-
-namespace
-{
-
-/* mysql ('host:port', database, table, user, password) - creates a temporary StorageMySQL.
- * The structure of the table is taken from the mysql query DESCRIBE table.
- * If there is no such table, an exception is thrown.
- */
-class TableFunctionMySQL : public ITableFunction
-{
-public:
-    static constexpr auto name = "mysql";
-    std::string getName() const override
-    {
-        return name;
-    }
-private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageTypeName() const override { return "MySQL"; }
-
-    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-
-    mutable std::optional<mysqlxx::PoolWithFailover> pool;
-    std::optional<StorageMySQL::Configuration> configuration;
-};
 
 void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
@@ -83,18 +59,27 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     pool.emplace(createMySQLPoolWithFailover(*configuration, mysql_settings));
 }
 
-ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context) const
 {
-    return StorageMySQL::getTableStructureFromData(*pool, configuration->database, configuration->table, context);
+    const auto & settings = context->getSettingsRef();
+    const auto tables_and_columns = fetchTablesColumnsList(*pool, configuration->database, {configuration->table}, settings, settings.mysql_datatypes_support_level);
+
+    const auto columns = tables_and_columns.find(configuration->table);
+    if (columns == tables_and_columns.end())
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {} doesn't exist.",
+                        (configuration->database.empty() ? "" : (backQuote(configuration->database) + "." + backQuote(configuration->table))));
+
+    return columns->second;
 }
 
 StoragePtr TableFunctionMySQL::executeImpl(
     const ASTPtr & /*ast_function*/,
     ContextPtr context,
     const std::string & table_name,
-    ColumnsDescription cached_columns,
-    bool /*is_insert_query*/) const
+    ColumnsDescription /*cached_columns*/) const
 {
+    auto columns = getActualTableStructure(context);
+
     auto res = std::make_shared<StorageMySQL>(
         StorageID(getDatabaseName(), table_name),
         std::move(*pool),
@@ -102,7 +87,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
         configuration->table,
         configuration->replace_query,
         configuration->on_duplicate_clause,
-        cached_columns,
+        columns,
         ConstraintsDescription{},
         String{},
         context,
@@ -114,14 +99,11 @@ StoragePtr TableFunctionMySQL::executeImpl(
     return res;
 }
 
-}
-
 
 void registerTableFunctionMySQL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMySQL>();
 }
-
 }
 
 #endif

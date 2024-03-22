@@ -49,9 +49,8 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
 {
     /** If there are columns-constants - then we materialize them.
       * (Since the data type does not know how to serialize / deserialize constants.)
-      * The same for compressed columns in-memory.
       */
-    ColumnPtr full_column = column->convertToFullColumnIfConst()->decompress();
+    ColumnPtr full_column = column->convertToFullColumnIfConst();
 
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
@@ -136,19 +135,9 @@ size_t NativeWriter::write(const Block & block)
         if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             auto info = column.type->getSerializationInfo(*column.column);
-            bool has_custom = false;
+            serialization = column.type->getSerialization(*info);
 
-            if (client_revision >= DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
-            {
-                serialization = column.type->getSerialization(*info);
-                has_custom = info->hasCustomSerialization();
-            }
-            else
-            {
-                serialization = column.type->getDefaultSerialization();
-                column.column = recursiveRemoveSparse(column.column);
-            }
-
+            bool has_custom = info->hasCustomSerialization();
             writeBinary(static_cast<UInt8>(has_custom), ostr);
             if (has_custom)
                 info->serialializeKindBinary(ostr);

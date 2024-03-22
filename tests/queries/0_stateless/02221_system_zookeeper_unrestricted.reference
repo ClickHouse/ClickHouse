@@ -16,8 +16,6 @@ columns
 columns
 columns
 columns
-creator_info
-creator_info
 failed_parts
 failed_parts
 flags
@@ -38,8 +36,6 @@ log
 log
 log_pointer
 log_pointer
-lost_part_count
-lost_part_count
 max_processed_insert_time
 max_processed_insert_time
 metadata

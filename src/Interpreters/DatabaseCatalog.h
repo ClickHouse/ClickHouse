@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Core/UUID.h>
-#include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Databases/TablesDependencyGraph.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/SharedMutex.h>
@@ -20,6 +20,9 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -76,8 +79,6 @@ private:
 
 using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
-class FutureSetFromSubquery;
-using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
 /// Such table can be accessed from everywhere by its ID.
@@ -110,7 +111,6 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
-    FutureSetFromSubqueryPtr future_set;
 };
 
 ///TODO maybe remove shared_ptr from here?
@@ -137,18 +137,13 @@ public:
 
     void createBackgroundTasks();
     void initializeAndLoadTemporaryDatabase();
-    void startupBackgroundTasks();
+    void startupBackgroundCleanup();
     void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
-
-    /// We need special synchronization between DROP/DETACH DATABASE and SYSTEM RESTART REPLICA
-    /// because IStorage::flushAndPrepareForShutdown cannot be protected by DDLGuard (and a race with IStorage::startup is possible)
-    std::unique_lock<SharedMutex> getLockForDropDatabase(const String & database);
-    std::optional<std::shared_lock<SharedMutex>> tryGetLockForRestartReplica(const String & database);
 
 
     void assertDatabaseExists(const String & database_name) const;
@@ -257,9 +252,6 @@ public:
         std::lock_guard lock(tables_marked_dropped_mutex);
         return tables_marked_dropped;
     }
-
-    void triggerReloadDisksTask(const Strings & new_added_disks);
-
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -267,6 +259,7 @@ private:
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
+    void assertDatabaseExistsUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
     void shutdownImpl();
@@ -284,7 +277,7 @@ private:
 
     static inline size_t getFirstLevelIdx(const UUID & uuid)
     {
-        return UUIDHelpers::getHighBytes(uuid) >> (64 - bits_for_first_level);
+        return uuid.toUnderType().items[0] >> (64 - bits_for_first_level);
     }
 
     void dropTableDataTask();
@@ -292,8 +285,6 @@ private:
 
     void cleanupStoreDirectoryTask();
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
-
-    void reloadDisksTask();
 
     static constexpr size_t reschedule_time_ms = 100;
 
@@ -312,7 +303,7 @@ private:
     /// View dependencies between a source table and its view.
     TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     std::atomic_bool is_shutting_down = false;
 
@@ -322,22 +313,13 @@ private:
     /// For the duration of the operation, an element is placed here, and an object is returned,
     /// which deletes the element in the destructor when counter becomes zero.
     /// In case the element already exists, waits when query will be executed in other thread. See class DDLGuard below.
-    struct DatabaseGuard
-    {
-        SharedMutex database_ddl_mutex;
-        SharedMutex restart_replica_mutex;
-
-        DDLGuard::Map table_guards;
-    };
-    DatabaseGuard & getDatabaseGuard(const String & database);
-
+    using DatabaseGuard = std::pair<DDLGuard::Map, SharedMutex>;
     using DDLGuards = std::map<String, DatabaseGuard>;
     DDLGuards ddl_guards TSA_GUARDED_BY(ddl_guards_mutex);
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
     mutable std::mutex ddl_guards_mutex;
 
     TablesMarkedAsDropped tables_marked_dropped TSA_GUARDED_BY(tables_marked_dropped_mutex);
-    TablesMarkedAsDropped::iterator first_async_drop_in_queue TSA_GUARDED_BY(tables_marked_dropped_mutex);
     std::unordered_set<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
     mutable std::mutex tables_marked_dropped_mutex;
 
@@ -356,13 +338,7 @@ private:
 
     static constexpr time_t default_drop_error_cooldown_sec = 5;
     time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
-
-    std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
-    std::mutex reload_disks_mutex;
-    std::set<String> disks_to_reload;
-    static constexpr time_t DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC = 5;
 };
-
 
 /// This class is useful when creating a table or database.
 /// Usually we create IStorage/IDatabase object first and then add it to IDatabase/DatabaseCatalog.
@@ -376,7 +352,7 @@ class TemporaryLockForUUIDDirectory : private boost::noncopyable
     UUID uuid = UUIDHelpers::Nil;
 public:
     TemporaryLockForUUIDDirectory() = default;
-    explicit TemporaryLockForUUIDDirectory(UUID uuid_);
+    TemporaryLockForUUIDDirectory(UUID uuid_);
     ~TemporaryLockForUUIDDirectory();
 
     TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept;

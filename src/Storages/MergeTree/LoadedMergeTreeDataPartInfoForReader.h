@@ -1,5 +1,4 @@
 #pragma once
-#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -10,17 +9,17 @@ namespace DB
 class LoadedMergeTreeDataPartInfoForReader final : public IMergeTreeDataPartInfoForReader
 {
 public:
-    LoadedMergeTreeDataPartInfoForReader(
-        MergeTreeData::DataPartPtr data_part_, AlterConversionsPtr alter_conversions_)
+    explicit LoadedMergeTreeDataPartInfoForReader(MergeTreeData::DataPartPtr data_part_)
         : IMergeTreeDataPartInfoForReader(data_part_->storage.getContext())
-        , data_part(std::move(data_part_))
-        , alter_conversions(std::move(alter_conversions_))
+        , data_part(data_part_)
     {
     }
 
     bool isCompactPart() const override { return DB::isCompactPart(data_part); }
 
     bool isWidePart() const override { return DB::isWidePart(data_part); }
+
+    bool isInMemoryPart() const override { return DB::isInMemoryPart(data_part); }
 
     bool isProjectionPart() const override { return data_part->isProjectionPart(); }
 
@@ -34,7 +33,7 @@ public:
 
     std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
 
-    AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
+    AlterConversions getAlterConversions() const override { return data_part->storage.getAlterConversionsForPart(data_part); }
 
     String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const override { return data_part->getColumnNameWithMinimumCompressedSize(with_subcolumns); }
 
@@ -54,13 +53,8 @@ public:
 
     SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
 
-    String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
-
-    MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
-
 private:
     MergeTreeData::DataPartPtr data_part;
-    AlterConversionsPtr alter_conversions;
 };
 
 }

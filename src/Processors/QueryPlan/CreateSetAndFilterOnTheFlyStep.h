@@ -35,8 +35,6 @@ public:
 
     SetWithStatePtr getSet() const { return own_set; }
 
-    bool isColumnPartOfSetKey(const String & column_name) const;
-
     /// Set for another stream.
     void setFiltering(SetWithStatePtr filtering_set_) { filtering_set = filtering_set_; }
 
@@ -54,7 +52,7 @@ private:
 
     JoinTableSide position;
 
-    LoggerPtr log = getLogger("CreateSetAndFilterOnTheFlyStep");
+    Poco::Logger * log = &Poco::Logger::get("CreateSetAndFilterOnTheFlyStep");
 };
 
 }

@@ -19,7 +19,7 @@ LimitSeekableReadBuffer::LimitSeekableReadBuffer(std::unique_ptr<SeekableReadBuf
     , in(std::move(in_))
     , min_offset(start_offset_)
     , max_offset(start_offset_ + limit_size_)
-    , need_seek(min_offset) /// We always start reading from `min_offset`.
+    , need_seek(start_offset_)
 {
 }
 
@@ -31,50 +31,44 @@ bool LimitSeekableReadBuffer::nextImpl()
     if (need_seek)
     {
         /// Do actual seek.
-        if (in->seek(*need_seek, SEEK_SET) != static_cast<off_t>(*need_seek))
+        if (in->getPosition() != *need_seek)
         {
-            /// Failed to seek, maybe because the new seek position is located after EOF.
-            set(in->position(), 0);
-            return false;
+            if (in->seek(*need_seek, SEEK_SET) != static_cast<off_t>(*need_seek))
+            {
+                /// Failed to seek, maybe because the new seek position is located after EOF.
+                set(in->position(), 0);
+                return false;
+            }
         }
         need_seek.reset();
     }
 
-    off_t seek_pos = in->getPosition();
-    off_t offset_after_min = seek_pos - min_offset;
-    off_t available_before_max = max_offset - seek_pos;
-
-    if (offset_after_min < 0 || available_before_max <= 0)
+    if (in->getPosition() >= max_offset)
     {
         /// Limit reached.
         set(in->position(), 0);
         return false;
     }
 
-    if (in->eof()) /// `in->eof()` can call `in->next()`
+    if (in->eof())
     {
         /// EOF reached.
         set(in->position(), 0);
         return false;
     }
 
-    /// in->eof() shouldn't change the seek position.
-    chassert(seek_pos == in->getPosition());
+    /// Adjust the size of the buffer (we don't allow to read more than `max_offset - min_offset`).
+    off_t size = in->buffer().size();
+    size = std::min(size, max_offset - in->getPosition());
 
-    /// Adjust the beginning and the end of the working buffer.
-    /// Because we don't want to read before `min_offset` or after `max_offset`.
-    auto * ptr = in->position();
-    auto * begin = in->buffer().begin();
-    auto * end = in->buffer().end();
+    if (!size || (static_cast<off_t>(in->offset()) >= size))
+    {
+        /// Limit reached.
+        set(in->position(), 0);
+        return false;
+    }
 
-    if (ptr - begin > offset_after_min)
-        begin = ptr - offset_after_min;
-    if (end - ptr > available_before_max)
-        end = ptr + available_before_max;
-
-    BufferBase::set(begin, end - begin, ptr - begin);
-    chassert(position() == ptr && available());
-
+    BufferBase::set(in->buffer().begin(), size, in->offset());
     return true;
 }
 

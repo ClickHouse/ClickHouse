@@ -26,6 +26,14 @@ def make_instance(name, cfg, *args, **kwargs):
 # _n1/_n2 contains cluster with different <secret> -- should fail
 n1 = make_instance("n1", "configs/remote_servers_n1.xml")
 n2 = make_instance("n2", "configs/remote_servers_n2.xml")
+backward = make_instance(
+    "backward",
+    "configs/remote_servers_backward.xml",
+    image="clickhouse/clickhouse-server",
+    # version without DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
+    tag="23.2.3",
+    with_installed_binary=True,
+)
 
 users = pytest.mark.parametrize(
     "user,password",
@@ -99,6 +107,10 @@ def start_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def query_with_id(node, id_, query, **kwargs):
+    return node.query("WITH '{}' AS __id {}".format(id_, query), **kwargs)
 
 
 # @return -- [user, initial_user]
@@ -177,7 +189,7 @@ def test_insecure_insert_sync():
     n1.query("TRUNCATE TABLE data")
     n1.query(
         "INSERT INTO dist_insecure SELECT * FROM numbers(2)",
-        settings={"distributed_foreground_insert": 1},
+        settings={"insert_distributed_sync": 1},
     )
     assert int(n1.query("SELECT count() FROM dist_insecure")) == 2
     n1.query("TRUNCATE TABLE data ON CLUSTER secure")
@@ -199,7 +211,7 @@ def test_secure_insert_sync():
     n1.query("TRUNCATE TABLE data")
     n1.query(
         "INSERT INTO dist_secure SELECT * FROM numbers(2)",
-        settings={"distributed_foreground_insert": 1},
+        settings={"insert_distributed_sync": 1},
     )
     assert int(n1.query("SELECT count() FROM dist_secure")) == 2
     n1.query("TRUNCATE TABLE data ON CLUSTER secure")
@@ -231,7 +243,7 @@ def test_secure_insert_sync():
 # - after we will ensure that connection is really established from the context
 #   of SELECT query, and that the connection will not be established from the
 #   context of the INSERT query (but actually it is a no-op since the INSERT
-#   will be done in background, due to distributed_foreground_insert=false by
+#   will be done in background, due to insert_distributed_sync=false by
 #   default)
 #
 # - if the bug is there, then FLUSH DISTRIBUTED will fail, because it will go
@@ -315,7 +327,7 @@ def test_secure_disagree_insert():
 @users
 def test_user_insecure_cluster(user, password):
     id_ = "query-dist_insecure-" + user
-    n1.query(f"SELECT *, '{id_}' FROM dist_insecure", user=user, password=password)
+    query_with_id(n1, id_, "SELECT * FROM dist_insecure", user=user, password=password)
     assert get_query_user_info(n1, id_) == [
         user,
         user,
@@ -326,7 +338,7 @@ def test_user_insecure_cluster(user, password):
 @users
 def test_user_secure_cluster(user, password):
     id_ = "query-dist_secure-" + user
-    n1.query(f"SELECT *, '{id_}' FROM dist_secure", user=user, password=password)
+    query_with_id(n1, id_, "SELECT * FROM dist_secure", user=user, password=password)
     assert get_query_user_info(n1, id_) == [user, user]
     assert get_query_user_info(n2, id_) == [user, user]
 
@@ -334,14 +346,16 @@ def test_user_secure_cluster(user, password):
 @users
 def test_per_user_inline_settings_insecure_cluster(user, password):
     id_ = "query-ddl-settings-dist_insecure-" + user
-    n1.query(
-        f"""
-        SELECT *, '{id_}' FROM dist_insecure
-        SETTINGS
-            prefer_localhost_replica=0,
-            max_memory_usage_for_user=1e9,
-            max_untracked_memory=0
-        """,
+    query_with_id(
+        n1,
+        id_,
+        """
+    SELECT * FROM dist_insecure
+    SETTINGS
+        prefer_localhost_replica=0,
+        max_memory_usage_for_user=1e9,
+        max_untracked_memory=0
+    """,
         user=user,
         password=password,
     )
@@ -351,14 +365,16 @@ def test_per_user_inline_settings_insecure_cluster(user, password):
 @users
 def test_per_user_inline_settings_secure_cluster(user, password):
     id_ = "query-ddl-settings-dist_secure-" + user
-    n1.query(
-        f"""
-        SELECT *, '{id_}' FROM dist_secure
-        SETTINGS
-            prefer_localhost_replica=0,
-            max_memory_usage_for_user=1e9,
-            max_untracked_memory=0
-        """,
+    query_with_id(
+        n1,
+        id_,
+        """
+    SELECT * FROM dist_secure
+    SETTINGS
+        prefer_localhost_replica=0,
+        max_memory_usage_for_user=1e9,
+        max_untracked_memory=0
+    """,
         user=user,
         password=password,
     )
@@ -370,8 +386,10 @@ def test_per_user_inline_settings_secure_cluster(user, password):
 @users
 def test_per_user_protocol_settings_insecure_cluster(user, password):
     id_ = "query-protocol-settings-dist_insecure-" + user
-    n1.query(
-        f"SELECT *, '{id_}' FROM dist_insecure",
+    query_with_id(
+        n1,
+        id_,
+        "SELECT * FROM dist_insecure",
         user=user,
         password=password,
         settings={
@@ -386,8 +404,10 @@ def test_per_user_protocol_settings_insecure_cluster(user, password):
 @users
 def test_per_user_protocol_settings_secure_cluster(user, password):
     id_ = "query-protocol-settings-dist_secure-" + user
-    n1.query(
-        f"SELECT *, '{id_}' FROM dist_secure",
+    query_with_id(
+        n1,
+        id_,
+        "SELECT * FROM dist_secure",
         user=user,
         password=password,
         settings={
@@ -398,4 +418,32 @@ def test_per_user_protocol_settings_secure_cluster(user, password):
     )
     assert int(get_query_setting_on_shard(n1, id_, "max_memory_usage_for_user")) == int(
         1e9
+    )
+
+
+@users
+def test_user_secure_cluster_with_backward(user, password):
+    id_ = "with-backward-query-dist_secure-" + user
+    query_with_id(
+        n1, id_, "SELECT * FROM dist_secure_backward", user=user, password=password
+    )
+    assert get_query_user_info(n1, id_) == [user, user]
+    assert get_query_user_info(backward, id_) == [user, user]
+
+
+@users
+def test_user_secure_cluster_from_backward(user, password):
+    id_ = "from-backward-query-dist_secure-" + user
+    query_with_id(
+        backward,
+        id_,
+        "SELECT * FROM dist_secure_backward",
+        user=user,
+        password=password,
+    )
+    assert get_query_user_info(n1, id_) == [user, user]
+    assert get_query_user_info(backward, id_) == [user, user]
+
+    assert n1.contains_in_log(
+        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster."
     )

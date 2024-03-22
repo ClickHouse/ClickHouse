@@ -1,8 +1,8 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <re2/re2.h>
 #include <filesystem>
-#include <Common/re2.h>
 
 #if USE_HDFS
 #include <Common/ShellCommand.h>
@@ -21,7 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int HDFS_ERROR;
+    extern const int NETWORK_ERROR;
     #if USE_KRB5
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int KERBEROS_ERROR;
@@ -38,8 +38,8 @@ HDFSFileInfo::~HDFSFileInfo()
 }
 
 
-void HDFSBuilderWrapper::loadFromConfig(
-    const Poco::Util::AbstractConfiguration & config, const String & prefix, [[maybe_unused]] bool isUser)
+void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
+    const String & prefix, bool isUser)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
 
@@ -55,7 +55,7 @@ void HDFSBuilderWrapper::loadFromConfig(
             need_kinit = true;
             hadoop_kerberos_keytab = config.getString(key_path);
             #else // USE_KRB5
-            LOG_WARNING(getLogger("HDFSClient"), "hadoop_kerberos_keytab parameter is ignored because ClickHouse was built without support of krb5 library.");
+            LOG_WARNING(&Poco::Logger::get("HDFSClient"), "hadoop_kerberos_keytab parameter is ignored because ClickHouse was built without support of krb5 library.");
             #endif // USE_KRB5
             continue;
         }
@@ -66,7 +66,7 @@ void HDFSBuilderWrapper::loadFromConfig(
             hadoop_kerberos_principal = config.getString(key_path);
             hdfsBuilderSetPrincipal(hdfs_builder, hadoop_kerberos_principal.c_str());
             #else // USE_KRB5
-            LOG_WARNING(getLogger("HDFSClient"), "hadoop_kerberos_principal parameter is ignored because ClickHouse was built without support of krb5 library.");
+            LOG_WARNING(&Poco::Logger::get("HDFSClient"), "hadoop_kerberos_principal parameter is ignored because ClickHouse was built without support of krb5 library.");
             #endif // USE_KRB5
             continue;
         }
@@ -81,7 +81,7 @@ void HDFSBuilderWrapper::loadFromConfig(
             hadoop_security_kerberos_ticket_cache_path = config.getString(key_path);
             // standard param - pass further
             #else // USE_KRB5
-            LOG_WARNING(getLogger("HDFSClient"), "hadoop.security.kerberos.ticket.cache.path parameter is ignored because ClickHouse was built without support of krb5 library.");
+            LOG_WARNING(&Poco::Logger::get("HDFSClient"), "hadoop.security.kerberos.ticket.cache.path parameter is ignored because ClickHouse was built without support of krb5 library.");
             #endif // USE_KRB5
         }
 
@@ -95,7 +95,7 @@ void HDFSBuilderWrapper::loadFromConfig(
 #if USE_KRB5
 void HDFSBuilderWrapper::runKinit()
 {
-    LOG_DEBUG(getLogger("HDFSClient"), "Running KerberosInit");
+    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Running KerberosInit");
     try
     {
         kerberosInit(hadoop_kerberos_keytab,hadoop_kerberos_principal,hadoop_security_kerberos_ticket_cache_path);
@@ -104,7 +104,7 @@ void HDFSBuilderWrapper::runKinit()
     {
         throw Exception(ErrorCodes::KERBEROS_ERROR, "KerberosInit failure: {}", getExceptionMessage(e, false));
     }
-    LOG_DEBUG(getLogger("HDFSClient"), "Finished KerberosInit");
+    LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Finished KerberosInit");
 }
 #endif // USE_KRB5
 
@@ -119,7 +119,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
 
     HDFSBuilderWrapper builder;
     if (builder.get() == nullptr)
-        throw Exception(ErrorCodes::HDFS_ERROR, "Unable to create builder to connect to HDFS: {} {}",
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Unable to create builder to connect to HDFS: {} {}",
             uri.toString(), String(hdfsGetLastError()));
 
     hdfsBuilderConfSetStr(builder.get(), "input.read.timeout", "60000"); // 1 min
@@ -145,7 +145,10 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
         hdfsBuilderSetNameNodePort(builder.get(), port);
     }
 
-    builder.loadFromConfig(config, std::string(CONFIG_PREFIX));
+    if (config.has(std::string(CONFIG_PREFIX)))
+    {
+        builder.loadFromConfig(config, std::string(CONFIG_PREFIX));
+    }
 
     if (!user.empty())
     {
@@ -170,7 +173,7 @@ HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
 {
     HDFSFSPtr fs(hdfsBuilderConnect(builder));
     if (fs == nullptr)
-        throw Exception(ErrorCodes::HDFS_ERROR, "Unable to connect to HDFS: {}", String(hdfsGetLastError()));
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Unable to connect to HDFS: {}", String(hdfsGetLastError()));
 
     return fs;
 }

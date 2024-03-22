@@ -2,6 +2,7 @@
 
 #include <sys/types.h>
 #include <unistd.h>
+#include <iostream>
 #include <memory>
 #include <functional>
 #include <optional>
@@ -14,7 +15,9 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Version.h>
 #include <base/types.h>
+#include <Common/logger_useful.h>
 #include <base/getThreadId.h>
 #include <Daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -103,7 +106,7 @@ public:
 
     GraphiteWriter * getGraphiteWriter(const std::string & config_name = DEFAULT_GRAPHITE_CONFIG_NAME)
     {
-        if (graphite_writers.contains(config_name))
+        if (graphite_writers.count(config_name))
             return graphite_writers[config_name].get();
         return nullptr;
     }
@@ -183,7 +186,7 @@ std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
     {
         ptr = dynamic_cast<Daemon *>(&Poco::Util::Application::instance());
     }
-    catch (const Poco::NullPointerException &) /// NOLINT(bugprone-empty-catch)
+    catch (const Poco::NullPointerException &)
     {
         /// if daemon doesn't exist than instance() throw NullPointerException
     }

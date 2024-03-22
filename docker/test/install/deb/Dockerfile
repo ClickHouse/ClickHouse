@@ -10,13 +10,12 @@ ENV \
   init=/lib/systemd/systemd
 
 # install systemd packages
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-    sudo \
+RUN apt-get update && \
+  apt-get install -y --no-install-recommends \
     systemd \
-    \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+    && \
+  apt-get clean && \
+  rm -rf /var/lib/apt/lists
 
 # configure systemd
 # remove systemd 'wants' triggers

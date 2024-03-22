@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/mysql
-sidebar_position: 138
+sidebar_position: 4
 sidebar_label: MySQL
 ---
 
@@ -16,7 +16,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-) ENGINE = MySQL({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
+) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
 SETTINGS
     [ connection_pool_size=16, ]
     [ connection_max_tries=3, ]
@@ -31,27 +31,29 @@ See a detailed description of the [CREATE TABLE](../../../sql-reference/statemen
 
 The table structure can differ from the original MySQL table structure:
 
-- Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
-- The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
-
-:::note
-The MySQL Table Engine is currently not available on the ClickHouse builds for MacOS ([issue](https://github.com/ClickHouse/ClickHouse/issues/21191))
-:::
+-   Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
+-   Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
+-   The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 
-- `host:port` — MySQL server address.
-- `database` — Remote database name.
-- `table` — Remote table name.
-- `user` — MySQL user.
-- `password` — User password.
-- `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is substituted.
-- `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
-    Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the [MySQL documentation](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
-    To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
+-   `host:port` — MySQL server address.
 
-Arguments also can be passed using [named collections](/docs/en/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+-   `database` — Remote database name.
+
+-   `table` — Remote table name.
+
+-   `user` — MySQL user.
+
+-   `password` — User password.
+
+-   `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is substituted.
+
+-   `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
+
+    Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the [MySQL documentation](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
+
+    To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
@@ -65,7 +67,7 @@ CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) EN
 
 ## Usage Example {#usage-example}
 
-Create table in MySQL:
+Table in MySQL:
 
 ``` text
 mysql> CREATE TABLE `test`.`test` (
@@ -88,7 +90,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Create table in ClickHouse using plain arguments:
+Table in ClickHouse, retrieving data from the MySQL table created above:
 
 ``` sql
 CREATE TABLE mysql_table
@@ -98,25 +100,6 @@ CREATE TABLE mysql_table
 )
 ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
-
-Or using [named collections](/docs/en/operations/named-collections.md):
-
-```sql
-CREATE NAMED COLLECTION creds AS
-        host = 'localhost',
-        port = 3306,
-        database = 'test',
-        user = 'bayonet',
-        password = '123';
-CREATE TABLE mysql_table
-(
-    `float_nullable` Nullable(Float32),
-    `int_id` Int32
-)
-ENGINE = MySQL(creds, table='test')
-```
-
-Retrieving data from MySQL table:
 
 ``` sql
 SELECT * FROM mysql_table
@@ -138,8 +121,8 @@ Allows to automatically close the connection after query execution, i.e. disable
 
 Possible values:
 
-- 1 — Auto-close connection is allowed, so the connection reuse is disabled
-- 0 — Auto-close connection is not allowed, so the connection reuse is enabled
+-   1 — Auto-close connection is allowed, so the connection reuse is disabled
+-   0 — Auto-close connection is not allowed, so the connection reuse is enabled
 
 Default value: `1`.
 
@@ -149,8 +132,8 @@ Sets the number of retries for pool with failover.
 
 Possible values:
 
-- Positive integer.
-- 0 — There are no retries for pool with failover.
+-   Positive integer.
+-   0 — There are no retries for pool with failover.
 
 Default value: `3`.
 
@@ -160,7 +143,7 @@ Size of connection pool (if all connections are in use, the query will wait unti
 
 Possible values:
 
-- Positive integer.
+-   Positive integer.
 
 Default value: `16`.
 
@@ -170,7 +153,7 @@ Timeout (in seconds) for waiting for free connection (in case of there is alread
 
 Possible values:
 
-- Positive integer.
+-   Positive integer.
 
 Default value: `5`.
 
@@ -180,7 +163,7 @@ Connect timeout (in seconds).
 
 Possible values:
 
-- Positive integer.
+-   Positive integer.
 
 Default value: `10`.
 
@@ -190,11 +173,11 @@ Read/write timeout (in seconds).
 
 Possible values:
 
-- Positive integer.
+-   Positive integer.
 
 Default value: `300`.
 
 ## See Also {#see-also}
 
-- [The mysql table function](../../../sql-reference/table-functions/mysql.md)
-- [Using MySQL as a dictionary source](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)
+-   [The mysql table function](../../../sql-reference/table-functions/mysql.md)
+-   [Using MySQL as a dictionary source](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)

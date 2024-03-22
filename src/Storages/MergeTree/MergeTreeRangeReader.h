@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Block.h>
+#include <Common/logger_useful.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -22,33 +23,19 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct PrewhereExprStep
 {
-    enum Type
-    {
-        Filter,
-        Expression,
-    };
-
-    Type type = Type::Filter;
     ExpressionActionsPtr actions;
-    String filter_column_name;
-
-    bool remove_filter_column = false;
+    String column_name;
+    bool remove_column = false;
     bool need_filter = false;
-
-    /// Some PREWHERE steps should be executed without conversions.
-    /// A step without alter conversion cannot be executed after step with alter conversions.
-    bool perform_alter_conversions = false;
 };
-
-using PrewhereExprStepPtr = std::shared_ptr<PrewhereExprStep>;
-using PrewhereExprSteps = std::vector<PrewhereExprStepPtr>;
 
 /// The same as PrewhereInfo, but with ExpressionActions instead of ActionsDAG
 struct PrewhereExprInfo
 {
-    PrewhereExprSteps steps;
+    std::vector<PrewhereExprStep> steps;
 
     std::string dump() const;
+
     std::string dumpConditions() const;
 };
 
@@ -101,7 +88,8 @@ public:
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
         const PrewhereExprStep * prewhere_info_,
-        bool last_reader_in_chain_);
+        bool last_reader_in_chain_,
+        const Names & non_const_virtual_column_names);
 
     MergeTreeRangeReader() = default;
 
@@ -230,7 +218,7 @@ public:
 
         using RangesInfo = std::vector<RangeInfo>;
 
-        explicit ReadResult(LoggerPtr log_) : log(log_) {}
+        explicit ReadResult(Poco::Logger * log_) : log(log_) {}
 
         static size_t getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges);
 
@@ -297,7 +285,7 @@ public:
         size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
-        LoggerPtr log;
+        Poco::Logger * log;
     };
 
     ReadResult read(size_t max_rows, MarkRanges & ranges);
@@ -308,7 +296,7 @@ private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result) const;
-    ColumnPtr createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+    void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -322,8 +310,9 @@ private:
 
     bool last_reader_in_chain = false;
     bool is_initialized = false;
+    Names non_const_virtual_column_names;
 
-    LoggerPtr log = getLogger("MergeTreeRangeReader");
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeRangeReader");
 };
 
 }

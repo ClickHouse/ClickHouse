@@ -8,11 +8,10 @@
 namespace DB
 {
 
-class StorageDummy final : public IStorage
+class StorageDummy : public IStorage
 {
 public:
-    StorageDummy(
-        const StorageID & table_id_, const ColumnsDescription & columns_, const StorageSnapshotPtr & original_storage_snapshot_ = nullptr);
+    StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_);
 
     std::string getName() const override { return "StorageDummy"; }
 
@@ -21,20 +20,7 @@ public:
     bool supportsPrewhere() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
-    bool canMoveConditionsToPrewhere() const override
-    {
-        return original_storage_snapshot ? original_storage_snapshot->storage.canMoveConditionsToPrewhere() : false;
-    }
-
-    bool hasEvenlyDistributedRead() const override
-    {
-        return original_storage_snapshot ? original_storage_snapshot->storage.hasEvenlyDistributedRead() : false;
-    }
-
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
-    {
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns);
-    }
+    bool canMoveConditionsToPrewhere() const override { return false; }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
@@ -51,23 +37,14 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
-
-private:
-    const ColumnsDescription object_columns;
-
-    /// The original storage snapshot which is replaced during planning. See collectFiltersForAnalysis for example.
-    StorageSnapshotPtr original_storage_snapshot;
 };
 
-class ReadFromDummy final : public SourceStepWithFilter
+class ReadFromDummy : public SourceStepWithFilter
 {
 public:
-    explicit ReadFromDummy(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
-        const StorageDummy & storage_);
+    explicit ReadFromDummy(const StorageDummy & storage_,
+        StorageSnapshotPtr storage_snapshot_,
+        Names column_names_);
 
     const StorageDummy & getStorage() const
     {
@@ -90,6 +67,7 @@ public:
 
 private:
     const StorageDummy & storage;
+    StorageSnapshotPtr storage_snapshot;
     Names column_names;
 };
 

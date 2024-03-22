@@ -1,3 +1,0 @@
-data.x	Array(UInt32)					
-data.y	Array(UInt32)					
-data	Array(Tuple(\n    x UInt64,\n    y UInt64))					

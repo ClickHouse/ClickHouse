@@ -4,7 +4,6 @@
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -108,9 +107,10 @@ static std::string getSortDescriptionDump(const SortDescription & description, c
     return buffer.str();
 }
 
-static LoggerPtr getLogger()
+static Poco::Logger * getLogger()
 {
-    return ::getLogger("SortDescription");
+    static Poco::Logger & logger = Poco::Logger::get("SortDescription");
+    return &logger;
 }
 
 void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts)
@@ -132,7 +132,8 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     SipHash sort_description_dump_hash;
     sort_description_dump_hash.update(description_dump);
 
-    const auto sort_description_hash_key = sort_description_dump_hash.get128();
+    UInt128 sort_description_hash_key;
+    sort_description_dump_hash.get128(sort_description_hash_key);
 
     {
         std::lock_guard lock(mutex);

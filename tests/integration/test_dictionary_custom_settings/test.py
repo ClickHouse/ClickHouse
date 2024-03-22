@@ -2,8 +2,6 @@ import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
-
 
 DICTIONARY_FILES = [
     "configs/dictionaries/FileSourceConfig.xml",
@@ -80,11 +78,5 @@ def test_work(start_cluster):
 
     assert caught_exception.find("Limit for result exceeded") != -1
 
-    # It is possible that the HTTP server takes long time to start accepting connections
-
-    assert_eq_with_retry(
-        instance, "SELECT dictGetString('test_http', 'first', toUInt64(1))", "\\'a\n"
-    )
-    assert_eq_with_retry(
-        instance, "SELECT dictGetString('test_http', 'second', toUInt64(1))", '"b\n'
-    )
+    assert query("SELECT dictGetString('test_http', 'first', toUInt64(1))") == "\\'a\n"
+    assert query("SELECT dictGetString('test_http', 'second', toUInt64(1))") == '"b\n'

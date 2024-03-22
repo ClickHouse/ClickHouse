@@ -1,12 +1,9 @@
 #include <Common/FrequencyHolder.h>
-
-#if USE_NLP
-
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
 
 #include <memory>
-
+#include <unordered_map>
 
 namespace DB
 {
@@ -49,7 +46,7 @@ namespace
         return res;
     }
 
-    /// Count how many times each bigram occurs in the text.
+    /// Сount how many times each bigram occurs in the text.
     template <typename ModelMap>
     ALWAYS_INLINE inline void calculateStats(
         const UInt8 * data,
@@ -153,5 +150,3 @@ REGISTER_FUNCTION(DetectCharset)
 }
 
 }
-
-#endif

@@ -60,7 +60,6 @@ public:
             settings, state);
         serialization->serializeBinaryBulkStateSuffix(settings, state);
 
-        out.finalize();
         return out.count();
     }
 };

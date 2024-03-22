@@ -34,14 +34,13 @@ public:
         , task_result_callback(task_result_callback_)
     {
         for (auto & item : merge_mutate_entry->future_part->parts)
-            priority.value += item->getBytesOnDisk();
+            priority += item->getBytesOnDisk();
     }
 
     bool executeStep() override;
     void onCompleted() override;
-    StorageID getStorageID() const override;
-    Priority getPriority() const override { return priority; }
-    String getQueryId() const override { return getStorageID().getShortName() + "::" + merge_mutate_entry->future_part->name; }
+    StorageID getStorageID() override;
+    UInt64 getPriority() override { return priority; }
 
     void setCurrentTransaction(MergeTreeTransactionHolder && txn_holder_, MergeTreeTransactionPtr && txn_)
     {
@@ -78,10 +77,9 @@ private:
     using MergeListEntryPtr = std::unique_ptr<MergeListEntry>;
     MergeListEntryPtr merge_list_entry;
 
-    Priority priority;
+    UInt64 priority{0};
 
     std::function<void(const ExecutionStatus &)> write_part_log;
-    std::function<void()> transfer_profile_counters_to_initial_query;
     IExecutableTask::TaskResultCallback task_result_callback;
     MergeTaskPtr merge_task{nullptr};
 
@@ -89,10 +87,6 @@ private:
     MergeTreeTransactionPtr txn;
 
     ProfileEvents::Counters profile_counters;
-
-    ContextMutablePtr task_context;
-
-    ContextMutablePtr createTaskContext() const;
 };
 
 

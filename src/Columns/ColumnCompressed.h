@@ -30,7 +30,7 @@ namespace ErrorCodes
   *
   * Also in-memory compression allows to keep more data in RAM.
   */
-class ColumnCompressed : public COWHelper<IColumnHelper<ColumnCompressed>, ColumnCompressed>
+class ColumnCompressed : public COWHelper<IColumn, ColumnCompressed>
 {
 public:
     using Lazy = std::function<ColumnPtr()>;
@@ -64,7 +64,7 @@ public:
         return ColumnCompressed::create(
             size,
             bytes,
-            [my_column = std::move(column)]{ return my_column; });
+            [column = std::move(column)]{ return column; });
     }
 
     /// Helper methods for compression.
@@ -84,13 +84,11 @@ public:
     StringRef getDataAt(size_t) const override { throwMustBeDecompressed(); }
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
-    bool tryInsert(const Field &) override { throwMustBeDecompressed(); }
     void insertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeDecompressed(); }
     void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
     void insertDefault() override { throwMustBeDecompressed(); }
     void popBack(size_t) override { throwMustBeDecompressed(); }
     StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeDecompressed(); }
-    char * serializeValueIntoMemory(size_t, char *) const override { throwMustBeDecompressed(); }
     const char * deserializeAndInsertFromArena(const char *) override { throwMustBeDecompressed(); }
     const char * skipSerializedInArena(const char *) const override { throwMustBeDecompressed(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }

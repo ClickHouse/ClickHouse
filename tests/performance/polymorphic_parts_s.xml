@@ -14,6 +14,13 @@
         SETTINGS min_bytes_for_wide_part = '10M'
     </create_query>
     <create_query>
+        CREATE TABLE hits_memory AS hits_10m_single ENGINE = MergeTree()
+        PARTITION BY toYYYYMM(EventDate)
+        ORDER BY (CounterID, EventDate, intHash32(UserID))
+        SAMPLE BY intHash32(UserID)
+        SETTINGS min_bytes_for_compact_part = '1M', min_bytes_for_wide_part = '10M', in_memory_parts_enable_wal = 1
+    </create_query>
+    <create_query>
        CREATE TABLE hits_buffer AS hits_10m_single 
        ENGINE = Buffer(default, hits_wide, 1, 0, 0, 10000, 10000, 0, 0)
     </create_query>
@@ -31,5 +38,6 @@
 
     <drop_query>DROP TABLE IF EXISTS hits_wide</drop_query>
     <drop_query>DROP TABLE IF EXISTS hits_compact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hits_memory</drop_query>
     <drop_query>DROP TABLE IF EXISTS hits_buffer</drop_query>
 </test>

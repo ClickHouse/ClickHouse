@@ -28,7 +28,6 @@ public:
 
     Strings names;
     String new_name;
-    String storage_name;
 
     std::shared_ptr<ASTSettingsProfileElements> settings;
 

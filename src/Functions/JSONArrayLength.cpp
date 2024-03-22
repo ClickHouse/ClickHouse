@@ -45,7 +45,7 @@ namespace
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             auto args = FunctionArgumentDescriptors{
-                {"json", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+                {"json", &isString<IDataType>, nullptr, "String"},
             };
 
             validateFunctionArgumentTypes(*this, arguments, args);
@@ -100,8 +100,8 @@ namespace
 
 REGISTER_FUNCTION(JSONArrayLength)
 {
-    factory.registerFunction<FunctionJSONArrayLength>(FunctionDocumentation{
-        .description="Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid."});
+    factory.registerFunction<FunctionJSONArrayLength>(Documentation{
+        "Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid."});
 
     /// For Spark compatibility.
     factory.registerAlias("JSON_ARRAY_LENGTH", "JSONArrayLength", FunctionFactory::CaseInsensitive);

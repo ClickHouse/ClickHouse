@@ -22,9 +22,8 @@ class MergeJoin : public IJoin
 public:
     MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
 
-    std::string getName() const override { return "PartialMergeJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addJoinedBlock(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
 
@@ -117,7 +116,7 @@ private:
 
     Names lowcard_right_keys;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);

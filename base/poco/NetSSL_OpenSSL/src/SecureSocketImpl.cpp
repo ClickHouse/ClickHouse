@@ -629,15 +629,5 @@ bool SecureSocketImpl::sessionWasReused()
 		return false;
 }
 
-void SecureSocketImpl::setBlocking(bool flag)
-{
-    _pSocket->setBlocking(flag);
-}
-
-bool SecureSocketImpl::getBlocking() const
-{
-    return _pSocket->getBlocking();
-}
-
 
 } } // namespace Poco::Net

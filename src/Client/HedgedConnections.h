@@ -70,15 +70,12 @@ public:
         size_t index;
     };
 
-    HedgedConnections(
-        const ConnectionPoolWithFailoverPtr & pool_,
-        ContextPtr context_,
-        const ConnectionTimeouts & timeouts_,
-        const ThrottlerPtr & throttler,
-        PoolMode pool_mode,
-        std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr,
-        AsyncCallback async_callback = {},
-        GetPriorityForLoadBalancing::Func priority_func = {});
+    HedgedConnections(const ConnectionPoolWithFailoverPtr & pool_,
+                      ContextPtr context_,
+                      const ConnectionTimeouts & timeouts_,
+                      const ThrottlerPtr & throttler,
+                      PoolMode pool_mode,
+                      std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr);
 
     void sendScalarsData(Scalars & data) override;
 
@@ -121,8 +118,6 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
-
-    void setAsyncCallback(AsyncCallback async_callback) override;
 
 private:
     /// If we don't receive data from replica and there is no progress in query

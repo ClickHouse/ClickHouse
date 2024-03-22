@@ -7,7 +7,6 @@
 
 #include <filesystem>
 #include <fstream>
-#include <Interpreters/Context.h>
 
 
 namespace
@@ -163,9 +162,4 @@ DateLUT & DateLUT::getInstance()
 {
     static DateLUT ret;
     return ret;
-}
-
-std::string DateLUT::extractTimezoneFromContext(DB::ContextPtr query_context)
-{
-    return query_context->getSettingsRef().session_timezone.value;
 }

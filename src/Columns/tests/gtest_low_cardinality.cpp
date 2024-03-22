@@ -48,16 +48,3 @@ TEST(ColumnLowCardinality, Insert)
     testLowCardinalityNumberInsert<Float32>(std::make_shared<DataTypeFloat32>());
     testLowCardinalityNumberInsert<Float64>(std::make_shared<DataTypeFloat64>());
 }
-
-TEST(ColumnLowCardinality, Clone)
-{
-    auto data_type = std::make_shared<DataTypeInt32>();
-    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(data_type);
-    auto column = low_cardinality_type->createColumn();
-    ASSERT_FALSE(assert_cast<const ColumnLowCardinality &>(*column).nestedIsNullable());
-
-    auto nullable_column = assert_cast<const ColumnLowCardinality &>(*column).cloneNullable();
-
-    ASSERT_TRUE(assert_cast<const ColumnLowCardinality &>(*nullable_column).nestedIsNullable());
-    ASSERT_FALSE(assert_cast<const ColumnLowCardinality &>(*column).nestedIsNullable());
-}

@@ -22,10 +22,6 @@ postgres_table_template_5 = """
     CREATE TABLE IF NOT EXISTS "{}" (
     key Integer NOT NULL, value UUID, PRIMARY KEY(key))
     """
-postgres_table_template_6 = """
-    CREATE TABLE IF NOT EXISTS "{}" (
-    key Integer NOT NULL, value Text, PRIMARY KEY(key))
-    """
 
 
 def get_postgres_conn(
@@ -80,26 +76,16 @@ def drop_postgres_schema(cursor, schema_name):
 
 
 def create_postgres_table(
-    cursor,
-    table_name,
-    database_name="",
-    replica_identity_full=False,
-    template=postgres_table_template,
+    cursor, table_name, replica_identity_full=False, template=postgres_table_template
 ):
-    if database_name == "":
-        name = table_name
-    else:
-        name = f"{database_name}.{table_name}"
-    drop_postgres_table(cursor, name)
-    query = template.format(name)
-    cursor.execute(query)
-    print(f"Query: {query}")
+    drop_postgres_table(cursor, table_name)
+    cursor.execute(template.format(table_name))
     if replica_identity_full:
-        cursor.execute(f"ALTER TABLE {name} REPLICA IDENTITY FULL;")
+        cursor.execute(f"ALTER TABLE {table_name} REPLICA IDENTITY FULL;")
 
 
-def drop_postgres_table(cursor, name):
-    cursor.execute(f"""DROP TABLE IF EXISTS "{name}" """)
+def drop_postgres_table(cursor, table_name):
+    cursor.execute(f"""DROP TABLE IF EXISTS "{table_name}" """)
 
 
 def create_postgres_table_with_schema(cursor, schema_name, table_name):
@@ -117,23 +103,12 @@ class PostgresManager:
         self.created_materialized_postgres_db_list = set()
         self.created_ch_postgres_db_list = set()
 
-    def init(
-        self,
-        instance,
-        ip,
-        port,
-        default_database="postgres_database",
-        postgres_db_exists=False,
-    ):
+    def init(self, instance, ip, port):
         self.instance = instance
         self.ip = ip
         self.port = port
-        self.default_database = default_database
-        self.postgres_db_exists = postgres_db_exists
+        self.conn = get_postgres_conn(ip=self.ip, port=self.port)
         self.prepare()
-
-    def get_default_database(self):
-        return self.default_database
 
     def restart(self):
         try:
@@ -143,23 +118,11 @@ class PostgresManager:
             self.prepare()
             raise ex
 
-    def execute(self, query):
-        return self.cursor.execute(query)
-
     def prepare(self):
-        self.conn = get_postgres_conn(ip=self.ip, port=self.port)
-        self.cursor = self.conn.cursor()
-        if self.default_database != "":
-            if not self.postgres_db_exists:
-                self.create_postgres_db(self.default_database)
-            self.conn = get_postgres_conn(
-                ip=self.ip,
-                port=self.port,
-                database=True,
-                database_name=self.default_database,
-            )
-            self.cursor = self.conn.cursor()
-            self.create_clickhouse_postgres_db()
+        conn = get_postgres_conn(ip=self.ip, port=self.port)
+        cursor = conn.cursor()
+        self.create_postgres_db(cursor, "postgres_database")
+        self.create_clickhouse_postgres_db(ip=self.ip, port=self.port)
 
     def clear(self):
         if self.conn.closed == 0:
@@ -169,85 +132,67 @@ class PostgresManager:
         for db in self.created_ch_postgres_db_list.copy():
             self.drop_clickhouse_postgres_db(db)
         if len(self.created_postgres_db_list) > 0:
-            self.conn = get_postgres_conn(ip=self.ip, port=self.port)
-            self.cursor = self.conn.cursor()
+            conn = get_postgres_conn(ip=self.ip, port=self.port)
+            cursor = conn.cursor()
             for db in self.created_postgres_db_list.copy():
-                self.drop_postgres_db(db)
+                self.drop_postgres_db(cursor, db)
 
-    def get_db_cursor(self, database_name=""):
-        if database_name == "":
-            database_name = self.default_database
-        self.conn = get_postgres_conn(
-            ip=self.ip, port=self.port, database=True, database_name=database_name
-        )
+    def get_db_cursor(self):
+        self.conn = get_postgres_conn(ip=self.ip, port=self.port, database=True)
         return self.conn.cursor()
 
-    def database_or_default(self, database_name):
-        if database_name != "":
-            return database_name
-        if self.default_database != "":
-            return self.default_database
-        raise Exception("Database name is empty")
+    def create_postgres_db(self, cursor, name="postgres_database"):
+        self.drop_postgres_db(cursor, name)
+        self.created_postgres_db_list.add(name)
+        cursor.execute(f"CREATE DATABASE {name}")
 
-    def create_postgres_db(self, database_name=""):
-        database_name = self.database_or_default(database_name)
-        self.drop_postgres_db(database_name)
-        self.created_postgres_db_list.add(database_name)
-        self.cursor.execute(f'CREATE DATABASE "{database_name}"')
-
-    def drop_postgres_db(self, database_name=""):
-        database_name = self.database_or_default(database_name)
-        self.cursor.execute(f'DROP DATABASE IF EXISTS "{database_name}" WITH (FORCE)')
-        if database_name in self.created_postgres_db_list:
-            self.created_postgres_db_list.remove(database_name)
+    def drop_postgres_db(self, cursor, name="postgres_database"):
+        cursor.execute(f"DROP DATABASE IF EXISTS {name}")
+        if name in self.created_postgres_db_list:
+            self.created_postgres_db_list.remove(name)
 
     def create_clickhouse_postgres_db(
         self,
-        database_name="",
+        ip,
+        port,
+        name="postgres_database",
+        database_name="postgres_database",
         schema_name="",
-        postgres_database="",
     ):
-        database_name = self.database_or_default(database_name)
-        if postgres_database == "":
-            postgres_database = database_name
-        self.drop_clickhouse_postgres_db(database_name)
-        self.created_ch_postgres_db_list.add(database_name)
+        self.drop_clickhouse_postgres_db(name)
+        self.created_ch_postgres_db_list.add(name)
 
         if len(schema_name) == 0:
             self.instance.query(
                 f"""
-                    CREATE DATABASE \"{database_name}\"
-                    ENGINE = PostgreSQL('{self.ip}:{self.port}', '{postgres_database}', 'postgres', 'mysecretpassword')"""
+                    CREATE DATABASE {name}
+                    ENGINE = PostgreSQL('{ip}:{port}', '{database_name}', 'postgres', 'mysecretpassword')"""
             )
         else:
             self.instance.query(
                 f"""
-                CREATE DATABASE \"{database_name}\"
-                ENGINE = PostgreSQL('{self.ip}:{self.port}', '{postgres_database}', 'postgres', 'mysecretpassword', '{schema_name}')"""
+                CREATE DATABASE {name}
+                ENGINE = PostgreSQL('{ip}:{port}', '{database_name}', 'postgres', 'mysecretpassword', '{schema_name}')"""
             )
 
-    def drop_clickhouse_postgres_db(self, database_name=""):
-        database_name = self.database_or_default(database_name)
-        self.instance.query(f'DROP DATABASE IF EXISTS "{database_name}"')
-        if database_name in self.created_ch_postgres_db_list:
-            self.created_ch_postgres_db_list.remove(database_name)
+    def drop_clickhouse_postgres_db(self, name="postgres_database"):
+        self.instance.query(f"DROP DATABASE IF EXISTS {name}")
+        if name in self.created_ch_postgres_db_list:
+            self.created_ch_postgres_db_list.remove(name)
 
     def create_materialized_db(
         self,
         ip,
         port,
         materialized_database="test_database",
-        postgres_database="",
+        postgres_database="postgres_database",
         settings=[],
         table_overrides="",
-        user="postgres",
-        password="mysecretpassword",
     ):
-        postgres_database = self.database_or_default(postgres_database)
         self.created_materialized_postgres_db_list.add(materialized_database)
         self.instance.query(f"DROP DATABASE IF EXISTS {materialized_database}")
 
-        create_query = f"CREATE DATABASE {materialized_database} ENGINE = MaterializedPostgreSQL('{ip}:{port}', '{postgres_database}', '{user}', '{password}')"
+        create_query = f"CREATE DATABASE {materialized_database} ENGINE = MaterializedPostgreSQL('{ip}:{port}', '{postgres_database}', 'postgres', 'mysecretpassword')"
         if len(settings) > 0:
             create_query += " SETTINGS "
             for i in range(len(settings)):
@@ -259,41 +204,38 @@ class PostgresManager:
         assert materialized_database in self.instance.query("SHOW DATABASES")
 
     def drop_materialized_db(self, materialized_database="test_database"):
-        self.instance.query(f"DROP DATABASE IF EXISTS {materialized_database} SYNC")
+        self.instance.query(f"DROP DATABASE IF EXISTS {materialized_database} NO DELAY")
         if materialized_database in self.created_materialized_postgres_db_list:
             self.created_materialized_postgres_db_list.remove(materialized_database)
+        assert materialized_database not in self.instance.query("SHOW DATABASES")
 
-    def create_postgres_schema(self, name):
-        create_postgres_schema(self.cursor, name)
+    def create_and_fill_postgres_table(self, table_name):
+        conn = get_postgres_conn(ip=self.ip, port=self.port, database=True)
+        cursor = conn.cursor()
+        self.create_and_fill_postgres_table_from_cursor(cursor, table_name)
 
-    def create_postgres_table(
-        self, table_name, database_name="", template=postgres_table_template
-    ):
-        create_postgres_table(
-            self.cursor, table_name, database_name=database_name, template=template
-        )
-
-    def create_and_fill_postgres_table(self, table_name, database_name=""):
-        create_postgres_table(self.cursor, table_name, database_name)
-        database_name = self.database_or_default(database_name)
+    def create_and_fill_postgres_table_from_cursor(self, cursor, table_name):
+        create_postgres_table(cursor, table_name)
         self.instance.query(
-            f"INSERT INTO {database_name}.{table_name} SELECT number, number from numbers(50)"
+            f"INSERT INTO postgres_database.{table_name} SELECT number, number from numbers(50)"
         )
 
-    def create_and_fill_postgres_tables(
-        self,
-        tables_num,
-        numbers=50,
-        database_name="",
-        table_name_base="postgresql_replica",
+    def create_and_fill_postgres_tables(self, tables_num, numbers=50):
+        conn = get_postgres_conn(ip=self.ip, port=self.port, database=True)
+        cursor = conn.cursor()
+        self.create_and_fill_postgres_tables_from_cursor(
+            cursor, tables_num, numbers=numbers
+        )
+
+    def create_and_fill_postgres_tables_from_cursor(
+        self, cursor, tables_num, numbers=50
     ):
         for i in range(tables_num):
-            table_name = f"{table_name_base}_{i}"
-            create_postgres_table(self.cursor, table_name, database_name)
+            table_name = f"postgresql_replica_{i}"
+            create_postgres_table(cursor, table_name)
             if numbers > 0:
-                db = self.database_or_default(database_name)
                 self.instance.query(
-                    f"INSERT INTO {db}.{table_name} SELECT number, number from numbers({numbers})"
+                    f"INSERT INTO postgres_database.{table_name} SELECT number, number from numbers({numbers})"
                 )
 
 
@@ -374,7 +316,7 @@ def check_tables_are_synchronized(
     result_query = f"select * from {table_path} order by {order_by};"
 
     expected = instance.query(
-        f"select * from `{postgres_database}`.`{table_name}` order by {order_by};"
+        f"select * from {postgres_database}.{table_name} order by {order_by};"
     )
     result = instance.query(result_query)
 
@@ -385,12 +327,6 @@ def check_tables_are_synchronized(
             time.sleep(1)
         result = instance.query(result_query)
 
-    if result != expected:
-        count = int(instance.query(f"select count() from {table_path}"))
-        expected_count = int(
-            instance.query(f"select count() from `{postgres_database}`.`{table_name}`")
-        )
-        print(f"Having {count}, expected {expected_count}")
     assert result == expected
 
 

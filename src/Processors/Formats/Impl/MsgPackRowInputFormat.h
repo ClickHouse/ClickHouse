@@ -19,7 +19,7 @@ class ReadBuffer;
 class MsgPackVisitor : public msgpack::null_visitor
 {
 public:
-    explicit MsgPackVisitor(bool null_as_default_) : null_as_default(null_as_default_) {}
+    MsgPackVisitor(bool null_as_default_) : null_as_default(null_as_default_) {}
 
     struct Info
     {
@@ -76,11 +76,7 @@ private:
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
-    template <typename Parser>
-    bool readObject(Parser & msgpack_parser);
-
-    size_t countRows(size_t max_block_size) override;
-    bool supportsCountRows() const override { return true; }
+    bool readObject();
 
     std::unique_ptr<PeekableReadBuffer> buf;
     MsgPackVisitor visitor;
@@ -96,7 +92,7 @@ public:
 private:
     msgpack::object_handle readObject();
     DataTypePtr getDataType(const msgpack::object & object);
-    std::optional<DataTypes> readRowAndGetDataTypes() override;
+    DataTypes readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
     UInt64 number_of_columns;

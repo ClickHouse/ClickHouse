@@ -60,7 +60,7 @@ ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $T1 UPDATE y = y + rand() % 1 WHERE no
 
 # hm... it looks like joinGet condidered determenistic
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 UPDATE y = joinGet('${CLICKHOUSE_DATABASE}.lookup_table', 'y_new', y) WHERE x=1" 2>&1 \
-| grep -F -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
+&& echo 'OK' || echo 'FAIL'
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE dictHas('${CLICKHOUSE_DATABASE}.dict1', toUInt64(x))" 2>&1 \
 | grep -F -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'

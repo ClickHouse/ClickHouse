@@ -15,7 +15,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <base/scope_guard.h>
 
 #if USE_SSL
     #include <openssl/x509v3.h>

@@ -46,21 +46,14 @@ IVolume::IVolume(
     }
 
     if (disks.empty())
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Volume {} must contain at least one disk", name);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Volume must contain at least one disk");
 }
 
-std::optional<UInt64> IVolume::getMaxUnreservedFreeSpace() const
+UInt64 IVolume::getMaxUnreservedFreeSpace() const
 {
-    std::optional<UInt64> res;
+    UInt64 res = 0;
     for (const auto & disk : disks)
-    {
-        auto disk_unreserved_space = disk->getUnreservedSpace();
-        if (!disk_unreserved_space)
-            return std::nullopt; /// There is at least one unlimited disk.
-
-        if (!res || *disk_unreserved_space > *res)
-            res = disk_unreserved_space;
-    }
+        res = std::max(res, disk->getUnreservedSpace());
     return res;
 }
 

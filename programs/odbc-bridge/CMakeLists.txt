@@ -13,8 +13,13 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     getIdentifierQuote.cpp
     odbc-bridge.cpp
     validateODBCConnectionString.cpp
-    createFunctionBaseCast.cpp
 )
+
+if (OS_LINUX)
+    # clickhouse-odbc-bridge is always a separate binary.
+    # Reason: it must not export symbols from SSL, mariadb-client, etc. to not break ABI compatibility with ODBC drivers.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic")
+endif ()
 
 clickhouse_add_executable(clickhouse-odbc-bridge ${CLICKHOUSE_ODBC_BRIDGE_SOURCES})
 

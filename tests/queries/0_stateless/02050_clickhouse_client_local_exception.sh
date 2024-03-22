@@ -10,4 +10,4 @@ function cleanup()
     rm "${CLICKHOUSE_TMP}/test_exception"
 }
 trap cleanup EXIT
-$CLICKHOUSE_LOCAL --query="SELECT 1 INTO OUTFILE '${CLICKHOUSE_TMP}/test_exception' FORMAT Native" 2>&1 | grep -q "Code: 504. DB::Exception:" && echo 'OK' || echo 'FAIL' ||:
+$CLICKHOUSE_LOCAL --query="SELECT 1 INTO OUTFILE '${CLICKHOUSE_TMP}/test_exception' FORMAT Native" 2>&1 | grep -q "Code: 76. DB::ErrnoException:" && echo 'OK' || echo 'FAIL' ||:

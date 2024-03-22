@@ -28,17 +28,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int OPENSSL_ERROR;
-    extern const int BAD_ARGUMENTS;
-}
-
-EncryptionMethod toEncryptionMethod(const std::string & name)
-{
-    if (name == "AES_128_GCM_SIV")
-        return AES_128_GCM_SIV;
-    else if (name == "AES_256_GCM_SIV")
-        return AES_256_GCM_SIV;
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", name);
 }
 
 namespace
@@ -48,22 +37,34 @@ namespace
 String getMethodName(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
+    {
         return "AES_128_GCM_SIV";
+    }
     else if (Method == AES_256_GCM_SIV)
+    {
         return "AES_256_GCM_SIV";
+    }
     else
+    {
         return "";
+    }
 }
 
 /// Get method code (used for codec, to understand which one we are using)
 uint8_t getMethodCode(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
+    {
         return static_cast<uint8_t>(CompressionMethodByte::AES_128_GCM_SIV);
+    }
     else if (Method == AES_256_GCM_SIV)
+    {
         return static_cast<uint8_t>(CompressionMethodByte::AES_256_GCM_SIV);
+    }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+    }
 }
 
 } // end of namespace
@@ -78,6 +79,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
 }
 
@@ -93,11 +95,17 @@ const String empty_nonce = {"\0\0\0\0\0\0\0\0\0\0\0\0", actual_nonce_size};
 UInt64 methodKeySize(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
+    {
         return 16;
+    }
     else if (Method == AES_256_GCM_SIV)
+    {
         return 32;
+    }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+    }
 }
 
 std::string lastErrorString()
@@ -112,11 +120,17 @@ std::string lastErrorString()
 auto getMethod(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
+    {
         return EVP_aead_aes_128_gcm_siv;
+    }
     else if (Method == AES_256_GCM_SIV)
+    {
         return EVP_aead_aes_256_gcm_siv;
+    }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+    }
 }
 
 /// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
@@ -182,11 +196,17 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
 auto getMethod(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
+    {
         return EVP_aes_128_gcm;
+    }
     else if (Method == AES_256_GCM_SIV)
+    {
         return EVP_aes_256_gcm;
+    }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+    }
 }
 
 /// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
@@ -463,7 +483,7 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
 
         /// If there is only one key with non zero ID, curren_key_id should be defined.
         if (new_params->keys_storage[method].size() == 1 && !new_params->keys_storage[method].contains(0))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config has one key with non zero id. current_key_id is required");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config has one key with non zero id. сurrent_key_id is required");
     }
 
     /// Try to find which key will be used for encryption. If there is no current_key and only one key without id
@@ -558,7 +578,7 @@ String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method,
     if (current_params->keys_storage[method].contains(key_id))
         key = current_params->keys_storage[method].at(key_id);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no key {} in config for {} encryption codec", key_id, getMethodName(method));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no key {} in config", key_id);
 
     return key;
 }
@@ -576,7 +596,7 @@ uint8_t CompressionCodecEncrypted::getMethodByte() const
 
 void CompressionCodecEncrypted::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash);
 }
 
 UInt32 CompressionCodecEncrypted::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -694,7 +714,7 @@ bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::Abstrac
 /// if encryption is disabled, print warning about this.
 void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractConfiguration & config [[maybe_unused]], const String & config_prefix [[maybe_unused]])
 {
-    LOG_WARNING(getLogger("CompressionCodecEncrypted"), "Server was built without SSL support. Encryption is disabled.");
+    LOG_WARNING(&Poco::Logger::get("CompressionCodecEncrypted"), "Server was built without SSL support. Encryption is disabled.");
 }
 
 }

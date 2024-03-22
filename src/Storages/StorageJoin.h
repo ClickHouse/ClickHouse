@@ -49,7 +49,7 @@ public:
 
     /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
-    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const;
+    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context) const;
 
     /// Get result type for function "joinGet(OrNull)"
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -59,7 +59,7 @@ public:
     /// (but not during processing whole query, it's safe for joinGet that doesn't involve `used_flags` from HashJoin)
     ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add, ContextPtr context) const;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     Pipe read(
         const Names & column_names,
@@ -84,8 +84,6 @@ public:
     bool useNulls() const { return use_nulls; }
 
     const Names & getKeyNames() const { return key_names; }
-
-    bool supportsTrivialCountOptimization() const override { return true; }
 
 private:
     Block sample_block;

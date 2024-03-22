@@ -9,8 +9,10 @@
 #include <Parsers/SelectUnionMode.h>
 #include <Common/IntervalKind.h>
 
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wc99-extensions"
+#endif
 
 namespace DB
 {
@@ -170,15 +172,10 @@ protected:
 
 class ParserExpression : public IParserBase
 {
-public:
-    explicit ParserExpression(bool allow_trailing_commas_ = false) : allow_trailing_commas(allow_trailing_commas_) {}
-
 protected:
     const char * getName() const override { return "lambda expression"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-
-    bool allow_trailing_commas;
 };
 
 
@@ -195,7 +192,7 @@ protected:
 class ParserExpressionWithOptionalAlias : public IParserBase
 {
 public:
-    explicit ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword_, bool is_table_function_ = false, bool allow_trailing_commas_ = false);
+    explicit ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword_, bool is_table_function_ = false);
 protected:
     ParserPtr impl;
 
@@ -212,15 +209,12 @@ protected:
 class ParserExpressionList : public IParserBase
 {
 public:
-    explicit ParserExpressionList(bool allow_alias_without_as_keyword_, bool is_table_function_ = false, bool allow_trailing_commas_ = false)
-        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
-        , is_table_function(is_table_function_)
-        , allow_trailing_commas(allow_trailing_commas_) {}
+    explicit ParserExpressionList(bool allow_alias_without_as_keyword_, bool is_table_function_ = false)
+        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_), is_table_function(is_table_function_) {}
 
 protected:
     bool allow_alias_without_as_keyword;
     bool is_table_function; // This expression list is used by a table function
-    bool allow_trailing_commas;
 
     const char * getName() const override { return "list of expressions"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -230,8 +224,8 @@ protected:
 class ParserNotEmptyExpressionList : public IParserBase
 {
 public:
-    explicit ParserNotEmptyExpressionList(bool allow_alias_without_as_keyword_, bool allow_trailing_commas_ = false)
-        : nested_parser(allow_alias_without_as_keyword_, false, allow_trailing_commas_) {}
+    explicit ParserNotEmptyExpressionList(bool allow_alias_without_as_keyword)
+        : nested_parser(allow_alias_without_as_keyword) {}
 private:
     ParserExpressionList nested_parser;
 protected:
@@ -295,4 +289,6 @@ protected:
 
 }
 
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif

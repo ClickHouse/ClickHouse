@@ -13,7 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
 
-#pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma GCC diagnostic ignored "-Wold-style-cast"
 
 
 namespace DB
@@ -42,6 +42,7 @@ private:
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     mutable LZ4::PerformanceStatistics lz4_stat;
+    ASTPtr codec_desc;
 };
 
 
@@ -78,7 +79,7 @@ uint8_t CompressionCodecLZ4::getMethodByte() const
 
 void CompressionCodecLZ4::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDesc()->updateTreeHash(hash);
 }
 
 UInt32 CompressionCodecLZ4::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -96,7 +97,7 @@ void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_si
     bool success = LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
 
     if (!success)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress LZ4-encoded data");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress");
 }
 
 void registerCodecLZ4(CompressionCodecFactory & factory)
@@ -112,7 +113,7 @@ UInt32 CompressionCodecLZ4HC::doCompressData(const char * source, UInt32 source_
     auto success = LZ4_compress_HC(source, dest, source_size, LZ4_COMPRESSBOUND(source_size), level);
 
     if (!success)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with LZ4 codec");
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot LZ4_compress_HC");
 
     return success;
 }

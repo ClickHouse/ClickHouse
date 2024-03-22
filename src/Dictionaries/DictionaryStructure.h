@@ -16,6 +16,11 @@
 #include <Interpreters/IExternalLoadable.h>
 
 
+#if defined(__GNUC__)
+    /// GCC mistakenly warns about the names in enum class.
+    #pragma GCC diagnostic ignored "-Wshadow"
+#endif
+
 namespace DB
 {
 using TypeIndexUnderlying = magic_enum::underlying_type_t<TypeIndex>;
@@ -40,33 +45,6 @@ enum class AttributeUnderlyingType : TypeIndexUnderlying
 };
 
 #undef map_item
-
-
-#define CALL_FOR_ALL_DICTIONARY_ATTRIBUTE_TYPES(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(UInt128) \
-    M(UInt256) \
-    M(Int8) \
-    M(Int16) \
-    M(Int32) \
-    M(Int64) \
-    M(Int128) \
-    M(Int256) \
-    M(Decimal32) \
-    M(Decimal64) \
-    M(Decimal128) \
-    M(Decimal256) \
-    M(DateTime64) \
-    M(Float32) \
-    M(Float64) \
-    M(UUID) \
-    M(IPv4) \
-    M(IPv6) \
-    M(String) \
-    M(Array)
 
 /// Min and max lifetimes for a dictionary or its entry
 using DictionaryLifetime = ExternalLoadableLifetime;
@@ -109,10 +87,10 @@ struct DictionaryAttributeType
 template <typename F>
 constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
 {
-    static_for<AttributeUnderlyingType>([type, my_func = std::forward<F>(func)](auto other)
+    static_for<AttributeUnderlyingType>([type, func = std::forward<F>(func)](auto other)
     {
         if (type == other)
-            my_func(DictionaryAttributeType<other>{});
+            func(DictionaryAttributeType<other>{});
     });
 }
 

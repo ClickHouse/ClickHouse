@@ -6,6 +6,7 @@
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
 #include <mutex>
+#include <list>
 
 namespace DB
 {
@@ -16,49 +17,38 @@ namespace DB
 class FileCacheFactory final : private boost::noncopyable
 {
 public:
-    class FileCacheData
+    struct FileCacheData
     {
-        friend class FileCacheFactory;
-    public:
-        FileCacheData(FileCachePtr cache_, const FileCacheSettings & settings_, const std::string & config_path_);
-
-        FileCacheSettings getSettings() const;
-
-        void setSettings(const FileCacheSettings & new_settings);
-
-        const FileCachePtr cache;
-        const std::string config_path;
-
-    private:
+        FileCachePtr cache;
         FileCacheSettings settings;
-        mutable std::mutex settings_mutex;
+
+        FileCacheData(FileCachePtr cache_, const FileCacheSettings & settings_) : cache(cache_), settings(settings_) {}
     };
 
-    using FileCacheDataPtr = std::shared_ptr<FileCacheData>;
-    using CacheByName = std::unordered_map<std::string, FileCacheDataPtr>;
+    using Caches = std::list<FileCacheData>;
+    using CacheByBasePath = std::unordered_map<std::string, Caches::iterator>;
+    using CacheByName = std::unordered_map<std::string, Caches::iterator>;
 
     static FileCacheFactory & instance();
 
-    FileCachePtr getOrCreate(
-        const std::string & cache_name,
-        const FileCacheSettings & file_cache_settings,
-        const std::string & config_path);
+    FileCachePtr getOrCreate(const std::string & cache_base_path, const FileCacheSettings & file_cache_settings, const std::string & name);
 
-    FileCachePtr create(
-        const std::string & cache_name,
-        const FileCacheSettings & file_cache_settings,
-        const std::string & config_path);
+    FileCachePtr tryGet(const std::string & cache_base_path);
+    FileCachePtr get(const std::string & cache_base_path);
 
-    CacheByName getAll();
+    CacheByBasePath getAll();
 
-    FileCacheDataPtr getByName(const std::string & cache_name);
+    const FileCacheSettings & getSettings(const std::string & cache_base_path);
 
-    void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
+    FileCacheData getByName(const std::string & name);
 
-    void clear();
+    CacheByName getAllByName();
 
 private:
     std::mutex mutex;
+    Caches caches;
+
+    CacheByBasePath caches_by_path;
     CacheByName caches_by_name;
 };
 

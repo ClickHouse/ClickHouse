@@ -3,16 +3,15 @@
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
-#include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>
 
 
 namespace DB
 {
 
-/** The stream for outputting data in JSON format, by JSON array per line.
+/** The stream for outputting data in JSON format, by object per line.
   */
-class JSONCompactEachRowRowOutputFormat final : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
+class JSONCompactEachRowRowOutputFormat final : public RowOutputFormatWithUTF8ValidationAdaptor
 {
 public:
     JSONCompactEachRowRowOutputFormat(
@@ -34,9 +33,6 @@ private:
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
-    void writeSuffix() override;
-
-    void resetFormatterImpl() override;
 
     bool supportTotals() const override { return true; }
     void consumeTotals(Chunk) override;
@@ -47,7 +43,5 @@ private:
     bool with_names;
     bool with_types;
     bool yield_strings;
-
-    WriteBuffer * ostr;
 };
 }

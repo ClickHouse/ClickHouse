@@ -6,6 +6,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/StorageSnapshot.h>
 
 namespace DB
@@ -25,8 +26,6 @@ using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
 struct StorageID;
 
-class PreparedSets;
-using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 namespace ClusterProxy
 {
 
@@ -40,7 +39,6 @@ ASTPtr rewriteSelectQuery(
     ASTPtr table_function_ptr = nullptr);
 
 using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
-using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 
 class SelectStreamFactory
 {
@@ -50,8 +48,6 @@ public:
     {
         /// Query and header may be changed depending on shard.
         ASTPtr query;
-        /// Used to check the table existence on remote node
-        StorageID main_table;
         Block header;
 
         Cluster::ShardInfo shard_info;
@@ -60,7 +56,9 @@ public:
         /// (When there is a local replica with big delay).
         bool lazy = false;
         time_t local_delay = 0;
-        AdditionalShardFilterGenerator shard_filter_generator{};
+
+        /// Set only if parallel reading from replicas is used.
+        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator;
     };
 
     using Shards = std::vector<Shard>;
@@ -79,9 +77,16 @@ public:
         ContextPtr context,
         std::vector<QueryPlanPtr> & local_plans,
         Shards & remote_shards,
-        UInt32 shard_count,
-        bool parallel_replicas_enabled,
-        AdditionalShardFilterGenerator shard_filter_generator);
+        UInt32 shard_count);
+
+    struct ShardPlans
+    {
+        /// If a shard has local replicas this won't be nullptr
+        std::unique_ptr<QueryPlan> local_plan;
+
+        /// Contains several steps to read from all remote replicas
+        std::unique_ptr<QueryPlan> remote_plan;
+    };
 
     const Block header;
     const ColumnsDescriptionByShardNum objects_by_shard;

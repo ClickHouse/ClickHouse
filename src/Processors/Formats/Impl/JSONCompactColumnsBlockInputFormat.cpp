@@ -53,7 +53,7 @@ void registerJSONCompactColumnsSchemaReader(FormatFactory & factory)
     );
     factory.registerAdditionalInfoForSchemaCacheGetter("JSONCompactColumns", [](const FormatSettings & settings)
     {
-        auto result = getAdditionalFormatInfoForAllRowBasedFormats(settings) + getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
+        auto result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
         return result + fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
     });
 }

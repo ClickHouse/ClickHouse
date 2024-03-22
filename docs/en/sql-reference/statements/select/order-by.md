@@ -5,29 +5,19 @@ sidebar_label: ORDER BY
 
 # ORDER BY Clause
 
-The `ORDER BY` clause contains
+The `ORDER BY` clause contains a list of expressions, which can each be attributed with `DESC` (descending) or `ASC` (ascending) modifier which determine the sorting direction. If the direction is not specified, `ASC` is assumed, so it’s usually omitted. The sorting direction applies to a single expression, not to the entire list. Example: `ORDER BY Visits DESC, SearchPhrase`.
 
-- a list of expressions, e.g. `ORDER BY visits, search_phrase`,
-- a list of numbers referring to columns in the `SELECT` clause, e.g. `ORDER BY 2, 1`, or
-- `ALL` which means all columns of the `SELECT` clause, e.g. `ORDER BY ALL`.
+If you want to sort by column numbers instead of column names, enable the setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments).
 
-To disable sorting by column numbers, set setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments) = 0.
-To disable sorting by `ALL`, set setting [enable_order_by_all](../../../operations/settings/settings.md#enable-order-by-all) = 0.
-
-The `ORDER BY` clause can be attributed by a `DESC` (descending) or `ASC` (ascending) modifier which determines the sorting direction.
-Unless an explicit sort order is specified, `ASC` is used by default.
-The sorting direction applies to a single expression, not to the entire list, e.g. `ORDER BY Visits DESC, SearchPhrase`.
-Also, sorting is performed case-sensitively.
-
-Rows with identical values for a sort expressions are returned in an arbitrary and non-deterministic order.
-If the `ORDER BY` clause is omitted in a `SELECT` statement, the row order is also arbitrary and non-deterministic.
+Rows that have identical values for the list of sorting expressions are output in an arbitrary order, which can also be non-deterministic (different each time).
+If the ORDER BY clause is omitted, the order of the rows is also undefined, and may be non-deterministic as well.
 
 ## Sorting of Special Values
 
 There are two approaches to `NaN` and `NULL` sorting order:
 
-- By default or with the `NULLS LAST` modifier: first the values, then `NaN`, then `NULL`.
-- With the `NULLS FIRST` modifier: first `NULL`, then `NaN`, then other values.
+-   By default or with the `NULLS LAST` modifier: first the values, then `NaN`, then `NULL`.
+-   With the `NULLS FIRST` modifier: first `NULL`, then `NaN`, then other values.
 
 ### Example
 
@@ -275,9 +265,8 @@ Consider disabling `optimize_read_in_order` manually, when running queries that 
 
 Optimization is supported in the following table engines:
 
-- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) (including [materialized views](../../../sql-reference/statements/create/view.md#materialized-view)),
-- [Merge](../../../engines/table-engines/special/merge.md),
-- [Buffer](../../../engines/table-engines/special/buffer.md)
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
+- [Merge](../../../engines/table-engines/special/merge.md), [Buffer](../../../engines/table-engines/special/buffer.md), and [MaterializedView](../../../engines/table-engines/special/materializedview.md) table engines over `MergeTree`-engine tables
 
 In `MaterializedView`-engine tables the optimization works with views like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the view query does not have the `ORDER BY` clause.
 
@@ -300,7 +289,7 @@ When `FROM const_expr` not defined sequence of filling use minimal `expr` field 
 When `TO const_expr` not defined sequence of filling use maximum `expr` field value from `ORDER BY`.
 When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types, as `days` for Date type, as `seconds` for DateTime type. It also supports [INTERVAL](https://clickhouse.com/docs/en/sql-reference/data-types/special-data-types/interval/) data type representing time and date intervals.
 When `STEP const_numeric_expr` omitted then sequence of filling use `1.0` for numeric type, `1 day` for Date type and `1 second` for DateTime type.
-`INTERPOLATE` can be applied to columns not participating in `ORDER BY WITH FILL`. Such columns are filled based on previous fields values by applying `expr`. If `expr` is not present will repeat previous value. Omitted list will result in including all allowed columns.
+`INTERPOLATE` can be applied to columns not participating in `ORDER BY WITH FILL`. Such columns are filled based on previous fields values by applying `expr`. If `expr` is not present will repeate previous value. Omitted list will result in including all allowed columns.
 
 Example of a query without `WITH FILL`:
 
@@ -554,54 +543,6 @@ Result:
 │   7 │ original │     7 │
 └─────┴──────────┴───────┘
 ```
-
-## Filling grouped by sorting prefix
-
-It can be useful to fill rows which have the same values in particular columns independently, - a good example is filling missing values in time series.
-Assume there is the following time series table:
-``` sql
-CREATE TABLE timeseries
-(
-    `sensor_id` UInt64,
-    `timestamp` DateTime64(3, 'UTC'),
-    `value` Float64
-)
-ENGINE = Memory;
-
-SELECT * FROM timeseries;
-
-┌─sensor_id─┬───────────────timestamp─┬─value─┐
-│       234 │ 2021-12-01 00:00:03.000 │     3 │
-│       432 │ 2021-12-01 00:00:01.000 │     1 │
-│       234 │ 2021-12-01 00:00:07.000 │     7 │
-│       432 │ 2021-12-01 00:00:05.000 │     5 │
-└───────────┴─────────────────────────┴───────┘
-```
-And we'd like to fill missing values for each sensor independently with 1 second interval.
-The way to achieve it is to use `sensor_id` column as sorting prefix for filling column `timestamp`:
-```
-SELECT *
-FROM timeseries
-ORDER BY
-    sensor_id,
-    timestamp WITH FILL
-INTERPOLATE ( value AS 9999 )
-
-┌─sensor_id─┬───────────────timestamp─┬─value─┐
-│       234 │ 2021-12-01 00:00:03.000 │     3 │
-│       234 │ 2021-12-01 00:00:04.000 │  9999 │
-│       234 │ 2021-12-01 00:00:05.000 │  9999 │
-│       234 │ 2021-12-01 00:00:06.000 │  9999 │
-│       234 │ 2021-12-01 00:00:07.000 │     7 │
-│       432 │ 2021-12-01 00:00:01.000 │     1 │
-│       432 │ 2021-12-01 00:00:02.000 │  9999 │
-│       432 │ 2021-12-01 00:00:03.000 │  9999 │
-│       432 │ 2021-12-01 00:00:04.000 │  9999 │
-│       432 │ 2021-12-01 00:00:05.000 │     5 │
-└───────────┴─────────────────────────┴───────┘
-```
-Here, the `value` column was interpolated with `9999` just to make filled rows more noticeable.
-This behavior is controlled by setting `use_with_fill_by_sorting_prefix` (enabled by default)
 
 ## Related content
 

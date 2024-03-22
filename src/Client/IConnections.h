@@ -1,5 +1,7 @@
 #pragma once
 
+#include <compare>
+
 #include <Client/Connection.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
@@ -70,8 +72,6 @@ public:
     virtual bool hasActiveConnections() const = 0;
 
     virtual ~IConnections() = default;
-
-    virtual void setAsyncCallback(AsyncCallback) {}
 };
 
 }

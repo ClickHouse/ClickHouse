@@ -1,6 +1,7 @@
 {% for join_algorithm in ['hash', 'partial_merge', 'auto', 'full_sorting_merge', 'grace_hash'] -%}
 === {{ join_algorithm }} ===
 = full =
+{% if join_algorithm not in ['grace_hash'] -%}
 -4	0	196
 -3	0	197
 -2	0	198
@@ -16,6 +17,7 @@
 8	108	\N
 9	109	\N
 10	110	\N
+{% endif -%}
 = left =
 1	101	201
 2	102	202
@@ -28,6 +30,7 @@
 9	109	\N
 10	110	\N
 = right =
+{% if join_algorithm not in ['grace_hash'] -%}
 -4	0	196
 -3	0	197
 -2	0	198
@@ -38,6 +41,7 @@
 3	103	203
 4	104	204
 5	105	205
+{% endif -%}
 = inner =
 1	101	201
 2	102	202
@@ -45,6 +49,7 @@
 4	104	204
 5	105	205
 = full =
+{% if join_algorithm not in ['grace_hash'] -%}
 0	0	-4
 0	0	-3
 0	0	-2
@@ -60,6 +65,7 @@
 8	8	0
 9	9	0
 10	10	0
+{% endif -%}
 = left =
 1	1	1
 2	2	2
@@ -72,6 +78,7 @@
 9	9	0
 10	10	0
 = right =
+{% if join_algorithm not in ['grace_hash'] -%}
 0	0	-4
 0	0	-3
 0	0	-2
@@ -82,16 +89,7 @@
 3	3	3
 4	4	4
 5	5	5
--4	0	-4
--3	0	-3
--2	0	-2
--1	0	-1
-0	0	0
-1	1	1
-2	2	2
-3	3	3
-4	4	4
-5	5	5
+{% endif -%}
 = inner =
 1	1	1
 2	2	2
@@ -100,6 +98,7 @@
 5	5	5
 = join on =
 = full =
+{% if join_algorithm not in ['grace_hash'] -%}
 0	0	-4	196
 0	0	-3	197
 0	0	-2	198
@@ -115,6 +114,7 @@
 8	108	0	\N
 9	109	0	\N
 10	110	0	\N
+{% endif -%}
 = left =
 1	101	1	201
 2	102	2	202
@@ -127,6 +127,7 @@
 9	109	0	\N
 10	110	0	\N
 = right =
+{% if join_algorithm not in ['grace_hash'] -%}
 0	0	-4	196
 0	0	-3	197
 0	0	-2	198
@@ -137,6 +138,7 @@
 3	103	3	203
 4	104	4	204
 5	105	5	205
+{% endif -%}
 = inner =
 1	101	1	201
 2	102	2	202
@@ -144,6 +146,7 @@
 4	104	4	204
 5	105	5	205
 = full =
+{% if join_algorithm not in ['grace_hash'] -%}
 0	0	-4	196
 0	0	-3	197
 0	0	-2	198
@@ -159,6 +162,7 @@
 8	108	0	\N
 9	109	0	\N
 10	110	0	\N
+{% endif -%}
 = left =
 1	101	1	201
 2	102	2	202
@@ -171,6 +175,7 @@
 9	109	0	\N
 10	110	0	\N
 = right =
+{% if join_algorithm not in ['grace_hash'] -%}
 0	0	-4	196
 0	0	-3	197
 0	0	-2	198
@@ -181,6 +186,7 @@
 3	103	3	203
 4	104	4	204
 5	105	5	205
+{% endif -%}
 = inner =
 1	101	1	201
 2	102	2	202
@@ -190,6 +196,7 @@
 = agg =
 1
 1
+{% if join_algorithm not in ['grace_hash'] -%}
 1
 1
 1
@@ -198,11 +205,13 @@
 1	55	1055
 0	0	-10	0	990
 1	55	15	1055	1015
+{% endif -%}
 = types =
 1
 1
 1
 1
+{% if join_algorithm not in ['grace_hash'] -%}
 1
 1
 1
@@ -210,9 +219,11 @@
 1
 1
 1
+{% endif -%}
 {% if join_algorithm not in ['full_sorting_merge'] -%}
 === join use nulls ===
 = full =
+{% if join_algorithm not in ['grace_hash'] -%}
 -4	\N	196
 -3	\N	197
 -2	\N	198
@@ -228,6 +239,7 @@
 8	108	\N
 9	109	\N
 10	110	\N
+{% endif -%}
 = left =
 1	101	201
 2	102	202
@@ -240,6 +252,7 @@
 9	109	\N
 10	110	\N
 = right =
+{% if join_algorithm not in ['grace_hash'] -%}
 -4	\N	196
 -3	\N	197
 -2	\N	198
@@ -250,6 +263,7 @@
 3	103	203
 4	104	204
 5	105	205
+{% endif -%}
 = inner =
 1	101	201
 2	102	202
@@ -257,6 +271,7 @@
 4	104	204
 5	105	205
 = full =
+{% if join_algorithm not in ['grace_hash'] -%}
 1	1	1
 2	2	2
 3	3	3
@@ -272,6 +287,7 @@
 \N	\N	-2
 \N	\N	-1
 \N	\N	0
+{% endif -%}
 = left =
 1	1	1
 2	2	2
@@ -284,6 +300,7 @@
 9	9	\N
 10	10	\N
 = right =
+{% if join_algorithm not in ['grace_hash'] -%}
 1	1	1
 2	2	2
 3	3	3
@@ -294,16 +311,7 @@
 \N	\N	-2
 \N	\N	-1
 \N	\N	0
-1	1	1
-2	2	2
-3	3	3
-4	4	4
-5	5	5
--4	\N	-4
--3	\N	-3
--2	\N	-2
--1	\N	-1
-0	\N	0
+{% endif -%}
 = inner =
 1	1	1
 2	2	2
@@ -312,6 +320,7 @@
 5	5	5
 = join on =
 = full =
+{% if join_algorithm not in ['grace_hash'] -%}
 1	101	1	201
 2	102	2	202
 3	103	3	203
@@ -327,6 +336,7 @@
 \N	\N	-2	198
 \N	\N	-1	199
 \N	\N	0	200
+{% endif -%}
 = left =
 1	101	1	201
 2	102	2	202
@@ -339,6 +349,7 @@
 9	109	\N	\N
 10	110	\N	\N
 = right =
+{% if join_algorithm not in ['grace_hash'] -%}
 1	101	1	201
 2	102	2	202
 3	103	3	203
@@ -349,6 +360,7 @@
 \N	\N	-2	198
 \N	\N	-1	199
 \N	\N	0	200
+{% endif -%}
 = inner =
 1	101	1	201
 2	102	2	202
@@ -356,6 +368,7 @@
 4	104	4	204
 5	105	5	205
 = full =
+{% if join_algorithm not in ['grace_hash'] -%}
 1	101	1	201
 2	102	2	202
 3	103	3	203
@@ -371,6 +384,7 @@
 \N	\N	-2	198
 \N	\N	-1	199
 \N	\N	0	200
+{% endif -%}
 = left =
 1	101	1	201
 2	102	2	202
@@ -383,6 +397,7 @@
 9	109	\N	\N
 10	110	\N	\N
 = right =
+{% if join_algorithm not in ['grace_hash'] -%}
 1	101	1	201
 2	102	2	202
 3	103	3	203
@@ -393,6 +408,7 @@
 \N	\N	-2	198
 \N	\N	-1	199
 \N	\N	0	200
+{% endif -%}
 = inner =
 1	101	1	201
 2	102	2	202
@@ -402,6 +418,7 @@
 = agg =
 1
 1
+{% if join_algorithm not in ['grace_hash'] -%}
 1
 1
 1
@@ -410,11 +427,13 @@
 1	55	1055
 1	55	15	1055	1015
 \N	\N	-10	\N	990
+{% endif -%}
 = types =
 1
 1
 1
 1
+{% if join_algorithm not in ['grace_hash'] -%}
 1
 1
 1
@@ -422,6 +441,6 @@
 1
 1
 1
-1
+{% endif -%}
 {% endif -%}
 {% endfor -%}

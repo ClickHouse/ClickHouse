@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/levenshteinDistance.h>
+#include <Common/PODArray.h>
 
 #include <algorithm>
 #include <cctype>
@@ -29,6 +29,31 @@ public:
     }
 
 private:
+    static size_t levenshteinDistance(const String & lhs, const String & rhs)
+    {
+        size_t m = lhs.size();
+        size_t n = rhs.size();
+
+        PODArrayWithStackMemory<size_t, 64> row(n + 1);
+
+        for (size_t i = 1; i <= n; ++i)
+            row[i] = i;
+
+        for (size_t j = 1; j <= m; ++j)
+        {
+            row[0] = j;
+            size_t prev = j - 1;
+            for (size_t i = 1; i <= n; ++i)
+            {
+                size_t old = row[i];
+                row[i] = std::min(prev + (std::tolower(lhs[j - 1]) != std::tolower(rhs[i - 1])),
+                    std::min(row[i - 1], row[i]) + 1);
+                prev = old;
+            }
+        }
+        return row[n];
+    }
+
     static void appendToQueue(size_t ind, const String & name, DistanceIndexQueue & queue, const std::vector<String> & prompting_strings)
     {
         const String & prompt = prompting_strings[ind];
@@ -70,7 +95,7 @@ String getHintsErrorMessageSuffix(const std::vector<String> & hints);
 
 void appendHintsMessage(String & error_message, const std::vector<String> & hints);
 
-template <size_t MaxNumHints = 1>
+template <size_t MaxNumHints, typename Self>
 class IHints
 {
 public:
@@ -81,20 +106,10 @@ public:
         return prompter.getHints(name, getAllRegisteredNames());
     }
 
-    std::vector<String> getHints(const String & name, const std::vector<String> & prompting_strings) const
-    {
-        return prompter.getHints(name, prompting_strings);
-    }
-
     void appendHintsMessage(String & error_message, const String & name) const
     {
         auto hints = getHints(name);
         DB::appendHintsMessage(error_message, hints);
-    }
-
-    String getHintsMessage(const String & name) const
-    {
-        return getHintsErrorMessageSuffix(getHints(name));
     }
 
     IHints() = default;

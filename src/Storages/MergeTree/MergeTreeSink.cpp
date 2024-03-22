@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
@@ -38,15 +39,15 @@ MergeTreeSink::MergeTreeSink(
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)
     , context(context_)
-    , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
+    , storage_snapshot(storage.getStorageSnapshotWithoutParts(metadata_snapshot))
 {
 }
 
 void MergeTreeSink::onStart()
 {
-    /// It's only allowed to throw "too many parts" before write,
+    /// Only check "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(nullptr, context, true);
+    storage.delayInsertOrThrowIfNeeded(nullptr, context);
 }
 
 void MergeTreeSink::onFinish()
@@ -56,14 +57,11 @@ void MergeTreeSink::onFinish()
 
 void MergeTreeSink::consume(Chunk chunk)
 {
-    if (num_blocks_processed > 0)
-        storage.delayInsertOrThrowIfNeeded(nullptr, context, false);
-
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     if (!storage_snapshot->object_columns.empty())
         convertDynamicColumnsToTuples(block, storage_snapshot);
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
+    auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<MergeTreeSink::DelayedChunk::Partition>;
     DelayedPartitions partitions;
@@ -87,10 +85,6 @@ void MergeTreeSink::consume(Chunk chunk)
             elapsed_ns = watch.elapsed();
         }
 
-        /// Reset earlier to free memory
-        current_block.block.clear();
-        current_block.partition.clear();
-
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.
         if (!temp_part.part)
@@ -112,14 +106,9 @@ void MergeTreeSink::consume(Chunk chunk)
             }
         }
 
-        size_t max_insert_delayed_streams_for_parallel_write;
-
-        if (settings.max_insert_delayed_streams_for_parallel_write.changed)
+        size_t max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
+        if (!support_parallel_write || settings.max_insert_delayed_streams_for_parallel_write.changed)
             max_insert_delayed_streams_for_parallel_write = settings.max_insert_delayed_streams_for_parallel_write;
-        else if (support_parallel_write)
-            max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
-        else
-            max_insert_delayed_streams_for_parallel_write = 0;
 
         /// In case of too much columns/parts in block, flush explicitly.
         streams += temp_part.streams.size();
@@ -147,8 +136,6 @@ void MergeTreeSink::consume(Chunk chunk)
     finishDelayedChunk();
     delayed_chunk = std::make_unique<MergeTreeSink::DelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
-
-    ++num_blocks_processed;
 }
 
 void MergeTreeSink::finishDelayedChunk()

@@ -20,9 +20,6 @@ namespace JSONUtils
     std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows);
     std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows);
 
-    void skipRowForJSONEachRow(ReadBuffer & in);
-    void skipRowForJSONCompactEachRow(ReadBuffer & in);
-
     /// Read row in JSONEachRow format and try to determine type for each field.
     /// Return list of names and types.
     /// If cannot determine the type of some field, return nullptr for it.
@@ -76,8 +73,7 @@ namespace JSONUtils
         WriteBuffer & out,
         const std::optional<String> & name = std::nullopt,
         size_t indent = 0,
-        const char * title_after_delimiter = " ",
-        bool pretty_json = false);
+        const char * title_after_delimiter = " ");
 
     void writeColumns(
         const Columns & columns,
@@ -108,11 +104,8 @@ namespace JSONUtils
         bool write_statistics,
         WriteBuffer & out);
 
-    void writeException(const String & exception_message, WriteBuffer & out, const FormatSettings & settings, size_t indent = 0);
-
     void skipColon(ReadBuffer & in);
     void skipComma(ReadBuffer & in);
-    bool checkAndSkipComma(ReadBuffer & in);
 
     String readFieldName(ReadBuffer & in);
 
@@ -123,13 +116,10 @@ namespace JSONUtils
 
     void skipObjectStart(ReadBuffer & in);
     void skipObjectEnd(ReadBuffer & in);
-    bool checkAndSkipObjectStart(ReadBuffer & in);
     bool checkAndSkipObjectEnd(ReadBuffer & in);
 
     NamesAndTypesList readMetadata(ReadBuffer & in);
-    bool tryReadMetadata(ReadBuffer & in, NamesAndTypesList & names_and_types);
     NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header);
-    void validateMetadataByHeader(const NamesAndTypesList & names_and_types_from_metadata, const Block & header);
 
     bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name);
     void skipTheRestOfObject(ReadBuffer & in);

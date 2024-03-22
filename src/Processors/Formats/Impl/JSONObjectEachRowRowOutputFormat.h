@@ -40,7 +40,6 @@ private:
 
     std::optional<size_t> field_index_for_object_name;
     String object_name;
-    size_t rows = 0;
 };
 
 }

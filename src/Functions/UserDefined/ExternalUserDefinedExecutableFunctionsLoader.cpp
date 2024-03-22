@@ -95,13 +95,12 @@ namespace
 }
 
 ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunctionsLoader(ContextPtr global_context_)
-    : ExternalLoader("external user defined function", getLogger("ExternalUserDefinedExecutableFunctionsLoader"))
+    : ExternalLoader("external user defined function", &Poco::Logger::get("ExternalUserDefinedExecutableFunctionsLoader"))
     , WithContext(global_context_)
 {
     setConfigSettings({"function", "name", "database", "uuid"});
     enableAsyncLoading(false);
-    if (getContext()->getApplicationType() == Context::ApplicationType::SERVER)
-        enablePeriodicUpdates(true);
+    enablePeriodicUpdates(true);
     enableAlwaysLoadEverything(true);
 }
 
@@ -172,9 +171,6 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     size_t command_termination_timeout_seconds = config.getUInt64(key_in_config + ".command_termination_timeout", 10);
     size_t command_read_timeout_milliseconds = config.getUInt64(key_in_config + ".command_read_timeout", 10000);
     size_t command_write_timeout_milliseconds = config.getUInt64(key_in_config + ".command_write_timeout", 10000);
-    ExternalCommandStderrReaction stderr_reaction
-        = parseExternalCommandStderrReaction(config.getString(key_in_config + ".stderr_reaction", "none"));
-    bool check_exit_code = config.getBool(key_in_config + ".check_exit_code", true);
 
     size_t pool_size = 0;
     size_t max_command_execution_time = 0;
@@ -242,8 +238,6 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         .command_termination_timeout_seconds = command_termination_timeout_seconds,
         .command_read_timeout_milliseconds = command_read_timeout_milliseconds,
         .command_write_timeout_milliseconds = command_write_timeout_milliseconds,
-        .stderr_reaction = stderr_reaction,
-        .check_exit_code = check_exit_code,
         .pool_size = pool_size,
         .max_command_execution_time_seconds = max_command_execution_time,
         .is_executable_pool = is_executable_pool,

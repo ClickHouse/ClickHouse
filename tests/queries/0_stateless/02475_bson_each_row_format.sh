@@ -5,12 +5,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# In case of parallel parsing and small block
-# (--min_chunk_bytes_for_parallel_parsing) we may have multiple blocks, and
-# this will break sorting order, so let's limit number of threads to avoid
-# reordering.
-CLICKHOUSE_CLIENT+="--allow_repeated_settings --max_threads 1"
-
 echo "Integers"
 $CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow) select number::Bool as bool, number::Int8 as int8, number::UInt8 as uint8, number::Int16 as int16, number::UInt16 as uint16, number::Int32 as int32, number::UInt32 as uint32, number::Int64 as int64, number::UInt64 as uint64 from numbers(5) settings engine_file_truncate_on_insert=1"
 $CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow, auto, 'bool Bool, int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32, uint32 UInt32, int64 Int64, uint64 UInt64')"
@@ -94,7 +88,7 @@ echo "Nullable"
 $CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow, auto, 'null Nullable(UInt32)') select number % 2 ? NULL : number from numbers(5) settings engine_file_truncate_on_insert=1"
 $CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow, auto, 'null Nullable(UInt32)')"
 $CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow, auto, 'null UInt32')"
-$CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow, auto, 'null UInt32') settings input_format_null_as_default=0" 2>&1 | grep -q -F "ILLEGAL_COLUMN" && echo "OK" || echo "FAIL"
+$CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow, auto, 'null UInt32') settings input_format_null_as_default=0" 2>&1 | grep -q -F "INCORRECT_DATA" && echo "OK" || echo "FAIL"
 
 $CLICKHOUSE_CLIENT -q "desc file(02475_data.bsonEachRow)"
 $CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow)"
@@ -138,10 +132,10 @@ $CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow)"
 
 
 echo "Map"
-$CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow, auto, 'map Map(UInt64, UInt64)') select map(1, number, 2, number + 1) from numbers(5) settings engine_file_truncate_on_insert=1"
-$CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow, auto, 'map Map(UInt64, UInt64)')"
-
+$CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow, auto, 'map Map(UInt64, UInt64)') select map(1, number, 2, number + 1) from numbers(5) settings engine_file_truncate_on_insert=1" 2>&1 | grep -q -F "ILLEGAL_COLUMN" && echo "OK" || echo "FAIL"
 $CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow, auto, 'map Map(String, UInt64)') select map('a', number, 'b', number + 1) from numbers(5) settings engine_file_truncate_on_insert=1"
+
+$CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow, auto, 'map Map(UInt64, UInt64)')" 2>&1 | grep -q -F "ILLEGAL_COLUMN" && echo "OK" || echo "FAIL"
 $CLICKHOUSE_CLIENT -q "select * from file(02475_data.bsonEachRow, auto, 'map Map(String, UInt64)')"
 
 $CLICKHOUSE_CLIENT -q "desc file(02475_data.bsonEachRow)"

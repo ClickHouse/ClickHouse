@@ -16,11 +16,6 @@ ENV TESTS_TO_RUN="8"
 ENV TIME_LIMIT="30"
 
 ENV KEEPER_NODE=""
-ENV NEMESIS=""
-ENV WORKLOAD=""
-ENV WITH_LOCAL_BINARY=""
-ENV RATE=""
-ENV CONCURRENCY=""
 
 
 # volumes
@@ -31,9 +26,7 @@ RUN mkdir "/root/.ssh"
 RUN touch "/root/.ssh/known_hosts"
 
 # install java
-RUN apt-get update && apt-get install default-jre default-jdk libjna-java libjna-jni ssh gnuplot graphviz --yes --no-install-recommends \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+RUN apt-get update && apt-get install default-jre default-jdk libjna-java libjna-jni ssh gnuplot graphviz --yes --no-install-recommends
 
 # install clojure
 RUN curl -O "https://download.clojure.org/install/linux-install-${CLOJURE_VERSION}.sh" && \

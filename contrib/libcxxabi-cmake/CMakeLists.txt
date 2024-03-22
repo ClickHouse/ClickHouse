@@ -33,12 +33,14 @@ target_include_directories(cxxabi SYSTEM BEFORE
     PRIVATE $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/../libcxx/include>
     PRIVATE $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/../libcxx/src>
 )
-target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DHAS_THREAD_LOCAL)
+target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY)
 target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-macro-redefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
-target_link_libraries(cxxabi PUBLIC unwind)
+target_link_libraries(cxxabi PUBLIC ${EXCEPTION_HANDLING_LIBRARY})
 
 # Enable capturing stack traces for all exceptions.
-target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
+if (USE_UNWIND)
+    target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
+endif ()
 
 install(
     TARGETS cxxabi

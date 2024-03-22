@@ -36,7 +36,7 @@ public:
         /// If the time zone is specified but empty, throw an exception.
         /// only validate the time_zone part if the number of arguments is 2.
         if ((which.isDateTime() || which.isDateTime64()) && arguments.size() == 2
-            && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false).empty())
+            && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0).empty())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Function {} supports a 2nd argument (optional) that must be a valid time zone",
                 this->getName());

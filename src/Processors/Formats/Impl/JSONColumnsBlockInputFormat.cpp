@@ -55,7 +55,7 @@ void registerJSONColumnsSchemaReader(FormatFactory & factory)
     );
     factory.registerAdditionalInfoForSchemaCacheGetter("JSONColumns", [](const FormatSettings & settings)
     {
-        return getAdditionalFormatInfoForAllRowBasedFormats(settings) + getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
     });
 }
 

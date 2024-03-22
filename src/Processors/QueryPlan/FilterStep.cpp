@@ -105,20 +105,6 @@ void FilterStep::updateOutputStream()
         input_streams.front(),
         FilterTransform::transformHeader(input_streams.front().header, actions_dag.get(), filter_column_name, remove_filter_column),
         getDataStreamTraits());
-
-    if (!getDataStreamTraits().preserves_sorting)
-        return;
-
-    FindAliasForInputName alias_finder(actions_dag);
-    const auto & input_sort_description = getInputStreams().front().sort_description;
-    for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
-    {
-        String alias;
-        const auto & original_column = input_sort_description[i].column_name;
-        const auto * alias_node = alias_finder.find(original_column);
-        if (alias_node)
-            output_stream->sort_description[i].column_name = alias_node->result_name;
-    }
 }
 
 }

@@ -32,7 +32,7 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
 
     StoragePtr table = std::make_shared<StorageLog>(
         "Log", disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types},
-        ConstraintsDescription{}, String{}, LoadingStrictnessLevel::CREATE, getContext().context);
+        ConstraintsDescription{}, String{}, false, getContext().context);
 
     table->startup();
 
@@ -95,7 +95,7 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr con
         block.insert(column);
     }
 
-    QueryPipeline pipeline(table->write({}, metadata_snapshot, context, /*async_insert=*/false));
+    QueryPipeline pipeline(table->write({}, metadata_snapshot, context));
 
     PushingPipelineExecutor executor(pipeline);
     executor.push(block);

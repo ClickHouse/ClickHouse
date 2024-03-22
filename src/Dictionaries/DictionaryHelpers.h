@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnDecimal.h>
@@ -27,8 +28,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
 }
-
-class Arena;
 
 /** Simple helper for getting default.
   * Initialized with default value and default values column.
@@ -75,15 +74,13 @@ public:
     DictionaryStorageFetchRequest(const DictionaryStructure & structure,
         const Strings & attributes_to_fetch_names,
         const DataTypes & attributes_to_fetch_types,
-        const Columns * const attributes_to_fetch_default_values_columns = nullptr)
+        const Columns & attributes_to_fetch_default_values_columns)
         : attributes_to_fetch_filter(structure.attributes.size(), false)
     {
         size_t attributes_to_fetch_size = attributes_to_fetch_names.size();
 
         assert(attributes_to_fetch_size == attributes_to_fetch_types.size());
-
-        bool has_default = attributes_to_fetch_default_values_columns;
-        assert(!has_default || attributes_to_fetch_size == attributes_to_fetch_default_values_columns->size());
+        assert(attributes_to_fetch_size == attributes_to_fetch_default_values_columns.size());
 
         for (size_t i = 0; i < attributes_to_fetch_size; ++i)
             attributes_to_fetch_name_to_index.emplace(attributes_to_fetch_names[i], i);
@@ -111,6 +108,7 @@ public:
 
             size_t attributes_to_fetch_index = attribute_to_fetch_index_it->second;
             const auto & attribute_to_fetch_result_type = attributes_to_fetch_types[attributes_to_fetch_index];
+            const auto & attribute_to_fetch_default_value_column = attributes_to_fetch_default_values_columns[attributes_to_fetch_index];
 
             if (!attribute_to_fetch_result_type->equals(*dictionary_attribute.type))
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
@@ -119,13 +117,7 @@ public:
                     attribute_to_fetch_result_type->getName(),
                     dictionary_attribute.type->getName());
 
-            if (has_default)
-            {
-                const auto & attribute_to_fetch_default_value_column =
-                    (*attributes_to_fetch_default_values_columns)[attributes_to_fetch_index];
-                attributes_default_value_providers.emplace_back(dictionary_attribute.null_value,
-                    attribute_to_fetch_default_value_column);
-            }
+            attributes_default_value_providers.emplace_back(dictionary_attribute.null_value, attribute_to_fetch_default_value_column);
         }
     }
 

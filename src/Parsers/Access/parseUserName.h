@@ -2,7 +2,6 @@
 
 #include <Core/Types.h>
 #include <Parsers/IParser.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 
 
 namespace DB

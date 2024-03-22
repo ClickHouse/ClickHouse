@@ -13,11 +13,6 @@
 #include <valgrind/valgrind.h>
 #endif
 
-/// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
-#ifndef MAP_ANONYMOUS
-#define MAP_ANONYMOUS MAP_ANON
-#endif
-
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
@@ -51,19 +46,18 @@ public:
 
         void * vp = ::mmap(nullptr, num_bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (MAP_FAILED == vp)
-            throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "FiberStack: Cannot mmap {}.", ReadableSize(num_bytes));
+            DB::throwFromErrno(fmt::format("FiberStack: Cannot mmap {}.", ReadableSize(num_bytes)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         /// TODO: make reports on illegal guard page access more clear.
         /// Currently we will see segfault and almost random stacktrace.
         if (-1 == ::mprotect(vp, page_size, PROT_NONE))
         {
             ::munmap(vp, num_bytes);
-            throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "FiberStack: cannot protect guard page");
+            DB::throwFromErrno("FiberStack: cannot protect guard page", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         }
 
         /// Do not count guard page in memory usage.
-        auto trace = CurrentMemoryTracker::alloc(num_pages * page_size);
-        trace.onAlloc(vp, num_pages * page_size);
+        CurrentMemoryTracker::alloc(num_pages * page_size);
 
         boost::context::stack_context sctx;
         sctx.size = num_bytes;
@@ -83,7 +77,6 @@ public:
         ::munmap(vp, sctx.size);
 
         /// Do not count guard page in memory usage.
-        auto trace = CurrentMemoryTracker::free(sctx.size - page_size);
-        trace.onFree(vp, sctx.size - page_size);
+        CurrentMemoryTracker::free(sctx.size - page_size);
     }
 };

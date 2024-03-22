@@ -43,7 +43,7 @@ EOF
     get_table_comment_info
 
     echo detach table
-    $CLICKHOUSE_CLIENT --query="DETACH TABLE comment_test_table SYNC;"
+    $CLICKHOUSE_CLIENT --query="DETACH TABLE comment_test_table NO DELAY;"
     get_table_comment_info
 
     echo re-attach table
