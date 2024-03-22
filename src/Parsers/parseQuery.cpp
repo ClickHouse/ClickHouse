@@ -283,6 +283,7 @@ ASTPtr tryParseQuery(
             ++lookahead;
         }
     }
+    tokens.reset();
 
     Expected expected;
     ASTPtr res;
