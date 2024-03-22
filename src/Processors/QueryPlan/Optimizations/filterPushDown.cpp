@@ -330,7 +330,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                 continue;
 
             /// Skip if type is changed. Push down expression expect equal types.
-            if (!input_header.getByName(input_name).type->equals(*join_header.getByName(input_name).type))
+            if (!input_header.getByName(name).type->equals(*join_header.getByName(input_name).type))
                 continue;
 
             available_input_columns_for_filter.push_back(input_name);
@@ -392,6 +392,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     auto old_filter_expression = filter->getExpression();
     ActionsDAGPtr new_filter_expression;
+    std::string new_filter_column_name;
 
     size_t left_stream_push_down_updated_steps = join_push_down(true /*push_to_left_stream*/, left_stream_filter_push_down_all_input_columns_available);
     size_t right_stream_push_down_updated_steps = 0;
@@ -401,19 +402,25 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
       * 2. ASOF Right join is not supported.
       */
     if (join && join->allowPushDownToRight() && table_join.strictness() != JoinStrictness::Asof)
+    {
         right_stream_push_down_updated_steps = join_push_down(false /*push_to_left_stream*/, right_stream_filter_push_down_all_input_columns_available);
+    }
 
     if (left_stream_push_down_updated_steps || right_stream_push_down_updated_steps)
     {
         new_filter_expression = std::move(left_table_filter_dag);
+        new_filter_column_name = std::move(left_table_filter_column_name);
 
         if (table_join.kind() == JoinKind::Right)
+        {
             new_filter_expression = std::move(right_table_filter_dag);
+            new_filter_column_name = std::move(right_table_filter_column_name);
+        }
     }
 
     if (new_filter_expression)
     {
-        const auto * filter_node = new_filter_expression->tryFindInOutputs(filter->getFilterColumnName());
+        const auto * filter_node = new_filter_expression->tryFindInOutputs(new_filter_column_name);
         if (!filter_node && !filter->removesFilterColumn())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Filter column {} was removed from ActionsDAG but it is needed in result. DAG:\n{}",
