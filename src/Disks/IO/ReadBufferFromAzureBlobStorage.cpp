@@ -103,7 +103,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
     auto handle_exception = [&, this](const auto & e, size_t i)
     {
-        LOG_INFO(log, "Exception caught during Azure Read for file {} at attempt {}/{}: {}", path, i + 1, max_single_read_retries, e.Message);
+        LOG_DEBUG(log, "Exception caught during Azure Read for file {} at attempt {}/{}: {}", path, i + 1, max_single_read_retries, e.Message);
         if (i + 1 == max_single_read_retries)
             throw;
 
@@ -215,7 +215,7 @@ void ReadBufferFromAzureBlobStorage::initialize()
 
     auto handle_exception = [&, this](const auto & e, size_t i)
     {
-        LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
+        LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
         if (i + 1 == max_single_download_retries)
             throw;
 
@@ -275,14 +275,14 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
             bytes_copied = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(to), body_stream->Length());
 
-            LOG_INFO(log, "AzureBlobStorage readBigAt read bytes {}", bytes_copied);
+            LOG_TEST(log, "AzureBlobStorage readBigAt read bytes {}", bytes_copied);
 
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->add(bytes_copied, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
+            LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
             if (i + 1 == max_single_download_retries)
                 throw;
 
