@@ -2228,8 +2228,6 @@ private:
         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
             arguments, result_type, input_rows_count, from_string_tag); \
         break;
-                static_assert(
-                    !(std::is_same_v<LeftDataType, DataTypeNumber<Int64>> && std::is_same_v<RightDataType, DataTypeNumber<UInt32>>));
                 switch (date_time_overflow_behavior)
                 {
                     GENERATE_OVERFLOW_MODE_CASE(Throw)
@@ -3210,18 +3208,18 @@ private:
                         {
                             switch (date_time_overflow_behavior)
                             {
-                                GENERATE_OVERFLOW_MODE_CASE(Throw, AccurateConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Ignore, AccurateConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Saturate, AccurateConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Throw, DateTimeAccurateConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Ignore, DateTimeAccurateConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Saturate, DateTimeAccurateConvertStrategyAdditions)
                             }
                         }
                         else
                         {
                             switch (date_time_overflow_behavior)
                             {
-                                GENERATE_OVERFLOW_MODE_CASE(Throw, AccurateOrNullConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Ignore, AccurateOrNullConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Saturate, AccurateOrNullConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Throw, DateTimeAccurateOrNullConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Ignore, DateTimeAccurateOrNullConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Saturate, DateTimeAccurateOrNullConvertStrategyAdditions)
                             }
                         }
 #undef GENERATE_OVERFLOW_MODE_CASE
