@@ -1569,8 +1569,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
         row_policy_data_opt->addFilterTransform(builder);
     }
 
-    std::cerr << "============" << builder.getHeader().dumpStructure() << std::endl;
-    std::cerr << "============" << header.dumpStructure() << std::endl;
+    // std::cerr << "============" << builder.getHeader().dumpStructure() << std::endl;
+    // std::cerr << "============" << header.dumpStructure() << std::endl;
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(builder.getHeader().getColumnsWithTypeAndName(),
                                                                 header.getColumnsWithTypeAndName(),
