@@ -41,6 +41,10 @@
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 using namespace Azure::Storage::Blobs;
 
 namespace CurrentMetrics

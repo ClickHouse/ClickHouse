@@ -18,9 +18,16 @@ namespace ErrorCodes
 
 bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ParserKeyword s_after{Keyword::AFTER};
+    ParserKeyword s_every{Keyword::EVERY};
+    ParserKeyword s_offset{Keyword::OFFSET};
+    ParserKeyword s_randomize_for{Keyword::RANDOMIZE_FOR};
+    ParserKeyword s_depends_on{Keyword::DEPENDS_ON};
+    ParserKeyword s_settings{Keyword::SETTINGS};
+
     auto refresh = std::make_shared<ASTRefreshStrategy>();
 
-    if (ParserKeyword{"AFTER"}.ignore(pos, expected))
+    if (s_after.ignore(pos, expected))
     {
         refresh->schedule_kind = RefreshScheduleKind::AFTER;
         ASTPtr period;
@@ -29,14 +36,14 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         refresh->set(refresh->period, period);
     }
-    else if (ParserKeyword{"EVERY"}.ignore(pos, expected))
+    else if (s_every.ignore(pos, expected))
     {
         refresh->schedule_kind = RefreshScheduleKind::EVERY;
         ASTPtr period;
         if (!ParserTimeInterval{{.allow_mixing_calendar_and_clock_units = false}}.parse(pos, period, expected))
             return false;
         refresh->set(refresh->period, period);
-        if (ParserKeyword{"OFFSET"}.ignore(pos, expected))
+        if (s_offset.ignore(pos, expected))
         {
             ASTPtr periodic_offset;
             if (!ParserTimeInterval{{.allow_zero = true}}.parse(pos, periodic_offset, expected))
@@ -53,7 +60,7 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (refresh->schedule_kind == RefreshScheduleKind::UNKNOWN)
         return false;
 
-    if (ParserKeyword{"RANDOMIZE FOR"}.ignore(pos, expected))
+    if (s_randomize_for.ignore(pos, expected))
     {
         ASTPtr spread;
         if (!ParserTimeInterval{{.allow_zero = true}}.parse(pos, spread, expected))
@@ -62,7 +69,7 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         refresh->set(refresh->spread, spread);
     }
 
-    if (ParserKeyword{"DEPENDS ON"}.ignore(pos, expected))
+    if (s_depends_on.ignore(pos, expected))
     {
         if (refresh->schedule_kind == RefreshScheduleKind::AFTER)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -81,7 +88,7 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
 
     // Refresh SETTINGS
-    if (ParserKeyword{"SETTINGS"}.ignore(pos, expected))
+    if (s_settings.ignore(pos, expected))
     {
         /// Settings are written like SET query, so parse them with ParserSetQuery
         ASTPtr settings;
