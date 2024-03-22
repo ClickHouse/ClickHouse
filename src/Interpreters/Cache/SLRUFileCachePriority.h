@@ -29,8 +29,6 @@ public:
 
     size_t getElementsCountApprox() const override;
 
-    QueueEntryType getDefaultQueueEntryType() const override { return FileCacheQueueEntryType::SLRU_Probationary; }
-
     std::string getStateInfoForLog(const CachePriorityGuard::Lock & lock) const override;
 
     void check(const CachePriorityGuard::Lock &) const override;
@@ -56,8 +54,6 @@ public:
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
         const UserID & user_id,
-        bool & reached_size_limit,
-        bool & reached_elements_limit,
         const CachePriorityGuard::Lock &) override;
 
     void shuffle(const CachePriorityGuard::Lock &) override;
@@ -73,14 +69,6 @@ private:
     LoggerPtr log = getLogger("SLRUFileCachePriority");
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock);
-
-    void holdImpl(
-        size_t size,
-        size_t elements,
-        QueueEntryType queue_entry_type,
-        const CachePriorityGuard::Lock & lock) override;
-
-    void releaseImpl(size_t size, size_t elements, QueueEntryType queue_entry_type) override;
 
     void downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock &);
 };

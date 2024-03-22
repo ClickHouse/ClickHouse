@@ -21,6 +21,12 @@ public:
 
     auto end() const { return candidates.end(); }
 
+    void setSpaceHolder(
+        size_t size,
+        size_t elements,
+        IFileCachePriority & priority,
+        const CachePriorityGuard::Lock &);
+
     using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
     void setFinalizeEvictionFunc(FinalizeEvictionFunc && func) { finalize_eviction_func = std::move(func); }
 
@@ -35,6 +41,7 @@ private:
     size_t candidates_size = 0;
     FinalizeEvictionFunc finalize_eviction_func;
     std::vector<IFileCachePriority::IteratorPtr> queue_entries_to_invalidate;
+    std::vector<IFileCachePriority::HoldSpacePtr> hold_space;
 };
 
 using EvictionCandidatesPtr = std::unique_ptr<EvictionCandidates>;

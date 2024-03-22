@@ -64,16 +64,16 @@ void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, bool releas
     auto & local_stat = stat_by_kind[kind];
     if (releasable)
     {
-        stat.releasable_size += size;
-        ++stat.releasable_count;
+        total_stat.releasable_size += size;
+        ++total_stat.releasable_count;
 
         local_stat.releasable_size += size;
         ++local_stat.releasable_count;
     }
     else
     {
-        stat.non_releasable_size += size;
-        ++stat.non_releasable_count;
+        total_stat.non_releasable_size += size;
+        ++total_stat.non_releasable_count;
 
         local_stat.non_releasable_size += size;
         ++local_stat.non_releasable_count;
@@ -833,14 +833,10 @@ bool FileCache::tryReserve(
     }
 
     EvictionCandidates eviction_candidates;
-    bool reached_size_limit = false;
-    bool reached_elements_limit = false;
-
     if (query_priority)
     {
         if (!query_priority->collectCandidatesForEviction(
-                size, reserve_stat, eviction_candidates, {}, user.user_id,
-                reached_size_limit, reached_elements_limit, cache_lock))
+                size, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
         {
             return false;
         }
@@ -858,8 +854,7 @@ bool FileCache::tryReserve(
     chassert(!queue_iterator || file_segment.getReservedSize() > 0);
 
     if (!main_priority->collectCandidatesForEviction(
-            size, reserve_stat, eviction_candidates, queue_iterator, user.user_id,
-            reached_size_limit, reached_elements_limit, cache_lock))
+            size, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
     {
         return false;
     }
@@ -869,35 +864,6 @@ bool FileCache::tryReserve(
 
     if (eviction_candidates.size() > 0)
     {
-        chassert(reached_size_limit || reached_elements_limit);
-
-        /// If we did not reach size limit (it means we reached only elements limit here)
-        /// then we need to make sure that this fact that we fit in cache by size
-        /// remains true after we release the lock and take it again.
-        /// For this purpose we create a HoldSpace holder which makes sure that the space is hold in the meantime.
-        /// We subtract reserve_stat.stat.releasable_size from the hold space,
-        /// because it is the space that will be released, so we do not need to take it into account.
-        const size_t hold_size = reached_size_limit
-            ? size > reserve_stat.stat.releasable_size ? size - reserve_stat.stat.releasable_size : 0
-            : size;
-        /// If we reached the elements limit - we will evict at least 1 element,
-        /// then we do not need to hold anything, otherwise (if we reached limit only by size)
-        /// we will also evict at least one element, so hold elements count is awlays zero here.
-
-        std::unique_ptr<IFileCachePriority::HoldSpace> hold_space;
-        if (hold_size)
-        {
-            const auto queue_entry_type = queue_iterator
-                ? queue_iterator->getType()
-                : main_priority->getDefaultQueueEntryType();
-
-            hold_space = std::make_unique<IFileCachePriority::HoldSpace>(
-                hold_size, /* hold_elements */0, queue_entry_type, *main_priority, cache_lock);
-        }
-
-        LOG_TEST(log, "Eviction candidates: {}, hold space: {}. {}",
-                 eviction_candidates.size(), hold_size, main_priority->getStateInfoForLog(cache_lock));
-
         cache_lock.unlock();
         try
         {

@@ -36,8 +36,6 @@ public:
 
     size_t getElementsCountApprox() const override { return state->current_elements_num; }
 
-    QueueEntryType getDefaultQueueEntryType() const override { return FileCacheQueueEntryType::LRU; }
-
     std::string getStateInfoForLog(const CachePriorityGuard::Lock & lock) const override;
 
     bool canFit( /// NOLINT
@@ -61,8 +59,6 @@ public:
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
         const UserID & user_id,
-        bool & reached_size_limit,
-        bool & reached_elements_limit,
         const CachePriorityGuard::Lock &) override;
 
     void shuffle(const CachePriorityGuard::Lock &) override;
@@ -97,8 +93,6 @@ private:
         size_t elements,
         size_t released_size_assumption,
         size_t released_elements_assumption,
-        bool * reached_size_limit,
-        bool * reached_elements_limit,
         const CachePriorityGuard::Lock &) const;
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
@@ -118,10 +112,9 @@ private:
     void holdImpl(
         size_t size,
         size_t elements,
-        QueueEntryType queue_entry_type,
         const CachePriorityGuard::Lock & lock) override;
 
-    void releaseImpl(size_t size, size_t elements, QueueEntryType queue_entry_type) override;
+    void releaseImpl(size_t size, size_t elements) override;
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator

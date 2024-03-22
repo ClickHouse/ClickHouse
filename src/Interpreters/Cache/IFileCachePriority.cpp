@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 IFileCachePriority::IFileCachePriority(size_t max_size_, size_t max_elements_)
@@ -51,4 +52,13 @@ void IFileCachePriority::check(const CachePriorityGuard::Lock & lock) const
     }
 }
 
+void IFileCachePriority::holdImpl(size_t, size_t, const CachePriorityGuard::Lock &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method holdImpl() is not implemented");
+}
+
+void IFileCachePriority::releaseImpl(size_t, size_t)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method holdImpl() is not implemented");
+}
 }

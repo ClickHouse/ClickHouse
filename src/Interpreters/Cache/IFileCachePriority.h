@@ -105,8 +105,6 @@ public:
 
     virtual size_t getElementsCountApprox() const = 0;
 
-    virtual QueueEntryType getDefaultQueueEntryType() const = 0;
-
     virtual std::string getStateInfoForLog(const CachePriorityGuard::Lock &) const = 0;
 
     virtual void check(const CachePriorityGuard::Lock &) const;
@@ -146,8 +144,6 @@ public:
         EvictionCandidates & res,
         IteratorPtr reservee,
         const UserID & user_id,
-        bool & reached_size_limit,
-        bool & reached_elements_limit,
         const CachePriorityGuard::Lock &) = 0;
 
     virtual bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) = 0;
@@ -157,12 +153,11 @@ public:
         HoldSpace(
             size_t size_,
             size_t elements_,
-            QueueEntryType queue_entry_type_,
             IFileCachePriority & priority_,
             const CachePriorityGuard::Lock & lock)
-            : size(size_), elements(elements_), queue_entry_type(queue_entry_type_), priority(priority_)
+            : size(size_), elements(elements_), priority(priority_)
         {
-            priority.holdImpl(size, elements, queue_entry_type, lock);
+            priority.holdImpl(size, elements, lock);
         }
 
         void release()
@@ -170,7 +165,7 @@ public:
             if (released)
                 return;
             released = true;
-            priority.releaseImpl(size, elements, queue_entry_type);
+            priority.releaseImpl(size, elements);
         }
 
         ~HoldSpace()
@@ -182,11 +177,10 @@ public:
     private:
         const size_t size;
         const size_t elements;
-        const QueueEntryType queue_entry_type;
         IFileCachePriority & priority;
         bool released = false;
     };
-    HoldSpace takeHold();
+    using HoldSpacePtr = std::unique_ptr<HoldSpace>;
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
@@ -194,10 +188,9 @@ protected:
     virtual void holdImpl(
         size_t size,
         size_t elements,
-        QueueEntryType queue_entry_type,
-        const CachePriorityGuard::Lock & lock) = 0;
+        const CachePriorityGuard::Lock & lock);
 
-    virtual void releaseImpl(size_t size, size_t elements, QueueEntryType queue_entry_type) = 0;
+    virtual void releaseImpl(size_t size, size_t elements);
 
     size_t max_size = 0;
     size_t max_elements = 0;
