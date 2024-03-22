@@ -19,7 +19,7 @@ struct StringKey24
     bool operator==(const StringKey24 rhs) const { return a == rhs.a && b == rhs.b && c == rhs.c; }
 };
 
-inline StringRef ALWAYS_INLINE toStringRef(const StringKey8 & n)
+inline StringRef ALWAYS_INLINE toStringView(const StringKey8 & n)
 {
     assert(n != 0);
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -28,7 +28,7 @@ inline StringRef ALWAYS_INLINE toStringRef(const StringKey8 & n)
     return {reinterpret_cast<const char *>(&n), 8ul - (std::countl_zero(n) >> 3)};
 #endif
 }
-inline StringRef ALWAYS_INLINE toStringRef(const StringKey16 & n)
+inline StringRef ALWAYS_INLINE toStringView(const StringKey16 & n)
 {
     assert(n.items[1] != 0);
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -37,7 +37,7 @@ inline StringRef ALWAYS_INLINE toStringRef(const StringKey16 & n)
     return {reinterpret_cast<const char *>(&n), 16ul - (std::countl_zero(n.items[1]) >> 3)};
 #endif
 }
-inline StringRef ALWAYS_INLINE toStringRef(const StringKey24 & n)
+inline StringRef ALWAYS_INLINE toStringView(const StringKey24 & n)
 {
     assert(n.c != 0);
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__

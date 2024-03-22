@@ -7,8 +7,8 @@
 
 #include <base/argsToConfig.h>
 #include <base/safeExit.h>
-#include <base/scope_guard.h>
 #include <Core/Block.h>
+#include <Core/BaseSettingsProgramOptions.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
@@ -16,7 +16,6 @@
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/typeid_cast.h>
-#include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -70,6 +69,7 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <iostream>
 #include <filesystem>
 #include <limits>
@@ -345,7 +345,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     if (dialect == Dialect::kusto)
         parser = std::make_unique<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
     else if (dialect == Dialect::prql)
-        parser = std::make_unique<ParserPRQLQuery>(max_length, settings.max_parser_depth);
+        parser = std::make_unique<ParserPRQLQuery>(max_length, settings.max_parser_depth, settings.max_parser_backtracks);
     else
         parser = std::make_unique<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);
 
@@ -353,9 +353,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     {
         String message;
         if (dialect == Dialect::kusto)
-            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks, true);
         else
-            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks, true);
 
         if (!res)
         {
@@ -366,9 +366,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     else
     {
         if (dialect == Dialect::kusto)
-            res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks);
         else
-            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth, settings.max_parser_backtracks);
     }
 
     if (is_interactive)
@@ -385,12 +385,12 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
 
 
 /// Consumes trailing semicolons and tries to consume the same-line trailing comment.
-void ClientBase::adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth)
+void ClientBase::adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks)
 {
     // We have to skip the trailing semicolon that might be left
     // after VALUES parsing or just after a normal semicolon-terminated query.
     Tokens after_query_tokens(this_query_end, all_queries_end);
-    IParser::Pos after_query_iterator(after_query_tokens, max_parser_depth);
+    IParser::Pos after_query_iterator(after_query_tokens, max_parser_depth, max_parser_backtracks);
     while (after_query_iterator.isValid() && after_query_iterator->type == TokenType::Semicolon)
     {
         this_query_end = after_query_iterator->end;
@@ -1984,6 +1984,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         return MultiQueryProcessingStage::QUERIES_END;
 
     unsigned max_parser_depth = static_cast<unsigned>(global_context->getSettingsRef().max_parser_depth);
+    unsigned max_parser_backtracks = static_cast<unsigned>(global_context->getSettingsRef().max_parser_backtracks);
 
     // If there are only comments left until the end of file, we just
     // stop. The parser can't handle this situation because it always
@@ -1994,7 +1995,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // and it makes more sense to treat them as such.
     {
         Tokens tokens(this_query_begin, all_queries_end);
-        IParser::Pos token_iterator(tokens, max_parser_depth);
+        IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
         if (!token_iterator.isValid())
             return MultiQueryProcessingStage::QUERIES_END;
     }
@@ -2015,7 +2016,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         if (ignore_error)
         {
             Tokens tokens(this_query_begin, all_queries_end);
-            IParser::Pos token_iterator(tokens, max_parser_depth);
+            IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
             while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                 ++token_iterator;
             this_query_begin = token_iterator->end;
@@ -2055,7 +2056,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // after we have processed the query. But even this guess is
     // beneficial so that we see proper trailing comments in "echo" and
     // server log.
-    adjustQueryEnd(this_query_end, all_queries_end, max_parser_depth);
+    adjustQueryEnd(this_query_end, all_queries_end, max_parser_depth, max_parser_backtracks);
     return MultiQueryProcessingStage::EXECUTE_QUERY;
 }
 
@@ -2251,7 +2252,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     this_query_end = insert_ast->end;
                     adjustQueryEnd(
                         this_query_end, all_queries_end,
-                        static_cast<unsigned>(global_context->getSettingsRef().max_parser_depth));
+                        static_cast<unsigned>(global_context->getSettingsRef().max_parser_depth),
+                        static_cast<unsigned>(global_context->getSettingsRef().max_parser_backtracks));
                 }
 
                 // Report error.
@@ -2629,6 +2631,46 @@ void ClientBase::runNonInteractive()
 }
 
 
+#if defined(FUZZING_MODE)
+extern "C" int LLVMFuzzerRunDriver(int * argc, char *** argv, int (*callback)(const uint8_t * data, size_t size));
+ClientBase * app;
+
+void ClientBase::runLibFuzzer()
+{
+    app = this;
+    std::vector<String> fuzzer_args_holder;
+
+    if (const char * fuzzer_args_env = getenv("FUZZER_ARGS")) // NOLINT(concurrency-mt-unsafe)
+        boost::split(fuzzer_args_holder, fuzzer_args_env, isWhitespaceASCII, boost::token_compress_on);
+
+    std::vector<char *> fuzzer_args;
+    fuzzer_args.push_back(argv0);
+    for (auto & arg : fuzzer_args_holder)
+        fuzzer_args.emplace_back(arg.data());
+
+    int fuzzer_argc = fuzzer_args.size();
+    char ** fuzzer_argv = fuzzer_args.data();
+
+    LLVMFuzzerRunDriver(&fuzzer_argc, &fuzzer_argv, [](const uint8_t * data, size_t size)
+    {
+        try
+        {
+            String query(reinterpret_cast<const char *>(data), size);
+            app->processQueryText(query);
+        }
+        catch (...)
+        {
+            return -1;
+        }
+
+        return 0;
+    });
+}
+#else
+void ClientBase::runLibFuzzer() {}
+#endif
+
+
 void ClientBase::clearTerminal()
 {
     /// Clear from cursor until end of screen.
@@ -2712,9 +2754,9 @@ private:
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
     if (allow_repeated_settings)
-        cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+        addProgramOptionsAsMultitokens(cmd_settings, options_description.main_description.value());
     else
-        cmd_settings.addProgramOptions(options_description.main_description.value());
+        addProgramOptions(cmd_settings, options_description.main_description.value());
 
     if (allow_merge_tree_settings)
     {
@@ -2735,9 +2777,9 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
                     return;
 
                 if (allow_repeated_settings)
-                    cmd_merge_tree_settings.addProgramOptionAsMultitoken(main_options, name, setting);
+                    addProgramOptionAsMultitoken(cmd_merge_tree_settings, main_options, name, setting);
                 else
-                    cmd_merge_tree_settings.addProgramOption(main_options, name, setting);
+                    addProgramOption(cmd_merge_tree_settings, main_options, name, setting);
             };
 
             const auto & setting_name = setting.getName();
@@ -2798,6 +2840,8 @@ void ClientBase::init(int argc, char ** argv)
     Arguments common_arguments = {""}; /// 0th argument is ignored.
     std::vector<Arguments> hosts_and_ports_arguments;
 
+    if (argc)
+        argv0 = argv[0];
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
     /// Support for Unicode dashes
@@ -2862,6 +2906,8 @@ void ClientBase::init(int argc, char ** argv)
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
+
+        ("fuzzer-args", po::value<std::string>(), "Command line arguments for the LLVM's libFuzzer driver. Only relevant if the application is compiled with libFuzzer.")
     ;
 
     addOptions(options_description);

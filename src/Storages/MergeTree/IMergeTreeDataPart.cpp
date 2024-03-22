@@ -2,38 +2,41 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <base/types.h>
 
+#include <exception>
 #include <optional>
-#include <boost/algorithm/string/join.hpp>
 #include <string_view>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/getCompressionCodecForFile.h>
 #include <Core/Defines.h>
-#include <IO/HashingWriteBuffer.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/SettingsEnums.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/NestedUtils.h>
 #include <IO/HashingReadBuffer.h>
+#include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/localBackup.h>
-#include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
-#include <Core/NamesAndTypes.h>
-#include <Storages/ColumnsDescription.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/escapeForFileName.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <base/JSON.h>
-#include <Common/logger_useful.h>
-#include <Compression/getCompressionCodecForFile.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/TransactionLog.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
+#include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/localBackup.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <base/JSON.h>
+#include <boost/algorithm/string/join.hpp>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 
@@ -609,6 +612,15 @@ UInt64 IMergeTreeDataPart::getMarksCount() const
     return index_granularity.getMarksCount();
 }
 
+UInt64 IMergeTreeDataPart::getExistingBytesOnDisk() const
+{
+    if (storage.getSettings()->exclude_deleted_rows_for_part_size_in_merge && supportLightweightDeleteMutate() && hasLightweightDelete()
+        && existing_rows_count.has_value() && existing_rows_count.value() < rows_count && rows_count > 0)
+        return bytes_on_disk * existing_rows_count.value() / rows_count;
+    else
+        return bytes_on_disk;
+}
+
 size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
 {
     auto checksum = checksums.files.find(file_name);
@@ -691,6 +703,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
         calculateColumnsAndSecondaryIndicesSizesOnDisk();
         loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
+        loadExistingRowsCount(); /// Must be called after loadRowsCount() as it uses the value of `rows_count`.
         loadPartitionAndMinMaxIndex();
         if (!parent_part)
         {
@@ -947,7 +960,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         try
         {
             ParserCodec codec_parser;
-            auto codec_ast = parseQuery(codec_parser, codec_line.data() + buf.getPosition(), codec_line.data() + codec_line.length(), "codec parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            auto codec_ast = parseQuery(codec_parser, codec_line.data() + buf.getPosition(), codec_line.data() + codec_line.length(), "codec parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
             default_codec = CompressionCodecFactory::instance().get(codec_ast, {});
         }
         catch (const DB::Exception & ex)
@@ -1332,6 +1345,87 @@ void IMergeTreeDataPart::loadRowsCount()
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Data part doesn't contain fixed size column (even Date column)");
     }
+}
+
+void IMergeTreeDataPart::loadExistingRowsCount()
+{
+    if (existing_rows_count.has_value())
+        return;
+
+    if (!rows_count || !storage.getSettings()->load_existing_rows_count_for_old_parts || !supportLightweightDeleteMutate()
+        || !hasLightweightDelete())
+        existing_rows_count = rows_count;
+    else
+        existing_rows_count = readExistingRowsCount();
+}
+
+UInt64 IMergeTreeDataPart::readExistingRowsCount()
+{
+    const size_t total_mark = getMarksCount();
+    if (!total_mark)
+        return rows_count;
+
+    NamesAndTypesList cols;
+    cols.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
+
+    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
+    StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
+
+    MergeTreeReaderPtr reader = getReader(
+        cols,
+        storage_snapshot_ptr,
+        MarkRanges{MarkRange(0, total_mark)},
+        /*virtual_fields=*/ {},
+        /*uncompressed_cache=*/{},
+        storage.getContext()->getMarkCache().get(),
+        std::make_shared<AlterConversions>(),
+        MergeTreeReaderSettings{},
+        ValueSizeMap{},
+        ReadBufferFromFileBase::ProfileCallback{});
+
+    if (!reader)
+    {
+        LOG_WARNING(storage.log, "Create reader failed while reading existing rows count");
+        return rows_count;
+    }
+
+    size_t current_mark = 0;
+    bool continue_reading = false;
+    size_t current_row = 0;
+    size_t existing_count = 0;
+
+    while (current_row < rows_count)
+    {
+        size_t rows_to_read = index_granularity.getMarkRows(current_mark);
+        continue_reading = (current_mark != 0);
+
+        Columns result;
+        result.resize(1);
+
+        size_t rows_read = reader->readRows(current_mark, total_mark, continue_reading, rows_to_read, result);
+        if (!rows_read)
+        {
+            LOG_WARNING(storage.log, "Part {} has lightweight delete, but _row_exists column not found", name);
+            return rows_count;
+        }
+
+        current_row += rows_read;
+        current_mark += (rows_to_read == rows_read);
+
+        const ColumnUInt8 * row_exists_col = typeid_cast<const ColumnUInt8 *>(result[0].get());
+        if (!row_exists_col)
+        {
+            LOG_WARNING(storage.log, "Part {} _row_exists column type is not UInt8", name);
+            return rows_count;
+        }
+
+        for (UInt8 row_exists : row_exists_col->getData())
+            if (row_exists)
+                existing_count++;
+    }
+
+    LOG_DEBUG(storage.log, "Part {} existing_rows_count = {}", name, existing_count);
+    return existing_count;
 }
 
 void IMergeTreeDataPart::appendFilesOfRowsCount(Strings & files)
@@ -1985,7 +2079,39 @@ void IMergeTreeDataPart::checkConsistencyBase() const
     }
 }
 
-void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) const
+void IMergeTreeDataPart::checkConsistency(bool require_part_metadata) const
+{
+    try
+    {
+        checkConsistencyBase();
+        doCheckConsistency(require_part_metadata);
+    }
+    catch (Exception & e)
+    {
+        const auto part_state = fmt::format(
+            "state: {}, is_unexpected_local_part: {}, is_frozen: {}, is_duplicate: {}",
+            stateString(),
+            is_unexpected_local_part,
+            is_frozen,
+            is_duplicate,
+            is_temp);
+
+        const auto debug_info = fmt::format(
+            "columns: {}, getMarkSizeInBytes: {}, getMarksCount: {}, index_granularity_info: [{}], index_granularity: [{}], "
+            "part_state: [{}]",
+            columns.toString(),
+            index_granularity_info.getMarkSizeInBytes(columns.size()),
+            index_granularity.getMarksCount(),
+            index_granularity_info.describe(),
+            index_granularity.describe(),
+            part_state);
+
+        e.addMessage(debug_info);
+        e.rethrow();
+    }
+}
+
+void IMergeTreeDataPart::doCheckConsistency(bool /* require_part_metadata */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'checkConsistency' is not implemented for part with type {}", getType().toString());
 }
