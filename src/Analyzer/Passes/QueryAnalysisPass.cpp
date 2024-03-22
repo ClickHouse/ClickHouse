@@ -7696,27 +7696,36 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 
-class ReplaceColumnsVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsVisitor>
+/** Replace all columns with their versions from the source table.
+  * It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
+  * However, the column in the projection still refers to the table as its source.
+  * This visitor restores column nodes to their source versions.
+  */
+class ReplaceColumnsToSourceVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsToSourceVisitor>
 {
 public:
-    explicit ReplaceColumnsVisitor(const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map_, const ContextPtr & context_)
-        : replacement_map(replacement_map_)
-        , context(context_)
+    explicit ReplaceColumnsToSourceVisitor(const IdentifierResolveScope & scope_)
+        : scope(scope_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (auto it = replacement_map.find(node); it != replacement_map.end())
-            node = it->second;
+        if (auto * column_node = node->as<ColumnNode>(); column_node && column_node->getColumnSource())
+        {
+            const auto & table_expession_data = scope.getTableExpressionDataOrThrow(column_node->getColumnSource());
+            const auto & source_column_it = table_expession_data.column_name_to_column_node.find(column_node->getColumnName());
+            if (source_column_it != table_expession_data.column_name_to_column_node.end())
+                node = source_column_it->second;
+        }
+
         if (auto * function_node = node->as<FunctionNode>())
-            rerunFunctionResolve(function_node, context);
+            rerunFunctionResolve(function_node, scope.context);
     }
 
     bool shouldTraverseTopToBottom() const { return false; }
 
 private:
-    const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map;
-    const ContextPtr & context;
+    const IdentifierResolveScope & scope;
 };
 
 /** Resolve query.
@@ -7910,19 +7919,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     {
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        if (scope.join_use_nulls)
-        {
-            /** Expression in PREWHERE with JOIN should not be modified by join_use_nulls.
-              * Example: SELECT * FROM t1 JOIN t2 USING (id) PREWHERE b = 1
-              * Column `a` should be resolved from table and should not change its type to Nullable.
-              * More complicated example when column is somewhere inside an expression:
-              * SELECT a + 1 as b FROM t1 JOIN t2 USING (id) PREWHERE b = 1
-              * expression `a + 1 as b` in projection and in PREWHERE should have different `a`.
-              */
-            prewhere_node = prewhere_node->clone();
-            ReplaceColumnsVisitor replace_visitor(scope.nullable_join_columns, scope.context);
-            replace_visitor.visit(prewhere_node);
-        }
+        /** Expressions in PREWHERE with JOIN should not change their type.
+          * Example: SELECT * FROM t1 JOIN t2 USING (a) PREWHERE a = 1
+          * Column `a` in PREWHERE should be resolved from the left table
+          * and should not change its type to Nullable or to the supertype of `a` from t1 and t2.
+          * Here's a more complicated example where the column is somewhere inside an expression:
+          * SELECT a + 1 as b FROM t1 JOIN t2 USING (id) PREWHERE b = 1
+          * The expression `a + 1 as b` in the projection and in PREWHERE should have different `a`.
+          */
+        prewhere_node = prewhere_node->clone();
+        ReplaceColumnsToSourceVisitor replace_visitor(scope);
+        replace_visitor.visit(prewhere_node);
     }
 
     if (query_node_typed.getWhere())
