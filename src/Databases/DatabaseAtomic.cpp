@@ -210,7 +210,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
             return;
         db.table_name_to_path.emplace(table_name_, table_data_path_);
         if (table_->storesDataOnDisk())
-            db.tryCreateSymlink(table_name_, table_data_path_);
+            db.tryCreateSymlink(table_);
     };
 
     auto assert_can_move_mat_view = [inside_database](const StoragePtr & table_)
@@ -336,7 +336,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         throw;
     }
     if (table->storesDataOnDisk())
-        tryCreateSymlink(query.getTable(), table_data_path);
+        tryCreateSymlink(table);
 }
 
 void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path,
@@ -467,7 +467,14 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
 
             fs::create_directories(path_to_table_symlinks);
             for (const auto & table : table_names)
-                tryCreateSymlink(table.first, table.second, true);
+            {
+                /// All tables in database should be loaded at this point
+                StoragePtr table_ptr = tryGetTable(table.first, getContext());
+                if (table_ptr)
+                    tryCreateSymlink(table_ptr, true);
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} is not loaded before database startup", table.first);
+            }
         });
     std::scoped_lock lock(mutex);
     return startup_atomic_database_task = makeLoadTask(async_loader, {job});
@@ -495,12 +502,17 @@ void DatabaseAtomic::stopLoading()
     DatabaseOrdinary::stopLoading();
 }
 
-void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)
+void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_path_exist)
 {
     try
     {
+        String table_name = table->getStorageID().getTableName();
+
+        if (!table->storesDataOnDisk())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't have data path to create symlink", table_name);
+
         String link = path_to_table_symlinks + escapeForFileName(table_name);
-        fs::path data = fs::canonical(getContext()->getPath()) / actual_data_path;
+        fs::path data = fs::canonical(table->getDataPaths()[0]);
 
         /// If it already points where needed.
         std::error_code ec;
