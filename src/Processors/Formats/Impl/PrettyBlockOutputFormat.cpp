@@ -164,6 +164,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     const auto & columns = chunk.getColumns();
     const auto & header = getPort(port_kind).getHeader();
 
+    size_t cut_to_width = format_settings.pretty.max_value_width;
+    if (!format_settings.pretty.max_value_width_apply_for_single_value && num_rows == 1 && num_columns == 1 && total_rows == 0)
+        cut_to_width = 0;
+
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
@@ -303,7 +307,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             const auto & type = *header.getByPosition(j).type;
             writeValueWithPadding(*columns[j], *serializations[j], i,
                 widths[j].empty() ? max_widths[j] : widths[j][i],
-                max_widths[j], type.shouldAlignRightInPrettyFormats());
+                max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats());
         }
 
         writeCString(grid_symbols.bar, out);
@@ -324,7 +328,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
 void PrettyBlockOutputFormat::writeValueWithPadding(
     const IColumn & column, const ISerialization & serialization, size_t row_num,
-    size_t value_width, size_t pad_to_width, bool align_right)
+    size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right)
 {
     String serialized_value = " ";
     {
@@ -332,7 +336,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
-    if (value_width > format_settings.pretty.max_value_width)
+    if (cut_to_width && value_width > cut_to_width)
     {
         serialized_value.resize(UTF8::computeBytesBeforeWidth(
             reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, 1 + format_settings.pretty.max_value_width));
@@ -419,16 +423,19 @@ void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
     auto is_single_number = readable_number_tip && chunk.getNumRows() == 1 && chunk.getNumColumns() == 1;
     if (!is_single_number)
         return;
+
     auto value = columns[0]->getFloat64(0);
     auto threshold = format_settings.pretty.output_format_pretty_single_large_number_tip_threshold;
-    if (threshold == 0 || value <= threshold)
-        return;
-    if (color)
-        writeCString("\033[90m", out);
-    writeCString(" -- ", out);
-    formatReadableQuantity(value, out, 2);
-    if (color)
-        writeCString("\033[0m", out);
+
+    if (threshold && isFinite(value) && abs(value) >= threshold)
+    {
+        if (color)
+            writeCString("\033[90m", out);
+        writeCString(" -- ", out);
+        formatReadableQuantity(value, out, 2);
+        if (color)
+            writeCString("\033[0m", out);
+    }
 }
 
 void registerOutputFormatPretty(FormatFactory & factory)
