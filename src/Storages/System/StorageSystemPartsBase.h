@@ -115,7 +115,7 @@ protected:
 class StoragesInfoStream : public StoragesInfoStreamBase
 {
 public:
-    StoragesInfoStream(const ActionsDAG::Node * predicate, ContextPtr context);
+    StoragesInfoStream(const ActionsDAGPtr & filter_by_database, const ActionsDAGPtr & filter_by_other_columns, ContextPtr context);
 };
 
 /** Implements system table 'parts' which allows to get information about data parts for tables of MergeTree family.
@@ -145,9 +145,9 @@ protected:
 
     StorageSystemPartsBase(const StorageID & table_id_, ColumnsDescription && columns);
 
-    virtual std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(const ActionsDAG::Node * predicate, ContextPtr context)
+    virtual std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(const ActionsDAGPtr & filter_by_database, const ActionsDAGPtr & filter_by_other_columns, ContextPtr context)
     {
-        return std::make_unique<StoragesInfoStream>(predicate, context);
+        return std::make_unique<StoragesInfoStream>(filter_by_database, filter_by_other_columns, context);
     }
 
     virtual void

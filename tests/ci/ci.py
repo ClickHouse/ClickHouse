@@ -1248,9 +1248,7 @@ def _configure_jobs(
         for token_ in ci_controlling_tokens:
             label_config = CI_CONFIG.get_label_config(token_)
             assert label_config, f"Unknonwn token [{token_}]"
-            print(
-                f"NOTE: CI controlling token: [{ci_controlling_tokens}], add jobs: [{label_config.run_jobs}]"
-            )
+            print(f"NOTE: CI modifier: [{token_}], add jobs: [{label_config.run_jobs}]")
             jobs_to_do_requested += label_config.run_jobs
 
         # handle specific job requests
@@ -1264,7 +1262,7 @@ def _configure_jobs(
             for job in requested_jobs:
                 job_with_parents = CI_CONFIG.get_job_with_parents(job)
                 print(
-                    f"NOTE: CI controlling token: [#job_{job}], add jobs: [{job_with_parents}]"
+                    f"NOTE: CI modifier: [#job_{job}], add jobs: [{job_with_parents}]"
                 )
                 # always add requested job itself, even if it could be skipped
                 jobs_to_do_requested.append(job_with_parents[0])
@@ -1273,6 +1271,7 @@ def _configure_jobs(
                         jobs_to_do_requested.append(parent)
 
         if jobs_to_do_requested:
+            jobs_to_do_requested = list(set(jobs_to_do_requested))
             print(
                 f"NOTE: Only specific job(s) were requested by commit message tokens: [{jobs_to_do_requested}]"
             )
@@ -1407,15 +1406,25 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
     print("... CI report update - done")
 
 
-def _fetch_commit_tokens(message: str) -> List[str]:
-    pattern = r"#[\w-]+"
-    matches = [match[1:] for match in re.findall(pattern, message)]
+def _fetch_commit_tokens(message: str, pr_info: PRInfo) -> List[str]:
+    pattern = r"(#|- \[x\] +<!---)(\w+)"
+    matches = [match[-1] for match in re.findall(pattern, message)]
     res = [
         match
         for match in matches
         if match in Labels or match.startswith("job_") or match.startswith("batch_")
     ]
-    return res
+    print(f"CI modifyers from commit message: [{res}]")
+    res_2 = []
+    if pr_info.is_pr():
+        matches = [match[-1] for match in re.findall(pattern, pr_info.body)]
+        res_2 = [
+            match
+            for match in matches
+            if match in Labels or match.startswith("job_") or match.startswith("batch_")
+        ]
+        print(f"CI modifyers from PR body: [{res_2}]")
+    return list(set(res + res_2))
 
 
 def _upload_build_artifacts(
@@ -1701,8 +1710,7 @@ def main() -> int:
             message = args.commit_message or git_runner.run(
                 f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1"
             )
-            tokens = _fetch_commit_tokens(message)
-            print(f"Commit message tokens: [{tokens}]")
+            tokens = _fetch_commit_tokens(message, pr_info)
             if Labels.NO_MERGE_COMMIT in tokens and CI:
                 git_runner.run(f"{GIT_PREFIX} checkout {pr_info.sha}")
                 git_ref = git_runner.run(f"{GIT_PREFIX} rev-parse HEAD")
