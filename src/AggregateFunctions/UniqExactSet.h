@@ -39,8 +39,8 @@ public:
     /// This method will convert all the SingleLevelSet to TwoLevelSet in parallel if the hashsets are not all singlelevel or not all twolevel.
     static void parallelizeMergePrepare(const std::vector<UniqExactSet *> & data_vec, ThreadPool & thread_pool)
     {
-        unsigned long single_level_set_num = 0;
-        unsigned long all_single_hash_size = 0;
+        UInt64 single_level_set_num = 0;
+        UInt64 all_single_hash_size = 0;
 
         for (auto ele : data_vec)
         {
@@ -156,7 +156,6 @@ public:
     void read(ReadBuffer & in)
     {
         size_t new_size = 0;
-        auto * const position = in.position();
         readVarUInt(new_size, in);
         if (new_size > 100'000'000'000)
             throw DB::Exception(
@@ -174,8 +173,14 @@ public:
         }
         else
         {
-            in.position() = position; // Rollback position
-            asSingleLevel().read(in);
+            asSingleLevel().reserve(new_size);
+
+            for (size_t i = 0; i < new_size; ++i)
+            {
+                typename SingleLevelSet::Cell x;
+                x.read(in);
+                asSingleLevel().insert(x.getValue());
+            }
         }
     }
 

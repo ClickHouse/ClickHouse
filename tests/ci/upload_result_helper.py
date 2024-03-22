@@ -9,7 +9,7 @@ from env_helper import (
     GITHUB_RUN_URL,
     GITHUB_SERVER_URL,
 )
-from report import ReportColorTheme, TestResults, create_test_html_report
+from report import TestResults, create_test_html_report
 from s3_helper import S3Helper
 
 
@@ -92,10 +92,6 @@ def upload_results(
     else:
         raw_log_url = GITHUB_JOB_URL()
 
-    statuscolors = (
-        ReportColorTheme.bugfixcheck if "bugfix validate check" in check_name else None
-    )
-
     if test_results or not ready_report_url:
         html_report = create_test_html_report(
             check_name,
@@ -107,7 +103,6 @@ def upload_results(
             branch_name,
             commit_url,
             additional_urls,
-            statuscolors=statuscolors,
         )
         report_path = Path("report.html")
         report_path.write_text(html_report, encoding="utf-8")

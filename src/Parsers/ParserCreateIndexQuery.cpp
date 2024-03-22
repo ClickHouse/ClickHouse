@@ -15,17 +15,17 @@ namespace DB
 
 bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_type("TYPE");
-    ParserKeyword s_granularity("GRANULARITY");
+    ParserKeyword s_type(Keyword::TYPE);
+    ParserKeyword s_granularity(Keyword::GRANULARITY);
     ParserToken open(TokenType::OpeningRoundBracket);
     ParserToken close(TokenType::ClosingRoundBracket);
     ParserOrderByExpressionList order_list;
+
     ParserDataType data_type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
     ASTPtr expr;
-    ASTPtr order;
     ASTPtr type;
     ASTPtr granularity;
 
@@ -35,7 +35,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     }
     else if (open.ignore(pos, expected))
     {
-        if (!order_list.parse(pos, order, expected))
+        if (!order_list.parse(pos, expr, expected))
             return false;
 
         if (!close.ignore(pos, expected))
@@ -72,7 +72,6 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
     }
     node = index;
-
     return true;
 }
 
@@ -81,11 +80,12 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     auto query = std::make_shared<ASTCreateIndexQuery>();
     node = query;
 
-    ParserKeyword s_create("CREATE");
-    ParserKeyword s_unique("UNIQUE");
-    ParserKeyword s_index("INDEX");
-    ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserKeyword s_on("ON");
+    ParserKeyword s_create(Keyword::CREATE);
+    ParserKeyword s_unique(Keyword::UNIQUE);
+    ParserKeyword s_index(Keyword::INDEX);
+    ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
+    ParserKeyword s_on(Keyword::ON);
+
     ParserIdentifier index_name_p;
     ParserCreateIndexDeclaration parser_create_idx_decl;
 

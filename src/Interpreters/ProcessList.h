@@ -127,7 +127,7 @@ protected:
 
     struct ExecutorHolder
     {
-        ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+        explicit ExecutorHolder(PipelineExecutor * e) : executor(e) {}
 
         void cancel();
 
@@ -318,7 +318,7 @@ public:
     ~ProcessListEntry();
 
     QueryStatusPtr getQueryStatus() { return *it; }
-    const QueryStatusPtr getQueryStatus() const { return *it; }
+    QueryStatusPtr getQueryStatus() const { return *it; }
 };
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from docker_images_helper import get_docker_image, pull_image
 from env_helper import REPO_COPY, TEMP_PATH
 from pr_info import PRInfo
-from report import JobReport, TestResult, TestResults
+from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -49,7 +49,7 @@ def main():
         JobReport(
             description="No changes in docs",
             test_results=[],
-            status="success",
+            status=SUCCESS,
             start_time=stopwatch.start_time_str,
             duration=stopwatch.duration_seconds,
             additional_files=[],
@@ -79,11 +79,11 @@ def main():
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
-            status = "success"
+            status = SUCCESS
             description = "Docs check passed"
         else:
             description = "Docs check failed (non zero exit code)"
-            status = "failure"
+            status = FAILURE
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
@@ -92,7 +92,7 @@ def main():
     if not any(test_output.iterdir()):
         logging.error("No output files after docs check")
         description = "No output files after docs check"
-        status = "failure"
+        status = FAILURE
     else:
         for p in test_output.iterdir():
             additional_files.append(p)
@@ -101,9 +101,9 @@ def main():
                     if "ERROR" in line:
                         test_results.append(TestResult(line.split(":")[-1], "FAIL"))
         if test_results:
-            status = "failure"
+            status = FAILURE
             description = "Found errors in docs"
-        elif status != "failure":
+        elif status != FAILURE:
             test_results.append(TestResult("No errors found", "OK"))
         else:
             test_results.append(TestResult("Non zero exit code", "FAIL"))
@@ -117,7 +117,7 @@ def main():
         additional_files=additional_files,
     ).dump()
 
-    if status == "failure":
+    if status == FAILURE:
         sys.exit(1)
 
 

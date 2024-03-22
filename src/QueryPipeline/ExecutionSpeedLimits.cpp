@@ -113,7 +113,7 @@ static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<A
             ProfileEvents::increment(ProfileEvents::OverflowBreak);
             return false;
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown overflow mode");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown overflow mode");
     }
 }
 

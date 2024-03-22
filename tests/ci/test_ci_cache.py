@@ -96,16 +96,27 @@ class TestCiCache(unittest.TestCase):
             pr_num=PR_NUM,
         )
 
-        ### add some pending statuses for two batches and on non-release branch
+        ### add some pending statuses for two batches, non-release branch
         for job in JobNames:
-            ci_cache.push_pending(job, [0, 1], NUM_BATCHES, release_branch=False)
-            ci_cache_2.push_pending(job, [0, 1], NUM_BATCHES, release_branch=False)
+            ci_cache.push_pending(job, [0, 1, 2], NUM_BATCHES, release_branch=False)
+            ci_cache_2.push_pending(job, [0, 1, 2], NUM_BATCHES, release_branch=False)
 
         ### add success status for 0 batch, non-release branch
+        batch = 0
         for job in JobNames:
-            ci_cache.push_successful(job, 0, NUM_BATCHES, status, release_branch=False)
+            ci_cache.push_successful(
+                job, batch, NUM_BATCHES, status, release_branch=False
+            )
             ci_cache_2.push_successful(
-                job, 0, NUM_BATCHES, status, release_branch=False
+                job, batch, NUM_BATCHES, status, release_branch=False
+            )
+
+        ### add failed status for 2 batch, non-release branch
+        batch = 2
+        for job in JobNames:
+            ci_cache.push_failed(job, batch, NUM_BATCHES, status, release_branch=False)
+            ci_cache_2.push_failed(
+                job, batch, NUM_BATCHES, status, release_branch=False
             )
 
         ### check all expected directories were created on s3 mock
@@ -128,7 +139,7 @@ class TestCiCache(unittest.TestCase):
         )
 
         ### check number of cache files is as expected
-        FILES_PER_JOB = 3  # 1 successful + 2 pending batches = 3
+        FILES_PER_JOB = 5  # 1 successful + 1 failed + 3 pending batches = 5
         self.assertEqual(
             len(
                 s3_mock.files_on_s3_paths[
@@ -219,7 +230,7 @@ class TestCiCache(unittest.TestCase):
             ci_cache.push_successful(job, 0, NUM_BATCHES, status, release_branch=True)
 
         ### check number of cache files is as expected
-        FILES_PER_JOB = 6  # 1 successful + 1 successful_release + 2 pending batches + 2 pending batches release = 6
+        FILES_PER_JOB = 8  # 1 successful + 1 failed + 1 successful_release + 3 pending batches + 2 pending batches release = 8
         self.assertEqual(
             len(
                 s3_mock.files_on_s3_paths[
@@ -252,6 +263,9 @@ class TestCiCache(unittest.TestCase):
             self.assertEqual(ci_cache.is_pending(job, 1, NUM_BATCHES, False), True)
             self.assertEqual(ci_cache.is_pending(job, 1, NUM_BATCHES, True), True)
 
+            self.assertEqual(ci_cache.is_failed(job, 2, NUM_BATCHES, False), True)
+            self.assertEqual(ci_cache.is_failed(job, 2, NUM_BATCHES, True), False)
+
             status2 = ci_cache.get_successful(job, 0, NUM_BATCHES)
             assert status2 and status2.pr_num == PR_NUM
             status2 = ci_cache.get_successful(job, 1, NUM_BATCHES)
@@ -272,6 +286,13 @@ class TestCiCache(unittest.TestCase):
             )  # it's success, not pending
             self.assertEqual(ci_cache.is_pending(job, 1, NUM_BATCHES, False), True)
             self.assertEqual(ci_cache.is_pending(job, 1, NUM_BATCHES, True), True)
+
+            self.assertEqual(ci_cache.is_failed(job, 2, NUM_BATCHES, False), True)
+            self.assertEqual(ci_cache.is_failed(job, 2, NUM_BATCHES, True), False)
+
+            # is_pending() is false for failed jobs batches
+            self.assertEqual(ci_cache.is_pending(job, 2, NUM_BATCHES, False), False)
+            self.assertEqual(ci_cache.is_pending(job, 2, NUM_BATCHES, True), False)
 
             status2 = ci_cache.get_successful(job, 0, NUM_BATCHES)
             assert status2 and status2.pr_num == PR_NUM

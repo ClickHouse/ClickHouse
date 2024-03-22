@@ -78,6 +78,9 @@ protected:
     void runInteractive();
     void runNonInteractive();
 
+    char * argv0 = nullptr;
+    void runLibFuzzer();
+
     virtual bool processWithFuzzing(const String &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
@@ -94,7 +97,7 @@ protected:
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
-    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth);
+    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
     static void setupSignalHandler();
 

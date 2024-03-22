@@ -63,4 +63,4 @@ jobs:
           python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64 \
             --image-tags '${{ toJson(fromJson(inputs.data).docker_data.images) }}' \
             --missing-images '${{ toJson(fromJson(inputs.data).docker_data.missing_multi) }}' \
-            "$FLAG_LATEST"
+            $FLAG_LATEST

@@ -1,16 +1,15 @@
 #pragma once
 
-#include <cmath>
-#include <Columns/ColumnVectorHelper.h>
+#include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
+#include <Common/TargetSpecific.h>
+#include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
 #include <Core/Field.h>
 #include <Core/TypeId.h>
 #include <base/TypeName.h>
 #include <base/unaligned.h>
-#include <Common/TargetSpecific.h>
-#include <Common/assert_cast.h>
 
 #include "config.h"
 
@@ -30,13 +29,13 @@ namespace ErrorCodes
 /** A template for columns that use a simple array to store.
  */
 template <typename T>
-class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<T>>
+class ColumnVector final : public COWHelper<IColumnHelper<ColumnVector<T>, ColumnFixedSizeHelper>, ColumnVector<T>>
 {
     static_assert(!is_decimal<T>);
 
 private:
     using Self = ColumnVector;
-    friend class COWHelper<ColumnVectorHelper, Self>;
+    friend class COWHelper<IColumnHelper<Self, ColumnFixedSizeHelper>, Self>;
 
     struct less;
     struct less_stable;
@@ -101,8 +100,6 @@ public:
         data.resize_assume_reserved(data.size() - n);
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
-
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
     const char * skipSerializedInArena(const char * pos) const override;
@@ -158,19 +155,6 @@ public:
 
 #endif
 
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                       int direction, int nan_direction_hint) const override
-    {
-        return this->template doCompareColumn<Self>(assert_cast<const Self &>(rhs), rhs_row_num, row_indexes,
-                                                    compare_results, direction, nan_direction_hint);
-    }
-
-    bool hasEqualValues() const override
-    {
-        return this->template hasEqualValuesImpl<Self>();
-    }
-
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
@@ -179,7 +163,7 @@ public:
 
     void reserve(size_t n) override
     {
-        data.reserve(n);
+        data.reserve_exact(n);
     }
 
     void shrinkToFit() override
@@ -240,6 +224,14 @@ public:
         data.push_back(static_cast<T>(x.get<T>()));
     }
 
+    bool tryInsert(const DB::Field & x) override
+    {
+        NearestFieldType<T> value;
+        if (!x.tryGet<NearestFieldType<T>>(value))
+            return false;
+        data.push_back(static_cast<T>(value));
+        return true;
+    }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
@@ -256,13 +248,6 @@ public:
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
     void getExtremes(Field & min, Field & max) const override;
-
-    MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override
-    {
-        return this->template scatterImpl<Self>(num_columns, selector);
-    }
-
-    void gather(ColumnGathererStream & gatherer_stream) override;
 
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return true; }
@@ -283,21 +268,6 @@ public:
     bool structureEquals(const IColumn & rhs) const override
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
-    }
-
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
-    }
-
-    UInt64 getNumberOfDefaultRows() const override
-    {
-        return this->template getNumberOfDefaultRowsImpl<Self>();
-    }
-
-    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
-    {
-        return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
     }
 
     ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;

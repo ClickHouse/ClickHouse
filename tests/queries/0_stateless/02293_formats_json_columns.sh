@@ -88,4 +88,4 @@ echo '
 }
 ' > $DATA_FILE
 
-$CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONColumns) settings input_format_max_rows_to_read_for_schema_inference=3, input_format_json_infer_incomplete_types_as_strings=0" 2>&1 | grep -F -q 'Cannot extract table structure' && echo 'OK' || echo 'FAIL'
+$CLICKHOUSE_CLIENT -q "desc file(data_02293, JSONColumns) settings input_format_max_rows_to_read_for_schema_inference=3, input_format_json_infer_incomplete_types_as_strings=0" 2>&1 | grep -F -q 'CANNOT_EXTRACT_TABLE_STRUCTURE' && echo 'OK' || echo 'FAIL'

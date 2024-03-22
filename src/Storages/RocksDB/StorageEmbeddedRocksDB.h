@@ -32,7 +32,7 @@ public:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
-        bool attach,
+        LoadingStrictnessLevel mode,
         ContextPtr context_,
         const String & primary_key_,
         Int32 ttl_ = 0,

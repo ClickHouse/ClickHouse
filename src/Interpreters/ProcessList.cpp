@@ -208,8 +208,13 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {
+                TemporaryDataOnDiskSettings temporary_data_on_disk_settings
+                {
+                    .max_size_on_disk = settings.max_temporary_data_on_disk_size_for_query,
+                    .compression_codec = settings.temporary_files_codec
+                };
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
-                    user_process_list.user_temp_data_on_disk, settings.max_temporary_data_on_disk_size_for_query));
+                    user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
             }
 
             /// Set query-level memory trackers
@@ -295,7 +300,7 @@ ProcessListEntry::~ProcessListEntry()
     auto user_process_list_it = parent.user_to_queries.find(user);
     if (user_process_list_it == parent.user_to_queries.end())
     {
-        LOG_ERROR(getLogger("ProcessList"), "Logical error: cannot find user in ProcessList");
+        LOG_ERROR(getLogger("ProcessList"), "Cannot find user in ProcessList");
         std::terminate();
     }
 
@@ -323,7 +328,7 @@ ProcessListEntry::~ProcessListEntry()
 
     if (!found)
     {
-        LOG_ERROR(getLogger("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
+        LOG_ERROR(getLogger("ProcessList"), "Cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
     }
 
@@ -682,8 +687,15 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
 
     if (global_context)
     {
-        size_t size_limit = global_context->getSettingsRef().max_temporary_data_on_disk_size_for_user;
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(), size_limit);
+        const auto & settings = global_context->getSettingsRef();
+        TemporaryDataOnDiskSettings temporary_data_on_disk_settings
+        {
+            .max_size_on_disk = settings.max_temporary_data_on_disk_size_for_user,
+            .compression_codec = settings.temporary_files_codec
+        };
+
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),
+            std::move(temporary_data_on_disk_settings));
     }
 }
 

@@ -44,7 +44,7 @@ class FunctionWidthBucket : public IFunction
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Logical error in function {}: argument {} has unexpected type or size!",
+                "Logical error in function {}: argument {} has unexpected type or size.",
                 getName(),
                 argument_index);
         }
@@ -157,7 +157,7 @@ class FunctionWidthBucket : public IFunction
         if (are_all_const_cols)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Logical error in function {}: unexpected combination of argument types!", getName());
+                ErrorCodes::LOGICAL_ERROR, "Logical error in function {}: unexpected combination of argument types.", getName());
         }
 
         auto result_column = ColumnVector<ResultType>::create();

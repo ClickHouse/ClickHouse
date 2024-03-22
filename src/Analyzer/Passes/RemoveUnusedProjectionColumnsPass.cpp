@@ -132,7 +132,7 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
 
 }
 
-void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     std::vector<QueryTreeNodePtr> nodes_to_visit;
     nodes_to_visit.push_back(query_tree_node);

@@ -77,17 +77,12 @@ private:
     Tables tables;
     Tables::iterator it;
 
-    // Tasks to wait before returning a table
-    using Tasks = std::unordered_map<String, LoadTaskPtr>;
-    Tasks tasks;
-
 protected:
     DatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && other) noexcept
     : IDatabaseTablesIterator(std::move(other.database_name))
     {
         size_t idx = std::distance(other.tables.begin(), other.it);
         std::swap(tables, other.tables);
-        std::swap(tasks, other.tasks);
         other.it = other.tables.end();
         it = tables.begin();
         std::advance(it, idx);
@@ -110,17 +105,7 @@ public:
 
     const String & name() const override { return it->first; }
 
-    const StoragePtr & table() const override
-    {
-        if (auto task = tasks.find(it->first); task != tasks.end())
-            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task->second);
-        return it->second;
-    }
-
-    void setLoadTasks(const Tasks & tasks_)
-    {
-        tasks = tasks_;
-    }
+    const StoragePtr & table() const override { return it->second; }
 };
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
@@ -407,7 +392,7 @@ public:
 
     virtual void stopReplication()
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread", getEngineName());
     }
 
     virtual bool shouldReplicateQuery(const ContextPtr & /*query_context*/, const ASTPtr & /*query_ptr*/) const { return false; }

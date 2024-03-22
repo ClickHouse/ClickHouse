@@ -130,6 +130,11 @@ namespace DB
                 reinterpret_cast<const uint8_t *>(internal_data.data() + start),
                 end - start,
                 reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+        else if constexpr (std::is_same_v<NumericType, Int8>)
+            status = builder.AppendValues(
+                reinterpret_cast<const int8_t *>(internal_data.data() + start),
+                end - start,
+                reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
         else
             status = builder.AppendValues(internal_data.data() + start, end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
         checkStatus(status, write_column->getName(), format_name);

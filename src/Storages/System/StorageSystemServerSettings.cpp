@@ -55,7 +55,7 @@ ColumnsDescription StorageSystemServerSettings::getColumnsDescription()
     };
 }
 
-void StorageSystemServerSettings::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemServerSettings::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// When the server configuration file is periodically re-loaded from disk, the server components (e.g. memory tracking) are updated
     /// with new the setting values but the settings themselves are not stored between re-loads. As a result, if one wants to know the

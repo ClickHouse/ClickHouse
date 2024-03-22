@@ -55,7 +55,7 @@ namespace
     {
         IPAddress addr_v6 = toIPv6(address);
 
-        auto host_addresses = DNSResolver::instance().resolveHostAll(host);
+        auto host_addresses = DNSResolver::instance().resolveHostAllInOriginOrder(host);
 
         for (const auto & addr : host_addresses)
         {

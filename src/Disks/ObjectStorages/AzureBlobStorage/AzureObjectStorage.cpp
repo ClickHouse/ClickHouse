@@ -92,10 +92,12 @@ private:
 AzureObjectStorage::AzureObjectStorage(
     const String & name_,
     AzureClientPtr && client_,
-    SettingsPtr && settings_)
+    SettingsPtr && settings_,
+    const String & object_namespace_)
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
+    , object_namespace(object_namespace_)
     , log(getLogger("AzureObjectStorage"))
 {
 }
@@ -204,7 +206,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
 
     auto read_buffer_creator =
         [this, settings_ptr, disk_read_settings]
-        (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
+        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromAzureBlobStorage>(
             client.get(),
@@ -213,8 +215,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
             settings_ptr->max_single_read_retries,
             settings_ptr->max_single_download_retries,
             /* use_external_buffer */true,
-            /* restricted_seek */true,
-            read_until_position);
+            restricted_seek);
     };
 
     switch (read_settings.remote_fs_method)
@@ -224,16 +225,17 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
             return std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator),
                 objects,
+                "azure:",
                 disk_read_settings,
                 global_context->getFilesystemCacheLog(),
                 /* use_external_buffer */false);
-
         }
         case RemoteFSReadMethod::threadpool:
         {
             auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(read_buffer_creator),
                 objects,
+                "azure:",
                 disk_read_settings,
                 global_context->getFilesystemCacheLog(),
                 /* use_external_buffer */true);
@@ -376,7 +378,8 @@ std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(const std
     return std::make_unique<AzureObjectStorage>(
         name,
         getAzureBlobContainerClient(config, config_prefix),
-        getAzureBlobStorageSettings(config, config_prefix, context)
+        getAzureBlobStorageSettings(config, config_prefix, context),
+        object_namespace
     );
 }
 
