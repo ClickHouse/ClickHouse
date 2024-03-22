@@ -950,7 +950,7 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
 {
     std::optional<Exception> exc;
     auto table = local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc).second; }) :
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }, &exc).second :
         getTableImpl(table_id, local_context, &exc).second;
     if (!table)
         throw Exception(*exc);
@@ -960,14 +960,16 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
 {
     return local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr).second; }) :
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }, nullptr).second :
         getTableImpl(table_id, local_context, nullptr).second;
 }
 
 DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, local_context, &exc);
+    auto res = local_context->hasQueryContext() ?
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }, &exc) :
+        getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res;
@@ -975,7 +977,9 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
 
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return getTableImpl(table_id, local_context, nullptr);
+    return local_context->hasQueryContext() ?
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }, nullptr) :
+        getTableImpl(table_id, local_context, nullptr);
 }
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()

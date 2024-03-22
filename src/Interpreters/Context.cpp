@@ -904,18 +904,20 @@ String Context::getFilesystemCacheUser() const
     return shared->filesystem_cache_user;
 }
 
-StoragePtr Context::getOrCacheStorage(const StorageID & id, std::function<StoragePtr()> f) const
+DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> f, std::optional<Exception> * exception) const
 {
-    if (auto storage = storage_cache.find(id); storage != storage_cache.end())
+    if (auto storage_id = storage_cache.find(id); storage_id != storage_cache.end())
     {
-        if (auto storage_ptr = storage->second.lock(); storage_ptr)
-            return storage_ptr;
-        else
-            storage_cache.erase(storage);
+        DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(storage_id->uuid);
+        if (exception && !storage.second)
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist anymore - maybe it was dropped", id.getNameForLogs()));
+        return storage;
     }
+
     auto storage = f();
-    if (storage)
-        storage_cache.insert({id, storage});
+    if (storage.second)
+        if (const auto & new_id = storage.second->getStorageID(); new_id.hasUUID())
+            storage_cache.insert(new_id);
     return storage;
 }
 
