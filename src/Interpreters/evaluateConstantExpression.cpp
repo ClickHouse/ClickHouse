@@ -106,7 +106,7 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
 
     if (result_column->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Logical error: empty result column after evaluation "
+                        "Empty result column after evaluation "
                         "of constant expression for IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument");
 
     /// Expressions like rand() or now() are not constant

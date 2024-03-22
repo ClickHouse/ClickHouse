@@ -47,7 +47,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"value", &isDateTime<IDataType>, nullptr, "DateTime"}
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime), nullptr, "DateTime"}
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -91,10 +91,10 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"value", &isInt64<IDataType>, nullptr, "Int64"}
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInt64), nullptr, "Int64"}
         };
         FunctionArgumentDescriptors optional_args{
-            {"time_zone", &isString<IDataType>, nullptr, "String"}
+            {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
@@ -151,7 +151,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"value", &isDateTime64<IDataType>, nullptr, "DateTime64"}
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime64), nullptr, "DateTime64"}
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -203,10 +203,10 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"value", &isInt64<IDataType>, nullptr, "Int64"}
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInt64), nullptr, "Int64"}
         };
         FunctionArgumentDescriptors optional_args{
-            {"time_zone", &isString<IDataType>, nullptr, "String"}
+            {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
@@ -249,28 +249,24 @@ public:
 REGISTER_FUNCTION(DateTimeToSnowflake)
 {
     factory.registerFunction("dateTimeToSnowflake",
-        [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionDateTimeToSnowflake>("dateTimeToSnowflake")); });
+        [](ContextPtr){ return std::make_shared<FunctionDateTimeToSnowflake>("dateTimeToSnowflake"); });
 }
 
 REGISTER_FUNCTION(DateTime64ToSnowflake)
 {
     factory.registerFunction("dateTime64ToSnowflake",
-        [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionDateTime64ToSnowflake>("dateTime64ToSnowflake")); });
+        [](ContextPtr){ return std::make_shared<FunctionDateTime64ToSnowflake>("dateTime64ToSnowflake"); });
 }
 
 REGISTER_FUNCTION(SnowflakeToDateTime)
 {
     factory.registerFunction("snowflakeToDateTime",
-        [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionSnowflakeToDateTime>("snowflakeToDateTime", context)); });
+        [](ContextPtr context){ return std::make_shared<FunctionSnowflakeToDateTime>("snowflakeToDateTime", context); });
 }
 REGISTER_FUNCTION(SnowflakeToDateTime64)
 {
     factory.registerFunction("snowflakeToDateTime64",
-        [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionSnowflakeToDateTime64>("snowflakeToDateTime64", context)); });
+        [](ContextPtr context){ return std::make_shared<FunctionSnowflakeToDateTime64>("snowflakeToDateTime64", context); });
 }
 
 }

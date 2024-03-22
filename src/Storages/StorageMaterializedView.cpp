@@ -5,14 +5,15 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
-#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Access/Common/AccessFlags.h>
+#include <Interpreters/getTableExpressions.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -72,14 +73,14 @@ StorageMaterializedView::StorageMaterializedView(
     ContextPtr local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
-    bool attach_,
+    LoadingStrictnessLevel mode,
     const String & comment)
     : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     if (query.sql_security)
-        storage_metadata.setDefiner(query.sql_security->as<ASTSQLSecurity &>());
+        storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
     if (storage_metadata.sql_security_type == SQLSecurityType::INVOKER)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
@@ -124,7 +125,7 @@ StorageMaterializedView::StorageMaterializedView(
     {
         target_table_id = query.to_table_id;
     }
-    else if (attach_)
+    else if (LoadingStrictnessLevel::ATTACH <= mode)
     {
         /// If there is an ATTACH request, then the internal table must already be created.
         target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()), query.to_inner_uuid);
@@ -157,7 +158,7 @@ StorageMaterializedView::StorageMaterializedView(
             *this,
             getContext(),
             *query.refresh_strategy);
-        refresh_on_start = !attach_ && !query.is_create_empty;
+        refresh_on_start = mode < LoadingStrictnessLevel::ATTACH && !query.is_create_empty;
     }
 }
 
@@ -169,6 +170,12 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
 {
     const auto & target_metadata = getTargetTable()->getInMemoryMetadataPtr();
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
+}
+
+StorageSnapshotPtr StorageMaterializedView::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
+{
+    /// We cannot set virtuals at table creation because target table may not exist at that time.
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, getTargetTable()->getVirtualsPtr());
 }
 
 void StorageMaterializedView::read(
@@ -459,8 +466,8 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     if (!from_atomic_to_atomic_database && has_inner_table && tryGetTargetTable())
     {
         auto new_target_table_name = generateInnerTableName(new_table_id);
-        auto rename = std::make_shared<ASTRenameQuery>();
 
+        ASTRenameQuery::Elements rename_elements;
         assert(inner_table_id.database_name == old_table_id.database_name);
 
         ASTRenameQuery::Element elem
@@ -476,8 +483,9 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
                 std::make_shared<ASTIdentifier>(new_target_table_name)
             }
         };
-        rename->elements.emplace_back(std::move(elem));
+        rename_elements.emplace_back(std::move(elem));
 
+        auto rename = std::make_shared<ASTRenameQuery>(std::move(rename_elements));
         InterpreterRenameQuery(rename, getContext()).execute();
         updateTargetTableId(new_table_id.database_name, new_target_table_name);
     }
@@ -534,11 +542,6 @@ StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
     checkStackSize();
     return DatabaseCatalog::instance().tryGetTable(getTargetTableId(), getContext());
-}
-
-NamesAndTypesList StorageMaterializedView::getVirtuals() const
-{
-    return getTargetTable()->getVirtuals();
 }
 
 Strings StorageMaterializedView::getDataPaths() const
@@ -657,7 +660,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
         /// Pass local_context here to convey setting for inner table
         return std::make_shared<StorageMaterializedView>(
             args.table_id, args.getLocalContext(), args.query,
-            args.columns, args.attach, args.comment);
+            args.columns, args.mode, args.comment);
     });
 }
 

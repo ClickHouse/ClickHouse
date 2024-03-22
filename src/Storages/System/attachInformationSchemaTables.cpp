@@ -478,7 +478,7 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         ParserCreateQuery parser;
         ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(),
                                 "Attach query from embedded resource " + metadata_resource_name,
-                                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto & ast_create = ast->as<ASTCreateQuery &>();
         assert(view_name == ast_create.getTable());
@@ -486,13 +486,13 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         ast_create.setDatabase(database.getDatabaseName());
 
         StoragePtr view = createTableFromAST(ast_create, database.getDatabaseName(),
-                                             database.getTableDataPath(ast_create), context, true).second;
+                                             database.getTableDataPath(ast_create), context, LoadingStrictnessLevel::FORCE_RESTORE).second;
         database.createTable(context, ast_create.getTable(), view, ast);
         ASTPtr ast_upper = ast_create.clone();
         auto & ast_create_upper = ast_upper->as<ASTCreateQuery &>();
         ast_create_upper.setTable(Poco::toUpper(view_name));
         StoragePtr view_upper = createTableFromAST(ast_create_upper, database.getDatabaseName(),
-                                             database.getTableDataPath(ast_create_upper), context, true).second;
+                                             database.getTableDataPath(ast_create_upper), context, LoadingStrictnessLevel::FORCE_RESTORE).second;
 
         database.createTable(context, ast_create_upper.getTable(), view_upper, ast_upper);
 

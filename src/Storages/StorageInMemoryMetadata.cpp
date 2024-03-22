@@ -90,7 +90,7 @@ void StorageInMemoryMetadata::setComment(const String & comment_)
     comment = comment_;
 }
 
-void StorageInMemoryMetadata::setDefiner(const ASTSQLSecurity & sql_security)
+void StorageInMemoryMetadata::setSQLSecurity(const ASTSQLSecurity & sql_security)
 {
     if (sql_security.definer)
         definer = sql_security.definer->toString();
@@ -114,7 +114,7 @@ UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
 
 ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context) const
 {
-    if (!sql_security_type.has_value())
+    if (!sql_security_type)
         return Context::createCopy(context);
 
     if (sql_security_type == SQLSecurityType::INVOKER)

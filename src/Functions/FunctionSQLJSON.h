@@ -26,6 +26,7 @@
 
 #include "config.h"
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -114,8 +115,6 @@ private:
 
 };
 
-class EmptyJSONStringSerializer{};
-
 
 class FunctionSQLJSONHelpers
 {
@@ -124,7 +123,7 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, const ContextPtr & context)
+        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, uint32_t parse_backtracks, const ContextPtr & context)
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
@@ -156,27 +155,13 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (JSONPath) must be constant string");
             }
 
-            const ColumnPtr & arg_jsonpath = json_path_column.column;
-            const auto * arg_jsonpath_const = typeid_cast<const ColumnConst *>(arg_jsonpath.get());
-            const auto * arg_jsonpath_string = typeid_cast<const ColumnString *>(arg_jsonpath_const->getDataColumnPtr().get());
-
-            const ColumnPtr & arg_json = json_column.column;
-            const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
-            const auto * col_json_string
-                = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
-
-            /// Get data and offsets for 1 argument (JSONPath)
-            const ColumnString::Chars & chars_path = arg_jsonpath_string->getChars();
-            const ColumnString::Offsets & offsets_path = arg_jsonpath_string->getOffsets();
-
             /// Prepare to parse 1 argument (JSONPath)
-            const char * query_begin = reinterpret_cast<const char *>(&chars_path[0]);
-            const char * query_end = query_begin + offsets_path[0] - 1;
+            String query = typeid_cast<const ColumnConst &>(*json_path_column.column).getValue<String>();
 
-            /// Tokenize query
-            Tokens tokens(query_begin, query_end);
+            /// Tokenize the query
+            Tokens tokens(query.data(), query.data() + query.size());
             /// Max depth 0 indicates that depth is not limited
-            IParser::Pos token_iterator(tokens, parse_depth);
+            IParser::Pos token_iterator(tokens, parse_depth, parse_backtracks);
 
             /// Parse query and create AST tree
             Expected expected;
@@ -188,10 +173,6 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse JSONPath");
             }
 
-            /// Get data and offsets for 2 argument (JSON)
-            const ColumnString::Chars & chars_json = col_json_string->getChars();
-            const ColumnString::Offsets & offsets_json = col_json_string->getOffsets();
-
             JSONParser json_parser;
             using Element = typename JSONParser::Element;
             Element document;
@@ -200,10 +181,9 @@ public:
             /// Parse JSON for every row
             Impl impl;
             GeneratorJSONPath<JSONParser> generator_json_path(res);
-            for (const auto i : collections::range(0, input_rows_count))
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view json{
-                    reinterpret_cast<const char *>(&chars_json[offsets_json[i - 1]]), offsets_json[i] - offsets_json[i - 1] - 1};
+                std::string_view json = json_column.column->getDataAt(i).toView();
                 document_ok = json_parser.parse(json, document);
 
                 bool added_to_column = false;
@@ -252,16 +232,17 @@ public:
         /// 3. Parser(Tokens, ASTPtr) -> complete AST
         /// 4. Execute functions: call getNextItem on generator and handle each item
         unsigned parse_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
+        unsigned parse_backtracks = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_backtracks);
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
             return FunctionSQLJSONHelpers::Executor<
                 Name,
                 Impl<SimdJSONParser, JSONStringSerializer<SimdJSONParser::Element, SimdJSONElementFormatter>>,
-                SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
+                SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, parse_backtracks, getContext());
 #endif
         return FunctionSQLJSONHelpers::
             Executor<Name, Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>, DummyJSONParser>::run(
-                arguments, result_type, input_rows_count, parse_depth, getContext());
+                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, getContext());
     }
 };
 

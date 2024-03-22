@@ -4,10 +4,7 @@
 
 #if USE_AWS_S3
 
-#include <memory>
-#include <optional>
-
-#include "Client/Connection.h"
+#include <Client/Connection.h>
 #include <Interpreters/Cluster.h>
 #include <IO/S3Common.h>
 #include <Storages/IStorageCluster.h>
@@ -31,8 +28,6 @@ public:
 
     std::string getName() const override { return "S3Cluster"; }
 
-    NamesAndTypesList getVirtuals() const override;
-
     RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
 
     bool supportsSubcolumns() const override { return true; }
@@ -48,7 +43,6 @@ private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
 
     StorageS3::Configuration s3_configuration;
-    NamesAndTypesList virtual_columns;
 };
 
 

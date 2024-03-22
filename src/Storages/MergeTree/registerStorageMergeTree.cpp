@@ -1,6 +1,5 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
-#include <Storages/MergeTree/MergeTreeIndexSet.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
@@ -9,16 +8,12 @@
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
 
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -298,7 +293,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             arg_idx, e.message(), verbose_help_message);
         }
     }
-    else if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
+    else if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
                                                    "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause. "
@@ -321,7 +316,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name)
     {
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
-        if (!args.attach)
+        if (args.mode < LoadingStrictnessLevel::ATTACH)
         {
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive
@@ -582,7 +577,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
 
-        bool allow_suspicious_ttl = args.attach || args.getLocalContext()->getSettingsRef().allow_suspicious_ttl_expressions;
+        bool allow_suspicious_ttl = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || args.getLocalContext()->getSettingsRef().allow_suspicious_ttl_expressions;
 
         if (args.storage_def->ttl_table)
         {
@@ -609,12 +604,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
-        storage_settings->loadFromQuery(*args.storage_def, context, args.attach);
+        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
 
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
         {
-            if (!args.attach)
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
                 args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
@@ -690,7 +685,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (ast && ast->value.getType() == Field::Types::UInt64)
         {
             storage_settings->index_granularity = ast->value.safeGet<UInt64>();
-            if (!args.attach)
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
             {
                 SettingsChanges changes;
                 changes.emplace_back("index_granularity", Field(storage_settings->index_granularity));
@@ -701,12 +696,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index granularity must be a positive integer{}", verbose_help_message);
         ++arg_num;
 
-        if (args.storage_def->ttl_table && !args.attach)
+        if (args.storage_def->ttl_table && args.mode <= LoadingStrictnessLevel::CREATE)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
     }
 
     DataTypes data_types = metadata.partition_key.data_types;
-    if (!args.attach && !storage_settings->allow_floating_point_partition_key)
+    if (args.mode <= LoadingStrictnessLevel::CREATE && !storage_settings->allow_floating_point_partition_key)
     {
         for (size_t i = 0; i < data_types.size(); ++i)
             if (isFloat(data_types[i]))
@@ -726,7 +721,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_path,
             replica_name,
-            args.attach,
+            args.mode,
             args.table_id,
             args.relative_data_path,
             metadata,
@@ -734,7 +729,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             date_column_name,
             merging_params,
             std::move(storage_settings),
-            args.has_force_restore_data_flag,
             renaming_restrictions,
             need_check_table_structure);
     }
@@ -743,12 +737,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.table_id,
             args.relative_data_path,
             metadata,
-            args.attach,
+            args.mode,
             context,
             date_column_name,
             merging_params,
-            std::move(storage_settings),
-            args.has_force_restore_data_flag);
+            std::move(storage_settings));
 }
 
 

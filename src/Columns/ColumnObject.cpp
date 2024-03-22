@@ -12,7 +12,6 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashSet.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <numeric>
 
 
@@ -21,12 +20,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
     extern const int NUMBER_OF_DIMENSIONS_MISMATCHED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
 namespace
@@ -248,7 +247,7 @@ void ColumnObject::Subcolumn::checkTypes() const
         prefix_types.push_back(current_type);
         auto prefix_common_type = getLeastSupertype(prefix_types);
         if (!prefix_common_type->equals(*current_type))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
                 "Data type {} of column at position {} cannot represent all columns from i-th prefix",
                 current_type->getName(), i);
     }
@@ -636,7 +635,7 @@ void ColumnObject::checkConsistency() const
     {
         if (num_rows != leaf->data.size())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of subcolumns are inconsistent in ColumnObject."
+            throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Sizes of subcolumns are inconsistent in ColumnObject."
                 " Subcolumn '{}' has {} rows, but expected size is {}",
                 leaf->path.getPath(), leaf->data.size(), num_rows);
         }
@@ -714,6 +713,15 @@ void ColumnObject::insert(const Field & field)
     }
 
     ++num_rows;
+}
+
+bool ColumnObject::tryInsert(const Field & field)
+{
+    if (field.getType() != Field::Types::Which::Object)
+        return false;
+
+    insert(field);
+    return true;
 }
 
 void ColumnObject::insertDefault()
@@ -843,14 +851,6 @@ void ColumnObject::getPermutation(PermutationSortDirection, PermutationSortStabi
     iota(res.data(), res.size(), size_t(0));
 }
 
-void ColumnObject::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                 PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                 int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnObject>(assert_cast<const ColumnObject &>(rhs), rhs_row_num, row_indexes,
-                                        compare_results, direction, nan_direction_hint);
-}
-
 void ColumnObject::getExtremes(Field & min, Field & max) const
 {
     if (num_rows == 0)
@@ -863,16 +863,6 @@ void ColumnObject::getExtremes(Field & min, Field & max) const
         get(0, min);
         get(0, max);
     }
-}
-
-MutableColumns ColumnObject::scatter(ColumnIndex num_columns, const Selector & selector) const
-{
-    return scatterImpl<ColumnObject>(num_columns, selector);
-}
-
-void ColumnObject::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
 }
 
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key) const
@@ -929,7 +919,7 @@ void ColumnObject::addSubcolumn(const PathInData & key, size_t new_size)
 void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & field_info, size_t new_size)
 {
     if (!key.hasNested())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
             "Cannot add Nested subcolumn, because path doesn't contain Nested");
 
     bool inserted = false;

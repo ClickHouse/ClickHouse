@@ -66,7 +66,6 @@ struct ViewsData
     StorageID source_storage_id;
     StorageMetadataPtr source_metadata_snapshot;
     StoragePtr source_storage;
-    /// This value is actually only for logs.
     size_t max_threads = 1;
 
     /// In case of exception happened while inserting into main table, it is pushed to pipeline.
@@ -452,7 +451,7 @@ Chain buildPushingToViewsChain(
 
     /// If we don't write directly to the destination
     /// then expect that we're inserting with precalculated virtual columns
-    auto storage_header = no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals())
+    auto storage_header = no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtualsList())
                                          : metadata_snapshot->getSampleBlock();
 
     /** TODO This is a very important line. At any insertion into the table one of chains should own lock.
@@ -572,7 +571,6 @@ Chain buildPushingToViewsChain(
         result_chain.addSource(std::move(sink));
     }
 
-    /// TODO: add pushing to live view
     if (result_chain.empty())
         result_chain.addSink(std::make_shared<NullSinkToStorage>(storage_header));
 
@@ -599,7 +597,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         views_data.source_storage_id,
         views_data.source_metadata_snapshot->getColumns(),
         std::move(block),
-        views_data.source_storage->getVirtuals()));
+        *views_data.source_storage->getVirtualsPtr()));
 
     QueryPipelineBuilder pipeline;
 

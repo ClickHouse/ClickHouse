@@ -26,6 +26,8 @@
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/PeekableReadBuffer.h>
+#include <IO/AsynchronousReadBufferFromFile.h>
+#include <Disks/IO/IOUringReader.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -92,6 +94,7 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -275,6 +278,22 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
             res = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
 
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
+    }
+    else if (read_method == LocalFSReadMethod::io_uring && !use_table_fd)
+    {
+#if USE_LIBURING
+        auto & reader = context->getIOURingReader();
+        if (!reader.isSupported())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
+
+        res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
+            reader,
+            Priority{},
+            current_path,
+            context->getSettingsRef().max_read_buffer_size);
+#else
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
+#endif
     }
     else
     {
@@ -1078,8 +1097,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
     setInMemoryMetadata(storage_metadata);
-
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 
@@ -1217,9 +1235,9 @@ StorageFileSource::~StorageFileSource()
     beforeDestroy();
 }
 
-void StorageFileSource::setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_)
+void StorageFileSource::setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_)
 {
-    setKeyConditionImpl(nodes, context_, block_for_format);
+    setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
 }
 
 
@@ -1476,22 +1494,25 @@ std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & p
     return schema_cache.tryGetNumRows(key, get_last_mod_time);
 }
 
-class ReadFromFile : public SourceStepWithFilter, WithContext
+class ReadFromFile : public SourceStepWithFilter
 {
 public:
     std::string getName() const override { return "ReadFromFile"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters() override;
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     ReadFromFile(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
         Block sample_block,
         std::shared_ptr<StorageFile> storage_,
         ReadFromFormatInfo info_,
         const bool need_only_count_,
-        const ContextPtr & context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}), WithContext(context_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
         , info(std::move(info_))
         , need_only_count(need_only_count_)
@@ -1513,9 +1534,9 @@ private:
     void createIterator(const ActionsDAG::Node * predicate);
 };
 
-void ReadFromFile::applyFilters()
+void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes);
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1559,16 +1580,19 @@ void StorageFile::read(
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context));
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context->getSettingsRef().optimize_count_from_files;
 
     auto reading = std::make_unique<ReadFromFile>(
+        column_names,
+        query_info,
+        storage_snapshot,
+        context,
         read_from_format_info.source_header,
         std::move(this_ptr),
         std::move(read_from_format_info),
         need_only_count,
-        context,
         max_block_size,
         num_streams);
 
@@ -1584,8 +1608,8 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->paths,
         storage->archive_info,
         predicate,
-        storage->virtual_columns,
-        getContext(),
+        storage->getVirtualsList(),
+        context,
         storage->distributed_processing);
 }
 
@@ -1634,7 +1658,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             std::move(read_buffer),
             need_only_count);
 
-        source->setKeyCondition(filter_nodes.nodes, ctx);
+        source->setKeyCondition(filter_actions_dag, ctx);
         pipes.emplace_back(std::move(source));
     }
 
@@ -2229,11 +2253,6 @@ StorageFile::ArchiveInfo StorageFile::getArchiveInfo(
     archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
 
     return archive_info;
-}
-
-Names StorageFile::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 }

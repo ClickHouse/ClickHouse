@@ -61,7 +61,7 @@ SQL SECURITY DEFINER
 AS SELECT * FROM $db.test_table;
 EOF
 
-(( $(${CLICKHOUSE_CLIENT} --query "SHOW TABLE $db.test_view_1" 2>&1 | grep -c "INVOKER") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+(( $(${CLICKHOUSE_CLIENT} --query "SHOW TABLE $db.test_view_5" 2>&1 | grep -c "INVOKER") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 (( $(${CLICKHOUSE_CLIENT} --query "SHOW TABLE $db.test_view_2" 2>&1 | grep -c "DEFINER = $user1") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF

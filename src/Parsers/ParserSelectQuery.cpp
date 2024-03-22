@@ -1,23 +1,21 @@
-#include <Parsers/ParserSelectQuery.h>
-
-#include <Parsers/ASTAsterisk.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTInterpolateElement.h>
+#include <memory>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/IParserBase.h>
-#include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserSampleRatio.h>
+#include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Poco/String.h>
 
-#include <memory>
 
 namespace DB
 {
@@ -39,35 +37,35 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto select_query = std::make_shared<ASTSelectQuery>();
     node = select_query;
 
-    ParserKeyword s_select("SELECT");
-    ParserKeyword s_all("ALL");
-    ParserKeyword s_distinct("DISTINCT");
-    ParserKeyword s_distinct_on("DISTINCT ON");
-    ParserKeyword s_from("FROM");
-    ParserKeyword s_prewhere("PREWHERE");
-    ParserKeyword s_where("WHERE");
-    ParserKeyword s_group_by("GROUP BY");
-    ParserKeyword s_with("WITH");
-    ParserKeyword s_totals("TOTALS");
-    ParserKeyword s_having("HAVING");
-    ParserKeyword s_window("WINDOW");
-    ParserKeyword s_order_by("ORDER BY");
-    ParserKeyword s_limit("LIMIT");
-    ParserKeyword s_settings("SETTINGS");
-    ParserKeyword s_by("BY");
-    ParserKeyword s_rollup("ROLLUP");
-    ParserKeyword s_cube("CUBE");
-    ParserKeyword s_grouping_sets("GROUPING SETS");
-    ParserKeyword s_top("TOP");
-    ParserKeyword s_with_ties("WITH TIES");
-    ParserKeyword s_offset("OFFSET");
-    ParserKeyword s_fetch("FETCH");
-    ParserKeyword s_only("ONLY");
-    ParserKeyword s_row("ROW");
-    ParserKeyword s_rows("ROWS");
-    ParserKeyword s_first("FIRST");
-    ParserKeyword s_next("NEXT");
-    ParserKeyword s_interpolate("INTERPOLATE");
+    ParserKeyword s_select(Keyword::SELECT);
+    ParserKeyword s_all(Keyword::ALL);
+    ParserKeyword s_distinct(Keyword::DISTINCT);
+    ParserKeyword s_distinct_on(Keyword::DISTINCT_ON);
+    ParserKeyword s_from(Keyword::FROM);
+    ParserKeyword s_prewhere(Keyword::PREWHERE);
+    ParserKeyword s_where(Keyword::WHERE);
+    ParserKeyword s_group_by(Keyword::GROUP_BY);
+    ParserKeyword s_with(Keyword::WITH);
+    ParserKeyword s_totals(Keyword::TOTALS);
+    ParserKeyword s_having(Keyword::HAVING);
+    ParserKeyword s_window(Keyword::WINDOW);
+    ParserKeyword s_order_by(Keyword::ORDER_BY);
+    ParserKeyword s_limit(Keyword::LIMIT);
+    ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_by(Keyword::BY);
+    ParserKeyword s_rollup(Keyword::ROLLUP);
+    ParserKeyword s_cube(Keyword::CUBE);
+    ParserKeyword s_grouping_sets(Keyword::GROUPING_SETS);
+    ParserKeyword s_top(Keyword::TOP);
+    ParserKeyword s_with_ties(Keyword::WITH_TIES);
+    ParserKeyword s_offset(Keyword::OFFSET);
+    ParserKeyword s_fetch(Keyword::FETCH);
+    ParserKeyword s_only(Keyword::ONLY);
+    ParserKeyword s_row(Keyword::ROW);
+    ParserKeyword s_rows(Keyword::ROWS);
+    ParserKeyword s_first(Keyword::FIRST);
+    ParserKeyword s_next(Keyword::NEXT);
+    ParserKeyword s_interpolate(Keyword::INTERPOLATE);
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
@@ -292,9 +290,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (order_expression_list->children.size() == 1)
         {
-            /// ORDER BY *
-            auto * asterisk = order_expression_list->children[0]->as<ASTOrderByElement>()->children[0]->as<ASTAsterisk>();
-            if (asterisk != nullptr)
+            /// ORDER BY ALL
+            auto * identifier = order_expression_list->children[0]->as<ASTOrderByElement>()->children[0]->as<ASTIdentifier>();
+            if (identifier != nullptr && Poco::toUpper(identifier->name()) == "ALL")
                 select_query->order_by_all = true;
         }
     }

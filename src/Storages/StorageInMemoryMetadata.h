@@ -72,8 +72,8 @@ struct StorageInMemoryMetadata
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 
-    StorageInMemoryMetadata(StorageInMemoryMetadata && other) = default;
-    StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) = default;
+    StorageInMemoryMetadata(StorageInMemoryMetadata && other) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    StorageInMemoryMetadata & operator=(StorageInMemoryMetadata && other) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
     /// NOTE: Thread unsafe part. You should not modify same StorageInMemoryMetadata
     /// structure from different threads. It should be used as MultiVersion
@@ -115,8 +115,8 @@ struct StorageInMemoryMetadata
     /// Get copy of current metadata with metadata_version_
     StorageInMemoryMetadata withMetadataVersion(int32_t metadata_version_) const;
 
-    /// Sets a definer for the storage.
-    void setDefiner(const ASTSQLSecurity & sql_security);
+    /// Sets SQL security for the storage.
+    void setSQLSecurity(const ASTSQLSecurity & sql_security);
     UUID getDefinerID(ContextPtr context) const;
 
     /// Returns a copy of the context with the correct user from SQL security options.

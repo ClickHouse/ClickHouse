@@ -37,7 +37,6 @@ struct S3QueueLogElement
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class S3QueueLog : public SystemLog<S3QueueLogElement>

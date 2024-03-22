@@ -474,16 +474,18 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         type_ids.insert(type->getTypeId());
 
     /// For String and FixedString, or for different FixedStrings, the common type is String.
-    /// No other types are compatible with Strings. TODO Enums?
+    /// If there are Enums and any type of Strings, the common type is String.
+    /// No other types are compatible with Strings.
     {
         size_t have_string = type_ids.count(TypeIndex::String);
         size_t have_fixed_string = type_ids.count(TypeIndex::FixedString);
+        size_t have_enums = type_ids.count(TypeIndex::Enum8) + type_ids.count(TypeIndex::Enum16);
 
         if (have_string || have_fixed_string)
         {
-            bool all_strings = type_ids.size() == (have_string + have_fixed_string);
-            if (!all_strings)
-                return throwOrReturn<on_error>(types, "because some of them are String/FixedString and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+            bool all_compatible_with_string = type_ids.size() == (have_string + have_fixed_string + have_enums);
+            if (!all_compatible_with_string)
+                return throwOrReturn<on_error>(types, "because some of them are String/FixedString/Enum and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
             return std::make_shared<DataTypeString>();
         }
@@ -640,7 +642,8 @@ DataTypePtr getLeastSupertypeOrString(const DataTypes & types)
     return getLeastSupertype<LeastSupertypeOnError::String>(types);
 }
 
-DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
+template<>
+DataTypePtr getLeastSupertype<LeastSupertypeOnError::Variant>(const DataTypes & types)
 {
     auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types);
     if (common_type)
@@ -664,6 +667,11 @@ DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
     }
 
     return std::make_shared<DataTypeVariant>(variants);
+}
+
+DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
+{
+    return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
 }
 
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)

@@ -388,7 +388,7 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
     return result;
 }
 
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join)
+QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join, bool recursive)
 {
     QueryTreeNodes result;
 
@@ -406,12 +406,25 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
         {
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
-            case QueryTreeNodeType::QUERY:
-                [[fallthrough]];
-            case QueryTreeNodeType::UNION:
-                [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
+                result.push_back(std::move(node_to_process));
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                if (recursive)
+                    nodes_to_process.push_back(node_to_process->as<QueryNode>()->getJoinTree());
+                result.push_back(std::move(node_to_process));
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                if (recursive)
+                {
+                    for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
+                        nodes_to_process.push_back(union_node);
+                }
                 result.push_back(std::move(node_to_process));
                 break;
             }
