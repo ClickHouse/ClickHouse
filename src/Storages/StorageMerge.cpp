@@ -901,15 +901,27 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
         if (!storage_snapshot_->tryGetColumn(get_column_options, "_table"))
         {
-            auto table_name_node = std::make_shared<ConstantNode>(current_storage_id.table_name);
-            table_name_node->setAlias("_table");
-            column_name_to_node.emplace("_table", table_name_node);
+            auto table_name_node = std::make_shared<ConstantNode>(current_storage_id.table_name); //, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+            auto table_name_alias = std::make_shared<ConstantNode>("__table1._table");
+
+            auto function_node = std::make_shared<FunctionNode>("__actionName");
+            function_node->getArguments().getNodes().push_back(std::move(table_name_node));
+            function_node->getArguments().getNodes().push_back(std::move(table_name_alias));
+            function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
+
+            column_name_to_node.emplace("_table", function_node);
         }
 
         if (!storage_snapshot_->tryGetColumn(get_column_options, "_database"))
         {
-            auto database_name_node = std::make_shared<ConstantNode>(current_storage_id.database_name);
-            database_name_node->setAlias("_database");
+            auto database_name_node = std::make_shared<ConstantNode>(current_storage_id.database_name); //, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+            auto database_name_alias = std::make_shared<ConstantNode>("__table1._table");
+
+            auto function_node = std::make_shared<FunctionNode>("__actionName");
+            function_node->getArguments().getNodes().push_back(std::move(database_name_node));
+            function_node->getArguments().getNodes().push_back(std::move(database_name_alias));
+            function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
+
             column_name_to_node.emplace("_database", database_name_node);
         }
 
@@ -961,9 +973,15 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 
         if (!column_name_to_node.empty())
         {
+            // std::cerr << ">>>>>>>>>>>>>>>>\n";
+            // std::cerr << modified_query_info.query_tree->dumpTree() << std::endl;
+
             replaceColumns(modified_query_info.query_tree,
                 replacement_table_expression,
                 column_name_to_node);
+
+            // std::cerr << "<<<<<<<<<<\n";
+            // std::cerr << modified_query_info.query_tree->dumpTree() << std::endl;
         }
 
         modified_query_info.query = queryNodeToSelectQuery(modified_query_info.query_tree);
@@ -1061,7 +1079,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             String table_column = table_alias.empty() || processed_stage == QueryProcessingStage::FetchColumns ? "_table" : table_alias + "._table";
 
             if (has_database_virtual_column && common_header.has(database_column)
-                && (storage_stage == QueryProcessingStage::FetchColumns || !pipe_header.has("'" + database_name + "'_String")))
+                && storage_stage == QueryProcessingStage::FetchColumns && !pipe_header.has(database_column)) // || !pipe_header.has("'" + database_name + "'_String")))
             {
                 ColumnWithTypeAndName column;
                 column.name = database_column;
@@ -1077,7 +1095,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             }
 
             if (has_table_virtual_column && common_header.has(table_column)
-                && (storage_stage == QueryProcessingStage::FetchColumns || !pipe_header.has("'" + table_name + "'_String")))
+                && storage_stage == QueryProcessingStage::FetchColumns && !pipe_header.has(table_column)) // || !pipe_header.has("'" + table_name + "'_String")))
             {
                 ColumnWithTypeAndName column;
                 column.name = table_column;
@@ -1235,6 +1253,10 @@ QueryPlan ReadFromMerge::createPlanForTable(
             interpreter.buildQueryPlan(plan);
         }
     }
+
+    // WriteBufferFromOwnString buf;
+    // plan.explainPlan(buf, {.header=true, .actions=true});
+    // std::cerr << buf.str() << std::endl;
 
     return plan;
 }
@@ -1546,6 +1568,9 @@ void ReadFromMerge::convertAndFilterSourceStream(
     {
         row_policy_data_opt->addFilterTransform(builder);
     }
+
+    std::cerr << "============" << builder.getHeader().dumpStructure() << std::endl;
+    std::cerr << "============" << header.dumpStructure() << std::endl;
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(builder.getHeader().getColumnsWithTypeAndName(),
                                                                 header.getColumnsWithTypeAndName(),
