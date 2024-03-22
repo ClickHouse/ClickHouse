@@ -327,7 +327,7 @@ public:
                 metric_active_threads = CurrentMetrics::RestoreThreadsActive;
                 metric_active_threads = CurrentMetrics::RestoreThreadsScheduled;
                 max_threads = num_restore_threads;
-                use_queue = (thread_pool_id != ThreadPoolId::RESTORE);
+                use_queue = true;
                 break;
             }
         }

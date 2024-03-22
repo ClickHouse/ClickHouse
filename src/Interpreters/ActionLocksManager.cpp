@@ -1,5 +1,6 @@
 #include "ActionLocksManager.h"
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 

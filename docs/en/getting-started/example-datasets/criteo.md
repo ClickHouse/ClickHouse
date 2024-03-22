@@ -55,7 +55,7 @@ CREATE TABLE criteo_log (
 ) ENGINE = Log;
 ```
 
-Download the data:
+Insert the data:
 
 ``` bash
 $ for i in {00..23}; do echo $i; zcat datasets/criteo/day_${i#0}.gz | sed -r 's/^/2000-01-'${i/00/24}'\t/' | clickhouse-client --host=example-perftest01j --query="INSERT INTO criteo_log FORMAT TabSeparated"; done

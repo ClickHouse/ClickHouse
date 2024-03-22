@@ -194,10 +194,7 @@ blockSerializedSize
 blockSize
 buildId
 byteSize
-caseWithExpr
 caseWithExpression
-caseWithoutExpr
-caseWithoutExpression
 catboostEvaluate
 cbrt
 ceil
@@ -312,7 +309,6 @@ fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
 fromUnixTimestampInJodaSyntax
-fullHostName
 fuzzBits
 gccMurmurHash
 gcd
