@@ -43,6 +43,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         mark_ranges_,
         settings_,
         avg_value_size_hints_)
+    , read_whole_part(all_mark_ranges.isOneRangeForWholePart(data_part_info_for_read->getMarksCount()))
 {
     try
     {
@@ -253,9 +254,7 @@ void MergeTreeReaderWide::addStreams(
                 std::move(marks_loader), profile_callback, clock_type);
         };
 
-        LOG_DEBUG(getLogger("KEK"), "settings.always_load_marks: {}, one range: {}", settings.always_load_marks, all_mark_ranges.isOneRangeForWholePart(num_marks_in_part));
-
-        if (!settings.always_load_marks && all_mark_ranges.isOneRangeForWholePart(num_marks_in_part))
+        if (read_whole_part)
         {
             streams.emplace(*stream_name, create_stream.operator()<MergeTreeReaderStreamSingleColumnWholePart>());
         }
@@ -300,7 +299,7 @@ static ReadBuffer * getStream(
 
     if (seek_to_start)
         stream.seekToStart();
-    else if (seek_to_mark && from_mark != 0)
+    else if (seek_to_mark)
         stream.seekToMark(from_mark);
 
     return stream.getDataBuffer();
@@ -341,7 +340,8 @@ void MergeTreeReaderWide::prefetchForColumn(
 
         if (stream_name && !prefetched_streams.contains(*stream_name))
         {
-            bool seek_to_mark = !continue_reading;
+            bool seek_to_mark = !continue_reading && !read_whole_part;
+
             if (ReadBuffer * buf = getStream(false, substream_path, data_part_info_for_read->getChecksums(), streams, name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache))
             {
                 buf->prefetch(priority);
@@ -365,7 +365,7 @@ void MergeTreeReaderWide::readData(
 
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
-        bool seek_to_mark = !was_prefetched && !continue_reading;
+        bool seek_to_mark = !was_prefetched && !continue_reading && !read_whole_part;
 
         return getStream(
             /* seek_to_start = */false, substream_path,

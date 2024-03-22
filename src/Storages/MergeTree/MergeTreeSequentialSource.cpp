@@ -174,7 +174,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         .read_settings = read_settings,
         .save_marks_in_cache = false,
         .apply_deleted_mask = apply_deleted_mask,
-        .always_load_marks = false,
     };
 
     if (!mark_ranges)
