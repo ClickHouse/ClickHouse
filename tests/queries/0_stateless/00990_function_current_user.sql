@@ -3,3 +3,8 @@ select currentUser() IS NOT NULL;
 select length(currentUser()) > 0;
 select currentUser() = user(), currentUser() = USER();
 select currentUser() = initial_user from system.processes where query like '%$!@#%';
+
+select current_user() IS NOT NULL;
+select length(current_user()) > 0;
+select current_user() = user(), current_user() = USER(), current_user() = currentUser();
+select current_user() = initial_user from system.processes where query like '%$!@#%';
