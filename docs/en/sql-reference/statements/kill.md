@@ -103,7 +103,7 @@ WHERE is_done = 0;
 Count of mutations from a ClickHouse cluster of replicas:
 ``` sql
 SELECT count(*)
-FROM clusterAllReplicas('default',system.mutations)
+FROM clusterAllReplicas('default', system.mutations)
 WHERE is_done = 0;
 ```
 
@@ -111,15 +111,15 @@ Query the list of incomplete mutations:
 
 List of mutations from a single ClickHouse node:
 ``` sql
-SELECT mutation_id,*
+SELECT mutation_id, *
 FROM system.mutations
 WHERE is_done = 0;
 ```
 
 List of mutations from a ClickHouse cluster:
 ``` sql
-SELECT mutation_id,*
-FROM clusterAllReplicas('default',system.mutations)
+SELECT mutation_id, *
+FROM clusterAllReplicas('default', system.mutations)
 WHERE is_done = 0;
 ```
 
