@@ -32,6 +32,7 @@ enum class MetadataStorageType
 };
 
 MetadataStorageType metadataTypeFromString(const String & type);
+
 String toString(DataSourceType data_source_type);
 
 struct DataSourceDescription

@@ -141,7 +141,7 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));
 
     if (function_name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty name of aggregate function passed");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty name of aggregate function passed");
 
     AggregateFunctionProperties properties;
     /// NullsAction is not part of the type definition, instead it will have transformed the function into a different one

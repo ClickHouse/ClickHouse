@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/NamePrompter.h>
-#include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
@@ -44,7 +43,8 @@ public:
         ContextWeakMutablePtr context;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
-        LoadingStrictnessLevel mode;
+        bool attach;
+        bool has_force_restore_data_flag;
         const String & comment;
 
         ContextMutablePtr getContext() const;
@@ -87,7 +87,7 @@ public:
         ContextMutablePtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        LoadingStrictnessLevel mode) const;
+        bool has_force_restore_data_flag) const;
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.

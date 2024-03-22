@@ -334,12 +334,9 @@ bool SerializationString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer
     return read<bool>(column, [&](ColumnString::Chars & data) { readEscapedStringInto(data, istr); return true; });
 }
 
-void SerializationString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    if (settings.values.escape_quote_with_quote)
-        writeQuotedStringPostgreSQL(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
-    else
-        writeQuotedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeQuotedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 

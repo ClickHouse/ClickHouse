@@ -210,11 +210,6 @@ public:
         throwNotImplemented();
     }
 
-    virtual void shutdown()
-    {
-        /// This method is overridden for specific metadata implementations in ClickHouse Cloud.
-    }
-
     virtual ~IMetadataStorage() = default;
 
     /// ==== More specific methods. Previous were almost general purpose. ====

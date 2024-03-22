@@ -173,7 +173,6 @@ public:
     void deactivateBackgroundOperations();
 
     CacheGuard::Lock lockCache() const;
-    CacheGuard::Lock tryLockCache() const;
 
     std::vector<FileSegment::Info> sync();
 

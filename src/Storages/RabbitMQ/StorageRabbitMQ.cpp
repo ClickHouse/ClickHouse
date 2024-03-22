@@ -69,7 +69,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         ContextPtr context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-        LoadingStrictnessLevel mode)
+        bool is_attach)
         : IStorage(table_id_)
         , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
@@ -136,7 +136,6 @@ StorageRabbitMQ::StorageRabbitMQ(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals(rabbitmq_settings->rabbitmq_handle_error_mode));
 
     rabbitmq_context = addSettings(getContext());
     rabbitmq_context->makeQueryContext();
@@ -171,13 +170,13 @@ StorageRabbitMQ::StorageRabbitMQ(
         connection = std::make_unique<RabbitMQConnection>(configuration, log);
         if (connection->connect())
             initRabbitMQ();
-        else if (mode <= LoadingStrictnessLevel::CREATE)
+        else if (!is_attach)
             throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to {}", connection->connectionInfoForLog());
     }
     catch (...)
     {
         tryLogCurrentException(log);
-        if (mode <= LoadingStrictnessLevel::CREATE)
+        if (!is_attach)
             throw;
     }
 
@@ -192,26 +191,6 @@ StorageRabbitMQ::StorageRabbitMQ(
     init_task->deactivate();
 }
 
-VirtualColumnsDescription StorageRabbitMQ::createVirtuals(StreamingHandleErrorMode handle_error_mode)
-{
-    VirtualColumnsDescription desc;
-
-    desc.addEphemeral("_exchange_name", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_channel_id", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_delivery_tag", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_redelivered", std::make_shared<DataTypeUInt8>(), "");
-    desc.addEphemeral("_message_id", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_timestamp", std::make_shared<DataTypeUInt64>(), "");
-
-
-    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
-    {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
-        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
-    }
-
-    return desc;
-}
 
 Names StorageRabbitMQ::parseSettings(String settings_list)
 {
@@ -1228,10 +1207,31 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!rabbitmq_settings->rabbitmq_format.changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
 
-        return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.mode);
+        return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.attach);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+}
+
+
+NamesAndTypesList StorageRabbitMQ::getVirtuals() const
+{
+    auto virtuals = NamesAndTypesList{
+            {"_exchange_name", std::make_shared<DataTypeString>()},
+            {"_channel_id", std::make_shared<DataTypeString>()},
+            {"_delivery_tag", std::make_shared<DataTypeUInt64>()},
+            {"_redelivered", std::make_shared<DataTypeUInt8>()},
+            {"_message_id", std::make_shared<DataTypeString>()},
+            {"_timestamp", std::make_shared<DataTypeUInt64>()}
+    };
+
+    if (rabbitmq_settings->rabbitmq_handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        virtuals.push_back({"_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+    }
+
+    return virtuals;
 }
 
 }

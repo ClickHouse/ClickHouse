@@ -427,7 +427,9 @@ TEST(AsyncLoader, CancelExecutingTask)
     }
 }
 
-TEST(AsyncLoader, JobFailure)
+// This test is disabled due to `MemorySanitizer: use-of-uninitialized-value` issue in `collectSymbolsFromProgramHeaders` function
+// More details: https://github.com/ClickHouse/ClickHouse/pull/48923#issuecomment-1545415482
+TEST(AsyncLoader, DISABLED_JobFailure)
 {
     AsyncLoaderTest t;
     t.loader.start();

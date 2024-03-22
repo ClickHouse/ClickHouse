@@ -3,8 +3,6 @@ CREATE TABLE too_many_parts (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTI
 
 SYSTEM STOP MERGES too_many_parts;
 SET max_block_size = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
--- Avoid concurrent parts check to avoid flakiness
-SET max_threads=1, max_insert_threads=1;
 
 -- exception is not thrown if threshold is exceeded when multi-block INSERT is already started.
 INSERT INTO too_many_parts SELECT * FROM numbers(10);

@@ -9,7 +9,6 @@ The following operations with [partitions](/docs/en/engines/table-engines/merget
 
 - [DETACH PARTITION\|PART](#detach-partitionpart) — Moves a partition or part to the `detached` directory and forget it.
 - [DROP PARTITION\|PART](#drop-partitionpart) — Deletes a partition or part.
-- [FORGET PARTITION](#forget-partition) — Deletes a partition metadata from zookeeper if it's empty.
 - [ATTACH PARTITION\|PART](#attach-partitionpart) — Adds a partition or part from the `detached` directory to the table.
 - [ATTACH PARTITION FROM](#attach-partition-from) — Copies the data partition from one table to another and adds.
 - [REPLACE PARTITION](#replace-partition) — Copies the data partition from one table to another and replaces.
@@ -73,22 +72,6 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART partiti
 
 Removes the specified part or all parts of the specified partition from `detached`.
 Read more about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
-
-## FORGET PARTITION
-
-``` sql
-ALTER TABLE table_name FORGET PARTITION partition_expr
-```
-
-Removes all metadata about an empty partition from ZooKeeper. Query fails if partition is not empty or unknown. Make sure to execute only for partitions that will never be used again.
-
-Read about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
-
-Example:
-
-``` sql
-ALTER TABLE mt FORGET PARTITION '20201121';
-```
 
 ## ATTACH PARTITION\|PART
 

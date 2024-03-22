@@ -64,37 +64,6 @@ std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::N
     return { std::move(arguments), all_const };
 }
 
-bool isConstantFromScalarSubquery(const ActionsDAG::Node * node)
-{
-    std::stack<const ActionsDAG::Node *> stack;
-    stack.push(node);
-    while (!stack.empty())
-    {
-        const auto * arg = stack.top();
-        stack.pop();
-
-        if (arg->column && isColumnConst(*arg->column))
-            continue;
-
-        while (arg->type == ActionsDAG::ActionType::ALIAS)
-            arg = arg->children.at(0);
-
-        if (arg->type != ActionsDAG::ActionType::FUNCTION)
-            return false;
-
-        if (arg->function_base->getName() == "__scalarSubqueryResult")
-            continue;
-
-        if (arg->children.empty() || !arg->function_base->isSuitableForConstantFolding())
-            return false;
-
-        for (const auto * child : arg->children)
-            stack.push(child);
-    }
-
-    return true;
-}
-
 }
 
 void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
@@ -227,19 +196,6 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 {
     auto [arguments, all_const] = getFunctionArguments(children);
 
-    auto constant_args = function->getArgumentsThatAreAlwaysConstant();
-    for (size_t pos : constant_args)
-    {
-        if (pos >= children.size())
-            continue;
-
-        if (arguments[pos].column && isColumnConst(*arguments[pos].column))
-            continue;
-
-        if (isConstantFromScalarSubquery(children[pos]))
-            arguments[pos].column = arguments[pos].type->createColumnConstWithDefaultValue(0);
-    }
-
     auto function_base = function->build(arguments);
     return addFunctionImpl(
         function_base,
@@ -326,13 +282,6 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
         {
             size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
             column = node.function->execute(arguments, node.result_type, num_rows, true);
-            if (column->getDataType() != node.result_type->getColumnType())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected return type from {}. Expected {}. Got {}",
-                    node.function->getName(),
-                    node.result_type->getColumnType(),
-                    column->getDataType());
         }
         else
         {
@@ -649,7 +598,7 @@ ActionsDAGPtr ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool rem
     return actions;
 }
 
-static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Node * node, ColumnsWithTypeAndName arguments, size_t input_rows_count)
+static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * node, ColumnsWithTypeAndName arguments)
 {
     ColumnWithTypeAndName res_column;
     res_column.type = node->result_type;
@@ -659,7 +608,7 @@ static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Nod
     {
         case ActionsDAG::ActionType::FUNCTION:
         {
-            res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
+            res_column.column = node->function->execute(arguments, res_column.type, 0, true);
             break;
         }
 
@@ -672,24 +621,13 @@ static ColumnWithTypeAndName executeActionForPartialResult(const ActionsDAG::Nod
             if (!array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                                 "ARRAY JOIN of not array nor map: {}", node->result_name);
-
-            ColumnPtr data;
-            if (input_rows_count < array->size())
-                data = array->getDataInRange(0, input_rows_count);
-            else
-                data = array->getDataPtr();
-
-            res_column.column = data;
+            res_column.column = array->getDataPtr()->cloneEmpty();
             break;
         }
 
         case ActionsDAG::ActionType::COLUMN:
         {
-            auto column = node->column;
-            if (input_rows_count < column->size())
-                column = column->cloneResized(input_rows_count);
-
-            res_column.column = column;
+            res_column.column = node->column->cloneResized(0);
             break;
         }
 
@@ -736,7 +674,7 @@ Block ActionsDAG::updateHeader(Block header) const
     ColumnsWithTypeAndName result_columns;
     try
     {
-        result_columns = evaluatePartialResult(node_to_column, outputs, /* input_rows_count= */ 0, /* throw_on_error= */ true);
+        result_columns = evaluatePartialResult(node_to_column, outputs, true);
     }
     catch (Exception & e)
     {
@@ -765,11 +703,8 @@ Block ActionsDAG::updateHeader(Block header) const
 ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     IntermediateExecutionResult & node_to_column,
     const NodeRawConstPtrs & outputs,
-    size_t input_rows_count,
     bool throw_on_error)
 {
-    chassert(input_rows_count <= 1); /// evaluatePartialResult() should be used only to evaluate headers or constants
-
     ColumnsWithTypeAndName result_columns;
     result_columns.reserve(outputs.size());
 
@@ -826,7 +761,7 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                                         node->result_name);
 
                     if (node->type != ActionsDAG::ActionType::INPUT && has_all_arguments)
-                        node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count);
+                        node_to_column[node] = executeActionForHeader(node, std::move(arguments));
                 }
             }
 
@@ -1362,7 +1297,7 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     size_t num_result_columns = result.size();
 
     if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
-        throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns doesn't match (source: {} and result: {})", num_input_columns, num_result_columns);
+        throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns doesn't match");
 
     if (add_casted_columns && mode != MatchColumnsMode::Name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_casted_columns supported only for MatchColumnsMode::Name");
@@ -1689,7 +1624,7 @@ void ActionsDAG::mergeNodes(ActionsDAG && second)
     }
 }
 
-ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping) const
+ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes) const
 {
     /// Split DAG into two parts.
     /// (first_nodes, first_outputs) is a part which will have split_list in result.
@@ -1821,6 +1756,15 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
                         child = child_data.to_second;
                     }
+
+                    /// Input from second DAG should also be in the first.
+                    if (copy.type == ActionType::INPUT)
+                    {
+                        auto & input_copy = first_nodes.emplace_back(*cur.node);
+                        assert(cur_data.to_first == nullptr);
+                        cur_data.to_first = &input_copy;
+                        new_inputs.push_back(cur.node);
+                    }
                 }
                 else
                 {
@@ -1839,12 +1783,11 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
                         /// If this node is needed in result, add it as input.
                         Node input_node;
                         input_node.type = ActionType::INPUT;
-                        input_node.result_type = cur.node->result_type;
-                        input_node.result_name = cur.node->result_name;
+                        input_node.result_type = node.result_type;
+                        input_node.result_name = node.result_name;
                         cur_data.to_second = &second_nodes.emplace_back(std::move(input_node));
 
-                        if (cur.node->type != ActionType::INPUT)
-                            new_inputs.push_back(cur.node);
+                        new_inputs.push_back(cur.node);
                     }
                 }
             }
@@ -1860,13 +1803,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     for (const auto * input_node : inputs)
     {
         const auto & cur = data[input_node];
-        if (cur.to_first)
-        {
-            first_inputs.push_back(cur.to_first);
-
-            if (cur.to_second)
-                first_outputs.push_back(cur.to_first);
-        }
+        first_inputs.push_back(cur.to_first);
     }
 
     for (const auto * input : new_inputs)
@@ -1874,13 +1811,6 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
         const auto & cur = data[input];
         second_inputs.push_back(cur.to_second);
         first_outputs.push_back(cur.to_first);
-    }
-
-    for (const auto * input_node : inputs)
-    {
-        const auto & cur = data[input_node];
-        if (cur.to_second)
-            second_inputs.push_back(cur.to_second);
     }
 
     auto first_actions = std::make_shared<ActionsDAG>();
@@ -1893,14 +1823,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     second_actions->outputs.swap(second_outputs);
     second_actions->inputs.swap(second_inputs);
 
-    std::unordered_map<const Node *, const Node *> split_nodes_mapping;
-    if (create_split_nodes_mapping)
-    {
-        for (const auto * node : split_nodes)
-            split_nodes_mapping[node] = data[node].to_first;
-    }
-
-    return {std::move(first_actions), std::move(second_actions), std::move(split_nodes_mapping)};
+    return {std::move(first_actions), std::move(second_actions)};
 }
 
 ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const

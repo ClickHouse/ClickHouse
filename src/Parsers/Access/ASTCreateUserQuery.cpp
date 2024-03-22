@@ -18,6 +18,7 @@ namespace
                       << quoteString(new_name);
     }
 
+
     void formatAuthenticationData(const ASTAuthenticationData & auth_data, const IAST::FormatSettings & settings)
     {
         auth_data.format(settings);

@@ -8,7 +8,6 @@
 #include <vector>
 #include <memory>
 #include <cstdint>
-#include <span>
 #include <functional>
 
 /** Generic interface for ZooKeeper-like services.
@@ -477,7 +476,7 @@ private:
         incrementErrorMetrics(code);
     }
 
-    static void incrementErrorMetrics(Error code_);
+    static void incrementErrorMetrics(const Error code_);
 
 public:
     explicit Exception(const Error code_); /// NOLINT
@@ -622,10 +621,6 @@ public:
         std::string_view new_members,
         int32_t version,
         ReconfigCallback callback) = 0;
-
-    virtual void multi(
-        std::span<const RequestPtr> requests,
-        MultiCallback callback) = 0;
 
     virtual void multi(
         const Requests & requests,

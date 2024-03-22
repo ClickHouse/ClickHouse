@@ -65,12 +65,10 @@ struct CacheGuard : private boost::noncopyable
     /// so, we wouldn't be able to pass CacheGuard::Lock to a function which accepts KeyGuard::Lock, for example
     struct Lock : public std::unique_lock<std::mutex>
     {
-        using Base = std::unique_lock<std::mutex>;
-        using Base::Base;
+        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
     };
 
     Lock lock() { return Lock(mutex); }
-    Lock tryLock() { return Lock(mutex, std::try_to_lock); }
     std::mutex mutex;
 };
 

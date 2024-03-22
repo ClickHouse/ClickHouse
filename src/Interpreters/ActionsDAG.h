@@ -278,7 +278,6 @@ public:
     static ColumnsWithTypeAndName evaluatePartialResult(
         IntermediateExecutionResult & node_to_column,
         const NodeRawConstPtrs & outputs,
-        size_t input_rows_count,
         bool throw_on_error);
 
     /// For apply materialize() function for every output.
@@ -327,18 +326,13 @@ public:
     /// Merge current nodes with specified dag nodes
     void mergeNodes(ActionsDAG && second);
 
-    struct SplitResult
-    {
-        ActionsDAGPtr first;
-        ActionsDAGPtr second;
-        std::unordered_map<const Node *, const Node *> split_nodes_mapping;
-    };
+    using SplitResult = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
 
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
     /// Execution of first then second parts on block is equivalent to execution of initial DAG.
     /// First DAG and initial DAG have equal inputs, second DAG and initial DAG has equal outputs.
     /// Second DAG inputs may contain less inputs then first DAG (but also include other columns).
-    SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false) const;
+    SplitResult split(std::unordered_set<const Node *> split_nodes) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
     SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;

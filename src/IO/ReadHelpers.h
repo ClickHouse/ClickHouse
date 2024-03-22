@@ -38,6 +38,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/VarInt.h>
 
 #include <pcg_random.hpp>
@@ -50,7 +51,6 @@ namespace DB
 
 template <typename Allocator>
 struct Memory;
-class PeekableReadBuffer;
 
 namespace ErrorCodes
 {

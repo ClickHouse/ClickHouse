@@ -17,7 +17,6 @@ namespace ErrorCodes
 MergeTreeReaderCompact::MergeTreeReaderCompact(
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
     NamesAndTypesList columns_,
-    const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
@@ -30,7 +29,6 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     : IMergeTreeReader(
         data_part_info_for_read_,
         columns_,
-        virtual_fields_,
         storage_snapshot_,
         uncompressed_cache_,
         mark_cache_,

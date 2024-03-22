@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
 
@@ -9,7 +10,7 @@ namespace DB
 {
 
 /// Create source from prepared pipe.
-class ReadFromPreparedSource : public ISourceStep
+class ReadFromPreparedSource : public SourceStepWithFilter
 {
 public:
     explicit ReadFromPreparedSource(Pipe pipe_);
@@ -27,6 +28,7 @@ public:
     ReadFromStorageStep(Pipe pipe_, String storage_name, ContextPtr context_, const SelectQueryInfo & query_info_);
 
     String getName() const override { return "ReadFromStorage"; }
+    void applyFilters() override;
 
 private:
     ContextPtr context;

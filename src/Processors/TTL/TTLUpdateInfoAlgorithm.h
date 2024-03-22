@@ -20,7 +20,6 @@ class TTLUpdateInfoAlgorithm : public ITTLAlgorithm
 {
 public:
     TTLUpdateInfoAlgorithm(
-        const TTLExpressions & ttl_expressions_,
         const TTLDescription & description_,
         const TTLUpdateField ttl_update_field_,
         const String ttl_update_key_,

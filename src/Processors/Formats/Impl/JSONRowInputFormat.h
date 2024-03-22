@@ -45,17 +45,16 @@ private:
 class JSONRowSchemaReader : public JSONEachRowSchemaReader
 {
 public:
-    JSONRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, bool fallback_to_json_each_row_);
+    JSONRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
 
     bool hasStrictOrderOfColumns() const override { return false; }
 
 private:
-    JSONRowSchemaReader(std::unique_ptr<PeekableReadBuffer> buf, const FormatSettings & format_settings_, bool fallback_to_json_each_row_);
+    JSONRowSchemaReader(std::unique_ptr<PeekableReadBuffer> buf, const FormatSettings & format_settings_);
 
     std::unique_ptr<PeekableReadBuffer> peekable_buf;
-    bool fallback_to_json_each_row;
 };
 
 }

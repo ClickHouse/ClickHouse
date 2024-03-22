@@ -5,7 +5,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <base/hex.h>
-#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
@@ -13,8 +12,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
-
-#include <Disks/IDisk.h>
 
 #include <atomic>
 #include <future>
@@ -214,13 +211,10 @@ void KeeperDispatcher::requestThread()
                 if (shutdown_called)
                     break;
 
-                bool execute_requests_after_write = has_read_request || has_reconfig_request;
-
                 nuraft::ptr<nuraft::buffer> result_buf = nullptr;
                 /// Forcefully process all previous pending requests
                 if (prev_result)
-                    result_buf
-                        = forceWaitAndProcessResult(prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
+                    result_buf = forceWaitAndProcessResult(prev_result, prev_batch);
 
                 /// Process collected write requests batch
                 if (!current_batch.empty())
@@ -241,11 +235,10 @@ void KeeperDispatcher::requestThread()
                 }
 
                 /// If we will execute read or reconfig next, we have to process result now
-                if (execute_requests_after_write)
+                if (has_read_request || has_reconfig_request)
                 {
                     if (prev_result)
-                        result_buf = forceWaitAndProcessResult(
-                            prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
+                        result_buf = forceWaitAndProcessResult(prev_result, current_batch);
 
                     /// In case of older version or disabled async replication, result buf will be set to value of `commit` function
                     /// which always returns nullptr
@@ -257,15 +250,19 @@ void KeeperDispatcher::requestThread()
                         nuraft::buffer_serializer bs(result_buf);
                         auto log_idx = bs.get_u64();
 
-                        /// if timeout happened set error responses for the requests
-                        if (!keeper_context->waitCommittedUpto(log_idx, coordination_settings->operation_timeout_ms.totalMilliseconds()))
-                            addErrorResponses(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
+                        /// we will wake up this thread on each commit so we need to run it in loop until the last request of batch is committed
+                        while (true)
+                        {
+                            if (shutdown_called)
+                                return;
 
-                        if (shutdown_called)
-                            return;
+                            auto current_last_committed_idx = our_last_committed_log_idx.load(std::memory_order_relaxed);
+                            if (current_last_committed_idx >= log_idx)
+                                break;
+
+                            our_last_committed_log_idx.wait(current_last_committed_idx);
+                        }
                     }
-
-                    prev_batch.clear();
                 }
 
                 if (has_reconfig_request)
@@ -417,8 +414,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
+    keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
     configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
-    keeper_context = std::make_shared<KeeperContext>(standalone_keeper, configuration_and_settings->coordination_settings);
 
     keeper_context->initialize(config, this);
 
@@ -436,7 +433,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         snapshots_queue,
         keeper_context,
         snapshot_s3,
-        [this](uint64_t /*log_idx*/, const KeeperStorage::RequestForSession & request_for_session)
+        [this](uint64_t log_idx, const KeeperStorage::RequestForSession & request_for_session)
         {
             {
                 /// check if we have queue of read requests depending on this request to be committed
@@ -460,6 +457,9 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                     }
                 }
             }
+
+            our_last_committed_log_idx.store(log_idx, std::memory_order_relaxed);
+            our_last_committed_log_idx.notify_all();
         });
 
     try
@@ -503,6 +503,9 @@ void KeeperDispatcher::shutdown()
                 return;
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
+
+            our_last_committed_log_idx = std::numeric_limits<uint64_t>::max();
+            our_last_committed_log_idx.notify_all();
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
@@ -717,8 +720,7 @@ void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSession
     }
 }
 
-nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(
-    RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions, bool clear_requests_on_success)
+nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions)
 {
     if (!result->has_result())
         result->get();
@@ -732,10 +734,7 @@ nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(
     auto result_buf = result->get();
 
     result = nullptr;
-
-    if (!result_buf || clear_requests_on_success)
-        requests_for_sessions.clear();
-
+    requests_for_sessions.clear();
     return result_buf;
 }
 

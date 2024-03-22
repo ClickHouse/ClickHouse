@@ -38,7 +38,14 @@ std::mutex & getLoggerMutex()
 	return *logger_mutex;
 }
 
-Poco::Logger::LoggerMap * _pLoggerMap = nullptr;
+struct LoggerEntry
+{
+	Poco::Logger * logger;
+	bool owned_by_shared_ptr = false;
+};
+
+using LoggerMap = std::unordered_map<std::string, LoggerEntry>;
+LoggerMap * _pLoggerMap = nullptr;
 
 }
 
@@ -330,12 +337,10 @@ struct LoggerDeleter
 	}
 };
 
-inline LoggerPtr makeLoggerPtr(Logger & logger, bool owned_by_shared_ptr)
-{
-	if (owned_by_shared_ptr)
-		return LoggerPtr(&logger, LoggerDeleter());
 
-	return LoggerPtr(std::shared_ptr<void>{}, &logger);
+inline LoggerPtr makeLoggerPtr(Logger & logger)
+{
+	return std::shared_ptr<Logger>(&logger, LoggerDeleter());
 }
 
 }
@@ -345,67 +350,64 @@ Logger& Logger::get(const std::string& name)
 {
 	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
-	auto [it, inserted] = unsafeGet(name, false /*get_shared*/);
-	return *it->second.logger;
-}
+	Logger & logger = unsafeGet(name);
 
-
-LoggerPtr Logger::getShared(const std::string & name, bool should_be_owned_by_shared_ptr_if_created)
-{
-	std::lock_guard<std::mutex> lock(getLoggerMutex());
-	auto [it, inserted] = unsafeGet(name, true /*get_shared*/);
-
-	/** If during `unsafeGet` logger was created, then this shared pointer owns it.
-	  * If logger was already created, then this shared pointer does not own it.
+	/** If there are already shared pointer created for this logger
+	  * we need to increment Logger reference count and now logger
+	  * is owned by logger infrastructure.
 	  */
-	if (inserted && should_be_owned_by_shared_ptr_if_created)
-		it->second.owned_by_shared_ptr = true;
-
-	return makeLoggerPtr(*it->second.logger, it->second.owned_by_shared_ptr);
-}
-
-
-std::pair<Logger::LoggerMapIterator, bool> Logger::unsafeGet(const std::string& name, bool get_shared)
-{
-	std::optional<Logger::LoggerMapIterator> optional_logger_it = find(name);
-
-	if (optional_logger_it)
+	auto it = _pLoggerMap->find(name);
+	if (it->second.owned_by_shared_ptr)
 	{
-		auto & logger_it = *optional_logger_it;
-
-		if (logger_it->second.owned_by_shared_ptr)
-		{
-			logger_it->second.logger->duplicate();
-
-			if (!get_shared)
-				logger_it->second.owned_by_shared_ptr = false;
-		}
+		it->second.logger->duplicate();
+		it->second.owned_by_shared_ptr = false;
 	}
 
-	if (!optional_logger_it)
-	{
-		Logger * logger = nullptr;
+	return logger;
+}
 
+
+LoggerPtr Logger::getShared(const std::string & name)
+{
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
+	bool logger_exists = _pLoggerMap && _pLoggerMap->contains(name);
+
+	Logger & logger = unsafeGet(name);
+
+	/** If logger already exists, then this shared pointer does not own it.
+	  * If logger does not exists, logger infrastructure could be already destroyed
+	  * or logger was created.
+	  */
+	if (logger_exists)
+	{
+		logger.duplicate();
+	}
+	else if (_pLoggerMap)
+	{
+		_pLoggerMap->find(name)->second.owned_by_shared_ptr = true;
+	}
+
+	return makeLoggerPtr(logger);
+}
+
+
+Logger& Logger::unsafeGet(const std::string& name)
+{
+	Logger* pLogger = find(name);
+	if (!pLogger)
+	{
 		if (name == ROOT)
 		{
-			logger = new Logger(name, nullptr, Message::PRIO_INFORMATION);
+			pLogger = new Logger(name, 0, Message::PRIO_INFORMATION);
 		}
 		else
 		{
 			Logger& par = parent(name);
-			logger = new Logger(name, par.getChannel(), par.getLevel());
+			pLogger = new Logger(name, par.getChannel(), par.getLevel());
 		}
-
-		return add(logger);
+		add(pLogger);
 	}
-
-	return std::make_pair(*optional_logger_it, false);
-}
-
-
-Logger * Logger::unsafeGetRawPtr(const std::string & name)
-{
-	return unsafeGet(name, false /*get_shared*/).first->second.logger;
+	return *pLogger;
 }
 
 
@@ -413,24 +415,24 @@ Logger& Logger::create(const std::string& name, Channel* pChannel, int level)
 {
 	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
-	return *unsafeCreate(name, pChannel, level).first->second.logger;
+	return unsafeCreate(name, pChannel, level);
 }
 
 LoggerPtr Logger::createShared(const std::string & name, Channel * pChannel, int level)
 {
 	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
-	auto [it, inserted] = unsafeCreate(name, pChannel, level);
-	it->second.owned_by_shared_ptr = true;
+	Logger & logger = unsafeCreate(name, pChannel, level);
+	_pLoggerMap->find(name)->second.owned_by_shared_ptr = true;
 
-	return makeLoggerPtr(*it->second.logger, it->second.owned_by_shared_ptr);
+	return makeLoggerPtr(logger);
 }
 
 Logger& Logger::root()
 {
 	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
-	return *unsafeGetRawPtr(ROOT);
+	return unsafeGet(ROOT);
 }
 
 
@@ -438,11 +440,7 @@ Logger* Logger::has(const std::string& name)
 {
 	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
-	auto optional_it = find(name);
-	if (!optional_it)
-		return nullptr;
-
-	return (*optional_it)->second.logger;
+	return find(name);
 }
 
 
@@ -461,32 +459,20 @@ void Logger::shutdown()
 		}
 
 		delete _pLoggerMap;
-		_pLoggerMap = nullptr;
+		_pLoggerMap = 0;
 	}
 }
 
 
-std::optional<Logger::LoggerMapIterator> Logger::find(const std::string& name)
+Logger* Logger::find(const std::string& name)
 {
 	if (_pLoggerMap)
 	{
 		LoggerMap::iterator it = _pLoggerMap->find(name);
 		if (it != _pLoggerMap->end())
-			return it;
-
-		return {};
+			return it->second.logger;
 	}
-
-	return {};
-}
-
-Logger * Logger::findRawPtr(const std::string & name)
-{
-	auto optional_it = find(name);
-	if (!optional_it)
-		return nullptr;
-
-	return (*optional_it)->second.logger;
+	return 0;
 }
 
 
@@ -504,14 +490,14 @@ void Logger::names(std::vector<std::string>& names)
 	}
 }
 
-
-std::pair<Logger::LoggerMapIterator, bool> Logger::unsafeCreate(const std::string & name, Channel * pChannel, int level)
+Logger& Logger::unsafeCreate(const std::string & name, Channel * pChannel, int level)
 {
 	if (find(name)) throw ExistsException();
 	Logger* pLogger = new Logger(name, pChannel, level);
-	return add(pLogger);
-}
+	add(pLogger);
 
+	return *pLogger;
+}
 
 Logger& Logger::parent(const std::string& name)
 {
@@ -519,13 +505,13 @@ Logger& Logger::parent(const std::string& name)
 	if (pos != std::string::npos)
 	{
 		std::string pname = name.substr(0, pos);
-		Logger* pParent = findRawPtr(pname);
+		Logger* pParent = find(pname);
 		if (pParent)
 			return *pParent;
 		else
 			return parent(pname);
 	}
-	else return *unsafeGetRawPtr(ROOT);
+	else return unsafeGet(ROOT);
 }
 
 
@@ -593,14 +579,12 @@ namespace
 }
 
 
-std::pair<Logger::LoggerMapIterator, bool> Logger::add(Logger* pLogger)
+void Logger::add(Logger* pLogger)
 {
 	if (!_pLoggerMap)
-		_pLoggerMap = new Logger::LoggerMap;
+		_pLoggerMap = new LoggerMap;
 
-	auto result = _pLoggerMap->emplace(pLogger->name(), LoggerEntry{pLogger, false /*owned_by_shared_ptr*/});
-	assert(result.second);
-	return result;
+	_pLoggerMap->emplace(pLogger->name(), LoggerEntry{pLogger, false /*owned_by_shared_ptr*/});
 }
 
 

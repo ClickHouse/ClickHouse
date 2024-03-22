@@ -61,12 +61,6 @@ SerializationPtr DataTypeNullable::doGetDefaultSerialization() const
     return std::make_shared<SerializationNullable>(nested_data_type->getDefaultSerialization());
 }
 
-void DataTypeNullable::forEachChild(const ChildCallback & callback) const
-{
-    callback(*nested_data_type);
-    nested_data_type->forEachChild(callback);
-}
-
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
