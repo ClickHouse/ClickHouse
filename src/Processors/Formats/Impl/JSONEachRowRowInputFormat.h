@@ -55,7 +55,13 @@ private:
 
     virtual void readRowStart(MutableColumns &) {}
     virtual void skipRowStart() {}
-
+    void transformFieldNameToLowerCase(StringRef & field_name)
+    {
+        if (!field_name.data) return;
+        char * name_data = const_cast<char*>(field_name.data);
+        for (size_t i = 0; i < field_name.size; ++i)
+            name_data[i] = std::tolower(name_data[i]);
+    }
     /// Buffer for the read from the stream field name. Used when you have to copy it.
     /// Also, if processing of Nested data is in progress, it holds the common prefix
     /// of the nested column names (so that appending the field name to it produces

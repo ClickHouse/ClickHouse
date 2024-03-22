@@ -45,6 +45,14 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
 {
     const auto & header = getPort().getHeader();
     name_map = header.getNamesToIndexesMap();
+    if (format_settings_.json.ignore_key_case)
+    {
+        for (auto it = name_map.begin(); it != name_map.end(); ++it)
+        {
+            StringRef key = it->first;
+            transformFieldNameToLowerCase(key);
+        }
+    }
     if (format_settings_.import_nested_json)
     {
         for (size_t i = 0; i != header.columns(); ++i)
@@ -161,6 +169,10 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
         StringRef name_ref = readColumnName(*in);
+        if (format_settings.json.ignore_key_case)
+        {
+            transformFieldNameToLowerCase(name_ref);
+        }
         const size_t column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
