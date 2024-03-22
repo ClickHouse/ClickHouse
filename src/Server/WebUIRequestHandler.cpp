@@ -29,7 +29,7 @@ DashboardWebUIRequestHandler::DashboardWebUIRequestHandler(IServer & server_) : 
 BinaryWebUIRequestHandler::BinaryWebUIRequestHandler(IServer & server_) : server(server_) {}
 JavaScriptWebUIRequestHandler::JavaScriptWebUIRequestHandler(IServer & server_) : server(server_) {}
 
-static void handle(const IServer &, HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
+static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
 {
     response.setContentType("text/html; charset=UTF-8");
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
@@ -42,7 +42,7 @@ static void handle(const IServer &, HTTPServerRequest & request, HTTPServerRespo
 
 void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(server, request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize});
 }
 
 void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
@@ -60,23 +60,23 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
     static re2::RE2 lz_string_url = R"(https://[^\s"'`]+lz-string[^\s"'`]*\.js)";
     RE2::Replace(&html, lz_string_url, "/js/lz-string.js");
 
-    handle(server, request, response, html);
+    handle(request, response, html);
 }
 
 void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(server, request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
 }
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     if (request.getURI() == "/js/uplot.js")
     {
-        handle(server, request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize});
+        handle(request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize});
     }
     else if (request.getURI() == "/js/lz-string.js")
     {
-        handle(server, request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize});
+        handle(request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize});
     }
     else
     {
@@ -84,7 +84,7 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
         *response.send() << "Not found.\n";
     }
 
-    handle(server, request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
 }
 
 }

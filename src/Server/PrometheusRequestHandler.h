@@ -15,7 +15,7 @@ private:
     PrometheusMetricsWriterPtr metrics_writer;
 
 public:
-    PrometheusRequestHandler(IServer &, PrometheusMetricsWriterPtr metrics_writer_) : metrics_writer(std::move(metrics_writer_)) { }
+    PrometheusRequestHandler(PrometheusMetricsWriterPtr metrics_writer_) : metrics_writer(std::move(metrics_writer_)) { }
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };

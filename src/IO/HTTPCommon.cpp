@@ -1,4 +1,3 @@
-#include <cstddef>
 #include <IO/HTTPCommon.h>
 
 #include <Server/HTTP/HTTPServerResponse.h>
