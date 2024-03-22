@@ -475,7 +475,7 @@ class ClickhouseIntegrationTestsRunner:
         return result
 
     @staticmethod
-    def _update_counters(main_counters, current_counters, broken_tests):
+    def _update_counters(main_counters, current_counters):
         for test in current_counters["PASSED"]:
             if test not in main_counters["PASSED"]:
                 if test in main_counters["FAILED"]:
@@ -483,21 +483,14 @@ class ClickhouseIntegrationTestsRunner:
                 if test in main_counters["BROKEN"]:
                     main_counters["BROKEN"].remove(test)
 
-                if test not in broken_tests:
-                    main_counters["PASSED"].append(test)
-                else:
-                    main_counters["NOT_FAILED"].append(test)
+                main_counters["PASSED"].append(test)
 
         for state in ("ERROR", "FAILED"):
             for test in current_counters[state]:
                 if test in main_counters["PASSED"]:
                     main_counters["PASSED"].remove(test)
-                if test not in broken_tests:
-                    if test not in main_counters[state]:
-                        main_counters[state].append(test)
-                else:
-                    if test not in main_counters["BROKEN"]:
-                        main_counters["BROKEN"].append(test)
+                if test not in main_counters[state]:
+                    main_counters[state].append(test)
 
         for state in ("SKIPPED",):
             for test in current_counters[state]:
@@ -564,7 +557,6 @@ class ClickhouseIntegrationTestsRunner:
         tests_in_group,
         num_tries,
         num_workers,
-        broken_tests,
     ):
         try:
             return self.run_test_group(
@@ -573,7 +565,6 @@ class ClickhouseIntegrationTestsRunner:
                 tests_in_group,
                 num_tries,
                 num_workers,
-                broken_tests,
             )
         except Exception as e:
             logging.info("Failed to run %s:\n%s", test_group, e)
@@ -596,7 +587,6 @@ class ClickhouseIntegrationTestsRunner:
         tests_in_group,
         num_tries,
         num_workers,
-        broken_tests,
     ):
         counters = {
             "ERROR": [],
@@ -706,7 +696,7 @@ class ClickhouseIntegrationTestsRunner:
                     )
                 times_lines = parse_test_times(info_path)
                 new_tests_times = get_test_times(times_lines)
-                self._update_counters(counters, new_counters, broken_tests)
+                self._update_counters(counters, new_counters)
                 for test_name, test_time in new_tests_times.items():
                     tests_times[test_name] = test_time
 
@@ -783,7 +773,7 @@ class ClickhouseIntegrationTestsRunner:
             final_retry += 1
             logging.info("Running tests for the %s time", i)
             counters, tests_times, log_paths = self.try_run_test_group(
-                repo_path, "bugfix" if should_fail else "flaky", tests_to_run, 1, 1, []
+                repo_path, "bugfix" if should_fail else "flaky", tests_to_run, 1, 1
             )
             logs += log_paths
             if counters["FAILED"]:
@@ -915,20 +905,10 @@ class ClickhouseIntegrationTestsRunner:
             logging.info("Shuffling test groups")
             random.shuffle(items_to_run)
 
-        broken_tests = []
-        if not self.use_analyzer:
-            with open(
-                f"{repo_path}/tests/analyzer_integration_broken_tests.txt",
-                "r",
-                encoding="utf-8",
-            ) as f:
-                broken_tests = f.read().splitlines()
-            logging.info("Broken tests in the list: %s", len(broken_tests))
-
         for group, tests in items_to_run:
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                repo_path, group, tests, MAX_RETRY, NUM_WORKERS, broken_tests
+                repo_path, group, tests, MAX_RETRY, NUM_WORKERS
             )
             total_tests = 0
             for counter, value in group_counters.items():
