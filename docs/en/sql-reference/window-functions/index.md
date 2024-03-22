@@ -101,9 +101,9 @@ Engine = Memory;
 
 INSERT INTO salaries FORMAT Values
     ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
-    ('Port Elizabeth Barbarians', 'Charles Juarez', 190000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
     ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
-    ('Port Elizabeth Barbarians', 'Scott Harrison', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
     ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M');
 ```
 
@@ -139,6 +139,46 @@ FROM salaries;
 │ Gary Chen       │ 195000 │   4 │    4 │         3 │
 │ Robert George   │ 195000 │   5 │    4 │         3 │
 └─────────────────┴────────┴─────┴──────┴───────────┘
+```
+
+### Aggregation functions
+
+Compare each player's salary to the average for their team.
+
+```sql
+SELECT player, salary, team,
+       avg(salary) OVER (PARTITION BY team) AS teamAvg,
+       salary - teamAvg AS diff
+FROM salaries;
+```
+
+```text
+┌─player──────────┬─salary─┬─team──────────────────────┬─teamAvg─┬───diff─┐
+│ Charles Juarez  │ 190000 │ New Coreystad Archdukes   │  170000 │  20000 │
+│ Scott Harrison  │ 150000 │ New Coreystad Archdukes   │  170000 │ -20000 │
+│ Gary Chen       │ 195000 │ Port Elizabeth Barbarians │  180000 │  15000 │
+│ Michael Stanley │ 150000 │ Port Elizabeth Barbarians │  180000 │ -30000 │
+│ Robert George   │ 195000 │ Port Elizabeth Barbarians │  180000 │  15000 │
+└─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
+```
+
+Compare each player's salary to the maximum for their team.
+
+```sql
+SELECT player, salary, team,
+       max(salary) OVER (PARTITION BY team) AS teamAvg,
+       salary - teamAvg AS diff
+FROM salaries;
+```
+
+```text
+┌─player──────────┬─salary─┬─team──────────────────────┬─teamAvg─┬───diff─┐
+│ Charles Juarez  │ 190000 │ New Coreystad Archdukes   │  190000 │      0 │
+│ Scott Harrison  │ 150000 │ New Coreystad Archdukes   │  190000 │ -40000 │
+│ Gary Chen       │ 195000 │ Port Elizabeth Barbarians │  195000 │      0 │
+│ Michael Stanley │ 150000 │ Port Elizabeth Barbarians │  195000 │ -45000 │
+│ Robert George   │ 195000 │ Port Elizabeth Barbarians │  195000 │      0 │
+└─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
 ```
 
 ### Partitioning by column
@@ -446,7 +486,7 @@ ORDER BY
 
 The following examples solve common real-world problems.
 
-### Maximum/total salary per department.
+### Maximum/total salary per department
 
 ```sql
 CREATE TABLE employees
@@ -502,7 +542,7 @@ FROM
 └────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
 ```
 
-### Cumulative sum.
+### Cumulative sum
 
 ```sql
 CREATE TABLE warehouse
