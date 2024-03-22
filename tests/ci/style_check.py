@@ -96,28 +96,25 @@ def commit_push_staged(pr_info: PRInfo) -> None:
     git_runner(push_cmd)
 
 
-def is_python(file: Union[Path, str]) -> bool:
-    """returns if the changed file in the repository is python script"""
+def _check_mime(file: Union[Path, str], mime: str) -> bool:
     # WARNING: python-magic v2:0.4.24-2 is used in ubuntu 22.04,
     # and `Support os.PathLike values in magic.from_file` is only from 0.4.25
-    if not os.path.exists(os.path.join(REPO_COPY, file)):
+    try:
+        return bool(magic.from_file(os.path.join(REPO_COPY, file), mime=True) == mime)
+    except (IsADirectoryError, FileNotFoundError) as e:
+        # Process submodules and removed files w/o errors
+        logging.warning("Captured error on file '%s': %s", file, e)
         return False
-    return bool(
-        magic.from_file(os.path.join(REPO_COPY, file), mime=True)
-        == "text/x-script.python"
-    )
+
+
+def is_python(file: Union[Path, str]) -> bool:
+    """returns if the changed file in the repository is python script"""
+    return _check_mime(file, "text/x-script.python")
 
 
 def is_shell(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is shell script"""
-    # WARNING: python-magic v2:0.4.24-2 is used in ubuntu 22.04,
-    # and `Support os.PathLike values in magic.from_file` is only from 0.4.25
-    if not os.path.exists(os.path.join(REPO_COPY, file)):
-        return False
-    return bool(
-        magic.from_file(os.path.join(REPO_COPY, file), mime=True)
-        == "text/x-shellscript"
-    )
+    return _check_mime(file, "text/x-shellscript")
 
 
 def main():
@@ -139,8 +136,8 @@ def main():
     run_python_check = True
     if CI and pr_info.number > 0:
         pr_info.fetch_changed_files()
-        run_cpp_check = not any(
-            is_python(file) or is_shell(file) for file in pr_info.changed_files
+        run_cpp_check = any(
+            not (is_python(file) or is_shell(file)) for file in pr_info.changed_files
         )
         run_shell_check = any(is_shell(file) for file in pr_info.changed_files)
         run_python_check = any(is_python(file) for file in pr_info.changed_files)
