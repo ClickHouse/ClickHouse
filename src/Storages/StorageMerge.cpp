@@ -915,14 +915,14 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         if (!storage_snapshot_->tryGetColumn(get_column_options, "_database"))
         {
             auto database_name_node = std::make_shared<ConstantNode>(current_storage_id.database_name); //, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
-            auto database_name_alias = std::make_shared<ConstantNode>("__table1._table");
+            auto database_name_alias = std::make_shared<ConstantNode>("__table1._database");
 
             auto function_node = std::make_shared<FunctionNode>("__actionName");
             function_node->getArguments().getNodes().push_back(std::move(database_name_node));
             function_node->getArguments().getNodes().push_back(std::move(database_name_alias));
             function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
 
-            column_name_to_node.emplace("_database", database_name_node);
+            column_name_to_node.emplace("_database", function_node);
         }
 
         auto storage_columns = storage_snapshot_->metadata->getColumns();
