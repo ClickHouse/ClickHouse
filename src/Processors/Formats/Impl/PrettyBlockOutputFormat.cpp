@@ -287,11 +287,14 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         {
             // Write row number;
             auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
+
             for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
-            {
-                writeCString(" ", out);
-            }
+                writeChar(' ', out);
+            if (color)
+                writeCString("\033[90m", out);
             writeString(row_num_string, out);
+            if (color)
+                writeCString("\033[0m", out);
         }
 
         writeCString(grid_symbols.bar, out);
