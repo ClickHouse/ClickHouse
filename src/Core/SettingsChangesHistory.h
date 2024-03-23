@@ -95,6 +95,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"traverse_shadow_remote_data_paths", false, false, "Traverse shadow directory when query system.remote_data_paths."},
               {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", false, true, "Deduplication is dependent materialized view cannot work together with async inserts."},
               {"parallel_replicas_allow_in_with_subquery", false, true, "If true, subquery for IN will be executed on every follower replica"},
+              {"log_processors_profiles", false, true, "Enable by default"},
               {"function_locate_has_mysql_compatible_argument_order", false, true, "Increase compatibility with MySQL's locate function."},
               {"filesystem_cache_reserve_space_wait_lock_timeout_milliseconds", 1000, 1000, "Wait time to lock cache for sapce reservation in filesystem cache"},
               {"max_parser_backtracks", 0, 1000000, "Limiting the complexity of parsing"},
