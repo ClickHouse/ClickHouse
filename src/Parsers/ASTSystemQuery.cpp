@@ -358,6 +358,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::START_VIEW:
         case Type::STOP_VIEW:
         case Type::CANCEL_VIEW:
+        case Type::WAIT_VIEW:
         {
             settings.ostr << ' ';
             print_database_table();

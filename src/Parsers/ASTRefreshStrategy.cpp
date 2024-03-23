@@ -20,7 +20,6 @@ ASTPtr ASTRefreshStrategy::clone() const
         res->set(res->settings, settings->clone());
     if (dependencies)
         res->set(res->dependencies, dependencies->clone());
-    res->schedule_kind = schedule_kind;
     return res;
 }
 
@@ -66,6 +65,8 @@ void ASTRefreshStrategy::formatImpl(
         f_settings.ostr << (f_settings.hilite ? hilite_keyword : "") << " SETTINGS " << (f_settings.hilite ? hilite_none : "");
         settings->formatImpl(f_settings, state, frame);
     }
+    if (append)
+        f_settings.ostr << (f_settings.hilite ? hilite_keyword : "") << " APPEND" << (f_settings.hilite ? hilite_none : "");
 }
 
 }

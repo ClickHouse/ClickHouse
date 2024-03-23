@@ -32,8 +32,9 @@ ColumnsDescription StorageSystemViewRefreshes::getColumnsDescription()
             "If status = 'WaitingForDependencies', a refresh is ready to start as soon as these dependencies are fulfilled."
         },
         {"exception", std::make_shared<DataTypeString>(),
-            "if last_refresh_result = 'Exception', i.e. the last refresh attempt failed, this column contains the corresponding error message and stack trace."
+            "if last_refresh_result = 'Error', i.e. the last refresh attempt failed, this column contains the corresponding error message and stack trace."
         },
+        {"retry", std::make_shared<DataTypeUInt64>(), "How many failed attempts there were so far, for the current refresh."},
         {"refresh_count", std::make_shared<DataTypeUInt64>(), "Number of successful refreshes since last server restart or table creation."},
         {"progress", std::make_shared<DataTypeFloat64>(), "Progress of the current refresh, between 0 and 1."},
         {"elapsed", std::make_shared<DataTypeFloat64>(), "The amount of nanoseconds the current refresh took."},
@@ -85,6 +86,7 @@ void StorageSystemViewRefreshes::fillData(
         res_columns[i++]->insert(Array(deps));
 
         res_columns[i++]->insert(refresh.exception_message);
+        res_columns[i++]->insert(refresh.retry);
         res_columns[i++]->insert(refresh.refresh_count);
         res_columns[i++]->insert(Float64(refresh.progress.read_rows) / refresh.progress.total_rows_to_read);
         res_columns[i++]->insert(refresh.progress.elapsed_ns / 1e9);

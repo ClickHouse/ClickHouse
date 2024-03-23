@@ -141,6 +141,19 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::Rename; }
 
+    void addElement(const String & from_db, const String & from_table, const String & to_db, const String & to_table)
+    {
+        auto identifier = [&](const String & name) -> ASTPtr
+        {
+            if (name.empty())
+                return nullptr;
+            ASTPtr ast = std::make_shared<ASTIdentifier>(name);
+            children.push_back(ast);
+            return ast;
+        };
+        elements.push_back(Element {.from = Table {.database = identifier(from_db), .table = identifier(from_table)}, .to = Table {.database = identifier(to_db), .table = identifier(to_table)}});
+    }
+
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
