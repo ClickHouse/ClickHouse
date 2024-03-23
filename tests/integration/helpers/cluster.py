@@ -1047,6 +1047,8 @@ class ClickHouseCluster:
         env_variables["MYSQL_ROOT_HOST"] = "%"
         env_variables["MYSQL_LOGS"] = self.mysql57_logs_dir
         env_variables["MYSQL_LOGS_FS"] = "bind"
+        env_variables["MYSQL_DOCKER_USER"] = str(os.getuid())
+
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql.yml")]
         )
@@ -1069,6 +1071,8 @@ class ClickHouseCluster:
         env_variables["MYSQL8_ROOT_HOST"] = "%"
         env_variables["MYSQL8_LOGS"] = self.mysql8_logs_dir
         env_variables["MYSQL8_LOGS_FS"] = "bind"
+        env_variables["MYSQL8_DOCKER_USER"] = str(os.getuid())
+
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql_8_0.yml")]
         )
@@ -1090,6 +1094,7 @@ class ClickHouseCluster:
         env_variables["MYSQL_CLUSTER_ROOT_HOST"] = "%"
         env_variables["MYSQL_CLUSTER_LOGS"] = self.mysql_cluster_logs_dir
         env_variables["MYSQL_CLUSTER_LOGS_FS"] = "bind"
+        env_variables["MYSQL_CLUSTER_DOCKER_USER"] = str(os.getuid())
 
         self.base_cmd.extend(
             [
