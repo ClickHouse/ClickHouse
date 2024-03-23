@@ -78,6 +78,14 @@ SELECT s FROM (SELECT s, y FROM t1) t1 FULL JOIN (SELECT y FROM t2) t2 USING (y)
 
 a
 b
+SELECT y FROM t1 FULL JOIN t2 USING (y) PREWHERE y * 2 > 2 ORDER BY ALL SETTINGS allow_experimental_analyzer = 1, join_use_nulls = 0;
+369
+3693
+6666
+SELECT y FROM t1 FULL JOIN t2 USING (y) PREWHERE y * 2 > 2 ORDER BY ALL SETTINGS allow_experimental_analyzer = 1, join_use_nulls = 1;
+369
+3693
+6666
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
