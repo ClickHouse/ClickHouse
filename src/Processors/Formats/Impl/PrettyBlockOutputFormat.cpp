@@ -306,7 +306,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             const auto & type = *header.getByPosition(j).type;
             writeValueWithPadding(*columns[j], *serializations[j], i,
                 widths[j].empty() ? max_widths[j] : widths[j][i],
-                max_widths[j], type.shouldAlignRightInPrettyFormats());
+                max_widths[j], type.shouldAlignRightInPrettyFormats(), isNumber(type));
         }
 
         writeCString(grid_symbols.bar, out);
@@ -325,9 +325,75 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 }
 
 
+static String highlightDigitGroups(String source)
+{
+    if (source.size() <= 4)
+        return source;
+
+    bool is_regular_number = true;
+    size_t num_digits_before_decimal = 0;
+    for (auto c : source)
+    {
+        if (c == '-' || c == ' ')
+            continue;
+        if (c == '.')
+            break;
+        if (c >= '0' && c <= '9')
+        {
+            ++num_digits_before_decimal;
+        }
+        else
+        {
+            is_regular_number = false;
+            break;
+        }
+    }
+
+    if (!is_regular_number || num_digits_before_decimal <= 4)
+        return source;
+
+    String result;
+    size_t size = source.size();
+    result.reserve(2 * size);
+
+    bool before_decimal = true;
+    size_t digit_num = 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        auto c = source[i];
+        if (before_decimal && c >= '0' && c <= '9')
+        {
+            ++digit_num;
+            size_t offset = num_digits_before_decimal - digit_num;
+            if (offset && offset % 3 == 0)
+            {
+                result += "\033[4m";
+                result += c;
+                result += "\033[0m";
+            }
+            else
+            {
+                result += c;
+            }
+        }
+        else if (c == '.')
+        {
+            before_decimal = false;
+            result += c;
+        }
+        else
+        {
+            result += c;
+        }
+    }
+
+    return result;
+}
+
+
 void PrettyBlockOutputFormat::writeValueWithPadding(
     const IColumn & column, const ISerialization & serialization, size_t row_num,
-    size_t value_width, size_t pad_to_width, bool align_right)
+    size_t value_width, size_t pad_to_width, bool align_right, bool is_number)
 {
     String serialized_value = " ";
     {
@@ -361,6 +427,10 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             for (size_t k = 0; k < pad_to_width - value_width; ++k)
                 writeChar(' ', out);
     };
+
+    /// Highlight groups of thousands.
+    if (color && is_number && format_settings.pretty.highlight_digit_groups)
+        serialized_value = highlightDigitGroups(serialized_value);
 
     if (align_right)
     {
