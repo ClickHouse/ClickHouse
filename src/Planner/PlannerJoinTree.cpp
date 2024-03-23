@@ -1037,12 +1037,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     };
 }
 
-void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextPtr & planner_context, const FunctionOverloadResolverPtr & to_nullable_function)
+void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextPtr & planner_context, const FunctionOverloadResolverPtr & to_nullable_function, const ColumnIdentifierSet & except)
 {
     auto cast_actions_dag = std::make_shared<ActionsDAG>(plan_to_add_cast.getCurrentDataStream().header.getColumnsWithTypeAndName());
 
     for (auto & output_node : cast_actions_dag->getOutputs())
     {
+        if (except.contains(output_node->result_name))
+            continue;
+
         if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output_node->result_name))
         {
             DataTypePtr type_to_check = output_node->result_type;
@@ -1125,6 +1128,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     std::unordered_map<ColumnIdentifier, DataTypePtr> left_plan_column_name_to_cast_type;
     std::unordered_map<ColumnIdentifier, DataTypePtr> right_plan_column_name_to_cast_type;
+    ColumnIdentifierSet left_plan_using_columns;
+    ColumnIdentifierSet right_plan_using_columns;
 
     if (join_node.isUsingJoinExpression())
     {
@@ -1141,17 +1146,16 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             auto & right_inner_column = right_inner_column_node->as<ColumnNode &>();
 
             const auto & join_node_using_column_node_type = join_node_using_column_node.getColumnType();
-            if (!left_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
-            {
-                const auto & left_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(left_inner_column_node);
-                left_plan_column_name_to_cast_type.emplace(left_inner_column_identifier, join_node_using_column_node_type);
-            }
 
+            const auto & left_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(left_inner_column_node);
+            if (!left_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
+                left_plan_column_name_to_cast_type.emplace(left_inner_column_identifier, join_node_using_column_node_type);
+            left_plan_using_columns.emplace(left_inner_column_identifier);
+
+            const auto & right_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(right_inner_column_node);
             if (!right_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
-            {
-                const auto & right_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(right_inner_column_node);
                 right_plan_column_name_to_cast_type.emplace(right_inner_column_identifier, join_node_using_column_node_type);
-            }
+            right_plan_using_columns.emplace(right_inner_column_identifier);
         }
     }
 
@@ -1190,16 +1194,16 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         auto to_nullable_function = FunctionFactory::instance().get("toNullable", query_context);
         if (isFull(join_kind))
         {
-            joinCastPlanColumnsToNullable(left_plan, planner_context, to_nullable_function);
-            joinCastPlanColumnsToNullable(right_plan, planner_context, to_nullable_function);
+            joinCastPlanColumnsToNullable(left_plan, planner_context, to_nullable_function, left_plan_using_columns);
+            joinCastPlanColumnsToNullable(right_plan, planner_context, to_nullable_function, right_plan_using_columns);
         }
         else if (isLeft(join_kind))
         {
-            joinCastPlanColumnsToNullable(right_plan, planner_context, to_nullable_function);
+            joinCastPlanColumnsToNullable(right_plan, planner_context, to_nullable_function, right_plan_using_columns);
         }
         else if (isRight(join_kind))
         {
-            joinCastPlanColumnsToNullable(left_plan, planner_context, to_nullable_function);
+            joinCastPlanColumnsToNullable(left_plan, planner_context, to_nullable_function, left_plan_using_columns);
         }
     }
 
