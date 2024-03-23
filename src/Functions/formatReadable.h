@@ -108,9 +108,10 @@ private:
 
         const ColumnConst * col_from_const = checkAndGetColumnConst<ColumnVector<T>>(arguments[0].column.get());
         const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(arguments[0].column.get());
+        ColumnWithTypeAndName new_arg;
         if (col_from_const)
         {
-            ColumnWithTypeAndName new_arg = {col_from_const->convertToFullColumn(), arguments[0].type, arguments[0].name};
+            new_arg = {col_from_const->convertToFullColumn(), arguments[0].type, arguments[0].name};
             col_from = checkAndGetColumn<ColumnVector<T>>(new_arg.column.get());
         }
 
