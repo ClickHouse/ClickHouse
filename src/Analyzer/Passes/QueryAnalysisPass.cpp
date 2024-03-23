@@ -7727,11 +7727,21 @@ public:
                 break;
         }
 
-        if (auto * function_node = node->as<FunctionNode>())
+        if (auto * function_node = node->as<FunctionNode>(); function_node && function_node->isResolved())
             rerunFunctionResolve(function_node, context);
     }
 
+    /// We want to re-run resolve for function _after_ its arguments are replaced
     bool shouldTraverseTopToBottom() const { return false; }
+
+    bool needChildVisit(QueryTreeNodePtr & /* parent */, QueryTreeNodePtr & child)
+    {
+        /// Visit only expressions, but not subqueries
+        return child->getNodeType() == QueryTreeNodeType::IDENTIFIER
+            || child->getNodeType() == QueryTreeNodeType::LIST
+            || child->getNodeType() == QueryTreeNodeType::FUNCTION
+            || child->getNodeType() == QueryTreeNodeType::COLUMN;
+    }
 
 private:
     const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map;
