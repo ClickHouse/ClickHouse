@@ -3501,15 +3501,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         resolved_side = JoinTableSide::Left;
         resolved_identifier = left_resolved_identifier;
 
-<<<<<<< HEAD
         if (left_resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
-=======
-        auto using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
-        is_using_column_node = using_column_node_it != join_using_column_name_to_column_node.end();
-
-        if (using_column_node_it != join_using_column_name_to_column_node.end() &&
-            !using_column_node_it->second->getColumnType()->equals(*left_resolved_column.getColumnType()))
->>>>>>> 7381c13bc3e (Analyzer: Join using key do not became nullable)
         {
             check_nested_column_not_in_using(left_resolved_identifier);
         }
@@ -3517,6 +3509,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         {
             auto & left_resolved_column = left_resolved_identifier->as<ColumnNode &>();
             auto using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
+            is_using_column_node = using_column_node_it != join_using_column_name_to_column_node.end();
             if (using_column_node_it != join_using_column_name_to_column_node.end() &&
                 !using_column_node_it->second->getColumnType()->equals(*left_resolved_column.getColumnType()))
             {
@@ -3531,15 +3524,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         resolved_side = JoinTableSide::Right;
         resolved_identifier = right_resolved_identifier;
 
-<<<<<<< HEAD
         if (right_resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
-=======
-        auto using_column_node_it = join_using_column_name_to_column_node.find(right_resolved_column.getColumnName());
-        is_using_column_node = using_column_node_it != join_using_column_name_to_column_node.end();
-
-        if (using_column_node_it != join_using_column_name_to_column_node.end() &&
-            !using_column_node_it->second->getColumnType()->equals(*right_resolved_column.getColumnType()))
->>>>>>> 7381c13bc3e (Analyzer: Join using key do not became nullable)
         {
             check_nested_column_not_in_using(right_resolved_identifier);
         }
@@ -3547,6 +3532,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         {
             auto & right_resolved_column = right_resolved_identifier->as<ColumnNode &>();
             auto using_column_node_it = join_using_column_name_to_column_node.find(right_resolved_column.getColumnName());
+            is_using_column_node = using_column_node_it != join_using_column_name_to_column_node.end();
             if (using_column_node_it != join_using_column_name_to_column_node.end() &&
                 !using_column_node_it->second->getColumnType()->equals(*right_resolved_column.getColumnType()))
             {

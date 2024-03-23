@@ -6,19 +6,39 @@ SELECT a.pk, b.pk, a.dt, b.dt, toTypeName(a.pk), toTypeName(b.pk), toTypeName(ma
 FROM (SELECT toUInt8(number) > 0 as pk, toUInt8(number) as dt FROM numbers(3)) a
 ASOF LEFT JOIN (SELECT 1 as pk, 2 as dt) b
 USING(pk, dt)
-ORDER BY a.dt;
+ORDER BY a.dt SETTINGS allow_experimental_analyzer = 0;;
 
 SELECT a.pk, b.pk, a.dt, b.dt, toTypeName(a.pk), toTypeName(b.pk), toTypeName(materialize(a.dt)), toTypeName(materialize(b.dt))
 FROM (SELECT toUInt8(number) > 0 as pk, toNullable(toUInt8(number)) as dt FROM numbers(3)) a
 ASOF LEFT JOIN (SELECT 1 as pk, 2 as dt) b
 USING(pk, dt)
-ORDER BY a.dt;
+ORDER BY a.dt SETTINGS allow_experimental_analyzer = 0;;
 
 SELECT a.pk, b.pk, a.dt, b.dt, toTypeName(a.pk), toTypeName(b.pk), toTypeName(materialize(a.dt)), toTypeName(materialize(b.dt))
 FROM (SELECT toUInt8(number) > 0 as pk, toUInt8(number) as dt FROM numbers(3)) a
 ASOF LEFT JOIN (SELECT 1 as pk, toNullable(0) as dt) b
 USING(pk, dt)
 ORDER BY a.dt SETTINGS allow_experimental_analyzer = 0;
+
+SELECT a.pk, b.pk, a.dt, b.dt, toTypeName(a.pk), toTypeName(b.pk), toTypeName(materialize(a.dt)), toTypeName(materialize(b.dt))
+FROM (SELECT toUInt8(number) > 0 as pk, toNullable(toUInt8(number)) as dt FROM numbers(3)) a
+ASOF LEFT JOIN (SELECT 1 as pk, toNullable(0) as dt) b
+USING(pk, dt)
+ORDER BY a.dt SETTINGS allow_experimental_analyzer = 0;;
+
+select 'left asof using (analyzer)';
+
+SELECT a.pk, b.pk, a.dt, b.dt, toTypeName(a.pk), toTypeName(b.pk), toTypeName(materialize(a.dt)), toTypeName(materialize(b.dt))
+FROM (SELECT toUInt8(number) > 0 as pk, toUInt8(number) as dt FROM numbers(3)) a
+ASOF LEFT JOIN (SELECT 1 as pk, 2 as dt) b
+USING(pk, dt)
+ORDER BY a.dt SETTINGS allow_experimental_analyzer = 1;
+
+SELECT a.pk, b.pk, a.dt, b.dt, toTypeName(a.pk), toTypeName(b.pk), toTypeName(materialize(a.dt)), toTypeName(materialize(b.dt))
+FROM (SELECT toUInt8(number) > 0 as pk, toNullable(toUInt8(number)) as dt FROM numbers(3)) a
+ASOF LEFT JOIN (SELECT 1 as pk, 2 as dt) b
+USING(pk, dt)
+ORDER BY a.dt SETTINGS allow_experimental_analyzer = 1;
 
 SELECT a.pk, b.pk, a.dt, b.dt, toTypeName(a.pk), toTypeName(b.pk), toTypeName(materialize(a.dt)), toTypeName(materialize(b.dt))
 FROM (SELECT toUInt8(number) > 0 as pk, toUInt8(number) as dt FROM numbers(3)) a
@@ -30,7 +50,7 @@ SELECT a.pk, b.pk, a.dt, b.dt, toTypeName(a.pk), toTypeName(b.pk), toTypeName(ma
 FROM (SELECT toUInt8(number) > 0 as pk, toNullable(toUInt8(number)) as dt FROM numbers(3)) a
 ASOF LEFT JOIN (SELECT 1 as pk, toNullable(0) as dt) b
 USING(pk, dt)
-ORDER BY a.dt;
+ORDER BY a.dt SETTINGS allow_experimental_analyzer = 1;
 
 select 'left asof on';
 
