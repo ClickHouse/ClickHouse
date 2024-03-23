@@ -97,7 +97,7 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         refresh->set(refresh->settings, settings);
     }
 
-    if (ParserKeyword{"APPEND"}.ignore(pos, expected))
+    if (ParserKeyword{Keyword::APPEND}.ignore(pos, expected))
         refresh->append = true;
 
     node = refresh;
