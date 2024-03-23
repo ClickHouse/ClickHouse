@@ -372,7 +372,7 @@ Result:
 
 ## bitmapAnd
 
-Computes the logical conjunction of two two bitmaps.
+Computes the logical conjunction of two bitmaps.
 
 **Syntax**
 

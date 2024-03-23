@@ -4,12 +4,12 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <base/getMemoryAmount.h>
-#include <base/errnoToString.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
 #include <Poco/SimpleFileChannel.h>
+#include <Databases/registerDatabases.h>
 #include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesOverlay.h>
@@ -19,9 +19,8 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/registerInterpreters.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/scope_guard_safe.h>
-#include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
@@ -32,7 +31,6 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
-#include <Loggers/Loggers.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
@@ -40,7 +38,6 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
-#include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
@@ -58,10 +55,6 @@
 #include <filesystem>
 
 #include "config.h"
-
-#if defined(FUZZING_MODE)
-    #include <Functions/getFuzzerData.h>
-#endif
 
 #if USE_AZURE_BLOB_STORAGE
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
@@ -219,7 +212,7 @@ void LocalServer::tryInitPath()
     {
         // The path is not provided explicitly - use a unique path in the system temporary directory
         // (or in the current dir if temporary don't exist)
-        Poco::Logger * log = &logger();
+        LoggerRawPtr log = &logger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
 
@@ -247,7 +240,7 @@ void LocalServer::tryInitPath()
         default_path = parent_folder / fmt::format("clickhouse-local-{}-{}-{}", getpid(), time(nullptr), randomSeed());
 
         if (exists(default_path))
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} exist!", default_path.string());
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to create working directory: {} already exists.", default_path.string());
 
         create_directory(default_path);
         temporary_directory_to_delete = default_path;
@@ -288,6 +281,11 @@ void LocalServer::cleanup()
     {
         connection.reset();
 
+        /// Suggestions are loaded async in a separate thread and it can use global context.
+        /// We should reset it before resetting global_context.
+        if (suggest)
+            suggest.reset();
+
         if (global_context)
         {
             global_context->shutdown();
@@ -320,6 +318,14 @@ static bool checkIfStdinIsRegularFile()
     return fstat(STDIN_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
 }
 
+
+static bool checkIfStdoutIsRegularFile()
+{
+    struct stat file_stat;
+    return fstat(STDOUT_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
+}
+
+
 std::string LocalServer::getInitialCreateTableQuery()
 {
     if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || queries.empty()))
@@ -329,23 +335,23 @@ std::string LocalServer::getInitialCreateTableQuery()
     auto table_structure = config().getString("table-structure", "auto");
 
     String table_file;
-    String format_from_file_name;
+    std::optional<String> format_from_file_name;
     if (!config().has("table-file") || config().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
-        format_from_file_name = FormatFactory::instance().getFormatFromFileDescriptor(STDIN_FILENO);
+        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDIN_FILENO);
     }
     else
     {
         /// Use regular file
         auto file_name = config().getString("table-file");
         table_file = quoteString(file_name);
-        format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
+        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(file_name);
     }
 
     auto data_format = backQuoteIfNeed(
-        config().getString("table-data-format", config().getString("format", format_from_file_name.empty() ? "TSV" : format_from_file_name)));
+        config().getString("table-data-format", config().getString("format", format_from_file_name ? *format_from_file_name : "TSV")));
 
 
     if (table_structure == "auto")
@@ -459,25 +465,10 @@ try
         }
     }
 
-#if defined(FUZZING_MODE)
-    static bool first_time = true;
-    if (first_time)
-    {
-
-    if (queries_files.empty() && queries.empty())
-    {
-        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode." << "\033[0m" << std::endl;
-        std::cerr << "\033[31m" << "You have to provide a query with --query or --queries-file option." << "\033[0m" << std::endl;
-        std::cerr << "\033[31m" << "The query have to use function getFuzzerData() inside." << "\033[0m" << std::endl;
-        exit(1);
-    }
-
-    is_interactive = false;
-#else
     is_interactive = stdin_is_a_tty
         && (config().hasOption("interactive")
             || (queries.empty() && !config().has("table-structure") && queries_files.empty() && !config().has("table-file")));
-#endif
+
     if (!is_interactive)
     {
         /// We will terminate process on error
@@ -485,10 +476,12 @@ try
         Poco::ErrorHandler::set(&error_handler);
     }
 
+    registerInterpreters();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
+    registerDatabases();
     registerStorages();
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
@@ -497,6 +490,7 @@ try
     processConfig();
     adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
+    ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     applyCmdSettings(global_context);
 
@@ -520,15 +514,13 @@ try
 
     connect();
 
-#ifdef FUZZING_MODE
-    first_time = false;
-    }
-#endif
-
     String initial_query = getInitialCreateTableQuery();
     if (!initial_query.empty())
         processQueryText(initial_query);
 
+#if defined(FUZZING_MODE)
+    runLibFuzzer();
+#else
     if (is_interactive && !delayed_interactive)
     {
         runInteractive();
@@ -540,10 +532,8 @@ try
         if (delayed_interactive)
             runInteractive();
     }
-
-#ifndef FUZZING_MODE
-    cleanup();
 #endif
+
     return Application::EXIT_OK;
 }
 catch (const DB::Exception & e)
@@ -622,13 +612,20 @@ void LocalServer::processConfig()
 
     tryInitPath();
 
-    Poco::Logger * log = &logger();
+    LoggerRawPtr log = &logger();
 
     /// Maybe useless
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
-    format = config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV"));
+    if (!config().has("output-format") && !config().has("format") && checkIfStdoutIsRegularFile())
+    {
+        std::optional<String> format_from_file_name;
+        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDOUT_FILENO);
+        format = format_from_file_name ? *format_from_file_name : "TSV";
+    }
+    else
+        format = config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV"));
     insert_format = "Values";
 
     /// Setting value from cmd arg overrides one from config
@@ -726,12 +723,7 @@ void LocalServer::processConfig()
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
-    /** Init dummy default DB
-      * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
-      * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
-      *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
-      */
-    std::string default_database = config().getString("default_database", "_local");
+    std::string default_database = config().getString("default_database", "default");
     DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
 
@@ -744,7 +736,7 @@ void LocalServer::processConfig()
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         auto startup_system_tasks = loadMetadataSystem(global_context);
-        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         waitLoad(TablesLoaderForegroundPoolId, startup_system_tasks);
@@ -763,7 +755,7 @@ void LocalServer::processConfig()
     }
     else if (!config().has("no-system-tables"))
     {
-        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
@@ -809,22 +801,11 @@ void LocalServer::processConfig()
 
 void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & options_description)
 {
-#if defined(FUZZING_MODE)
-    std::cout <<
-        "usage: clickhouse <clickhouse-local arguments> -- <libfuzzer arguments>\n"
-        "Note: It is important not to use only one letter keys with single dash for \n"
-        "for clickhouse-local arguments. It may work incorrectly.\n"
-
-        "ClickHouse is build with coverage guided fuzzer (libfuzzer) inside it.\n"
-        "You have to provide a query which contains getFuzzerData function.\n"
-        "This will take the data from fuzzing engine, pass it to getFuzzerData function and execute a query.\n"
-        "Each time the data will be different, and it will last until some segfault or sanitizer assertion is found. \n";
-#else
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
     std::cout << getHelpFooter() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
-#endif
+    std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
 }
 
 
@@ -835,10 +816,9 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 
         /// If structure argument is omitted then initial query is not generated
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
-        ("file,f", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
+        ("file,F", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
 
         ("input-format", po::value<std::string>(), "input format of the initial table data")
-        ("output-format", po::value<std::string>(), "default output format")
 
         ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")
@@ -900,6 +880,7 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
+
         /// Parameter arg after underline.
         if (arg.starts_with("--param_"))
         {
@@ -932,14 +913,16 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
             addMultiquery(arg, common_arguments);
         }
         else
+        {
             common_arguments.emplace_back(arg);
+        }
     }
 }
 
 }
 
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
@@ -967,69 +950,3 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
         return code ? code : 1;
     }
 }
-
-#if defined(FUZZING_MODE)
-
-// linked from programs/main.cpp
-bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv);
-
-std::optional<DB::LocalServer> fuzz_app;
-
-extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
-{
-    std::vector<char *> argv(*pargv, *pargv + (*pargc + 1));
-
-    if (!isClickhouseApp("local", argv))
-    {
-        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode, only clickhouse local is available." << "\033[0m" << std::endl;
-        exit(1);
-    }
-
-    /// As a user you can add flags to clickhouse binary in fuzzing mode as follows
-    /// clickhouse local <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
-
-    char **p = &(*pargv)[1];
-
-    auto it = argv.begin() + 1;
-    for (; *it; ++it)
-        if (strcmp(*it, "--") == 0)
-        {
-            ++it;
-            break;
-        }
-
-    while (*it)
-        if (strncmp(*it, "--", 2) != 0)
-        {
-            *(p++) = *it;
-            it = argv.erase(it);
-        }
-        else
-            ++it;
-
-    *pargc = static_cast<int>(p - &(*pargv)[0]);
-    *p = nullptr;
-
-    /// Initialize clickhouse-local app
-    fuzz_app.emplace();
-    fuzz_app->init(static_cast<int>(argv.size() - 1), argv.data());
-
-    return 0;
-}
-
-
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
-{
-    try
-    {
-        auto input = String(reinterpret_cast<const char *>(data), size);
-        DB::FunctionGetFuzzerData::update(input);
-        fuzz_app->run();
-    }
-    catch (...)
-    {
-    }
-
-    return 0;
-}
-#endif

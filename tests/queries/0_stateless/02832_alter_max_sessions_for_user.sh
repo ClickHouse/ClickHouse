@@ -23,14 +23,14 @@ function test_alter_profile()
 
     ${CLICKHOUSE_CLIENT} -q $"ALTER SETTINGS PROFILE ${PROFILE} SETTINGS max_sessions_for_user = ${max_session_count}"
 
-    # Create sesssions with $max_session_count resriction
+    # Create sessions with $max_session_count restriction
     for ((i = 1 ; i <= ${max_session_count} ; i++)); do
         local session_id="${SESSION_ID_PREFIX}_${i}"
          # Skip output from this query 
          ${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&user=${USER}&session_id=${session_id}&session_check=0" --data-binary "SELECT 1" > /dev/null
     done
 
-    # Update resriction to $alter_sessions_count
+    # Update restriction to $alter_sessions_count
     ${CLICKHOUSE_CLIENT} -q $"ALTER SETTINGS PROFILE ${PROFILE} SETTINGS max_sessions_for_user = ${alter_sessions_count}"
 
     # Simultaneous sessions should use max settings from profile ($alter_sessions_count)

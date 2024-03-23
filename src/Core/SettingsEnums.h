@@ -1,10 +1,12 @@
 #pragma once
 
-#include <Core/SettingsFields.h>
 #include <Core/Joins.h>
-#include <QueryPipeline/SizeLimits.h>
+#include <Core/LogsLevel.h>
+#include <Core/SettingsFields.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
+#include <Parsers/ASTSQLSecurity.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
 
 
@@ -89,18 +91,6 @@ DECLARE_SETTING_ENUM_WITH_RENAME(IntervalOutputFormat, FormatSettings::IntervalO
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
 
-enum class LogsLevel
-{
-    none = 0,    /// Disable
-    fatal,
-    error,
-    warning,
-    information,
-    debug,
-    trace,
-    test,
-};
-
 DECLARE_SETTING_ENUM(LogsLevel)
 
 
@@ -140,6 +130,15 @@ enum class DefaultTableEngine
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
+
+enum class CleanDeletedRows
+{
+    Never = 0, /// Disable.
+    Always,
+};
+
+DECLARE_SETTING_ENUM(CleanDeletedRows)
+
 enum class MySQLDataTypesSupport
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
@@ -165,6 +164,9 @@ enum class DistributedDDLOutputMode
     THROW,
     NULL_STATUS_ON_TIMEOUT,
     NEVER_THROW,
+    THROW_ONLY_ACTIVE,
+    NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE,
+    NONE_ONLY_ACTIVE,
 };
 
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
@@ -256,4 +258,5 @@ DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 
+DECLARE_SETTING_ENUM(SQLSecurityType)
 }

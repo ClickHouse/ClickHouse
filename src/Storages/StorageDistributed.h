@@ -58,7 +58,7 @@ public:
         const String & storage_policy_name_,
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
-        bool attach_,
+        LoadingStrictnessLevel mode,
         ClusterPtr owned_cluster_ = {},
         ASTPtr remote_table_function_ptr_ = {});
 
@@ -73,7 +73,7 @@ public:
         const String & storage_policy_name_,
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
-        bool attach,
+        LoadingStrictnessLevel mode,
         ClusterPtr owned_cluster_ = {});
 
     ~StorageDistributed() override;
@@ -146,8 +146,6 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
-    NamesAndTypesList getVirtuals() const override;
-
     /// Used by InterpreterInsertQuery
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
@@ -156,7 +154,6 @@ public:
     /// Used by InterpreterSystemQuery
     void flushClusterNodesAllData(ContextPtr context);
 
-    /// Used by ClusterCopier
     size_t getShardCount() const;
 
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
@@ -234,11 +231,13 @@ private:
     std::optional<QueryPipeline> distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
     std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
 
+    static VirtualColumnsDescription createVirtuals();
+
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Used to implement TableFunctionRemote.
     std::shared_ptr<Cluster> owned_cluster;

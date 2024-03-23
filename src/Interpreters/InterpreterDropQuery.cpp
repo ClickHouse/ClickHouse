@@ -1,6 +1,8 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/QueryLog.h>
@@ -416,7 +418,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     uuids_to_wait.push_back(table_to_wait);
                 }
             }
-           // only if operation is DETACH
+            // only if operation is DETACH
             if ((!drop || !truncate) && query.sync)
             {
                 /// Avoid "some tables are still in use" when sync mode is enabled
@@ -519,4 +521,12 @@ bool InterpreterDropQuery::supportsTransactions() const
             && drop.table;
 }
 
+void registerInterpreterDropQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDropQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDropQuery", create_fn);
+}
 }

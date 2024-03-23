@@ -33,7 +33,6 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/optional.cpp"
 "${LIBCXX_SOURCE_DIR}/src/random.cpp"
 "${LIBCXX_SOURCE_DIR}/src/random_shuffle.cpp"
-"${LIBCXX_SOURCE_DIR}/src/regex.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ryu/d2fixed.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ryu/d2s.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ryu/f2s.cpp"

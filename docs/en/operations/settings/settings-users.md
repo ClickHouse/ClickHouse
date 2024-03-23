@@ -4,7 +4,7 @@ sidebar_position: 63
 sidebar_label: User Settings
 ---
 
-# User Settings
+# Users and Roles Settings
 
 The `users` section of the `user.xml` configuration file contains user settings.
 
@@ -187,3 +187,34 @@ The following configuration forces that user `user1` can only see the rows of `t
 ```
 
 The `filter` can be any expression resulting in a [UInt8](../../sql-reference/data-types/int-uint.md)-type value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
+
+## Roles
+
+You can create any predefined roles using the `roles` section of the `user.xml` configuration file.
+
+Structure of the `roles` section:
+
+```xml
+<roles>
+    <test_role>
+        <grants>
+            <query>GRANT SHOW ON *.*</query>
+            <query>REVOKE SHOW ON system.*</query>
+            <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+        </grants>
+    </test_role>
+</roles>
+```
+
+These roles can also be granted to users from the `users` section:
+
+```xml
+<users>
+    <user_name>
+        ...
+        <grants>
+            <query>GRANT test_role</query>
+        </grants>
+    </user_name>
+<users>
+```

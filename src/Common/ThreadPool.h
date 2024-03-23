@@ -20,8 +20,9 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Priority.h>
 #include <Common/StackTrace.h>
-#include <Common/Exception.h>
 #include <base/scope_guard.h>
+
+class JobWithPriority;
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -127,37 +128,6 @@ private:
     bool shutdown = false;
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
-
-    struct JobWithPriority
-    {
-        Job job;
-        Priority priority;
-        CurrentMetrics::Increment metric_increment;
-        DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
-
-        /// Call stacks of all jobs' schedulings leading to this one
-        std::vector<StackTrace::FramePointers> frame_pointers;
-        bool enable_job_stack_trace = false;
-
-        JobWithPriority(
-            Job job_, Priority priority_, CurrentMetrics::Metric metric,
-            const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
-            bool capture_frame_pointers)
-            : job(job_), priority(priority_), metric_increment(metric),
-            thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
-        {
-            if (!capture_frame_pointers)
-                return;
-            /// Save all previous jobs call stacks and append with current
-            frame_pointers = DB::Exception::thread_frame_pointers;
-            frame_pointers.push_back(StackTrace().getFramePointers());
-        }
-
-        bool operator<(const JobWithPriority & rhs) const
-        {
-            return priority > rhs.priority; // Reversed for `priority_queue` max-heap to yield minimum value (i.e. highest priority) first
-        }
-    };
 
     boost::heap::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;

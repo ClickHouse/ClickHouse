@@ -24,7 +24,7 @@ class HTTPAuthClient
 public:
     using Result = TResponseParser::Result;
 
-    HTTPAuthClient(const HTTPAuthClientParams & params, const TResponseParser & parser_ = TResponseParser{})
+    explicit HTTPAuthClient(const HTTPAuthClientParams & params, const TResponseParser & parser_ = TResponseParser{})
         : timeouts{params.timeouts}
         , max_tries{params.max_tries}
         , retry_initial_backoff_ms{params.retry_initial_backoff_ms}
@@ -36,7 +36,7 @@ public:
 
     Result authenticateRequest(Poco::Net::HTTPRequest & request) const
     {
-        auto session = makeHTTPSession(uri, timeouts);
+        auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, timeouts);
         Poco::Net::HTTPResponse response;
 
         auto milliseconds_to_wait = retry_initial_backoff_ms;

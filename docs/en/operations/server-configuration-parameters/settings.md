@@ -199,6 +199,16 @@ Type: Bool
 
 Default: 0
 
+
+## dns_cache_max_entries
+
+Internal DNS cache max entries.
+
+Type: UInt64
+
+Default: 10000
+
+
 ## dns_cache_update_period
 
 Internal DNS cache update period in seconds.
@@ -369,6 +379,18 @@ Type: UInt64
 
 Default: 0
 
+## max_waiting_queries
+
+Limit on total number of concurrently waiting queries. Execution of a waiting query is blocked while required tables are loading asynchronously (see `async_load_databases`). Note that waiting queries are not counted when `max_concurrent_queries`, `max_concurrent_insert_queries`, `max_concurrent_select_queries`, `max_concurrent_queries_for_user` and `max_concurrent_queries_for_all_users` limits are checked. This correction is done to avoid hitting these limits just after server startup. Zero means unlimited.
+
+:::note
+This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
+
+Type: UInt64
+
+Default: 0
+
 ## max_connections
 
 Max server connections.
@@ -458,6 +480,38 @@ Type: Double
 
 Default: 0.9
 
+## cgroups_memory_usage_observer_wait_time
+
+Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups. (see
+settings `cgroup_memory_watcher_hard_limit_ratio` and `cgroup_memory_watcher_soft_limit_ratio`).
+
+Type: UInt64
+
+Default: 15
+
+## cgroup_memory_watcher_hard_limit_ratio
+
+Specifies the "hard" threshold with regards to the memory consumption of the server process according to cgroups after which the server's
+maximum memory consumption is adjusted to the threshold value.
+
+See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watcher_soft_limit_ratio`
+
+Type: Double
+
+Default: 0.95
+
+## cgroup_memory_watcher_soft_limit_ratio
+
+Specifies the "soft" threshold with regards to the memory consumption of the server process according to cgroups after which arenas in
+jemalloc are purged.
+
+
+See settings `cgroups_memory_usage_observer_wait_time` and `cgroup_memory_watcher_hard_limit_ratio`
+
+Type: Double
+
+Default: 0.95
+
 ## max_table_size_to_drop
 
 Restriction on deleting tables.
@@ -472,10 +526,10 @@ The value 0 means that you can delete all tables without any restrictions.
 ``` xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
-  
 
-## max\_database\_num\_to\_warn {#max-database-num-to-warn}  
-If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.    
+
+## max\_database\_num\_to\_warn {#max-database-num-to-warn}
+If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
 Default value: 1000
 
 **Example**
@@ -483,10 +537,10 @@ Default value: 1000
 ``` xml
 <max_database_num_to_warn>50</max_database_num_to_warn>
 ```
-  
-## max\_table\_num\_to\_warn {#max-table-num-to-warn}   
-If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
-Default value: 5000    
+
+## max\_table\_num\_to\_warn {#max-table-num-to-warn}
+If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 5000
 
 **Example**
 
@@ -495,9 +549,9 @@ Default value: 5000
 ```
 
 
-## max\_part\_num\_to\_warn {#max-part-num-to-warn}  
-If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
-Default value: 100000  
+## max\_part\_num\_to\_warn {#max-part-num-to-warn}
+If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 100000
 
 **Example**
 
@@ -1683,7 +1737,7 @@ Default value: `0.5`.
 
 Asynchronous loading of databases and tables.
 
-If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up.
+If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up. Also consider setting a limit `max_waiting_queries` for the total number of waiting queries.
 
 If `false`, all databases are loaded when the server starts.
 
@@ -2866,3 +2920,30 @@ This also allows a mix of resolver types can be used.
 ### disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
 
 By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
+
+## max_materialized_views_count_for_table {#max_materialized_views_count_for_table}
+
+A limit on the number of materialized views attached to a table.
+Note that only directly dependent views are considered here, and the creation of one view on top of another view is not considered.
+
+Default value: `0`.
+
+## format_alter_operations_with_parentheses {#format_alter_operations_with_parentheses}
+
+If set to true, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.
+
+Type: Bool
+
+Default: 0
+
+## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
+
+If true, ClickHouse doesn't write defaults for empty SQL security statement in CREATE VIEW queries.
+
+:::note
+This setting is only necessary for the migration period and will become obsolete in 24.4
+:::
+
+Type: Bool
+
+Default: 1

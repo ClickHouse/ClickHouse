@@ -11,14 +11,12 @@
 #include <Common/Throttler.h>
 #include <Interpreters/Cache/FileCache.h>
 
-#include <IO/ResourceGuard.h>
+#include <Common/Scheduler/ResourceGuard.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/BlobStorageLogWriter.h>
-
-#include <aws/s3/model/StorageClass.h>
 
 #include <utility>
 
@@ -178,6 +176,11 @@ void WriteBufferFromS3::preFinalize()
 
 void WriteBufferFromS3::finalizeImpl()
 {
+    OpenTelemetry::SpanHolder span("WriteBufferFromS3::finalizeImpl");
+    span.addAttribute("clickhouse.s3_bucket", bucket);
+    span.addAttribute("clickhouse.s3_key", key);
+    span.addAttribute("clickhouse.total_size", total_size);
+
     LOG_TRACE(limitedLog, "finalizeImpl WriteBufferFromS3. {}.", getShortLogDetails());
 
     if (!is_prefinalized)
@@ -187,6 +190,8 @@ void WriteBufferFromS3::finalizeImpl()
     chassert(hidden_size == 0);
 
     task_tracker->waitAll();
+
+    span.addAttributeIfNotZero("clickhouse.multipart_upload_parts", multipart_tags.size());
 
     if (!multipart_upload_id.empty())
     {
@@ -449,6 +454,14 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
+    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate then manually and store in multipart_checksums
+    if (client_ptr->isS3ExpressBucket())
+    {
+        auto checksum = S3::RequestChecksum::calculateChecksum(req);
+        S3::RequestChecksum::setRequestChecksum(req, checksum);
+        multipart_checksums.push_back(std::move(checksum));
+    }
+
     return req;
 }
 
@@ -568,7 +581,10 @@ void WriteBufferFromS3::completeMultipartUpload()
     for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
-        multipart_upload.AddParts(part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1)));
+        part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
+        if (!multipart_checksums.empty())
+            S3::RequestChecksum::setPartChecksum(part, multipart_checksums.at(i));
+        multipart_upload.AddParts(part);
     }
 
     req.SetMultipartUpload(multipart_upload);

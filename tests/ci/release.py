@@ -10,19 +10,19 @@ On another hand, PyGithub is used for convenient getting commit's status from AP
 """
 
 
-from contextlib import contextmanager
-from typing import Any, Iterator, List, Literal, Optional
 import argparse
 import json
 import logging
 import subprocess
+from contextlib import contextmanager
+from typing import Any, Final, Iterator, List, Optional, Tuple
 
-from git_helper import commit, release_branch
+from git_helper import Git, commit, release_branch
+from report import SUCCESS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
     ClickHouseVersion,
-    Git,
     VersionType,
     get_abs_path,
     get_version_from_repo,
@@ -54,15 +54,16 @@ class Repo:
         elif protocol == "origin":
             self._url = protocol
         else:
-            raise Exception(f"protocol must be in {self.VALID}")
+            raise ValueError(f"protocol must be in {self.VALID}")
 
     def __str__(self):
         return self._repo
 
 
 class Release:
-    BIG = ("major", "minor")
-    SMALL = ("patch",)
+    NEW = "new"  # type: Final
+    PATCH = "patch"  # type: Final
+    VALID_TYPE = (NEW, PATCH)  # type: Final[Tuple[str, str]]
     CMAKE_PATH = get_abs_path(FILE_WITH_VERSION_PATH)
     CONTRIBUTORS_PATH = get_abs_path(GENERATED_CONTRIBUTORS)
 
@@ -70,7 +71,7 @@ class Release:
         self,
         repo: Repo,
         release_commit: str,
-        release_type: Literal["major", "minor", "patch"],
+        release_type: str,
         dry_run: bool,
         with_stderr: bool,
     ):
@@ -79,7 +80,7 @@ class Release:
         self.release_commit = release_commit
         self.dry_run = dry_run
         self.with_stderr = with_stderr
-        assert release_type in self.BIG + self.SMALL
+        assert release_type in self.VALID_TYPE
         self.release_type = release_type
         self._git = Git()
         self._version = get_version_from_repo(git=self._git)
@@ -122,7 +123,7 @@ class Release:
         self.version = get_version_from_repo(git=self._git)
 
     def get_stable_release_type(self) -> str:
-        if self.version.minor % 5 == 3:  # our 3 and 8 are LTS
+        if self.version.is_lts:
             return VersionType.LTS
         return VersionType.STABLE
 
@@ -142,8 +143,8 @@ class Release:
 
             for status in statuses:
                 if status["context"] == RELEASE_READY_STATUS:
-                    if not status["state"] == "success":
-                        raise Exception(
+                    if not status["state"] == SUCCESS:
+                        raise ValueError(
                             f"the status {RELEASE_READY_STATUS} is {status['state']}"
                             ", not success"
                         )
@@ -152,7 +153,7 @@ class Release:
 
             page += 1
 
-        raise Exception(
+        raise KeyError(
             f"the status {RELEASE_READY_STATUS} "
             f"is not found for commit {self.release_commit}"
         )
@@ -187,26 +188,17 @@ class Release:
                 raise
 
         if check_run_from_master and self._git.branch != "master":
-            raise Exception("the script must be launched only from master")
+            raise RuntimeError("the script must be launched only from master")
 
         self.set_release_info()
 
         if check_branch:
             self.check_branch()
 
-        if self.release_type in self.BIG:
-            if self._version.minor >= 12 and self.release_type != "major":
-                raise ValueError(
-                    "The release type must be 'major' for minor versions>=12"
-                )
-            if self._version.minor < 12 and self.release_type == "major":
-                raise ValueError(
-                    "The release type must be 'minor' for minor versions<12"
-                )
-
+        if self.release_type == self.NEW:
             with self._checkout(self.release_commit, True):
                 # Checkout to the commit, it will provide the correct current version
-                with self.testing():
+                with self.new_release():
                     with self.create_release_branch():
                         logging.info(
                             "Publishing release %s from commit %s is done",
@@ -214,9 +206,9 @@ class Release:
                             self.release_commit,
                         )
 
-        elif self.release_type in self.SMALL:
+        elif self.release_type == self.PATCH:
             with self._checkout(self.release_commit, True):
-                with self.stable():
+                with self.patch_release():
                     logging.info(
                         "Publishing release %s from commit %s is done",
                         self.release_version.describe,
@@ -237,22 +229,19 @@ class Release:
     def check_no_tags_after(self):
         tags_after_commit = self.run(f"git tag --contains={self.release_commit}")
         if tags_after_commit:
-            raise Exception(
+            raise RuntimeError(
                 f"Commit {self.release_commit} belongs to following tags:\n"
                 f"{tags_after_commit}\nChoose another commit"
             )
 
     def check_branch(self):
         branch = self.release_branch
-        if self.release_type in self.BIG:
+        if self.release_type == self.NEW:
             # Commit to spin up the release must belong to a main branch
             branch = "master"
-        elif self.release_type not in self.SMALL:
+        elif self.release_type != self.PATCH:
             raise (
-                ValueError(
-                    f"release_type {self.release_type} neither in {self.BIG} nor "
-                    f"in {self.SMALL}"
-                )
+                ValueError(f"release_type {self.release_type} not in {self.VALID_TYPE}")
             )
 
         # Prefetch the branch to have it updated
@@ -264,7 +253,7 @@ class Release:
             )
         output = self.run(f"git branch --contains={self.release_commit} {branch}")
         if branch not in output:
-            raise Exception(
+            raise RuntimeError(
                 f"commit {self.release_commit} must belong to {branch} "
                 f"for {self.release_type} release"
             )
@@ -295,6 +284,14 @@ class Release:
             f"-m 'Update autogenerated version to {version.string} and contributors'",
             dry_run=self.dry_run,
         )
+
+    @property
+    def bump_part(self) -> ClickHouseVersion.PART_TYPE:
+        if self.release_type == Release.NEW:
+            if self._version.minor >= 12:
+                return "major"
+            return "minor"
+        return "patch"
 
     @property
     def has_rollback(self) -> bool:
@@ -329,13 +326,13 @@ class Release:
                     yield
 
     @contextmanager
-    def stable(self):
+    def patch_release(self):
         self.check_no_tags_after()
         self.read_version()
         version_type = self.get_stable_release_type()
         self.version.with_description(version_type)
         with self._create_gh_release(False):
-            self.version = self.version.update(self.release_type)
+            self.version = self.version.update(self.bump_part)
             self.version.with_description(version_type)
             self._update_cmake_contributors(self.version)
             # Checking out the commit of the branch and not the branch itself,
@@ -355,14 +352,14 @@ class Release:
                     yield
 
     @contextmanager
-    def testing(self):
+    def new_release(self):
         # Create branch for a version bump
         self.read_version()
-        self.version = self.version.update(self.release_type)
+        self.version = self.version.update(self.bump_part)
         helper_branch = f"{self.version.major}.{self.version.minor}-prepare"
         with self._create_branch(helper_branch, self.release_commit):
             with self._checkout(helper_branch, True):
-                with self._bump_testing_version(helper_branch):
+                with self._bump_version_in_master(helper_branch):
                     yield
 
     @property
@@ -432,9 +429,9 @@ class Release:
                         yield
 
     @contextmanager
-    def _bump_testing_version(self, helper_branch: str) -> Iterator[None]:
+    def _bump_version_in_master(self, helper_branch: str) -> Iterator[None]:
         self.read_version()
-        self.version = self.version.update(self.release_type)
+        self.version = self.version.update(self.bump_part)
         self.version.with_description(VersionType.TESTING)
         self._update_cmake_contributors(self.version)
         self._commit_cmake_contributors(self.version)
@@ -447,7 +444,7 @@ class Release:
                 "--label 'do not test' --assignee @me",
                 dry_run=self.dry_run,
             )
-            # Here the testing part is done
+            # Here the new release part is done
             yield
 
     @contextmanager
@@ -467,9 +464,9 @@ class Release:
             logging.warning("Rolling back checked out %s for %s", ref, orig_ref)
             self.run(f"git reset --hard; git checkout -f {orig_ref}")
             raise
-        else:
-            if with_checkout_back and need_rollback:
-                self.run(rollback_cmd)
+        # Normal flow when we need to checkout back
+        if with_checkout_back and need_rollback:
+            self.run(rollback_cmd)
 
     @contextmanager
     def _create_branch(self, name: str, start_point: str = "") -> Iterator[None]:
@@ -598,10 +595,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--type",
         required=True,
-        choices=Release.BIG + Release.SMALL,
+        choices=Release.VALID_TYPE,
         dest="release_type",
         help="a release type to bump the major.minor.patch version part, "
-        "new branch is created only for 'major' and 'minor'",
+        "new branch is created only for the value 'new'",
     )
     parser.add_argument("--with-release-branch", default=True, help=argparse.SUPPRESS)
     parser.add_argument("--check-dirty", default=True, help=argparse.SUPPRESS)
@@ -627,7 +624,7 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         default=argparse.SUPPRESS,
         help="(debug or development only, dangerous) if set, skip the branch check for "
-        "a run. By default, 'major' and 'minor' types work only for master, and 'patch' "
+        "a run. By default, 'new' type work only for master, and 'patch' "
         "works only for a release branches, that name "
         "should be the same as '$MAJOR.$MINOR' version, e.g. 22.2",
     )

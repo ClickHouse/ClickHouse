@@ -4,7 +4,7 @@ import unittest
 from dataclasses import dataclass
 from typing import Any, List
 
-from app import set_capacity, Queue
+from app import Queue, set_capacity
 
 
 @dataclass
@@ -35,7 +35,7 @@ class TestSetCapacity(unittest.TestCase):
 
         @property
         def expected_capacity(self) -> int:
-            """one-time property"""
+            """a one-time property"""
             capacity, self._expected_capacity = self._expected_capacity, -1
             return capacity
 
@@ -68,13 +68,19 @@ class TestSetCapacity(unittest.TestCase):
         test_cases = (
             # Do not change capacity
             TestCase("noqueue", 1, 13, 20, [Queue("in_progress", 155, "noqueue")], -1),
-            TestCase(
-                "w/reserve-1", 1, 13, 20, [Queue("queued", 15, "w/reserve-1")], 14
-            ),
+            TestCase("reserve", 1, 13, 20, [Queue("queued", 13, "reserve")], -1),
             # Increase capacity
+            TestCase(
+                "increase-always",
+                1,
+                13,
+                20,
+                [Queue("queued", 14, "increase-always")],
+                14,
+            ),
             TestCase("increase-1", 1, 13, 20, [Queue("queued", 23, "increase-1")], 17),
             TestCase(
-                "style-checker", 1, 13, 20, [Queue("queued", 33, "style-checker")], 20
+                "style-checker", 1, 13, 20, [Queue("queued", 19, "style-checker")], 19
             ),
             TestCase("increase-2", 1, 13, 20, [Queue("queued", 18, "increase-2")], 15),
             TestCase("increase-3", 1, 13, 20, [Queue("queued", 183, "increase-3")], 20),
@@ -108,6 +114,33 @@ class TestSetCapacity(unittest.TestCase):
         )
         for t in test_cases:
             self.client.data_helper(t.name, t.min_size, t.desired_capacity, t.max_size)
+            set_capacity(t.name, t.queues, self.client, False)
+            self.assertEqual(t.expected_capacity, self.client.expected_capacity, t.name)
+
+    def test_effective_capacity(self):
+        """Normal cases test increasing w/o considering
+        effective_capacity much lower than DesiredCapacity"""
+        test_cases = (
+            TestCase(
+                "desired-overwritten",
+                1,
+                20,  # DesiredCapacity, overwritten by effective_capacity
+                50,
+                [
+                    Queue("in_progress", 30, "desired-overwritten"),
+                    Queue("queued", 60, "desired-overwritten"),
+                ],
+                40,
+            ),
+        )
+        for t in test_cases:
+            self.client.data_helper(t.name, t.min_size, t.desired_capacity, t.max_size)
+            # we test that effective_capacity is 30 (a half of 60)
+            data_with_instances = self.client.expected_data
+            data_with_instances["AutoScalingGroups"][0]["Instances"] = [
+                {"HealthStatus": "Healthy" if i % 2 else "Unhealthy"} for i in range(60)
+            ]
+            self.client.expected_data = data_with_instances
             set_capacity(t.name, t.queues, self.client, False)
             self.assertEqual(t.expected_capacity, self.client.expected_capacity, t.name)
 

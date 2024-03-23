@@ -21,15 +21,19 @@ namespace ErrorCodes
 class FullSortingMergeJoin : public IJoin
 {
 public:
-    explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+    explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_,
+                                  int null_direction_ = 1)
         : table_join(table_join_)
         , right_sample_block(right_sample_block_)
+        , null_direction(null_direction_)
     {
-        LOG_TRACE(&Poco::Logger::get("FullSortingMergeJoin"), "Will use full sorting merge join");
+        LOG_TRACE(getLogger("FullSortingMergeJoin"), "Will use full sorting merge join");
     }
 
     std::string getName() const override { return "FullSortingMergeJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
+
+    int getNullDirection() const { return null_direction; }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
     {
@@ -119,6 +123,7 @@ private:
     std::shared_ptr<TableJoin> table_join;
     Block right_sample_block;
     Block totals;
+    int null_direction;
 };
 
 }

@@ -4,6 +4,7 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <IO/PeekableReadBuffer.h>
 
 
 namespace DB
@@ -23,7 +24,7 @@ public:
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
-    void resetParser() override;
+    void resetReadBuffer() override;
 
 private:
     TabSeparatedRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> in_, const Params & params_,

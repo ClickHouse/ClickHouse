@@ -76,7 +76,7 @@ insert into data_01278 select
     reinterpretAsString(number), // s6
     reinterpretAsString(number), // s7
     reinterpretAsString(number)  // s8
-from numbers(100000); -- { serverError 241 }" > /dev/null 2>&1
+from numbers(200000); -- { serverError 241 }" > /dev/null 2>&1
     local ret_code=$?
     if [[ $ret_code -eq 0 ]];
     then

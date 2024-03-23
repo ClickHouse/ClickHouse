@@ -127,7 +127,12 @@ struct Pattern
     {
         hash.update(rule_type);
         hash.update(regexp_str);
-        hash.update(function->getName());
+        if (function)
+        {
+            hash.update(function->getName());
+            for (const auto & p : function->getParameters())
+                hash.update(toString(p));
+        }
         for (const auto & r : retentions)
         {
             hash.update(r.age);

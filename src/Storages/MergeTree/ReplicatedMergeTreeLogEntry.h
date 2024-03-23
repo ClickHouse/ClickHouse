@@ -98,6 +98,7 @@ struct ReplicatedMergeTreeLogEntryData
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
     Strings deduplicate_by_columns = {}; // Which columns should be checked for duplicates, empty means 'all' (default).
+    bool cleanup = false;
     MergeType merge_type = MergeType::Regular;
     String column_name;
     String index_name;
@@ -170,6 +171,9 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// The quorum value (for GET_PART) is a non-zero value when the quorum write is enabled.
     size_t quorum = 0;
+
+    /// Used only in tests for permanent fault injection for particular queue entry.
+    bool fault_injected = false;
 
     /// If this MUTATE_PART entry caused by alter(modify/drop) query.
     bool isAlterMutation() const

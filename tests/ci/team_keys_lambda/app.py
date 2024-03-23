@@ -2,13 +2,12 @@
 
 import argparse
 import json
-
 from datetime import datetime
 from queue import Queue
 from threading import Thread
 
-import requests  # type: ignore
 import boto3  # type: ignore
+import requests
 
 
 class Keys(set):
@@ -34,7 +33,7 @@ class Worker(Thread):
             m = self.queue.get()
             if m == "":
                 break
-            response = requests.get(f"https://github.com/{m}.keys")
+            response = requests.get(f"https://github.com/{m}.keys", timeout=30)
             self.results.add(f"# {m}\n{response.text}\n")
             self.queue.task_done()
 
@@ -45,7 +44,9 @@ def get_org_team_members(token: str, org: str, team_slug: str) -> set:
         "Accept": "application/vnd.github.v3+json",
     }
     response = requests.get(
-        f"https://api.github.com/orgs/{org}/teams/{team_slug}/members", headers=headers
+        f"https://api.github.com/orgs/{org}/teams/{team_slug}/members",
+        headers=headers,
+        timeout=30,
     )
     response.raise_for_status()
     data = response.json()

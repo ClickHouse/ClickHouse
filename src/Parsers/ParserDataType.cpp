@@ -64,39 +64,39 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// only for certain first words, otherwise we don't know how many words to parse
     if (type_name_upper == "NATIONAL")
     {
-        if (ParserKeyword("CHARACTER LARGE OBJECT").ignore(pos))
-            type_name_suffix = "CHARACTER LARGE OBJECT";
-        else if (ParserKeyword("CHARACTER VARYING").ignore(pos))
-            type_name_suffix = "CHARACTER VARYING";
-        else if (ParserKeyword("CHAR VARYING").ignore(pos))
-            type_name_suffix = "CHAR VARYING";
-        else if (ParserKeyword("CHARACTER").ignore(pos))
-            type_name_suffix = "CHARACTER";
-        else if (ParserKeyword("CHAR").ignore(pos))
-            type_name_suffix = "CHAR";
+        if (ParserKeyword(Keyword::CHARACTER_LARGE_OBJECT).ignore(pos))
+            type_name_suffix = toStringView(Keyword::CHARACTER_LARGE_OBJECT);
+        else if (ParserKeyword(Keyword::CHARACTER_VARYING).ignore(pos))
+            type_name_suffix = toStringView(Keyword::CHARACTER_VARYING);
+        else if (ParserKeyword(Keyword::CHAR_VARYING).ignore(pos))
+            type_name_suffix = toStringView(Keyword::CHAR_VARYING);
+        else if (ParserKeyword(Keyword::CHARACTER).ignore(pos))
+            type_name_suffix = toStringView(Keyword::CHARACTER);
+        else if (ParserKeyword(Keyword::CHAR).ignore(pos))
+            type_name_suffix = toStringView(Keyword::CHAR);
     }
     else if (type_name_upper == "BINARY" ||
              type_name_upper == "CHARACTER" ||
              type_name_upper == "CHAR" ||
              type_name_upper == "NCHAR")
     {
-        if (ParserKeyword("LARGE OBJECT").ignore(pos))
-            type_name_suffix = "LARGE OBJECT";
-        else if (ParserKeyword("VARYING").ignore(pos))
-            type_name_suffix = "VARYING";
+        if (ParserKeyword(Keyword::LARGE_OBJECT).ignore(pos))
+            type_name_suffix = toStringView(Keyword::LARGE_OBJECT);
+        else if (ParserKeyword(Keyword::VARYING).ignore(pos))
+            type_name_suffix = toStringView(Keyword::VARYING);
     }
     else if (type_name_upper == "DOUBLE")
     {
-        if (ParserKeyword("PRECISION").ignore(pos))
-            type_name_suffix = "PRECISION";
+        if (ParserKeyword(Keyword::PRECISION).ignore(pos))
+            type_name_suffix = toStringView(Keyword::PRECISION);
     }
     else if (type_name_upper.find("INT") != std::string::npos)
     {
         /// Support SIGNED and UNSIGNED integer type modifiers for compatibility with MySQL
-        if (ParserKeyword("SIGNED").ignore(pos))
-            type_name_suffix = "SIGNED";
-        else if (ParserKeyword("UNSIGNED").ignore(pos))
-            type_name_suffix = "UNSIGNED";
+        if (ParserKeyword(Keyword::SIGNED).ignore(pos))
+            type_name_suffix = toStringView(Keyword::SIGNED);
+        else if (ParserKeyword(Keyword::UNSIGNED).ignore(pos))
+            type_name_suffix = toStringView(Keyword::UNSIGNED);
         else if (pos->type == TokenType::OpeningRoundBracket)
         {
             ++pos;
@@ -105,16 +105,28 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (pos->type != TokenType::ClosingRoundBracket)
                return false;
             ++pos;
-            if (ParserKeyword("SIGNED").ignore(pos))
-                type_name_suffix = "SIGNED";
-            else if (ParserKeyword("UNSIGNED").ignore(pos))
-                type_name_suffix = "UNSIGNED";
+            if (ParserKeyword(Keyword::SIGNED).ignore(pos))
+                type_name_suffix = toStringView(Keyword::SIGNED);
+            else if (ParserKeyword(Keyword::UNSIGNED).ignore(pos))
+                type_name_suffix = toStringView(Keyword::UNSIGNED);
         }
 
     }
 
     if (!type_name_suffix.empty())
         type_name = type_name_upper + " " + type_name_suffix;
+
+    /// skip trailing comma in types, e.g. Tuple(Int, String,)
+    if (pos->type == TokenType::Comma)
+    {
+        Expected test_expected;
+        auto test_pos = pos;
+        ++test_pos;
+        if (ParserToken(TokenType::ClosingRoundBracket).ignore(test_pos, test_expected))
+        { // the end of the type definition was reached and there was a trailing comma
+            ++pos;
+        }
+    }
 
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = type_name;
@@ -133,6 +145,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!args_parser.parse(pos, expr_list_args, expected))
         return false;
+    if (pos->type == TokenType::Comma)
+        // ignore trailing comma inside Nested structures like Tuple(Int, Tuple(Int, String),)
+        ++pos;
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;

@@ -27,12 +27,18 @@ JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, std::unique_pt
             header_.columns());
 }
 
-void JSONAsRowInputFormat::resetParser()
+
+void JSONAsRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    JSONEachRowRowInputFormat::resetParser();
-    buf->reset();
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    JSONEachRowRowInputFormat::setReadBuffer(*buf);
 }
 
+void JSONAsRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    JSONEachRowRowInputFormat::resetReadBuffer();
+}
 
 bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
@@ -67,12 +73,6 @@ bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 
     return !buf->eof();
 }
-
-void JSONAsRowInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    buf->setSubBuffer(in_);
-}
-
 
 JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)

@@ -20,7 +20,7 @@ QUERY id: 0
                 LIST id: 9, nodes: 1
                   COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 11
   JOIN TREE
-    TABLE_FUNCTION id: 11, table_function_name: numbers
+    TABLE_FUNCTION id: 11, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 12, nodes: 1
           CONSTANT id: 13, constant_value: UInt64_10, constant_value_type: UInt8
@@ -44,7 +44,7 @@ QUERY id: 0
                     LIST id: 10, nodes: 1
                       CONSTANT id: 11, constant_value: UInt64_2, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 7, table_function_name: numbers
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 12, nodes: 1
           CONSTANT id: 13, constant_value: UInt64_10, constant_value_type: UInt8

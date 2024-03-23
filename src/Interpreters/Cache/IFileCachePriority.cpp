@@ -13,7 +13,7 @@ namespace DB
 IFileCachePriority::IFileCachePriority(size_t max_size_, size_t max_elements_)
     : max_size(max_size_), max_elements(max_elements_)
 {
-    CurrentMetrics::set(CurrentMetrics::FilesystemCacheSizeLimit, max_size_);
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheSizeLimit, max_size_);
 }
 
 IFileCachePriority::Entry::Entry(

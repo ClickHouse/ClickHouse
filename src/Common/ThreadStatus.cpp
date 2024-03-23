@@ -4,6 +4,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
@@ -75,7 +76,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("(for thread)");
-    log = &Poco::Logger::get("ThreadStatus");
+    log = getLogger("ThreadStatus");
 
     current_thread = this;
 
@@ -195,8 +196,9 @@ bool ThreadStatus::isQueryCanceled() const
     if (!thread_group)
         return false;
 
-    chassert(local_data.query_is_canceled_predicate);
-    return local_data.query_is_canceled_predicate();
+    if (local_data.query_is_canceled_predicate)
+        return local_data.query_is_canceled_predicate();
+    return false;
 }
 
 ThreadStatus::~ThreadStatus()

@@ -47,12 +47,12 @@ public:
                 arguments.size());
 
         FunctionArgumentDescriptors args{
-            {"haystack", &isString<IDataType>, nullptr, "String"},
-            {"pattern", &isString<IDataType>, isColumnConst, "const String"},
+            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
         };
 
         if (arguments.size() == 3)
-            args.emplace_back(FunctionArgumentDescriptor{"index", &isInteger<IDataType>, nullptr, "Integer"});
+            args.emplace_back(FunctionArgumentDescriptor{"index", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"});
 
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -124,21 +124,23 @@ private:
         res_offsets.push_back(res_offset);
     }
 
-    static void vectorConstant(
+    void vectorConstant(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & pattern,
         ssize_t index,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets) const
     {
         const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
         if (index < 0 || index >= capture + 1)
             throw Exception(
                 ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
-                "Index value {} is out of range, should be in [0, {})",
+                "Index value {} for regexp pattern `{}` in function {} is out-of-range, should be in [0, {})",
                 index,
+                pattern,
+                getName(),
                 capture + 1);
 
         OptimizedRegularExpression::MatchVec matches;
@@ -161,13 +163,13 @@ private:
         }
     }
 
-    static void vectorVector(
+    void vectorVector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & pattern,
         const ColumnPtr & column_index,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets) const
     {
         res_data.reserve(data.size() / 5);
         res_offsets.reserve(offsets.size());
@@ -187,8 +189,10 @@ private:
             if (index < 0 || index >= capture + 1)
                 throw Exception(
                     ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
-                    "Index value {} is out of range, should be in [0, {})",
+                    "Index value {} for regexp pattern `{}` in function {} is out-of-range, should be in [0, {})",
                     index,
+                    pattern,
+                    getName(),
                     capture + 1);
 
             regexp.match(
@@ -202,12 +206,12 @@ private:
         }
     }
 
-    static void constantVector(
+    void constantVector(
         const std::string & str,
         const std::string & pattern,
         const ColumnPtr & column_index,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets) const
     {
         size_t rows = column_index->size();
         res_data.reserve(str.size() / 5);
@@ -230,8 +234,10 @@ private:
             if (index < 0 || index >= capture + 1)
                 throw Exception(
                     ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
-                    "Index value {} is out of range, should be in [0, {})",
+                    "Index value {} for regexp pattern `{}` in function {} is out-of-range, should be in [0, {})",
                     index,
+                    pattern,
+                    getName(),
                     capture + 1);
 
             saveMatch(matches, index, padded_str, 0, res_data, res_offsets, res_offset);
