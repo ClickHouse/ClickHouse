@@ -61,7 +61,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && rm /tmp/nfpm.deb
 
 ARG GO_VERSION=1.19.10
-# We need go for clickhouse-diagnostics
+# We needed go for clickhouse-diagnostics (it is not used anymore)
 RUN arch=${TARGETARCH:-amd64} \
     && curl -Lo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
     && tar -xzf /tmp/go.tgz -C /usr/local/ \
