@@ -2892,7 +2892,9 @@ void ClientBase::init(int argc, char ** argv)
 
         ("suggestion_limit", po::value<int>()->default_value(10000), "Suggestion limit for how many databases, tables and columns to fetch.")
 
-        ("format,f", po::value<std::string>(), "default output format")
+        ("format,f", po::value<std::string>(), "default output format (and input format for clickhouse-local)")
+        ("output-format", po::value<std::string>(), "default output format (this option has preference over --format)")
+
         ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
         ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
 
@@ -2975,6 +2977,8 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("ignore-error", true);
     if (options.count("format"))
         config().setString("format", options["format"].as<std::string>());
+    if (options.count("output-format"))
+        config().setString("output-format", options["output-format"].as<std::string>());
     if (options.count("vertical"))
         config().setBool("vertical", true);
     if (options.count("stacktrace"))
