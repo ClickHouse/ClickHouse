@@ -3476,6 +3476,7 @@ class ClickHouseInstance:
     ):
         # logging.debug(f"Executing query {sql} on {self.name}")
         result = None
+        exception_msg = ""
         for i in range(retry_count):
             try:
                 result = self.query(
@@ -3493,17 +3494,19 @@ class ClickHouseInstance:
                     return result
                 time.sleep(sleep_time)
             except QueryRuntimeException as ex:
+                exception_msg = f"{type(ex).__name__}: {str(ex)}"
                 # Container is down, this is likely due to server crash.
                 if "No route to host" in str(ex):
                     raise
                 time.sleep(sleep_time)
             except Exception as ex:
                 # logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                exception_msg = f"{type(ex).__name__}: {str(ex)}"
                 time.sleep(sleep_time)
 
         if result is not None:
             return result
-        raise Exception("Can't execute query {}".format(sql))
+        raise Exception(f"Can't execute query {sql}\n{exception_msg}")
 
     # As query() but doesn't wait response and returns response handler
     def get_query_request(self, sql, *args, **kwargs):
