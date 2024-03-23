@@ -1,4 +1,3 @@
-#include <boost/algorithm/string/join.hpp>
 #include <cstdlib>
 #include <fcntl.h>
 #include <map>
@@ -7,7 +6,6 @@
 #include <memory>
 #include <optional>
 #include <Common/ThreadStatus.h>
-#include <Common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
@@ -44,8 +42,6 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-
-#include <Interpreters/InterpreterSetQuery.h>
 
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -1180,7 +1176,7 @@ void Client::processConfig()
 
     pager = config().getString("pager", "");
 
-    is_default_format = !config().has("vertical") && !config().has("format");
+    is_default_format = !config().has("vertical") && !config().has("output-format") && !config().has("format");
     if (is_default_format && checkIfStdoutIsRegularFile())
     {
         is_default_format = false;
@@ -1189,9 +1185,13 @@ void Client::processConfig()
         format = format_from_file_name ? *format_from_file_name : "TabSeparated";
     }
     else if (config().has("vertical"))
-        format = config().getString("format", "Vertical");
+    {
+        format = config().getString("output-format", config().getString("format", "Vertical"));
+    }
     else
-        format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
+    {
+        format = config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated"));
+    }
 
     format_max_block_size = config().getUInt64("format_max_block_size",
         global_context->getSettingsRef().max_block_size);
