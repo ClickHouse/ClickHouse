@@ -154,14 +154,14 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
         )
 
     @staticmethod
-    def insert_reliable(instance, query_insert):
+    def insert_reliable(instance, *args, **kwargs):
         """
         Make retries in case of UNKNOWN_STATUS_OF_INSERT or zkutil::KeeperException errors
         """
 
         for i in range(100):
             try:
-                instance.query(query_insert)
+                instance.query(*args, **kwargs)
                 return
             except Exception as e:
                 last_exception = e
