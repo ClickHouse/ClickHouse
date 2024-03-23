@@ -1576,7 +1576,11 @@ void TreeRewriter::normalize(
     CustomizeAggregateFunctionsMoveOrNullVisitor(data_or_null).visit(query);
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
-    QueryAliasesVisitor(aliases).visit(query);
+    bool is_initiator = context_->getClientInfo().distributed_depth == 0;
+    if (is_initiator)
+        QueryAliasesVisitor(aliases).visit(query);
+    else
+        QueryAliasesNoSubqueriesVisitor(aliases).visit(query);
 
     /// Mark table ASTIdentifiers with not a column marker
     MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
