@@ -406,7 +406,7 @@ void StorageMaterializedView::alter(
         const auto & inner_table_metadata = tryGetTargetTable()->getInMemoryMetadata().columns;
         for (const auto & name : block.getNames())
             if (!inner_table_metadata.has(name))
-                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", col.name);
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", name);
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
