@@ -163,6 +163,7 @@ public:
     }
 
     bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
+    const std::unordered_map<String, Field> & getServerProfileSettings() override { return server_profile_settings; }
 
 private:
     String host;
@@ -172,6 +173,7 @@ private:
     String password;
     ssh::SSHKey ssh_private_key;
     String quota_key;
+    std::unordered_map<String, Field> server_profile_settings;
 
     /// For inter-server authorization
     String cluster;

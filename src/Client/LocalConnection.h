@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include "Connection.h"
 #include <Interpreters/Context.h>
 #include <QueryPipeline/BlockIO.h>
@@ -130,6 +131,7 @@ public:
     void disconnect() override {}
 
     void setThrottler(const ThrottlerPtr &) override {}
+    const std::unordered_map<String, Field> & getServerProfileSettings() override { return dummy_profile_settings; }
 
 private:
     void initBlockInput();
@@ -164,6 +166,7 @@ private:
     std::optional<UInt64> next_packet_type;
 
     String current_database;
+    std::unordered_map<String, Field> dummy_profile_settings;
 
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 };
