@@ -8018,11 +8018,13 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
             bool zero_copy_enabled = storage_settings_ptr->allow_remote_fs_zero_copy_replication
                 || dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings()->allow_remote_fs_zero_copy_replication;
+
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
+
             auto [dst_part, part_lock] = cloneAndLoadDataPart(
                 src_part,
                 TMP_PREFIX,
@@ -8031,6 +8033,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 clone_params,
                 query_context->getReadSettings(),
                 query_context->getWriteSettings());
+
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));
             src_parts.emplace_back(src_part);
