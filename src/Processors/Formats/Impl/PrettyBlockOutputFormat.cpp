@@ -422,16 +422,19 @@ void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
     auto is_single_number = readable_number_tip && chunk.getNumRows() == 1 && chunk.getNumColumns() == 1;
     if (!is_single_number)
         return;
+
     auto value = columns[0]->getFloat64(0);
     auto threshold = format_settings.pretty.output_format_pretty_single_large_number_tip_threshold;
-    if (threshold == 0 || value <= threshold)
-        return;
-    if (color)
-        writeCString("\033[90m", out);
-    writeCString(" -- ", out);
-    formatReadableQuantity(value, out, 2);
-    if (color)
-        writeCString("\033[0m", out);
+
+    if (threshold && isFinite(value) && abs(value) > threshold)
+    {
+        if (color)
+            writeCString("\033[90m", out);
+        writeCString(" -- ", out);
+        formatReadableQuantity(value, out, 2);
+        if (color)
+            writeCString("\033[0m", out);
+    }
 }
 
 void registerOutputFormatPretty(FormatFactory & factory)
