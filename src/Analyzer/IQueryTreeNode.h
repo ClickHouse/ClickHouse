@@ -11,7 +11,6 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <Analyzer/Identifier.h>
-#include <Analyzer/ConstantValue.h>
 
 class SipHash;
 
@@ -90,6 +89,11 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
+    virtual void convertToNullable()
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query node", getNodeTypeName());
+    }
+
     struct CompareOptions
     {
         bool compare_aliases = true;
@@ -102,7 +106,7 @@ public:
       */
     bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true }) const;
 
-    using Hash = std::pair<UInt64, UInt64>;
+    using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
 
     /** Get tree hash identifying current tree
@@ -139,9 +143,17 @@ public:
         return alias;
     }
 
+    const String & getOriginalAlias() const
+    {
+        return original_alias.empty() ? alias : original_alias;
+    }
+
     /// Set node alias
     void setAlias(String alias_value)
     {
+        if (original_alias.empty())
+            original_alias = std::move(alias);
+
         alias = std::move(alias_value);
     }
 
@@ -176,8 +188,20 @@ public:
       */
     String formatOriginalASTForErrorMessage() const;
 
+    struct ConvertToASTOptions
+    {
+        /// Add _CAST if constant literal type is different from column type
+        bool add_cast_for_constants = true;
+
+        /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
+        bool fully_qualified_identifiers = true;
+
+        /// Identifiers are qualified but database name is not added (`table.column`) if set to false.
+        bool qualify_indentifiers_with_database = true;
+    };
+
     /// Convert query tree to AST
-    ASTPtr toAST() const;
+    ASTPtr toAST(const ConvertToASTOptions & options = { .add_cast_for_constants = true, .fully_qualified_identifiers = true, .qualify_indentifiers_with_database = true }) const;
 
     /// Convert query tree to AST and then format it for error message.
     String formatConvertedASTForErrorMessage() const;
@@ -253,13 +277,16 @@ protected:
     virtual QueryTreeNodePtr cloneImpl() const = 0;
 
     /// Subclass must convert its internal state and its children to AST
-    virtual ASTPtr toASTImpl() const = 0;
+    virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
 
     QueryTreeNodes children;
     QueryTreeWeakNodes weak_pointers;
 
 private:
     String alias;
+    /// An alias from query. Alias can be replaced by query passes,
+    /// but we need to keep the original one to support additional_table_filters.
+    String original_alias;
     ASTPtr original_ast;
 };
 

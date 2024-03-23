@@ -1,12 +1,16 @@
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDummy.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Planner/Utils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 namespace DB
@@ -15,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 bool hasJoin(const ASTSelectQuery & select)
@@ -83,44 +86,6 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     return true;
 }
 
-class StorageDummy : public IStorage
-{
-public:
-    StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_)
-        : IStorage(table_id_)
-    {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(columns_);
-        setInMemoryMetadata(storage_metadata);
-    }
-
-    std::string getName() const override { return "StorageDummy"; }
-
-    bool supportsSampling() const override { return true; }
-    bool supportsFinal() const override { return true; }
-    bool supportsPrewhere() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
-    bool canMoveConditionsToPrewhere() const override { return false; }
-
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "StorageDummy does not support getQueryProcessingStage method");
-    }
-
-    Pipe read(const Names & /*column_names*/,
-        const StorageSnapshotPtr & /*storage_snapshot*/,
-        SelectQueryInfo & /*query_info*/,
-        ContextPtr /*context*/,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/) override
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "StorageDummy does not support read method");
-    }
-};
-
 Block getHeaderForProcessingStage(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -133,23 +98,7 @@ Block getHeaderForProcessingStage(
         case QueryProcessingStage::FetchColumns:
         {
             Block header = storage_snapshot->getSampleBlockForColumns(column_names);
-
-            if (query_info.prewhere_info)
-            {
-                auto & prewhere_info = *query_info.prewhere_info;
-
-                if (prewhere_info.row_level_filter)
-                {
-                    header = prewhere_info.row_level_filter->updateHeader(std::move(header));
-                    header.erase(prewhere_info.row_level_column_name);
-                }
-
-                if (prewhere_info.prewhere_actions)
-                    header = prewhere_info.prewhere_actions->updateHeader(std::move(header));
-
-                if (prewhere_info.remove_prewhere_column)
-                    header.erase(prewhere_info.prewhere_column_name);
-            }
+            header = SourceStepWithFilter::applyPrewhereActions(header, query_info.prewhere_info);
             return header;
         }
         case QueryProcessingStage::WithMergeableState:
@@ -161,20 +110,41 @@ Block getHeaderForProcessingStage(
             ASTPtr query = query_info.query;
             if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
             {
-                /// TODO: Analyzer syntax analyzer result
                 if (!query_info.syntax_analyzer_result)
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getHeaderForProcessingStage is unsupported");
+                {
+                    if (!query_info.planner_context)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query is not analyzed: no planner context");
 
-                query = query_info.query->clone();
-                TreeRewriterResult new_rewriter_result = *query_info.syntax_analyzer_result;
-                removeJoin(*query->as<ASTSelectQuery>(), new_rewriter_result, context);
+                    const auto & query_node = query_info.query_tree->as<QueryNode &>();
+                    const auto & join_tree = query_node.getJoinTree();
+                    auto left_table_expression = extractLeftTableExpression(join_tree);
+
+                    auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(left_table_expression);
+                    const auto & query_context = query_info.planner_context->getQueryContext();
+
+                    NamesAndTypes columns;
+                    const auto & column_name_to_column = table_expression_data.getColumnNameToColumn();
+                    for (const auto & column_name : table_expression_data.getSelectedColumnsNames())
+                        columns.push_back(column_name_to_column.at(column_name));
+
+                    auto new_query_node = buildSubqueryToReadColumnsFromTableExpression(columns, left_table_expression, query_context);
+                    query = new_query_node->toAST();
+                }
+                else
+                {
+                    query = query_info.query->clone();
+                    TreeRewriterResult new_rewriter_result = *query_info.syntax_analyzer_result;
+                    removeJoin(*query->as<ASTSelectQuery>(), new_rewriter_result, context);
+                }
             }
 
             Block result;
 
             if (context->getSettingsRef().allow_experimental_analyzer)
             {
-                auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), storage_snapshot->metadata->getColumns());
+                auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
+                                                                                        storage_snapshot->getAllColumnsDescription(),
+                                                                                        storage_snapshot);
                 InterpreterSelectQueryAnalyzer interpreter(query, context, storage, SelectQueryOptions(processed_stage).analyze());
                 result = interpreter.getSampleBlock();
             }
@@ -188,8 +158,7 @@ Block getHeaderForProcessingStage(
             return result;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical Error: unknown processed stage.");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown processed stage.");
 }
 
 }
-

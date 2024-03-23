@@ -3,6 +3,7 @@
 #include <sys/types.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/Throttler_fwd.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 
 
@@ -32,6 +33,7 @@ public:
         const std::string & file_name_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         int flags = -1,
+        ThrottlerPtr throttler_ = {},
         mode_t mode = 0666,
         char * existing_memory = nullptr,
         size_t alignment = 0);
@@ -41,6 +43,7 @@ public:
         int & fd,   /// Will be set to -1 if constructor didn't throw and ownership of file descriptor is passed to the object.
         const std::string & original_file_name = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        ThrottlerPtr throttler_ = {},
         char * existing_memory = nullptr,
         size_t alignment = 0);
 

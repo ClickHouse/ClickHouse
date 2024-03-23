@@ -63,9 +63,11 @@ PushingPipelineExecutor::PushingPipelineExecutor(QueryPipeline & pipeline_) : pi
 
 PushingPipelineExecutor::~PushingPipelineExecutor()
 {
+    /// It must be finalized explicitly. Otherwise we cancel it assuming it's due to an exception.
+    chassert(finished || std::uncaught_exceptions() || std::current_exception());
     try
     {
-        finish();
+        cancel();
     }
     catch (...)
     {

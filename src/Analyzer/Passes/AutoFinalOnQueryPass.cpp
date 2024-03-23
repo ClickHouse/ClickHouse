@@ -1,4 +1,4 @@
-#include "AutoFinalOnQueryPass.h"
+#include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 
 #include <Storages/IStorage.h>
 
@@ -20,10 +20,9 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<AutoFinalOnQueryPassVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
-        const auto & context = getContext();
-        if (!context->getSettingsRef().final)
+        if (!getSettings().final)
             return;
 
         const auto * query_node = node->as<QueryNode>();
@@ -43,7 +42,7 @@ private:
             return;
 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        bool is_final_supported = storage && storage->supportsFinal() && !storage->isRemote();
+        bool is_final_supported = storage && storage->supportsFinal();
         if (!is_final_supported)
             return;
 
@@ -68,7 +67,7 @@ private:
 
 }
 
-void AutoFinalOnQueryPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void AutoFinalOnQueryPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     auto visitor = AutoFinalOnQueryPassVisitor(std::move(context));
     visitor.visit(query_tree_node);

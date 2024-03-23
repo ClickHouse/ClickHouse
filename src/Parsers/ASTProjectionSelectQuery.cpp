@@ -73,11 +73,11 @@ void ASTProjectionSelectQuery::formatImpl(const FormatSettings & s, FormatState 
 
     if (orderBy())
     {
-        /// Let's convert the ASTFunction into ASTExpressionList, which generates consistent format
+        /// Let's convert tuple ASTFunction into ASTExpressionList, which generates consistent format
         /// between GROUP BY and ORDER BY projection definition.
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY " << (s.hilite ? hilite_none : "");
         ASTPtr order_by;
-        if (auto * func = orderBy()->as<ASTFunction>())
+        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple")
             order_by = func->arguments;
         else
         {
@@ -142,6 +142,23 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     }
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
+
+    /// Attach settings to prevent AST transformations. We already have ignored AST optimizations
+    /// for projection queries. Only remaining settings need to be added here.
+    ///
+    /// NOTE: `count_distinct_implementation` has already been selected during the creation of the
+    /// projection, so there will be no countDistinct(...) to rewrite in projection queries.
+    /// Ideally, we should aim for a unique and normalized query representation that remains
+    /// unchanged after the AST rewrite. For instance, we can add -OrEmpty, realIn as the default
+    /// behavior w.r.t -OrNull, nullIn.
+    auto settings_query = std::make_shared<ASTSetQuery>();
+    SettingsChanges settings_changes;
+    settings_changes.insertSetting("aggregate_functions_null_for_empty", false);
+    settings_changes.insertSetting("transform_null_in", false);
+    settings_changes.insertSetting("legacy_column_name_of_tuple_literal", false);
+    settings_query->changes = std::move(settings_changes);
+    settings_query->is_standalone = false;
+    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     return node;
 }
 

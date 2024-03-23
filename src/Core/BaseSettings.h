@@ -2,10 +2,11 @@
 
 #include <Core/SettingsFields.h>
 #include <Common/SettingsChanges.h>
+#include <Common/FieldVisitorToString.h>
+#include <IO/Operators.h>
 #include <base/range.h>
 #include <boost/blank.hpp>
 #include <unordered_map>
-#include <boost/program_options/options_description.hpp>
 
 
 namespace boost::program_options
@@ -107,7 +108,9 @@ public:
     public:
         const String & getName() const;
         Field getValue() const;
+        Field getDefaultValue() const;
         String getValueString() const;
+        String getDefaultValueString() const;
         bool isValueChanged() const;
         const char * getTypeName() const;
         const char * getDescription() const;
@@ -124,18 +127,6 @@ public:
         size_t index;
         std::conditional_t<Traits::allow_custom_settings, const CustomSettingMap::mapped_type*, boost::blank> custom_setting;
     };
-
-    /// Adds program options to set the settings from a command line.
-    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
-    void addProgramOptions(boost::program_options::options_description & options);
-
-    /// Adds program options as to set the settings from a command line.
-    /// Allows to set one setting multiple times, the last value will be used.
-    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
-    void addProgramOptionsAsMultitokens(boost::program_options::options_description & options);
-
-    void addProgramOption(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field);
-    void addProgramOptionAsMultitoken(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field);
 
     enum SkipFlags
     {
@@ -465,7 +456,7 @@ void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format)
 {
     const auto & accessor = Traits::Accessor::instance();
 
-    for (auto field : *this)
+    for (const auto & field : *this)
     {
         bool is_custom = field.isCustom();
         bool is_important = !is_custom && accessor.isImportant(field.index);
@@ -499,9 +490,11 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
     const auto & accessor = Traits::Accessor::instance();
     while (true)
     {
-        String name = BaseSettingsHelpers::readString(in);
-        if (name.empty() /* empty string is a marker of the end of settings */)
+        String read_name = BaseSettingsHelpers::readString(in);
+        if (read_name.empty() /* empty string is a marker of the end of settings */)
             break;
+
+        std::string_view name = TTraits::resolveName(read_name);
         size_t index = accessor.find(name);
 
         using Flags = BaseSettingsHelpers::Flags;
@@ -543,65 +536,16 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
 template <typename TTraits>
 String BaseSettings<TTraits>::toString() const
 {
-    String res;
-    for (const auto & field : *this)
+    WriteBufferFromOwnString out;
+    bool first = true;
+    for (const auto & setting : *this)
     {
-        if (!res.empty())
-            res += ", ";
-        res += field.getName() + " = " + field.getValueString();
+        if (!first)
+            out << ", ";
+        out << setting.getName() << " = " << applyVisitor(FieldVisitorToString(), setting.getValue());
+        first = false;
     }
-    return res;
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::addProgramOptions(boost::program_options::options_description & options)
-{
-    const auto & settings_to_aliases = TTraits::settingsToAliases();
-    for (const auto & field : all())
-    {
-        std::string_view name = field.getName();
-        addProgramOption(options, name, field);
-
-        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
-        {
-            for (const auto alias : it->second)
-                addProgramOption(options, alias, field);
-        }
-    }
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::addProgramOptionsAsMultitokens(boost::program_options::options_description & options)
-{
-    const auto & settings_to_aliases = TTraits::settingsToAliases();
-    for (const auto & field : all())
-    {
-        std::string_view name = field.getName();
-        addProgramOptionAsMultitoken(options, name, field);
-
-        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
-        {
-            for (const auto alias : it->second)
-                addProgramOptionAsMultitoken(options, alias, field);
-        }
-    }
-}
-
-
-template <typename TTraits>
-void BaseSettings<TTraits>::addProgramOption(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field)
-{
-    auto on_program_option = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
-    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-        name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), field.getDescription())));
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::addProgramOptionAsMultitoken(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field)
-{
-    auto on_program_option = boost::function1<void, const Strings &>([this, name](const Strings & values) { set(name, values.back()); });
-    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-        name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option), field.getDescription())));
+    return out.str();
 }
 
 template <typename TTraits>
@@ -798,6 +742,17 @@ Field BaseSettings<TTraits>::SettingFieldRef::getValue() const
 }
 
 template <typename TTraits>
+Field BaseSettings<TTraits>::SettingFieldRef::getDefaultValue() const
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return static_cast<Field>(custom_setting->second);
+    }
+    return accessor->getDefaultValue(index);
+}
+
+template <typename TTraits>
 String BaseSettings<TTraits>::SettingFieldRef::getValueString() const
 {
     if constexpr (Traits::allow_custom_settings)
@@ -806,6 +761,17 @@ String BaseSettings<TTraits>::SettingFieldRef::getValueString() const
             return custom_setting->second.toString();
     }
     return accessor->getValueString(*settings, index);
+}
+
+template <typename TTraits>
+String BaseSettings<TTraits>::SettingFieldRef::getDefaultValueString() const
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return custom_setting->second.toString();
+    }
+    return accessor->getDefaultValueString(index);
 }
 
 template <typename TTraits>
@@ -902,7 +868,8 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             void resetValueToDefault(Data & data, size_t index) const { return field_infos[index].reset_value_to_default_function(data); } \
             void writeBinary(const Data & data, size_t index, WriteBuffer & out) const { return field_infos[index].write_binary_function(data, out); } \
             void readBinary(Data & data, size_t index, ReadBuffer & in) const { return field_infos[index].read_binary_function(data, in); } \
-        \
+            Field getDefaultValue(size_t index) const { return field_infos[index].get_default_value_function(); } \
+            String getDefaultValueString(size_t index) const { return field_infos[index].get_default_value_string_function(); } \
         private: \
             Accessor(); \
             struct FieldInfo \
@@ -923,6 +890,8 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 void (*reset_value_to_default_function)(Data &) ; \
                 void (*write_binary_function)(const Data &, WriteBuffer &) ; \
                 void (*read_binary_function)(Data &, ReadBuffer &) ; \
+                Field (*get_default_value_function)() ; \
+                String (*get_default_value_string_function)() ; \
             }; \
             std::vector<FieldInfo> field_infos; \
             std::unordered_map<std::string_view, size_t> name_to_index_map; \
@@ -1033,6 +1002,8 @@ struct DefineAliases
             [](const Data & data) -> bool { return data.NAME.changed; }, \
             [](Data & data) { data.NAME = SettingField##TYPE{DEFAULT}; }, \
             [](const Data & data, WriteBuffer & out) { data.NAME.writeBinary(out); }, \
-            [](Data & data, ReadBuffer & in) { data.NAME.readBinary(in); } \
+            [](Data & data, ReadBuffer & in) { data.NAME.readBinary(in); }, \
+            []() -> Field { return static_cast<Field>(SettingField##TYPE{DEFAULT}); }, \
+            []() -> String { return SettingField##TYPE{DEFAULT}.toString(); } \
         });
 }

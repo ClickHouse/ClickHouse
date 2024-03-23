@@ -19,12 +19,14 @@ class ReadBuffer;
 class MsgPackVisitor : public msgpack::null_visitor
 {
 public:
-    MsgPackVisitor(bool null_as_default_) : null_as_default(null_as_default_) {}
+    explicit MsgPackVisitor(bool null_as_default_) : null_as_default(null_as_default_) {}
 
     struct Info
     {
         IColumn & column;
         DataTypePtr type;
+        bool is_tuple_element;
+        std::optional<size_t> array_size;
         UInt8 * read;
     };
 
@@ -37,7 +39,7 @@ public:
     bool visit_bin(const char * value, size_t size);
     bool visit_boolean(bool value);
     bool start_array(size_t size);
-    bool end_array();
+    bool end_array_item();
     bool visit_nil();
     bool start_map(uint32_t size);
     bool start_map_key();
@@ -67,13 +69,18 @@ public:
     String getName() const override { return "MagPackRowInputFormat"; }
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
 private:
     MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings);
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
-    bool readObject();
+    template <typename Parser>
+    bool readObject(Parser & msgpack_parser);
+
+    size_t countRows(size_t max_block_size) override;
+    bool supportsCountRows() const override { return true; }
 
     std::unique_ptr<PeekableReadBuffer> buf;
     MsgPackVisitor visitor;
@@ -89,7 +96,7 @@ public:
 private:
     msgpack::object_handle readObject();
     DataTypePtr getDataType(const msgpack::object & object);
-    DataTypes readRowAndGetDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
     UInt64 number_of_columns;

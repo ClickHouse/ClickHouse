@@ -5,8 +5,8 @@ SET max_threads=0;
 DROP TABLE IF EXISTS left;
 DROP TABLE IF EXISTS right;
 
-CREATE TABLE left ( key UInt32, value String ) ENGINE = MergeTree ORDER BY key;
-CREATE TABLE right (  key UInt32, value String ) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE left ( key UInt32, value String ) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+CREATE TABLE right (  key UInt32, value String ) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO left SELECT number, toString(number) FROM numbers(25367182);
 INSERT INTO right SELECT number, toString(number) FROM numbers(23124707);

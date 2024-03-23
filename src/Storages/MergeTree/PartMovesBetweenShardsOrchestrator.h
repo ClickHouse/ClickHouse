@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <Common/logger_useful.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/UUID.h>
@@ -177,7 +176,7 @@ private:
 
     String zookeeper_path;
     String logger_name;
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
     std::atomic<bool> need_stop{false};
 
     BackgroundSchedulePool::TaskHolder task;

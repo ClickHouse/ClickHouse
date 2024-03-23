@@ -1,6 +1,5 @@
 #include "ODBCBlockOutputStream.h"
 
-#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -19,7 +18,7 @@ ODBCSink::ODBCSink(
     ContextPtr local_context_,
     IdentifierQuotingStyle quoting_)
     : ISink(sample_block_)
-    , log(&Poco::Logger::get("ODBCSink"))
+    , log(getLogger("ODBCSink"))
     , connection_holder(std::move(connection_holder_))
     , db_name(remote_database_name_)
     , table_name(remote_table_name_)

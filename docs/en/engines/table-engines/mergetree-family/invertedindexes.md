@@ -15,7 +15,19 @@ tokenized cells of the string column. For example, the string cell "I will be a 
 " wi", "wil", "ill", "ll ", "l b", " be" etc. The more fine-granular the input strings are tokenized, the bigger but also the more
 useful the resulting inverted index will be.
 
-:::warning
+<div class='vimeo-container'>
+  <iframe src="//www.youtube.com/embed/O_MnyUkrIq8"
+    width="640"
+    height="360"
+    frameborder="0"
+    allow="autoplay;
+    fullscreen;
+    picture-in-picture"
+    allowfullscreen>
+  </iframe>
+</div>
+
+:::note
 Inverted indexes are experimental and should not be used in production environments yet. They may change in the future in backward-incompatible
 ways, for example with respect to their DDL/DQL syntax or performance/compression characteristics.
 :::
@@ -45,6 +57,12 @@ where `N` specifies the tokenizer:
 
 - `inverted(0)` (or shorter: `inverted()`) set the tokenizer to "tokens", i.e. split strings along spaces,
 - `inverted(N)` with `N` between 2 and 8 sets the tokenizer to "ngrams(N)"
+
+The maximum rows per postings list can be specified as the second parameter. This parameter can be used to control postings list sizes to avoid generating huge postings list files. The following variants exist:
+
+- `inverted(ngrams, max_rows_per_postings_list)`: Use given max_rows_per_postings_list (assuming it is not 0)
+- `inverted(ngrams, 0)`: No limitation of maximum rows per postings list
+- `inverted(ngrams)`: Use a default maximum rows which is 64K.
 
 Being a type of skipping index, inverted indexes can be dropped or added to a column after table creation:
 
@@ -191,3 +209,7 @@ is performance. In practice, users often search for multiple terms at once. For 
 '%big%'` can be evaluated directly using an inverted index by forming the union of the row id lists for terms "little" and "big". This also
 means that the parameter `GRANULARITY` supplied to index creation has no meaning (it may be removed from the syntax in the future).
 :::
+
+## Related Content
+
+- Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)

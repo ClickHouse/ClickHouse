@@ -1,10 +1,14 @@
 #pragma once
 
-#include <re2/re2.h>
-
 #include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
+
+
+namespace re2
+{
+    class RE2;
+}
 
 namespace DB
 {
@@ -103,8 +107,6 @@ enum class ApplyColumnTransformerType
 /// Get apply column transformer type name
 const char * toString(ApplyColumnTransformerType type);
 
-class ApplyColumnTransformerNode;
-using ApplyColumnTransformerNodePtr = std::shared_ptr<ApplyColumnTransformerNode>;
 
 /// Apply column transformer
 class ApplyColumnTransformerNode final : public IColumnTransformerNode
@@ -141,7 +143,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     ApplyColumnTransformerType apply_transformer_type = ApplyColumnTransformerType::LAMBDA;
@@ -159,8 +161,6 @@ enum class ExceptColumnTransformerType
 
 const char * toString(ExceptColumnTransformerType type);
 
-class ExceptColumnTransformerNode;
-using ExceptColumnTransformerNodePtr = std::shared_ptr<ExceptColumnTransformerNode>;
 
 /** Except column transformer.
   * Strict EXCEPT column transformer must use all column names during matched nodes transformation.
@@ -220,7 +220,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     ExceptColumnTransformerType except_transformer_type;
@@ -231,8 +231,6 @@ private:
     static constexpr size_t children_size = 0;
 };
 
-class ReplaceColumnTransformerNode;
-using ReplaceColumnTransformerNodePtr = std::shared_ptr<ReplaceColumnTransformerNode>;
 
 /** Replace column transformer.
   * Strict replace column transformer must use all replacements during matched nodes transformation.
@@ -298,7 +296,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     ListNode & getReplacements()

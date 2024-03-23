@@ -42,7 +42,7 @@ namespace ErrorCodes
         #define __NR_renameat2 316
     #elif defined(__aarch64__)
         #define __NR_renameat2 276
-    #elif defined(__ppc64__)
+    #elif defined(__powerpc64__)
         #define __NR_renameat2 357
     #elif defined(__riscv)
         #define __NR_renameat2 276
@@ -87,10 +87,12 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
         return false;
 
     if (errno == EEXIST)
-        throwFromErrno(fmt::format("Cannot rename {} to {} because the second path already exists", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
+        throw ErrnoException(
+            ErrorCodes::ATOMIC_RENAME_FAIL, "Cannot rename {} to {} because the second path already exists", old_path, new_path);
     if (errno == ENOENT)
-        throwFromErrno(fmt::format("Paths cannot be exchanged because {} or {} does not exist", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
-    throwFromErrnoWithPath(fmt::format("Cannot rename {} to {}", old_path, new_path), new_path, ErrorCodes::SYSTEM_ERROR);
+        throw ErrnoException(
+            ErrorCodes::ATOMIC_RENAME_FAIL, "Paths cannot be exchanged because {} or {} does not exist", old_path, new_path);
+    ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, new_path, "Cannot rename {} to {}", old_path, new_path);
 }
 
 bool supportsAtomicRename()
@@ -139,11 +141,12 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
     if (errnum == ENOTSUP || errnum == EINVAL)
         return false;
     if (errnum == EEXIST)
-        throwFromErrno(fmt::format("Cannot rename {} to {} because the second path already exists", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
+        throw ErrnoException(
+            ErrorCodes::ATOMIC_RENAME_FAIL, "Cannot rename {} to {} because the second path already exists", old_path, new_path);
     if (errnum == ENOENT)
-        throwFromErrno(fmt::format("Paths cannot be exchanged because {} or {} does not exist", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
-    throwFromErrnoWithPath(
-        fmt::format("Cannot rename {} to {}: {}", old_path, new_path, strerror(errnum)), new_path, ErrorCodes::SYSTEM_ERROR);
+        throw ErrnoException(
+            ErrorCodes::ATOMIC_RENAME_FAIL, "Paths cannot be exchanged because {} or {} does not exist", old_path, new_path);
+    ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, new_path, "Cannot rename {} to {}", old_path, new_path);
 }
 
 
@@ -195,13 +198,13 @@ static void renameNoReplaceFallback(const std::string & old_path, const std::str
 }
 
 /// Do not use [[noreturn]] to avoid warnings like "code will never be executed" in other places
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-noreturn"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-noreturn"
 static void renameExchangeFallback(const std::string &, const std::string &)
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "System call renameat2() is not supported");
 }
-#pragma GCC diagnostic pop
+#pragma clang diagnostic pop
 
 void renameNoReplace(const std::string & old_path, const std::string & new_path)
 {

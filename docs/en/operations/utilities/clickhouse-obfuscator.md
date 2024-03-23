@@ -24,7 +24,7 @@ It is designed to retain the following properties of data:
 
 Most of the properties above are viable for performance testing:
 
-reading data, filtering, aggregatio, and sorting will work at almost the same speed
+reading data, filtering, aggregation, and sorting will work at almost the same speed
 as on original data due to saved cardinalities, magnitudes, compression ratios, etc.
 
 It works in a deterministic fashion: you define a seed value and the transformation is determined by input data and by seed.
@@ -38,7 +38,7 @@ For example, you have a column `IsMobile` in your table with values 0 and 1. In 
 
 So, the user will be able to count the exact ratio of mobile traffic.
 
-Let's give another example. When you have some private data in your table, like user email and you don't want to publish any single email address.
+Let's give another example. When you have some private data in your table, like user email, and you don't want to publish any single email address.
 If your table is large enough and contains multiple different emails and no email has a very high frequency than all others, it will anonymize all data. But if you have a small number of different values in a column, it can reproduce some of them.
 You should look at the working algorithm of this tool works, and fine-tune its command line parameters.
 

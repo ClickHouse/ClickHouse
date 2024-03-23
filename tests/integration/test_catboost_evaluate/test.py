@@ -12,7 +12,9 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 instance = cluster.add_instance(
-    "instance", stay_alive=True, main_configs=["config/models_config.xml"]
+    "instance",
+    stay_alive=True,
+    main_configs=["config/models_config.xml", "config/logger_library_bridge.xml"],
 )
 
 
@@ -279,7 +281,7 @@ def testAmazonModelManyRows(ch_cluster):
     )
 
     result = instance.query(
-        "insert into amazon select number % 256, number, number, number, number, number, number, number, number, number from numbers(7500)"
+        "insert into amazon select number % 256, number, number, number, number, number, number, number, number, number from numbers(750000)"
     )
 
     # First compute prediction, then as a very crude way to fingerprint and compare the result: sum and floor
@@ -288,7 +290,7 @@ def testAmazonModelManyRows(ch_cluster):
         "SELECT floor(sum(catboostEvaluate('/etc/clickhouse-server/model/amazon_model.bin', RESOURCE, MGR_ID, ROLE_ROLLUP_1, ROLE_ROLLUP_2, ROLE_DEPTNAME, ROLE_TITLE, ROLE_FAMILY_DESC, ROLE_FAMILY, ROLE_CODE))) FROM amazon"
     )
 
-    expected = "5834\n"
+    expected = "583092\n"
     assert result == expected
 
     result = instance.query("drop table if exists amazon")

@@ -10,4 +10,4 @@ The short answer is "yes". However, we recommend keeping latency between all reg
 
 Configuration-wise there's no difference compared to single-region replication, simply use hosts that are located in different locations for replicas.
 
-For more information, see [full article on data replication](../../engines/table-engines/mergetree-family/replication/).
+For more information, see [full article on data replication](../../engines/table-engines/mergetree-family/replication.md).

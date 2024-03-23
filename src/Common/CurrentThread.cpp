@@ -3,7 +3,6 @@
 #include "CurrentThread.h"
 #include <Common/logger_useful.h>
 #include <Common/ThreadStatus.h>
-#include <Common/TaskStatsInfoGetter.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
@@ -23,6 +22,13 @@ void CurrentThread::updatePerformanceCounters()
     if (unlikely(!current_thread))
         return;
     current_thread->updatePerformanceCounters();
+}
+
+void CurrentThread::updatePerformanceCountersIfNeeded()
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->updatePerformanceCountersIfNeeded();
 }
 
 bool CurrentThread::isInitialized()
@@ -57,6 +63,23 @@ void CurrentThread::updateProgressOut(const Progress & value)
     current_thread->progress_out.incrementPiecewiseAtomically(value);
 }
 
+std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
+{
+    /// NOTE: this method could be called at early server startup stage
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    return current_thread->getInternalTextLogsQueue();
+}
+
+InternalProfileEventsQueuePtr CurrentThread::getInternalProfileEventsQueue()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    return current_thread->getInternalProfileEventsQueue();
+}
+
 void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
                                                 LogsLevel client_logs_level)
 {
@@ -65,49 +88,29 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
     current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
 }
 
-void CurrentThread::setFatalErrorCallback(std::function<void()> callback)
-{
-    if (unlikely(!current_thread))
-        return;
-    current_thread->setFatalErrorCallback(callback);
-}
 
-std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
-{
-    /// NOTE: this method could be called at early server startup stage
-    if (unlikely(!current_thread))
-        return nullptr;
-
-    if (current_thread->getCurrentState() == ThreadStatus::ThreadState::Died)
-        return nullptr;
-
-    return current_thread->getInternalTextLogsQueue();
-}
-
-void CurrentThread::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue)
-{
-    if (unlikely(!current_thread))
-        return;
-    current_thread->attachInternalProfileEventsQueue(queue);
-}
-
-InternalProfileEventsQueuePtr CurrentThread::getInternalProfileEventsQueue()
-{
-    if (unlikely(!current_thread))
-        return nullptr;
-
-    if (current_thread->getCurrentState() == ThreadStatus::ThreadState::Died)
-        return nullptr;
-
-    return current_thread->getInternalProfileEventsQueue();
-}
-
-ThreadGroupStatusPtr CurrentThread::getGroup()
+ThreadGroupPtr CurrentThread::getGroup()
 {
     if (unlikely(!current_thread))
         return nullptr;
 
     return current_thread->getThreadGroup();
+}
+
+ContextPtr CurrentThread::getQueryContext()
+{
+    if (unlikely(!current_thread))
+        return {};
+
+    return current_thread->getQueryContext();
+}
+
+std::string_view CurrentThread::getQueryId()
+{
+    if (unlikely(!current_thread))
+        return {};
+
+    return current_thread->getQueryId();
 }
 
 MemoryTracker * CurrentThread::getUserMemoryTracker()
@@ -126,11 +129,7 @@ void CurrentThread::flushUntrackedMemory()
 {
     if (unlikely(!current_thread))
         return;
-    if (current_thread->untracked_memory == 0)
-        return;
-
-    current_thread->memory_tracker.adjustWithUntrackedMemory(current_thread->untracked_memory);
-    current_thread->untracked_memory = 0;
+    current_thread->flushUntrackedMemory();
 }
 
 }

@@ -26,7 +26,7 @@ Rows in parts	800000
 Count	700000
 First row	300000	1
 Do ALTER DELETE mutation that does a "heavyweight" delete
-Rows in parts	533333
+Rows in parts	466666
 Count	466666
 First row	300001	10
 Delete 100K more rows using lightweight DELETE

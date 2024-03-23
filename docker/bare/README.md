@@ -1,6 +1,6 @@
 ## The bare minimum ClickHouse Docker image.
 
-It is intented as a showcase to check the amount of implicit dependencies of ClickHouse from the OS in addition to the OS kernel.
+It is intended as a showcase to check the amount of implicit dependencies of ClickHouse from the OS in addition to the OS kernel.
 
 Example usage:
 

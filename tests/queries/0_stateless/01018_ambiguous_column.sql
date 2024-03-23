@@ -1,4 +1,7 @@
-select * from system.one cross join system.one; -- { serverError 352 }
+SET output_format_pretty_color=1;
+SET allow_experimental_analyzer = 1;
+
+select * from system.one cross join system.one;
 select * from system.one cross join system.one r;
 select * from system.one l cross join system.one;
 select * from system.one left join system.one using dummy;
@@ -8,10 +11,10 @@ USE system;
 
 SELECT dummy FROM one AS A JOIN one ON A.dummy = one.dummy;
 SELECT dummy FROM one JOIN one AS A ON A.dummy = one.dummy;
-SELECT dummy FROM one l JOIN one r ON dummy = r.dummy; -- { serverError 352 }
-SELECT dummy FROM one l JOIN one r ON l.dummy = dummy; -- { serverError 352 }
-SELECT dummy FROM one l JOIN one r ON one.dummy = r.dummy; -- { serverError 352 }
-SELECT dummy FROM one l JOIN one r ON l.dummy = one.dummy; -- { serverError 352 }
+SELECT dummy FROM one l JOIN one r ON dummy = r.dummy;
+SELECT dummy FROM one l JOIN one r ON l.dummy = dummy; -- { serverError 403 }
+SELECT dummy FROM one l JOIN one r ON one.dummy = r.dummy;
+SELECT dummy FROM one l JOIN one r ON l.dummy = one.dummy; -- { serverError 403 }
 
 SELECT * from one
 JOIN one A ON one.dummy = A.dummy

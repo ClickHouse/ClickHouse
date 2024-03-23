@@ -1,27 +1,44 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-
-#include "IO/VarInt.h"
+#include <fmt/format.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include "IO/VarInt.h"
 
+template <>
+struct fmt::formatter<DB::RangesInDataPartDescription>
+{
+    static constexpr auto parse(format_parse_context & ctx) { return ctx.begin(); }
+
+    template <typename FormatContext>
+    auto format(const DB::RangesInDataPartDescription & range, FormatContext & ctx)
+    {
+        return fmt::format_to(ctx.out(), "{}", range.describe());
+    }
+};
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
 
 void RangesInDataPartDescription::serialize(WriteBuffer & out) const
 {
     info.serialize(out);
     ranges.serialize(out);
+    writeVarUInt(rows, out);
 }
 
 String RangesInDataPartDescription::describe() const
 {
     String result;
-    result += fmt::format("Part: {}, ", info.getPartNameV1());
-    result += fmt::format("Ranges: [{}], ", fmt::join(ranges, ","));
+    result += fmt::format("part {} with ranges [{}]", info.getPartNameV1(), fmt::join(ranges, ","));
     return result;
 }
 
@@ -29,6 +46,7 @@ void RangesInDataPartDescription::deserialize(ReadBuffer & in)
 {
     info.deserialize(in);
     ranges.deserialize(in);
+    readVarUInt(rows, in);
 }
 
 void RangesInDataPartsDescription::serialize(WriteBuffer & out) const
@@ -40,16 +58,15 @@ void RangesInDataPartsDescription::serialize(WriteBuffer & out) const
 
 String RangesInDataPartsDescription::describe() const
 {
-    String result;
-    for (const auto & desc : *this)
-        result += desc.describe() + ",";
-    return result;
+    return fmt::format("{} parts: [{}]", this->size(), fmt::join(*this, ", "));
 }
 
 void RangesInDataPartsDescription::deserialize(ReadBuffer & in)
 {
     size_t new_size = 0;
     readVarUInt(new_size, in);
+    if (new_size > 100'000'000'000)
+        throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized hash table is suspiciously large: {}", new_size);
 
     this->resize(new_size);
     for (auto & desc : *this)
@@ -67,6 +84,7 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
     return RangesInDataPartDescription{
         .info = data_part->info,
         .ranges = ranges,
+        .rows = getRowsCount(),
     };
 }
 

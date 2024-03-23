@@ -56,13 +56,14 @@ DataTypePtr DataTypeFactory::getImpl(const String & full_name) const
     {
         String out_err;
         const char * start = full_name.data();
-        ast = tryParseQuery(parser, start, start + full_name.size(), out_err, false, "data type", false, DBMS_DEFAULT_MAX_QUERY_SIZE, data_type_max_parse_depth);
+        ast = tryParseQuery(parser, start, start + full_name.size(), out_err, false, "data type", false,
+            DBMS_DEFAULT_MAX_QUERY_SIZE, data_type_max_parse_depth, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
         if (!ast)
             return nullptr;
     }
     else
     {
-        ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", false, data_type_max_parse_depth);
+        ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", false, data_type_max_parse_depth, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
 
     return getImpl<nullptr_on_error>(ast);
@@ -217,10 +218,12 @@ void DataTypeFactory::registerDataTypeCustom(const String & family_name, Creator
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
 {
-    registerDataTypeCustom(name, [creator](const ASTPtr & /*ast*/)
+    registerDataTypeCustom(name, [name, creator](const ASTPtr & ast)
     {
+        if (ast)
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
         return creator();
     }, case_sensitiveness);
 }
@@ -288,6 +291,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
     registerDataTypeObject(*this);
+    registerDataTypeVariant(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

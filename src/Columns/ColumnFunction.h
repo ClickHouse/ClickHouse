@@ -5,6 +5,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -16,12 +17,12 @@ class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 /** A column containing a lambda expression.
-  * Behaves like a constant-column. Contains an expression, but not input or output data.
+  * Contains an expression and captured columns, but not input arguments.
   */
-class ColumnFunction final : public COWHelper<IColumn, ColumnFunction>
+class ColumnFunction final : public COWHelper<IColumnHelper<ColumnFunction>, ColumnFunction>
 {
 private:
-    friend class COWHelper<IColumn, ColumnFunction>;
+    friend class COWHelper<IColumnHelper<ColumnFunction>, ColumnFunction>;
 
     ColumnFunction(
         size_t size,
@@ -81,6 +82,11 @@ public:
     void insert(const Field &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
+    }
+
+    bool tryInsert(const Field &) override
+    {
+        return false;
     }
 
     void insertDefault() override
@@ -168,6 +174,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRatioOfDefaultRows is not supported for {}", getName());
     }
 
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getNumberOfDefaultRows is not supported for {}", getName());
+    }
+
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getIndicesOfNonDefaultRows is not supported for {}", getName());
@@ -202,8 +213,6 @@ private:
     bool is_function_compiled;
 
     void appendArgument(const ColumnWithTypeAndName & column);
-
-    void addOffsetsForReplication(const IColumn::Offsets & offsets);
 };
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column);

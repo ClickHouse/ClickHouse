@@ -3,6 +3,7 @@
 from argparse import ArgumentParser
 import os
 import jinja2
+import itertools
 
 
 def removesuffix(text, suffix):
@@ -47,6 +48,7 @@ def main(args):
         loader=jinja2.FileSystemLoader(suite_dir),
         keep_trailing_newline=True,
     )
+    j2env.globals.update(product=itertools.product)
 
     test_names = os.listdir(suite_dir)
     for test_name in test_names:

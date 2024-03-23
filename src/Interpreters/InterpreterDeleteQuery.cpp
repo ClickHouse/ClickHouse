@@ -1,4 +1,5 @@
 #include <Interpreters/InterpreterDeleteQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
@@ -14,7 +15,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/LightweightDeleteDescription.h>
 
 
 namespace DB
@@ -72,16 +72,17 @@ BlockIO InterpreterDeleteQuery::execute()
         mutation_commands.emplace_back(mut_command);
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
+        MutationsInterpreter::Settings settings(false);
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), settings).validate();
         table->mutate(mutation_commands, getContext());
         return {};
     }
     else if (table->supportsLightweightDelete())
     {
-        if (!getContext()->getSettingsRef().allow_experimental_lightweight_delete)
+        if (!getContext()->getSettingsRef().enable_lightweight_delete)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Lightweight delete mutate is experimental. "
-                            "Set `allow_experimental_lightweight_delete` setting to enable it");
+                            "Lightweight delete mutate is disabled. "
+                            "Set `enable_lightweight_delete` setting to enable it");
 
         /// Build "ALTER ... UPDATE _row_exists = 0 WHERE predicate" query
         String alter_query =
@@ -96,7 +97,8 @@ BlockIO InterpreterDeleteQuery::execute()
             alter_query.data() + alter_query.size(),
             "ALTER query",
             0,
-            DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto context = Context::createCopy(getContext());
         context->setSetting("mutations_sync", 2);   /// Lightweight delete is always synchronous
@@ -107,6 +109,15 @@ BlockIO InterpreterDeleteQuery::execute()
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
     }
+}
+
+void registerInterpreterDeleteQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDeleteQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDeleteQuery", create_fn);
 }
 
 }

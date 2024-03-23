@@ -10,7 +10,7 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int EMPTY_DATA_PASSED;
-    extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 template <typename T>
@@ -69,9 +69,28 @@ T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id) const
         }
         auto hints = this->getHints(field_name.toString());
         auto hints_string = !hints.empty() ? ", maybe you meant: " + toString(hints) : "";
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown element '{}' for enum {}", field_name.toString(), hints_string);
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown element '{}' for enum{}", field_name.toString(), hints_string);
     }
     return it->getMapped();
+}
+
+template <typename T>
+bool EnumValues<T>::tryGetValue(T & x, StringRef field_name, bool try_treat_as_id) const
+{
+    const auto it = name_to_value_map.find(field_name);
+    if (!it)
+    {
+        /// It is used in CSV and TSV input formats. If we fail to find given string in
+        /// enum names, we will try to treat it as enum id.
+        if (try_treat_as_id)
+        {
+            ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
+            return tryReadText(x, tmp_buf) && tmp_buf.eof() && value_to_name_map.contains(x);
+        }
+        return false;
+    }
+    x = it->getMapped();
+    return true;
 }
 
 template <typename T>

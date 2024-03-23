@@ -51,13 +51,13 @@ using ConstArenas = std::vector<ConstArenaPtr>;
   *  specifying which individual values should be destroyed and which ones should not.
   * Clearly, this method would have a substantially non-zero price.
   */
-class ColumnAggregateFunction final : public COWHelper<IColumn, ColumnAggregateFunction>
+class ColumnAggregateFunction final : public COWHelper<IColumnHelper<ColumnAggregateFunction>, ColumnAggregateFunction>
 {
 public:
     using Container = PaddedPODArray<AggregateDataPtr>;
 
 private:
-    friend class COWHelper<IColumn, ColumnAggregateFunction>;
+    friend class COWHelper<IColumnHelper<ColumnAggregateFunction>, ColumnAggregateFunction>;
 
     /// Arenas used by function states that are created elsewhere. We own these
     /// arenas in the sense of extending their lifetime, but do not modify them.
@@ -103,7 +103,7 @@ private:
 public:
     ~ColumnAggregateFunction() override;
 
-    void set(const AggregateFunctionPtr & func_, size_t version_);
+    void set(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
 
     AggregateFunctionPtr getAggregateFunction() { return func; }
     AggregateFunctionPtr getAggregateFunction() const { return func; }
@@ -160,6 +160,8 @@ public:
 
     void insert(const Field & x) override;
 
+    bool tryInsert(const Field & x) override;
+
     void insertDefault() override;
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -201,8 +203,6 @@ public:
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
-    void gather(ColumnGathererStream & gatherer_stream) override;
-
     int compareAt(size_t, size_t, const IColumn &, int) const override
     {
         return 0;
@@ -220,7 +220,12 @@ public:
 
     double getRatioOfDefaultRows(double) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRatioOfDefaultRows is not supported for ColumnAggregateFunction");
+        return 0.0;
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return 0;
     }
 
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override

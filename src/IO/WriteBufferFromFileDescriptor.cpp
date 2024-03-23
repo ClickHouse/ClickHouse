@@ -3,6 +3,7 @@
 #include <cassert>
 #include <sys/stat.h>
 
+#include <Common/Throttler.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -20,6 +21,8 @@ namespace ProfileEvents
     extern const Event DiskWriteElapsedMicroseconds;
     extern const Event FileSync;
     extern const Event FileSyncElapsedMicroseconds;
+    extern const Event LocalWriteThrottlerBytes;
+    extern const Event LocalWriteThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -66,12 +69,16 @@ void WriteBufferFromFileDescriptor::nextImpl()
             String error_file_name = file_name;
             if (error_file_name.empty())
                 error_file_name = "(fd = " + toString(fd) + ")";
-            throwFromErrnoWithPath("Cannot write to file " + error_file_name, error_file_name,
-                                   ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
+            ErrnoException::throwFromPath(
+                ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, error_file_name, "Cannot write to file {}", error_file_name);
         }
 
         if (res > 0)
+        {
             bytes_written += res;
+            if (throttler)
+                throttler->add(res, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
+        }
     }
 
     ProfileEvents::increment(ProfileEvents::DiskWriteElapsedMicroseconds, watch.elapsedMicroseconds());
@@ -85,10 +92,12 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
     int fd_,
     size_t buf_size,
     char * existing_memory,
+    ThrottlerPtr throttler_,
     size_t alignment,
     std::string file_name_)
     : WriteBufferFromFileBase(buf_size, existing_memory, alignment)
     , fd(fd_)
+    , throttler(throttler_)
     , file_name(std::move(file_name_))
 {
 }
@@ -128,7 +137,7 @@ void WriteBufferFromFileDescriptor::sync()
     ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
 
     if (-1 == res)
-        throwFromErrnoWithPath("Cannot fsync " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSYNC);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, getFileName(), "Cannot fsync {}", getFileName());
 }
 
 
@@ -136,8 +145,7 @@ off_t WriteBufferFromFileDescriptor::seek(off_t offset, int whence) // NOLINT
 {
     off_t res = lseek(fd, offset, whence);
     if (-1 == res)
-        throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
-                               ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, getFileName(), "Cannot seek through {}", getFileName());
     return res;
 }
 
@@ -145,7 +153,7 @@ void WriteBufferFromFileDescriptor::truncate(off_t length) // NOLINT
 {
     int res = ftruncate(fd, length);
     if (-1 == res)
-        throwFromErrnoWithPath("Cannot truncate file " + getFileName(), getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, getFileName(), "Cannot truncate file {}", getFileName());
 }
 
 
@@ -154,7 +162,7 @@ off_t WriteBufferFromFileDescriptor::size() const
     struct stat buf;
     int res = fstat(fd, &buf);
     if (-1 == res)
-        throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSTAT, getFileName(), "Cannot execute fstat {}", getFileName());
     return buf.st_size;
 }
 

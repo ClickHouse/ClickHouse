@@ -2,10 +2,7 @@
 
 #include <Common/FieldVisitorToString.h>
 
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Parsers/ParserSelectQuery.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -32,13 +29,11 @@
 #include <Analyzer/MatcherNode.h>
 #include <Analyzer/ColumnTransformers.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/WindowNode.h>
-#include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ArrayJoinNode.h>
@@ -49,7 +44,6 @@
 
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Context.h>
-#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -284,6 +278,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     current_query_tree->setIsGroupByWithRollup(select_query_typed.group_by_with_rollup);
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
+    current_query_tree->setIsOrderByAll(select_query_typed.order_by_all);
     current_query_tree->setOriginalAST(select_query);
 
     auto current_context = current_query_tree->getContext();
@@ -355,21 +350,67 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (select_limit_by)
         current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by, current_context);
 
-    /// Combine limit expression with limit setting
+    /// Combine limit expression with limit and offset settings into final limit expression
+    /// The sequence of application is the following - offset expression, limit expression, offset setting, limit setting.
+    /// Since offset setting is applied after limit expression, but we want to transfer settings into expression
+    /// we must decrease limit expression by offset setting and then add offset setting to offset expression.
+    ///    select_limit - limit expression
+    ///    limit        - limit setting
+    ///    offset       - offset setting
+    ///
+    /// if select_limit
+    ///   -- if offset >= select_limit                (expr 0)
+    ///      then (0) (0 rows)
+    ///   -- else if limit > 0                        (expr 1)
+    ///      then min(select_limit - offset, limit)   (expr 2)
+    ///   -- else
+    ///      then (select_limit - offset)             (expr 3)
+    /// else if limit > 0
+    ///    then limit
+    ///
+    /// offset = offset + of_expr
     auto select_limit = select_query_typed.limitLength();
-    if (select_limit && limit)
+    if (select_limit)
     {
-        auto function_node = std::make_shared<FunctionNode>("least");
-        function_node->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
-        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(limit));
-        current_query_tree->getLimit() = std::move(function_node);
-    }
-    else if (limit)
-        current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
-    else if (select_limit)
-        current_query_tree->getLimit() = buildExpression(select_limit, current_context);
+        /// Shortcut
+        if (offset == 0 && limit == 0)
+        {
+            current_query_tree->getLimit() = buildExpression(select_limit, current_context);
+        }
+        else
+        {
+            /// expr 3
+            auto expr_3 = std::make_shared<FunctionNode>("minus");
+            expr_3->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
+            expr_3->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
 
-    /// Combine offset expression with offset setting
+            /// expr 2
+            auto expr_2 = std::make_shared<FunctionNode>("least");
+            expr_2->getArguments().getNodes().push_back(expr_3->clone());
+            expr_2->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(limit));
+
+            /// expr 0
+            auto expr_0 = std::make_shared<FunctionNode>("greaterOrEquals");
+            expr_0->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
+            expr_0->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
+
+            /// expr 1
+            auto expr_1 = std::make_shared<ConstantNode>(limit > 0);
+
+            auto function_node = std::make_shared<FunctionNode>("multiIf");
+            function_node->getArguments().getNodes().push_back(expr_0);
+            function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(0));
+            function_node->getArguments().getNodes().push_back(expr_1);
+            function_node->getArguments().getNodes().push_back(expr_2);
+            function_node->getArguments().getNodes().push_back(expr_3);
+
+            current_query_tree->getLimit() = std::move(function_node);
+        }
+    }
+    else if (limit > 0)
+        current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
+
+    /// Combine offset expression with offset setting into final offset expression
     auto select_offset = select_query_typed.limitOffset();
     if (select_offset && offset)
     {
@@ -510,7 +551,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
-        result = std::make_shared<ConstantNode>(ast_literal->value);
+        if (context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
+            result = std::make_shared<ConstantNode>(ast_literal->value, applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
+        else
+            result = std::make_shared<ConstantNode>(ast_literal->value);
     }
     else if (const auto * function = expression->as<ASTFunction>())
     {
@@ -561,6 +605,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         else
         {
             auto function_node = std::make_shared<FunctionNode>(function->name);
+            function_node->setNullsAction(function->nulls_action);
 
             if (function->parameters)
             {
@@ -609,7 +654,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     else if (const auto * columns_regexp_matcher = expression->as<ASTColumnsRegexpMatcher>())
     {
         auto column_transformers = buildColumnTransformers(columns_regexp_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(columns_regexp_matcher->getMatcher(), std::move(column_transformers));
+        result = std::make_shared<MatcherNode>(columns_regexp_matcher->getPattern(), std::move(column_transformers));
     }
     else if (const auto * columns_list_matcher = expression->as<ASTColumnsListMatcher>())
     {
@@ -629,7 +674,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     {
         auto & qualified_identifier = qualified_columns_regexp_matcher->qualifier->as<ASTIdentifier &>();
         auto column_transformers = buildColumnTransformers(qualified_columns_regexp_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getMatcher(), std::move(column_transformers));
+        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
     }
     else if (const auto * qualified_columns_list_matcher = expression->as<ASTQualifiedColumnsListMatcher>())
     {
@@ -792,8 +837,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                     const auto & function_arguments_list = table_function_expression.arguments->as<ASTExpressionList &>().children;
                     for (const auto & argument : function_arguments_list)
                     {
+                        if (!node->getSettingsChanges().empty())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' has arguments after SETTINGS",
+                                table_function_expression.formatForErrorMessage());
+
                         if (argument->as<ASTSelectQuery>() || argument->as<ASTSelectWithUnionQuery>() || argument->as<ASTSelectIntersectExceptQuery>())
                             node->getArguments().getNodes().push_back(buildSelectOrUnionExpression(argument, false /*is_subquery*/, {} /*cte_name*/, context));
+                        else if (const auto * ast_set = argument->as<ASTSetQuery>())
+                            node->setSettingsChanges(ast_set->changes);
                         else
                             node->getArguments().getNodes().push_back(buildExpression(argument, context));
                     }

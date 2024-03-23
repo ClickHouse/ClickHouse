@@ -114,13 +114,18 @@ public:
             const auto hi = S2CellId(data_hi[row]);
             const auto point = S2CellId(data_point[row]);
 
-            if (!lo.is_valid() || !hi.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Rectangle is not valid");
+            S2LatLngRect rect(lo.ToLatLng(), hi.ToLatLng());
 
             if (!point.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point is not valid");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Point is invalid. For valid point the latitude is between -90 and 90 degrees inclusive "
+                    "and the longitude is between -180 and 180 degrees inclusive.");
 
-            S2LatLngRect rect(lo.ToLatLng(), hi.ToLatLng());
+            if (!rect.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Rectangle is invalid. For valid rectangles the latitude bounds do not exceed "
+                    "Pi/2 in absolute value and the longitude bounds do not exceed Pi in absolute value. "
+                    "Also, if either the latitude or longitude bound is empty then both must be. ");
 
             rect.AddPoint(point.ToPoint());
 

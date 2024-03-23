@@ -22,19 +22,19 @@ namespace
 struct FilesystemAvailable
 {
     static constexpr auto name = "filesystemAvailable";
-    static std::uintmax_t get(const DiskPtr & disk) { return disk->getAvailableSpace(); }
+    static UInt64 get(const DiskPtr & disk) { return disk->getAvailableSpace().value_or(std::numeric_limits<UInt64>::max()); }
 };
 
 struct FilesystemUnreserved
 {
     static constexpr auto name = "filesystemUnreserved";
-    static std::uintmax_t get(const DiskPtr & disk) { return disk->getUnreservedSpace(); }
+    static UInt64 get(const DiskPtr & disk) { return disk->getUnreservedSpace().value_or(std::numeric_limits<UInt64>::max()); }
 };
 
 struct FilesystemCapacity
 {
     static constexpr auto name = "filesystemCapacity";
-    static std::uintmax_t get(const DiskPtr & disk) { return disk->getTotalSpace(); }
+    static UInt64 get(const DiskPtr & disk) { return disk->getTotalSpace().value_or(std::numeric_limits<UInt64>::max()); }
 };
 
 template <typename Impl>

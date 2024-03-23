@@ -1,7 +1,7 @@
 #pragma once
 
-#include "FunctionsURL.h"
 #include <Common/StringUtils/StringUtils.h>
+#include <Functions/StringHelpers.h>
 
 
 namespace DB
@@ -54,4 +54,3 @@ struct ExtractProtocol
 };
 
 }
-

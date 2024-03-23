@@ -154,7 +154,7 @@ private:
     CSN getCSNImpl(const TIDHash & tid_hash, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr) const;
 
     const ContextPtr global_context;
-    Poco::Logger * const log;
+    LoggerPtr const log;
 
     /// The newest snapshot available for reading
     std::atomic<CSN> latest_snapshot;
@@ -177,7 +177,7 @@ private:
     /// Transactions that are currently processed
     TransactionsList running_list TSA_GUARDED_BY(running_list_mutex);
     /// If we lost connection on attempt to create csn- node then we don't know transaction's state.
-    using UnknownStateList = std::vector<std::pair<MergeTreeTransaction *, scope_guard>>;
+    using UnknownStateList = std::vector<std::pair<MergeTreeTransactionPtr, scope_guard>>;
     UnknownStateList unknown_state_list TSA_GUARDED_BY(running_list_mutex);
     UnknownStateList unknown_state_list_loaded TSA_GUARDED_BY(running_list_mutex);
     /// Ordered list of snapshots that are currently used by some transactions. Needed for background cleanup.

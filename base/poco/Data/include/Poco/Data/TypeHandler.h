@@ -97,7 +97,7 @@ namespace Data
     ///
     ///		static void extract(std::size_t pos, Person& obj, const Person& defVal, AbstractExtractor::Ptr pExt)
     ///		{
-    ///			// defVal is the default person we should use if we encunter NULL entries, so we take the individual fields
+    ///			// defVal is the default person we should use if we encounter NULL entries, so we take the individual fields
     ///			// as defaults. You can do more complex checking, ie return defVal if only one single entry of the fields is null etc...
     ///			poco_assert_dbg (!pExt.isNull());
     ///			std::string lastName;

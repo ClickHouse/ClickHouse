@@ -8,6 +8,8 @@
 #include <base/sort.h>
 #include <base/types.h>
 
+#define QUANTILE_EXACT_MAX_ARRAY_SIZE 1'000'000'000
+
 
 namespace DB
 {
@@ -17,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -54,6 +57,9 @@ struct QuantileExactBase
     {
         size_t size = 0;
         readVarUInt(size, buf);
+        if (unlikely(size > QUANTILE_EXACT_MAX_ARRAY_SIZE))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", QUANTILE_EXACT_MAX_ARRAY_SIZE);
         array.resize(size);
         buf.readStrict(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }
@@ -144,7 +150,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
                 return static_cast<Float64>(*std::min_element(array.begin(), array.end()));
 
             ::nth_element(array.begin(), array.begin() + n - 1, array.end());
-            auto nth_elem = std::min_element(array.begin() + n, array.end());
+            auto * nth_elem = std::min_element(array.begin() + n, array.end());
 
             return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
         }
@@ -173,7 +179,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
                 else
                 {
                     ::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
-                    auto nth_elem = std::min_element(array.begin() + n, array.end());
+                    auto * nth_elem = std::min_element(array.begin() + n, array.end());
 
                     result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
                     prev_n = n - 1;
@@ -208,7 +214,7 @@ struct QuantileExactInclusive : public QuantileExact<Value>
             else if (n < 1)
                 return static_cast<Float64>(*std::min_element(array.begin(), array.end()));
             ::nth_element(array.begin(), array.begin() + n - 1, array.end());
-            auto nth_elem = std::min_element(array.begin() + n, array.end());
+            auto * nth_elem = std::min_element(array.begin() + n, array.end());
 
             return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
         }
@@ -235,7 +241,7 @@ struct QuantileExactInclusive : public QuantileExact<Value>
                 else
                 {
                     ::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
-                    auto nth_elem = std::min_element(array.begin() + n, array.end());
+                    auto * nth_elem = std::min_element(array.begin() + n, array.end());
 
                     result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * (static_cast<Float64>(*nth_elem) - array[n - 1]);
                     prev_n = n - 1;

@@ -33,7 +33,7 @@ struct MarkRange
 
 struct MarkRanges : public std::deque<MarkRange>
 {
-    using std::deque<MarkRange>::deque;
+    using std::deque<MarkRange>::deque; /// NOLINT(modernize-type-traits)
 
     size_t getNumberOfMarks() const;
 
@@ -63,7 +63,7 @@ struct fmt::formatter<DB::MarkRange>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw format_error("invalid format");
+            throw fmt::format_error("invalid format");
 
         return it;
     }
@@ -71,6 +71,6 @@ struct fmt::formatter<DB::MarkRange>
     template <typename FormatContext>
     auto format(const DB::MarkRange & range, FormatContext & ctx)
     {
-        return format_to(ctx.out(), "{}", fmt::format("({}, {})", range.begin, range.end));
+        return fmt::format_to(ctx.out(), "{}", fmt::format("({}, {})", range.begin, range.end));
     }
 };

@@ -26,7 +26,7 @@ public:
         return !child->as<FunctionNode>();
     }
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_group_by_function_keys)
             return;
@@ -36,6 +36,9 @@ public:
             return;
 
         if (!query->hasGroupBy())
+            return;
+
+        if (query->isGroupByWithCube() || query->isGroupByWithRollup())
             return;
 
         auto & group_by = query->getGroupBy().getNodes();
@@ -69,8 +72,7 @@ private:
         for (auto it = function_arguments.rbegin(); it != function_arguments.rend(); ++it)
             candidates.push_back({ *it, is_deterministic });
 
-        // Using DFS we traverse function tree and try to find if it uses other keys as function arguments.
-        // TODO: Also process CONSTANT here. We can simplify GROUP BY x, x + 1 to GROUP BY x.
+        /// Using DFS we traverse function tree and try to find if it uses other keys as function arguments.
         while (!candidates.empty())
         {
             auto [candidate, parents_are_only_deterministic] = candidates.back();
@@ -90,7 +92,7 @@ private:
                     if (!found)
                     {
                         bool is_deterministic_function = parents_are_only_deterministic &&
-                            function->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
+                            func->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
                         for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
                             candidates.push_back({ *it, is_deterministic_function });
                     }
@@ -108,6 +110,7 @@ private:
                     return false;
             }
         }
+
         return true;
     }
 
@@ -127,7 +130,7 @@ private:
     }
 };
 
-void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     OptimizeGroupByFunctionKeysVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

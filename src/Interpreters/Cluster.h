@@ -4,6 +4,7 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/Macros.h>
 #include <Common/MultiVersion.h>
+#include <Common/Priority.h>
 
 #include <Poco/Net/SocketAddress.h>
 
@@ -29,6 +30,26 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+struct DatabaseReplicaInfo
+{
+    String hostname;
+    String shard_name;
+    String replica_name;
+};
+
+struct ClusterConnectionParameters
+{
+    const String & username;
+    const String & password;
+    UInt16 clickhouse_port;
+    bool treat_local_as_remote;
+    bool treat_local_port_as_remote;
+    bool secure = false;
+    Priority priority{1};
+    String cluster_name;
+    String cluster_secret;
+};
+
 /// Cluster contains connection pools to each node
 /// With the local nodes, the connection is not established, but the request is executed directly.
 /// Therefore we store only the number of local nodes
@@ -51,15 +72,13 @@ public:
     Cluster(
         const Settings & settings,
         const std::vector<std::vector<String>> & names,
-        const String & username,
-        const String & password,
-        UInt16 clickhouse_port,
-        bool treat_local_as_remote,
-        bool treat_local_port_as_remote,
-        bool secure = false,
-        Int64 priority = 1,
-        String cluster_name = "",
-        String cluster_secret = "");
+        const ClusterConnectionParameters & params);
+
+
+    Cluster(
+        const Settings & settings,
+        const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
+        const ClusterConnectionParameters & params);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -90,6 +109,8 @@ public:
         */
 
         String host_name;
+        String database_shard_name;
+        String database_replica_name;
         UInt16 port{0};
         String user;
         String password;
@@ -111,7 +132,7 @@ public:
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
 
-        Int64 priority = 1;
+        Priority priority{1};
 
         Address() = default;
 
@@ -124,17 +145,10 @@ public:
             UInt32 replica_index_ = 0);
 
         Address(
-            const String & host_port_,
-            const String & user_,
-            const String & password_,
-            UInt16 clickhouse_port,
-            bool treat_local_port_as_remote,
-            bool secure_ = false,
-            Int64 priority_ = 1,
-            UInt32 shard_index_ = 0,
-            UInt32 replica_index_ = 0,
-            String cluster_name = "",
-            String cluster_secret_ = "");
+            const DatabaseReplicaInfo & info,
+            const ClusterConnectionParameters & params,
+            UInt32 shard_index_,
+            UInt32 replica_index_);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -203,7 +217,6 @@ public:
         UInt32 shard_num = 0;
         UInt32 weight = 1;
         Addresses local_addresses;
-        Addresses all_addresses;
         /// nullptr if there are no remote addresses
         ConnectionPoolWithFailoverPtr pool;
         /// Connection pool for each replica, contains nullptr for local replicas
@@ -250,11 +263,16 @@ public:
     std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
 
     /// Get a new Cluster that contains all servers (all shards with all replicas) from existing cluster as independent shards.
-    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings) const;
+    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard = 0) const;
 
     /// Returns false if cluster configuration doesn't allow to use it for cross-replication.
     /// NOTE: true does not mean, that it's actually a cross-replication cluster.
     bool maybeCrossReplication() const;
+
+    /// Are distributed DDL Queries (ON CLUSTER Clause) allowed for this cluster
+    bool areDistributedDDLQueriesAllowed() const { return allow_distributed_ddl_queries; }
+
+    const String & getName() const { return name; }
 
 private:
     SlotToShard slot_to_shard;
@@ -271,7 +289,16 @@ private:
 
     /// For getClusterWithReplicasAsShards implementation
     struct ReplicasAsShardsTag {};
-    Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings);
+    Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
+
+    void addShard(
+        const Settings & settings,
+        Addresses addresses,
+        bool treat_local_as_remote,
+        UInt32 current_shard_num,
+        UInt32 weight = 1,
+        ShardInfoInsertPathForInternalReplication insert_paths = {},
+        bool internal_replication = false);
 
     /// Inter-server secret
     String secret;
@@ -286,6 +313,8 @@ private:
 
     /// An array of shards. For each shard, an array of replica addresses (servers that are considered identical).
     AddressesWithFailover addresses_with_failover;
+
+    bool allow_distributed_ddl_queries = true;
 
     size_t remote_shard_count = 0;
     size_t local_shard_count = 0;

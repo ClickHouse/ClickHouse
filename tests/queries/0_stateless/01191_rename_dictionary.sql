@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-backward-compatibility-check
+-- Tags: no-parallel
 
 DROP DATABASE IF EXISTS test_01191;
 CREATE DATABASE test_01191 ENGINE=Atomic;

@@ -7,6 +7,7 @@
 #include <Storages/IStorage.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Interpreters/Context.h>
 
@@ -26,12 +27,13 @@ TableFunctionNode::TableFunctionNode(String table_function_name_)
     children[arguments_child_index] = std::make_shared<ListNode>();
 }
 
-void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context)
+void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, std::vector<size_t> unresolved_arguments_indexes_)
 {
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
     storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+    unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
 }
 
 const StorageID & TableFunctionNode::getStorageID() const
@@ -71,6 +73,13 @@ void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_
         buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS\n";
         arguments.dumpTreeImpl(buffer, format_state, indent + 4);
     }
+
+    if (!settings_changes.empty())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
+        for (const auto & change : settings_changes)
+            buffer << fmt::format(" {}={}", change.name, toString(change.value));
+    }
 }
 
 bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
@@ -82,14 +91,10 @@ bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
     if (storage && rhs_typed.storage)
         return storage_id == rhs_typed.storage_id;
 
-    if (table_expression_modifiers && rhs_typed.table_expression_modifiers && table_expression_modifiers != rhs_typed.table_expression_modifiers)
-        return false;
-    else if (table_expression_modifiers && !rhs_typed.table_expression_modifiers)
-        return false;
-    else if (!table_expression_modifiers && rhs_typed.table_expression_modifiers)
+    if (settings_changes != rhs_typed.settings_changes)
         return false;
 
-    return true;
+    return table_expression_modifiers == rhs_typed.table_expression_modifiers;
 }
 
 void TableFunctionNode::updateTreeHashImpl(HashState & state) const
@@ -106,6 +111,17 @@ void TableFunctionNode::updateTreeHashImpl(HashState & state) const
 
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);
+
+    state.update(settings_changes.size());
+    for (const auto & change : settings_changes)
+    {
+        state.update(change.name.size());
+        state.update(change.name);
+
+        const auto & value_dump = change.value.dump();
+        state.update(value_dump.size());
+        state.update(value_dump);
+    }
 }
 
 QueryTreeNodePtr TableFunctionNode::cloneImpl() const
@@ -116,19 +132,29 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
     result->storage_id = storage_id;
     result->storage_snapshot = storage_snapshot;
     result->table_expression_modifiers = table_expression_modifiers;
+    result->settings_changes = settings_changes;
+    result->unresolved_arguments_indexes = unresolved_arguments_indexes;
 
     return result;
 }
 
-ASTPtr TableFunctionNode::toASTImpl() const
+ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto table_function_ast = std::make_shared<ASTFunction>();
 
     table_function_ast->name = table_function_name;
 
     const auto & arguments = getArguments();
-    table_function_ast->children.push_back(arguments.toAST());
+    table_function_ast->children.push_back(arguments.toAST(options));
     table_function_ast->arguments = table_function_ast->children.back();
+
+    if (!settings_changes.empty())
+    {
+        auto settings_ast = std::make_shared<ASTSetQuery>();
+        settings_ast->changes = settings_changes;
+        settings_ast->is_standalone = false;
+        table_function_ast->arguments->children.push_back(std::move(settings_ast));
+    }
 
     return table_function_ast;
 }

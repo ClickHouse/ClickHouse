@@ -4,6 +4,7 @@
         <replicated_deduplication_window_seconds>1</replicated_deduplication_window_seconds>
         <cleanup_delay_period>1</cleanup_delay_period>
         <cleanup_delay_period_random_add>0</cleanup_delay_period_random_add>
+        <max_cleanup_delay_period>1</max_cleanup_delay_period>
         <old_parts_lifetime>1</old_parts_lifetime>
     </merge_tree>
 </clickhouse>

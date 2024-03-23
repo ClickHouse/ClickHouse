@@ -1,0 +1,8 @@
+<test>
+    <query>select uniq(number) from (select DISTINCT number from numbers(1000000))</query>
+    <query>select uniq(number) from (select number from numbers(1000000) group by number)</query>
+
+    <!--For new analyzer-->
+    <query>select uniq(number) from (select DISTINCT number from numbers(1000000)) SETTINGS allow_experimental_analyzer=1</query>
+    <query>select uniq(number) from (select number from numbers(1000000) group by number) SETTINGS allow_experimental_analyzer=1</query>
+</test>

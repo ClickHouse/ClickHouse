@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Common/NamePrompter.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
@@ -14,8 +16,6 @@ namespace DB
 {
 
 class Context;
-class ASTCreateQuery;
-class ASTStorage;
 struct StorageID;
 
 
@@ -23,7 +23,7 @@ struct StorageID;
   * In 'columns' Nested data structures must be flattened.
   * You should subsequently call IStorage::startup method to work with table.
   */
-class StorageFactory : private boost::noncopyable, public IHints<1, StorageFactory>
+class StorageFactory : private boost::noncopyable, public IHints<>
 {
 public:
 
@@ -32,6 +32,7 @@ public:
     struct Arguments
     {
         const String & engine_name;
+        /// Mutable to allow replacing constant expressions with literals, and other transformations.
         ASTs & engine_args;
         ASTStorage * storage_def;
         const ASTCreateQuery & query;
@@ -43,8 +44,7 @@ public:
         ContextWeakMutablePtr context;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
-        bool attach;
-        bool has_force_restore_data_flag;
+        LoadingStrictnessLevel mode;
         const String & comment;
 
         ContextMutablePtr getContext() const;
@@ -87,7 +87,7 @@ public:
         ContextMutablePtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        bool has_force_restore_data_flag) const;
+        LoadingStrictnessLevel mode) const;
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.

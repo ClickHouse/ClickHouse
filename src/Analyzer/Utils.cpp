@@ -5,13 +5,21 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
+
+#include <Interpreters/Context.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IdentifierNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
@@ -27,6 +35,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
@@ -72,6 +81,130 @@ bool isNameOfInFunction(const std::string & function_name)
         function_name == "globalNotNullInIgnoreSet";
 
     return is_special_function_in;
+}
+
+bool isNameOfLocalInFunction(const std::string & function_name)
+{
+    bool is_special_function_in = function_name == "in" ||
+        function_name == "notIn" ||
+        function_name == "nullIn" ||
+        function_name == "notNullIn" ||
+        function_name == "inIgnoreSet" ||
+        function_name == "notInIgnoreSet" ||
+        function_name == "nullInIgnoreSet" ||
+        function_name == "notNullInIgnoreSet";
+
+    return is_special_function_in;
+}
+
+bool isNameOfGlobalInFunction(const std::string & function_name)
+{
+    bool is_special_function_in = function_name == "globalIn" ||
+        function_name == "globalNotIn" ||
+        function_name == "globalNullIn" ||
+        function_name == "globalNotNullIn" ||
+        function_name == "globalInIgnoreSet" ||
+        function_name == "globalNotInIgnoreSet" ||
+        function_name == "globalNullInIgnoreSet" ||
+        function_name == "globalNotNullInIgnoreSet";
+
+    return is_special_function_in;
+}
+
+std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & function_name)
+{
+    if (function_name == "in")
+        return "globalIn";
+    else if (function_name == "notIn")
+        return "globalNotIn";
+    else if (function_name == "nullIn")
+        return "globalNullIn";
+    else if (function_name == "notNullIn")
+        return "globalNotNullIn";
+    else if (function_name == "inIgnoreSet")
+        return "globalInIgnoreSet";
+    else if (function_name == "notInIgnoreSet")
+        return "globalNotInIgnoreSet";
+    else if (function_name == "nullInIgnoreSet")
+        return "globalNullInIgnoreSet";
+    else if (function_name == "notNullInIgnoreSet")
+        return "globalNotNullInIgnoreSet";
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid local IN function name {}", function_name);
+}
+
+void makeUniqueColumnNamesInBlock(Block & block)
+{
+    NameSet block_column_names;
+    size_t unique_column_name_counter = 1;
+
+    for (auto & column_with_type : block)
+    {
+        if (!block_column_names.contains(column_with_type.name))
+        {
+            block_column_names.insert(column_with_type.name);
+            continue;
+        }
+
+        column_with_type.name += '_';
+        column_with_type.name += std::to_string(unique_column_name_counter);
+        ++unique_column_name_counter;
+    }
+}
+
+bool isQueryOrUnionNode(const IQueryTreeNode * node)
+{
+    auto node_type = node->getNodeType();
+    return node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+}
+
+bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
+{
+    return isQueryOrUnionNode(node.get());
+}
+
+QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
+    const DataTypePtr & type,
+    const ContextPtr & context,
+    bool resolve)
+{
+    std::string cast_type = type->getName();
+    auto cast_type_constant_value = std::make_shared<ConstantValue>(std::move(cast_type), std::make_shared<DataTypeString>());
+    auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type_constant_value));
+
+    std::string cast_function_name = "_CAST";
+    auto cast_function_node = std::make_shared<FunctionNode>(cast_function_name);
+    cast_function_node->getArguments().getNodes().push_back(expression);
+    cast_function_node->getArguments().getNodes().push_back(std::move(cast_type_constant_node));
+
+    if (resolve)
+    {
+        auto cast_function = FunctionFactory::instance().get(cast_function_name, context);
+        cast_function_node->resolveAsFunction(cast_function->build(cast_function_node->getArgumentColumns()));
+    }
+
+    return cast_function_node;
+}
+
+std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
+{
+    const auto * constant_node = condition_node->as<ConstantNode>();
+    if (!constant_node)
+        return {};
+
+    const auto & value = constant_node->getValue();
+    auto constant_type = constant_node->getResultType();
+    constant_type = removeNullable(removeLowCardinality(constant_type));
+
+    auto which_constant_type = WhichDataType(constant_type);
+    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
+        return {};
+
+    if (value.isNull())
+        return false;
+
+    UInt8 predicate_value = value.safeGet<UInt8>();
+    return predicate_value > 0;
 }
 
 static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expression_node)
@@ -148,7 +281,7 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     return result_table_expression;
 }
 
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression)
+void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options)
 {
     auto table_expression_node_type = table_expression->getNodeType();
 
@@ -177,7 +310,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
             [[fallthrough]];
         case QueryTreeNodeType::JOIN:
         {
-            auto table_expression_tables_in_select_query_ast = table_expression->toAST();
+            auto table_expression_tables_in_select_query_ast = table_expression->toAST(convert_to_ast_options);
             tables_in_select_query_ast->children.reserve(table_expression_tables_in_select_query_ast->children.size());
             for (auto && table_element_ast : table_expression_tables_in_select_query_ast->children)
                 tables_in_select_query_ast->children.push_back(std::move(table_element_ast));
@@ -193,7 +326,69 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
     }
 }
 
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node)
+QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
+{
+    QueryTreeNodes result;
+
+    QueryTreeNodes nodes_to_process;
+    nodes_to_process.push_back(tree);
+
+    while (!nodes_to_process.empty())
+    {
+        auto node_to_process = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
+
+        auto node_type = node_to_process->getNodeType();
+
+        switch (node_type)
+        {
+            case QueryTreeNodeType::TABLE:
+            {
+                result.push_back(std::move(node_to_process));
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                nodes_to_process.push_back(node_to_process->as<QueryNode>()->getJoinTree());
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
+                    nodes_to_process.push_back(union_node);
+                break;
+            }
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                // Arguments of table function can't contain TableNodes.
+                break;
+            }
+            case QueryTreeNodeType::ARRAY_JOIN:
+            {
+                nodes_to_process.push_back(node_to_process->as<ArrayJoinNode>()->getTableExpression());
+                break;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                auto & join_node = node_to_process->as<JoinNode &>();
+                nodes_to_process.push_back(join_node.getRightTableExpression());
+                nodes_to_process.push_back(join_node.getLeftTableExpression());
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Unexpected node type for table expression. "
+                                "Expected table, table function, query, union, join or array join. Actual {}",
+                                node_to_process->getNodeTypeName());
+            }
+        }
+    }
+
+    return result;
+}
+
+QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join, bool recursive)
 {
     QueryTreeNodes result;
 
@@ -211,12 +406,25 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node)
         {
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
-            case QueryTreeNodeType::QUERY:
-                [[fallthrough]];
-            case QueryTreeNodeType::UNION:
-                [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
+                result.push_back(std::move(node_to_process));
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                if (recursive)
+                    nodes_to_process.push_back(node_to_process->as<QueryNode>()->getJoinTree());
+                result.push_back(std::move(node_to_process));
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                if (recursive)
+                {
+                    for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
+                        nodes_to_process.push_back(union_node);
+                }
                 result.push_back(std::move(node_to_process));
                 break;
             }
@@ -224,6 +432,8 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node)
             {
                 auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
                 nodes_to_process.push_front(array_join_node.getTableExpression());
+                if (add_array_join)
+                    result.push_back(std::move(node_to_process));
                 break;
             }
             case QueryTreeNodeType::JOIN:
@@ -352,30 +562,6 @@ QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_nod
     return result;
 }
 
-bool nestedIdentifierCanBeResolved(const DataTypePtr & compound_type, IdentifierView nested_identifier)
-{
-    const IDataType * current_type = compound_type.get();
-
-    for (const auto & identifier_part : nested_identifier)
-    {
-        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(current_type))
-            current_type = array->getNestedType().get();
-
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(current_type);
-
-        if (!tuple)
-            return false;
-
-        auto position = tuple->tryGetPositionByName(identifier_part);
-        if (!position)
-            return false;
-
-        current_type = tuple->getElements()[*position].get();
-    }
-
-    return true;
-}
-
 namespace
 {
 
@@ -416,6 +602,28 @@ private:
     std::string_view function_name;
     bool has_function = false;
 };
+
+inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode * function_node)
+{
+    Array parameters;
+    for (const auto & param : function_node->getParameters())
+    {
+        auto * constant = param->as<ConstantNode>();
+        parameters.push_back(constant->getValue());
+    }
+
+    const auto & function_node_argument_nodes = function_node->getArguments().getNodes();
+
+    DataTypes argument_types;
+    argument_types.reserve(function_node_argument_nodes.size());
+
+    for (const auto & function_node_argument : function_node_argument_nodes)
+        argument_types.emplace_back(function_node_argument->getResultType());
+
+    AggregateFunctionProperties properties;
+    auto action = NullsAction::EMPTY;
+    return AggregateFunctionFactory::instance().get(function_node->getFunctionName(), action, argument_types, parameters, properties);
+}
 
 }
 
@@ -475,6 +683,81 @@ void replaceColumns(QueryTreeNodePtr & node,
 {
     ReplaceColumnsVisitor visitor(table_expression_node, column_name_to_node);
     visitor.visit(node);
+}
+
+void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
+{
+    if (!function_node->isResolved())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to rerun resolve of unresolved function '{}'", function_node->getFunctionName());
+
+    const auto & name = function_node->getFunctionName();
+    if (function_node->isOrdinaryFunction())
+    {
+        // Special case, don't need to be resolved. It must be processed by GroupingFunctionsResolvePass.
+        if (name == "grouping")
+            return;
+        auto function = FunctionFactory::instance().get(name, context);
+        function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
+    }
+    else if (function_node->isAggregateFunction())
+    {
+        if (name == "nothing" || name == "nothingUInt64" || name == "nothingNull")
+            return;
+        function_node->resolveAsAggregateFunction(resolveAggregateFunction(function_node));
+    }
+    else if (function_node->isWindowFunction())
+    {
+        function_node->resolveAsWindowFunction(resolveAggregateFunction(function_node));
+    }
+}
+
+namespace
+{
+
+class CollectIdentifiersFullNamesVisitor : public ConstInDepthQueryTreeVisitor<CollectIdentifiersFullNamesVisitor>
+{
+public:
+    explicit CollectIdentifiersFullNamesVisitor(NameSet & used_identifiers_)
+        : used_identifiers(used_identifiers_) { }
+
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return true; }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        auto * column_node = node->as<IdentifierNode>();
+        if (!column_node)
+            return;
+
+        used_identifiers.insert(column_node->getIdentifier().getFullName());
+    }
+
+    NameSet & used_identifiers;
+};
+
+}
+
+NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
+{
+    NameSet out;
+    CollectIdentifiersFullNamesVisitor visitor(out);
+    visitor.visit(node);
+    return out;
+}
+
+QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context)
+{
+    auto enum_literal = std::make_shared<ConstantValue>(result_type->getName(), std::make_shared<DataTypeString>());
+    auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
+
+    auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
+    QueryTreeNodes arguments{ std::move(node), std::move(enum_literal_node) };
+
+    auto function_node = std::make_shared<FunctionNode>("_CAST");
+    function_node->getArguments().getNodes() = std::move(arguments);
+
+    function_node->resolveAsFunction(cast_function->build(function_node->getArgumentColumns()));
+
+    return function_node;
 }
 
 }

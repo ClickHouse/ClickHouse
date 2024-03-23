@@ -13,7 +13,8 @@ namespace DB
 {
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata);
-ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary, uint32_t max_parser_depth, bool throw_on_error);
+ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
+    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error);
 
 /// Cleans a CREATE QUERY from temporary flags like "IF NOT EXISTS", "OR REPLACE", "AS SELECT" (for non-views), etc.
 void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);
@@ -45,13 +46,14 @@ public:
 
 protected:
     Tables tables TSA_GUARDED_BY(mutex);
-    Poco::Logger * log;
+    LoggerPtr log;
 
     DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
     StoragePtr detachTableUnlocked(const String & table_name)  TSA_REQUIRES(mutex);
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
+    StoragePtr tryGetTableNoWait(const String & table_name) const;
 };
 
 }

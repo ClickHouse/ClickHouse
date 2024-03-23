@@ -30,7 +30,6 @@ int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
 }
 
 
-#include <sys/select.h>
 #include <stdlib.h>
 #include <features.h>
 
@@ -195,7 +194,6 @@ long splice(int fd_in, off_t *off_in, int fd_out, off_t *off_out, size_t len, un
 #include <sys/stat.h>
 #include <stdint.h>
 
-#if !defined(__aarch64__)
 struct statx {
 	uint32_t stx_mask;
 	uint32_t stx_blksize;
@@ -226,7 +224,6 @@ int statx(int fd, const char *restrict path, int flag,
 {
 	return syscall(SYS_statx, fd, path, flag, mask, statxbuf);
 }
-#endif
 
 
 #include <syscall.h>
@@ -237,6 +234,17 @@ ssize_t getrandom(void *buf, size_t buflen, unsigned flags)
     return syscall(SYS_getrandom, buf, buflen, flags);
 }
 
+/* Structure for scatter/gather I/O.  */
+struct iovec
+{
+    void *iov_base;    /* Pointer to data.  */
+    size_t iov_len;    /* Length of data.  */
+};
+
+ssize_t preadv(int __fd, const struct iovec *__iovec, int __count, __off_t __offset)
+{
+    return syscall(SYS_preadv, __fd, __iovec, __count, (long)(__offset), (long)(__offset>>32));
+}
 
 #include <errno.h>
 #include <limits.h>

@@ -399,9 +399,12 @@ namespace Net
         bool initialized() const;
         /// Returns true iff the underlying socket is initialized.
 
+        static void error(int code);
+        /// Throws an appropriate exception for the given error code.
+    
     protected:
-        SocketImpl();
-        /// Creates a SocketImpl.
+	    SocketImpl();
+		/// Creates a SocketImpl.
 
         SocketImpl(poco_socket_t sockfd);
         /// Creates a SocketImpl using the given native socket.
@@ -445,9 +448,6 @@ namespace Net
 
         static void error(const std::string & arg);
         /// Throws an appropriate exception for the last error.
-
-        static void error(int code);
-        /// Throws an appropriate exception for the given error code.
 
         static void error(int code, const std::string & arg);
         /// Throws an appropriate exception for the given error code.

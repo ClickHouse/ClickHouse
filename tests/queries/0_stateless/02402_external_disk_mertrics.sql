@@ -20,7 +20,8 @@ SET join_algorithm = 'partial_merge';
 SET default_max_bytes_in_join = 0;
 SET max_bytes_in_join = 10000000;
 
-SELECT number * 200000 as n, j * 2097152 FROM numbers(5) nums
+SELECT n, j * 2097152 FROM
+(SELECT number * 200000 as n FROM numbers(5)) nums
 ANY LEFT JOIN ( SELECT number * 2 AS n, number AS j FROM numbers(1000000) ) js2
 USING n
 ORDER BY n
@@ -30,40 +31,52 @@ FORMAT Null;
 SYSTEM FLUSH LOGS;
 
 SELECT
-    any(ProfileEvents['ExternalProcessingFilesTotal']) >= 1 AND
-    any(ProfileEvents['ExternalProcessingCompressedBytesTotal']) >= 100000 AND
-    any(ProfileEvents['ExternalProcessingUncompressedBytesTotal']) >= 100000 AND
-    any(ProfileEvents['ExternalSortWritePart']) >= 1 AND
-    any(ProfileEvents['ExternalSortMerge']) >= 1 AND
-    any(ProfileEvents['ExternalSortCompressedBytes']) >= 100000 AND
-    any(ProfileEvents['ExternalSortUncompressedBytes']) >= 100000 AND
-    count() == 1
+    if(
+        any(ProfileEvents['ExternalProcessingFilesTotal']) >= 1 AND
+        any(ProfileEvents['ExternalProcessingCompressedBytesTotal']) >= 100000 AND
+        any(ProfileEvents['ExternalProcessingUncompressedBytesTotal']) >= 100000 AND
+        any(ProfileEvents['ExternalSortWritePart']) >= 1 AND
+        any(ProfileEvents['ExternalSortMerge']) >= 1 AND
+        any(ProfileEvents['ExternalSortCompressedBytes']) >= 100000 AND
+        any(ProfileEvents['ExternalSortUncompressedBytes']) >= 100000 AND
+        count() == 1,
+        'ok',
+        'fail: ' || toString(count()) || ' ' || toString(any(ProfileEvents))
+    )
     FROM system.query_log WHERE current_database = currentDatabase()
         AND log_comment = '02402_external_disk_mertrics/sort'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 
 SELECT
-    any(ProfileEvents['ExternalProcessingFilesTotal']) >= 1 AND
-    any(ProfileEvents['ExternalProcessingCompressedBytesTotal']) >= 100000 AND
-    any(ProfileEvents['ExternalProcessingUncompressedBytesTotal']) >= 100000 AND
-    any(ProfileEvents['ExternalAggregationWritePart']) >= 1 AND
-    any(ProfileEvents['ExternalAggregationMerge']) >= 1 AND
-    any(ProfileEvents['ExternalAggregationCompressedBytes']) >= 100000 AND
-    any(ProfileEvents['ExternalAggregationUncompressedBytes']) >= 100000 AND
-    count() == 1
+    if(
+        any(ProfileEvents['ExternalProcessingFilesTotal']) >= 1 AND
+        any(ProfileEvents['ExternalProcessingCompressedBytesTotal']) >= 100000 AND
+        any(ProfileEvents['ExternalProcessingUncompressedBytesTotal']) >= 100000 AND
+        any(ProfileEvents['ExternalAggregationWritePart']) >= 1 AND
+        any(ProfileEvents['ExternalAggregationMerge']) >= 1 AND
+        any(ProfileEvents['ExternalAggregationCompressedBytes']) >= 100000 AND
+        any(ProfileEvents['ExternalAggregationUncompressedBytes']) >= 100000 AND
+        count() == 1,
+        'ok',
+        'fail: ' || toString(count()) || ' ' || toString(any(ProfileEvents))
+    )
     FROM system.query_log WHERE current_database = currentDatabase()
         AND log_comment = '02402_external_disk_mertrics/aggregation'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 
 SELECT
-    any(ProfileEvents['ExternalProcessingFilesTotal']) >= 1 AND
-    any(ProfileEvents['ExternalProcessingCompressedBytesTotal']) >= 100000 AND
-    any(ProfileEvents['ExternalProcessingUncompressedBytesTotal']) >= 100000 AND
-    any(ProfileEvents['ExternalJoinWritePart']) >= 1 AND
-    any(ProfileEvents['ExternalJoinMerge']) >= 0 AND
-    any(ProfileEvents['ExternalJoinCompressedBytes']) >= 100000 AND
-    any(ProfileEvents['ExternalJoinUncompressedBytes']) >= 100000 AND
-    count() == 1
+    if(
+        any(ProfileEvents['ExternalProcessingFilesTotal']) >= 1 AND
+        any(ProfileEvents['ExternalProcessingCompressedBytesTotal']) >= 100000 AND
+        any(ProfileEvents['ExternalProcessingUncompressedBytesTotal']) >= 100000 AND
+        any(ProfileEvents['ExternalJoinWritePart']) >= 1 AND
+        any(ProfileEvents['ExternalJoinMerge']) >= 0 AND
+        any(ProfileEvents['ExternalJoinCompressedBytes']) >= 100000 AND
+        any(ProfileEvents['ExternalJoinUncompressedBytes']) >= 100000 AND
+        count() == 1,
+        'ok',
+        'fail: ' || toString(count()) || ' ' || toString(any(ProfileEvents))
+    )
     FROM system.query_log WHERE current_database = currentDatabase()
         AND log_comment = '02402_external_disk_mertrics/join'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';

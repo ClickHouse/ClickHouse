@@ -79,9 +79,6 @@ select left_table.id,val_left, val_middle, val_right from left_table
                                                               inner join (SELECT * FROM right_table WHERE id = 1) r on middle_table.id = r.id
 ORDER BY left_table.id, val_left, val_middle, val_right;
 
--- no distributed tests because it is not currently supported:
--- JOIN with remote storages is unsupported.
-
 -- Quite exotic with Merge engine
 DROP TABLE IF EXISTS table_to_merge_a;
 DROP TABLE IF EXISTS table_to_merge_b;

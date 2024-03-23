@@ -5,7 +5,27 @@ sidebar_label: WITH
 
 # WITH Clause
 
-ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), that is provides to use results of `WITH` clause in the rest of `SELECT` query. Named subqueries can be included to the current and child query context in places where table objects are allowed. Recursion is prevented by hiding the current level CTEs from the WITH expression.
+ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)) and substitutes the code defined in the `WITH` clause in all places of use for the rest of `SELECT` query. Named subqueries can be included to the current and child query context in places where table objects are allowed. Recursion is prevented by hiding the current level CTEs from the WITH expression. 
+
+Please note that CTEs do not guarantee the same results in all places they are called because the query will be re-executed for each use case.
+
+An example of such behavior is below
+``` sql
+with cte_numbers as 
+(
+    select 
+        num 
+    from generateRandom('num UInt64', NULL) 
+    limit 1000000
+)
+select
+    count() 
+from cte_numbers
+where num in (select num from cte_numbers)
+```
+If CTEs were to pass exactly the results and not just a piece of code, you would always see `1000000`
+
+However, due to the fact that we are referring `cte_numbers` twice, random numbers are generated each time and, accordingly, we see different random results, `280501, 392454, 261636, 196227` and so on...
 
 ## Syntax
 

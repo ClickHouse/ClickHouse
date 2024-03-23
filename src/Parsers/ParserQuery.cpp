@@ -1,6 +1,5 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
-#include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/ParserDropFunctionQuery.h>
@@ -27,6 +26,7 @@
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ParserDropAccessEntityQuery.h>
 #include <Parsers/Access/ParserGrantQuery.h>
+#include <Parsers/Access/ParserMoveAccessEntityQuery.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
 
 
@@ -54,12 +54,12 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateIndexQuery create_index_p;
     ParserDropIndexQuery drop_index_p;
     ParserDropAccessEntityQuery drop_access_entity_p;
+    ParserMoveAccessEntityQuery move_access_entity_p;
     ParserGrantQuery grant_p;
     ParserSetRoleQuery set_role_p;
     ParserExternalDDLQuery external_ddl_p;
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
-    ParserBackupQuery backup_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -80,11 +80,11 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_index_p.parse(pos, node, expected)
         || drop_index_p.parse(pos, node, expected)
         || drop_access_entity_p.parse(pos, node, expected)
+        || move_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
         || external_ddl_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
-        || delete_p.parse(pos, node, expected)
-        || backup_p.parse(pos, node, expected);
+        || delete_p.parse(pos, node, expected);
 
     return res;
 }

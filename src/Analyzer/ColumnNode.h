@@ -3,6 +3,7 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -107,6 +108,11 @@ public:
       */
     QueryTreeNodePtr getColumnSourceOrNull() const;
 
+    void setColumnSource(const QueryTreeNodePtr & source)
+    {
+        getSourceWeakPointer() = source;
+    }
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::COLUMN;
@@ -115,6 +121,11 @@ public:
     DataTypePtr getResultType() const override
     {
         return column.type;
+    }
+
+    void convertToNullable() override
+    {
+        column.type = makeNullableSafe(column.type);
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t indent) const override;
@@ -126,7 +137,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     const QueryTreeNodeWeakPtr & getSourceWeakPointer() const

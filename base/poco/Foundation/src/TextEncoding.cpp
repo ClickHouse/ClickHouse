@@ -16,15 +16,9 @@
 #include "Poco/Exception.h"
 #include "Poco/String.h"
 #include "Poco/ASCIIEncoding.h"
-#include "Poco/Latin1Encoding.h"
-#include "Poco/Latin2Encoding.h"
-#include "Poco/Latin9Encoding.h"
 #include "Poco/UTF32Encoding.h"
 #include "Poco/UTF16Encoding.h"
 #include "Poco/UTF8Encoding.h"
-#include "Poco/Windows1250Encoding.h"
-#include "Poco/Windows1251Encoding.h"
-#include "Poco/Windows1252Encoding.h"
 #include "Poco/RWLock.h"
 #include "Poco/SingletonHolder.h"
 #include <map>
@@ -47,15 +41,9 @@ public:
 		add(pUtf8Encoding, TextEncoding::GLOBAL);
 
 		add(new ASCIIEncoding);
-		add(new Latin1Encoding);
-		add(new Latin2Encoding);
-		add(new Latin9Encoding);
 		add(pUtf8Encoding);
 		add(new UTF16Encoding);
 		add(new UTF32Encoding);
-		add(new Windows1250Encoding);
-		add(new Windows1251Encoding);
-		add(new Windows1252Encoding);
 	}
 
 	~TextEncodingManager()

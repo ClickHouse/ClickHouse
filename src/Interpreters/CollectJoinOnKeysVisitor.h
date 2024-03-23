@@ -1,11 +1,12 @@
 #pragma once
 
+#include <Core/Joins.h>
 #include <Core/Names.h>
+#include <Interpreters/Aliases.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
-#include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/Aliases.h>
 
 
 namespace DB
@@ -54,7 +55,7 @@ public:
         ASTPtr asof_left_key{};
         ASTPtr asof_right_key{};
 
-        void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos);
+        void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos, bool null_safe_comparison);
         void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos,
                              const ASOFJoinInequality & asof_inequality);
         void asofToJoinKeys();

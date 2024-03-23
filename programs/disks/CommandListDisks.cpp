@@ -26,8 +26,8 @@ public:
 
     void execute(
         const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
-        Poco::Util::LayeredConfiguration &) override
+        std::shared_ptr<DiskSelector> &,
+        Poco::Util::LayeredConfiguration & config) override
     {
         if (!command_arguments.empty())
         {
@@ -35,8 +35,29 @@ public:
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
-        for (const auto & [disk_name, _] : global_context->getDisksMap())
-            std::cout << disk_name << '\n';
+        constexpr auto config_prefix = "storage_configuration.disks";
+        constexpr auto default_disk_name = "default";
+
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(config_prefix, keys);
+
+        bool has_default_disk = false;
+
+        /// For the output to be ordered
+        std::set<String> disks;
+
+        for (const auto & disk_name : keys)
+        {
+            if (disk_name == default_disk_name)
+                has_default_disk = true;
+            disks.insert(disk_name);
+        }
+
+        if (!has_default_disk)
+            disks.insert(default_disk_name);
+
+        for (const auto & disk : disks)
+            std::cout << disk << '\n';
     }
 };
 }

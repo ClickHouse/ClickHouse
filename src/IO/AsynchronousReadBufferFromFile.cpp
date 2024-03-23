@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
     IAsynchronousReader & reader_,
-    Int32 priority_,
+    Priority priority_,
     const std::string & file_name_,
     size_t buf_size,
     int flags,
@@ -46,13 +46,13 @@ AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
     fd = ::open(file_name.c_str(), flags == -1 ? O_RDONLY | O_CLOEXEC : flags | O_CLOEXEC);
 
     if (-1 == fd)
-        throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
-                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot open file {}", file_name);
 #ifdef OS_DARWIN
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)
-            throwFromErrnoWithPath("Cannot set F_NOCACHE on file " + file_name, file_name, ErrorCodes::CANNOT_OPEN_FILE);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot set F_NOCACHE on file {}", file_name);
     }
 #endif
 }
@@ -60,7 +60,7 @@ AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
 
 AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
     IAsynchronousReader & reader_,
-    Int32 priority_,
+    Priority priority_,
     int & fd_,
     const std::string & original_file_name,
     size_t buf_size,

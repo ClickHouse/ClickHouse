@@ -1,10 +1,5 @@
 # https://software.intel.com/sites/landingpage/IntrinsicsGuide/
 
-include (CheckCXXSourceCompiles)
-include (CMakePushCheckState)
-
-cmake_push_check_state ()
-
 # The variables HAVE_* determine if compiler has support for the flag to use the corresponding instruction set.
 # The options ENABLE_* determine if we will tell compiler to actually use the corresponding instruction set if compiler can do it.
 
@@ -30,7 +25,7 @@ elseif (ARCH_AARCH64)
         # support it.
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8+crc")
     else ()
-        # ARMv8.2 is quite ancient but the lowest common denominator supported by both Graviton 2 and 3 processors [1]. In particular, it
+        # ARMv8.2 is quite ancient but the lowest common denominator supported by both Graviton 2 and 3 processors [1, 10]. In particular, it
         # includes LSE (made mandatory with ARMv8.1) which provides nice speedups without having to fall back to compat flag
         # "-moutline-atomics" for v8.0 [2, 3, 4] that requires a recent glibc with runtime dispatch helper, limiting our ability to run on
         # old OSs.
@@ -45,19 +40,20 @@ elseif (ARCH_AARCH64)
         # dotprod: Scalar vector product (SDOT and UDOT instructions). Probably the most obscure extra flag with doubtful performance benefits
         #          but it has been activated since always, so why not enable it. It's not 100% clear in which revision this flag was
         #          introduced as optional, either in v8.2 [7] or in v8.4 [8].
-        # ldapr:   Load-Acquire RCpc Register. Better support of release/acquire of atomics. Good for allocators and high contention code.
-        #          Optional in v8.2, mandatory in v8.3 [9]. Supported in Graviton 2+, Azure and GCP instances. Generated from clang 15.
+        # rcpc:    Load-Acquire RCpc Register. Better support of release/acquire of atomics. Good for allocators and high contention code.
+        #          Optional in v8.2, mandatory in v8.3 [9]. Supported in Graviton >=2, Azure and GCP instances.
         #
-        # [1] https://github.com/aws/aws-graviton-getting-started/blob/main/c-c%2B%2B.md
-        # [2] https://community.arm.com/arm-community-blogs/b/tools-software-ides-blog/posts/making-the-most-of-the-arm-architecture-in-gcc-10
-        # [3] https://mysqlonarm.github.io/ARM-LSE-and-MySQL/
-        # [4] https://dev.to/aws-builders/large-system-extensions-for-aws-graviton-processors-3eci
-        # [5] https://developer.arm.com/tools-and-software/open-source-software/developer-tools/llvm-toolchain/sve-support
-        # [6] https://developer.arm.com/documentation/100067/0612/armclang-Command-line-Options/-mcpu?lang=en
-        # [7] https://gcc.gnu.org/onlinedocs/gcc/ARM-Options.html
-        # [8] https://developer.arm.com/documentation/102651/a/What-are-dot-product-intructions-
-        # [9] https://developer.arm.com/documentation/dui0801/g/A64-Data-Transfer-Instructions/LDAPR?lang=en
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs -Xclang=-target-feature -Xclang=+ldapr -Wno-unused-command-line-argument")
+        # [1]  https://github.com/aws/aws-graviton-getting-started/blob/main/c-c%2B%2B.md
+        # [2]  https://community.arm.com/arm-community-blogs/b/tools-software-ides-blog/posts/making-the-most-of-the-arm-architecture-in-gcc-10
+        # [3]  https://mysqlonarm.github.io/ARM-LSE-and-MySQL/
+        # [4]  https://dev.to/aws-builders/large-system-extensions-for-aws-graviton-processors-3eci
+        # [5]  https://developer.arm.com/tools-and-software/open-source-software/developer-tools/llvm-toolchain/sve-support
+        # [6]  https://developer.arm.com/documentation/100067/0612/armclang-Command-line-Options/-mcpu?lang=en
+        # [7]  https://gcc.gnu.org/onlinedocs/gcc/ARM-Options.html
+        # [8]  https://developer.arm.com/documentation/102651/a/What-are-dot-product-intructions-
+        # [9]  https://developer.arm.com/documentation/dui0801/g/A64-Data-Transfer-Instructions/LDAPR?lang=en
+        # [10] https://github.com/aws/aws-graviton-getting-started/blob/main/README.md
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc")
     endif ()
 
     # Best-effort check: The build generates and executes intermediate binaries, e.g. protoc and llvm-tablegen. If we build on ARM for ARM
@@ -136,189 +132,54 @@ elseif (ARCH_AMD64)
     endif()
 
     # ClickHouse can be cross-compiled (e.g. on an ARM host for x86) but it is also possible to build ClickHouse on x86 w/o AVX for x86 w/
-    # AVX. We only check that the compiler can emit certain SIMD instructions, we don't care if the host system is able to run the binary.
-    # Therefore, use check_cxx_source_compiles (= does the code compile+link?) instead of check_cxx_source_runs (= does the code
-    # compile+link+run).
+    # AVX. We only assume that the compiler can emit certain SIMD instructions, we don't care if the host system is able to run the binary.
 
-    set (TEST_FLAG "-mssse3")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <tmmintrin.h>
-        int main() {
-            __m64 a = _mm_abs_pi8(__m64());
-            (void)a;
-            return 0;
-        }
-    " HAVE_SSSE3)
-    if (HAVE_SSSE3 AND ENABLE_SSSE3)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_SSSE3)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mssse3")
     endif ()
 
-    set (TEST_FLAG "-msse4.1")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <smmintrin.h>
-        int main() {
-            auto a = _mm_insert_epi8(__m128i(), 0, 0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_SSE41)
-    if (HAVE_SSE41 AND ENABLE_SSE41)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_SSE41)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -msse4.1")
     endif ()
 
-    set (TEST_FLAG "-msse4.2")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <nmmintrin.h>
-        int main() {
-            auto a = _mm_crc32_u64(0, 0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_SSE42)
-    if (HAVE_SSE42 AND ENABLE_SSE42)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_SSE42)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -msse4.2")
     endif ()
 
-    set (TEST_FLAG "-mpclmul")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <wmmintrin.h>
-        int main() {
-            auto a = _mm_clmulepi64_si128(__m128i(), __m128i(), 0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_PCLMULQDQ)
-    if (HAVE_PCLMULQDQ AND ENABLE_PCLMULQDQ)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_PCLMULQDQ)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mpclmul")
     endif ()
 
-    set (TEST_FLAG "-mpopcnt")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        int main() {
-            auto a = __builtin_popcountll(0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_POPCNT)
-    if (HAVE_POPCNT AND ENABLE_POPCNT)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_BMI)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbmi")
     endif ()
 
-    set (TEST_FLAG "-mavx")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _mm256_insert_epi8(__m256i(), 0, 0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_AVX)
-    if (HAVE_AVX AND ENABLE_AVX)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_POPCNT)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mpopcnt")
     endif ()
 
-    set (TEST_FLAG "-mavx2")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _mm256_add_epi16(__m256i(), __m256i());
-            (void)a;
-            return 0;
-        }
-    " HAVE_AVX2)
-    if (HAVE_AVX2 AND ENABLE_AVX2)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    if (ENABLE_AVX)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx")
     endif ()
 
-    set (TEST_FLAG "-mavx512f -mavx512bw -mavx512vl")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _mm512_setzero_epi32();
-            (void)a;
-            auto b = _mm512_add_epi16(__m512i(), __m512i());
-            (void)b;
-            auto c = _mm_cmp_epi8_mask(__m128i(), __m128i(), 0);
-            (void)c;
-            return 0;
-        }
-    " HAVE_AVX512)
-    if (HAVE_AVX512 AND ENABLE_AVX512)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()
-
-    set (TEST_FLAG "-mavx512vbmi")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _mm512_permutexvar_epi8(__m512i(), __m512i());
-            (void)a;
-            return 0;
-        }
-    " HAVE_AVX512_VBMI)
-    if (HAVE_AVX512 AND ENABLE_AVX512 AND HAVE_AVX512_VBMI AND ENABLE_AVX512_VBMI)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()
-
-    set (TEST_FLAG "-mbmi")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _blsr_u32(0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_BMI)
-    if (HAVE_BMI AND ENABLE_BMI)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()
-
-    set (TEST_FLAG "-mbmi2")
-    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
-    check_cxx_source_compiles("
-        #include <immintrin.h>
-        int main() {
-            auto a = _pdep_u64(0, 0);
-            (void)a;
-            return 0;
-        }
-    " HAVE_BMI2)
-    if (HAVE_BMI2 AND HAVE_AVX2 AND ENABLE_AVX2 AND ENABLE_BMI2)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()
-
-    # Limit avx2/avx512 flag for specific source build
-    set (X86_INTRINSICS_FLAGS "")
-    if (ENABLE_AVX2_FOR_SPEC_OP)
-        if (HAVE_BMI)
-            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mbmi")
+    if (ENABLE_AVX2)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx2")
+        if (ENABLE_BMI2)
+            set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbmi2")
         endif ()
-        if (HAVE_AVX AND HAVE_AVX2)
-            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx -mavx2")
+    endif ()
+
+    if (ENABLE_AVX512)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx512f -mavx512bw -mavx512vl")
+        if (ENABLE_AVX512_VBMI)
+            set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx512vbmi")
         endif ()
     endif ()
 
     if (ENABLE_AVX512_FOR_SPEC_OP)
-        set (X86_INTRINSICS_FLAGS "")
-        if (HAVE_BMI)
-            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mbmi")
-        endif ()
-        if (HAVE_AVX512)
-            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx512f -mavx512bw -mavx512vl -mprefer-vector-width=256")
-        endif ()
+        set (X86_INTRINSICS_FLAGS "-mbmi -mavx512f -mavx512bw -mavx512vl -mprefer-vector-width=256")
     endif ()
+
 else ()
     # RISC-V + exotic platforms
 endif ()
-
-cmake_pop_check_state ()

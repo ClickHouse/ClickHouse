@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
@@ -55,65 +56,64 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
 
 ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
 {
-    if (!column)
-        return column;
+    ColumnPtr res = column;
 
     if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
     {
         const auto & data = column_array->getDataPtr();
         auto data_no_lc = recursiveRemoveLowCardinality(data);
-        if (data.get() == data_no_lc.get())
-            return column;
-
-        return ColumnArray::create(data_no_lc, column_array->getOffsetsPtr());
+        if (data.get() != data_no_lc.get())
+            res = ColumnArray::create(data_no_lc, column_array->getOffsetsPtr());
     }
-
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+    else if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
     {
         const auto & nested = column_const->getDataColumnPtr();
         auto nested_no_lc = recursiveRemoveLowCardinality(nested);
-        if (nested.get() == nested_no_lc.get())
-            return column;
-
-        return ColumnConst::create(nested_no_lc, column_const->size());
+        if (nested.get() != nested_no_lc.get())
+            res = ColumnConst::create(nested_no_lc, column_const->size());
     }
-
-    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    else if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {
         auto columns = column_tuple->getColumns();
         for (auto & element : columns)
             element = recursiveRemoveLowCardinality(element);
-        return ColumnTuple::create(columns);
+        res = ColumnTuple::create(columns);
     }
-
-    if (const auto * column_map = typeid_cast<const ColumnMap *>(column.get()))
+    else if (const auto * column_map = typeid_cast<const ColumnMap *>(column.get()))
     {
         const auto & nested = column_map->getNestedColumnPtr();
         auto nested_no_lc = recursiveRemoveLowCardinality(nested);
-        if (nested.get() == nested_no_lc.get())
-            return column;
-
-        return ColumnMap::create(nested_no_lc);
+        if (nested.get() != nested_no_lc.get())
+            res = ColumnMap::create(nested_no_lc);
     }
-
     /// Special case when column is a lazy argument of short circuit function.
     /// We should call recursiveRemoveLowCardinality on the result column
     /// when function will be executed.
-    if (const auto * column_function = typeid_cast<const ColumnFunction *>(column.get()))
+    else if (const auto * column_function = typeid_cast<const ColumnFunction *>(column.get()))
     {
-        if (!column_function->isShortCircuitArgument())
-            return column;
-
-        return column_function->recursivelyConvertResultToFullColumnIfLowCardinality();
+        if (column_function->isShortCircuitArgument())
+            res = column_function->recursivelyConvertResultToFullColumnIfLowCardinality();
+    }
+    else if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
+    {
+        res = column_low_cardinality->convertToFullColumn();
     }
 
-    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
-        return column_low_cardinality->convertToFullColumn();
+    if (res != column)
+    {
+        /// recursiveRemoveLowCardinality() must not change the size of a passed column!
+        if (res->size() != column->size())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "recursiveRemoveLowCardinality() somehow changed the size of column {}. Old size={}, new size={}. It's a bug",
+                            column->getName(), column->size(), res->size());
+        }
+    }
 
-    return column;
+    return res;
 }
 
-ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type)
+ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     if (!column)
         return column;
@@ -128,7 +128,7 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
     {
         const auto & nested = column_const->getDataColumnPtr();
-        auto nested_no_lc = recursiveTypeConversion(nested, from_type, to_type);
+        auto nested_no_lc = recursiveLowCardinalityTypeConversion(nested, from_type, to_type);
         if (nested.get() == nested_no_lc.get())
             return column;
 
@@ -164,7 +164,7 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
             const auto & nested_to = to_array_type->getNestedType();
 
             return ColumnArray::create(
-                    recursiveTypeConversion(column_array->getDataPtr(), nested_from, nested_to),
+                    recursiveLowCardinalityTypeConversion(column_array->getDataPtr(), nested_from, nested_to),
                     column_array->getOffsetsPtr());
         }
     }
@@ -187,7 +187,7 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
             for (size_t i = 0; i < columns.size(); ++i)
             {
                 auto & element = columns[i];
-                auto element_no_lc = recursiveTypeConversion(element, from_elements.at(i), to_elements.at(i));
+                auto element_no_lc = recursiveLowCardinalityTypeConversion(element, from_elements.at(i), to_elements.at(i));
                 if (element.get() != element_no_lc.get())
                 {
                     element = element_no_lc;

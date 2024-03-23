@@ -5,7 +5,8 @@ DROP TABLE IF EXISTS t_sparse_s3;
 CREATE TABLE t_sparse_s3 (id UInt32, cond UInt8, s String)
 engine = MergeTree ORDER BY id
 settings ratio_of_defaults_for_sparse_serialization = 0.01, storage_policy = 's3_cache',
-min_bytes_for_wide_part = 0, min_compress_block_size = 1;
+min_bytes_for_wide_part = 0, min_compress_block_size = 1,
+index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO t_sparse_s3 SELECT 1, number % 2, '' FROM numbers(8192);
 INSERT INTO t_sparse_s3 SELECT 2, number % 2, '' FROM numbers(24576);

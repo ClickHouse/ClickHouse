@@ -28,8 +28,9 @@ public:
         ReadBuffer & in_,
         const Block & header_,
         const Params & params_,
-        const FormatSchemaInfo & schema_info_,
-        bool flatten_google_wrappers_);
+        const ProtobufSchemaInfo & schema_info_,
+        bool flatten_google_wrappers_,
+        const String & google_protos_path);
 
     String getName() const override { return "ProtobufListInputFormat"; }
 
@@ -37,6 +38,9 @@ public:
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
+
+    bool supportsCountRows() const override { return true; }
+    size_t countRows(size_t max_block_size) override;
 
     std::unique_ptr<ProtobufReader> reader;
     std::vector<size_t> missing_column_indices;
@@ -53,6 +57,7 @@ public:
 private:
     const FormatSchemaInfo schema_info;
     bool skip_unsopported_fields;
+    const String google_protos_path;
 };
 
 }

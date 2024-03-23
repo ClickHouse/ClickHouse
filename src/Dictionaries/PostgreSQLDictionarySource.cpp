@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Common/logger_useful.h>
 #endif
 
 
@@ -56,7 +57,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , sample_block(sample_block_)
-    , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
+    , log(getLogger("PostgreSQLDictionarySource"))
     , query_builder(makeExternalQueryBuilder(dict_struct, configuration.schema, configuration.table, configuration.query, configuration.where))
     , load_all_query(query_builder.composeLoadAllQuery())
 {
@@ -69,7 +70,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
     , configuration(other.configuration)
     , pool(other.pool)
     , sample_block(other.sample_block)
-    , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
+    , log(getLogger("PostgreSQLDictionarySource"))
     , query_builder(makeExternalQueryBuilder(dict_struct, configuration.schema, configuration.table, configuration.query, configuration.where))
     , load_all_query(query_builder.composeLoadAllQuery())
     , update_time(other.update_time)
