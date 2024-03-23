@@ -208,6 +208,12 @@ public:
                           const std::shared_ptr<Aws::Http::HttpRequest>& httpRequest) const override;
 
     bool supportsMultiPartCopy() const;
+
+    bool isClientForDisk() const
+    {
+        return client_configuration.for_disk_s3;
+    }
+
 private:
     friend struct ::MockS3::Client;
 
@@ -258,6 +264,9 @@ private:
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
+
+    template <typename RequestResult>
+    RequestResult enrichErrorMessage(RequestResult && outcome) const;
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;

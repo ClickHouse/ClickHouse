@@ -314,7 +314,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id, request_settings, /* for_disk_s3= */ read_settings.for_object_storage);
+    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id, request_settings);
 
     file_size = object_size;
     return *file_size;
@@ -415,7 +415,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     }
 
     ProfileEvents::increment(ProfileEvents::S3GetObject);
-    if (read_settings.for_object_storage)
+    if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
