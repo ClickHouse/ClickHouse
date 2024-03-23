@@ -19,7 +19,9 @@ namespace
 AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
-    assertArityAtMost<1>(name, argument_types);
+
+    if (argument_types.size() > 1)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires zero or one argument", name);
 
     return std::make_shared<AggregateFunctionCount>(argument_types);
 }
