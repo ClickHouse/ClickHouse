@@ -399,7 +399,7 @@ void StorageMaterializedView::alter(
 
     new_metadata.setSelectQuery(new_select);
 
-    /// check materialized view inner table structure
+    /// Check the materialized view's inner table structure.
     if (has_inner_table)
     {
         const Block & block = InterpreterSelectWithUnionQuery::getSampleBlock(new_select.select_query, local_context);
@@ -509,7 +509,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         updateTargetTableId(new_table_id.database_name, std::nullopt);
     }
     const auto & select_query = metadata_snapshot->getSelectQuery();
-    // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
+    /// TODO: Actually, we don't need to update dependency if MV has UUID, but then db and table name will be outdated
     DatabaseCatalog::instance().updateViewDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 
     if (refresher)
