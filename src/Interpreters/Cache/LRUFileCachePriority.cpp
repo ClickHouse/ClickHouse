@@ -303,9 +303,9 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         if (hold_size || hold_elements)
             res.setSpaceHolder(hold_size, hold_elements, *this, lock);
 
-        LOG_TEST(log, "Collected {} candidates for eviction (total size: {}). "
-                 "Took hold of size {} and elements {}",
-                 res.size(), stat.total_stat.releasable_size, hold_size, hold_elements);
+        // LOG_TEST(log, "Collected {} candidates for eviction (total size: {}). "
+        //          "Took hold of size {} and elements {}",
+        //          res.size(), stat.total_stat.releasable_size, hold_size, hold_elements);
 
         return true;
     }
@@ -503,6 +503,8 @@ void LRUFileCachePriority::holdImpl(
     size_t elements,
     const CachePriorityGuard::Lock & lock)
 {
+    chassert(size || elements);
+
     if (!canFit(size, elements, lock))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -520,6 +522,8 @@ void LRUFileCachePriority::holdImpl(
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
 {
+    chassert(size || elements);
+
     state->current_size -= size;
     state->current_elements_num -= elements;
 

@@ -7,11 +7,15 @@ namespace DB
 class EvictionCandidates
 {
 public:
+    using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
+
     ~EvictionCandidates();
 
     void add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key, const CachePriorityGuard::Lock &);
 
     void evict();
+
+    void onFinalize(FinalizeEvictionFunc && func) { on_finalize.emplace_back(std::move(func)); }
 
     void finalize(FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock &);
 
@@ -27,9 +31,6 @@ public:
         IFileCachePriority & priority,
         const CachePriorityGuard::Lock &);
 
-    using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
-    void setFinalizeEvictionFunc(FinalizeEvictionFunc && func) { finalize_eviction_func = std::move(func); }
-
 private:
     struct KeyCandidates
     {
@@ -39,7 +40,8 @@ private:
 
     std::unordered_map<FileCacheKey, KeyCandidates> candidates;
     size_t candidates_size = 0;
-    FinalizeEvictionFunc finalize_eviction_func;
+
+    std::vector<FinalizeEvictionFunc> on_finalize;
     std::vector<IFileCachePriority::IteratorPtr> queue_entries_to_invalidate;
     IFileCachePriority::HoldSpacePtr hold_space;
 };

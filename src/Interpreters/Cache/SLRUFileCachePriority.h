@@ -121,6 +121,7 @@ private:
     /// but needed only in order to do FileSegment::getInfo() without any lock,
     /// which is done for system tables and logging.
     std::atomic<bool> is_protected;
+    bool movable{true};
 };
 
 }

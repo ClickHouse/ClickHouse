@@ -113,11 +113,12 @@ void EvictionCandidates::finalize(FileCacheQueryLimit::QueryContext * query_cont
         iterator->remove(lock);
     }
 
-    if (finalize_eviction_func)
-    {
-        finalize_eviction_func(lock);
-        finalize_eviction_func = {};
-    }
+    for (auto & func : on_finalize)
+        func(lock);
+
+    /// Finalize functions might hold something (like HoldSpace object),
+    /// so we need to clear them now.
+    on_finalize.clear();
 }
 
 void EvictionCandidates::setSpaceHolder(
