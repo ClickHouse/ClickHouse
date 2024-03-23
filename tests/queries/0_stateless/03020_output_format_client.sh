@@ -14,3 +14,5 @@ ${CLICKHOUSE_LOCAL} --output-format Markdown --query "SELECT 'Hello, world' AS x
 ${CLICKHOUSE_CLIENT} --output-format Markdown --query "SELECT 'Hello, world' AS x"
 ${CLICKHOUSE_LOCAL} --format Markdown --query "SELECT 'Hello, world' AS x"
 ${CLICKHOUSE_CLIENT} --format Markdown --query "SELECT 'Hello, world' AS x"
+${CLICKHOUSE_LOCAL} --vertical --query "SELECT 'Hello, world' AS x"
+${CLICKHOUSE_CLIENT} --vertical --query "SELECT 'Hello, world' AS x"
