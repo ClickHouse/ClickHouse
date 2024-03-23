@@ -48,6 +48,7 @@ At a minimum, the following information should be added (but add more as needed)
 
 #### Run only:
 - [ ] <!---ci_set_integration--> Integration tests
+- [ ] <!---ci_set_integration_asan--> Integration tests (asan)
 - [ ] <!---ci_set_arm--> Integration tests (arm64)
 - [ ] <!---ci_set_stateless--> Stateless tests (release)
 - [ ] <!---ci_set_stateless_asan--> Stateless tests (asan)

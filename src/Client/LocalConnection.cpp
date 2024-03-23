@@ -24,14 +24,24 @@ namespace ErrorCodes
 
 LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
     : WithContext(context_)
-    , session(getContext(), ClientInfo::Interface::LOCAL)
+    , session(std::make_unique<Session>(getContext(), ClientInfo::Interface::LOCAL))
     , send_progress(send_progress_)
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
 {
     /// Authenticate and create a context to execute queries.
-    session.authenticate("default", "", Poco::Net::SocketAddress{});
-    session.makeSessionContext();
+    session->authenticate("default", "", Poco::Net::SocketAddress{});
+    session->makeSessionContext();
+}
+
+LocalConnection::LocalConnection(
+    std::unique_ptr<Session> && session_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
+    : WithContext(session_->sessionContext())
+    , session(std::move(session_))
+    , send_progress(send_progress_)
+    , send_profile_events(send_profile_events_)
+    , server_display_name(server_display_name_)
+{
 }
 
 LocalConnection::~LocalConnection()
@@ -92,9 +102,9 @@ void LocalConnection::sendQuery(
 
     /// Suggestion comes without client_info.
     if (client_info)
-        query_context = session.makeQueryContext(*client_info);
+        query_context = session->makeQueryContext(*client_info);
     else
-        query_context = session.makeQueryContext();
+        query_context = session->makeQueryContext();
     query_context->setCurrentQueryId(query_id);
 
     if (send_progress)
@@ -542,6 +552,16 @@ ServerConnectionPtr LocalConnection::createConnection(
     const String & server_display_name)
 {
     return std::make_unique<LocalConnection>(current_context, send_progress, send_profile_events, server_display_name);
+}
+
+ServerConnectionPtr LocalConnection::createConnection(
+    const ConnectionParameters &,
+    std::unique_ptr<Session> && session,
+    bool send_progress,
+    bool send_profile_events,
+    const String & server_display_name)
+{
+    return std::make_unique<LocalConnection>(std::move(session), send_progress, send_profile_events, server_display_name);
 }
 
 

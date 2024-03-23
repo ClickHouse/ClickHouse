@@ -9,6 +9,11 @@
 #include <vector>
 #include <base/types.h>
 #include <boost/container/flat_set.hpp>
+#include "config.h"
+#if USE_SSL
+    #include <Access/SSH/SSHPublicKey.h>
+#endif
+#include <vector>
 
 namespace DB
 {

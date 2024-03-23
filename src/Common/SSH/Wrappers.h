@@ -44,8 +44,10 @@ public:
     String getKeyType() const;
 
     friend SSHKeyFactory;
-private:
+
     explicit SSHKey(ssh_key key_) : key(key_) { }
+
+private:
     ssh_key key = nullptr;
 };
 

@@ -2,6 +2,9 @@
 
 #include <string_view>
 #include "Common/NamePrompter.h"
+#include <cstdio>
+#include <istream>
+#include <unistd.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
@@ -10,6 +13,7 @@
 #include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
 #include <Poco/Util/Application.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <Interpreters/Context.h>
 #include <Client/Suggest.h>
 #include <Client/QueryFuzzer.h>
@@ -17,9 +21,6 @@
 #include <Storages/StorageFile.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-
-
-namespace po = boost::program_options;
 
 
 namespace DB
@@ -58,21 +59,24 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
+
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
-class ClientBase : public Poco::Util::Application, public IHints<2>
+// Core client functionality. Can be used embedded into server and in standalone application.
+class ClientCore
 {
 
 public:
     using Arguments = std::vector<String>;
 
-    ClientBase();
-    ~ClientBase() override;
+    explicit ClientCore(
+        int in_fd_, int out_fd_, int err_fd_, std::istream & input_stream_, std::ostream & output_stream_, std::ostream & error_stream_);
+    virtual ~ClientCore();
 
-    void init(int argc, char ** argv);
+    bool tryStopQuery() { return query_interrupt_handler.tryStop(); }
+    void stopQuery() { return query_interrupt_handler.stop(); }
 
-    std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
 
 protected:
     void runInteractive();
@@ -99,7 +103,7 @@ protected:
 
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
-    static void setupSignalHandler();
+    // void setupSignalHandler();
 
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
@@ -107,40 +111,15 @@ protected:
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
         std::unique_ptr<Exception> & current_exception);
 
-    static void clearTerminal();
+    void clearTerminal();
     void showClientVersion();
 
-    using ProgramOptionsDescription = boost::program_options::options_description;
-    using CommandLineOptions = boost::program_options::variables_map;
-
-    struct OptionsDescription
-    {
-        std::optional<ProgramOptionsDescription> main_description;
-        std::optional<ProgramOptionsDescription> external_description;
-        std::optional<ProgramOptionsDescription> hosts_and_ports_description;
-    };
 
     virtual void updateLoggerLevel(const String &) {}
-    virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
-    virtual void addOptions(OptionsDescription & options_description) = 0;
-    virtual void processOptions(const OptionsDescription & options_description,
-                                const CommandLineOptions & options,
-                                const std::vector<Arguments> & external_tables_arguments,
-                                const std::vector<Arguments> & hosts_and_ports_arguments) = 0;
-    virtual void processConfig() = 0;
 
     bool processQueryText(const String & text);
 
-    virtual void readArguments(
-        int argc,
-        char ** argv,
-        Arguments & common_arguments,
-        std::vector<Arguments> & external_tables_arguments,
-        std::vector<Arguments> & hosts_and_ports_arguments) = 0;
-
     void setInsertionTable(const ASTInsertQuery & insert_query);
-
-    void addMultiquery(std::string_view query, Arguments & common_arguments) const;
 
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
@@ -174,14 +153,38 @@ private:
     String prompt() const;
 
     void resetOutput();
-    void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
     void updateSuggest(const ASTPtr & ast);
 
     void initQueryIdFormats();
+    virtual void initUserProvidedQueryIdFormats() {}
     bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
 protected:
+
+    class QueryInterruptHandler : private boost::noncopyable
+    {
+    public:
+        /// Store how much interrupt signals can be before stopping the query
+        /// by default stop after the first interrupt signal.
+        void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
+
+        /// Set value not greater then 0 to mark the query as stopped.
+        void stop() { return exit_after_signals.store(0); }
+
+        /// Return true if the query was stopped.
+        /// Query was stopped if it received at least "signals_before_stop" interrupt signals.
+        bool tryStop() { return exit_after_signals.fetch_sub(1) <= 0; }
+        bool cancelled() { return exit_after_signals.load() <= 0; }
+
+        /// Return how much interrupt signals remain before stop.
+        Int32 cancelledStatus() { return exit_after_signals.load(); }
+    private:
+        std::atomic<Int32> exit_after_signals = 0;
+    };
+
+    QueryInterruptHandler query_interrupt_handler;
+
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
@@ -192,8 +195,15 @@ protected:
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
-    SharedContextHolder shared_context;
+    SharedContextHolder shared_context; // maybe not initialized
     ContextMutablePtr global_context;
+
+    String default_database;
+    String query_id;
+    Int32 suggestion_limit;
+    bool enable_highlight = true;
+    bool multiline = false;
+    String static_query;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
@@ -216,8 +226,6 @@ protected:
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
 
-    String pager;
-
     String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
@@ -237,15 +245,16 @@ protected:
     MergeTreeSettings cmd_merge_tree_settings;
 
     /// thread status should be destructed before shared context because it relies on process list.
-    std::optional<ThreadStatus> thread_status;
+    std::optional<ThreadStatus> thread_status; // may be not initialized in embedded client
 
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;
 
     /// Buffer that reads from stdin in batch mode.
-    ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
+    ReadBufferFromFileDescriptor std_in;
     /// Console output.
-    WriteBufferFromFileDescriptor std_out{STDOUT_FILENO};
+    WriteBufferFromFileDescriptor std_out;
+    String pager;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.
@@ -258,6 +267,7 @@ protected:
     std::unique_ptr<InternalTextLogs> logs_out_stream;
 
     /// /dev/tty if accessible or std::cerr - for progress bar.
+    /// But running embedded into server, we write the progress to given tty file dexcriptor.
     /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
 
@@ -327,6 +337,15 @@ protected:
 
     /// Does log_comment has specified by user?
     bool has_log_comment = false;
+
+    bool logging_initialized = false;
+
+    std::ostream & output_stream;
+    std::ostream & error_stream;
+    std::istream & input_stream;
+    int in_fd = STDIN_FILENO;
+    int out_fd = STDOUT_FILENO;
+    int err_fd = STDERR_FILENO;
 };
 
 }

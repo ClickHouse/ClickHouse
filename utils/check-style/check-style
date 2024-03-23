@@ -304,7 +304,9 @@ std_cerr_cout_excludes=(
     src/Interpreters/Context.cpp
     # IProcessor::dump()
     src/Processors/IProcessor.cpp
-    src/Client/ClientBase.cpp
+    src/Client/ClientBaseApplication.cpp
+    src/Common/ProgressIndication.h
+    src/Client/LineReader.h
     src/Client/LineReader.cpp
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp

@@ -105,8 +105,11 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
         && (lhs.ssl_certificate_common_names == rhs.ssl_certificate_common_names)
+#if USE_SSL
         && (lhs.ssh_keys == rhs.ssh_keys) && (lhs.http_auth_scheme == rhs.http_auth_scheme)
-        && (lhs.http_auth_server_name == rhs.http_auth_server_name);
+#endif
+        && (lhs.http_auth_server_name == rhs.http_auth_server_name)
+        ;
 }
 
 
@@ -174,7 +177,12 @@ void AuthenticationData::setPasswordHashHex(const String & hash)
 
 String AuthenticationData::getPasswordHashHex() const
 {
-    if (type == AuthenticationType::LDAP || type == AuthenticationType::KERBEROS || type == AuthenticationType::SSL_CERTIFICATE)
+    if (
+        type == AuthenticationType::LDAP
+        || type == AuthenticationType::KERBEROS
+        || type == AuthenticationType::SSL_CERTIFICATE
+        || type == AuthenticationType::SSH_KEY
+    )
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get password hex hash for authentication type {}", toString(type));
 
     String hex;

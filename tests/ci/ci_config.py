@@ -49,6 +49,7 @@ class Labels(metaclass=WithIter):
     CI_SET_FAST = "ci_set_fast"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_INTEGRATION = "ci_set_integration"
+    CI_SET_INTEGRATION_ASAN = "ci_set_integration_asan"
     CI_SET_ANALYZER = "ci_set_analyzer"
     CI_SET_STATLESS = "ci_set_stateless"
     CI_SET_STATEFUL = "ci_set_stateful"
@@ -838,10 +839,16 @@ CI_CONFIG = CIConfig(
                 JobNames.INTEGRATION_TEST,
             ]
         ),
+        Labels.CI_SET_INTEGRATION_ASAN: LabelConfig(
+            run_jobs=[
+                JobNames.STYLE_CHECK,
+                Build.PACKAGE_ASAN,
+                JobNames.INTEGRATION_TEST_ASAN,
+            ]
+        ),
         Labels.CI_SET_ANALYZER: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
                 Build.PACKAGE_RELEASE,
                 Build.PACKAGE_ASAN,
                 JobNames.STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE,
@@ -851,7 +858,6 @@ CI_CONFIG = CIConfig(
         Labels.CI_SET_STATLESS: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
                 Build.PACKAGE_RELEASE,
                 JobNames.STATELESS_TEST_RELEASE,
             ]
@@ -859,7 +865,6 @@ CI_CONFIG = CIConfig(
         Labels.CI_SET_STATLESS_ASAN: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
                 Build.PACKAGE_ASAN,
                 JobNames.STATELESS_TEST_ASAN,
             ]
@@ -867,7 +872,6 @@ CI_CONFIG = CIConfig(
         Labels.CI_SET_STATEFUL: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
                 Build.PACKAGE_RELEASE,
                 JobNames.STATEFUL_TEST_RELEASE,
             ]
@@ -875,7 +879,6 @@ CI_CONFIG = CIConfig(
         Labels.CI_SET_STATEFUL_ASAN: LabelConfig(
             run_jobs=[
                 JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
                 Build.PACKAGE_ASAN,
                 JobNames.STATEFUL_TEST_ASAN,
             ]

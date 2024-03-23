@@ -1,6 +1,10 @@
 #pragma once
 
 #include <base/types.h>
+#include "config.h"
+#if USE_SSL
+    #include <Access/SSH/SSHPublicKey.h>
+#endif
 #include <memory>
 
 
@@ -86,6 +90,9 @@ class MySQLNative41Credentials : public CredentialsWithScramble
     using CredentialsWithScramble::CredentialsWithScramble;
 };
 
+#if USE_SSL
+// Credentials, which contain just user and its public key.
+// The validness of the key must be checked before.
 class SshCredentials : public Credentials
 {
 public:
@@ -117,5 +124,7 @@ private:
     String signature;
     String original;
 };
+
+#endif
 
 }

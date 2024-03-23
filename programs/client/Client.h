@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Client/ClientBase.h>
+#include <Client/ClientBaseApplication.h>
 
 
 namespace DB
 {
 
-class Client : public ClientBase
+class Client : public ClientBaseApplication
 {
 public:
     Client() = default;
