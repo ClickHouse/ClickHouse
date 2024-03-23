@@ -26,7 +26,7 @@ public:
     explicit FunctionGetClientHTTPHeader(ContextPtr context_)
         : WithContext(context_)
     {
-        if (!getContext()->getSettingsRef().allow_get_http_client_header)
+        if (!getContext()->getSettingsRef().allow_get_client_http_header)
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "The function {} requires setting `allow_get_client_http_header` to be enabled.", getName());
     }
 
@@ -79,11 +79,15 @@ REGISTER_FUNCTION(GetClientHTTPHeader)
             .description = R"(
 Get the value of an HTTP header.
 
-If there no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
+If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
 Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricted.
 
 The function requires the setting `allow_get_client_http_header` to be enabled.
 The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
+
+HTTP headers are case sensitive for this function.
+
+If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
 ",
             .syntax = "getClientHTTPHeader(name)",
             .arguments = {{"name", "The HTTP header name (String)"}},
