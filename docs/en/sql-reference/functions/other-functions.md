@@ -405,7 +405,7 @@ Returns the name of the current user. In case of a distributed query, the name o
 SELECT currentUser();
 ```
 
-Alias: `user()`, `USER()`.
+Aliases: `user()`, `USER()`, `current_user()`. Aliases are case insensitive.
 
 **Returned values**
 
