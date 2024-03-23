@@ -1,20 +1,23 @@
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <base/find_symbols.h>
 #include <Functions/URL/protocol.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/registerTableFunctions.h>
+
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
 }
+
+namespace
+{
 
 bool isAbsoluteURL(const char * url_begin, const char * url_end)
 {
@@ -155,12 +158,12 @@ public:
             }
             else if (*relative_url_ptr == '/')
             {
-                relative_url_ptr++;
+                ++relative_url_ptr;
                 Pos domain_pos;
                 /// Relative url begins with double or more slashes
                 if (relative_url_ptr != relative_url_end && *relative_url_ptr == '/')
                 {
-                    relative_url_ptr++;
+                    ++relative_url_ptr;
                     /// Relative url begins with three or more slashes
                     if (*relative_url_ptr == '/')
                     {
@@ -192,7 +195,7 @@ public:
                     domain_pos = getDomainNameEndPos(base_url_begin, base_url_end);
                     if (domain_pos == base_url_end)
                         continue;
-                    relative_url_ptr--;
+                    --relative_url_ptr;
                 }
 
                 base_size = domain_pos - base_url_begin;
@@ -217,7 +220,7 @@ public:
                 memcpy(&res_data[res_offset], base_url_begin, base_size);
                 res_offset += base_size;
                 memcpy(&res_data[res_offset], "/", 1);
-                res_offset++;
+                ++res_offset;
                 memcpy(&res_data[res_offset], relative_url_ptr, relative_size);
                 res_offset += relative_size;
             }
@@ -231,18 +234,17 @@ public:
     }
 };
 
+}
+
 REGISTER_FUNCTION(ResolveRelativeURL)
 {
     factory.registerFunction<FunctionResolveRelativeURL>(
         FunctionDocumentation{
             .description=R"(
-                resolves a relative URL to its absolute form based on a given base URL.
-                This is particularly useful to resolve relative URLs from HTML pages.]
-                 )",
-            .examples={{"", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}}
-        }
-    );
-}
+Resolves a relative URL to its absolute form based on a given base URL.
+This is particularly useful to resolve relative URLs from HTML pages.]
+)"});
 
 }
 
+}
