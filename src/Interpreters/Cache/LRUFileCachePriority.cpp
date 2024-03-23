@@ -303,6 +303,10 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         if (hold_size || hold_elements)
             res.setSpaceHolder(hold_size, hold_elements, *this, lock);
 
+        LOG_TEST(log, "Collected {} candidates for eviction (total size: {}). "
+                 "Took hold of size {} and elements {}",
+                 res.size(), stat.total_stat.releasable_size, hold_size, hold_elements);
+
         return true;
     }
     else

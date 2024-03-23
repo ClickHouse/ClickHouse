@@ -149,10 +149,14 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     /// If `it` not nullptr (e.g. is already in some queue),
     /// we need to check in which queue (protected/probationary) it currently is
     /// (in order to know where we need to free space).
-    if (!assert_cast<SLRUIterator *>(reservee.get())->is_protected)
+    auto * slru_iterator = assert_cast<SLRUIterator *>(reservee.get());
+    if (!slru_iterator->is_protected)
     {
+        chassert(slru_iterator->lru_iterator.cache_priority == &probationary_queue);
         return probationary_queue.collectCandidatesForEviction(size, elements, stat, res, reservee, user_id, lock);
     }
+    else
+        chassert(slru_iterator->lru_iterator.cache_priority == &protected_queue);
 
     /// Entry is in protected queue.
     /// Check if we have enough space in protected queue to fit a new size of entry.
@@ -196,10 +200,6 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
     auto downgrade_func = [=, this](const CachePriorityGuard::Lock & lk)
     {
-        LOG_TEST(log, "Downgrading {} elements from protected to probationary. "
-                 "Total size: {}",
-                 downgrade_candidates->size(), downgrade_stat.total_stat.releasable_size);
-
         for (const auto & [key, key_candidates] : *downgrade_candidates)
         {
             for (const auto & candidate : key_candidates.candidates)
@@ -209,12 +209,20 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
     if (res.size() > 0)
     {
+        LOG_TEST(log, "Setting up delayed downgrade for {} elements "
+                 "from protected to probationary. Total size: {}",
+                 downgrade_candidates->size(), downgrade_stat.total_stat.releasable_size);
+
         /// Downgrade from protected to probationary only after
         /// we free up space in probationary (in order to fit these downgrade candidates).
         res.setFinalizeEvictionFunc(std::move(downgrade_func));
     }
     else
     {
+        LOG_TEST(log, "Downgrading {} elements from protected to probationary. "
+                 "Total size: {}",
+                 downgrade_candidates->size(), downgrade_stat.total_stat.releasable_size);
+
         /// Enough space in probationary queue already to fit our downgrade candidates.
         downgrade_func(lock);
     }
@@ -251,9 +259,12 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
     /// we only need to increase its priority within the protected queue.
     if (iterator.is_protected)
     {
+        chassert(iterator.lru_iterator.cache_priority == &protected_queue);
         iterator.lru_iterator.increasePriority(lock);
         return;
     }
+    else
+        chassert(iterator.lru_iterator.cache_priority == &probationary_queue);
 
     /// Entry is in probationary queue.
     /// We need to move it to protected queue.
