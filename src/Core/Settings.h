@@ -271,7 +271,7 @@ class IColumn;
     M(UInt64, log_queries_cut_to_length, 100000, "If query length is greater than specified threshold (in bytes), then cut query when writing to query log. Also limit length of printed query in ordinary text log.", 0) \
     M(Float, log_queries_probability, 1., "Log queries with the specified probability.", 0) \
     \
-    M(Bool, log_processors_profiles, false, "Log Processors profile events.", 0) \
+    M(Bool, log_processors_profiles, true, "Log Processors profile events.", 0) \
     M(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, "How are distributed subqueries performed inside IN or JOIN sections?", IMPORTANT) \
     \
     M(UInt64, max_concurrent_queries_for_all_users, 0, "The maximum number of concurrent requests for all users.", 0) \
@@ -293,6 +293,7 @@ class IColumn;
     M(UInt64, read_backoff_min_concurrency, 1, "Settings to try keeping the minimal number of threads in case of slow reads.", 0) \
     \
     M(Float, memory_tracker_fault_probability, 0., "For testing of `exception safety` - throw an exception every time you allocate memory with the specified probability.", 0) \
+    M(Float, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability, 0.0, "For testing of `PartsSplitter` - split read ranges into intersecting and non intersecting every time you read from MergeTree with the specified probability.", 0) \
     \
     M(Bool, enable_http_compression, false, "Compress the result if the client over HTTP said that it understands data compressed by gzip, deflate, zstd, br, lz4, bz2, xz.", 0) \
     M(Int64, http_zlib_compression_level, 3, "Compression level - used if the client on HTTP said that it understands data compressed by gzip or deflate.", 0) \
@@ -865,6 +866,7 @@ class IColumn;
     M(Bool, optimize_uniq_to_count, true, "Rewrite uniq and its variants(except uniqUpTo) to count if subquery has distinct or group by clause.", 0) \
     M(Bool, use_variant_as_common_type, false, "Use Variant as a result type for if/multiIf in case when there is no common type for arguments", 0) \
     M(Bool, enable_order_by_all, true, "Enable sorting expression ORDER BY ALL.", 0) \
+    M(Bool, traverse_shadow_remote_data_paths, false, "Traverse shadow directory when query system.remote_data_paths", 0) \
     \
     /** Experimental functions */ \
     M(Bool, allow_experimental_materialized_postgresql_table, false, "Allows to use the MaterializedPostgreSQL table engine. Disabled by default, because this feature is experimental", 0) \
