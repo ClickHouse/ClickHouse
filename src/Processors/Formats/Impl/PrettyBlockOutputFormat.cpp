@@ -427,7 +427,7 @@ void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
     auto value = columns[0]->getFloat64(0);
     auto threshold = format_settings.pretty.output_format_pretty_single_large_number_tip_threshold;
 
-    if (threshold && isFinite(value) && abs(value) >= threshold)
+    if (threshold && isFinite(value) && abs(value) > threshold)
     {
         if (color)
             writeCString("\033[90m", out);
