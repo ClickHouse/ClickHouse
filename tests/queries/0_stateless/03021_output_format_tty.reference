@@ -1,0 +1,8 @@
+spawn bash -c source ./../shell_config.sh ; $CLICKHOUSE_CLIENT --query 'SELECT 1'
+┌─[1m1[0m─┐
+│ 1 │
+└───┘
+spawn bash -c source ./../shell_config.sh ; $CLICKHOUSE_LOCAL --query 'SELECT 2'
+┌─[1m2[0m─┐
+│ 2 │
+└───┘
