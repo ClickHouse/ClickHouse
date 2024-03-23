@@ -84,7 +84,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             const auto & type = *header.getByPosition(column).type;
             auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
             writeValueWithPadding(
-                *columns[column], *serializations[column], row, cur_width, max_widths[column], type.shouldAlignRightInPrettyFormats());
+                *columns[column], *serializations[column], row, cur_width, max_widths[column], type.shouldAlignRightInPrettyFormats(), isNumber(type));
         }
 
         writeReadableNumberTip(chunk);
