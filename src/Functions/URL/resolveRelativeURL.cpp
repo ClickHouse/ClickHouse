@@ -137,7 +137,6 @@ public:
             ColumnString::Offset relative_url_offset = relative_url_offsets[i];
             ColumnString::Offset base_url_offset = base_url_offsets[i];
 
-
             const char * relative_url_begin = reinterpret_cast<const char *>(&relative_url_data[relative_url_prev_offset]);
             const char * relative_url_end = reinterpret_cast<const char *>(&relative_url_data[relative_url_offset]);
             size_t relative_size = relative_url_offset - relative_url_prev_offset - 1;
