@@ -13,6 +13,7 @@ set history_file $CLICKHOUSE_TMP/$basename.history
 log_user 0
 set timeout 60
 match_max 100000
+
 expect_after {
     # Do not ignore eof from expect
     -i $any_spawn_id eof { exp_continue }
@@ -20,23 +21,12 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-exec bash -c "echo select 1 > $history_file.txt"
-exec bash -c "echo select 1 >> $history_file.txt"
-exec bash -c "echo select 1 >> $history_file.txt"
-
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --history_file=$history_file.txt"
-expect "The history file ($history_file.txt) is in old format. 3 lines, 1 unique lines."
-expect ":) "
-send -- "\4"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT --query 'SELECT 1'"
+expect "│ 1 │"
+expect "└───┘"
 expect eof
 
-spawn bash -c "wc -l $history_file.txt"
-# The following lines are expected:
-#
-#     ### YYYY-MM-DD HH:MM:SS.SSS
-#     select 1
-#
-expect "2"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL --query 'SELECT 2'"
+expect "│ 2 │"
+expect "└───┘"
 expect eof
-
-exec bash -c "rm $history_file.txt"
