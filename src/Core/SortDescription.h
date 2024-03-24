@@ -90,6 +90,10 @@ struct SortColumnDescription
     void explain(JSONBuilder::JSONMap & map) const;
 };
 
+struct SortColumnDescriptionDependsOn{
+    // TODO
+};
+
 struct SortColumnDescriptionWithColumnIndex
 {
     SortColumnDescription base;

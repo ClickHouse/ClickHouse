@@ -65,7 +65,6 @@ public:
         UInt64 limit_ = 0,
         bool always_read_till_end_ = false
     );
-
     String getName() const override { return "Sorting"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;

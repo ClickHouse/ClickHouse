@@ -125,6 +125,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int DEPENDS_BY_BAD_ARGUMENTS
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -2976,6 +2977,8 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info, UInt64 limit, SortDescription & output_order_descr)
 {
+
+    // TODO: some work here? Maybe Separate Sorting Step?
     const Settings & settings = context->getSettingsRef();
 
     auto finish_sorting_step = std::make_unique<SortingStep>(
@@ -3002,6 +3005,8 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
          *  and then merge them into one sorted stream.
          * At this stage we merge per-thread streams into one.
          */
+
+        // TODO: multithreadthread topological sort? I don't rhink so
         executeOrderOptimized(query_plan, input_sorting_info, limit, output_order_descr);
         return;
     }
@@ -3018,7 +3023,10 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         sort_settings,
         settings.optimize_sorting_by_input_stream_properties);
 
-    sorting_step->setStepDescription("Sorting for ORDER BY");
+//    if (sort_setting.is_depends_on)
+//        sorting_step->setStepDescription("Sorting for ORDER BY DEPENDS ON");
+//    else
+//        sorting_step->setStepDescription("Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));
 }
 

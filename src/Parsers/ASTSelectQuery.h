@@ -33,7 +33,7 @@ public:
         LIMIT_LENGTH,
         SETTINGS,
         INTERPOLATE
-    };
+    }; //I think we don't need expression here
 
     static String expressionToString(Expression expr)
     {
