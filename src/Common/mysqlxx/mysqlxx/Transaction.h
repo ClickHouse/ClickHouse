@@ -27,7 +27,7 @@ public:
             if (!finished)
                 rollback();
         }
-        catch (...)
+        catch (...) /// NOLINT(bugprone-empty-catch)
         {
         }
     }

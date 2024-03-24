@@ -2,6 +2,7 @@
 #include <mutex>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TableNameHints.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -26,7 +27,6 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
-#include "Interpreters/Context_fwd.h"
 #include "config.h"
 
 #if USE_MYSQL
@@ -1706,4 +1706,43 @@ DDLGuard::~DDLGuard()
     releaseTableLock();
 }
 
+std::pair<String, String> TableNameHints::getHintForTable(const String & table_name) const
+{
+    auto results = this->getHints(table_name, getAllRegisteredNames());
+    if (results.empty())
+        return getExtendedHintForTable(table_name);
+    return std::make_pair(database->getDatabaseName(), results[0]);
+}
+
+std::pair<String, String> TableNameHints::getExtendedHintForTable(const String & table_name) const
+{
+    /// load all available databases from the DatabaseCatalog instance
+    auto & database_catalog = DatabaseCatalog::instance();
+    auto all_databases = database_catalog.getDatabases();
+
+    for (const auto & [db_name, db] : all_databases)
+    {
+        /// this case should be covered already by getHintForTable
+        if (db_name == database->getDatabaseName())
+            continue;
+
+        TableNameHints hints(db, context);
+        auto results = hints.getHints(table_name);
+
+        /// if the results are not empty, return the first instance of the table_name
+        /// and the corresponding database_name that was found.
+        if (!results.empty())
+            return std::make_pair(db_name, results[0]);
+    }
+    return {};
+}
+
+Names TableNameHints::getAllRegisteredNames() const
+{
+    Names result;
+    if (database)
+        for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+            result.emplace_back(table_it->name());
+    return result;
+}
 }

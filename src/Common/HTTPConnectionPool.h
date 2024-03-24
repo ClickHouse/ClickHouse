@@ -44,11 +44,12 @@ public:
     virtual const Metrics & getMetrics() const = 0;
     virtual ~IHTTPConnectionPoolForEndpoint() = default;
 
+    IHTTPConnectionPoolForEndpoint(const IHTTPConnectionPoolForEndpoint &) = delete;
+    IHTTPConnectionPoolForEndpoint & operator=(const IHTTPConnectionPoolForEndpoint &) = delete;
+
 protected:
     IHTTPConnectionPoolForEndpoint() = default;
 
-    IHTTPConnectionPoolForEndpoint(const IHTTPConnectionPoolForEndpoint &) = delete;
-    IHTTPConnectionPoolForEndpoint & operator=(const IHTTPConnectionPoolForEndpoint &) = delete;
 };
 
 enum class HTTPConnectionGroupType
@@ -70,10 +71,11 @@ public:
         static constexpr size_t warning_step = 100;
     };
 
-private:
-    HTTPConnectionPools();
     HTTPConnectionPools(const HTTPConnectionPools &) = delete;
     HTTPConnectionPools & operator=(const HTTPConnectionPools &) = delete;
+
+private:
+    HTTPConnectionPools();
 
 public:
     static HTTPConnectionPools & instance();

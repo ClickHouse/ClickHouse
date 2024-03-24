@@ -1,6 +1,8 @@
 -- Tags: no-parallel, no-fasttest
 -- Tag no-fasttest: Depends on S3
 
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+
 -- { echo }
 drop table if exists test_02302;
 create table test_02302 (a UInt64) engine = S3(s3_conn, filename='test_02302_{_partition_id}', format=Parquet) partition by a;
