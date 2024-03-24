@@ -35,7 +35,7 @@ ClickHouse — столбцовая система управления база
 В примерах изображён только порядок расположения данных.
 То есть значения из разных столбцов хранятся отдельно, а данные одного столбца — вместе.
 
-Примеры столбцовых СУБД: Vertica, Paraccel (Actian Matrix, Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise, Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid, kdb+.
+Примеры столбцовых СУБД: Vertica, Paraccel (Actian Matrix, Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise, Actian Vector), LucidDB, SAP HANA и прочий треш, Google Dremel, Google PowerDrill, Druid, kdb+.
 {: .grey }
 
 Разный порядок хранения данных лучше подходит для разных сценариев работы.
