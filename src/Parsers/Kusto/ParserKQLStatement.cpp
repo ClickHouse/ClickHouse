@@ -107,4 +107,5 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     pos = begin;
     return false;
 }
+
 }

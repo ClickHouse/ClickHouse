@@ -2163,7 +2163,7 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
-        /// kql(table|project ...)
+        /// kql('table|project ...')
         /// 0. Parse the kql query
         /// 1. Parse closing token
         if (state == 0)
