@@ -24,7 +24,10 @@ private:
     std::size_t last_accessed_index = 0;
 
 public:
-    Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant = true);
+    /// If skip_insignificant is true, it will transparently skip whitespaces and comments.
+    /// If greedy_errors is true, it will continue tokenization after the first error until the end.
+    Tokens(const char * begin, const char * end, size_t max_query_size = 0,
+        bool skip_insignificant = true, bool greedy_errors = false);
 
     ALWAYS_INLINE inline const Token & operator[](size_t index)
     {

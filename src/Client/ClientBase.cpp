@@ -44,7 +44,6 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>

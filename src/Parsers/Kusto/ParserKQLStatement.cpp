@@ -77,7 +77,7 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     String kql_statement = typeid_cast<const ASTLiteral &>(*string_literal).value.safeGet<String>();
 
-    Tokens token_kql(kql_statement.data(), kql_statement.data() + kql_statement.size());
+    Tokens token_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true, /* greedy_errors= */ true);
     IParser::Pos pos_kql(token_kql, pos.max_depth, pos.max_backtracks);
 
     return ParserKQLWithUnionQuery().parse(pos_kql, node, expected);
