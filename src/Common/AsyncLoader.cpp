@@ -140,6 +140,11 @@ void LoadJob::finish()
     finish_time = std::chrono::system_clock::now();
     if (waiters > 0)
         finished.notify_all();
+    else
+    {
+        on_waiters_increment = {};
+        on_waiters_decrement = {};
+    }
 }
 
 void LoadJob::scheduled(UInt64 job_id_)
@@ -765,11 +770,25 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
     if (job->load_status != LoadStatus::PENDING) // Shortcut just to avoid incrementing ProfileEvents
         return;
 
+    if (job->on_waiters_increment)
+        job->on_waiters_increment(job);
+
+    // WARNING: it is important not to throw below this point to avoid `on_waiters_increment` call w/o matching `on_waiters_decrement` call
+
     Stopwatch watch;
     job->waiters++;
     job->finished.wait(job_lock, [&] { return job->load_status != LoadStatus::PENDING; });
     job->waiters--;
     ProfileEvents::increment(ProfileEvents::AsyncLoaderWaitMicroseconds, watch.elapsedMicroseconds());
+
+    if (job->on_waiters_decrement)
+        job->on_waiters_decrement(job);
+
+    if (job->waiters == 0)
+    {
+        job->on_waiters_increment = {};
+        job->on_waiters_decrement = {};
+    }
 }
 
 bool AsyncLoader::canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> &)
@@ -859,7 +878,7 @@ void AsyncLoader::worker(Pool & pool)
         try
         {
             current_load_job = job.get();
-            SCOPE_EXIT({ current_load_job = nullptr; }); // Note that recursive job execution is not supported
+            SCOPE_EXIT({ current_load_job = nullptr; }); // Note that recursive job execution is not supported, but jobs can wait one another
             job->execute(*this, pool_id, job);
             exception_from_job = {};
         }

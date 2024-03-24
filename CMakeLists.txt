@@ -61,9 +61,14 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
 
-    # -fsanitize=memory and address are too heavy
+    # Sanitizers are too heavy
     if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE)
        set (RLIMIT_DATA 10000000000) # 10G
+    endif()
+
+    # For some files currently building RISCV64 might be too slow. TODO: Improve compilation times per file
+    if (ARCH_RISCV64)
+        set (RLIMIT_CPU 1800)
     endif()
 
     set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
@@ -102,6 +107,8 @@ if (ENABLE_FUZZING)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
+
+    add_compile_definitions(FUZZING_MODE=1)
 endif()
 
 # Global libraries
@@ -574,7 +581,7 @@ if (FUZZER)
             if (NOT(target_type STREQUAL "INTERFACE_LIBRARY" OR target_type STREQUAL "UTILITY"))
                 target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
             endif()
-            if (target_type STREQUAL "EXECUTABLE" AND (target MATCHES ".+_fuzzer" OR target STREQUAL "clickhouse"))
+            if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
                 message(STATUS "${target} instrumented with fuzzer")
                 target_link_libraries(${target} PUBLIC ch_contrib::fuzzer)
                 # Add to fuzzers bundle
@@ -582,6 +589,12 @@ if (FUZZER)
                 get_target_filename(${target} target_bin_name)
                 get_target_property(target_bin_dir ${target} BINARY_DIR)
                 add_custom_command(TARGET fuzzers POST_BUILD COMMAND mv "${target_bin_dir}/${target_bin_name}" "${CMAKE_CURRENT_BINARY_DIR}/programs/" VERBATIM)
+            endif()
+            if (target STREQUAL "clickhouse")
+                message(STATUS "${target} instrumented with fuzzer")
+                target_link_libraries(${target} PUBLIC ch_contrib::fuzzer_no_main)
+                # Add to fuzzers bundle
+                add_dependencies(fuzzers ${target})
             endif()
         endif()
     endforeach()
