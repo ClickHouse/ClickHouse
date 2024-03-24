@@ -63,7 +63,7 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserToken lparen(TokenType::OpeningRoundBracket);
-    ParserToken rparen(TokenType::OpeningRoundBracket);
+    ParserToken rparen(TokenType::ClosingRoundBracket);
 
     ASTPtr string_literal;
     ParserStringLiteral parser_string_literal;
