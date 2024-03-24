@@ -164,6 +164,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     const auto & columns = chunk.getColumns();
     const auto & header = getPort(port_kind).getHeader();
 
+    size_t cut_to_width = format_settings.pretty.max_value_width;
+    if (!format_settings.pretty.max_value_width_apply_for_single_value && num_rows == 1 && num_columns == 1 && total_rows == 0)
+        cut_to_width = 0;
+
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
@@ -306,7 +310,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             const auto & type = *header.getByPosition(j).type;
             writeValueWithPadding(*columns[j], *serializations[j], i,
                 widths[j].empty() ? max_widths[j] : widths[j][i],
-                max_widths[j], type.shouldAlignRightInPrettyFormats(), isNumber(type));
+                max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
         }
 
         writeCString(grid_symbols.bar, out);
@@ -393,7 +397,7 @@ static String highlightDigitGroups(String source)
 
 void PrettyBlockOutputFormat::writeValueWithPadding(
     const IColumn & column, const ISerialization & serialization, size_t row_num,
-    size_t value_width, size_t pad_to_width, bool align_right, bool is_number)
+    size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number)
 {
     String serialized_value = " ";
     {
@@ -401,7 +405,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
-    if (value_width > format_settings.pretty.max_value_width)
+    if (cut_to_width && value_width > cut_to_width)
     {
         serialized_value.resize(UTF8::computeBytesBeforeWidth(
             reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, 1 + format_settings.pretty.max_value_width));

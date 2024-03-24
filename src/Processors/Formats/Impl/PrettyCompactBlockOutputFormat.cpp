@@ -162,6 +162,10 @@ void PrettyCompactBlockOutputFormat::writeRow(
     size_t num_columns = max_widths.size();
     const auto & columns = chunk.getColumns();
 
+    size_t cut_to_width = format_settings.pretty.max_value_width;
+    if (!format_settings.pretty.max_value_width_apply_for_single_value && chunk.getNumRows() == 1 && num_columns == 1 && total_rows == 0)
+        cut_to_width = 0;
+
     writeCString(grid_symbols.bar, out);
 
     for (size_t j = 0; j < num_columns; ++j)
@@ -171,7 +175,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
         const auto & type = *header.getByPosition(j).type;
         const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
-        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], type.shouldAlignRightInPrettyFormats(), isNumber(type));
+        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
     }
 
     writeCString(grid_symbols.bar, out);
