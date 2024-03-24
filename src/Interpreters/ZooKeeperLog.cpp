@@ -183,7 +183,7 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(IPv6ToBinary(address.host()).data(), 16);
     columns[i++]->insert(address.port());
     columns[i++]->insert(session_id);
-    columns[i++]->insert(elapsed_microseconds);
+    columns[i++]->insert(duration_microseconds);
 
     columns[i++]->insert(xid);
     columns[i++]->insert(has_watch);
