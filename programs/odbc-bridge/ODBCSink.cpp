@@ -1,4 +1,4 @@
-#include "ODBCBlockOutputStream.h"
+#include "ODBCSink.h"
 
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
