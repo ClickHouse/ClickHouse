@@ -1021,7 +1021,9 @@ def test_restart_server(started_cluster):
                 clickhouse_node, mysql_node, action="REJECT --reject-with tcp-reset"
             )
             clickhouse_node.restart_clickhouse()
-            clickhouse_node.query_and_get_error("SHOW TABLES FROM test_restart")
+            clickhouse_node.query_and_get_error_with_retry(
+                "SHOW TABLES FROM test_restart"
+            )
         assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_restart")
 
 
