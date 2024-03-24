@@ -307,11 +307,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             const auto & type = *header.getByPosition(j).type;
             writeValueWithPadding(*columns[j], *serializations[j], i,
                 widths[j].empty() ? max_widths[j] : widths[j][i],
-<<<<<<< HEAD
-                max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats());
-=======
-                max_widths[j], type.shouldAlignRightInPrettyFormats(), isNumber(type));
->>>>>>> master
+                max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
         }
 
         writeCString(grid_symbols.bar, out);
