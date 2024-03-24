@@ -18,8 +18,6 @@
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
-#include <aws/s3/model/StorageClass.h>
-
 #include <utility>
 
 
@@ -456,6 +454,14 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
+    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate then manually and store in multipart_checksums
+    if (client_ptr->isS3ExpressBucket())
+    {
+        auto checksum = S3::RequestChecksum::calculateChecksum(req);
+        S3::RequestChecksum::setRequestChecksum(req, checksum);
+        multipart_checksums.push_back(std::move(checksum));
+    }
+
     return req;
 }
 
@@ -575,7 +581,10 @@ void WriteBufferFromS3::completeMultipartUpload()
     for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
-        multipart_upload.AddParts(part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1)));
+        part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
+        if (!multipart_checksums.empty())
+            S3::RequestChecksum::setPartChecksum(part, multipart_checksums.at(i));
+        multipart_upload.AddParts(part);
     }
 
     req.SetMultipartUpload(multipart_upload);

@@ -312,47 +312,28 @@ void LocalServer::cleanup()
 }
 
 
-static bool checkIfStdinIsRegularFile()
-{
-    struct stat file_stat;
-    return fstat(STDIN_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
-}
-
-
-static bool checkIfStdoutIsRegularFile()
-{
-    struct stat file_stat;
-    return fstat(STDOUT_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
-}
-
-
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || queries.empty()))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!isRegularFile(STDIN_FILENO) || queries.empty()))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
     auto table_structure = config().getString("table-structure", "auto");
 
     String table_file;
-    std::optional<String> format_from_file_name;
     if (!config().has("table-file") || config().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
-        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDIN_FILENO);
     }
     else
     {
         /// Use regular file
         auto file_name = config().getString("table-file");
         table_file = quoteString(file_name);
-        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(file_name);
     }
 
-    auto data_format = backQuoteIfNeed(
-        config().getString("table-data-format", config().getString("format", format_from_file_name ? *format_from_file_name : "TSV")));
-
+    String data_format = backQuoteIfNeed(default_input_format);
 
     if (table_structure == "auto")
         table_structure = "";
@@ -618,26 +599,7 @@ void LocalServer::processConfig()
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
-    if (!config().has("output-format") && !config().has("format") && checkIfStdoutIsRegularFile())
-    {
-        std::optional<String> format_from_file_name;
-        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDOUT_FILENO);
-        format = format_from_file_name ? *format_from_file_name : "TSV";
-    }
-    else
-        format = config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV"));
-    insert_format = "Values";
-
-    /// Setting value from cmd arg overrides one from config
-    if (global_context->getSettingsRef().max_insert_block_size.changed)
-    {
-        insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
-    }
-    else
-    {
-        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
-            global_context->getSettingsRef().max_insert_block_size);
-    }
+    setDefaultFormatsFromConfiguration();
 
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
@@ -819,7 +781,6 @@ void LocalServer::addOptions(OptionsDescription & options_description)
         ("file,F", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
 
         ("input-format", po::value<std::string>(), "input format of the initial table data")
-        ("output-format", po::value<std::string>(), "default output format")
 
         ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")

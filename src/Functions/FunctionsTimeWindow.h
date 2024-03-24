@@ -21,16 +21,6 @@ namespace DB
   * hopEnd(window_id)
   * hopEnd(time_attr, hop_interval, window_interval [, timezone])
   */
-enum TimeWindowFunctionName
-{
-    TUMBLE,
-    TUMBLE_START,
-    TUMBLE_END,
-    HOP,
-    HOP_START,
-    HOP_END,
-    WINDOW_ID
-};
 
 template <IntervalKind::Kind unit>
 struct ToStartOfTransform;
@@ -73,17 +63,15 @@ struct ToStartOfTransform;
     TRANSFORM_TIME(Second)
 #undef TRANSFORM_TIME
 
-/// NOLINTBEGIN(bugprone-macro-parentheses)
-
 #define TRANSFORM_SUBSECONDS(INTERVAL_KIND, DEF_SCALE) \
 template<> \
     struct ToStartOfTransform<IntervalKind::Kind::INTERVAL_KIND> \
     { \
         static Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
         { \
-            if (scale <= DEF_SCALE) \
+            if (scale <= (DEF_SCALE)) \
             { \
-                auto val = t * DecimalUtils::scaleMultiplier<DateTime64>(DEF_SCALE - scale); \
+                auto val = t * DecimalUtils::scaleMultiplier<DateTime64>((DEF_SCALE) - scale); \
                 if (delta == 1) \
                     return val; \
                 else \
@@ -91,7 +79,7 @@ template<> \
             } \
             else \
             { \
-                return t - (t % (delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - DEF_SCALE))) ; \
+                return t - (t % (delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - (DEF_SCALE)))) ; \
             } \
         } \
     };
@@ -131,7 +119,7 @@ template<> \
     struct AddTime<IntervalKind::Kind::INTERVAL_KIND> \
     { \
         static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &) \
-        { return static_cast<UInt32>(t + delta * INTERVAL); } \
+        { return static_cast<UInt32>(t + delta * (INTERVAL)); } \
     };
     ADD_TIME(Day, 86400)
     ADD_TIME(Hour, 3600)
@@ -145,19 +133,17 @@ template <> \
     { \
         static inline NO_SANITIZE_UNDEFINED Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
         { \
-            if (scale < DEF_SCALE) \
+            if (scale < (DEF_SCALE)) \
             { \
-                return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(DEF_SCALE - scale); \
+                return t + delta * DecimalUtils::scaleMultiplier<DateTime64>((DEF_SCALE) - scale); \
             } \
             else \
-                return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - DEF_SCALE); \
+                return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - (DEF_SCALE)); \
         } \
     };
     ADD_SUBSECONDS(Millisecond, 3)
     ADD_SUBSECONDS(Microsecond, 6)
     ADD_SUBSECONDS(Nanosecond, 9)
 #undef ADD_SUBSECONDS
-
-/// NOLINTEND(bugprone-macro-parentheses)
 
 }

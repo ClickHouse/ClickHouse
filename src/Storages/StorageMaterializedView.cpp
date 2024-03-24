@@ -12,6 +12,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
 
@@ -42,6 +43,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
     extern const int TOO_MANY_MATERIALIZED_VIEWS;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace ActionLocks
@@ -390,12 +392,22 @@ void StorageMaterializedView::alter(
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     params.apply(new_metadata, local_context);
 
-    /// start modify query
     const auto & new_select = new_metadata.select;
     const auto & old_select = old_metadata.getSelectQuery();
 
     DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
-    /// end modify query
+
+    new_metadata.setSelectQuery(new_select);
+
+    /// Check the materialized view's inner table structure.
+    if (has_inner_table)
+    {
+        const Block & block = InterpreterSelectWithUnionQuery::getSampleBlock(new_select.select_query, local_context);
+        const auto & inner_table_metadata = tryGetTargetTable()->getInMemoryMetadata().columns;
+        for (const auto & name : block.getNames())
+            if (!inner_table_metadata.has(name))
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", name);
+    }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
@@ -497,7 +509,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         updateTargetTableId(new_table_id.database_name, std::nullopt);
     }
     const auto & select_query = metadata_snapshot->getSelectQuery();
-    // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
+    /// TODO: Actually, we don't need to update dependency if MV has UUID, but then db and table name will be outdated
     DatabaseCatalog::instance().updateViewDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 
     if (refresher)
