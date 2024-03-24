@@ -15,4 +15,5 @@ std::vector<std::pair<String, Int8>> getExternalLoaderStatusEnumAllPossibleValue
 
     return out;
 }
+
 }
