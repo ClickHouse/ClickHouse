@@ -385,7 +385,11 @@ upgrade_check_digest = DigestConfig(
     docker=["clickhouse/upgrade-check"],
 )
 integration_check_digest = DigestConfig(
-    include_paths=["./tests/ci/integration_test_check.py", "./tests/integration"],
+    include_paths=[
+        "./tests/ci/integration_test_check.py",
+        "./tests/ci/integration_tests_runner.py",
+        "./tests/integration/",
+    ],
     exclude_files=[".md"],
     docker=IMAGES.copy(),
 )
