@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/QueueModeColumns.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -482,6 +483,10 @@ static void validateUpdateColumns(
             {
                 if (!source.supportsLightweightDelete())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
+            }
+            else if (isQueueModeColumn(column_name))
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for queue mode column {} ", backQuote(column_name));
             }
             else if (virtual_columns.tryGet(column_name))
             {

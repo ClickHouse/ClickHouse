@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/MergeTree/QueueModeColumns.h>
 #include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Common/ProfileEventsScope.h>
@@ -20,6 +21,7 @@ struct MergeTreeSink::DelayedChunk
         UInt64 elapsed_ns;
         String block_dedup_token;
         ProfileEvents::Counters part_counters;
+        std::optional<int64_t> block_number;
     };
 
     std::vector<Partition> partitions;
@@ -74,6 +76,15 @@ void MergeTreeSink::consume(Chunk chunk)
 
     for (auto & current_block : part_blocks)
     {
+        std::optional<int64_t> block_number;
+
+        if (storage.getSettings()->queue_mode)
+        {
+            block_number = storage.increment.get();
+            auto partition_id = MergeTreePartition(current_block.partition).getID(metadata_snapshot->getPartitionKey().sample_block);
+            materializeQueueSortingColumns(current_block.block, partition_id, block_number.value());
+        }
+
         ProfileEvents::Counters part_counters;
 
         UInt64 elapsed_ns = 0;
@@ -141,6 +152,7 @@ void MergeTreeSink::consume(Chunk chunk)
             .elapsed_ns = elapsed_ns,
             .block_dedup_token = std::move(block_dedup_token),
             .part_counters = std::move(part_counters),
+            .block_number = std::move(block_number),
         });
     }
 
@@ -171,7 +183,7 @@ void MergeTreeSink::finishDelayedChunk()
         MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
         {
             auto lock = storage.lockParts();
-            storage.fillNewPartName(part, lock);
+            storage.fillNewPartName(part, lock, std::move(partition.block_number));
 
             auto * deduplication_log = storage.getDeduplicationLog();
             if (deduplication_log)
