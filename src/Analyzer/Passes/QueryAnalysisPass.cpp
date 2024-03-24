@@ -3368,7 +3368,7 @@ private:
 };
 
 /// Compare resolved identifiers considering columns that become nullable after JOIN
-static bool resolvedIdenfiersFromJoinAreEquals(
+bool resolvedIdenfiersFromJoinAreEquals(
     const QueryTreeNodePtr & left_resolved_identifier,
     const QueryTreeNodePtr & right_resolved_identifier,
     const IdentifierResolveScope & scope)
