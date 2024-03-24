@@ -960,8 +960,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
         else
         {
+            std::shared_ptr<GlobalPlannerContext> subquery_planner_context;
+            if (wrap_read_columns_in_subquery)
+                subquery_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+            else
+                subquery_planner_context = planner_context->getGlobalPlannerContext();
+
             auto subquery_options = select_query_options.subquery();
-            Planner subquery_planner(table_expression, subquery_options, planner_context->getGlobalPlannerContext());
+            Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
             subquery_planner.buildQueryPlanIfNeeded();
