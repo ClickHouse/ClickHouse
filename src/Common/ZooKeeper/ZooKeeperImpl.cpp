@@ -1536,7 +1536,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
         elem.event_time = event_time;
         elem.address = socket_address;
         elem.session_id = session_id;
-        elem.elapsed_microseconds = elapsed_microseconds;
+        elem.duration_microseconds = elapsed_microseconds;
         if (request)
         {
             elem.thread_id = request->thread_id;
