@@ -801,6 +801,14 @@ struct IdentifierResolveScope
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 
+    struct ResolvedFunctionsCache
+    {
+        FunctionOverloadResolverPtr resolver;
+        FunctionBasePtr function_base;
+    };
+
+    std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
+
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const
     {
         const IdentifierResolveScope * scope_to_check = this;
@@ -5586,9 +5594,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters);
     bool is_executable_udf = true;
 
+    IdentifierResolveScope::ResolvedFunctionsCache * function_cache = nullptr;
+
     if (!function)
     {
-        function = FunctionFactory::instance().tryGet(function_name, scope.context);
+        /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
+        /// Function randConstant() would return the same value for the same arguments (in scope).
+
+        auto hash = function_node_ptr->getTreeHash();
+        function_cache = &scope.functions_cache[hash];
+        if (!function_cache->resolver)
+            function_cache->resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
+
+        function = function_cache->resolver;
+
         is_executable_udf = false;
     }
 
@@ -5812,7 +5831,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     try
     {
-        auto function_base = function->build(argument_columns);
+        FunctionBasePtr function_base;
+        if (function_cache)
+        {
+            auto & cached_function = function_cache->function_base;
+            if (!cached_function)
+                cached_function = function->build(argument_columns);
+
+            function_base = cached_function;
+        }
+        else
+            function_base = function->build(argument_columns);
 
         /// Do not constant fold get scalar functions
         bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
