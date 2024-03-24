@@ -22,5 +22,5 @@ application/x-www-form-urlencoded
 
 
 -- Does it work for distributed queries? (not yet, but maybe it will be needed later)
-application/x-www-form-urlencoded
+
 
