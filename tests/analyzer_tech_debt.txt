@@ -1,4 +1,3 @@
-00223_shard_distributed_aggregation_memory_efficient
 00725_memory_tracking
 01155_rename_move_materialized_view
 01624_soft_constraints
