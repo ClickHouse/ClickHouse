@@ -307,7 +307,7 @@ If you had a `MergeTree` table that was manually replicated, you can convert it 
 `MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for `Atomic` database).
 Create empty `convert_to_replicated` file and the table will be loaded as replicated on next server restart.
 
-This query can be used to get the table's data path. It table has many data paths, you have to use the first one.
+This query can be used to get the table's data path. If table has many data paths, you have to use the first one.
 
 ```sql
 SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = 'database_name';
