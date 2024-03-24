@@ -83,7 +83,8 @@ struct QueryState
     {
         FULLY_CANCELLED,
         READ_CANCELLED,
-        NOT_CANCELLED
+        NOT_CANCELLED,
+        CONTINUE_IN_BACKGROUND,
     };
 
     /// Is request cancelled

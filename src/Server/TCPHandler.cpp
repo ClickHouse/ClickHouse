@@ -551,8 +551,11 @@ void TCPHandler::runImpl()
                         {
                             std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
 
-                            if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
+                            auto status = getQueryCancellationStatus();
+                            if (status == CancellationStatus::FULLY_CANCELLED)
                                 return true;
+                            if (status == CancellationStatus::CONTINUE_IN_BACKGROUND)
+                                return false;
 
                             sendProgress();
                             sendSelectProfileEvents();
@@ -785,7 +788,7 @@ bool TCPHandler::readDataNext()
             /// If client disconnected.
             if (in->eof())
             {
-                LOG_INFO(log, "Client has dropped the connection, cancel the query.");
+                LOG_INFO(log, "Client has dropped the connection. Cancelling the query.");
                 state.is_connection_closed = true;
                 state.cancellation_status = CancellationStatus::FULLY_CANCELLED;
                 break;
@@ -2141,12 +2144,30 @@ QueryState::CancellationStatus TCPHandler::getQueryCancellationStatus()
     /// During request execution the only packet that can come from the client is stopping the query.
     if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(0))
     {
-        if (in->eof())
+        bool eof = true;
+        try
         {
-            LOG_INFO(log, "Client has dropped the connection, cancel the query.");
-            state.cancellation_status = CancellationStatus::FULLY_CANCELLED;
+            eof = in->eof();
+        }
+        catch (const Poco::Net::NetException &)
+        {
+        }
+
+        if (eof)
+        {
+            if (query_context && query_context->getSettingsRef().native_protocol_continue_query_on_connection_close)
+            {
+                state.cancellation_status = CancellationStatus::CONTINUE_IN_BACKGROUND;
+                LOG_INFO(log, "Client has dropped the connection. The query will continue in the background.");
+            }
+            else
+            {
+                state.cancellation_status = CancellationStatus::FULLY_CANCELLED;
+                LOG_INFO(log, "Client has dropped the connection. Cancelling the query.");
+            }
+
             state.is_connection_closed = true;
-            return CancellationStatus::FULLY_CANCELLED;
+            return state.cancellation_status;
         }
 
         UInt64 packet_type = 0;
