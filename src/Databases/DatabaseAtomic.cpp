@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
+    extern const int LOGICAL_ERROR;
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
