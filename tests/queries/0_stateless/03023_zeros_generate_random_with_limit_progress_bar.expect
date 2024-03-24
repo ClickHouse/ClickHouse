@@ -23,14 +23,14 @@ spawn clickhouse-local
 expect ":) "
 
 # Trivial SELECT with LIMIT from system.zeros shows progress bar.
-send "SELECT * FROM system.zeros LIMIT 1e11 FORMAT Null\r"
+send "SELECT * FROM system.zeros LIMIT 10000000 FORMAT Null SETTINGS max_execution_speed = 1000000, timeout_before_checking_execution_speed = 0, max_block_size = 128\r"
 expect "Progress: "
 expect "█"
 send "\3"
 expect "Query was cancelled."
 expect ":) "
 
-send "SELECT * FROM system.zeros_mt LIMIT 1e11 FORMAT Null\r"
+send "SELECT * FROM system.zeros_mt LIMIT 10000000 FORMAT Null SETTINGS max_execution_speed = 1000000, timeout_before_checking_execution_speed = 0, max_block_size = 128\r"
 expect "Progress: "
 expect "█"
 send "\3"
@@ -38,7 +38,7 @@ expect "Query was cancelled."
 expect ":) "
 
 # As well as from generateRandom
-send "SELECT * FROM generateRandom() LIMIT 1e9 FORMAT Null\r"
+send "SELECT * FROM generateRandom() LIMIT 10000000 FORMAT Null SETTINGS max_execution_speed = 1000000, timeout_before_checking_execution_speed = 0, max_block_size = 128\r"
 expect "Progress: "
 expect "█"
 send "\3"
