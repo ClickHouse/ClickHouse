@@ -31,6 +31,12 @@ public:
         if (!getSettings().optimize_group_by_function_keys)
             return;
 
+        /// When group_by_use_nulls = 1 removing keys from GROUP BY can lead
+        /// to unexpected types in some functions.
+        /// See example in https://github.com/ClickHouse/ClickHouse/pull/61567#issuecomment-2018007887
+        if (getSettings().group_by_use_nulls)
+            return;
+
         auto * query = node->as<QueryNode>();
         if (!query)
             return;
