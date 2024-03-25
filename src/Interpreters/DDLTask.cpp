@@ -14,6 +14,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Databases/DatabaseReplicated.h>
 
 
@@ -198,6 +199,8 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     String description;
     query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
+    if (auto * query_drop = query->as<ASTDropQuery>())
+        query = query_drop->getRewrittenASTWithoutMultipleTables()[0];
 }
 
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)

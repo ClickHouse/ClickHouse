@@ -49,6 +49,8 @@ public:
         return removeOnCluster<ASTDropQuery>(clone(), params.default_database);
     }
 
+    ASTs getRewrittenASTWithoutMultipleTables();
+
     QueryKind getQueryKind() const override { return QueryKind::Drop; }
 
 protected:

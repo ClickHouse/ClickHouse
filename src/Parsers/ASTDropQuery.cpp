@@ -105,4 +105,43 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
 }
 
+ASTs ASTDropQuery::getRewrittenASTWithoutMultipleTables()
+{
+    ASTs res;
+    if (database_and_tables == nullptr)
+    {
+        res.push_back(shared_from_this());
+        return res;
+    }
+
+    auto & list = database_and_tables->as<ASTExpressionList &>();
+    for (const auto & child : list.children)
+    {
+        auto cloned = clone();
+        auto & query = cloned->as<ASTDropQuery &>();
+        query.database_and_tables = nullptr;
+        query.children.clear();
+
+        auto database_and_table = dynamic_pointer_cast<ASTIdentifier>(child);
+        if (database_and_table->name_parts.size() == 2)
+        {
+            query.database = std::make_shared<ASTIdentifier>(database_and_table->name_parts[0]);
+            query.table = std::make_shared<ASTIdentifier>(database_and_table->name_parts[1]);
+        }
+        else
+        {
+            query.table = std::make_shared<ASTIdentifier>(database_and_table->name_parts[0]);
+        }
+
+        if (query.database)
+            query.children.push_back(query.database);
+
+        if (query.table)
+            query.children.push_back(query.table);
+
+        res.push_back(cloned);
+    }
+    return res;
+}
+
 }

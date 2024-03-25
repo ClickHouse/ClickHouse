@@ -56,45 +56,15 @@ InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMut
 
 BlockIO InterpreterDropQuery::execute()
 {
+    BlockIO res;
     auto & drop = query_ptr->as<ASTDropQuery &>();
-    if (drop.database_and_tables)
+    ASTs drops = drop.getRewrittenASTWithoutMultipleTables();
+    for (const auto & drop_query_ptr : drops)
     {
-        BlockIO res;
-        auto & database_and_tables = drop.database_and_tables->as<ASTExpressionList &>();
-        for (const auto & child : database_and_tables.children)
-        {
-            auto cloned = drop.clone();
-            auto & query = cloned->as<ASTDropQuery &>();
-            query.database_and_tables = nullptr;
-            query.children.clear();
-
-            auto database_and_table = dynamic_pointer_cast<ASTIdentifier>(child);
-            if (database_and_table->name_parts.size() == 2)
-            {
-                query.database = std::make_shared<ASTIdentifier>(database_and_table->name_parts[0]);
-                query.table = std::make_shared<ASTIdentifier>(database_and_table->name_parts[1]);
-            }
-            else
-            {
-                query.table = std::make_shared<ASTIdentifier>(database_and_table->name_parts[0]);
-            }
-
-            if (query.database)
-                query.children.push_back(query.database);
-
-            if (query.table)
-                query.children.push_back(query.table);
-
-            current_query_ptr = cloned;
-            res = executeSingleDropQuery(cloned);
-        }
-        return res;
+        current_query_ptr = drop_query_ptr;
+        res = executeSingleDropQuery(drop_query_ptr);
     }
-    else
-    {
-        current_query_ptr = query_ptr;
-        return executeSingleDropQuery(query_ptr);
-    }
+    return res;
 }
 
 BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_ptr)
