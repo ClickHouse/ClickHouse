@@ -189,6 +189,60 @@ def test_replicated_database():
     assert node2.query("SELECT * FROM mydb.tbl ORDER BY x") == expect
 
 
+def test_replicated_database_compare_parts():
+    """
+    stop merges and fetches then write data to two nodes and
+    compare that parts are restored from single node (second) after backup
+    replica is selected by settings replica_num=2, replica_num_in_backup=2
+    """
+    node1.query(
+        "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
+    )
+
+    node1.query(
+        "CREATE TABLE mydb.tbl(x UInt8, y String) ENGINE=ReplicatedMergeTree ORDER BY x"
+    )
+
+    node2.query("SYSTEM SYNC DATABASE REPLICA mydb")
+
+    node1.query("SYSTEM STOP MERGES mydb.tbl")
+    node2.query("SYSTEM STOP MERGES mydb.tbl")
+
+    node1.query("SYSTEM STOP FETCHES mydb.tbl")
+    node2.query("SYSTEM STOP FETCHES mydb.tbl")
+
+    node1.query("INSERT INTO mydb.tbl VALUES (1, 'a')")
+    node1.query("INSERT INTO mydb.tbl VALUES (2, 'b')")
+
+    node2.query("INSERT INTO mydb.tbl VALUES (3, 'x')")
+    node2.query("INSERT INTO mydb.tbl VALUES (4, 'y')")
+
+    p2 = node2.query("SELECT * FROM mydb.tbl ORDER BY x")
+
+    # Make backup.
+    backup_name = new_backup_name()
+    node1.query(
+        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=2"
+    )
+
+    # Drop table on both nodes.
+    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' SYNC")
+
+    # Restore from backup on node2.
+    node1.query(
+        f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} SETTINGS replica_num_in_backup=2"
+    )
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
+
+    # compare parts
+    p1_ = node1.query("SELECT _part, * FROM mydb.tbl ORDER BY x")
+    p2_ = node2.query("SELECT _part, * FROM mydb.tbl ORDER BY x")
+    assert p1_ == p2_
+
+    # compare data
+    assert p2 == node2.query("SELECT * FROM mydb.tbl ORDER BY x")
+
+
 def test_different_tables_on_nodes():
     node1.query(
         "CREATE TABLE tbl (`x` UInt8, `y` String) ENGINE = MergeTree ORDER BY x"
