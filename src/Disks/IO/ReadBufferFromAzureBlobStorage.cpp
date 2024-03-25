@@ -23,7 +23,6 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
-    extern const int RECEIVED_EMPTY_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -196,7 +195,6 @@ size_t ReadBufferFromAzureBlobStorage::initialize()
     {
         try
         {
-            LOG_INFO(log, "Intialize buffer offset {}    read_until_position {}   data_capacity {} ",offset, read_until_position, data_capacity);
             auto download_response = blob_client->DownloadTo(reinterpret_cast<uint8_t *>(data_ptr), data_capacity, download_options);
             read_bytes = download_response.Value.ContentRange.Length.Value();
             break;
