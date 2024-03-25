@@ -88,7 +88,7 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
     auto backup = restorer.getBackup();
     fs::path data_path_in_backup_fs{data_path_in_backup};
 
-    Strings filenames = backup->listFiles(data_path_in_backup);
+    Strings filenames = backup->listFiles(data_path_in_backup, /*recursive*/ false);
     if (filenames.empty())
         return {}; /// Nothing to restore.
 

@@ -15,11 +15,12 @@ namespace DB
 
 bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_type("TYPE");
-    ParserKeyword s_granularity("GRANULARITY");
+    ParserKeyword s_type(Keyword::TYPE);
+    ParserKeyword s_granularity(Keyword::GRANULARITY);
     ParserToken open(TokenType::OpeningRoundBracket);
     ParserToken close(TokenType::ClosingRoundBracket);
     ParserOrderByExpressionList order_list;
+
     ParserDataType data_type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
@@ -79,11 +80,12 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     auto query = std::make_shared<ASTCreateIndexQuery>();
     node = query;
 
-    ParserKeyword s_create("CREATE");
-    ParserKeyword s_unique("UNIQUE");
-    ParserKeyword s_index("INDEX");
-    ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserKeyword s_on("ON");
+    ParserKeyword s_create(Keyword::CREATE);
+    ParserKeyword s_unique(Keyword::UNIQUE);
+    ParserKeyword s_index(Keyword::INDEX);
+    ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
+    ParserKeyword s_on(Keyword::ON);
+
     ParserIdentifier index_name_p;
     ParserCreateIndexDeclaration parser_create_idx_decl;
 

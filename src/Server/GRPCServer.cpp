@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -618,7 +619,6 @@ namespace
 
 
     /// Handles a connection after a responder is started (i.e. after getting a new call).
-// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
     class Call
     {
     public:
@@ -724,7 +724,6 @@ namespace
 
         ThreadFromGlobalPool call_thread;
     };
-// NOLINTEND(clang-analyzer-optin.performance.Padding)
 
     Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
