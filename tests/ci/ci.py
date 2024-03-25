@@ -1033,22 +1033,6 @@ def _print_results(result: Any, outfile: Optional[str], pretty: bool = False) ->
             raise AssertionError(f"Unexpected type for 'res': {type(result)}")
 
 
-def _check_and_update_for_early_style_check(jobs_data: dict, docker_data: dict) -> None:
-    """
-    This is temporary hack to start style check before docker build if possible
-    FIXME: need better solution to do style check as soon as possible and as fast as possible w/o dependency on docker job
-    """
-    jobs_to_do = jobs_data.get("jobs_to_do", [])
-    docker_to_build = docker_data.get("missing_multi", [])
-    if (
-        JobNames.STYLE_CHECK in jobs_to_do
-        and docker_to_build
-        and "clickhouse/style-test" not in docker_to_build
-    ):
-        index = jobs_to_do.index(JobNames.STYLE_CHECK)
-        jobs_to_do[index] = "Style check early"
-
-
 def _update_config_for_docs_only(jobs_data: dict) -> None:
     DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
     print(f"NOTE: Will keep only docs related jobs: [{DOCS_CHECK_JOBS}]")
@@ -1305,6 +1289,12 @@ def _configure_jobs(
             for job, params in jobs_params.items():
                 if params["num_batches"] > 1:
                     params["batches"] = list(requested_batches)
+
+    if pr_info.is_merge_queue():
+        # FIXME: Quick support for MQ workflow which is only StyleCheck for now
+        jobs_to_do = [JobNames.STYLE_CHECK]
+        jobs_to_skip = []
+        print(f"NOTE: This is Merge Queue CI: set jobs to do: [{jobs_to_do}]")
 
     return {
         "digests": digests,
@@ -1752,11 +1742,6 @@ def main() -> int:
             else {}
         )
 
-        # # FIXME: Early style check manipulates with job names might be not robust with await feature
-        # if pr_info.number != 0:
-        #     # FIXME: it runs style check before docker build if possible (style-check images is not changed)
-        #     #    find a way to do style check always before docker build and others
-        #     _check_and_update_for_early_style_check(jobs_data, docker_data)
         if not args.skip_jobs and pr_info.has_changes_in_documentation_only():
             _update_config_for_docs_only(jobs_data)
 
