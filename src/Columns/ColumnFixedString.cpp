@@ -273,11 +273,11 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 void ColumnFixedString::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
 {
     Chars & res_chars = chars;
-    size_t offset = 0;
+    size_t offset = n * start;
     for (size_t i = 0; i < indexes.size(); ++i, offset += n)
         memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[indexes[i] * n], n);
 
-    res_chars.resize_exact(n * indexes.size());
+    res_chars.resize_exact(n * (start + indexes.size()));
 }
 
 void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)

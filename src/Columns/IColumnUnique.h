@@ -130,6 +130,11 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method filter is not supported for ColumnUnique.");
     }
 
+    void filterInPlace(const PaddedPODArray<UInt64> &, size_t) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method filterInPlace is not supported for ColumnUnique.");
+    }
+
     void expand(const IColumn::Filter &, bool) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method expand is not supported for ColumnUnique.");

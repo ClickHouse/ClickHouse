@@ -63,21 +63,19 @@ FilterDescription::FilterDescription(const IColumn & column_)
     if (const ColumnUInt8 * concrete_column = typeid_cast<const ColumnUInt8 *>(&column))
     {
         data = &concrete_column->getData();
-        return;
     }
-
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column))
+    else if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column))
     {
         ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
         MutableColumnPtr mutable_holder = IColumn::mutate(std::move(nested_column));
 
-        ColumnUInt8 * concrete_column = typeid_cast<ColumnUInt8 *>(mutable_holder.get());
-        if (!concrete_column)
+        ColumnUInt8 * data_column = typeid_cast<ColumnUInt8 *>(mutable_holder.get());
+        if (!data_column)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
                 "Illegal type {} of column for filter. Must be UInt8 or Nullable(UInt8).", column.getName());
 
         const NullMap & null_map = nullable_column->getNullMapData();
-        IColumn::Filter & res = concrete_column->getData();
+        IColumn::Filter & res = data_column->getData();
 
         const auto size = res.size();
         assert(size == null_map.size());
@@ -91,12 +89,34 @@ FilterDescription::FilterDescription(const IColumn & column_)
 
         data = &res;
         data_holder = std::move(mutable_holder);
-        return;
     }
+    else
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Illegal type {} of column for filter. Must be UInt8 or Nullable(UInt8) or Const variants of them.",
+            column.getName());
+}
 
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-        "Illegal type {} of column for filter. Must be UInt8 or Nullable(UInt8) or Const variants of them.",
-        column.getName());
+void FilterDescription::filterInPlace(IColumn & column) const
+{
+    if (!initialized_for_filter_in_place)
+        lazyInitializeForFilterInPlace();
+
+    column.filterInPlace(indexes, start);
+}
+
+void FilterDescription::lazyInitializeForFilterInPlace() const
+{
+    start = filterToIndices(*data, indexes);
+    initialized_for_filter_in_place = true;
+}
+
+size_t FilterDescription::countBytesInFilter() const
+{
+    if (!initialized_for_filter_in_place)
+        lazyInitializeForFilterInPlace();
+
+    return start + indexes.size();
 }
 
 SparseFilterDescription::SparseFilterDescription(const IColumn & column)

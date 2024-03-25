@@ -76,6 +76,10 @@ size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end);
 size_t countBytesInFilter(const IColumn::Filter & filt);
 size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map, size_t start, size_t end);
 
+/// Transform filter column to indices
+void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<UInt64> & indices);
+size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<UInt64> & indices);
+
 /// Returns vector with num_columns elements. vector[i] is the count of i values in selector.
 /// Selector must contain values from 0 to num_columns - 1. NOTE: this is not checked.
 std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector);

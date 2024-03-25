@@ -90,6 +90,28 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
     return count;
 }
 
+void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<UInt64> & indices)
+{
+    for (size_t i = 0; start != end; ++start)
+    {
+        if (filt[start])
+            indices[i++] = start;
+    }
+}
+
+size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<UInt64> & indices)
+{
+    size_t start = 0;
+    for (; filt[start]; ++start)
+        ;
+
+    size_t size = countBytesInFilter(filt.data(), start, filt.size());
+    indices.resize_exact(size);
+    filterToIndices(filt.data(), start, filt.size(), indices);
+    return start;
+}
+
+
 std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector)
 {
     std::vector<size_t> counts(num_columns);

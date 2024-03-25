@@ -287,10 +287,7 @@ public:
     [[nodiscard]] virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
     /// Filter current column by indexes in-place.
-    virtual void filterInPlace(const PaddedPODArray<UInt64> &  /*indexes*/, size_t  /*start*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method filterInPlace is not supported for {}", getName());
-    }
+    virtual void filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start) = 0;
 
     /** Expand column by mask inplace. After expanding column will
       * satisfy the following: if we filter it by given mask, we will
