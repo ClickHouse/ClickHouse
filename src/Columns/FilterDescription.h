@@ -26,7 +26,7 @@ struct IFilterDescription
     /// has_one can be pre-compute during creating the filter description in some cases
     Int64 has_one = -1;
     virtual ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const = 0;
-    virtual void filterInPlace(IColumn & column) const;
+    virtual void filterInPlace(IColumn & column) const = 0;
     virtual size_t countBytesInFilter() const = 0;
     virtual ~IFilterDescription() = default;
     bool hasOne() { return has_one >= 0 ? has_one : hasOneImpl();}
@@ -48,7 +48,7 @@ struct FilterDescription final : public IFilterDescription
     size_t countBytesInFilter() const override;
 
 protected:
-    bool hasOneImpl() override { return countBytesInFilter() > 0; }
+    bool hasOneImpl() override { return data ? (has_one = !memoryIsZero(data->data(), 0, data->size())) : false; }
 
 private:
     void lazyInitializeForFilterInPlace() const;

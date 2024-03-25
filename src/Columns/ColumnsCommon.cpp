@@ -102,12 +102,13 @@ void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArra
 size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<UInt64> & indices)
 {
     size_t start = 0;
-    for (; filt[start]; ++start)
+    size_t end = filt.size();
+    for (; start != end && filt[start]; ++start)
         ;
 
-    size_t size = countBytesInFilter(filt.data(), start, filt.size());
+    size_t size = countBytesInFilter(filt.data(), start, end);
     indices.resize_exact(size);
-    filterToIndices(filt.data(), start, filt.size(), indices);
+    filterToIndices(filt.data(), start, end, indices);
     return start;
 }
 
