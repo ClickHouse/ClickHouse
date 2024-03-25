@@ -131,7 +131,7 @@ ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
         {"address", DataTypeFactory::instance().get("IPv6"), "IP address of ZooKeeper server that was used to make the request."},
         {"port", std::make_shared<DataTypeUInt16>(), "The port of ZooKeeper server that was used to make the request."},
         {"session_id", std::make_shared<DataTypeInt64>(), "The session ID that the ZooKeeper server sets for each connection."},
-        {"duration_us", std::make_shared<DataTypeUInt64>(), "The time taken by ZooKeeper to execute the request."},
+        {"duration_microseconds", std::make_shared<DataTypeUInt64>(), "The time taken by ZooKeeper to execute the request."},
 
         {"xid", std::make_shared<DataTypeInt32>(), "The ID of the request within the session. This is usually a sequential request number. It is the same for the request row and the paired response/finalize row."},
         {"has_watch", std::make_shared<DataTypeUInt8>(), "The request whether the watch has been set."},
