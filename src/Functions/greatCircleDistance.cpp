@@ -227,7 +227,7 @@ template <Method method>
 class FunctionGeoDistance : public IFunction
 {
 public:
-    FunctionGeoDistance(ContextPtr context)
+    explicit FunctionGeoDistance(ContextPtr context)
     {
         always_float32 = !context->getSettingsRef().geo_distance_returns_float64_on_float64_arguments;
     }
