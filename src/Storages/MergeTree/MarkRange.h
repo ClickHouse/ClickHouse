@@ -33,7 +33,7 @@ struct MarkRange
 
 struct MarkRanges : public std::deque<MarkRange>
 {
-    using std::deque<MarkRange>::deque;
+    using std::deque<MarkRange>::deque; /// NOLINT(modernize-type-traits)
 
     size_t getNumberOfMarks() const;
 
