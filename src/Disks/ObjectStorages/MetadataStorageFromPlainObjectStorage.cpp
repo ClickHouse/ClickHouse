@@ -241,11 +241,12 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
 
 void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
 {
-    /// TODO: Should it be handled by the disk transaction?
-    for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
-        metadata_storage.object_storage->removeObject(StoredObject(it->path()));
-
-    if (!metadata_storage.object_storage->isWriteOnce())
+    if (metadata_storage.object_storage->isWriteOnce())
+    {
+        for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
+            metadata_storage.object_storage->removeObject(StoredObject(it->path()));
+    }
+    else
     {
         addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
             path, *metadata_storage.path_map, object_storage));
