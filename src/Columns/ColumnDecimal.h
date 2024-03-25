@@ -56,6 +56,13 @@ public:
     void shrinkToFit() override { data.shrink_to_fit(); }
 
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
+
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override
+    {
+        ValueType v = assert_cast<const Self &>(src).getData()[position];
+        data.resize_fill(data.size() + length, v);
+    }
+
     void insertData(const char * src, size_t /*length*/) override;
     void insertDefault() override { data.push_back(T()); }
     void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }

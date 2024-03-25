@@ -119,7 +119,7 @@ q = queue.Queue(100)
 total_number = 10000
 
 use_token = False
-if len(sys.argv) > 3 and sys.argv[2] == "token":
+if len(sys.argv) >= 3 and sys.argv[2] == "token":
     use_token = True
 
 gen = Thread(target=generate_data, args=[q, total_number, use_token])

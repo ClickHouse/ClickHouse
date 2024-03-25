@@ -63,6 +63,10 @@ public:
     PushResult pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
 
+    /// This method should be called manually because it's not flushed automatically in dtor
+    /// because all tables may be already unloaded when we destroy AsynchronousInsertQueue
+    void flushAndShutdown();
+
 private:
 
     struct InsertQuery
@@ -295,7 +299,7 @@ private:
 public:
     auto getQueueLocked(size_t shard_num) const
     {
-        auto & shard = queue_shards[shard_num];
+        const auto & shard = queue_shards[shard_num];
         std::unique_lock lock(shard.mutex);
         return std::make_pair(std::ref(shard.queue), std::move(lock));
     }

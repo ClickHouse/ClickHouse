@@ -132,14 +132,6 @@ public:
     void setThrottler(const ThrottlerPtr &) override {}
 
 private:
-    void initBlockInput();
-
-    void processOrdinaryQuery();
-
-    void processOrdinaryQueryWithProcessors();
-
-    void updateState();
-
     bool pullBlock(Block & block);
 
     void finishQuery();

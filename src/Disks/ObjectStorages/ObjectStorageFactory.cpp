@@ -23,6 +23,9 @@
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {

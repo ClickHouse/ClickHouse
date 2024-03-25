@@ -9,6 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>

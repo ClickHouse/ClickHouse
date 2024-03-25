@@ -27,10 +27,10 @@ public:
             CompressionMethod compression_method,
             int compression_level,
             size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-            char * existing_memory = nullptr,
+            char * existing_memory = nullptr, /// NOLINT(readability-non-const-parameter)
             size_t alignment = 0,
             bool compress_empty_ = true)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment), compress_empty(compress_empty_)
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment), compress_empty(compress_empty_) /// NOLINT(bugprone-move-forwarding-reference)
     {
         zstr.zalloc = nullptr;
         zstr.zfree = nullptr;
@@ -60,8 +60,8 @@ private:
     /// Flush all pending data and write zlib footer to the underlying buffer.
     /// After the first call to this function, subsequent calls will have no effect and
     /// an attempt to write to this buffer will result in exception.
-    virtual void finalizeBefore() override;
-    virtual void finalizeAfter() override;
+    void finalizeBefore() override;
+    void finalizeAfter() override;
 
     z_stream zstr;
     bool compress_empty = true;

@@ -386,6 +386,8 @@ StorageKafka::StorageKafka(
     });
 }
 
+StorageKafka::~StorageKafka() = default;
+
 VirtualColumnsDescription StorageKafka::createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
     VirtualColumnsDescription desc;

@@ -1,4 +1,4 @@
-// Dump of https://github.com/ankane/stl-cpp/blob/3b1b3a3e9335cda26c8b0797d8b8d24ac8e350ad/include/stl.hpp. 
+// Dump of https://github.com/ankane/stl-cpp/blob/3b1b3a3e9335cda26c8b0797d8b8d24ac8e350ad/include/stl.hpp.
 // Added to ClickHouse source code and not referenced as a submodule because its easier maintain and modify/customize.
 
 /*!
@@ -24,12 +24,12 @@
 
 namespace stl {
 
-bool est(const float* y, size_t n, size_t len, int ideg, float xs, float* ys, size_t nleft, size_t nright, float* w, bool userw, const float* rw) {
+inline bool est(const float* y, size_t n, size_t len, int ideg, float xs, float* ys, size_t nleft, size_t nright, float* w, bool userw, const float* rw) {
     auto range = ((float) n) - 1.0;
     auto h = std::max(xs - ((float) nleft), ((float) nright) - xs);
 
     if (len > n) {
-        h += (float) ((len - n) / 2);
+        h += (float) ((len - n) / 2); /// NOLINT(bugprone-integer-division)
     }
 
     auto h9 = 0.999 * h;
@@ -89,7 +89,7 @@ bool est(const float* y, size_t n, size_t len, int ideg, float xs, float* ys, si
     }
 }
 
-void ess(const float* y, size_t n, size_t len, int ideg, size_t njump, bool userw, const float* rw, float* ys, float* res) {
+inline void ess(const float* y, size_t n, size_t len, int ideg, size_t njump, bool userw, const float* rw, float* ys, float* res) {
     if (n < 2) {
         ys[0] = y[0];
         return;
@@ -165,7 +165,7 @@ void ess(const float* y, size_t n, size_t len, int ideg, size_t njump, bool user
     }
 }
 
-void ma(const float* x, size_t n, size_t len, float* ave) {
+inline void ma(const float* x, size_t n, size_t len, float* ave) {
     auto newn = n - len + 1;
     auto flen = (float) len;
     auto v = 0.0;
@@ -189,13 +189,13 @@ void ma(const float* x, size_t n, size_t len, float* ave) {
     }
 }
 
-void fts(const float* x, size_t n, size_t np, float* trend, float* work) {
+inline void fts(const float* x, size_t n, size_t np, float* trend, float* work) {
     ma(x, n, np, trend);
     ma(trend, n - np + 1, np, work);
     ma(work, n - 2 * np + 2, 3, trend);
 }
 
-void rwts(const float* y, size_t n, const float* fit, float* rw) {
+inline void rwts(const float* y, size_t n, const float* fit, float* rw) {
     for (size_t i = 0; i < n; i++) {
         rw[i] = fabs(y[i] - fit[i]);
     }
@@ -222,7 +222,7 @@ void rwts(const float* y, size_t n, const float* fit, float* rw) {
     }
 }
 
-void ss(const float* y, size_t n, size_t np, size_t ns, int isdeg, size_t nsjump, bool userw, float* rw, float* season, float* work1, float* work2, float* work3, float* work4) {
+inline void ss(const float* y, size_t n, size_t np, size_t ns, int isdeg, size_t nsjump, bool userw, float* rw, float* season, float* work1, float* work2, float* work3, float* work4) { /// NOLINT(readability-non-const-parameter)
     for (size_t j = 1; j <= np; j++) {
         size_t k = (n - j) / np + 1;
 
@@ -253,7 +253,7 @@ void ss(const float* y, size_t n, size_t np, size_t ns, int isdeg, size_t nsjump
     }
 }
 
-void onestp(const float* y, size_t n, size_t np, size_t ns, size_t nt, size_t nl, int isdeg, int itdeg, int ildeg, size_t nsjump, size_t ntjump, size_t nljump, size_t ni, bool userw, float* rw, float* season, float* trend, float* work1, float* work2, float* work3, float* work4, float* work5) {
+inline void onestp(const float* y, size_t n, size_t np, size_t ns, size_t nt, size_t nl, int isdeg, int itdeg, int ildeg, size_t nsjump, size_t ntjump, size_t nljump, size_t ni, bool userw, float* rw, float* season, float* trend, float* work1, float* work2, float* work3, float* work4, float* work5) {
     for (size_t j = 0; j < ni; j++) {
         for (size_t i = 0; i < n; i++) {
             work1[i] = y[i] - trend[i];
@@ -272,7 +272,7 @@ void onestp(const float* y, size_t n, size_t np, size_t ns, size_t nt, size_t nl
     }
 }
 
-void stl(const float* y, size_t n, size_t np, size_t ns, size_t nt, size_t nl, int isdeg, int itdeg, int ildeg, size_t nsjump, size_t ntjump, size_t nljump, size_t ni, size_t no, float* rw, float* season, float* trend) {
+inline void stl(const float* y, size_t n, size_t np, size_t ns, size_t nt, size_t nl, int isdeg, int itdeg, int ildeg, size_t nsjump, size_t ntjump, size_t nljump, size_t ni, size_t no, float* rw, float* season, float* trend) {
     if (ns < 3) {
         throw std::invalid_argument("seasonal_length must be at least 3");
     }
@@ -335,7 +335,7 @@ void stl(const float* y, size_t n, size_t np, size_t ns, size_t nt, size_t nl, i
     }
 }
 
-float var(const std::vector<float>& series) {
+inline float var(const std::vector<float>& series) {
     auto mean = std::accumulate(series.begin(), series.end(), 0.0) / series.size();
     std::vector<float> tmp;
     tmp.reserve(series.size());
@@ -345,7 +345,7 @@ float var(const std::vector<float>& series) {
     return std::accumulate(tmp.begin(), tmp.end(), 0.0) / (series.size() - 1);
 }
 
-float strength(const std::vector<float>& component, const std::vector<float>& remainder) {
+inline float strength(const std::vector<float>& component, const std::vector<float>& remainder) {
     std::vector<float> sr;
     sr.reserve(remainder.size());
     for (size_t i = 0; i < remainder.size(); i++) {
@@ -361,11 +361,11 @@ public:
     std::vector<float> remainder;
     std::vector<float> weights;
 
-    inline float seasonal_strength() {
+    float seasonal_strength() const {
         return strength(seasonal, remainder);
     }
 
-    inline float trend_strength() {
+    float trend_strength() const {
         return strength(trend, remainder);
     }
 };
@@ -385,62 +385,62 @@ class StlParams {
     bool robust_ = false;
 
 public:
-    inline StlParams seasonal_length(size_t ns) {
+    StlParams seasonal_length(size_t ns) {
         this->ns_ = ns;
         return *this;
     }
 
-    inline StlParams trend_length(size_t nt) {
+    StlParams trend_length(size_t nt) {
         this->nt_ = nt;
         return *this;
     }
 
-    inline StlParams low_pass_length(size_t nl) {
+    StlParams low_pass_length(size_t nl) {
         this->nl_ = nl;
         return *this;
     }
 
-    inline StlParams seasonal_degree(int isdeg) {
+    StlParams seasonal_degree(int isdeg) {
         this->isdeg_ = isdeg;
         return *this;
     }
 
-    inline StlParams trend_degree(int itdeg) {
+    StlParams trend_degree(int itdeg) {
         this->itdeg_ = itdeg;
         return *this;
     }
 
-    inline StlParams low_pass_degree(int ildeg) {
+    StlParams low_pass_degree(int ildeg) {
         this->ildeg_ = ildeg;
         return *this;
     }
 
-    inline StlParams seasonal_jump(size_t nsjump) {
+    StlParams seasonal_jump(size_t nsjump) {
         this->nsjump_ = nsjump;
         return *this;
     }
 
-    inline StlParams trend_jump(size_t ntjump) {
+    StlParams trend_jump(size_t ntjump) {
         this->ntjump_ = ntjump;
         return *this;
     }
 
-    inline StlParams low_pass_jump(size_t nljump) {
+    StlParams low_pass_jump(size_t nljump) {
         this->nljump_ = nljump;
         return *this;
     }
 
-    inline StlParams inner_loops(bool ni) {
+    StlParams inner_loops(bool ni) {
         this->ni_ = ni;
         return *this;
     }
 
-    inline StlParams outer_loops(bool no) {
+    StlParams outer_loops(bool no) {
         this->no_ = no;
         return *this;
     }
 
-    inline StlParams robust(bool robust) {
+    StlParams robust(bool robust) {
         this->robust_ = robust;
         return *this;
     }
@@ -449,11 +449,11 @@ public:
     StlResult fit(const std::vector<float>& y, size_t np);
 };
 
-StlParams params() {
+inline StlParams params() {
     return StlParams();
 }
 
-StlResult StlParams::fit(const float* y, size_t n, size_t np) {
+inline StlResult StlParams::fit(const float* y, size_t n, size_t np) {
     if (n < 2 * np) {
         throw std::invalid_argument("series has less than two periods");
     }
@@ -506,7 +506,7 @@ StlResult StlParams::fit(const float* y, size_t n, size_t np) {
     return res;
 }
 
-StlResult StlParams::fit(const std::vector<float>& y, size_t np) {
+inline StlResult StlParams::fit(const std::vector<float>& y, size_t np) {
     return StlParams::fit(y.data(), y.size(), np);
 }
 

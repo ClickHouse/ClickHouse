@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-ordinary-database
+# Tags: long, no-parallel, no-ordinary-database, no-debug
 # Test is too heavy, avoid parallel run in Flaky Check
 # shellcheck disable=SC2119
 

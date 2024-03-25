@@ -154,7 +154,7 @@ public:
     void setException(const String & exception_message_) override { exception_message = exception_message_; }
 
 private:
-    void consume(Chunk chunk) override final
+    void consume(Chunk chunk) final
     {
         addChunk(std::move(chunk), ProcessingUnitType::PLAIN, /*can_throw_exception*/ true);
     }

@@ -34,7 +34,7 @@ public:
     };
 
     explicit GSSAcceptorContext(const Params & params_);
-    virtual ~GSSAcceptorContext() override;
+    ~GSSAcceptorContext() override;
 
     GSSAcceptorContext(const GSSAcceptorContext &) = delete;
     GSSAcceptorContext(GSSAcceptorContext &&) = delete;

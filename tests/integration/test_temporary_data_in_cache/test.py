@@ -67,6 +67,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
             settings={
                 "max_bytes_before_external_group_by": "4M",
                 "max_bytes_before_external_sort": "4M",
+                "temporary_files_codec": "ZSTD",
             },
         )
     assert fnmatch.fnmatch(

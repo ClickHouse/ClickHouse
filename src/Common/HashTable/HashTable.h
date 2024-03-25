@@ -92,7 +92,8 @@ inline bool bitEquals(T && a, T && b)
     using RealT = std::decay_t<T>;
 
     if constexpr (std::is_floating_point_v<RealT>)
-        return 0 == memcmp(&a, &b, sizeof(RealT));  /// Note that memcmp with constant size is compiler builtin.
+        /// Note that memcmp with constant size is compiler builtin.
+        return 0 == memcmp(&a, &b, sizeof(RealT)); /// NOLINT
     else
         return a == b;
 }
@@ -644,7 +645,7 @@ protected:
 
         /// Copy to a new location and zero the old one.
         x.setHash(hash_value);
-        memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x));
+        memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x)); /// NOLINT(bugprone-undefined-memory-manipulation)
         x.setZero();
 
         /// Then the elements that previously were in collision with this can move to the old place.

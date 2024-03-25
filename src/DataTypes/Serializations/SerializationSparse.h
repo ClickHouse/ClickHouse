@@ -27,7 +27,7 @@ public:
 
     Kind getKind() const override { return Kind::SPARSE; }
 
-    virtual void enumerateStreams(
+    void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const override;

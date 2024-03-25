@@ -36,6 +36,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
@@ -1439,6 +1440,7 @@ try
             global_context->getProcessList().setMaxSize(new_server_settings.max_concurrent_queries);
             global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings.max_concurrent_insert_queries);
             global_context->getProcessList().setMaxSelectQueriesAmount(new_server_settings.max_concurrent_select_queries);
+            global_context->getProcessList().setMaxWaitingQueriesAmount(new_server_settings.max_waiting_queries);
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);

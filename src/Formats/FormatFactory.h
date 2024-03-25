@@ -23,6 +23,7 @@ namespace DB
 class Block;
 struct Settings;
 struct FormatFactorySettings;
+struct ReadSettings;
 
 class ReadBuffer;
 class WriteBuffer;

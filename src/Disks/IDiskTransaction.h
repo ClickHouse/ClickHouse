@@ -62,8 +62,8 @@ public:
     virtual void copyFile(
         const std::string & from_file_path,
         const std::string & to_file_path,
-        const ReadSettings & read_settings = {},
-        const WriteSettings & write_settings = {}) = 0;
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings) = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT

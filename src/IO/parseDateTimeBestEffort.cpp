@@ -147,6 +147,9 @@ ReturnType parseDateTimeBestEffortImpl(
             {
                 has_comma_between_date_and_time = true;
                 ++in.position();
+
+                if (in.eof())
+                    break;
             }
         }
 

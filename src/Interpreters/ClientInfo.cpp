@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/ProtocolDefines.h>
 #include <base/getFQDNOrHostName.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <unistd.h>
 
 #include <Common/config_version.h>
@@ -255,7 +256,29 @@ String toString(ClientInfo::Interface interface)
             return "TCP_INTERSERVER";
     }
 
-    return std::format("Unknown {}!\n", static_cast<int>(interface));
+    return std::format("Unknown server interface ({}).", static_cast<int>(interface));
+}
+
+void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
+{
+    http_method = ClientInfo::HTTPMethod::UNKNOWN;
+    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
+        http_method = ClientInfo::HTTPMethod::GET;
+    else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+        http_method = ClientInfo::HTTPMethod::POST;
+
+    http_user_agent = request.get("User-Agent", "");
+    http_referer = request.get("Referer", "");
+    forwarded_for = request.get("X-Forwarded-For", "");
+
+    for (const auto & header : request)
+    {
+        /// These headers can contain authentication info and shouldn't be accessible by the user.
+        String key_lowercase = Poco::toLower(header.first);
+        if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication")
+            continue;
+        http_headers[header.first] = header.second;
+    }
 }
 
 }

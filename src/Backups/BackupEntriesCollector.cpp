@@ -6,6 +6,7 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>

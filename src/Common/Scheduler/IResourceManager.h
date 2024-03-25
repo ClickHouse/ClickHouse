@@ -12,6 +12,9 @@
 namespace DB
 {
 
+class ISchedulerNode;
+using SchedulerNodePtr = std::shared_ptr<ISchedulerNode>;
+
 /*
  * Instance of derived class holds everything required for resource consumption,
  * including resources currently registered at `SchedulerRoot`. This is required to avoid

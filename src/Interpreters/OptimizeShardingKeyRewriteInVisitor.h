@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Cluster.h>
 
@@ -43,5 +44,7 @@ struct OptimizeShardingKeyRewriteInMatcher
 };
 
 using OptimizeShardingKeyRewriteInVisitor = InDepthNodeVisitor<OptimizeShardingKeyRewriteInMatcher, true>;
+
+void optimizeShardingKeyRewriteIn(QueryTreeNodePtr & node, OptimizeShardingKeyRewriteInVisitor::Data data, ContextPtr context);
 
 }

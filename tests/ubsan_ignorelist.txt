@@ -1,0 +1,16 @@
+# Note, this file is ignorelist file [1] not suppressions [2].
+#
+#  [1]: https://clang.llvm.org/docs/SanitizerSpecialCaseList.html
+#  [2]: https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html#runtime-suppressions
+#
+# See also [3] for all UBSan checks.
+#
+#   [3]: https://github.com/llvm-mirror/compiler-rt/blob/master/lib/ubsan/ubsan_checks.inc
+
+# Some value is outside the range of representable values of type 'long' on user-provided data inside boost::geometry - ignore.
+src:*/Functions/pointInPolygon.cpp
+src:*/contrib/boost/boost/geometry/*
+
+# We don't want to receive sanitizer alerts from third-party libraries during fuzzing
+src:*/contrib/contrib/protobuf/*
+src:*/contrib/libprotobuf-mutator/*

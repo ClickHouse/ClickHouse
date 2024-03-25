@@ -31,7 +31,7 @@ struct MarksWeightFunction
     }
 };
 
-
+extern template class CacheBase<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
 /** Cache of 'marks' for StorageMergeTree.
   * Marks is an index structure that addresses ranges in column file, corresponding to ranges of primary key.
   */
@@ -41,8 +41,7 @@ private:
     using Base = CacheBase<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
 
 public:
-    MarkCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-        : Base(cache_policy, max_size_in_bytes, 0, size_ratio) {}
+    MarkCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file)

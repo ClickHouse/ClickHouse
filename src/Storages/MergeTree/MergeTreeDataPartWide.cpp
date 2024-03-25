@@ -189,9 +189,8 @@ MergeTreeDataPartWide::~MergeTreeDataPartWide()
     removeIfNeeded();
 }
 
-void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
+void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
 {
-    checkConsistencyBase();
     std::string marks_file_extension = index_granularity_info.mark_type.getFileExtension();
 
     if (!checksums.empty())

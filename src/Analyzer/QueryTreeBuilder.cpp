@@ -2,11 +2,7 @@
 
 #include <Common/FieldVisitorToString.h>
 
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
-#include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -33,13 +29,11 @@
 #include <Analyzer/MatcherNode.h>
 #include <Analyzer/ColumnTransformers.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/WindowNode.h>
-#include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ArrayJoinNode.h>
@@ -50,7 +44,6 @@
 
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Context.h>
-#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -661,7 +654,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     else if (const auto * columns_regexp_matcher = expression->as<ASTColumnsRegexpMatcher>())
     {
         auto column_transformers = buildColumnTransformers(columns_regexp_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(columns_regexp_matcher->getMatcher(), std::move(column_transformers));
+        result = std::make_shared<MatcherNode>(columns_regexp_matcher->getPattern(), std::move(column_transformers));
     }
     else if (const auto * columns_list_matcher = expression->as<ASTColumnsListMatcher>())
     {
@@ -681,7 +674,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     {
         auto & qualified_identifier = qualified_columns_regexp_matcher->qualifier->as<ASTIdentifier &>();
         auto column_transformers = buildColumnTransformers(qualified_columns_regexp_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getMatcher(), std::move(column_transformers));
+        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
     }
     else if (const auto * qualified_columns_list_matcher = expression->as<ASTQualifiedColumnsListMatcher>())
     {

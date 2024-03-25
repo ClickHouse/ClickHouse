@@ -58,12 +58,10 @@ void executeQuery(
     const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
     LoggerPtr log,
-    const ASTPtr & query_ast,
     ContextPtr context,
     const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
-    const ClusterPtr & not_optimized_cluster,
     const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator);
 

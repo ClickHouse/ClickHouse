@@ -13,6 +13,11 @@ REGISTER_FUNCTION(Equals)
     factory.registerFunction<FunctionEquals>();
 }
 
+FunctionOverloadResolverPtr createInternalFunctionEqualOverloadResolver(bool decimal_check_overflow)
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(decimal_check_overflow));
+}
+
 template <>
 ColumnPtr FunctionComparison<EqualsOp, NameEquals>::executeTupleImpl(
     const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count) const

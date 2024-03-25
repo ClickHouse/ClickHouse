@@ -37,7 +37,7 @@ private:
 class BackupWriterAzureBlobStorage : public BackupWriterDefault
 {
 public:
-    BackupWriterAzureBlobStorage(StorageAzureBlob::Configuration configuration_, const ReadSettings & read_settings_, const WriteSettings & write_settings_, const ContextPtr & context_);
+    BackupWriterAzureBlobStorage(StorageAzureBlob::Configuration configuration_, const ReadSettings & read_settings_, const WriteSettings & write_settings_, const ContextPtr & context_, bool attempt_to_create_container);
     ~BackupWriterAzureBlobStorage() override;
 
     bool fileExists(const String & file_name) override;

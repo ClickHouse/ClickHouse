@@ -1479,8 +1479,11 @@ UInt64 StorageMergeTree::getCurrentMutationVersion(
 
 size_t StorageMergeTree::clearOldMutations(bool truncate)
 {
-    size_t finished_mutations_to_keep = truncate ? 0 : getSettings()->finished_mutations_to_keep;
+    size_t finished_mutations_to_keep = getSettings()->finished_mutations_to_keep;
+    if (!truncate && !finished_mutations_to_keep)
+        return 0;
 
+    finished_mutations_to_keep = truncate ? 0 : finished_mutations_to_keep;
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
@@ -1899,8 +1902,6 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         }
     }
 
-    /// Old part objects is needed to be destroyed before clearing them from filesystem.
-    clearOldMutations(true);
     clearOldPartsFromFilesystem();
     clearEmptyParts();
 }
@@ -1985,8 +1986,6 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         }
     }
 
-    /// Old parts are needed to be destroyed before clearing them from filesystem.
-    clearOldMutations(true);
     clearOldPartsFromFilesystem();
     clearEmptyParts();
 }
@@ -2099,7 +2098,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
-        auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
+        auto [dst_part, part_lock] = cloneAndLoadDataPart(
             src_part,
             TMP_PREFIX,
             dst_part_info,
@@ -2210,7 +2209,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
         };
 
-        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
+        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
             src_part,
             TMP_PREFIX,
             dst_part_info,

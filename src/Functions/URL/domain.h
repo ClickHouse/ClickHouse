@@ -88,7 +88,7 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
     const auto * start_of_host = pos;
     for (; pos < end; ++pos)
     {
-        switch (*pos)
+        switch (*pos) /// NOLINT(bugprone-switch-missing-default-case)
         {
         case '.':
             if (has_open_bracket)
@@ -220,7 +220,7 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
     const auto * start_of_host = pos;
     for (; pos < end; ++pos)
     {
-        switch (*pos)
+        switch (*pos) /// NOLINT(bugprone-switch-missing-default-case)
         {
         case '.':
             dot_pos = pos;

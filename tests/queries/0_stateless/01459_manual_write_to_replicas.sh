@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-parallel
+# Tags: replica, no-parallel, no-debug
 
 set -e
 

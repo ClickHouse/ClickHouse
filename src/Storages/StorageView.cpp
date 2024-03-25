@@ -110,7 +110,7 @@ StorageView::StorageView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     const String & comment,
-    const bool is_parameterized_view_)
+    bool is_parameterized_view_)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;

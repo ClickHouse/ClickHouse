@@ -306,7 +306,8 @@ TEST(TransformQueryForExternalDatabase, Aliases)
 
     check(state, 1, {"field"},
           "SELECT field AS value, field AS display FROM table WHERE field NOT IN ('') AND display LIKE '%test%'",
-          R"(SELECT "field" FROM "test"."table" WHERE ("field" NOT IN ('')) AND ("field" LIKE '%test%'))");
+          R"(SELECT "field" FROM "test"."table" WHERE ("field" NOT IN ('')) AND ("field" LIKE '%test%'))",
+          R"(SELECT "field" FROM "test"."table" WHERE ("field" != '') AND ("field" LIKE '%test%'))");
 }
 
 TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
@@ -408,5 +409,6 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
 
     check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo"},
         "SELECT * FROM table WHERE (column) IN (1)",
-        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" IN (1))");
+        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" IN (1))",
+        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" = 1)");
 }

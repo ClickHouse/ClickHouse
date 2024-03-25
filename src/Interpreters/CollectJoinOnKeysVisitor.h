@@ -1,11 +1,12 @@
 #pragma once
 
+#include <Core/Joins.h>
 #include <Core/Names.h>
+#include <Interpreters/Aliases.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
-#include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/Aliases.h>
 
 
 namespace DB

@@ -17,7 +17,6 @@ public:
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-public:
     std::string getName() const override { return "SystemTimeZones"; }
 
     static ColumnsDescription getColumnsDescription();
