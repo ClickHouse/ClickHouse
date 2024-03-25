@@ -261,6 +261,7 @@ public:
         Block sample_block,
         std::map<String, std::map<String, StoragePtr>> replicated_tables_,
         bool with_zk_fields_,
+        size_t max_block_size_,
         std::shared_ptr<StorageSystemReplicasImpl> impl_)
         : SourceStepWithFilter(
             DataStream{.header = std::move(sample_block)},
@@ -270,6 +271,7 @@ public:
             context_)
         , replicated_tables(std::move(replicated_tables_))
         , with_zk_fields(with_zk_fields_)
+        , max_block_size(max_block_size_)
         , impl(std::move(impl_))
     {
     }
@@ -279,6 +281,7 @@ public:
 private:
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     const bool with_zk_fields;
+    const size_t max_block_size;
     std::shared_ptr<StorageSystemReplicasImpl> impl;
     const ActionsDAG::Node * predicate = nullptr;
 };
@@ -297,7 +300,7 @@ void StorageSystemReplicas::read(
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t /*max_block_size*/,
+    const size_t max_block_size,
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
@@ -348,7 +351,7 @@ void StorageSystemReplicas::read(
     auto header = storage_snapshot->metadata->getSampleBlock();
     auto reading = std::make_unique<ReadFromSystemReplicas>(
         column_names, query_info, storage_snapshot,
-        std::move(context), std::move(header), std::move(replicated_tables), with_zk_fields, impl); // /*std::move(this_ptr),*/ std::move(columns_mask), max_block_size);
+        std::move(context), std::move(header), std::move(replicated_tables), with_zk_fields, max_block_size, impl);
 
     query_plan.addStep(std::move(reading));
 }
@@ -358,12 +361,14 @@ class SystemReplicasSource : public ISource
 public:
     SystemReplicasSource(
         Block header_,
+        size_t max_block_size_,
         ColumnPtr col_database_,
         ColumnPtr col_table_,
         ColumnPtr col_engine_,
         std::vector<std::shared_future<ReplicatedTableStatus>> futures_,
         ContextPtr context_)
         : ISource(header_)
+        , max_block_size(max_block_size_)
         , col_database(std::move(col_database_))
         , col_table(std::move(col_table_))
         , col_engine(std::move(col_engine_))
@@ -378,6 +383,7 @@ protected:
     Chunk generate() override;
 
 private:
+    const size_t max_block_size;
     /// Columns with table metadata.
     ColumnPtr col_database;
     ColumnPtr col_table;
@@ -461,7 +467,7 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
     /// If there are more requests, they will be scheduled by the query that needs them.
     get_status_requests.scheduleRequests(max_request_id, query_status);
 
-    pipeline.init(Pipe(std::make_shared<SystemReplicasSource>(header, col_database, col_table, col_engine, std::move(futures), context)));
+    pipeline.init(Pipe(std::make_shared<SystemReplicasSource>(header, max_block_size, col_database, col_table, col_engine, std::move(futures), context)));
 }
 
 Chunk SystemReplicasSource::generate()
@@ -480,9 +486,22 @@ Chunk SystemReplicasSource::generate()
         if (query_status)
             query_status->checkTimeLimit();
 
-        /// Return current chunk if the next future is not ready yet
-        if (rows_added && futures[i].wait_for(std::chrono::seconds(0)) != std::future_status::ready)
-            break;
+        if (rows_added)
+        {
+            /// Return current chunk if the next future is not ready yet
+            if (futures[i].wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+                break;
+
+            if (max_block_size != 0)
+            {
+                size_t total_size = 0;
+                for (const auto & column : res_columns)
+                    total_size += column->byteSize();
+                /// If the block size exceeds the maximum, return the current block
+                if (total_size >= max_block_size)
+                    break;
+            }
+        }
 
         res_columns[0]->insert((*col_database)[i]);
         res_columns[1]->insert((*col_table)[i]);
