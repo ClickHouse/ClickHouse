@@ -1,5 +1,6 @@
 import pytest
 import uuid
+import logging
 import time
 
 from helpers.cluster import ClickHouseCluster
@@ -37,11 +38,11 @@ def test_undrop_drop_and_undrop_loop(started_cluster):
     for i in range(10):
         if i >= 8: # -> setting for table to live after drop = 80 seconds
             error = node.query_and_get_error(
-                f"UNDROP TABLE test_undrop_loop_{i} UUID '{table_uuid}';"
+                f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';"
             )
             assert "UNKNOWN_TABLE" in error
         else:
             node.query(
-                f"UNDROP TABLE test_undrop_loop_{i} UUID '{table_uuid}';"
+                f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';"
             )
         time.sleep(10)
