@@ -171,12 +171,17 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard
 
         if (entry.size == 0)
         {
+            /// entry.size == 0 means that queue entry was invalidated,
+            /// valid (active) queue entries always have size > 0,
+            /// so we can safely remove it.
             it = remove(it, lock);
             continue;
         }
 
         if (entry.isEvicting(lock))
         {
+            /// Skip queue entries which are in evicting state.
+            /// We threat them the same way as deleted entries.
             ++it;
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
             continue;
@@ -185,6 +190,10 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard
         auto locked_key = entry.key_metadata->tryLock();
         if (!locked_key || entry.size == 0)
         {
+            /// locked_key == nullptr means that the cache key of
+            /// the file segment of this queue entry no longer exists.
+            /// This is normal if the key was removed from metadata,
+            /// while queue entries can be removed lazily (with delay).
             it = remove(it, lock);
             continue;
         }
@@ -192,6 +201,9 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard
         auto metadata = locked_key->tryGetByOffset(entry.offset);
         if (!metadata)
         {
+            /// Same as explained in comment above, metadata == nullptr,
+            /// if file segment was removed from cache metadata,
+            /// but queue entry still exists because it is lazily removed.
             it = remove(it, lock);
             continue;
         }
@@ -294,6 +306,15 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
     if (can_fit())
     {
+        /// As eviction is done without a cache priority lock,
+        /// then if some space was partially available and some needed
+        /// to be freed via eviction, we need to make sure that this
+        /// partially available space is still available
+        /// after we finish with eviction for non-available space.
+        /// So we create a space holder for the currently available part
+        /// of the required space for the duration of eviction of the other
+        /// currently non-available part of the space.
+
         const size_t hold_size = size > stat.total_stat.releasable_size
             ? size - stat.total_stat.releasable_size
             : 0;
@@ -519,7 +540,7 @@ void LRUFileCachePriority::holdImpl(
     state->current_size += size;
     state->current_elements_num += elements;
 
-    LOG_TEST(log, "Hold {} by size and {} by elements", size, elements);
+    // LOG_TEST(log, "Hold {} by size and {} by elements", size, elements);
 }
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
@@ -529,7 +550,7 @@ void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
     state->current_size -= size;
     state->current_elements_num -= elements;
 
-    LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
+    // LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
 }
 
 }

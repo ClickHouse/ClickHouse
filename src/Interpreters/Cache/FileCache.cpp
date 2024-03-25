@@ -830,11 +830,26 @@ bool FileCache::tryReserve(
             file_segment.key(), file_segment.offset());
     }
 
+    auto queue_iterator = file_segment.getQueueIterator();
+
+    /// A file_segment_metadata acquires a priority iterator
+    /// on first successful space reservation attempt,
+    /// so queue_iterator == nullptr, if no space reservation took place yet.
+    chassert(!queue_iterator || file_segment.getReservedSize() > 0);
+
+    /// If it is the first space reservatiob attempt for a file segment
+    /// we need to make space for 1 element in cache,
+    /// otherwise space is already taken and we need 0 elements to free.
+    size_t required_elements_num = queue_iterator ? 0 : 1;
+
     EvictionCandidates eviction_candidates;
+
+    /// If user has configured fs cache limit per query,
+    /// we take into account query limits here.
     if (query_priority)
     {
         if (!query_priority->collectCandidatesForEviction(
-                size, 1, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
+                size, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
         {
             return false;
         }
@@ -847,12 +862,8 @@ bool FileCache::tryReserve(
         reserve_stat.stat_by_kind.clear();
     }
 
-    /// A file_segment_metadata acquires a priority iterator on first successful space reservation attempt,
-    auto queue_iterator = file_segment.getQueueIterator();
-    chassert(!queue_iterator || file_segment.getReservedSize() > 0);
-
     if (!main_priority->collectCandidatesForEviction(
-            size, 1, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
+            size, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
     {
         return false;
     }
@@ -878,33 +889,29 @@ bool FileCache::tryReserve(
 
         cache_lock.lock();
 
-        /// Invalidate and remove queue entries and execute (only for SLRU) finalize func.
+        /// Invalidate and remove queue entries and execute finalize func.
         eviction_candidates.finalize(query_context.get(), cache_lock);
     }
-    else if (!main_priority->canFit(size, /* elements */queue_iterator ? 0 : 1, cache_lock, queue_iterator))
+    else if (!main_priority->canFit(size, required_elements_num, cache_lock, queue_iterator))
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot fit {} in cache, but collection of eviction candidates succeeded. "
-                        "This is a bug. Queue entry type: {}. Cache info: {}",
-                        size, queue_iterator ? queue_iterator->getType() : FileCacheQueueEntryType::None,
-                        main_priority->getStateInfoForLog(cache_lock));
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot fit {} in cache, but collection of eviction candidates succeeded with no candidates. "
+            "This is a bug. Queue entry type: {}. Cache info: {}",
+            size, queue_iterator ? queue_iterator->getType() : FileCacheQueueEntryType::None,
+            main_priority->getStateInfoForLog(cache_lock));
     }
 
-    /// Space reservation is incremental, so file_segment_metadata is created first (with state Empty),
-    /// and queue_iterator is assigned on first space reservation attempt
-    /// (so it is nullptr here if we are reserving for the first time).
     if (queue_iterator)
     {
         /// Increase size of queue entry.
         queue_iterator->incrementSize(size, cache_lock);
-        main_priority->check(cache_lock);
     }
     else
     {
         /// Create a new queue entry and assign currently reserved size to it.
         queue_iterator = main_priority->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_lock);
         file_segment.setQueueIterator(queue_iterator);
-        main_priority->check(cache_lock);
     }
 
     main_priority->check(cache_lock);

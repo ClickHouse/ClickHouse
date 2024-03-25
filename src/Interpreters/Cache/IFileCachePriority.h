@@ -149,6 +149,9 @@ public:
 
     virtual bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) = 0;
 
+    /// A space holder implementation, which allows to take hold of
+    /// some space in cache given that this space was freed.
+    /// Takes hold of the space in constructor and releases it in destructor.
     struct HoldSpace : private boost::noncopyable
     {
         HoldSpace(

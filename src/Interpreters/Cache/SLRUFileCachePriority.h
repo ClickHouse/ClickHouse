@@ -121,6 +121,15 @@ private:
     /// but needed only in order to do FileSegment::getInfo() without any lock,
     /// which is done for system tables and logging.
     std::atomic<bool> is_protected;
+    /// Iterator can me marked as non-movable in case we are reserving
+    /// space for it. It means that we start space reservation
+    /// and prepare space in probationary queue, then do eviction without lock,
+    /// then take the lock again to finalize the eviction and we need to be sure
+    /// that the element is still in probationary queue.
+    /// Therefore we forbid concurrent priority increase for probationary entries.
+    /// Same goes for the downgrade of queue entries from protected to probationary.
+    /// (For downgrade there is no explicit check because it will fall into unreleasable state,
+    /// e.g. will not be taken for eviction anyway).
     bool movable{true};
 };
 

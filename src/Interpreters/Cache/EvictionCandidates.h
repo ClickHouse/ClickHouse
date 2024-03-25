@@ -11,13 +11,18 @@ public:
 
     ~EvictionCandidates();
 
-    void add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key, const CachePriorityGuard::Lock &);
+    void add(
+        const FileSegmentMetadataPtr & candidate,
+        LockedKey & locked_key,
+        const CachePriorityGuard::Lock &);
 
     void evict();
 
     void onFinalize(FinalizeEvictionFunc && func) { on_finalize.emplace_back(std::move(func)); }
 
-    void finalize(FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock &);
+    void finalize(
+        FileCacheQueryLimit::QueryContext * query_context,
+        const CachePriorityGuard::Lock &);
 
     size_t size() const { return candidates_size; }
 

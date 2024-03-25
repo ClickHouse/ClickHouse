@@ -46,9 +46,6 @@ struct FileCacheReserveStat
         }
     };
 
-    bool reached_elements_limit = false;
-    bool reached_size_limit = false;
-
     Stat total_stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
