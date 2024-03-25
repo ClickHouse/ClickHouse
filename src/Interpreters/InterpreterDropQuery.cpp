@@ -155,9 +155,13 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         if (settings.ignore_drop_queries_probability != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= settings.ignore_drop_queries_probability)
         {
             ast_drop_query.sync = false;
-            if (table->getName() != "Memory" && table->getName() != "Join")
+            if (table->storesDataOnDisk())
+            {
+                LOG_TEST(getLogger("InterpreterDropQuery"), "Ignore DROP TABLE query for table {}.{}", table_id.database_name, table_id.table_name);
                 return {};
+            }
 
+            LOG_TEST(getLogger("InterpreterDropQuery"), "Replace DROP TABLE query to TRUNCATE TABLE for table {}.{}", table_id.database_name, table_id.table_name);
             ast_drop_query.kind = ASTDropQuery::Truncate;
         }
 
