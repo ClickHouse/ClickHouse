@@ -9,6 +9,7 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <base/errnoToString.h>
+#include <base/find_symbols.h>
 #include <base/getPageSize.h>
 #include <sys/resource.h>
 #include <chrono>
@@ -89,6 +90,9 @@ AsynchronousMetrics::AsynchronousMetrics(
         openFileIfExists("/sys/fs/cgroup/cpu/cpu.cfs_period_us", cgroupcpu_cfs_period);
         openFileIfExists("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", cgroupcpu_cfs_quota);
     }
+
+    openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
+    openFileIfExists("/proc/self/maps", vm_maps);
 
     openSensors();
     openBlockDevices();
@@ -1420,6 +1424,55 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/net/dev", net_dev);
+        }
+    }
+
+    if (vm_max_map_count)
+    {
+        try
+        {
+            vm_max_map_count->rewind();
+
+            uint64_t max_map_count = 0;
+            readText(max_map_count, *vm_max_map_count);
+            new_values["VMMaxMapCount"] = { max_map_count, "The maximum number of memory mappings a process may have (/proc/sys/vm/max_map_count)."};
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
+        }
+    }
+
+    if (vm_maps)
+    {
+        try
+        {
+            vm_maps->rewind();
+
+            uint64_t num_maps = 0;
+            while (!vm_maps->eof())
+            {
+                char * next_pos = find_first_symbols<'\n'>(vm_maps->position(), vm_maps->buffer().end());
+                vm_maps->position() = next_pos;
+
+                if (!vm_maps->hasPendingData())
+                    continue;
+
+                if (*vm_maps->position() == '\n')
+                {
+                    ++num_maps;
+                    ++vm_maps->position();
+                }
+            }
+            new_values["VMNumMaps"] = { num_maps,
+                "The current number of memory mappings of the process (/proc/self/maps)."
+                " If it is close to the maximum (VMMaxMapCount), you should increase the limit for vm.max_map_count in /etc/sysctl.conf"};
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/self/maps", vm_maps);
         }
     }
 

@@ -320,8 +320,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     if (!filter_description->has_one)
         return;
 
-    size_t num_filtered_rows = 0;
-    num_filtered_rows = filter_description->countBytesInFilter();
+    size_t num_filtered_rows = filter_description->countBytesInFilter();
 
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)

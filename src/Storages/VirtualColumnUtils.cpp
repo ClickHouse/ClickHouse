@@ -53,9 +53,9 @@ namespace DB
 namespace VirtualColumnUtils
 {
 
-static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & context)
+void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context)
 {
-    for (const auto & node : actions->getNodes())
+    for (const auto & node : dag->getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
         {
@@ -78,8 +78,8 @@ static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & co
 
 void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
 {
+    buildSetsForDAG(dag, context);
     auto actions = std::make_shared<ExpressionActions>(dag);
-    makeSets(actions, context);
     Block block_with_filter = block;
     actions->execute(block_with_filter, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
@@ -237,6 +237,23 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allo
     return true;
 }
 
+bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+    {
+        if (!isDeterministicInScopeOfQuery(child))
+            return false;
+    }
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+
+    if (!node->function_base->isDeterministicInScopeOfQuery())
+        return false;
+
+    return true;
+}
+
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     const ActionsDAG::Node * node,
     const Block * allowed_inputs,
@@ -311,6 +328,10 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     }
                 }
             }
+        }
+        else if (!isDeterministicInScopeOfQuery(node))
+        {
+            return nullptr;
         }
     }
 

@@ -123,17 +123,15 @@ protected:
 
     std::string getServerUrl() const
     {
-        return "http://" + server_data.socket->address().toString();
+        return "http://" + server_data.server->socket().address().toString();
     }
 
     void startServer()
     {
         server_data.reset();
-        server_data.params = new Poco::Net::HTTPServerParams();
-        server_data.socket = std::make_unique<Poco::Net::ServerSocket>(server_data.port);
         server_data.handler_factory = new HTTPRequestHandlerFactory(slowdown_receive);
         server_data.server =  std::make_unique<Poco::Net::HTTPServer>(
-            server_data.handler_factory, *server_data.socket, server_data.params);
+            server_data.handler_factory, server_data.port);
 
         server_data.server->start();
     }
@@ -155,8 +153,7 @@ protected:
     {
         // just some port to avoid collisions with others tests
         UInt16 port = 9871;
-        Poco::Net::HTTPServerParams::Ptr params;
-        std::unique_ptr<Poco::Net::ServerSocket> socket;
+
         HTTPRequestHandlerFactory::Ptr handler_factory;
         std::unique_ptr<Poco::Net::HTTPServer> server;
 
@@ -171,8 +168,6 @@ protected:
 
             server = nullptr;
             handler_factory = nullptr;
-            socket = nullptr;
-            params = nullptr;
         }
 
         ~ServerData() {

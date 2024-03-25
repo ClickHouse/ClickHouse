@@ -150,6 +150,8 @@ public:
         ++s;
     }
 
+    void insertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
+
     void insertDefault() override
     {
         ++s;
