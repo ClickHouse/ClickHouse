@@ -446,7 +446,29 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
 
 void ColumnSparse::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
 {
+    const auto & offsets_data = getOffsetsData();
+    const auto * offsets_bould = std::lower_bound(offsets_data.begin(), offsets_data.end(), start);
+    size_t offset_start = offsets_bould - offsets_data.begin();
+    size_t value_start = offset_start + 1;
 
+    PaddedPODArray<UInt64> offset_indexes;
+    offset_indexes.reserve_exact(std::min(indexes.size(), offsets_data.size()));
+    PaddedPODArray<UInt64> value_indexes;
+    value_indexes.reserve_exact(std::min(indexes.size(), values->size()));
+    for (auto index : indexes)
+    {
+        size_t value_index = getValueIndex(index);
+        if (value_index != 0)
+        {
+            offset_indexes.push_back(value_index - 0);
+            value_indexes.push_back(value_index);
+        }
+    }
+
+    offsets->filterInPlace(offset_indexes, offset_start);
+    values->filterInPlace(value_indexes, value_start);
+
+    _size = start + indexes.size();
 }
 
 int ColumnSparse::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const

@@ -820,6 +820,12 @@ void ColumnVariant::expand(const Filter & mask, bool inverted)
     expandDataByMask(getOffsets(), mask, inverted);
 }
 
+void ColumnVariant::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+{
+    getLocalDiscriminatorsColumn().filterInPlace(indexes, start);
+    getOffsetsColumn().filterInPlace(indexes, start);
+}
+
 ColumnPtr ColumnVariant::permute(const Permutation & perm, size_t limit) const
 {
     /// If we have only NULLs, permutation will take no effect, just return resized column.
