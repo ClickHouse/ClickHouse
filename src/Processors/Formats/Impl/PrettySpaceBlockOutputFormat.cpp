@@ -77,8 +77,13 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             // Write row number;
             auto row_num_string = std::to_string(row + 1 + total_rows) + ". ";
             for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
-                writeCString(" ", out);
+                writeChar(' ', out);
+            if (color)
+                writeCString("\033[90m", out);
             writeString(row_num_string, out);
+            if (color)
+                writeCString("\033[0m", out);
+
         }
         for (size_t column = 0; column < num_columns; ++column)
         {
