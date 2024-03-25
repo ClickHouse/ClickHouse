@@ -64,6 +64,7 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// TODO: This code is idiotic, see https://github.com/ClickHouse/ClickHouse/issues/61742
+
     ParserToken lparen(TokenType::OpeningRoundBracket);
 
     ASTPtr string_literal;
@@ -93,9 +94,10 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                 break;
             ++pos;
         }
-        kql_statement = String(pos_start->begin, (--pos)->end);
+        --pos;
+        kql_statement = String(pos_start->begin, pos->end);
+        ++pos;
     }
-    ++pos;
 
     Tokens token_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true, /* greedy_errors= */ true);
     IParser::Pos pos_kql(token_kql, pos.max_depth, pos.max_backtracks);
