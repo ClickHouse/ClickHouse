@@ -161,7 +161,9 @@ ClickHouseNIO
 ClickHouseVapor
 ClickVisual
 ClickableSquare
+CloudAvailableBadge
 CloudDetails
+CloudNotSupportedBadge
 CloudStorage
 CodeBlock
 CodeLLDB
@@ -1584,6 +1586,7 @@ gccMurmurHash
 gcem
 generateRandom
 generateRandomStructure
+generateSeries
 generateULID
 generateUUIDv
 geoDistance

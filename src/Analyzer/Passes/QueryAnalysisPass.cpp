@@ -48,6 +48,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
@@ -799,6 +800,14 @@ struct IdentifierResolveScope
 
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
+
+    struct ResolvedFunctionsCache
+    {
+        FunctionOverloadResolverPtr resolver;
+        FunctionBasePtr function_base;
+    };
+
+    std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
 
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const
     {
@@ -5585,9 +5594,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters);
     bool is_executable_udf = true;
 
+    IdentifierResolveScope::ResolvedFunctionsCache * function_cache = nullptr;
+
     if (!function)
     {
-        function = FunctionFactory::instance().tryGet(function_name, scope.context);
+        /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
+        /// Function randConstant() would return the same value for the same arguments (in scope).
+
+        auto hash = function_node_ptr->getTreeHash();
+        function_cache = &scope.functions_cache[hash];
+        if (!function_cache->resolver)
+            function_cache->resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
+
+        function = function_cache->resolver;
+
         is_executable_udf = false;
     }
 
@@ -5811,7 +5831,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     try
     {
-        auto function_base = function->build(argument_columns);
+        FunctionBasePtr function_base;
+        if (function_cache)
+        {
+            auto & cached_function = function_cache->function_base;
+            if (!cached_function)
+                cached_function = function->build(argument_columns);
+
+            function_base = cached_function;
+        }
+        else
+            function_base = function->build(argument_columns);
 
         /// Do not constant fold get scalar functions
         bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
@@ -7409,18 +7439,40 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             if (!result_left_table_expression)
                 result_left_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope);
 
-            /// Here we may try to resolve identifier from projection in case it's not resolved from left table expression
-            /// and analyzer_compatibility_join_using_top_level_identifier is disabled.
-            /// For now we do not do this, because not all corner cases are clear.
+            /** Here we may try to resolve identifier from projection in case it's not resolved from left table expression
+              * and analyzer_compatibility_join_using_top_level_identifier is disabled.
+              * For now we do not do this, because not all corner cases are clear.
+              * But let's at least mention it in error message
+              */
             /// if (!settings.analyzer_compatibility_join_using_top_level_identifier && !result_left_table_expression)
             ///     result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpression(), scope);
 
             if (!result_left_table_expression)
+            {
+                String extra_message;
+                const QueryNode * query_node = scope.scope_node ? scope.scope_node->as<QueryNode>() : nullptr;
+                if (settings.analyzer_compatibility_join_using_top_level_identifier && query_node)
+                {
+                    for (const auto & projection_node : query_node->getProjection().getNodes())
+                    {
+                        if (projection_node->hasAlias() && identifier_full_name == projection_node->getAlias())
+                        {
+                            extra_message = fmt::format(
+                                ", but alias '{}' is present in SELECT list."
+                                " You may try to SET analyzer_compatibility_join_using_top_level_identifier = 1, to allow to use it in USING clause",
+                                projection_node->formatASTForErrorMessage());
+                            break;
+                        }
+                    }
+                }
+
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                    "JOIN {} using identifier '{}' cannot be resolved from left table expression. In scope {}",
+                    "JOIN {} using identifier '{}' cannot be resolved from left table expression{}. In scope {}",
                     join_node_typed.formatASTForErrorMessage(),
                     identifier_full_name,
+                    extra_message,
                     scope.scope_node->formatASTForErrorMessage());
+            }
 
             if (result_left_table_expression->getNodeType() != QueryTreeNodeType::COLUMN)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,

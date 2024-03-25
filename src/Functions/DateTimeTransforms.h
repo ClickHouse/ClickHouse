@@ -11,6 +11,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
