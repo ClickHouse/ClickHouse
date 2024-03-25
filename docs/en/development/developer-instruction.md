@@ -153,6 +153,18 @@ Upon successful build you get an executable file `ClickHouse/<build_dir>/program
 
     ls -l programs/clickhouse
 
+### Advanced Building Process {#advanced-building-process}
+
+#### Minimal Build {#minimal-build}
+
+If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
+
+```
+cmake -DENABLE_LIBRARIES=OFF
+```
+
+In case of problems with any of the development options, you are on your own!
+
 ## Running the Built Executable of ClickHouse {#running-the-built-executable-of-clickhouse}
 
 To run the server under the current user you need to navigate to `ClickHouse/programs/server/` (located outside of `build`) and run:
@@ -250,10 +262,3 @@ Most probably some of the builds will fail at first times. This is due to the fa
 You can use GitHub integrated code browser [here](https://github.dev/ClickHouse/ClickHouse).
 
 Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHouse) as usual.
-
-If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
-```
--DENABLE_LIBRARIES=0
-```
-
-In case of problems with any of the development options, you are on your own!
