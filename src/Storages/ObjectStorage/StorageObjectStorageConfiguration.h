@@ -54,6 +54,10 @@ public:
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
+
+    void assertInitialized() const;
+
+    bool initialized = false;
 };
 
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;

@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 
 #include <Storages/S3Queue/S3QueueSettings.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <base/types.h>
 

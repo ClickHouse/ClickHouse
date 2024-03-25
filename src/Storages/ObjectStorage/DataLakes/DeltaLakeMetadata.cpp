@@ -11,6 +11,7 @@
 #include <Formats/FormatFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string/case_conv.hpp>

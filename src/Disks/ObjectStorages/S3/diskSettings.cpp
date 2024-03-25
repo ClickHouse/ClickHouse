@@ -69,10 +69,6 @@ std::unique_ptr<S3::Client> getClient(
     {
         String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
 
-        if (S3::isS3ExpressEndpoint(endpoint) && !config.has(config_prefix + ".region"))
-            throw Exception(
-                ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Region should be explicitly specified for directory buckets ({})", config_prefix);
-
         url = S3::URI(endpoint);
         if (!url.key.ends_with('/'))
             url.key.push_back('/');
@@ -82,6 +78,12 @@ std::unique_ptr<S3::Client> getClient(
         if (!url_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "URL not passed");
         url = *url_;
+    }
+    const bool is_s3_express_bucket = S3::isS3ExpressEndpoint(url.endpoint);
+    if (is_s3_express_bucket && !config.has(config_prefix + ".region"))
+    {
+        throw Exception(
+            ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Region should be explicitly specified for directory buckets ({})", config_prefix);
     }
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
@@ -130,7 +132,7 @@ std::unique_ptr<S3::Client> getClient(
         .use_virtual_addressing = url.is_virtual_hosted_style,
         .disable_checksum = local_settings.s3_disable_checksum,
         .gcs_issue_compose_request = config.getBool("s3.gcs_issue_compose_request", false),
-        .is_s3express_bucket = S3::isS3ExpressEndpoint(endpoint),
+        .is_s3express_bucket = is_s3_express_bucket,
     };
 
     auto credentials_configuration = S3::CredentialsConfiguration

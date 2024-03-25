@@ -66,6 +66,8 @@ StorageS3Configuration::StorageS3Configuration(const StorageS3Configuration & ot
 
 ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context, bool /* is_readonly */) /// NOLINT
 {
+    assertInitialized();
+
     const auto & config = context->getConfigRef();
     const std::string config_prefix = "s3.";
 

@@ -29,12 +29,14 @@ void StorageHDFSConfiguration::check(ContextPtr context) const
     checkHDFSURL(fs::path(url) / path);
 }
 
-ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage(ContextPtr context, bool is_readonly) /// NOLINT
+ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage(ContextPtr context, bool /* is_readonly */) /// NOLINT
 {
-    UNUSED(is_readonly);
-    auto settings = std::make_unique<HDFSObjectStorageSettings>();
+    assertInitialized();
+
     if (!url.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS url is empty");
+
+    auto settings = std::make_unique<HDFSObjectStorageSettings>();
     return std::make_shared<HDFSObjectStorage>(url, std::move(settings), context->getConfigRef());
 }
 

@@ -18,6 +18,8 @@ void StorageObjectStorageConfiguration::initialize(
     // FIXME: it should be - if (format == "auto" && get_format_from_file)
     if (configuration.format == "auto")
         configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.getPath()).value_or("auto");
+
+    configuration.initialized = true;
 }
 
 StorageObjectStorageConfiguration::StorageObjectStorageConfiguration(const StorageObjectStorageConfiguration & other)
@@ -46,6 +48,14 @@ bool StorageObjectStorageConfiguration::isNamespaceWithGlobs() const
 std::string StorageObjectStorageConfiguration::getPathWithoutGlob() const
 {
     return getPath().substr(0, getPath().find_first_of("*?{"));
+}
+
+void StorageObjectStorageConfiguration::assertInitialized() const
+{
+    if (!initialized)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration was not initialized before usage");
+    }
 }
 
 }
