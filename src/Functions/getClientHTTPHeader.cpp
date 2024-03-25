@@ -20,14 +20,12 @@ namespace
 
 class FunctionGetClientHTTPHeader : public IFunction, WithContext
 {
-private:
-
 public:
     explicit FunctionGetClientHTTPHeader(ContextPtr context_)
         : WithContext(context_)
     {
         if (!getContext()->getSettingsRef().allow_get_client_http_header)
-            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "The function {} requires setting `allow_get_client_http_header` to be enabled.", getName());
+            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "The function getClientHTTPHeader requires setting `allow_get_client_http_header` to be enabled.");
     }
 
     String getName() const override { return "getClientHTTPHeader"; }
