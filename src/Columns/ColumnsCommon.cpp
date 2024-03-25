@@ -92,10 +92,47 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
 
 void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<UInt64> & indices)
 {
-    for (size_t i = 0; start != end; ++start)
+    auto * dst = indices.data();
+    for (; start + 64 <= end; start += 64)
+    {
+        UInt64 mask = bytes64MaskToBits64Mask(filt + start);
+        const uint8_t prefix_to_copy = prefixToCopy(mask);
+
+        if (0xFF != prefix_to_copy)
+        {
+            for (size_t i = 0; i < prefix_to_copy; ++i)
+                dst[i] = start + i;
+            dst += prefix_to_copy;
+        }
+        else
+        {
+            const uint8_t suffix_to_copy = suffixToCopy(mask);
+            if (0xFF != suffix_to_copy)
+            {
+                for (size_t i = 64 - suffix_to_copy; i < 64; ++i)
+                    dst[i] = start + i;
+                dst += suffix_to_copy;
+            }
+            else
+            {
+                while (mask)
+                {
+                    size_t index = std::countr_zero(mask);
+                    *dst = start + index;
+                    ++dst;
+                    mask = blsr(mask);
+                }
+            }
+        }
+    }
+
+    for (; start != end; ++start)
     {
         if (filt[start])
-            indices[i++] = start;
+        {
+            *dst = start;
+            ++dst;
+        }
     }
 }
 

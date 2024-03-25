@@ -25,6 +25,14 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+UInt64 blsr(UInt64 mask);
+
+/// If mask is a number of this kind: [0]*[1]* function returns the length of the cluster of 1s.
+/// Otherwise it returns the special value: 0xFF.
+uint8_t prefixToCopy(UInt64 mask);
+
+uint8_t suffixToCopy(UInt64 mask);
+
 
 /** A template for columns that use a simple array to store.
  */

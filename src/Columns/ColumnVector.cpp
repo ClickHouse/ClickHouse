@@ -476,7 +476,7 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
     memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
-static inline UInt64 blsr(UInt64 mask)
+inline UInt64 blsr(UInt64 mask)
 {
 #ifdef __BMI__
     return _blsr_u64(mask);
@@ -487,7 +487,7 @@ static inline UInt64 blsr(UInt64 mask)
 
 /// If mask is a number of this kind: [0]*[1]* function returns the length of the cluster of 1s.
 /// Otherwise it returns the special value: 0xFF.
-uint8_t prefixToCopy(UInt64 mask)
+inline uint8_t prefixToCopy(UInt64 mask)
 {
     if (mask == 0)
         return 0;
@@ -502,7 +502,7 @@ uint8_t prefixToCopy(UInt64 mask)
         return 0xFF;
 }
 
-uint8_t suffixToCopy(UInt64 mask)
+inline uint8_t suffixToCopy(UInt64 mask)
 {
     const auto prefix_to_copy = prefixToCopy(~mask);
     return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;
