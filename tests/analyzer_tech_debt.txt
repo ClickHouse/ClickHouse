@@ -4,5 +4,3 @@
 02354_vector_search_queries
 # Check after constants refactoring
 02901_parallel_replicas_rollup
-# Flaky. Please don't delete them without fixing them:
-02003_WithMergeableStateAfterAggregationAndLimit_LIMIT_BY_LIMIT_OFFSET
