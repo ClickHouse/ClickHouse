@@ -1,6 +1,7 @@
 #include "DNSResolver.h"
 #include <Common/CacheBase.h>
 #include <Common/Exception.h>
+#include <Common/NetException.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
@@ -108,7 +109,7 @@ DNSResolver::IPAddresses hostByName(const std::string & host)
     if (addresses.empty())
     {
         ProfileEvents::increment(ProfileEvents::DNSError);
-        throw Exception(ErrorCodes::DNS_ERROR, "Not found address of host: {}", host);
+        throw DB::NetException(ErrorCodes::DNS_ERROR, "Not found address of host: {}", host);
     }
 
     return addresses;
@@ -296,7 +297,7 @@ void DNSResolver::setDisableCacheFlag(bool is_disabled)
     impl->disable_cache = is_disabled;
 }
 
-void DNSResolver::setCacheMaxEntries(const UInt64 cache_max_entries)
+void DNSResolver::setCacheMaxEntries(UInt64 cache_max_entries)
 {
     impl->cache_address.setMaxSizeInBytes(cache_max_entries);
     impl->cache_host.setMaxSizeInBytes(cache_max_entries);

@@ -22,6 +22,7 @@ public:
         KILL,
         SUSPEND,
         DROP_DNS_CACHE,
+        DROP_CONNECTIONS_CACHE,
         DROP_MARK_CACHE,
         DROP_UNCOMPRESSED_CACHE,
         DROP_INDEX_MARK_CACHE,
@@ -108,6 +109,7 @@ public:
 
     ASTPtr database;
     ASTPtr table;
+    ASTPtr query_settings;
 
     String getDatabase() const;
     String getTable() const;
@@ -157,6 +159,7 @@ public:
 
         if (database) { res->database = database->clone(); res->children.push_back(res->database); }
         if (table) { res->table = table->clone(); res->children.push_back(res->table); }
+        if (query_settings) { res->query_settings = query_settings->clone(); res->children.push_back(res->query_settings); }
 
         return res;
     }

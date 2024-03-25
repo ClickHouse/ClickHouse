@@ -11,6 +11,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/PageCache.h>
+#include <Common/HostResolvePool.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -58,6 +59,7 @@
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/ThreadFuzzer.h>
 #include <base/coverage.h>
@@ -333,8 +335,15 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
+            HostResolversPool::instance().dropCache();
             /// Reinitialize clusters to update their resolved_addresses
             system_context->reloadClusterConfig();
+            break;
+        }
+        case Type::DROP_CONNECTIONS_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
+            HTTPConnectionPools::instance().dropCache();
             break;
         }
         case Type::DROP_MARK_CACHE:
@@ -711,7 +720,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
-            auto * queue = getContext()->getAsynchronousInsertQueue();
+            auto * queue = getContext()->tryGetAsynchronousInsertQueue();
             if (!queue)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
@@ -1157,12 +1166,16 @@ void InterpreterSystemQuery::syncTransactionLog()
 }
 
 
-void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
+void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
+    SettingsChanges settings_changes;
+    if (query.query_settings)
+        settings_changes = query.query_settings->as<ASTSetQuery>()->changes;
+
     if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, getContext()).get()))
-        storage_distributed->flushClusterNodesAllData(getContext());
+        storage_distributed->flushClusterNodesAllData(getContext(), settings_changes);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
@@ -1201,6 +1214,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::DROP_DNS_CACHE:
+        case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:

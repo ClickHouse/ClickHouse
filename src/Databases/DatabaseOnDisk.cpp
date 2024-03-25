@@ -5,8 +5,9 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -526,7 +527,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
         /// If database.sql doesn't exist, then engine is Ordinary
         String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
-        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
     }
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
@@ -707,7 +708,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
-                             "in file " + metadata_file_path, /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
+        "in file " + metadata_file_path, /* allow_multi_statements = */ false, 0, settings.max_parser_depth, settings.max_parser_backtracks, true);
 
     if (!ast && throw_on_error)
         throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -765,12 +766,14 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     auto ast_storage = std::make_shared<ASTStorage>();
     ast_storage->set(ast_storage->engine, ast_engine);
 
-    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
-    auto create_table_query = DB::getCreateQueryFromStorage(storage,
-                                                            ast_storage,
-                                                            false,
-                                                            max_parser_depth,
-                                                            throw_on_error);
+    const Settings & settings = getContext()->getSettingsRef();
+    auto create_table_query = DB::getCreateQueryFromStorage(
+        storage,
+        ast_storage,
+        false,
+        static_cast<unsigned>(settings.max_parser_depth),
+        static_cast<unsigned>(settings.max_parser_backtracks),
+        throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
                             std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));

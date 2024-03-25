@@ -6,7 +6,7 @@
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 #include <Dictionaries/HashedDictionaryCollectionType.h>
 #include <Dictionaries/HashedDictionaryCollectionTraits.h>
@@ -117,7 +117,7 @@ public:
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<HashedDictionary<dictionary_key_type, sparse, sharded>>(
             getDictionaryID(),

@@ -1,8 +1,6 @@
 #include "ReadBufferFromWebServer.h"
 
 #include <Common/logger_useful.h>
-#include <base/sleep.h>
-#include <Core/Types.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -45,12 +43,6 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
     {
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
-
-        LOG_DEBUG(log, "Reading with range: {}-{}", offset, read_until_position);
-    }
-    else
-    {
-        LOG_DEBUG(log, "Reading from offset: {}", offset);
     }
 
     const auto & settings = context->getSettingsRef();
@@ -60,19 +52,14 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
     connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings.http_connection_timeout, Poco::Timespan(20, 0)));
     connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings.http_receive_timeout, Poco::Timespan(20, 0)));
 
-    auto res = std::make_unique<ReadWriteBufferFromHTTP>(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_GET,
-        ReadWriteBufferFromHTTP::OutStreamCallback(),
-        connection_timeouts,
-        credentials,
-        0,
-        buf_size,
-        read_settings,
-        HTTPHeaderEntries{},
-        &context->getRemoteHostFilter(),
-        /* delay_initialization */true,
-        use_external_buffer);
+    auto res = BuilderRWBufferFromHTTP(uri)
+                   .withConnectionGroup(HTTPConnectionGroupType::DISK)
+                   .withSettings(read_settings)
+                   .withTimeouts(connection_timeouts)
+                   .withBufSize(buf_size)
+                   .withHostFilter(&context->getRemoteHostFilter())
+                   .withExternalBuf(use_external_buffer)
+                   .create(credentials);
 
     if (read_until_position)
         res->setReadUntilPosition(read_until_position);
@@ -101,44 +88,43 @@ bool ReadBufferFromWebServer::nextImpl()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
     }
 
-    if (impl)
-    {
-        if (!use_external_buffer)
-        {
-            /**
-            * impl was initialized before, pass position() to it to make
-            * sure there is no pending data which was not read, because
-            * this branch means we read sequentially.
-            */
-            impl->position() = position();
-            assert(!impl->hasPendingData());
-        }
-    }
-    else
+    if (!impl)
     {
         impl = initialize();
+
+        if (!use_external_buffer)
+        {
+            BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+        }
     }
 
     if (use_external_buffer)
     {
-        /**
-        * use_external_buffer -- means we read into the buffer which
-        * was passed to us from somewhere else. We do not check whether
-        * previously returned buffer was read or not, because this branch
-        * means we are prefetching data, each nextImpl() call we can fill
-        * a different buffer.
-        */
         impl->set(internal_buffer.begin(), internal_buffer.size());
-        assert(working_buffer.begin() != nullptr);
-        assert(!internal_buffer.empty());
+    }
+    else
+    {
+        impl->position() = position();
     }
 
+    chassert(available() == 0);
+
+    chassert(pos >= working_buffer.begin());
+    chassert(pos <= working_buffer.end());
+
+    chassert(working_buffer.begin() != nullptr);
+    chassert(impl->buffer().begin() != nullptr);
+
+    chassert(impl->available() == 0);
+
     auto result = impl->next();
+
+    BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
+
+    chassert(working_buffer.begin() == impl->buffer().begin());
+
     if (result)
-    {
-        BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
         offset += working_buffer.size();
-    }
 
     return result;
 }

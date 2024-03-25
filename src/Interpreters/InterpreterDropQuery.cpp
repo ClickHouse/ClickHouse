@@ -1,5 +1,6 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -417,7 +418,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     uuids_to_wait.push_back(table_to_wait);
                 }
             }
-           // only if operation is DETACH
+            // only if operation is DETACH
             if ((!drop || !truncate) && query.sync)
             {
                 /// Avoid "some tables are still in use" when sync mode is enabled
