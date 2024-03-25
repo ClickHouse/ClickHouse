@@ -388,7 +388,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 query_for_table.kind = query.kind;
                 // For truncate operation on database, drop the tables
                 if (truncate)
-                    query_for_table.kind = ASTDropQuery::Kind::Drop;
+                    query_for_table.kind = query.has_all ? ASTDropQuery::Kind::Truncate : ASTDropQuery::Kind::Drop;
                 query_for_table.if_exists = true;
                 query_for_table.if_empty = false;
                 query_for_table.setDatabase(database_name);

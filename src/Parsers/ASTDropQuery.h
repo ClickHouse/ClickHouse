@@ -26,6 +26,9 @@ public:
     /// Useful if we already have a DDL lock
     bool no_ddl_lock{false};
 
+    /// For `TRUNCATE ALL TABLES` query
+    bool has_all{false};
+
     /// We dropping dictionary, so print correct word
     bool is_dictionary{false};
 
