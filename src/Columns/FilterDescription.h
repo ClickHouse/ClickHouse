@@ -70,7 +70,7 @@ struct SparseFilterDescription final : public IFilterDescription
     void filterInPlace(IColumn & column) const override { return column.filterInPlace(filter_indices->getData(), 0); }
     size_t countBytesInFilter() const override { return filter_indices->size(); }
 protected:
-    bool hasOneImpl() override { return !filter_indices->empty(); }
+    bool hasOneImpl() override { return filter_indices && !filter_indices->empty(); }
 };
 
 struct ColumnWithTypeAndName;
