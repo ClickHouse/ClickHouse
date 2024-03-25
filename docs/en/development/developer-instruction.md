@@ -165,6 +165,14 @@ cmake -DENABLE_LIBRARIES=OFF
 
 In case of problems with any of the development options, you are on your own!
 
+#### Rust support {#rust-support}
+
+Rust requires internet connection, in case you don't have it, you can disable Rust support:
+
+```
+cmake -DENABLE_RUST=OFF
+```
+
 ## Running the Built Executable of ClickHouse {#running-the-built-executable-of-clickhouse}
 
 To run the server under the current user you need to navigate to `ClickHouse/programs/server/` (located outside of `build`) and run:
