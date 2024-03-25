@@ -39,7 +39,6 @@
 #include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
@@ -538,7 +537,7 @@ void TCPHandler::runImpl()
             }
             else if (state.io.pipeline.pulling())
             {
-                processOrdinaryQueryWithProcessors();
+                processOrdinaryQuery();
                 finish_or_cancel();
             }
             else if (state.io.pipeline.completed())
@@ -924,7 +923,7 @@ void TCPHandler::processInsertQuery()
     Block processed_block;
     const auto & settings = query_context->getSettingsRef();
 
-    auto * insert_queue = query_context->getAsynchronousInsertQueue();
+    auto * insert_queue = query_context->tryGetAsynchronousInsertQueue();
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*state.parsed_query);
 
     bool async_insert_enabled = settings.async_insert;
@@ -993,7 +992,7 @@ void TCPHandler::processInsertQuery()
 }
 
 
-void TCPHandler::processOrdinaryQueryWithProcessors()
+void TCPHandler::processOrdinaryQuery()
 {
     auto & pipeline = state.io.pipeline;
 
@@ -2185,7 +2184,7 @@ void TCPHandler::sendData(const Block & block)
         /// For testing hedged requests
         if (unknown_packet_in_send_data)
         {
-            constexpr UInt64 marker = (1ULL<<63) - 1;
+            constexpr UInt64 marker = (1ULL << 63) - 1;
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
                 writeVarUInt(marker, *out);

@@ -51,7 +51,8 @@ public:
         const StorageAzureBlobConfiguration & configuration_,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        bool attempt_to_create_container);
 
     ~BackupWriterAzureBlobStorage() override;
 

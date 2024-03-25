@@ -8,6 +8,7 @@ class TableFunctionFactory;
 void registerTableFunctionMerge(TableFunctionFactory & factory);
 void registerTableFunctionRemote(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
+void registerTableFunctionGenerateSeries(TableFunctionFactory & factory);
 void registerTableFunctionNull(TableFunctionFactory & factory);
 void registerTableFunctionZeros(TableFunctionFactory & factory);
 void registerTableFunctionExecutable(TableFunctionFactory & factory);

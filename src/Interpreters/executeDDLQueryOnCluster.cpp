@@ -1,4 +1,5 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>

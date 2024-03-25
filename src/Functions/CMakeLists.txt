@@ -14,6 +14,8 @@ extract_into_parent_list(clickhouse_functions_sources dbms_sources
     multiMatchAny.cpp
     checkHyperscanRegexp.cpp
     array/has.cpp
+    equals.cpp
+    notEquals.cpp
     CastOverloadResolver.cpp
 )
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
@@ -37,6 +39,7 @@ list (APPEND PUBLIC_LIBS
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         ch_contrib::consistent_hashing
+        common
         dbms
         ch_contrib::metrohash
         ch_contrib::murmurhash
@@ -141,10 +144,6 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_extractkeyvaluepa
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
-
-if (ENABLE_FUZZING)
-    add_compile_definitions(FUZZING_MODE=1)
-endif ()
 
 if (USE_GPERF)
     # Only for regenerating

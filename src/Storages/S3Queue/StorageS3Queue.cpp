@@ -5,6 +5,7 @@
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Formats/FormatFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -25,8 +26,8 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <filesystem>
 
+#include <filesystem>
 
 namespace fs = std::filesystem;
 
@@ -108,7 +109,8 @@ StorageS3Queue::StorageS3Queue(
     const String & comment,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    ASTStorage * engine_args)
+    ASTStorage * engine_args,
+    LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
     , s3queue_settings(std::move(s3queue_settings_))
@@ -130,6 +132,14 @@ StorageS3Queue::StorageS3Queue(
     else if (!configuration->isPathWithGlobs())
     {
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue url must either end with '/' or contain globs");
+    }
+
+    if (mode == LoadingStrictnessLevel::CREATE
+        && !context_->getSettingsRef().s3queue_allow_experimental_sharded_mode
+        && s3queue_settings->mode == S3QueueMode::ORDERED
+        && (s3queue_settings->s3queue_total_shards_num > 1 || s3queue_settings->s3queue_processing_threads_num > 1))
+    {
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue sharded mode is not allowed. To enable use `s3queue_allow_experimental_sharded_mode`");
     }
 
     checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef());
@@ -650,7 +660,8 @@ void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
                 args.comment,
                 args.getContext(),
                 format_settings,
-                args.storage_def);
+                args.storage_def,
+                args.mode);
         },
         {
             .supports_settings = true,

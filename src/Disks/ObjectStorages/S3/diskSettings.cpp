@@ -1,5 +1,6 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
-#include "IO/S3/Client.h"
+#include <IO/S3/Client.h>
+#include <Common/Exception.h>
 
 #if USE_AWS_S3
 
@@ -10,6 +11,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Disks/DiskFactory.h>
+
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 #include <IO/S3Common.h>
@@ -25,6 +28,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace ErrorCodes
+{
+extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 std::unique_ptr<S3ObjectStorageSettings> getSettings(
@@ -60,6 +68,11 @@ std::unique_ptr<S3::Client> getClient(
     if (for_disk_s3)
     {
         String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+
+        if (S3::isS3ExpressEndpoint(endpoint) && !config.has(config_prefix + ".region"))
+            throw Exception(
+                ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Region should be explicitly specified for directory buckets ({})", config_prefix);
+
         url = S3::URI(endpoint);
         if (!url.key.ends_with('/'))
             url.key.push_back('/');
@@ -117,6 +130,7 @@ std::unique_ptr<S3::Client> getClient(
         .use_virtual_addressing = url.is_virtual_hosted_style,
         .disable_checksum = local_settings.s3_disable_checksum,
         .gcs_issue_compose_request = config.getBool("s3.gcs_issue_compose_request", false),
+        .is_s3express_bucket = S3::isS3ExpressEndpoint(endpoint),
     };
 
     auto credentials_configuration = S3::CredentialsConfiguration
