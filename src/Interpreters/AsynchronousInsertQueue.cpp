@@ -197,7 +197,7 @@ void AsynchronousInsertQueue::QueueShardFlushTimeHistory::updateWithCurrentTime(
 }
 
 AsynchronousInsertQueue::AsynchronousInsertQueue(
-    ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_, size_t max_pending_inserts_)
+    ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_, size_t max_pending_inserts_, size_t max_pending_bytes_)
     : WithContext(context_)
     , pool_size(pool_size_)
     , flush_on_shutdown(flush_on_shutdown_)
@@ -209,6 +209,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(
           CurrentMetrics::AsynchronousInsertThreadsScheduled,
           pool_size)
     , max_pending_inserts(max_pending_inserts_)
+    , max_pending_bytes(max_pending_bytes_)
 {
     if (!pool_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "pool_size cannot be zero");
@@ -420,10 +421,10 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
 
         auto queue_it = it->second;
         auto & data = queue_it->second.data;
-        size_t entry_data_size = entry->chunk.byteSize();
+        const size_t entry_data_size = entry->chunk.byteSize();
 
         assert(data);
-        auto size_in_bytes = data->size_in_bytes;
+        const auto size_in_bytes = data->size_in_bytes;
         data->size_in_bytes += entry_data_size;
         /// We rely on the fact that entries are being added to the list in order of creation time in `scheduleDataProcessingJob()`
         data->entries.emplace_back(entry);
@@ -460,6 +461,7 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
         shard.busy_timeout_ms = timeout_ms;
 
         ++pending_inserts;
+        pending_bytes += entry_data_size;
         CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
@@ -717,6 +719,7 @@ try
 
     SCOPE_EXIT({
         pending_inserts -= data->entries.size();
+        pending_bytes -= data->size_in_bytes;
         CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size());
     });
 
@@ -1091,20 +1094,23 @@ void AsynchronousInsertQueue::finishWithException(
 
 void AsynchronousInsertQueue::checkQueueLimit(std::chrono::seconds wait_timeout)
 {
-    if (pending_inserts <= max_pending_inserts)
+    if (pending_inserts <= max_pending_inserts && pending_bytes <= max_pending_bytes)
         return;
 
     if (flush_mutex.try_lock_for(wait_timeout))
     {
         SCOPE_EXIT(flush_mutex.unlock());
 
-        if (pending_inserts > max_pending_inserts)
+        if (pending_inserts > max_pending_inserts || pending_bytes > max_pending_bytes)
         {
             LOG_DEBUG(
                 log,
-                "Too many pending inserts - will flush queue immediately: pending_inserts={}, max_pending_inserts={}",
+                "AsynchronousInsertQueue is overloaded - will flush queue immediately: pending_inserts={}, max_pending_inserts={}, "
+                "pending_bytes={}, max_pending_bytes={}",
                 pending_inserts,
-                max_pending_inserts);
+                max_pending_inserts,
+                pending_bytes,
+                max_pending_bytes);
             flushAllImpl(flush_mutex);
             ProfileEvents::increment(ProfileEvents::AsyncInsertQueueFlushesOnLimit);
         }

@@ -25,7 +25,8 @@ class AsynchronousInsertQueue : public WithContext
 public:
     using Milliseconds = std::chrono::milliseconds;
 
-    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_, size_t max_pending_inserts_);
+    AsynchronousInsertQueue(
+        ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_, size_t max_pending_inserts_, size_t max_pending_bytes_);
     ~AsynchronousInsertQueue();
 
     struct PushResult
@@ -261,7 +262,9 @@ private:
     std::vector<ThreadFromGlobalPool> dump_by_first_update_threads;
 
     std::atomic_int64_t pending_inserts{0};
+    std::atomic_int64_t pending_bytes{0};
     const int64_t max_pending_inserts;
+    const int64_t max_pending_bytes;
 
     LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
