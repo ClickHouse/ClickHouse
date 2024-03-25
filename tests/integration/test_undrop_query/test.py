@@ -19,6 +19,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_undrop_drop_and_undrop_loop(started_cluster):
     uuid_list = []
 
@@ -26,7 +27,7 @@ def test_undrop_drop_and_undrop_loop(started_cluster):
         table_uuid = uuid.uuid1().__str__()
         uuid_list.append(table_uuid)
         logging.info(f"table_uuid: {table_uuid}")
-        
+
         node.query(
             f"CREATE TABLE test_undrop_{i} UUID '{table_uuid}' (id Int32) ENGINE = MergeTree() ORDER BY id;"
         )
@@ -34,13 +35,11 @@ def test_undrop_drop_and_undrop_loop(started_cluster):
         node.query(f"DROP TABLE test_undrop_{i};")
 
     for i in range(10):
-        if i >= 8: # -> setting for table to live after drop = 80 seconds
+        if i >= 8:  # -> setting for table to live after drop = 80 seconds
             error = node.query_and_get_error(
                 f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';"
             )
             assert "UNKNOWN_TABLE" in error
         else:
-            node.query(
-                f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';"
-            )
+            node.query(f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';")
         time.sleep(10)
