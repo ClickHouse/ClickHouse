@@ -108,7 +108,7 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
     if (max_upload_part_size > max_upload_part_size_limit)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting max_upload_part_size has invalid value {} which is grater than the s3 API limit {}",
+            "Setting max_upload_part_size has invalid value {} which is greater than the s3 API limit {}",
             ReadableSize(max_upload_part_size), ReadableSize(max_upload_part_size_limit));
 
     if (max_single_part_upload_size > max_upload_part_size_limit)

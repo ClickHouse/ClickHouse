@@ -54,6 +54,9 @@ public:
     SinkPtr createSinkForPartition(const String & partition_id) override;
 
 private:
+    void validateKey(const String & str);
+    void validateNamespace(const String & str);
+
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
     const std::optional<FormatSettings> format_settings;

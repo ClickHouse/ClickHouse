@@ -87,6 +87,7 @@ StorageObjectStorage<StorageSettings>::StorageObjectStorage(
     , format_settings(format_settings_)
     , partition_by(partition_by_)
     , distributed_processing(distributed_processing_)
+    , log(getLogger("Storage" + engine_name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
 {
@@ -204,6 +205,7 @@ SinkToStoragePtr StorageObjectStorage<StorageSettings>::write(
 
         if (partition_by_ast)
         {
+            LOG_TEST(log, "Using PartitionedSink for {}", configuration->getPath());
             return std::make_shared<PartitionedStorageObjectStorageSink>(
                 object_storage, configuration, format_settings, sample_block, local_context, partition_by_ast);
         }

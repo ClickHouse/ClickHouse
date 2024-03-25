@@ -16,21 +16,13 @@ namespace DB
 
 struct HDFSObjectStorageSettings
 {
-
-    HDFSObjectStorageSettings() = default;
-
-    size_t min_bytes_for_seek;
-    int objects_chunk_size_to_delete;
-    int replication;
-
-    HDFSObjectStorageSettings(
-            int min_bytes_for_seek_,
-            int objects_chunk_size_to_delete_,
-            int replication_)
+    HDFSObjectStorageSettings(int min_bytes_for_seek_, int replication_)
         : min_bytes_for_seek(min_bytes_for_seek_)
-        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
         , replication(replication_)
     {}
+
+    size_t min_bytes_for_seek;
+    int replication;
 };
 
 

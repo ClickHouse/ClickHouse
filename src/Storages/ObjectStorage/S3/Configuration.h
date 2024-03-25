@@ -27,6 +27,8 @@ public:
     String getDataSourceDescription() override;
 
     void check(ContextPtr context) const override;
+    void validateNamespace(const String & name) const override;
+
     StorageObjectStorageConfigurationPtr clone() override { return std::make_shared<StorageS3Configuration>(*this); }
     bool isStaticConfiguration() const override { return static_configuration; }
 

@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Formats/FormatFactory.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -18,7 +19,10 @@ void StorageObjectStorageConfiguration::initialize(
     // FIXME: it should be - if (format == "auto" && get_format_from_file)
     if (configuration.format == "auto")
         configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.getPath()).value_or("auto");
+    else
+        FormatFactory::instance().checkFormatName(configuration.format);
 
+    configuration.check(local_context);
     configuration.initialized = true;
 }
 

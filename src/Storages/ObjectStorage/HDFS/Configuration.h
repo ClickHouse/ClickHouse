@@ -29,12 +29,12 @@ public:
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
     StorageObjectStorageConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
 
-    void fromNamedCollection(const NamedCollection &) override {}
-    void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
-
     static void addStructureToArgs(ASTs &, const String &, ContextPtr) {}
 
 private:
+    void fromNamedCollection(const NamedCollection &) override;
+    void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
+
     String url;
     String path;
     std::vector<String> paths;

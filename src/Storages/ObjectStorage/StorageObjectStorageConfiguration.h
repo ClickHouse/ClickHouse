@@ -43,6 +43,8 @@ public:
     std::string getPathWithoutGlob() const;
 
     virtual void check(ContextPtr context) const = 0;
+    virtual void validateNamespace(const String & /* name */) const {}
+
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) = 0; /// NOLINT
     virtual StorageObjectStorageConfigurationPtr clone() = 0;
     virtual bool isStaticConfiguration() const { return true; }

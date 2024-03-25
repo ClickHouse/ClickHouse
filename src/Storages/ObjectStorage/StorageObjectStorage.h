@@ -3,6 +3,7 @@
 #include <Common/re2.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -113,6 +114,7 @@ protected:
     const ASTPtr partition_by;
     const bool distributed_processing;
 
+    LoggerPtr log;
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
     std::mutex configuration_update_mutex;

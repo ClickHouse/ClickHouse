@@ -51,8 +51,14 @@ String StorageS3Configuration::getDataSourceDescription()
 
 void StorageS3Configuration::check(ContextPtr context) const
 {
+    validateNamespace(url.bucket);
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
     context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
+}
+
+void StorageS3Configuration::validateNamespace(const String & name) const
+{
+    S3::URI::validateBucket(name, {});
 }
 
 StorageS3Configuration::StorageS3Configuration(const StorageS3Configuration & other)

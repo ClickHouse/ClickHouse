@@ -143,8 +143,6 @@ std::unique_ptr<S3::Client> getClient(
         auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
     };
 
-    LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: {} - {}", auth_settings.access_key_id, auth_settings.secret_access_key);
-
     return S3::ClientFactory::instance().create(
         client_configuration,
         client_settings,

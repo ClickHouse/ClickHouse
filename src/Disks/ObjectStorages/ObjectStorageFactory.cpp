@@ -227,9 +227,8 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
         if (uri.back() != '/')
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
 
-        std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
+        auto settings = std::make_unique<HDFSObjectStorageSettings>(
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-            config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
             context->getSettingsRef().hdfs_replication
         );
 

@@ -1,9 +1,14 @@
 #include "StorageObjectStorageSink.h"
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Common/isValidUTF8.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_PARSE_TEXT;
+}
 
 StorageObjectStorageSink::StorageObjectStorageSink(
     ObjectStoragePtr object_storage,
@@ -93,6 +98,7 @@ void StorageObjectStorageSink::release()
     write_buf->finalize();
 }
 
+
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
@@ -111,9 +117,12 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
 
 SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String & partition_id)
 {
-    auto blob = configuration->getPaths().back();
-    auto partition_key = replaceWildcards(blob, partition_id);
-    validatePartitionKey(partition_key, true);
+    auto partition_bucket = replaceWildcards(configuration->getNamespace(), partition_id);
+    validateNamespace(partition_bucket);
+
+    auto partition_key = replaceWildcards(configuration->getPath(), partition_id);
+    validateKey(partition_key);
+
     return std::make_shared<StorageObjectStorageSink>(
         object_storage,
         configuration,
@@ -122,6 +131,31 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         context,
         partition_key
     );
+}
+
+void PartitionedStorageObjectStorageSink::validateKey(const String & str)
+{
+    /// See:
+    /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
+    /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#putobject
+
+    if (str.empty() || str.size() > 1024)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect key length (not empty, max 1023 characters), got: {}", str.size());
+
+    if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in key");
+
+    validatePartitionKey(str, true);
+}
+
+void PartitionedStorageObjectStorageSink::validateNamespace(const String & str)
+{
+    configuration->validateNamespace(str);
+
+    if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in bucket name");
+
+    validatePartitionKey(str, false);
 }
 
 }

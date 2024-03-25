@@ -6,6 +6,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/IAST.h>
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
 
 namespace DB
@@ -13,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguration & other)
@@ -29,35 +31,51 @@ void StorageHDFSConfiguration::check(ContextPtr context) const
     checkHDFSURL(fs::path(url) / path);
 }
 
-ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage(ContextPtr context, bool /* is_readonly */) /// NOLINT
+ObjectStoragePtr StorageHDFSConfiguration::createObjectStorage( /// NOLINT
+    ContextPtr context,
+    bool /* is_readonly */)
 {
     assertInitialized();
-
-    if (!url.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS url is empty");
-
-    auto settings = std::make_unique<HDFSObjectStorageSettings>();
-    return std::make_shared<HDFSObjectStorage>(url, std::move(settings), context->getConfigRef());
+    const auto & settings = context->getSettingsRef();
+    auto hdfs_settings = std::make_unique<HDFSObjectStorageSettings>(
+        settings.remote_read_min_bytes_for_seek,
+        settings.hdfs_replication
+    );
+    return std::make_shared<HDFSObjectStorage>(url, std::move(hdfs_settings), context->getConfigRef());
 }
 
-void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr, bool /* with_structure */)
+void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool /* with_structure */)
 {
     url = checkAndGetLiteralArgument<String>(args[0], "url");
 
     if (args.size() > 1)
+    {
+        args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context);
         format = checkAndGetLiteralArgument<String>(args[1], "format_name");
-    else
-        format = "auto";
+    }
 
     if (args.size() == 3)
+    {
+        args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context);
         compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
-    else
-        compression_method = "auto";
+    }
 
-    const size_t begin_of_path = url.find('/', url.find("//") + 2);
-    path = url.substr(begin_of_path + 1);
-    url = url.substr(0, begin_of_path);
+    auto pos = url.find("//");
+    if (pos == std::string::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid url: {}", url);
+
+    pos = url.find('/', pos + 2);
+    if (pos == std::string::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid url: {}", url);
+
+    path = url.substr(pos + 1);
+    url = url.substr(0, pos);
     paths = {path};
+}
+
+void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fromNamedColection() is not implemented");
 }
 
 }

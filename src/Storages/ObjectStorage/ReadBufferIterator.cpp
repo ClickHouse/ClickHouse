@@ -31,7 +31,7 @@ ReadBufferIterator::ReadBufferIterator(
     , query_settings(query_settings_)
     , schema_cache(schema_cache_)
     , read_keys(read_keys_)
-    , format(configuration->format.empty() || configuration->format == "auto" ? std::nullopt : std::optional<String>(configuration->format))
+    , format(configuration->format == "auto" ? std::nullopt : std::optional<String>(configuration->format))
     , prev_read_keys_size(read_keys_.size())
 {
 }
@@ -191,7 +191,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         {
             if (first)
             {
-                if (format)
+                if (format.has_value())
                     throw Exception(
                         ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                         "The table structure cannot be extracted from a {} format file, because there are no files with provided path "
