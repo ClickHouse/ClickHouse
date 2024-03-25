@@ -20,7 +20,7 @@ EvictionCandidates::~EvictionCandidates()
 {
     /// Here `queue_entries_to_invalidate` contains queue entries
     /// for file segments which were successfully removed in evict().
-    /// This set is non-empty in desctructor only if there was
+    /// This set is non-empty in destructor only if there was
     /// an exception before we called finalize() or in the middle of finalize().
     for (const auto & iterator : queue_entries_to_invalidate)
     {
