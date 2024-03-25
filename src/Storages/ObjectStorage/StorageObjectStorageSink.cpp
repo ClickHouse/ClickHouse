@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
+    extern const int BAD_ARGUMENTS;
 }
 
 StorageObjectStorageSink::StorageObjectStorageSink(
