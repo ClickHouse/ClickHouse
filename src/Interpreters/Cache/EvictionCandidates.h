@@ -18,7 +18,7 @@ public:
 
     void add(LockedKey & locked_key, const FileSegmentMetadataPtr & candidate);
 
-    void add(const EvictionCandidates & other, const CachePriorityGuard::Lock &) { candidates.insert(other.candidates.begin(), other.candidates.end()); }
+    void insert(EvictionCandidates && other, const CachePriorityGuard::Lock &);
 
     void evict(FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock &);
 

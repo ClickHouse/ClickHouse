@@ -195,7 +195,7 @@ EvictionCandidates SLRUFileCachePriority::collectCandidatesForEviction(
         desired_protected_size, desired_protected_elements_num,
         max_candidates_to_evict ? max_candidates_to_evict - res.size() : 0, stat, lock);
 
-    res.add(res_add, lock);
+    res.insert(std::move(res_add), lock);
     return res;
 }
 

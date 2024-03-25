@@ -40,7 +40,8 @@ void EvictionCandidates::evict(FileCacheQueryLimit::QueryContext * query_context
 }
 
 std::vector<std::string> EvictionCandidates::evictFromMemory(
-    FileCacheQueryLimit::QueryContext * query_context, const CachePriorityGuard::Lock & lock)
+    FileCacheQueryLimit::QueryContext * query_context,
+    const CachePriorityGuard::Lock & lock)
 {
     return evictImpl(true, query_context, lock);
 }
@@ -99,4 +100,10 @@ std::vector<std::string> EvictionCandidates::evictImpl(
     }
     return evicted_paths;
 }
+
+void EvictionCandidates::insert(EvictionCandidates && other, const CachePriorityGuard::Lock &)
+{
+    candidates.insert(make_move_iterator(other.candidates.begin()), make_move_iterator(other.candidates.end()));
+}
+
 }
