@@ -53,51 +53,45 @@ constexpr size_t ASIN_SQRT_LUT_SIZE = 512;
 constexpr size_t COS_LUT_SIZE = 1024; // maxerr 0.00063%
 constexpr size_t METRIC_LUT_SIZE = 1024;
 
+/// Earth radius in meters using WGS84 authalic radius.
+/// We use this value to be consistent with H3 library.
+constexpr double EARTH_RADIUS = 6371007.180918475;
+constexpr double EARTH_DIAMETER = 2.0 * EARTH_RADIUS;
+constexpr double PI = std::numbers::pi_v<double>;
+
+template <typename T>
+T sqr(T v) { return v * v; }
+
 template <typename T>
 struct Impl
 {
-    static constexpr T PI = std::numbers::pi_v<T>;
-    static constexpr T RAD_IN_DEG = static_cast<T>(PI / T(180.0));
-    static constexpr T RAD_IN_DEG_HALF = static_cast<T>(PI / T(360.0));
-
-    static constexpr T COS_LUT_SIZE_F = T(1024.0);
-
-    /** Earth radius in meters using WGS84 authalic radius.
-      * We use this value to be consistent with H3 library.
-      */
-    static constexpr T EARTH_RADIUS = T(6371007.180918475);
-    static constexpr T EARTH_DIAMETER = 2 * EARTH_RADIUS;
-
     T cos_lut[COS_LUT_SIZE + 1];       /// cos(x) table
     T asin_sqrt_lut[ASIN_SQRT_LUT_SIZE + 1]; /// asin(sqrt(x)) * earth_diameter table
-
     T sphere_metric_lut[METRIC_LUT_SIZE + 1]; /// sphere metric, unitless: the distance in degrees for one degree across longitude depending on latitude
     T sphere_metric_meters_lut[METRIC_LUT_SIZE + 1]; /// sphere metric: the distance in meters for one degree across longitude depending on latitude
     T wgs84_metric_meters_lut[2 * (METRIC_LUT_SIZE + 1)]; /// ellipsoid metric: the distance in meters across one degree latitude/longitude depending on latitude
 
-    static T sqr(T v) { return v * v; }
-
     Impl()
     {
         for (size_t i = 0; i <= COS_LUT_SIZE; ++i)
-            cos_lut[i] = std::cos(2 * PI * i / COS_LUT_SIZE); // [0, 2 * pi] -> [0, COS_LUT_SIZE]
+            cos_lut[i] = T(std::cos(2 * PI * static_cast<double>(i) / COS_LUT_SIZE)); // [0, 2 * pi] -> [0, COS_LUT_SIZE]
 
         for (size_t i = 0; i <= ASIN_SQRT_LUT_SIZE; ++i)
-            asin_sqrt_lut[i] = std::asin(std::sqrt(static_cast<T>(i) / ASIN_SQRT_LUT_SIZE)); // [0, 1] -> [0, ASIN_SQRT_LUT_SIZE]
+            asin_sqrt_lut[i] = T(std::asin(std::sqrt(static_cast<double>(i) / ASIN_SQRT_LUT_SIZE))); // [0, 1] -> [0, ASIN_SQRT_LUT_SIZE]
 
         for (size_t i = 0; i <= METRIC_LUT_SIZE; ++i)
         {
-            T latitude = i * (PI / METRIC_LUT_SIZE) - PI * T(0.5); // [-pi / 2, pi / 2] -> [0, METRIC_LUT_SIZE]
+            double latitude = i * (PI / METRIC_LUT_SIZE) - PI * 0.5; // [-pi / 2, pi / 2] -> [0, METRIC_LUT_SIZE]
 
             /// Squared metric coefficients (for the distance in meters) on a tangent plane, for latitude and longitude (in degrees),
             /// depending on the latitude (in radians).
 
             /// https://github.com/mapbox/cheap-ruler/blob/master/index.js#L67
-            wgs84_metric_meters_lut[i * 2] = sqr(T(111132.09) - T(566.05) * std::cos(T(2.0) * latitude) + T(1.20) * std::cos(T(4.0) * latitude));
-            wgs84_metric_meters_lut[i * 2 + 1] = sqr(T(111415.13) * std::cos(latitude) - T(94.55) * std::cos(T(3.0) * latitude) + T(0.12) * std::cos(T(5.0) * latitude));
-            sphere_metric_meters_lut[i] = sqr((EARTH_DIAMETER * PI / 360) * std::cos(latitude));
+            wgs84_metric_meters_lut[i * 2] = T(sqr(111132.09 - 566.05 * std::cos(2.0 * latitude) + 1.20 * std::cos(4.0 * latitude)));
+            wgs84_metric_meters_lut[i * 2 + 1] = T(sqr(111415.13 * std::cos(latitude) - 94.55 * std::cos(3.0 * latitude) + 0.12 * std::cos(5.0 * latitude)));
+            sphere_metric_meters_lut[i] = T(sqr((EARTH_DIAMETER * PI / 360) * std::cos(latitude)));
 
-            sphere_metric_lut[i] = sqr(std::cos(latitude));
+            sphere_metric_lut[i] = T(sqr(std::cos(latitude)));
         }
     }
 
@@ -117,7 +111,7 @@ struct Impl
 
     inline T fastCos(T x)
     {
-        T y = std::abs(x) * (COS_LUT_SIZE_F / PI / T(2.0));
+        T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
         y -= i;
         i &= (COS_LUT_SIZE - 1);
@@ -126,7 +120,7 @@ struct Impl
 
     inline T fastSin(T x)
     {
-        T y = std::abs(x) * (COS_LUT_SIZE_F / PI / T(2.0));
+        T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
         y -= i;
         i = (i - COS_LUT_SIZE / 4) & (COS_LUT_SIZE - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
@@ -194,7 +188,7 @@ T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
         }
         else if constexpr (method == Method::SPHERE_METERS)
         {
-            k_lat = impl<T>.sqr(impl<T>.EARTH_DIAMETER * impl<T>.PI / T(360.0));
+            k_lat = sqr(T(EARTH_DIAMETER) * T(PI) / T(360.0));
 
             k_lon = impl<T>.sphere_metric_meters_lut[latitude_midpoint_index]
                 + (impl<T>.sphere_metric_meters_lut[latitude_midpoint_index + 1] - impl<T>.sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
@@ -213,15 +207,18 @@ T distance(T lon1deg, T lat1deg, T lon2deg, T lat2deg)
     }
     else
     {
-        // points too far away; use haversine
+        /// Points are too far away: use Haversine.
 
-        T a = impl<T>.sqr(impl<T>.fastSin(lat_diff * impl<T>.RAD_IN_DEG_HALF))
-            + impl<T>.fastCos(lat1deg * impl<T>.RAD_IN_DEG) * impl<T>.fastCos(lat2deg * impl<T>.RAD_IN_DEG) * impl<T>.sqr(impl<T>.fastSin(lon_diff * impl<T>.RAD_IN_DEG_HALF));
+        static constexpr T RAD_IN_DEG = T(PI / 180.0);
+        static constexpr T RAD_IN_DEG_HALF = T(PI / 360.0);
+
+        T a = sqr(impl<T>.fastSin(lat_diff * RAD_IN_DEG_HALF))
+            + impl<T>.fastCos(lat1deg * RAD_IN_DEG) * impl<T>.fastCos(lat2deg * RAD_IN_DEG) * sqr(impl<T>.fastSin(lon_diff * RAD_IN_DEG_HALF));
 
         if constexpr (method == Method::SPHERE_DEGREES)
-            return (T(360.0) / impl<T>.PI) * impl<T>.fastAsinSqrt(a);
+            return (T(360.0) / T(PI)) * impl<T>.fastAsinSqrt(a);
         else
-            return impl<T>.EARTH_DIAMETER * impl<T>.fastAsinSqrt(a);
+            return T(EARTH_DIAMETER) * impl<T>.fastAsinSqrt(a);
     }
 }
 
