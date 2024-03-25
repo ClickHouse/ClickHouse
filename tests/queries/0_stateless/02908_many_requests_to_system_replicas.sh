@@ -45,6 +45,13 @@ done
 wait;
 
 
+# Check results with different max_block_size
+$CLICKHOUSE_CLIENT -q 'SELECT count(), sum(total_replicas), sum(active_replicas) FROM system.replicas WHERE database=currentDatabase()'
+$CLICKHOUSE_CLIENT -q 'SELECT count(), sum(total_replicas), sum(active_replicas) FROM system.replicas WHERE database=currentDatabase() SETTINGS max_block_size=1, send_logs_level=\'test\
+$CLICKHOUSE_CLIENT -q 'SELECT count(), sum(total_replicas), sum(active_replicas) FROM system.replicas WHERE database=currentDatabase() SETTINGS max_block_size=7'
+$CLICKHOUSE_CLIENT -q 'SELECT count(), sum(total_replicas), sum(active_replicas) FROM system.replicas WHERE database=currentDatabase() SETTINGS max_block_size=111'
+
+
 echo "Making $CONCURRENCY requests to system.replicas"
 
 for i in $(seq 1 $CONCURRENCY)
