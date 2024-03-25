@@ -4,6 +4,9 @@
 
 using namespace DB;
 
+namespace
+{
+
 struct TestCase
 {
     String query;
@@ -26,6 +29,8 @@ std::ostream & operator<<(std::ostream & ostr, const TestCase & test_case)
     return ostr << '"' << test_case.query << "\" -> \"" << test_case.res << "\" ok:" << test_case.ok;
 }
 
+}
+
 class QuoteUnrecognizedTokensTest : public ::testing::TestWithParam<TestCase>
 {
 };
@@ -33,8 +38,8 @@ class QuoteUnrecognizedTokensTest : public ::testing::TestWithParam<TestCase>
 TEST_P(QuoteUnrecognizedTokensTest, escape)
 {
     const auto & [query, expected, ok] = GetParam();
-    String actual;
-    bool res = tryQuoteUnrecognizedTokens(query, actual);
+    String actual = query;
+    bool res = tryQuoteUnrecognizedTokens(actual);
     EXPECT_EQ(ok, res);
     EXPECT_EQ(expected, actual);
 }
@@ -47,12 +52,12 @@ INSTANTIATE_TEST_SUITE_P(MaterializedMySQL, QuoteUnrecognizedTokensTest, ::testi
     },
     {
         "test '\"`",
-        "",
+        "test '\"`",
         false
     },
     {
         "SELECT * FROM db.`table`",
-        "",
+        "SELECT * FROM db.`table`",
         false
     },
     {
@@ -72,22 +77,22 @@ INSTANTIATE_TEST_SUITE_P(MaterializedMySQL, QuoteUnrecognizedTokensTest, ::testi
     },
     {
         "`道渠`",
-        "",
+        "`道渠`",
         false
     },
     {
         "'道'",
-        "",
+        "'道'",
         false
     },
     {
         "\"道\"",
-        "",
+        "\"道\"",
         false
     },
     {
         "` 道 test 渠 `",
-        "",
+        "` 道 test 渠 `",
         false
     },
     {
@@ -97,12 +102,12 @@ INSTANTIATE_TEST_SUITE_P(MaterializedMySQL, QuoteUnrecognizedTokensTest, ::testi
     },
     {
         "skip 123 `道` skip",
-        "",
+        "skip 123 `道` skip",
         false
     },
     {
         "skip `道 skip 123",
-        "",
+        "skip `道 skip 123",
         false
     },
     {
@@ -167,7 +172,7 @@ INSTANTIATE_TEST_SUITE_P(MaterializedMySQL, QuoteUnrecognizedTokensTest, ::testi
     },
     {
         "--TABLE 您a日.您a您a您a(test INT",
-        "",
+        "--TABLE 您a日.您a您a您a(test INT",
         false
     },
     {
@@ -177,7 +182,7 @@ INSTANTIATE_TEST_SUITE_P(MaterializedMySQL, QuoteUnrecognizedTokensTest, ::testi
     },
     {
         " /* TABLE 您a日.您a您a您a(test INT",
-        "",
+        " /* TABLE 您a日.您a您a您a(test INT",
         false
     },
     {
@@ -207,12 +212,12 @@ INSTANTIATE_TEST_SUITE_P(MaterializedMySQL, QuoteUnrecognizedTokensTest, ::testi
     },
     {
         "CREATE TABLE db.`道渠`",
-        "",
+        "CREATE TABLE db.`道渠`",
         false
     },
     {
         "CREATE TABLE db.`道渠",
-        "",
+        "CREATE TABLE db.`道渠",
         false
     },
     {

@@ -24,7 +24,7 @@ class RabbitMQHandler : public AMQP::LibUvHandler
 {
 
 public:
-    RabbitMQHandler(uv_loop_t * loop_, Poco::Logger * log_);
+    RabbitMQHandler(uv_loop_t * loop_, LoggerPtr log_);
 
     void onError(AMQP::TcpConnection * connection, const char * message) override;
     void onReady(AMQP::TcpConnection * connection) override;
@@ -50,7 +50,7 @@ public:
 
 private:
     uv_loop_t * loop;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::atomic<bool> connection_running, loop_running;
     std::atomic<UInt8> loop_state;

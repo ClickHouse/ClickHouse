@@ -14,24 +14,25 @@
 
 /**
 
+#include <Common/randomSeed.h>
 #include <fstream>
 #include <random>
+#include <pcg_random.hpp>
 
 using namespace std;
 
 int main()
 {
     std::string s;
-    std::random_device dev;
-    std::mt19937 rng(dev());
-    std::uniform_int_distribution<std::mt19937::result_type> dist(0, 25);
-    std::binomial_distribution<std::mt19937::result_type> binomial1(100, 0.01);
-    std::binomial_distribution<std::mt19937::result_type> binomial2(100, 0.02);
-    std::binomial_distribution<std::mt19937::result_type> binomial4(100, 0.04);
-    std::binomial_distribution<std::mt19937::result_type> binomial8(100, 0.08);
-    std::binomial_distribution<std::mt19937::result_type> binomial16(100, 0.16);
-    std::binomial_distribution<std::mt19937::result_type> binomial24(100, 0.24);
-    std::binomial_distribution<std::mt19937::result_type> binomial48(100, 0.48);
+    pcg64_fast rng{randomSeed()};
+    std::uniform_int_distribution<pcg64_fast::result_type> dist(0, 25);
+    std::binomial_distribution<pcg64_fast::result_type> binomial1(100, 0.01);
+    std::binomial_distribution<pcg64_fast::result_type> binomial2(100, 0.02);
+    std::binomial_distribution<pcg64_fast::result_type> binomial4(100, 0.04);
+    std::binomial_distribution<pcg64_fast::result_type> binomial8(100, 0.08);
+    std::binomial_distribution<pcg64_fast::result_type> binomial16(100, 0.16);
+    std::binomial_distribution<pcg64_fast::result_type> binomial24(100, 0.24);
+    std::binomial_distribution<pcg64_fast::result_type> binomial48(100, 0.48);
     // 11GB
     std::ofstream f("/tmp/terms.csv");
     size_t l1, l2, l4, l8, l16, l24, l48;

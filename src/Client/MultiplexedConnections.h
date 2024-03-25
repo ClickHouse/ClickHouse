@@ -105,8 +105,7 @@ private:
     /// std::nullopt if parallel reading from replicas is not used
     std::optional<ReplicaInfo> replica_info;
 
-    /// A mutex for the sendCancel function to execute safely
-    /// in separate thread.
+    /// A mutex for the sendCancel function to execute safely in separate thread.
     mutable std::mutex cancel_mutex;
 
     friend struct RemoteQueryExecutorRoutine;

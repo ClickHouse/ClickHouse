@@ -39,7 +39,8 @@ MemoryStatisticsOS::MemoryStatisticsOS()
     fd = ::open(filename, O_RDONLY | O_CLOEXEC);
 
     if (-1 == fd)
-        throwFromErrno("Cannot open file " + std::string(filename), errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, filename, "Cannot open file {}", filename);
 }
 
 MemoryStatisticsOS::~MemoryStatisticsOS()
@@ -48,9 +49,8 @@ MemoryStatisticsOS::~MemoryStatisticsOS()
     {
         try
         {
-            throwFromErrno(
-                    "File descriptor for \"" + std::string(filename) + "\" could not be closed. "
-                    "Something seems to have gone wrong. Inspect errno.", ErrorCodes::CANNOT_CLOSE_FILE);
+            ErrnoException::throwFromPath(
+                ErrorCodes::CANNOT_CLOSE_FILE, filename, "File descriptor for '{}' could not be closed", filename);
         }
         catch (const ErrnoException &)
         {
@@ -77,7 +77,7 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
             if (errno == EINTR)
                 continue;
 
-            throwFromErrno("Cannot read from file " + std::string(filename), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, filename, "Cannot read from file {}", filename);
         }
 
         assert(res >= 0);
@@ -136,7 +136,7 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
     size_t len = sizeof(struct kinfo_proc);
 
     if (-1 == ::sysctl(mib, 4, &kp, &len, nullptr, 0))
-        throwFromErrno("Cannot sysctl(kern.proc.pid." + std::to_string(self) + ")", ErrorCodes::SYSTEM_ERROR);
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot sysctl(kern.proc.pid.{})", std::to_string(self));
 
     if (sizeof(struct kinfo_proc) != len)
         throw DB::Exception(DB::ErrorCodes::SYSTEM_ERROR, "Kernel returns structure of {} bytes instead of expected {}",

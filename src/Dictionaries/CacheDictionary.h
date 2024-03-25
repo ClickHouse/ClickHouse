@@ -24,6 +24,14 @@
 
 namespace DB
 {
+
+struct CacheDictionaryConfiguration
+{
+    const bool allow_read_expired_keys;
+    const DictionaryLifetime lifetime;
+    const bool use_async_executor = false;
+};
+
 /** CacheDictionary store keys in cache storage and can asynchronous and synchronous updates during keys fetch.
 
     If keys are not found in storage during fetch, dictionary start update operation with update queue.
@@ -58,8 +66,7 @@ public:
         DictionarySourcePtr source_ptr_,
         CacheDictionaryStoragePtr cache_storage_ptr_,
         CacheDictionaryUpdateQueueConfiguration update_queue_configuration_,
-        DictionaryLifetime dict_lifetime_,
-        bool allow_read_expired_keys_);
+        CacheDictionaryConfiguration configuration_);
 
     ~CacheDictionary() override;
 
@@ -71,27 +78,27 @@ public:
 
     double getLoadFactor() const override;
 
-    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load(std::memory_order_relaxed);
+        size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override
     {
-        size_t queries = query_count.load(std::memory_order_relaxed);
+        size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(hit_count.load(std::memory_order_acquire)) / queries;
+        return static_cast<double>(hit_count.load()) / queries;
     }
 
     bool supportUpdates() const override { return false; }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<CacheDictionary>(
                 getDictionaryID(),
@@ -99,13 +106,12 @@ public:
                 getSourceAndUpdateIfNeeded()->clone(),
                 cache_storage_ptr,
                 update_queue.getConfiguration(),
-                dict_lifetime,
-                allow_read_expired_keys);
+                configuration);
     }
 
     DictionarySourcePtr getSource() const override;
 
-    const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
+    const DictionaryLifetime & getLifetime() const override { return configuration.lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
@@ -120,18 +126,18 @@ public:
     }
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        DefaultOrFilter default_or_filter) const override;
 
     Columns getColumns(
         const Strings & attribute_names,
-        const DataTypes & result_types,
+        const DataTypes & attribute_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const Columns & default_values_columns) const override;
+        DefaultsOrFilter defaults_or_filter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -151,19 +157,21 @@ public:
 private:
     using FetchResult = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, SimpleKeysStorageFetchResult, ComplexKeysStorageFetchResult>;
 
-    static MutableColumns aggregateColumnsInOrderOfKeys(
+    MutableColumns aggregateColumnsInOrderOfKeys(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns,
-        const PaddedPODArray<KeyState> & key_index_to_state);
+        const PaddedPODArray<KeyState> & key_index_to_state,
+        IColumn::Filter * default_mask = nullptr) const;
 
-    static MutableColumns aggregateColumns(
+    MutableColumns aggregateColumns(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns_from_storage,
         const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
         const MutableColumns & fetched_columns_during_update,
-        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index);
+        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
+        IColumn::Filter * default_mask = nullptr) const;
 
     void update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> update_unit_ptr);
 
@@ -194,11 +202,9 @@ private:
     CacheDictionaryStoragePtr cache_storage_ptr;
     mutable CacheDictionaryUpdateQueue<dictionary_key_type> update_queue;
 
-    const DictionaryLifetime dict_lifetime;
+    const CacheDictionaryConfiguration configuration;
 
-    Poco::Logger * log;
-
-    const bool allow_read_expired_keys;
+    LoggerPtr log;
 
     mutable pcg64 rnd_engine;
 

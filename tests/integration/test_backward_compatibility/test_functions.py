@@ -5,7 +5,7 @@
 
 import logging
 import pytest
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
@@ -13,11 +13,7 @@ upstream = cluster.add_instance("upstream", allow_analyzer=False)
 backward = cluster.add_instance(
     "backward",
     image="clickhouse/clickhouse-server",
-    # Note that a bug changed the string representation of several aggregations in 22.9 and 22.10 and some minor
-    # releases of 22.8, 22.7 and 22.3
-    # See https://github.com/ClickHouse/ClickHouse/issues/42916
-    # Affected at least: singleValueOrNull, last_value, min, max, any, anyLast, anyHeavy, first_value, argMin, argMax
-    tag="22.6",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     allow_analyzer=False,
 )
@@ -148,6 +144,16 @@ def test_string_functions(start_cluster):
         # 22.8 Backward Incompatible Change: Extended range of Date32
         "toDate32OrZero",
         "toDate32OrDefault",
+        # 23.9 changed the base64-handling library from Turbo base64 to aklomp-base64. They differ in the way they deal with base64 values
+        # that are not properly padded by '=', for example below test value v='foo'. (Depending on the specification/context, padding is
+        # mandatory or optional). The former lib produces a value based on implicit padding, the latter lib throws an error.
+        "FROM_BASE64",
+        "base64Decode",
+        # PR #56913 (in v23.11) corrected the way tryBase64Decode() behaved with invalid inputs. Old versions return garbage, new versions
+        # return an empty string (as it was always documented).
+        "tryBase64Decode",
+        # Removed in 23.9
+        "meiliMatch",
     ]
     functions = filter(lambda x: x not in excludes, functions)
 

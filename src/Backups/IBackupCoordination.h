@@ -56,6 +56,12 @@ public:
     /// Returns all mutations of a replicated table which are not finished for some data parts added by addReplicatedPartNames().
     virtual std::vector<MutationInfo> getReplicatedMutations(const String & table_shared_id, const String & replica_name) const = 0;
 
+    /// Adds information about KeeperMap tables
+    virtual void addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup) = 0;
+
+    /// KeeperMap tables use shared storage without local data so only one table should backup the data
+    virtual String getKeeperMapDataPath(const String & table_zookeeper_root_path) const = 0;
+
     /// Adds a data path in backup for a replicated table.
     /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
     /// getReplicatedDataPaths().

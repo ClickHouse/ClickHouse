@@ -63,7 +63,7 @@ echo $c_count
 
 # Valid cases:
 # The default dir is the CWD path in LOCAL mode
-${CLICKHOUSE_LOCAL} --query "
+${CLICKHOUSE_LOCAL} --multiquery --query "
     drop table if exists data;
     create table data (A String, B String) engine=MergeTree() order by A;
     select file('a.txt'), file('b.txt');

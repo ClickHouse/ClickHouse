@@ -9,7 +9,6 @@
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Defines.h>
-#include <Common/Exception.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/copyData.h>
@@ -17,16 +16,28 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskType.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/ObjectStorageKey.h>
 #include <Disks/WriteMode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Disks/DirectoryIterator.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/Exception.h>
+#include "config.h"
 
+#if USE_AZURE_BLOB_STORAGE
+#include <Common/MultiVersion.h>
+#include <azure/storage/blobs.hpp>
+#endif
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
@@ -35,7 +46,7 @@ using ObjectAttributes = std::map<std::string, std::string>;
 
 struct ObjectMetadata
 {
-    uint64_t size_bytes;
+    uint64_t size_bytes = 0;
     std::optional<Poco::Timestamp> last_modified;
     std::optional<ObjectAttributes> attributes;
 };
@@ -43,16 +54,31 @@ struct ObjectMetadata
 struct RelativePathWithMetadata
 {
     String relative_path;
-    ObjectMetadata metadata{};
+    ObjectMetadata metadata;
 
     RelativePathWithMetadata() = default;
 
-    RelativePathWithMetadata(const String & relative_path_, const ObjectMetadata & metadata_)
-        : relative_path(relative_path_), metadata(metadata_)
+    RelativePathWithMetadata(String relative_path_, ObjectMetadata metadata_)
+        : relative_path(std::move(relative_path_))
+        , metadata(std::move(metadata_))
+    {}
+};
+
+struct ObjectKeyWithMetadata
+{
+    ObjectStorageKey key;
+    ObjectMetadata metadata;
+
+    ObjectKeyWithMetadata() = default;
+
+    ObjectKeyWithMetadata(ObjectStorageKey key_, ObjectMetadata metadata_)
+        : key(std::move(key_))
+        , metadata(std::move(metadata_))
     {}
 };
 
 using RelativePathsWithMetadata = std::vector<RelativePathWithMetadata>;
+using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
 
 class IObjectStorageIterator;
 using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
@@ -65,9 +91,13 @@ class IObjectStorage
 public:
     IObjectStorage() = default;
 
-    virtual DataSourceDescription getDataSourceDescription() const = 0;
-
     virtual std::string getName() const = 0;
+
+    virtual ObjectStorageType getType() const = 0;
+
+    virtual std::string getCommonKeyPrefix() const = 0;
+
+    virtual std::string getDescription() const = 0;
 
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
@@ -131,6 +161,8 @@ public:
     virtual void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) = 0;
 
     /// Copy object to another instance of object storage
@@ -139,6 +171,8 @@ public:
     virtual void copyObjectToAnotherObjectStorage( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {});
 
@@ -172,7 +206,7 @@ public:
 
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
-    virtual std::string generateBlobNameForPath(const std::string & path);
+    virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path) const = 0;
 
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
@@ -184,16 +218,21 @@ public:
 
     virtual bool isReadOnly() const { return false; }
     virtual bool isWriteOnce() const { return false; }
+    virtual bool isPlain() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
-
-    virtual ReadSettings getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & /* path */) const { return settings; }
-
-    virtual WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & /* path */) const { return settings; }
 
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
+
+#if USE_AZURE_BLOB_STORAGE
+    virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
+    }
+#endif
+
 
 private:
     mutable std::mutex throttlers_mutex;

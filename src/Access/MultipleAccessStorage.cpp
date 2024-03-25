@@ -179,7 +179,7 @@ ConstStoragePtr MultipleAccessStorage::getStorage(const UUID & id) const
     return const_cast<MultipleAccessStorage *>(this)->getStorage(id);
 }
 
-StoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_name)
+StoragePtr MultipleAccessStorage::findStorageByName(const String & storage_name)
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
@@ -192,13 +192,13 @@ StoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_n
 }
 
 
-ConstStoragePtr MultipleAccessStorage::findStorageByName(const DB::String & storage_name) const
+ConstStoragePtr MultipleAccessStorage::findStorageByName(const String & storage_name) const
 {
     return const_cast<MultipleAccessStorage *>(this)->findStorageByName(storage_name);
 }
 
 
-StoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_name)
+StoragePtr MultipleAccessStorage::getStorageByName(const String & storage_name)
 {
     auto storage = findStorageByName(storage_name);
     if (storage)
@@ -208,12 +208,12 @@ StoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_na
 }
 
 
-ConstStoragePtr MultipleAccessStorage::getStorageByName(const DB::String & storage_name) const
+ConstStoragePtr MultipleAccessStorage::getStorageByName(const String & storage_name) const
 {
     return const_cast<MultipleAccessStorage *>(this)->getStorageByName(storage_name);
 }
 
-StoragePtr MultipleAccessStorage::findExcludingStorage(AccessEntityType type, const DB::String & name, DB::MultipleAccessStorage::StoragePtr exclude) const
+StoragePtr MultipleAccessStorage::findExcludingStorage(AccessEntityType type, const String & name, DB::MultipleAccessStorage::StoragePtr exclude) const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
@@ -415,7 +415,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 }
 
 
-std::optional<UUID>
+std::optional<AuthResult>
 MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address,
                                         const ExternalAuthenticators & external_authenticators,
                                         bool throw_if_user_not_exists,
@@ -426,14 +426,14 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
     {
         const auto & storage = (*storages)[i];
         bool is_last_storage = (i == storages->size() - 1);
-        auto id = storage->authenticate(credentials, address, external_authenticators,
+        auto auth_result = storage->authenticate(credentials, address, external_authenticators,
                                         (throw_if_user_not_exists && is_last_storage),
                                         allow_no_password, allow_plaintext_password);
-        if (id)
+        if (auth_result)
         {
             std::lock_guard lock{mutex};
-            ids_cache.set(*id, storage);
-            return id;
+            ids_cache.set(auth_result->user_id, storage);
+            return auth_result;
         }
     }
 

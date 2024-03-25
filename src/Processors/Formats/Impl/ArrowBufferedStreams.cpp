@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
-#include <IO/PeekableReadBuffer.h>
 #include <arrow/buffer.h>
 #include <arrow/util/future.h>
 #include <arrow/io/memory.h>
@@ -155,7 +154,7 @@ arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::GetSize()
 
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_t position, int64_t nbytes, void* out)
 {
-    return in.readBigAt(reinterpret_cast<char*>(out), nbytes, position);
+    return in.readBigAt(reinterpret_cast<char*>(out), nbytes, position, nullptr);
 }
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_t position, int64_t nbytes)

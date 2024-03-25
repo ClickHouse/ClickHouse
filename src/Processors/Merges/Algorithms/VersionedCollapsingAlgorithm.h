@@ -25,6 +25,7 @@ public:
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false);
 
+    const char * getName() const override { return "VersionedCollapsingAlgorithm"; }
     Status merge() override;
 
 private:

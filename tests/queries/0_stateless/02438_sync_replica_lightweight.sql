@@ -24,7 +24,8 @@ system start replicated sends rmt1;
 system sync replica rmt2 lightweight;   -- waits for fetches, not merges
 select type, new_part_name from system.replication_queue where database=currentDatabase() and table='rmt2' order by new_part_name;
 select 3, n, _part from rmt1 order by n;
-select 4, n, _part from rmt2 order by n;
+select 4, n from rmt2 order by n;
+select type, new_part_name from system.replication_queue where database=currentDatabase() and table='rmt2' order by new_part_name;
 
 system start merges rmt2;
 system sync replica rmt2;

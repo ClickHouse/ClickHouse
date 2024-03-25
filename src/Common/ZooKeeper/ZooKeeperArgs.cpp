@@ -39,12 +39,14 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
         throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "Timeout cannot be negative");
 
     /// init get_priority_load_balancing
-    get_priority_load_balancing.hostname_differences.resize(hosts.size());
+    get_priority_load_balancing.hostname_prefix_distance.resize(hosts.size());
+    get_priority_load_balancing.hostname_levenshtein_distance.resize(hosts.size());
     const String & local_hostname = getFQDNOrHostName();
     for (size_t i = 0; i < hosts.size(); ++i)
     {
         const String & node_host = hosts[i].substr(0, hosts[i].find_last_of(':'));
-        get_priority_load_balancing.hostname_differences[i] = DB::getHostNameDifference(local_hostname, node_host);
+        get_priority_load_balancing.hostname_prefix_distance[i] = DB::getHostNamePrefixDistance(local_hostname, node_host);
+        get_priority_load_balancing.hostname_levenshtein_distance[i] = DB::getHostNameLevenshteinDistance(local_hostname, node_host);
     }
 }
 
@@ -130,6 +132,8 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
 
 void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 {
+    zookeeper_name = config_name;
+
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_name, keys);
 
@@ -191,6 +195,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             chroot = config.getString(config_name + "." + key);
         }
+        else if (key == "sessions_path")
+        {
+            sessions_path = config.getString(config_name + "." + key);
+        }
         else if (key == "implementation")
         {
             implementation = config.getString(config_name + "." + key);
@@ -211,6 +219,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
                 .min_sec = config.getUInt(config_name + "." + key + ".min"),
                 .max_sec = config.getUInt(config_name + "." + key + ".max"),
             };
+        }
+        else if (key == "use_compression")
+        {
+            use_compression = config.getBool(config_name + "." + key);
         }
         else
             throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown key {} in config file", key);

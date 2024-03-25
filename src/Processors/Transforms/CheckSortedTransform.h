@@ -13,7 +13,7 @@ public:
     CheckSortedTransform(const Block & header, const SortDescription & sort_description);
 
     String getName() const override { return "CheckSortedTransform"; }
-
+    void setDescription(const String & str) { description = str; }
 
 protected:
     void transform(Chunk & chunk) override;
@@ -21,5 +21,8 @@ protected:
 private:
     SortDescriptionWithPositions sort_description_map;
     Columns last_row;
+    String description;
+    size_t chunk_num = 0;
+    size_t rows_read = 0;
 };
 }

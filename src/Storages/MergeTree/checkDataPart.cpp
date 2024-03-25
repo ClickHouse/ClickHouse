@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
@@ -15,6 +14,8 @@
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/SipHash.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -38,6 +39,7 @@ namespace ErrorCodes
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
+    extern const int NO_FILE_IN_DATA_PART;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
 }
@@ -54,7 +56,7 @@ bool isNotEnoughMemoryErrorCode(int code)
         || code == ErrorCodes::CANNOT_MREMAP;
 }
 
-bool isRetryableException(const std::exception_ptr exception_ptr)
+bool isRetryableException(std::exception_ptr exception_ptr)
 {
     try
     {
@@ -73,6 +75,16 @@ bool isRetryableException(const std::exception_ptr exception_ptr)
         return true;
     }
 #endif
+    catch (const ErrnoException & e)
+    {
+        if (e.getErrno() == EMFILE)
+            return true;
+    }
+    catch (const Coordination::Exception  & e)
+    {
+        if (Coordination::isHardwareError(e.code))
+            return true;
+    }
     catch (const Exception & e)
     {
         if (isNotEnoughMemoryErrorCode(e.code()))
@@ -150,9 +162,20 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     if (data_part_storage.exists(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
-        auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt, std::nullopt);
-        SerializationInfo::Settings settings{ratio_of_defaults, false};
-        serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
+        try
+        {
+            auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt, std::nullopt);
+            SerializationInfo::Settings settings{ratio_of_defaults, false};
+            serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
+        }
+        catch (const Poco::Exception & ex)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, ex.message());
+        }
+        catch (...)
+        {
+            throw;
+        }
     }
 
     auto get_serialization = [&serialization_infos](const auto & column)
@@ -189,7 +212,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         {
             get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
-                String file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage);
+
+                if (!stream_name)
+                    throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                        "There is no file for column '{}' in data part '{}'",
+                        column.name, data_part->name);
+
+                auto file_name = *stream_name + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
             });
         }
@@ -223,7 +253,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
-        if (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"))
+        if (isGinFile(file_name))
             continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
@@ -279,22 +309,11 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     return checksums_data;
 }
 
-IMergeTreeDataPart::Checksums checkDataPartInMemory(const DataPartInMemoryPtr & data_part)
-{
-    IMergeTreeDataPart::Checksums data_checksums;
-    data_checksums.files["data.bin"] = data_part->calculateBlockChecksum();
-    data_part->checksums.checkEqual(data_checksums, true);
-    return data_checksums;
-}
-
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
     std::function<bool()> is_cancelled)
 {
-    if (auto part_in_memory = asInMemoryPart(data_part))
-        return checkDataPartInMemory(part_in_memory);
-
     /// If check of part has failed and it is stored on disk with cache
     /// try to drop cache and check it once again because maybe the cache
     /// is broken not the part itself.
@@ -307,17 +326,17 @@ IMergeTreeDataPart::Checksums checkDataPart(
             throw;
 
         LOG_DEBUG(
-            &Poco::Logger::get("checkDataPart"),
+            getLogger("checkDataPart"),
             "Will drop cache for data part {} and will check it once again", data_part->name);
 
-        auto & cache = *FileCacheFactory::instance().getByName(*cache_name).cache;
+        auto & cache = *FileCacheFactory::instance().getByName(*cache_name)->cache;
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
         {
             auto file_name = it->name();
             if (!data_part_storage.isDirectory(file_name))
             {
                 auto remote_path = data_part_storage.getRemotePath(file_name);
-                cache.removePathIfExists(remote_path);
+                cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
             }
         }
 

@@ -27,10 +27,6 @@
     <query>SELECT avg(num_f)                FROM perf_avg FORMAT Null</query>
     <query>SELECT avgWeighted(num_f, num)   FROM perf_avg FORMAT Null</query>
     <query>SELECT avgWeighted(num_f, num_f) FROM perf_avg FORMAT Null</query>
-    <query>SELECT avgWeighted(num_f, num_u) FROM perf_avg FORMAT Null</query>
-    <query>SELECT avgWeighted(num_u, num_f) FROM perf_avg FORMAT Null</query>
-    <query>SELECT avgWeighted(num_u, num)   FROM perf_avg FORMAT Null</query>
-    <query>SELECT avgWeighted(num_u, num_u) FROM perf_avg FORMAT Null</query>
 
     <query>SELECT avgWeighted(num_f,                num_f)             FROM perf_avg FORMAT Null</query>
     <query>SELECT avgWeighted(toNullable(num_f),    num_f)             FROM perf_avg FORMAT Null</query>

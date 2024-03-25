@@ -90,3 +90,15 @@ select formatDateTime(toDateTime64('2022-12-08 18:11:29.1234', 0, 'UTC'), '%F %T
 select formatDateTime(toDateTime('2022-12-08 18:11:29', 'UTC'), '%F %T.%f');
 select formatDateTime(toDate32('2022-12-08 18:11:29', 'UTC'), '%F %T.%f');
 select formatDateTime(toDate('2022-12-08 18:11:29', 'UTC'), '%F %T.%f');
+
+-- %c %k %l with different formatdatetime_format_without_leading_zeros
+select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%c') settings formatdatetime_format_without_leading_zeros = 0;
+select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%m') settings formatdatetime_format_without_leading_zeros = 0;
+select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%k') settings formatdatetime_format_without_leading_zeros = 0;
+select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%l') settings formatdatetime_format_without_leading_zeros = 0;
+select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%h') settings formatdatetime_format_without_leading_zeros = 0;
+select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%c') settings formatdatetime_format_without_leading_zeros = 1;
+select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%m') settings formatdatetime_format_without_leading_zeros = 1;
+select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%k') settings formatdatetime_format_without_leading_zeros = 1;
+select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%l') settings formatdatetime_format_without_leading_zeros = 1;
+select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%h') settings formatdatetime_format_without_leading_zeros = 1;

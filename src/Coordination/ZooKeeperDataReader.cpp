@@ -8,7 +8,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Coordination/pathUtils.h>
+#include <Coordination/KeeperCommon.h>
 
 
 namespace DB
@@ -90,7 +90,7 @@ void deserializeACLMap(KeeperStorage & storage, ReadBuffer & in)
     }
 }
 
-int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * log) TSA_NO_THREAD_SAFETY_ANALYSIS
+int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     int64_t max_zxid = 0;
     std::string path;
@@ -101,33 +101,39 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
         KeeperStorage::Node node{};
         String data;
         Coordination::read(data, in);
-        node.setData(std::move(data));
-        Coordination::read(node.acl_id, in);
+        node.setData(data);
+        Coordination::read(node.stats.acl_id, in);
 
         /// Deserialize stat
-        Coordination::read(node.stat.czxid, in);
-        Coordination::read(node.stat.mzxid, in);
+        Coordination::read(node.stats.czxid, in);
+        Coordination::read(node.stats.mzxid, in);
         /// For some reason ZXID specified in filename can be smaller
         /// then actual zxid from nodes. In this case we will use zxid from nodes.
-        max_zxid = std::max(max_zxid, node.stat.mzxid);
+        max_zxid = std::max(max_zxid, node.stats.mzxid);
 
-        Coordination::read(node.stat.ctime, in);
-        Coordination::read(node.stat.mtime, in);
-        Coordination::read(node.stat.version, in);
-        Coordination::read(node.stat.cversion, in);
-        Coordination::read(node.stat.aversion, in);
-        Coordination::read(node.stat.ephemeralOwner, in);
-        Coordination::read(node.stat.pzxid, in);
+        int64_t ctime;
+        Coordination::read(ctime, in);
+        node.stats.setCtime(ctime);
+        Coordination::read(node.stats.mtime, in);
+        Coordination::read(node.stats.version, in);
+        Coordination::read(node.stats.cversion, in);
+        Coordination::read(node.stats.aversion, in);
+        int64_t ephemeral_owner;
+        Coordination::read(ephemeral_owner, in);
+        if (ephemeral_owner != 0)
+            node.stats.setEphemeralOwner(ephemeral_owner);
+        Coordination::read(node.stats.pzxid, in);
         if (!path.empty())
         {
-            node.stat.dataLength = static_cast<Int32>(node.getData().length());
-            node.seq_num = node.stat.cversion;
+            if (ephemeral_owner == 0)
+                node.stats.setSeqNum(node.stats.cversion);
+
             storage.container.insertOrReplace(path, node);
 
-            if (node.stat.ephemeralOwner != 0)
-                storage.ephemerals[node.stat.ephemeralOwner].insert(path);
+            if (ephemeral_owner != 0)
+                storage.ephemerals[ephemeral_owner].insert(path);
 
-            storage.acl_map.addUsage(node.acl_id);
+            storage.acl_map.addUsage(node.stats.acl_id);
         }
         Coordination::read(path, in);
         count++;
@@ -140,14 +146,20 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
         if (itr.key != "/")
         {
             auto parent_path = parentNodePath(itr.key);
-            storage.container.updateValue(parent_path, [my_path = itr.key] (KeeperStorage::Node & value) { value.addChild(getBaseNodeName(my_path)); ++value.stat.numChildren; });
+            storage.container.updateValue(
+                parent_path,
+                [my_path = itr.key](KeeperStorage::Node & value)
+                {
+                    value.addChild(getBaseNodeName(my_path));
+                    value.stats.increaseNumChildren();
+                });
         }
     }
 
     return max_zxid;
 }
 
-void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path, Poco::Logger * log) TSA_NO_THREAD_SAFETY_ANALYSIS
+void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::string & snapshot_path, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     LOG_INFO(log, "Deserializing storage snapshot {}", snapshot_path);
     int64_t zxid = getZxidFromName(snapshot_path);
@@ -186,7 +198,7 @@ void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::st
     LOG_INFO(log, "Finished, snapshot ZXID {}", storage.zxid);
 }
 
-void deserializeKeeperStorageFromSnapshotsDir(KeeperStorage & storage, const std::string & path, Poco::Logger * log)
+void deserializeKeeperStorageFromSnapshotsDir(KeeperStorage & storage, const std::string & path, LoggerPtr log)
 {
     namespace fs = std::filesystem;
     std::map<int64_t, std::string> existing_snapshots;
@@ -284,7 +296,7 @@ void deserializeLogMagic(ReadBuffer & in)
 ///     strange, that this 550 bytes obviously was a part of Create transaction,
 ///     but the operation code was -1. We have added debug prints to original
 ///     zookeeper (3.6.3) and found that it just reads 550 bytes of this "Error"
-///     transaction, tooks the first 4 bytes as an error code (it was 79, non
+///     transaction, took the first 4 bytes as an error code (it was 79, non
 ///     existing code) and skip all remaining 546 bytes. NOTE: it looks like a bug
 ///     in ZooKeeper.
 ///
@@ -474,7 +486,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
 
 }
 
-bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * /*log*/) TSA_NO_THREAD_SAFETY_ANALYSIS
+bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, LoggerPtr /*log*/) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     int64_t checksum;
     Coordination::read(checksum, in);
@@ -529,7 +541,7 @@ bool deserializeTxn(KeeperStorage & storage, ReadBuffer & in, Poco::Logger * /*l
     return true;
 }
 
-void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string & log_path, Poco::Logger * log)
+void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string & log_path, LoggerPtr log)
 {
     ReadBufferFromFile reader(log_path);
 
@@ -553,7 +565,7 @@ void deserializeLogAndApplyToStorage(KeeperStorage & storage, const std::string 
     LOG_INFO(log, "Finished {} deserialization, totally read {} records", log_path, counter);
 }
 
-void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string & path, Poco::Logger * log) TSA_NO_THREAD_SAFETY_ANALYSIS
+void deserializeLogsAndApplyToStorage(KeeperStorage & storage, const std::string & path, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     namespace fs = std::filesystem;
     std::map<int64_t, std::string> existing_logs;

@@ -341,7 +341,7 @@ struct MultiMatchAnyImpl
             {
                 String needle(needles[j]);
 
-                const auto & regexp = Regexps::Regexp(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
+                const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
 
                 String required_substr;
                 bool is_trivial;
@@ -364,7 +364,7 @@ struct MultiMatchAnyImpl
                                 {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
                                 0,
                                 cur_haystack_length,
-                                re2_st::RE2::UNANCHORED,
+                                re2::RE2::UNANCHORED,
                                 nullptr,
                                 0);
                         if constexpr (FindAny)
@@ -401,7 +401,7 @@ struct MultiMatchAnyImpl
                                     {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
                                     start_pos,
                                     end_pos,
-                                    re2_st::RE2::UNANCHORED,
+                                    re2::RE2::UNANCHORED,
                                     nullptr,
                                     0);
                             if constexpr (FindAny)

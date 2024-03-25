@@ -1,7 +1,5 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/IColumnImpl.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
@@ -102,6 +100,15 @@ void ColumnMap::insert(const Field & x)
     nested->insert(Array(map.begin(), map.end()));
 }
 
+bool ColumnMap::tryInsert(const Field & x)
+{
+    if (x.getType() != Field::Types::Which::Map)
+        return false;
+
+    const auto & map = x.get<const Map &>();
+    return nested->tryInsert(Array(map.begin(), map.end()));
+}
+
 void ColumnMap::insertDefault()
 {
     nested->insertDefault();
@@ -111,9 +118,14 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return nested->serializeValueIntoArena(n, arena, begin);
+}
+
+char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
+{
+    return nested->serializeValueIntoMemory(n, memory);
 }
 
 const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
@@ -139,6 +151,16 @@ void ColumnMap::updateWeakHash32(WeakHash32 & hash) const
 void ColumnMap::updateHashFast(SipHash & hash) const
 {
     nested->updateHashFast(hash);
+}
+
+void ColumnMap::insertFrom(const IColumn & src, size_t n)
+{
+    nested->insertFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), n);
+}
+
+void ColumnMap::insertManyFrom(const IColumn & src, size_t position, size_t length)
+{
+    assert_cast<ColumnArray &>(*nested).insertManyFrom(assert_cast<const ColumnMap &>(src).getNestedColumn(), position, length);
 }
 
 void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -194,19 +216,6 @@ int ColumnMap::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direct
     return nested->compareAt(n, m, rhs_map.getNestedColumn(), nan_direction_hint);
 }
 
-void ColumnMap::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnMap>(assert_cast<const ColumnMap &>(rhs), rhs_row_num, row_indexes,
-                                        compare_results, direction, nan_direction_hint);
-}
-
-bool ColumnMap::hasEqualValues() const
-{
-    return hasEqualValuesImpl<ColumnMap>();
-}
-
 void ColumnMap::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
@@ -219,14 +228,14 @@ void ColumnMap::updatePermutation(IColumn::PermutationSortDirection direction, I
     nested->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
 }
 
-void ColumnMap::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
-}
-
 void ColumnMap::reserve(size_t n)
 {
     nested->reserve(n);
+}
+
+void ColumnMap::shrinkToFit()
+{
+    nested->shrinkToFit();
 }
 
 void ColumnMap::ensureOwnership()
@@ -289,21 +298,6 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
         return nested->structureEquals(*rhs_map->nested);
     return false;
-}
-
-double ColumnMap::getRatioOfDefaultRows(double sample_ratio) const
-{
-    return getRatioOfDefaultRowsImpl<ColumnMap>(sample_ratio);
-}
-
-UInt64 ColumnMap::getNumberOfDefaultRows() const
-{
-    return getNumberOfDefaultRowsImpl<ColumnMap>();
-}
-
-void ColumnMap::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
-{
-    return getIndicesOfNonDefaultRowsImpl<ColumnMap>(indices, from, limit);
 }
 
 ColumnPtr ColumnMap::compress() const

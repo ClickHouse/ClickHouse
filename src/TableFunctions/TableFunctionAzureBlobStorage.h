@@ -49,16 +49,13 @@ public:
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
-    bool supportsReadingSubsetOfColumns() override;
+    bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
 
-    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
-    {
-        return {"_path", "_file"};
-    }
+    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override;
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context);
 
-    static void addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr & context);
+    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context);
 
 protected:
 

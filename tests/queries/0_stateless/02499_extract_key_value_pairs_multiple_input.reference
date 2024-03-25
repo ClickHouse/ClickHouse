@@ -293,7 +293,7 @@ SELECT
 {'age':'31','last_key':'last_value','name':'neymar','nationality':'brazil','team':'psg'}
 -- { echoOn }
 
-SET extract_kvp_max_pairs_per_row = 2;
+SET extract_key_value_pairs_max_pairs_per_row = 2;
 -- Should be allowed because it no longer exceeds the max number of pairs
 -- expected output: {'key1':'value1','key2':'value2'}
 WITH
@@ -307,7 +307,7 @@ WITH
 SELECT
     x;
 {'key1':'value1','key2':'value2'}
-SET extract_kvp_max_pairs_per_row = 0;
+SET extract_key_value_pairs_max_pairs_per_row = 0;
 -- Should be allowed because max pairs per row is set to 0 (unlimited)
 -- expected output: {'key1':'value1','key2':'value2'}
 WITH
@@ -345,6 +345,18 @@ WITH
 SELECT
     x;
 {'argument1':'1','argument2':'2','char':'=','char2':'=','formula':'1+2=3','result':'3','string':'foo=bar'}
+-- https://github.com/ClickHouse/ClickHouse/issues/56357
+WITH
+    extractKeyValuePairs('{"a":"1", "b":"2"}') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+{'a':'1','b':'2'}
 -- check str_to_map alias (it is case-insensitive)
 WITH
     sTr_tO_mAp('name:neymar, age:31 team:psg,nationality:brazil') AS s_map,

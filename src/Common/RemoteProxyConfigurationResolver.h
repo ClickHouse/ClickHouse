@@ -16,25 +16,26 @@ namespace DB
 class RemoteProxyConfigurationResolver : public ProxyConfigurationResolver
 {
 public:
+
+    struct RemoteServerConfiguration
+    {
+        Poco::URI endpoint;
+        String proxy_protocol;
+        unsigned proxy_port;
+        unsigned cache_ttl_;
+    };
+
     RemoteProxyConfigurationResolver(
-        const Poco::URI & endpoint_,
-        String proxy_protocol_,
-        unsigned proxy_port_,
-        unsigned cache_ttl_
-    );
+        const RemoteServerConfiguration & remote_server_configuration_,
+        Protocol request_protocol_,
+        bool disable_tunneling_for_https_requests_over_http_proxy_ = true);
 
     ProxyConfiguration resolve() override;
 
     void errorReport(const ProxyConfiguration & config) override;
 
 private:
-
-    /// Endpoint to obtain a proxy host.
-    const Poco::URI endpoint;
-    /// Scheme for obtained proxy.
-    const String proxy_protocol;
-    /// Port for obtained proxy.
-    const unsigned proxy_port;
+    RemoteServerConfiguration remote_server_configuration;
 
     std::mutex cache_mutex;
     bool cache_valid = false;

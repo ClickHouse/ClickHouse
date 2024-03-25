@@ -9,7 +9,7 @@
 #include <Functions/Regexps.h>
 
 #include "config.h"
-#include <re2_st/re2.h>
+#include <re2/re2.h>
 
 
 namespace DB
@@ -191,7 +191,7 @@ struct MatchImpl
             return;
         }
 
-        const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
+        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
 
         String required_substring;
         bool is_trivial;
@@ -212,7 +212,7 @@ struct MatchImpl
                             {reinterpret_cast<const char *>(&haystack_data[prev_offset]), haystack_offsets[i] - prev_offset - 1},
                             0,
                             haystack_offsets[i] - prev_offset - 1,
-                            re2_st::RE2::UNANCHORED,
+                            re2::RE2::UNANCHORED,
                             nullptr,
                             0);
                     res[i] = negate ^ match;
@@ -266,7 +266,7 @@ struct MatchImpl
                                 {str_data, str_size},
                                 start_pos,
                                 end_pos,
-                                re2_st::RE2::UNANCHORED,
+                                re2::RE2::UNANCHORED,
                                 nullptr,
                                 0);
                         res[i] = negate ^ match;
@@ -359,7 +359,7 @@ struct MatchImpl
             return;
         }
 
-        const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
+        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
 
         String required_substring;
         bool is_trivial;
@@ -380,7 +380,7 @@ struct MatchImpl
                             {reinterpret_cast<const char *>(&haystack[offset]), N},
                             0,
                             N,
-                            re2_st::RE2::UNANCHORED,
+                            re2::RE2::UNANCHORED,
                             nullptr,
                             0);
                     res[i] = negate ^ match;
@@ -437,7 +437,7 @@ struct MatchImpl
                                     {str_data, N},
                                     start_pos,
                                     end_pos,
-                                    re2_st::RE2::UNANCHORED,
+                                    re2::RE2::UNANCHORED,
                                     nullptr,
                                     0);
                             res[i] = negate ^ match;
@@ -526,7 +526,7 @@ struct MatchImpl
                                 {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
                                 0,
                                 cur_haystack_length,
-                                re2_st::RE2::UNANCHORED,
+                                re2::RE2::UNANCHORED,
                                 nullptr,
                                 0);
                         res[i] = negate ^ match;
@@ -552,7 +552,7 @@ struct MatchImpl
                                     {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
                                     start_pos,
                                     end_pos,
-                                    re2_st::RE2::UNANCHORED,
+                                    re2::RE2::UNANCHORED,
                                     nullptr,
                                     0);
                             res[i] = negate ^ match2;
@@ -635,7 +635,7 @@ struct MatchImpl
                                 {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
                                 0,
                                 cur_haystack_length,
-                                re2_st::RE2::UNANCHORED,
+                                re2::RE2::UNANCHORED,
                                 nullptr,
                                 0);
                         res[i] = negate ^ match;
@@ -661,7 +661,7 @@ struct MatchImpl
                                     {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
                                     start_pos,
                                     end_pos,
-                                    re2_st::RE2::UNANCHORED,
+                                    re2::RE2::UNANCHORED,
                                     nullptr,
                                     0);
                             res[i] = negate ^ match2;

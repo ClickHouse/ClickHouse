@@ -156,19 +156,69 @@ StorageSet::StorageSet(
 }
 
 
-void StorageSet::insertBlock(const Block & block, ContextPtr) { set->insertFromBlock(block.getColumnsWithTypeAndName()); }
-void StorageSet::finishInsert() { set->finishInsert(); }
+SetPtr StorageSet::getSet() const
+{
+    std::lock_guard lock(mutex);
+    return set;
+}
 
-size_t StorageSet::getSize(ContextPtr) const { return set->getTotalRowCount(); }
-std::optional<UInt64> StorageSet::totalRows(const Settings &) const { return set->getTotalRowCount(); }
-std::optional<UInt64> StorageSet::totalBytes(const Settings &) const { return set->getTotalByteCount(); }
+
+void StorageSet::insertBlock(const Block & block, ContextPtr)
+{
+    SetPtr current_set;
+    {
+        std::lock_guard lock(mutex);
+        current_set = set;
+    }
+    current_set->insertFromBlock(block.getColumnsWithTypeAndName());
+}
+
+void StorageSet::finishInsert()
+{
+    SetPtr current_set;
+    {
+        std::lock_guard lock(mutex);
+        current_set = set;
+    }
+    current_set->finishInsert();
+}
+
+size_t StorageSet::getSize(ContextPtr) const
+{
+    SetPtr current_set;
+    {
+        std::lock_guard lock(mutex);
+        current_set = set;
+    }
+    return current_set->getTotalRowCount();
+}
+
+std::optional<UInt64> StorageSet::totalRows(const Settings &) const
+{
+    SetPtr current_set;
+    {
+        std::lock_guard lock(mutex);
+        current_set = set;
+    }
+    return current_set->getTotalRowCount();
+}
+
+std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
+{
+    SetPtr current_set;
+    {
+        std::lock_guard lock(mutex);
+        current_set = set;
+    }
+    return current_set->getTotalByteCount();
+}
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
     if (disk->exists(path))
         disk->removeRecursive(path);
     else
-        LOG_INFO(&Poco::Logger::get("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
+        LOG_INFO(getLogger("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
 
     disk->createDirectories(path);
     disk->createDirectories(fs::path(path) / "tmp/");
@@ -176,8 +226,13 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     Block header = metadata_snapshot->getSampleBlock();
 
     increment = 0;
-    set = std::make_shared<Set>(SizeLimits(), 0, true);
-    set->setHeader(header.getColumnsWithTypeAndName());
+
+    auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
+    new_set->setHeader(header.getColumnsWithTypeAndName());
+    {
+        std::lock_guard lock(mutex);
+        set = new_set;
+    }
 }
 
 
@@ -229,7 +284,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     finishInsert();
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
-    LOG_INFO(&Poco::Logger::get("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
+    LOG_INFO(getLogger("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
         file_path, info.rows, ReadableSize(info.bytes), getSize(ctx));
 }
 

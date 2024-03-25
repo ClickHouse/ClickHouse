@@ -21,18 +21,78 @@ ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_,
         add(name);
 }
 
-bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
+ActiveDataPartSet::AddPartOutcome ActiveDataPartSet::tryAddPart(const MergeTreePartInfo & part_info, String * out_reason)
 {
-    auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
-    return add(part_info, name, out_replaced_parts);
+    return addImpl(part_info, part_info.getPartNameAndCheckFormat(format_version), nullptr, out_reason);
 }
 
 bool ActiveDataPartSet::add(const MergeTreePartInfo & part_info, const String & name, Strings * out_replaced_parts)
 {
+    String out_reason;
+    AddPartOutcome outcome = addImpl(part_info, name, out_replaced_parts, &out_reason);
+    if (outcome == AddPartOutcome::HasIntersectingPart)
+    {
+        chassert(!out_reason.empty());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, fmt::runtime(out_reason));
+    }
+
+    return outcome == AddPartOutcome::Added;
+}
+
+void ActiveDataPartSet::checkIntersectingParts(const MergeTreePartInfo & part_info) const
+{
+    auto it = part_info_to_name.lower_bound(part_info);
+    /// Let's go left.
+    while (it != part_info_to_name.begin())
+    {
+        --it;
+        if (!part_info.contains(it->first))
+        {
+            if (!part_info.isDisjoint(it->first))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the ZooKeeper data.", part_info.getPartNameForLogs(), it->first.getPartNameForLogs());
+            ++it;
+            break;
+        }
+    }
+    /// Let's go to the right.
+    while (it != part_info_to_name.end() && part_info.contains(it->first))
+    {
+        assert(part_info != it->first);
+        ++it;
+    }
+
+    if (it != part_info_to_name.end() && !part_info.isDisjoint(it->first))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects next part {}. It is a bug or a result of manual intervention in the ZooKeeper data.", part_info.getPartNameForLogs(), it->first.getPartNameForLogs());
+
+}
+
+void ActiveDataPartSet::checkIntersectingParts(const String & name) const
+{
+    auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
+    checkIntersectingParts(part_info);
+}
+
+bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
+{
+    auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
+    String out_reason;
+    AddPartOutcome outcome = addImpl(part_info, name, out_replaced_parts, &out_reason);
+    if (outcome == AddPartOutcome::HasIntersectingPart)
+    {
+        chassert(!out_reason.empty());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, fmt::runtime(out_reason));
+    }
+
+    return outcome == AddPartOutcome::Added;
+}
+
+
+ActiveDataPartSet::AddPartOutcome ActiveDataPartSet::addImpl(const MergeTreePartInfo & part_info, const String & name, Strings * out_replaced_parts, String * out_reason)
+{
     /// TODO make it exception safe (out_replaced_parts->push_back(...) may throw)
 
     if (getContainingPartImpl(part_info) != part_info_to_name.end())
-        return false;
+        return AddPartOutcome::HasCovering;
 
     /// Parts contained in `part` are located contiguously in `part_info_to_name`, overlapping with the place where the part itself would be inserted.
     auto it = part_info_to_name.lower_bound(part_info);
@@ -47,10 +107,15 @@ bool ActiveDataPartSet::add(const MergeTreePartInfo & part_info, const String & 
         if (!part_info.contains(it->first))
         {
             if (!part_info.isDisjoint(it->first))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Part {} intersects previous part {}. "
-                                "It is a bug or a result of manual intervention in the ZooKeeper data.",
-                                part_info.getPartNameForLogs(), it->first.getPartNameForLogs());
+            {
+                if (out_reason != nullptr)
+                    *out_reason = fmt::format(
+                        "Part {} intersects previous part {}. "
+                        "It is a bug or a result of manual intervention in the ZooKeeper data.",
+                        part_info.getPartNameForLogs(),
+                        it->first.getPartNameForLogs());
+                return AddPartOutcome::HasIntersectingPart;
+            }
             ++it;
             break;
         }
@@ -73,18 +138,33 @@ bool ActiveDataPartSet::add(const MergeTreePartInfo & part_info, const String & 
     }
 
     if (it != part_info_to_name.end() && !part_info.isDisjoint(it->first))
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Part {} intersects part {}. It is a bug or a result of manual intervention "
-                        "in the ZooKeeper data.", name, it->first.getPartNameForLogs());
+    {
+        if (out_reason != nullptr)
+            *out_reason = fmt::format(
+                "Part {} intersects part {}. It is a bug or a result of manual intervention "
+                "in the ZooKeeper data.",
+                name,
+                it->first.getPartNameForLogs());
+
+        return AddPartOutcome::HasIntersectingPart;
+    }
 
     part_info_to_name.emplace(part_info, name);
-    return true;
+    return AddPartOutcome::Added;
 
 }
 
 bool ActiveDataPartSet::add(const MergeTreePartInfo & part_info, Strings * out_replaced_parts)
 {
-    return add(part_info, part_info.getPartNameAndCheckFormat(format_version), out_replaced_parts);
+    String out_reason;
+    AddPartOutcome outcome = addImpl(part_info, part_info.getPartNameAndCheckFormat(format_version), out_replaced_parts, &out_reason);
+    if (outcome == AddPartOutcome::HasIntersectingPart)
+    {
+        chassert(!out_reason.empty());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, fmt::runtime(out_reason));
+    }
+
+    return outcome == AddPartOutcome::Added;
 }
 
 
@@ -128,7 +208,8 @@ ActiveDataPartSet::getContainingPartImpl(const MergeTreePartInfo & part_info) co
     return part_info_to_name.end();
 }
 
-Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info) const
+
+std::vector<std::map<MergeTreePartInfo, String>::const_iterator> ActiveDataPartSet::getPartsCoveredByImpl(const MergeTreePartInfo & part_info) const
 {
     auto it_middle = part_info_to_name.lower_bound(part_info);
     auto begin = it_middle;
@@ -159,10 +240,26 @@ Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info
         ++end;
     }
 
-    Strings covered;
+    std::vector<std::map<MergeTreePartInfo, String>::const_iterator> covered;
     for (auto it = begin; it != end; ++it)
-        covered.push_back(it->second);
+        covered.push_back(it);
 
+    return covered;
+}
+
+Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info) const
+{
+    Strings covered;
+    for (const auto & it : getPartsCoveredByImpl(part_info))
+        covered.push_back(it->second);
+    return covered;
+}
+
+std::vector<MergeTreePartInfo> ActiveDataPartSet::getPartInfosCoveredBy(const MergeTreePartInfo & part_info) const
+{
+    std::vector<MergeTreePartInfo> covered;
+    for (const auto & it : getPartsCoveredByImpl(part_info))
+        covered.push_back(it->first);
     return covered;
 }
 

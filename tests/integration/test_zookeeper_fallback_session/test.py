@@ -45,14 +45,13 @@ def started_cluster():
 
 def assert_uses_zk_node(node: ClickHouseInstance, zk_node):
     def check_callback(host):
-        return host.strip() == expected_zk_ip_addr
+        return host.strip() == zk_node
 
-    expected_zk_ip_addr = node.cluster.get_instance_ip(zk_node)
-
+    # We don't convert the column 'host' of system.zookeeper_connection to ip address any more.
     host = node.query_with_retry(
         "select host from system.zookeeper_connection", check_callback=check_callback
     )
-    assert host.strip() == expected_zk_ip_addr
+    assert host.strip() == zk_node
 
 
 def test_fallback_session(started_cluster: ClickHouseCluster):

@@ -56,7 +56,7 @@ SELECT sumMapWithOverflow(statusMap.goal_id, statusMap.revenue) FROM sum_map_dec
 
 DROP TABLE sum_map_decimal;
 
-CREATE TABLE sum_map_decimal_nullable (`statusMap` Array(Tuple(goal_id UInt16, revenue Nullable(Decimal(9, 5))))) engine=Log;
+CREATE TABLE sum_map_decimal_nullable (`statusMap` Nested(goal_id UInt16, revenue Nullable(Decimal(9, 5)))) engine=Log;
 INSERT INTO sum_map_decimal_nullable VALUES ([1, 2, 3], [1.0, 2.0, 3.0]), ([3, 4, 5], [3.0, 4.0, 5.0]), ([4, 5, 6], [4.0, 5.0, 6.0]), ([6, 7, 8], [6.0, 7.0, 8.0]);
 SELECT sumMap(statusMap.goal_id, statusMap.revenue) FROM sum_map_decimal_nullable;
 DROP TABLE sum_map_decimal_nullable;

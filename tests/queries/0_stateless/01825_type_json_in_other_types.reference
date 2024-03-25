@@ -1,4 +1,4 @@
-Tuple(String, Map(String, Array(Tuple(k1 Nested(k2 Int8, k3 Int8, k5 String), k4 String))), Tuple(k1 String, k2 Tuple(k3 String, k4 String)))
+Tuple(String, Map(String, Array(Tuple(\n    k1 Nested(k2 Int8, k3 Int8, k5 String),\n    k4 String))), Tuple(\n    k1 String,\n    k2 Tuple(\n        k3 String,\n        k4 String)))
 =============
 {"id":1,"data":["foo",{"aa":[{"k1":[{"k2":1,"k3":2,"k5":""},{"k2":0,"k3":3,"k5":""}],"k4":""},{"k1":[{"k2":4,"k3":0,"k5":""},{"k2":0,"k3":5,"k5":""},{"k2":6,"k3":0,"k5":""}],"k4":"qqq"}],"bb":[{"k1":[],"k4":"www"},{"k1":[{"k2":7,"k3":8,"k5":""},{"k2":9,"k3":10,"k5":""},{"k2":11,"k3":12,"k5":""}],"k4":""}]},{"k1":"aa","k2":{"k3":"bb","k4":"c"}}]}
 {"id":2,"data":["bar",{"aa":[{"k1":[{"k2":13,"k3":14,"k5":""},{"k2":15,"k3":16,"k5":""}],"k4":"www"}]},{"k1":"","k2":{"k3":"","k4":""}}]}

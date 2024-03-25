@@ -1,0 +1,49 @@
+02763_merge_aliases
+x, y, z FROM 02763_a_merge
+3	13	16
+4	14	18
+* FROM 02763_a_merge
+3	13	16
+4	14	18
+x, y FROM 02763_a_merge
+3	13
+4	14
+SELECT x, y FROM merge(currentDatabase(), 02763_alias)
+3	13
+4	14
+SELECT x, y FROM merge(currentDatabase(), 02763_alias)
+2	12
+3	13
+4	14
+SELECT x FROM merge(currentDatabase(), 02763_alias)
+12
+13
+14
+SELECT y FROM merge(currentDatabase(), 02763_alias)
+2
+3
+4
+x, y, z FROM 02763_a_merge
+3	13	16
+4	14	18
+* FROM 02763_a_merge
+3	13	16
+4	14	18
+x, y FROM 02763_a_merge
+3	13
+4	14
+SELECT x, y FROM merge(currentDatabase(), 02763_alias)
+3	13
+4	14
+SELECT x, y FROM merge(currentDatabase(), 02763_alias)
+2	12
+3	13
+4	14
+SELECT x FROM merge(currentDatabase(), 02763_alias)
+12
+13
+14
+SELECT y FROM merge(currentDatabase(), 02763_alias)
+2
+3
+4

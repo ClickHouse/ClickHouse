@@ -74,12 +74,6 @@ public:
     /// This data will be lost after destruction of peekable buffer.
     bool hasUnreadData() const;
 
-    // for streaming reading (like in Kafka) we need to restore initial state of the buffer
-    // without recreating the buffer.
-    void reset();
-
-    void setSubBuffer(ReadBuffer & sub_buf_);
-
     const ReadBuffer & getSubBuffer() const { return *sub_buf; }
 
 private:

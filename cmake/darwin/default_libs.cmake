@@ -22,9 +22,3 @@ link_libraries(global-group)
 target_link_libraries(global-group INTERFACE
     $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
 )
-
-# FIXME: remove when all contribs will get custom cmake lists
-install(
-    TARGETS global-group global-libs
-    EXPORT global
-)

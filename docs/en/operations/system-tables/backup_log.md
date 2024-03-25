@@ -7,6 +7,7 @@ Contains logging entries with the information about `BACKUP` and `RESTORE` opera
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Date of the entry.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Time of the entry with microseconds precision.
 - `id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the backup or restore operation.
@@ -45,6 +46,7 @@ SELECT * FROM system.backup_log WHERE id = 'e5b74ecb-f6f1-426a-80be-872f90043885
 ```response
 Row 1:
 ──────
+hostname:                clickhouse.eu-central1.internal
 event_date:              2023-08-19
 event_time_microseconds: 2023-08-19 11:05:21.998566
 id:                      e5b74ecb-f6f1-426a-80be-872f90043885
@@ -63,6 +65,7 @@ bytes_read:              0
 
 Row 2:
 ──────
+hostname:                clickhouse.eu-central1.internal
 event_date:              2023-08-19
 event_time_microseconds: 2023-08-19 11:08:56.916192
 id:                      e5b74ecb-f6f1-426a-80be-872f90043885
@@ -93,6 +96,7 @@ SELECT * FROM system.backup_log WHERE id = 'cdf1f731-52ef-42da-bc65-2e1bfcd4ce90
 ```response
 Row 1:
 ──────
+hostname:                clickhouse.eu-central1.internal
 event_date:              2023-08-19
 event_time_microseconds: 2023-08-19 11:09:19.718077
 id:                      cdf1f731-52ef-42da-bc65-2e1bfcd4ce90
@@ -111,6 +115,7 @@ bytes_read:              0
 
 Row 2:
 ──────
+hostname:                clickhouse.eu-central1.internal
 event_date:              2023-08-19
 event_time_microseconds: 2023-08-19 11:09:29.334234
 id:                      cdf1f731-52ef-42da-bc65-2e1bfcd4ce90

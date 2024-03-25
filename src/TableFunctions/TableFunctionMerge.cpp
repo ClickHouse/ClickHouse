@@ -2,15 +2,14 @@
 #include <Common/typeid_cast.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Access/ContextAccess.h>
-#include <TableFunctions/TableFunctionMerge.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 
@@ -26,17 +25,45 @@ namespace ErrorCodes
 
 namespace
 {
-    [[noreturn]] void throwNoTablesMatchRegexp(const String & source_database_regexp, const String & source_table_regexp)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Error while executing table function merge. Either there is no database, which matches regular expression `{}`, or there are "
-            "no tables in database matches `{}`, which fit tables expression: {}",
-            source_database_regexp,
-            source_database_regexp,
-            source_table_regexp);
-    }
+
+[[noreturn]] void throwNoTablesMatchRegexp(const String & source_database_regexp, const String & source_table_regexp)
+{
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Error while executing table function merge. Either there is no database, which matches regular expression `{}`, or there are "
+        "no tables in database matches `{}`, which fit tables expression: {}",
+        source_database_regexp,
+        source_database_regexp,
+        source_table_regexp);
 }
+
+/* merge (db_name, tables_regexp) - creates a temporary StorageMerge.
+ * The structure of the table is taken from the first table that came up, suitable for regexp.
+ * If there is no such table, an exception is thrown.
+ */
+class TableFunctionMerge : public ITableFunction
+{
+public:
+    static constexpr auto name = "merge";
+    std::string getName() const override { return name; }
+
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+    const char * getStorageTypeName() const override { return "Merge"; }
+
+    using TableSet = std::set<String>;
+    using DBToTableSetMap = std::map<String, TableSet>;
+    const DBToTableSetMap & getSourceDatabasesAndTables(ContextPtr context) const;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    static TableSet getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context);
+
+    String source_database_name_or_regexp;
+    String source_table_regexp;
+    bool database_is_regexp = false;
+    mutable std::optional<DBToTableSetMap> source_databases_and_tables;
+};
 
 std::vector<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
@@ -62,26 +89,38 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
     if (args_func.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Table function 'merge' requires exactly 2 arguments - name "
-                        "of source database and regexp for table names.");
+                        "Table function 'merge' requires from 1 to 2 parameters: "
+                        "merge(['db_name',] 'tables_regexp')");
 
     ASTs & args = args_func.at(0)->children;
 
-    if (args.size() != 2)
+    if (args.size() == 1)
+    {
+        database_is_regexp = false;
+        source_database_name_or_regexp = context->getCurrentDatabase();
+
+        args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
+        source_table_regexp = checkAndGetLiteralArgument<String>(args[0], "table_name_regexp");
+    }
+    else if (args.size() == 2)
+    {
+        auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(args[0], context);
+
+        database_is_regexp = is_regexp;
+
+        if (!is_regexp)
+            args[0] = database_ast;
+        source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
+
+        args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
+        source_table_regexp = checkAndGetLiteralArgument<String>(args[1], "table_name_regexp");
+    }
+    else
+    {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Table function 'merge' requires exactly 2 arguments - name "
-                        "of source database and regexp for table names.");
-
-    auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(args[0], context);
-
-    database_is_regexp = is_regexp;
-
-    if (!is_regexp)
-        args[0] = database_ast;
-    source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
-
-    args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
-    source_table_regexp = checkAndGetLiteralArgument<String>(args[1], "table_name_regexp");
+                        "Table function 'merge' requires from 1 to 2 parameters: "
+                        "merge(['db_name',] 'tables_regexp')");
+    }
 }
 
 
@@ -177,6 +216,8 @@ TableFunctionMerge::getMatchedTablesWithAccess(const String & database_name, con
         tables.emplace(it->name());
     }
     return tables;
+}
+
 }
 
 void registerTableFunctionMerge(TableFunctionFactory & factory)
