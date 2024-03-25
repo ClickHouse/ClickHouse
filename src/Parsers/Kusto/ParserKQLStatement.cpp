@@ -4,6 +4,7 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -62,25 +63,47 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
 bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// TODO: This code is idiotic, see https://github.com/ClickHouse/ClickHouse/issues/61742
     ParserToken lparen(TokenType::OpeningRoundBracket);
-    ParserToken rparen(TokenType::ClosingRoundBracket);
 
     ASTPtr string_literal;
     ParserStringLiteral parser_string_literal;
 
-    if (!(lparen.ignore(pos, expected)
-        && parser_string_literal.parse(pos, string_literal, expected)
-        && rparen.ignore(pos, expected)))
-    {
+    if (!lparen.ignore(pos, expected))
         return false;
-    }
 
-    String kql_statement = typeid_cast<const ASTLiteral &>(*string_literal).value.safeGet<String>();
+    size_t paren_count = 0;
+    String kql_statement;
+    if (parser_string_literal.parse(pos, string_literal, expected))
+    {
+        kql_statement = typeid_cast<const ASTLiteral &>(*string_literal).value.safeGet<String>();
+    }
+    else
+    {
+        ++paren_count;
+        auto pos_start = pos;
+        while (isValidKQLPos(pos))
+        {
+            if (pos->type == TokenType::ClosingRoundBracket)
+                --paren_count;
+            if (pos->type == TokenType::OpeningRoundBracket)
+                ++paren_count;
+
+            if (paren_count == 0)
+                break;
+            ++pos;
+        }
+        kql_statement = String(pos_start->begin, (--pos)->end);
+    }
+    ++pos;
 
     Tokens token_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true, /* greedy_errors= */ true);
     IParser::Pos pos_kql(token_kql, pos.max_depth, pos.max_backtracks);
 
-    return ParserKQLWithUnionQuery().parse(pos_kql, node, expected);
+    if (!ParserKQLWithUnionQuery().parse(pos_kql, node, expected))
+        return false;
+    ++pos;
+    return true;
 }
 
 }
