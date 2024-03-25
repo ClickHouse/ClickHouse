@@ -58,8 +58,6 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
-void interruptSignalHandler(int signum);
-
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
@@ -80,6 +78,9 @@ protected:
     void runInteractive();
     void runNonInteractive();
 
+    char * argv0 = nullptr;
+    void runLibFuzzer();
+
     virtual bool processWithFuzzing(const String &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
@@ -96,7 +97,7 @@ protected:
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
-    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth);
+    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
     static void setupSignalHandler();
 
@@ -184,7 +185,14 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    void initTtyBuffer(ProgressOption progress);
+    static bool isRegularFile(int fd);
+
+    /// Adjust some settings after command line options and config had been processed.
+    void adjustSettings();
+
+    void setDefaultFormatsFromConfiguration();
+
+    void initTTYBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -212,12 +220,15 @@ protected:
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
 
-    String format; /// Query results output format.
+    String pager;
+
+    String default_output_format; /// Query results output format.
+    String default_input_format; /// Tables' format for clickhouse-local.
+
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
     size_t format_max_block_size = 0; /// Max block size for console output.
-    String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
@@ -272,21 +283,6 @@ protected:
     size_t processed_rows = 0; /// How many rows have been read or written.
     bool print_num_processed_rows = false; /// Whether to print the number of processed rows at
 
-    enum class PartialResultMode: UInt8
-    {
-        /// Query doesn't show partial result before the first block with 0 rows.
-        /// The first block with 0 rows initializes the output table format using its header.
-        NotInit,
-
-        /// Query shows partial result after the first and before the second block with 0 rows.
-        /// The second block with 0 rows indicates that that receiving blocks with partial result has been completed and next blocks will be with the full result.
-        Active,
-
-        /// Query doesn't show partial result at all.
-        Inactive,
-    };
-    PartialResultMode partial_result_mode = PartialResultMode::Inactive;
-
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
     /// return code in batch mode.
@@ -334,7 +330,8 @@ protected:
 
     bool cancelled = false;
 
-    bool logging_initialized = false;
+    /// Does log_comment has specified by user?
+    bool has_log_comment = false;
 };
 
 }

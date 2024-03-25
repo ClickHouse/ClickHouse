@@ -62,7 +62,7 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
     const char * end = begin + definition.size();
     while (pos < end)
     {
-        queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH));
+        queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
         while (isWhitespaceASCII(*pos) || *pos == ';')
             ++pos;
     }

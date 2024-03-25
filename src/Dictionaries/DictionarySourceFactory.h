@@ -52,11 +52,14 @@ public:
         const std::string & default_database,
         bool check_config) const;
 
+    /// Checks that a specified source exists and available for the current user.
+    void checkSourceAvailable(const std::string & source_type, const std::string & dictionary_name, const ContextPtr & context) const;
+
 private:
     using SourceRegistry = std::unordered_map<std::string, Creator>;
     SourceRegistry registered_sources;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

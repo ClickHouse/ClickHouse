@@ -3,6 +3,23 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+SerializationNamed::SerializationNamed(
+    const SerializationPtr & nested_,
+    const String & name_,
+    SubstreamType substream_type_)
+    : SerializationWrapper(nested_)
+    , name(name_)
+    , substream_type(substream_type_)
+{
+    if (!ISerialization::Substream::named_types.contains(substream_type))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "SerializationNamed doesn't support substream type {}", substream_type);
+}
+
 void SerializationNamed::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
@@ -10,7 +27,7 @@ void SerializationNamed::enumerateStreams(
 {
     addToPath(settings.path);
     settings.path.back().data = data;
-    settings.path.back().creator = std::make_shared<SubcolumnCreator>(name, escape_delimiter);
+    settings.path.back().creator = std::make_shared<SubcolumnCreator>(name, substream_type);
 
     nested_serialization->enumerateStreams(settings, callback, data);
     settings.path.pop_back();
@@ -70,9 +87,8 @@ void SerializationNamed::deserializeBinaryBulkWithMultipleStreams(
 
 void SerializationNamed::addToPath(SubstreamPath & path) const
 {
-    path.push_back(Substream::TupleElement);
-    path.back().tuple_element_name = name;
-    path.back().escape_tuple_delimiter = escape_delimiter;
+    path.push_back(substream_type);
+    path.back().name_of_substream = name;
 }
 
 }

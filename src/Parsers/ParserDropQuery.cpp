@@ -12,22 +12,24 @@ namespace
 
 bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, const ASTDropQuery::Kind kind)
 {
-    ParserKeyword s_temporary("TEMPORARY");
-    ParserKeyword s_table("TABLE");
-    ParserKeyword s_dictionary("DICTIONARY");
-    ParserKeyword s_view("VIEW");
-    ParserKeyword s_database("DATABASE");
+    ParserKeyword s_temporary(Keyword::TEMPORARY);
+    ParserKeyword s_table(Keyword::TABLE);
+    ParserKeyword s_dictionary(Keyword::DICTIONARY);
+    ParserKeyword s_view(Keyword::VIEW);
+    ParserKeyword s_database(Keyword::DATABASE);
     ParserToken s_dot(TokenType::Dot);
-    ParserKeyword s_if_exists("IF EXISTS");
+    ParserKeyword s_if_exists(Keyword::IF_EXISTS);
+    ParserKeyword s_if_empty(Keyword::IF_EMPTY);
     ParserIdentifier name_p(true);
-    ParserKeyword s_permanently("PERMANENTLY");
-    ParserKeyword s_no_delay("NO DELAY");
-    ParserKeyword s_sync("SYNC");
+    ParserKeyword s_permanently(Keyword::PERMANENTLY);
+    ParserKeyword s_no_delay(Keyword::NO_DELAY);
+    ParserKeyword s_sync(Keyword::SYNC);
 
     ASTPtr database;
     ASTPtr table;
     String cluster_str;
     bool if_exists = false;
+    bool if_empty = false;
     bool temporary = false;
     bool is_dictionary = false;
     bool is_view = false;
@@ -38,6 +40,9 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     {
         if (s_if_exists.ignore(pos, expected))
             if_exists = true;
+
+        if (s_if_empty.ignore(pos, expected))
+            if_empty = true;
 
         if (!name_p.parse(pos, database, expected))
             return false;
@@ -60,6 +65,9 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
         if (s_if_exists.ignore(pos, expected))
             if_exists = true;
 
+        if (s_if_empty.ignore(pos, expected))
+            if_empty = true;
+
         if (!name_p.parse(pos, table, expected))
             return false;
 
@@ -72,7 +80,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     }
 
     /// common for tables / dictionaries / databases
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
@@ -90,6 +98,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 
     query->kind = kind;
     query->if_exists = if_exists;
+    query->if_empty = if_empty;
     query->temporary = temporary;
     query->is_dictionary = is_dictionary;
     query->is_view = is_view;
@@ -113,9 +122,9 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 
 bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_drop("DROP");
-    ParserKeyword s_detach("DETACH");
-    ParserKeyword s_truncate("TRUNCATE");
+    ParserKeyword s_drop(Keyword::DROP);
+    ParserKeyword s_detach(Keyword::DETACH);
+    ParserKeyword s_truncate(Keyword::TRUNCATE);
 
     if (s_drop.ignore(pos, expected))
         return parseDropQuery(pos, node, expected, ASTDropQuery::Kind::Drop);

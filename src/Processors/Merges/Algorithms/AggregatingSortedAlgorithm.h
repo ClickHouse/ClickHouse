@@ -24,6 +24,7 @@ public:
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_);
 
+    const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
@@ -46,7 +47,7 @@ public:
         bool created = false;
 
         SimpleAggregateDescription(
-            AggregateFunctionPtr function_, const size_t column_number_,
+            AggregateFunctionPtr function_, size_t column_number_,
             DataTypePtr nested_type_, DataTypePtr real_type_);
 
         void createState();

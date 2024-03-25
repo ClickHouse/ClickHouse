@@ -25,8 +25,8 @@ struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
 
     bool empty() const override { return !has_elems; }
 
-    String index_name;
-    BloomFilterParameters params;
+    const String index_name;
+    const BloomFilterParameters params;
 
     std::vector<BloomFilter> bloom_filters;
     bool has_elems;
@@ -62,7 +62,7 @@ class MergeTreeConditionFullText final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeConditionFullText(
-            const SelectQueryInfo & query_info,
+            const ActionsDAGPtr & filter_actions_dag,
             ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
@@ -90,8 +90,10 @@ private:
             FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,
             FUNCTION_IN,
+            FUNCTION_MATCH,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
+            FUNCTION_HAS_ANY,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -107,13 +109,13 @@ private:
                 : function(function_), key_column(key_column_), bloom_filter(std::move(const_bloom_filter_)) {}
 
         Function function = FUNCTION_UNKNOWN;
-        /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS and FUNCTION_MULTI_SEARCH
+        /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS, FUNCTION_MULTI_SEARCH and FUNCTION_HAS_ANY
         size_t key_column;
 
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
         std::unique_ptr<BloomFilter> bloom_filter;
 
-        /// For FUNCTION_IN, FUNCTION_NOT_IN and FUNCTION_MULTI_SEARCH
+        /// For FUNCTION_IN, FUNCTION_NOT_IN, FUNCTION_MULTI_SEARCH and FUNCTION_HAS_ANY
         std::vector<std::vector<BloomFilter>> set_bloom_filters;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
@@ -142,9 +144,6 @@ private:
     BloomFilterParameters params;
     TokenExtractorPtr token_extractor;
     RPN rpn;
-
-    /// Sets from syntax analyzer.
-    PreparedSetsPtr prepared_sets;
 };
 
 class MergeTreeIndexFullText final : public IMergeTreeIndex
@@ -161,12 +160,10 @@ public:
     ~MergeTreeIndexFullText() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const SelectQueryInfo & query, ContextPtr context) const override;
-
-    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
+            const ActionsDAGPtr & filter_dag, ContextPtr context) const override;
 
     BloomFilterParameters params;
     /// Function for selecting next token.

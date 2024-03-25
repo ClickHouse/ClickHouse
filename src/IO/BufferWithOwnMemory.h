@@ -191,6 +191,12 @@ private:
         memory.resize(2 * prev_size + 1);
         Base::set(memory.data() + prev_size, memory.size() - prev_size, 0);
     }
+
+    void finalizeImpl() final
+    {
+        /// there is no need to allocate twice more memory at finalize()
+        /// So make that call no op, do not call here nextImpl()
+    }
 };
 
 }

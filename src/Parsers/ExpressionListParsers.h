@@ -9,10 +9,8 @@
 #include <Parsers/SelectUnionMode.h>
 #include <Common/IntervalKind.h>
 
-#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wc99-extensions"
-#endif
 
 namespace DB
 {
@@ -173,7 +171,7 @@ protected:
 class ParserExpression : public IParserBase
 {
 public:
-    ParserExpression(bool allow_trailing_commas_ = false) : allow_trailing_commas(allow_trailing_commas_) {}
+    explicit ParserExpression(bool allow_trailing_commas_ = false) : allow_trailing_commas(allow_trailing_commas_) {}
 
 protected:
     const char * getName() const override { return "lambda expression"; }
@@ -297,6 +295,4 @@ protected:
 
 }
 
-#ifdef __clang__
 #pragma clang diagnostic pop
-#endif

@@ -457,6 +457,7 @@ def test_replicated_database_async():
     )
 
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl2")
 
     assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV([1, 22])
     assert node2.query("SELECT * FROM mydb.tbl2 ORDER BY y") == TSV(["a", "bb"])
@@ -1087,15 +1088,18 @@ def test_stop_other_host_during_backup(kill):
     status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
 
     if kill:
-        assert status in ["BACKUP_CREATED", "BACKUP_FAILED"]
+        expected_statuses = ["BACKUP_CREATED", "BACKUP_FAILED"]
     else:
-        assert status == "BACKUP_CREATED"
+        expected_statuses = ["BACKUP_CREATED", "BACKUP_CANCELLED"]
+
+    assert status in expected_statuses
 
     node2.start_clickhouse()
 
     if status == "BACKUP_CREATED":
         node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+        node1.query("SYSTEM SYNC REPLICA tbl")
         assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
     elif status == "BACKUP_FAILED":
         assert not os.path.exists(

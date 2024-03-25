@@ -6,7 +6,7 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-
+#include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -412,14 +412,14 @@ private:
 };
 
 
-/** TimeDiff(t1, t2)
+/** timeDiff(t1, t2)
   * t1 and t2 can be Date or DateTime
   */
 class FunctionTimeDiff : public IFunction
 {
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 public:
-    static constexpr auto name = "TimeDiff";
+    static constexpr auto name = "timeDiff";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeDiff>(); }
 
     String getName() const override

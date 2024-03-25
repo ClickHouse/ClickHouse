@@ -3,6 +3,7 @@
 #include <Functions/FunctionsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/UTF8Helpers.h>
 
 #include <Core/Defines.h>
@@ -77,7 +78,7 @@ struct NgramDistanceImpl
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         return crc32_ppc(code_points[2], reinterpret_cast<const unsigned char *>(&combined), sizeof(combined)) & 0xFFFFu;
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        return s390x_crc32(code_points[2], combined) & 0xFFFFu;
+        return s390x_crc32c(code_points[2], combined) & 0xFFFFu;
 #else
         return (intHashCRC32(combined) ^ intHashCRC32(code_points[2])) & 0xFFFFu;
 #endif
@@ -108,10 +109,8 @@ struct NgramDistanceImpl
 
         if constexpr (case_insensitive)
         {
-#if defined(MEMORY_SANITIZER)
             /// Due to PODArray padding accessing more elements should be OK
             __msan_unpoison(code_points + (N - 1), padding_offset * sizeof(CodePoint));
-#endif
             /// We really need template lambdas with C++20 to do it inline
             unrollLowering<N - 1>(code_points, std::make_index_sequence<padding_offset>());
         }

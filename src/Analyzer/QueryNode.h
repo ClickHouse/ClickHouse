@@ -99,6 +99,11 @@ public:
         return settings_changes;
     }
 
+    void clearSettingsChanges()
+    {
+        settings_changes.clear();
+    }
+
     /// Returns true if query node is subquery, false otherwise
     bool isSubquery() const
     {
@@ -217,6 +222,18 @@ public:
     void setIsGroupByAll(bool is_group_by_all_value)
     {
         is_group_by_all = is_group_by_all_value;
+    }
+
+    /// Returns true, if query node has ORDER BY ALL modifier, false otherwise
+    bool isOrderByAll() const
+    {
+        return is_order_by_all;
+    }
+
+    /// Set query node ORDER BY ALL modifier value
+    void setIsOrderByAll(bool is_order_by_all_value)
+    {
+        is_order_by_all = is_order_by_all_value;
     }
 
     /// Returns true if query node WITH section is not empty, false otherwise
@@ -556,10 +573,13 @@ public:
     }
 
     /// Resolve query node projection columns
-    void resolveProjectionColumns(NamesAndTypes projection_columns_value)
-    {
-        projection_columns = std::move(projection_columns_value);
-    }
+    void resolveProjectionColumns(NamesAndTypes projection_columns_value);
+
+    /// Remove unused projection columns
+    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
+
+    /// Remove unused projection columns
+    void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -587,6 +607,7 @@ private:
     bool is_group_by_with_cube = false;
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
+    bool is_order_by_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;

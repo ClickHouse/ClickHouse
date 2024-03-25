@@ -33,8 +33,8 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 
 - calculated t-statistic. [Float64](../../../sql-reference/data-types/float.md).
 - calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
-- [calculated confidence-interval-low.] [Float64](../../../sql-reference/data-types/float.md).
-- [calculated confidence-interval-high.] [Float64](../../../sql-reference/data-types/float.md).
+- [calculated confidence-interval-low. [Float64](../../../sql-reference/data-types/float.md).]
+- [calculated confidence-interval-high. [Float64](../../../sql-reference/data-types/float.md).]
 
 
 **Example**

@@ -33,10 +33,14 @@ def restore_table(backup_name):
 
 
 def test_backup_log():
+    instance.query("SYSTEM FLUSH LOGS")
+    instance.query("drop table system.backup_log")
+
     backup_name = "File('/backups/test_backup/')"
     assert instance.query("SELECT * FROM system.tables WHERE name = 'backup_log'") == ""
 
     backup_id = backup_table(backup_name)
+    instance.query("SYSTEM FLUSH LOGS")
     assert instance.query(
         f"SELECT status, error FROM system.backup_log WHERE id='{backup_id}' ORDER BY event_date, event_time_microseconds"
     ) == TSV([["CREATING_BACKUP", ""], ["BACKUP_CREATED", ""]])
@@ -44,6 +48,7 @@ def test_backup_log():
     instance.query("DROP TABLE test.table SYNC")
 
     restore_id = restore_table(backup_name)
+    instance.query("SYSTEM FLUSH LOGS")
     assert instance.query(
         f"SELECT status, error FROM system.backup_log WHERE id='{restore_id}' ORDER BY event_date, event_time_microseconds"
     ) == TSV([["RESTORING", ""], ["RESTORED", ""]])

@@ -1,5 +1,3 @@
--- Tags: disabled
--- FIXME https://github.com/ClickHouse/ClickHouse/issues/49552
 -- Test that check the correctness of the result for optimize_aggregation_in_order and projections,
 -- not that this optimization will take place.
 
@@ -20,7 +18,7 @@ CREATE TABLE normal
     )
 )
 ENGINE = MergeTree
-ORDER BY (key, ts);
+ORDER BY tuple();
 
 INSERT INTO normal SELECT
     number,
@@ -52,7 +50,7 @@ CREATE TABLE agg
     )
 )
 ENGINE = MergeTree
-ORDER BY (key, ts);
+ORDER BY tuple();
 
 INSERT INTO agg SELECT
     1,

@@ -34,7 +34,7 @@ public:
 
     void execute(
         const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
+        std::shared_ptr<DiskSelector> & disk_selector,
         Poco::Util::LayeredConfiguration & config) override
     {
         if (command_arguments.size() != 1)
@@ -47,7 +47,7 @@ public:
 
         const String & path = command_arguments[0];
 
-        DiskPtr disk = global_context->getDisk(disk_name);
+        DiskPtr disk = disk_selector->get(disk_name);
 
         String relative_path = validatePathAndGetAsRelative(path);
         bool recursive = config.getBool("recursive", false);

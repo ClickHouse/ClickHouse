@@ -39,6 +39,9 @@ void ASTCreateNamedCollectionQuery::formatImpl(const IAST::FormatSettings & sett
             settings.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
         else
             settings.ostr << " = '[HIDDEN]'";
+        auto override_value = overridability.find(change.name);
+        if (override_value != overridability.end())
+            settings.ostr << " " << (override_value->second ? "" : "NOT ") << "OVERRIDABLE";
     }
 }
 

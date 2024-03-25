@@ -175,6 +175,8 @@ static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expressi
         dag->mergeInplace(std::move(*expression->clone()));
     else
         dag = expression->clone();
+
+    dag->projectInput(false);
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
@@ -235,15 +237,20 @@ void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns &
 
         const auto & array_joined_columns = array_join->arrayJoin()->columns;
 
-        /// Remove array joined columns from outputs.
-        /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
-        ActionsDAG::NodeRawConstPtrs outputs;
-        outputs.reserve(dag->getOutputs().size());
-
-        for (const auto & output : dag->getOutputs())
+        if (dag)
         {
-            if (!array_joined_columns.contains(output->result_name))
-                outputs.push_back(output);
+            /// Remove array joined columns from outputs.
+            /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
+            ActionsDAG::NodeRawConstPtrs outputs;
+            outputs.reserve(dag->getOutputs().size());
+
+            for (const auto & output : dag->getOutputs())
+            {
+                if (!array_joined_columns.contains(output->result_name))
+                    outputs.push_back(output);
+            }
+
+            dag->getOutputs() = std::move(outputs);
         }
     }
 }
@@ -338,7 +345,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     if (dag)
     {
-        matches = matchTrees(sorting_key_dag, *dag);
+        matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
 
         for (const auto & [node, match] : matches)
         {
@@ -507,7 +514,7 @@ AggregationInputOrder buildInputOrderInfo(
 
     if (dag)
     {
-        matches = matchTrees(sorting_key_dag, *dag);
+        matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
 
         for (const auto & [node, match] : matches)
         {
@@ -997,7 +1004,7 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     }
 }
 
-/// This optimisation is obsolete and will be removed.
+/// This optimization is obsolete and will be removed.
 /// optimizeReadInOrder covers it.
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
 {
@@ -1073,10 +1080,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
     UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
 
-    auto order_info = order_optimizer->getInputOrder(
-            query_info.projection ? query_info.projection->desc->metadata : read_from_merge_tree->getStorageMetadata(),
-            context,
-            limit);
+    auto order_info = order_optimizer->getInputOrder(read_from_merge_tree->getStorageMetadata(), context, limit);
 
     if (order_info)
     {

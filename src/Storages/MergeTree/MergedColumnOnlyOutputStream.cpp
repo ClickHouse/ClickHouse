@@ -16,6 +16,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const Block & header_,
     CompressionCodecPtr default_codec,
     const MergeTreeIndices & indices_to_recalc,
+    const Statistics & stats_to_recalc_,
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
@@ -36,6 +37,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         header.getNamesAndTypesList(),
         metadata_snapshot_,
         indices_to_recalc,
+        stats_to_recalc_,
         default_codec,
         writer_settings,
         index_granularity);
@@ -63,7 +65,11 @@ MergedColumnOnlyOutputStream::fillChecksums(
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    writer->fillChecksums(checksums);
+    NameSet checksums_to_remove;
+    writer->fillChecksums(checksums, checksums_to_remove);
+
+    for (const auto & filename : checksums_to_remove)
+        all_checksums.files.erase(filename);
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
@@ -80,9 +86,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
     for (const String & removed_file : removed_files)
     {
         new_part->getDataPartStorage().removeFileIfExists(removed_file);
-
-        if (all_checksums.files.contains(removed_file))
-            all_checksums.files.erase(removed_file);
+        all_checksums.files.erase(removed_file);
     }
 
     new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());

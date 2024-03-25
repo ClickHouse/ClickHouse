@@ -2,6 +2,8 @@
 #include <base/sort.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -14,7 +16,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-#include <Databases/DatabaseReplicated.h>
 
 
 namespace DB
@@ -43,6 +44,11 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
     try
     {
         return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
+    }
+    catch (const DB::NetException &)
+    {
+        /// Avoid "Host not found" exceptions
+        return false;
     }
     catch (const Poco::Net::NetException &)
     {
@@ -113,6 +119,9 @@ String DDLLogEntry::toString() const
         writeChar('\n', wb);
     }
 
+    if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
+        wb << "is_backup_restore: " << is_backup_restore << "\n";
+
     return wb.str();
 }
 
@@ -145,9 +154,9 @@ void DDLLogEntry::parse(const String & data)
             String settings_str;
             rb >> "settings: " >> settings_str >> "\n";
             ParserSetQuery parser{true};
-            constexpr UInt64 max_size = 4096;
             constexpr UInt64 max_depth = 16;
-            ASTPtr settings_ast = parseQuery(parser, settings_str, max_size, max_depth);
+            constexpr UInt64 max_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
+            ASTPtr settings_ast = parseQuery(parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef().max_query_size, max_depth, max_backtracks);
             settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
         }
     }
@@ -165,6 +174,12 @@ void DDLLogEntry::parse(const String & data)
         checkChar('\n', rb);
     }
 
+    if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
+    {
+        checkString("is_backup_restore: ", rb);
+        readBoolText(is_backup_restore, rb);
+        checkChar('\n', rb);
+    }
 
     assertEOF(rb);
 
@@ -184,7 +199,7 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 
     ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
+    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth, settings.max_parser_backtracks);
 }
 
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
@@ -206,20 +221,47 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
 }
 
 
-bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log)
+bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name)
 {
     bool host_in_hostlist = false;
     std::exception_ptr first_exception = nullptr;
 
+    const auto maybe_secure_port = global_context->getTCPPortSecure();
+    const auto port = global_context->getTCPPort();
+
+    if (config_host_name)
+    {
+        bool is_local_port = (maybe_secure_port && HostID(*config_host_name, *maybe_secure_port).isLocalAddress(*maybe_secure_port)) ||
+                             HostID(*config_host_name, port).isLocalAddress(port);
+
+        if (!is_local_port)
+            throw Exception(
+                ErrorCodes::DNS_ERROR,
+                "{} is not a local address. Check parameter 'host_name' in the configuration",
+                *config_host_name);
+    }
+
     for (const HostID & host : entry.hosts)
     {
-        auto maybe_secure_port = global_context->getTCPPortSecure();
+        if (config_host_name)
+        {
+            if (config_host_name != host.host_name)
+                continue;
+
+            if (maybe_secure_port != host.port && port != host.port)
+                continue;
+
+            host_in_hostlist = true;
+            host_id = host;
+            host_id_str = host.toString();
+            break;
+        }
 
         try
         {
             /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
             bool is_local_port
-                = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port)) || host.isLocalAddress(global_context->getTCPPort());
+                = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port)) || host.isLocalAddress(port);
 
             if (!is_local_port)
                 continue;
@@ -253,6 +295,22 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log)
 
     if (!host_in_hostlist && first_exception)
     {
+        if (zookeeper->exists(getFinishedNodePath()))
+        {
+            LOG_WARNING(log, "Failed to find current host ID, but assuming that {} is finished because {} exists. Skipping the task. Error: {}",
+                        entry_name, getFinishedNodePath(), getExceptionMessage(first_exception, /*with_stacktrace*/ true));
+            return false;
+        }
+
+        size_t finished_nodes_count = zookeeper->getChildren(fs::path(entry_path) / "finished").size();
+        if (entry.hosts.size() == finished_nodes_count)
+        {
+            LOG_WARNING(log, "Failed to find current host ID, but assuming that {} is finished because the number of finished nodes ({}) "
+                        "equals to the number of hosts in list. Skipping the task. Error: {}",
+                        entry_name, finished_nodes_count, getExceptionMessage(first_exception, /*with_stacktrace*/ true));
+            return false;
+        }
+
         /// We don't know for sure if we should process task or not
         std::rethrow_exception(first_exception);
     }
@@ -260,7 +318,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log)
     return host_in_hostlist;
 }
 
-void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
+void DDLTask::setClusterInfo(ContextPtr context, LoggerPtr log)
 {
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
     if (!query_on_cluster)
@@ -504,7 +562,7 @@ void ZooKeeperMetadataTransaction::commit()
     if (state != CREATED)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state ({}), it's a bug", state);
     state = FAILED;
-    current_zookeeper->multi(ops);
+    current_zookeeper->multi(ops, /* check_session_valid */ true);
     state = COMMITTED;
 }
 

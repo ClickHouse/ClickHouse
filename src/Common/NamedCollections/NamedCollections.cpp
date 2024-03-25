@@ -216,11 +216,20 @@ public:
         return Configuration::getConfigValueOrDefault<T>(*config, key, &default_value);
     }
 
-    template <typename T> void set(const Key & key, const T & value, bool update_if_exists)
+    template <typename T>
+    void set(const Key & key, const T & value, bool update_if_exists, const std::optional<bool> is_overridable)
     {
-        Configuration::setConfigValue<T>(*config, key, value, update_if_exists);
+        Configuration::setConfigValue<T>(*config, key, value, update_if_exists, is_overridable);
         if (!keys.contains(key))
             keys.insert(key);
+    }
+
+    bool isOverridable(const Key & key, const bool default_value)
+    {
+        const auto is_overridable = Configuration::isOverridable(*config, key);
+        if (is_overridable)
+            return *is_overridable;
+        return default_value;
     }
 
     ImplPtr createCopy(const std::string & collection_name_) const
@@ -396,22 +405,30 @@ template <typename T> T NamedCollection::getAnyOrDefault(const std::initializer_
     return default_value;
 }
 
-template <typename T, bool Locked> void NamedCollection::set(const Key & key, const T & value)
+template <typename T, bool Locked>
+void NamedCollection::set(const Key & key, const T & value, const std::optional<bool> is_overridable)
 {
     assertMutable();
     std::unique_lock lock(mutex, std::defer_lock);
     if constexpr (!Locked)
         lock.lock();
-    pimpl->set<T>(key, value, false);
+    pimpl->set<T>(key, value, false, is_overridable);
 }
 
-template <typename T, bool Locked> void NamedCollection::setOrUpdate(const Key & key, const T & value)
+template <typename T, bool Locked>
+void NamedCollection::setOrUpdate(const Key & key, const T & value, const std::optional<bool> is_overridable)
 {
     assertMutable();
     std::unique_lock lock(mutex, std::defer_lock);
     if constexpr (!Locked)
         lock.lock();
-    pimpl->set<T>(key, value, true);
+    pimpl->set<T>(key, value, true, is_overridable);
+}
+
+bool NamedCollection::isOverridable(const Key & key, bool default_value) const
+{
+    std::lock_guard lock(mutex);
+    return pimpl->isOverridable(key, default_value);
 }
 
 template <bool Locked> void NamedCollection::remove(const Key & key)
@@ -499,25 +516,43 @@ template Int64 NamedCollection::getAnyOrDefault<Int64>(const std::initializer_li
 template Float64 NamedCollection::getAnyOrDefault<Float64>(const std::initializer_list<NamedCollection::Key> & key, const Float64 & default_value) const;
 template bool NamedCollection::getAnyOrDefault<bool>(const std::initializer_list<NamedCollection::Key> & key, const bool & default_value) const;
 
-template void NamedCollection::set<String, true>(const NamedCollection::Key & key, const String & value);
-template void NamedCollection::set<String, false>(const NamedCollection::Key & key, const String & value);
-template void NamedCollection::set<UInt64, true>(const NamedCollection::Key & key, const UInt64 & value);
-template void NamedCollection::set<UInt64, false>(const NamedCollection::Key & key, const UInt64 & value);
-template void NamedCollection::set<Int64, true>(const NamedCollection::Key & key, const Int64 & value);
-template void NamedCollection::set<Int64, false>(const NamedCollection::Key & key, const Int64 & value);
-template void NamedCollection::set<Float64, true>(const NamedCollection::Key & key, const Float64 & value);
-template void NamedCollection::set<Float64, false>(const NamedCollection::Key & key, const Float64 & value);
-template void NamedCollection::set<bool, false>(const NamedCollection::Key & key, const bool & value);
+template void
+NamedCollection::set<String, true>(const NamedCollection::Key & key, const String & value, const std::optional<bool> is_overridable);
+template void
+NamedCollection::set<String, false>(const NamedCollection::Key & key, const String & value, const std::optional<bool> is_overridable);
+template void
+NamedCollection::set<UInt64, true>(const NamedCollection::Key & key, const UInt64 & value, const std::optional<bool> is_overridable);
+template void
+NamedCollection::set<UInt64, false>(const NamedCollection::Key & key, const UInt64 & value, const std::optional<bool> is_overridable);
+template void
+NamedCollection::set<Int64, true>(const NamedCollection::Key & key, const Int64 & value, const std::optional<bool> is_overridable);
+template void
+NamedCollection::set<Int64, false>(const NamedCollection::Key & key, const Int64 & value, const std::optional<bool> is_overridable);
+template void
+NamedCollection::set<Float64, true>(const NamedCollection::Key & key, const Float64 & value, const std::optional<bool> is_overridable);
+template void
+NamedCollection::set<Float64, false>(const NamedCollection::Key & key, const Float64 & value, const std::optional<bool> is_overridable);
+template void
+NamedCollection::set<bool, false>(const NamedCollection::Key & key, const bool & value, const std::optional<bool> is_overridable);
 
-template void NamedCollection::setOrUpdate<String, true>(const NamedCollection::Key & key, const String & value);
-template void NamedCollection::setOrUpdate<String, false>(const NamedCollection::Key & key, const String & value);
-template void NamedCollection::setOrUpdate<UInt64, true>(const NamedCollection::Key & key, const UInt64 & value);
-template void NamedCollection::setOrUpdate<UInt64, false>(const NamedCollection::Key & key, const UInt64 & value);
-template void NamedCollection::setOrUpdate<Int64, true>(const NamedCollection::Key & key, const Int64 & value);
-template void NamedCollection::setOrUpdate<Int64, false>(const NamedCollection::Key & key, const Int64 & value);
-template void NamedCollection::setOrUpdate<Float64, true>(const NamedCollection::Key & key, const Float64 & value);
-template void NamedCollection::setOrUpdate<Float64, false>(const NamedCollection::Key & key, const Float64 & value);
-template void NamedCollection::setOrUpdate<bool, false>(const NamedCollection::Key & key, const bool & value);
+template void NamedCollection::setOrUpdate<String, true>(
+    const NamedCollection::Key & key, const String & value, const std::optional<bool> is_overridable);
+template void NamedCollection::setOrUpdate<String, false>(
+    const NamedCollection::Key & key, const String & value, const std::optional<bool> is_overridable);
+template void NamedCollection::setOrUpdate<UInt64, true>(
+    const NamedCollection::Key & key, const UInt64 & value, const std::optional<bool> is_overridable);
+template void NamedCollection::setOrUpdate<UInt64, false>(
+    const NamedCollection::Key & key, const UInt64 & value, const std::optional<bool> is_overridable);
+template void
+NamedCollection::setOrUpdate<Int64, true>(const NamedCollection::Key & key, const Int64 & value, const std::optional<bool> is_overridable);
+template void
+NamedCollection::setOrUpdate<Int64, false>(const NamedCollection::Key & key, const Int64 & value, const std::optional<bool> is_overridable);
+template void NamedCollection::setOrUpdate<Float64, true>(
+    const NamedCollection::Key & key, const Float64 & value, const std::optional<bool> is_overridable);
+template void NamedCollection::setOrUpdate<Float64, false>(
+    const NamedCollection::Key & key, const Float64 & value, const std::optional<bool> is_overridable);
+template void
+NamedCollection::setOrUpdate<bool, false>(const NamedCollection::Key & key, const bool & value, const std::optional<bool> is_overridable);
 
 template void NamedCollection::remove<true>(const Key & key);
 template void NamedCollection::remove<false>(const Key & key);

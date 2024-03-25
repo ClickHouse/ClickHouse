@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
-#include <Interpreters/Context_fwd.h>
+#include <Core/LogsLevel.h>
 #include <IO/Progress.h>
+#include <Interpreters/Context_fwd.h>
+#include <base/StringRef.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <base/StringRef.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -48,6 +48,8 @@ using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
 using ThreadStatusPtr = ThreadStatus *;
 
+using QueryIsCanceledPredicate = std::function<bool()>;
+
 /** Thread group is a collection of threads dedicated to single task
   * (query or other process like background merge).
   *
@@ -64,7 +66,7 @@ class ThreadGroup
 public:
     ThreadGroup();
     using FatalErrorCallback = std::function<void()>;
-    ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
+    explicit ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -87,6 +89,8 @@ public:
 
         String query_for_logs;
         UInt64 normalized_query_hash = 0;
+
+        QueryIsCanceledPredicate query_is_canceled_predicate = {};
     };
 
     SharedData getSharedData()
@@ -232,7 +236,7 @@ private:
     using Deleter = std::function<void()>;
     Deleter deleter;
 
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
 
     bool check_current_thread_on_destruction;
 
@@ -283,6 +287,8 @@ public:
 
     void attachQueryForLog(const String & query_);
     const String & getQueryForLog() const;
+
+    bool isQueryCanceled() const;
 
     /// Proper cal for fatal_error_callback
     void onFatalError();

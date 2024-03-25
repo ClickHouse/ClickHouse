@@ -21,7 +21,7 @@ struct ProfileInfo;
 class PullingAsyncPipelineExecutor
 {
 public:
-    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool has_partial_result_setting = false);
+    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_);
     ~PullingAsyncPipelineExecutor();
 
     /// Get structure of returned block or chunk.
@@ -58,7 +58,6 @@ private:
 
     void cancelWithExceptionHandling(CancelFunc && cancel_func);
 
-private:
     QueryPipeline & pipeline;
     std::shared_ptr<LazyOutputFormat> lazy_format;
     std::unique_ptr<Data> data;

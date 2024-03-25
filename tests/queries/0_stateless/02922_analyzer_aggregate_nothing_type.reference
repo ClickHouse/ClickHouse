@@ -1,0 +1,97 @@
+\N
+\N
+[nan,nan]
+\N	[nan,nan]	0	\N
+0
+0
+
+0
+\N
+\N
+
+\N
+[nan,nan]
+[nan,nan]
+
+[nan,nan]
+-- notinhgs:
+\N	Nullable(Nothing)
+0	UInt8
+\N	Nullable(Nothing)
+0	UInt64
+0	UInt64
+0	UInt64
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+-- quantile:
+\N
+\N
+\N
+\N
+1
+1
+1
+-- quantiles:
+[nan,nan]
+[nan,nan]
+[nan,nan]
+[nan,nan]
+[1,1]
+[1,1]
+[1,1]
+-- nothing:
+\N
+\N
+\N
+\N
+0
+0
+0
+-- nothing(UInt64):
+0
+0
+0
+0
+0
+0
+0
+-- nothing(Nullable(Nothing)):
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+-- sum:
+\N
+\N
+\N
+\N
+6
+6
+6
+-- count:
+0
+0
+0
+0
+6
+6
+6
+0
+
+0
+0	\N
+
+0	\N
+0	\N
+
+0	\N
+0
+
+0
+\N	\N	[nan,nan]
+
+\N	\N	[nan,nan]

@@ -37,30 +37,6 @@ const char * DataTypeEnum<Type>::getFamilyName() const
 }
 
 template <typename Type>
-std::string DataTypeEnum<Type>::generateMySQLName(const Values & values)
-{
-    WriteBufferFromOwnString out;
-
-    writeString("ENUM", out);
-    writeChar('(', out);
-
-    auto first = true;
-    for (const auto & name_and_value : values)
-    {
-        if (!first)
-            writeString(", ", out);
-
-        first = false;
-
-        writeQuotedString(name_and_value.first, out);
-    }
-
-    writeChar(')', out);
-
-    return out.str();
-}
-
-template <typename Type>
 std::string DataTypeEnum<Type>::generateName(const Values & values)
 {
     WriteBufferFromOwnString out;
@@ -194,7 +170,7 @@ bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
 template <typename Type>
 SerializationPtr DataTypeEnum<Type>::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationEnum<Type>>(this->getValues());
+    return std::make_shared<SerializationEnum<Type>>(std::static_pointer_cast<const DataTypeEnum<Type>>(shared_from_this()));
 }
 
 

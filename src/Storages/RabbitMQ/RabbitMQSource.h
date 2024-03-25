@@ -19,6 +19,7 @@ public:
             const Names & columns,
             size_t max_block_size_,
             UInt64 max_execution_time_,
+            StreamingHandleErrorMode handle_error_mode_,
             bool ack_in_suffix = false);
 
     ~RabbitMQSource() override;
@@ -32,6 +33,7 @@ public:
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();
+    bool sendNack();
 
 private:
     StorageRabbitMQ & storage;
@@ -39,13 +41,14 @@ private:
     ContextPtr context;
     Names column_names;
     const size_t max_block_size;
+    StreamingHandleErrorMode handle_error_mode;
     bool ack_in_suffix;
 
     bool is_finished = false;
     const Block non_virtual_header;
     const Block virtual_header;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     RabbitMQConsumerPtr consumer;
 
     uint64_t max_execution_time_ms = 0;
@@ -61,6 +64,7 @@ private:
         const Names & columns,
         size_t max_block_size_,
         UInt64 max_execution_time_,
+        StreamingHandleErrorMode handle_error_mode_,
         bool ack_in_suffix);
 
     Chunk generateImpl();

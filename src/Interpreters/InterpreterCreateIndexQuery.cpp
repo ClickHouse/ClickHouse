@@ -1,9 +1,12 @@
-#include <Interpreters/InterpreterCreateIndexQuery.h>
 
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterCreateIndexQuery.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -22,6 +25,7 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateIndexQuery::execute()
 {
+    FunctionNameNormalizer().visit(query_ptr.get());
     auto current_context = getContext();
     const auto & create_index = query_ptr->as<ASTCreateIndexQuery &>();
 
@@ -95,6 +99,15 @@ BlockIO InterpreterCreateIndexQuery::execute()
     table->alter(alter_commands, current_context, alter_lock);
 
     return {};
+}
+
+void registerInterpreterCreateIndexQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateIndexQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateIndexQuery", create_fn);
 }
 
 }

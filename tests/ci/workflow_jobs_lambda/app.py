@@ -8,11 +8,11 @@ Then it either posts it as is to the play.clickhouse.com, or anonymizes the sens
 fields for private repositories
 """
 
+import json
+import logging
 from base64 import b64decode
 from dataclasses import dataclass
 from typing import Any, List, Optional
-import json
-import logging
 
 from lambda_shared import ClickHouseHelper, InsertException, get_parameter_from_ssm
 
@@ -126,6 +126,20 @@ def send_event_workflow_job(workflow_job: WorkflowJob) -> None:
         )
 
 
+def killed_job(wf_job: dict) -> bool:
+    """a hack to identify the killed runner if "Complete job" is omit"""
+    if (
+        wf_job.get("status", "") != "completed"
+        or wf_job.get("conclusion", "") != "failure"
+    ):
+        # The task either success or in progress
+        return False
+    return not any(
+        step["name"] == "Complete job" and step["conclusion"] is not None
+        for step in wf_job["steps"]
+    )
+
+
 def handler(event: dict, context: Any) -> dict:
     if event["isBase64Encoded"]:
         event_data = json.loads(b64decode(event["body"]))
@@ -141,8 +155,12 @@ def handler(event: dict, context: Any) -> dict:
         logging.error("The event data: %s", event)
         logging.error("The context data: %s", context)
 
-    # We record only finished steps
-    steps = len([step for step in wf_job["steps"] if step["conclusion"] is not None])
+    if killed_job(wf_job):
+        # for killed job we record 0
+        steps = 0
+    else:
+        # We record only finished steps
+        steps = sum(1 for st in wf_job["steps"] if st["conclusion"] is not None)
 
     workflow_job = WorkflowJob(
         wf_job["id"],

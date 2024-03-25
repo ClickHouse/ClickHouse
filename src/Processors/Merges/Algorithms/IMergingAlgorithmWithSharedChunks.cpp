@@ -1,4 +1,5 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
+#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
 
 namespace DB
 {
@@ -10,6 +11,7 @@ IMergingAlgorithmWithSharedChunks::IMergingAlgorithmWithSharedChunks(
     , chunk_allocator(num_inputs + max_row_refs)
     , cursors(num_inputs)
     , sources(num_inputs)
+    , sources_origin_merge_tree_part_level(num_inputs)
     , out_row_sources_buf(out_row_sources_buf_)
 {
 }
@@ -41,6 +43,8 @@ void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
 
         source.chunk->all_columns = cursors[source_num].all_columns;
         source.chunk->sort_columns = cursors[source_num].sort_columns;
+
+        sources_origin_merge_tree_part_level[source_num] = getPartLevelFromChunk(*source.chunk);
     }
 
     queue = SortingQueue<SortCursor>(cursors);
@@ -57,6 +61,8 @@ void IMergingAlgorithmWithSharedChunks::consume(Input & input, size_t source_num
 
     source.chunk->all_columns = cursors[source_num].all_columns;
     source.chunk->sort_columns = cursors[source_num].sort_columns;
+
+    sources_origin_merge_tree_part_level[source_num] = getPartLevelFromChunk(*source.chunk);
 
     queue.push(cursors[source_num]);
 }

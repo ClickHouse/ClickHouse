@@ -66,7 +66,7 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
-    : data(data_), log(&Poco::Logger::get(data.getLogName() + " (MergerMutator)"))
+    : data(data_), log(getLogger(data.getLogName() + " (MergerMutator)"))
 {
 }
 
@@ -85,7 +85,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t max_coun
     if (scheduled_tasks_count > max_count)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Logical error: invalid argument passed to getMaxSourcePartsSize: scheduled_tasks_count = {} > max_count = {}",
+            "Invalid argument passed to getMaxSourcePartsSize: scheduled_tasks_count = {} > max_count = {}",
             scheduled_tasks_count, max_count);
     }
 
@@ -166,18 +166,20 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
     if (!best_partition_id_to_optimize.empty())
     {
-            return selectAllPartsToMergeWithinPartition(
-                future_part,
-                can_merge_callback,
-                best_partition_id_to_optimize,
-                /*final=*/true,
-                metadata_snapshot,
-                txn,
-                out_disable_reason,
-                /*optimize_skip_merged_partitions=*/true);
+        return selectAllPartsToMergeWithinPartition(
+            future_part,
+            can_merge_callback,
+            best_partition_id_to_optimize,
+            /*final=*/true,
+            metadata_snapshot,
+            txn,
+            out_disable_reason,
+            /*optimize_skip_merged_partitions=*/true);
     }
 
-    out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
+    if (!out_disable_reason.empty())
+        out_disable_reason += ". ";
+    out_disable_reason += "There is no need to merge parts according to merge selector algorithm";
     return SelectPartsDecision::CANNOT_SELECT;
 }
 
@@ -237,8 +239,8 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
     if (!best_partition_id_to_optimize.empty())
         res.emplace(std::move(best_partition_id_to_optimize));
 
-    LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: [{}]"
-              "(max_total_size_to_merge={}, merge_with_ttl_allowed{})",
+    LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: [{}] "
+              "(max_total_size_to_merge={}, merge_with_ttl_allowed={})",
               all_partition_ids.size(), res.size(), fmt::join(res, ", "), max_total_size_to_merge, merge_with_ttl_allowed);
     return res;
 }
@@ -403,7 +405,7 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
         }
 
         IMergeSelector::Part part_info;
-        part_info.size = part->getBytesOnDisk();
+        part_info.size = part->getExistingBytesOnDisk();
         part_info.age = res.current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
@@ -509,7 +511,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
         /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
         if (parts_to_merge.size() == 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: merge selector returned only one part to merge");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge selector returned only one part to merge");
 
         if (parts_to_merge.empty())
         {
@@ -609,7 +611,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
             return SelectPartsDecision::CANNOT_SELECT;
         }
 
-        sum_bytes += (*it)->getBytesOnDisk();
+        sum_bytes += (*it)->getExistingBytesOnDisk();
 
         prev_it = it;
         ++it;
@@ -791,7 +793,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
 }
 
 
-size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts)
+size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts, const bool & account_for_deleted)
 {
     size_t res = 0;
     time_t current_time = std::time(nullptr);
@@ -802,7 +804,10 @@ size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::
         if (part_max_ttl && part_max_ttl <= current_time)
             continue;
 
-        res += part->getBytesOnDisk();
+        if (account_for_deleted)
+            res += part->getExistingBytesOnDisk();
+        else
+            res += part->getBytesOnDisk();
     }
 
     return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);

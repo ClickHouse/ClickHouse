@@ -13,6 +13,13 @@ if (OS_FREEBSD)
     message(STATUS "skim is disabled for FreeBSD")
     return()
 endif()
+if (SANITIZE STREQUAL "thread")
+    # Rust does not supports Thread Sanitizer [1]
+    #
+    #   [1]: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#threadsanitizer
+    message(STATUS "skim is disabled under Thread Sanitizer")
+    return()
+endif()
 
 clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
 
