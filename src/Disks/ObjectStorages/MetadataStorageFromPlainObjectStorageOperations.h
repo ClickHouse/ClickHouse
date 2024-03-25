@@ -18,6 +18,7 @@ private:
     ObjectStoragePtr object_storage;
 
     bool write_created = false;
+    bool write_finalized = false;
 
 public:
     // Assuming that paths are normalized.
@@ -43,7 +44,7 @@ private:
     bool write_finalized = false;
 
     std::unique_ptr<WriteBufferFromFileBase>
-    write(const std::filesystem::path & from, const std::filesystem::path & to, bool validate_content);
+    moveObject(const std::filesystem::path & from, const std::filesystem::path & to, bool validate_content);
 
 public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
@@ -64,6 +65,9 @@ private:
 
     MetadataStorageFromPlainObjectStorage::PathMap & path_map;
     ObjectStoragePtr object_storage;
+
+    std::string key_prefix;
+    bool removed = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(

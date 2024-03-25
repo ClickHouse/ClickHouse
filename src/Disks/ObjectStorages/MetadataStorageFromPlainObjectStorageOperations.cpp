@@ -55,16 +55,20 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
     writeString(path.string(), *buf);
     buf->finalize();
+
+    write_finalized = true;
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
 {
-    if (!write_created)
-        return;
+    if (write_finalized)
+        path_map.erase(path);
 
-    auto node = path_map.extract(path);
-    auto object_key = ObjectStorageKey::createAsRelative(node.mapped(), PREFIX_PATH_FILE_NAME);
-    object_storage->removeObject(StoredObject(object_key.serialize(), path));
+    if (write_created)
+    {
+        auto object_key = ObjectStorageKey::createAsRelative(key_prefix, PREFIX_PATH_FILE_NAME);
+        object_storage->removeObject(StoredObject(object_key.serialize(), path / PREFIX_PATH_FILE_NAME));
+    }
 }
 
 MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
@@ -76,7 +80,7 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
 {
 }
 
-std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::write(
+std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::moveObject(
     const std::filesystem::path & from, const std::filesystem::path & to, bool validate_content)
 {
     auto from_it = path_map.find(from);
@@ -95,7 +99,6 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
         std::string data;
         auto readBuf = object_storage->readObject(object, {});
         readStringUntilEOF(data, *readBuf);
-        chassert(data == path_from);
         if (data != path_from)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
@@ -120,7 +123,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute(std::u
     LOG_TRACE(
         getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Moving directory '{}' to '{}'", path_from, path_to);
 
-    auto write_buf = write(path_from, path_to, /* validate_content */ true);
+    auto write_buf = moveObject(path_from, path_to, /* validate_content */ true);
     write_created = true;
     writeString(path_to.string(), *write_buf);
     write_buf->finalize();
@@ -136,7 +139,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
 
     if (write_created)
     {
-        auto write_buf = write(path_to, path_from, /* verify_content */ false);
+        auto write_buf = moveObject(path_to, path_from, /* verify_content */ false);
         writeString(path_from.string(), *write_buf);
         write_buf->finalize();
     }
@@ -156,15 +159,30 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Removing directory '{}'", path);
 
-    auto object_key = ObjectStorageKey::createAsRelative(path_it->second, PREFIX_PATH_FILE_NAME);
+    key_prefix = path_it->second;
+    auto object_key = ObjectStorageKey::createAsRelative(key_prefix, PREFIX_PATH_FILE_NAME);
     auto object = StoredObject(path_it->second, path / PREFIX_PATH_FILE_NAME);
     object_storage->removeObject(object);
     path_map.erase(path_it);
 }
 
-/// TODO
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
 {
+    if (!removed)
+        return;
+
+    auto object_key = ObjectStorageKey::createAsRelative(key_prefix, PREFIX_PATH_FILE_NAME);
+    auto object = StoredObject(object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
+    auto buf = object_storage->writeObject(
+        object,
+        WriteMode::Rewrite,
+        /* object_attributes */ std::nullopt,
+        /* buf_size */ 4096,
+        /* settings */ {});
+    writeString(path.string(), *buf);
+    buf->finalize();
+
+    path_map.emplace(path, std::move(key_prefix));
 }
 
 }
