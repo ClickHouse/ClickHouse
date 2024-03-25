@@ -89,7 +89,7 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderAzureBlobStorage::readFile(const
         key = file_name;
     }
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
-        client, key, read_settings, settings->max_single_read_retries,
+        client, key, read_settings,
         settings->max_single_download_retries);
 }
 
@@ -258,7 +258,7 @@ std::unique_ptr<ReadBuffer> BackupWriterAzureBlobStorage::readFile(const String 
     }
 
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
-        client, key, read_settings, settings->max_single_read_retries,
+        client, key, read_settings,
         settings->max_single_download_retries);
 }
 

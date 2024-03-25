@@ -21,7 +21,6 @@ public:
         std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         const String & path_,
         const ReadSettings & read_settings_,
-        size_t max_single_read_retries_,
         size_t max_single_download_retries_,
         bool use_external_buffer_ = false,
         bool restricted_seek_ = false,
@@ -38,6 +37,7 @@ public:
     String getFileName() const override { return path; }
 
     void setReadUntilPosition(size_t position) override;
+
     void setReadUntilEnd() override;
 
     bool supportsRightBoundedReads() const override { return true; }
@@ -50,14 +50,12 @@ public:
 
 private:
 
-    void initialize();
+    size_t initialize();
 
-    std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     std::unique_ptr<Azure::Storage::Blobs::BlobClient> blob_client;
 
     const String path;
-    size_t max_single_read_retries;
     size_t max_single_download_retries;
     ReadSettings read_settings;
     std::vector<char> tmp_buffer;

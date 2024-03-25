@@ -190,7 +190,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
     auto settings_ptr = settings.get();
 
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
-        client.get(), object.remote_path, patchSettings(read_settings), settings_ptr->max_single_read_retries,
+        client.get(), object.remote_path, patchSettings(read_settings),
         settings_ptr->max_single_download_retries);
 }
 
@@ -212,7 +212,6 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
             client.get(),
             path,
             disk_read_settings,
-            settings_ptr->max_single_read_retries,
             settings_ptr->max_single_download_retries,
             /* use_external_buffer */true,
             restricted_seek);
