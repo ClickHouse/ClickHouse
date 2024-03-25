@@ -3332,6 +3332,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(table_expression_node.get());
 
     std::unordered_map<std::string, ColumnNodePtr> join_using_column_name_to_column_node;
+    bool is_using_column_node = false;
 
     if (!join_node_in_resolve_process && from_join_node.isUsingJoinExpression())
     {
@@ -3444,6 +3445,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
             result_column.setColumnType(using_column_node.getColumnType());
 
             resolved_identifier = std::move(result_column_node);
+            is_using_column_node = true;
         }
         else if (left_resolved_identifier->isEqual(*right_resolved_identifier, IQueryTreeNode::CompareOptions{.compare_aliases = false}))
         {
@@ -3515,6 +3517,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         {
             auto & left_resolved_column = left_resolved_identifier->as<ColumnNode &>();
             auto using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
+            is_using_column_node = using_column_node_it != join_using_column_name_to_column_node.end();
             if (using_column_node_it != join_using_column_name_to_column_node.end() &&
                 !using_column_node_it->second->getColumnType()->equals(*left_resolved_column.getColumnType()))
             {
@@ -3537,6 +3540,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         {
             auto & right_resolved_column = right_resolved_identifier->as<ColumnNode &>();
             auto using_column_node_it = join_using_column_name_to_column_node.find(right_resolved_column.getColumnName());
+            is_using_column_node = using_column_node_it != join_using_column_name_to_column_node.end();
             if (using_column_node_it != join_using_column_name_to_column_node.end() &&
                 !using_column_node_it->second->getColumnType()->equals(*right_resolved_column.getColumnType()))
             {
@@ -3550,7 +3554,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     if (join_node_in_resolve_process || !resolved_identifier)
         return resolved_identifier;
 
-    if (scope.join_use_nulls)
+    if (scope.join_use_nulls && !is_using_column_node)
     {
         auto nullable_resolved_identifier = convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side, scope);
         if (nullable_resolved_identifier)

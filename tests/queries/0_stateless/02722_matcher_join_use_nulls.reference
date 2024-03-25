@@ -80,7 +80,7 @@ FROM (
     LEFT JOIN (SELECT 2 :: UInt32 as a) t2
     USING (a)
 ) ORDER BY 1;
-\N	Nullable(UInt32)
+0	Nullable(UInt32)
 SELECT *, * APPLY toTypeName
 FROM (
     SELECT *
@@ -336,8 +336,8 @@ FROM (
     FULL JOIN (SELECT 2 :: UInt32 as a) t2
     USING (a)
 ) ORDER BY 1;
-1	Nullable(Int64)
-2	Nullable(Int64)
+1	Int64
+2	Int64
 SELECT *, * APPLY toTypeName
 FROM (
     SELECT *
@@ -363,8 +363,8 @@ FROM (
     FULL JOIN (SELECT 2 :: UInt32 as a) t2
     USING (a)
 ) ORDER BY 1;
+0	Nullable(UInt32)
 2	Nullable(UInt32)
-\N	Nullable(UInt32)
 SELECT *, * APPLY toTypeName
 FROM (
     SELECT *
