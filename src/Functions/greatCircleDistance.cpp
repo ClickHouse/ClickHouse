@@ -7,7 +7,6 @@
 #include <Functions/PerformanceAdaptors.h>
 #include <Interpreters/castColumn.h>
 #include <Common/TargetSpecific.h>
-#include <base/range.h>
 #include <cmath>
 #include <numbers>
 
