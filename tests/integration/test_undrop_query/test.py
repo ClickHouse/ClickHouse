@@ -20,65 +20,30 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-
 def test_undrop_drop_and_undrop_loop(started_cluster):
-    count = 0
-    while count < 10:
-        random_sec = random.randint(0, 10)
+    uuid_list = []
+
+    for i in range(10):
         table_uuid = uuid.uuid1().__str__()
-        logging.info(
-            "random_sec: " + random_sec.__str__() + ", table_uuid: " + table_uuid
-        )
-
+        uuid_list.append(table_uuid)
+        logging.info(f"table_uuid: {table_uuid}")
+        
         node.query(
-            "CREATE TABLE test_undrop_loop"
-            + count.__str__()
-            + " UUID '"
-            + table_uuid
-            + "' (id Int32) ENGINE = MergeTree() ORDER BY id;"
+            f"CREATE TABLE test_undrop_{i} 
+            UUID '{table_uuid}' (id Int32) 
+            ENGINE = MergeTree() ORDER BY id;"
         )
 
-        node.query("DROP TABLE test_undrop_loop" + count.__str__() + ";")
+        node.query(f"DROP TABLE test_undrop_{i};")
 
-        time.sleep(random_sec)
-
-        if random_sec >= 5:
+    for i in range(10):
+        if i >= 8: # -> setting for table to live after drop = 80 seconds
             error = node.query_and_get_error(
-                "UNDROP TABLE test_undrop_loop"
-                + count.__str__()
-                + " UUID '"
-                + table_uuid
-                + "';"
+                f"UNDROP TABLE test_undrop_loop_{i} UUID '{table_uuid}';"
             )
             assert "UNKNOWN_TABLE" in error
-        elif random_sec <= 3:
-            # (*)
-            node.query(
-                "UNDROP TABLE test_undrop_loop"
-                + count.__str__()
-                + " UUID '"
-                + table_uuid
-                + "';"
-            )
-            count = count + 1
         else:
-            try:
-                node.query(
-                    "UNDROP TABLE test_undrop_loop"
-                    + count.__str__()
-                    + " UUID '"
-                    + table_uuid
-                    + "';"
-                )
-                count = count + 1
-            except:
-                error = node.query_and_get_error(
-                    "UNDROP TABLE test_undrop_loop"
-                    + count.__str__()
-                    + " UUID '"
-                    + table_uuid
-                    + "';"
-                )
-                assert "UNKNOWN_TABLE" in error
-            # ignore random_sec = 4 result to account for communication delay with the database.
-            # if we don't do that, then the second case (*) may find the table already dropped and receive an unexpected exception from the database (Bug #55167)
+            node.query(
+                f"UNDROP TABLE test_undrop_loop_{i} UUID '{table_uuid}';"
+            )
+        time.sleep(10)
