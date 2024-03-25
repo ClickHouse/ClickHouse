@@ -392,6 +392,9 @@ def test_progress():
         ),
     ]
 
+    # Stats data can be returned, which broke the test
+    results = [i for i in results if not isinstance(i, clickhouse_grpc_pb2.Stats)]
+
     assert results == expected_results
 
 

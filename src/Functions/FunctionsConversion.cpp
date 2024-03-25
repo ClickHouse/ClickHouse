@@ -1921,6 +1921,19 @@ struct NameParseDateTimeBestEffort;
 struct NameParseDateTimeBestEffortOrZero;
 struct NameParseDateTimeBestEffortOrNull;
 
+template <typename Name, typename ToDataType>
+constexpr bool mightBeDateTime()
+{
+    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+        return true;
+    else if constexpr (
+        std::is_same_v<Name, NameToDateTime> || std::is_same_v<Name, NameParseDateTimeBestEffort>
+        || std::is_same_v<Name, NameParseDateTimeBestEffortOrZero> || std::is_same_v<Name, NameParseDateTimeBestEffortOrNull>)
+        return true;
+
+    return false;
+}
+
 template<typename Name, typename ToDataType>
 inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
 {
@@ -2190,7 +2203,6 @@ private:
                         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
                         break;
                 }
-
             }
             else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
             {
@@ -2208,12 +2220,23 @@ private:
                         break;
                 }
             }
+            else if constexpr ((IsDataTypeNumber<LeftDataType>
+                                || IsDataTypeDateOrDateTime<LeftDataType>)&&IsDataTypeDateOrDateTime<RightDataType>)
+            {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
-            case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
-                arguments, result_type, input_rows_count, from_string_tag); \
-                break;
+    case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
+        result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
+            arguments, result_type, input_rows_count, from_string_tag); \
+        break;
+                switch (date_time_overflow_behavior)
+                {
+                    GENERATE_OVERFLOW_MODE_CASE(Throw)
+                    GENERATE_OVERFLOW_MODE_CASE(Ignore)
+                    GENERATE_OVERFLOW_MODE_CASE(Saturate)
+                }
 
+#undef GENERATE_OVERFLOW_MODE_CASE
+            }
             else if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
             {
                 using LeftT = typename LeftDataType::FieldType;
@@ -2232,44 +2255,36 @@ private:
                 }
                 else
                 {
-                    switch (date_time_overflow_behavior)
-                    {
-                        GENERATE_OVERFLOW_MODE_CASE(Throw)
-                        GENERATE_OVERFLOW_MODE_CASE(Ignore)
-                        GENERATE_OVERFLOW_MODE_CASE(Saturate)
-                    }
+                    result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(
+                        arguments, result_type, input_rows_count, from_string_tag);
                 }
             }
-            else if constexpr ((IsDataTypeNumber<LeftDataType> || IsDataTypeDateOrDateTime<LeftDataType>)
-                               && IsDataTypeDateOrDateTime<RightDataType>)
-            {
-                switch (date_time_overflow_behavior)
-                {
-                    GENERATE_OVERFLOW_MODE_CASE(Throw)
-                    GENERATE_OVERFLOW_MODE_CASE(Ignore)
-                    GENERATE_OVERFLOW_MODE_CASE(Saturate)
-                }
-            }
-#undef GENERATE_OVERFLOW_MODE_CASE
             else
                   result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
 
             return true;
         };
 
-        if (isDateTime64<Name, ToDataType>(arguments))
+        if constexpr (mightBeDateTime<Name, ToDataType>())
         {
-            /// For toDateTime('xxxx-xx-xx xx:xx:xx.00', 2[, 'timezone']) we need to it convert to DateTime64
-            const ColumnWithTypeAndName & scale_column = arguments[1];
-            UInt32 scale = extractToDecimalScale(scale_column);
-
-            if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
+            if (isDateTime64<Name, ToDataType>(arguments))
             {
-                if (!callOnIndexAndDataType<DataTypeDateTime64>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                                    arguments[0].type->getName(), getName());
+                /// For toDateTime('xxxx-xx-xx xx:xx:xx.00', 2[, 'timezone']) we need to it convert to DateTime64
+                const ColumnWithTypeAndName & scale_column = arguments[1];
+                UInt32 scale = extractToDecimalScale(scale_column);
 
-                return result_column;
+                if (to_datetime64 || scale != 0) /// When scale = 0, the data type is DateTime otherwise the data type is DateTime64
+                {
+                    if (!callOnIndexAndDataType<DataTypeDateTime64>(
+                            from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag))
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of argument of function {}",
+                            arguments[0].type->getName(),
+                            getName());
+
+                    return result_column;
+                }
             }
         }
 
@@ -2468,19 +2483,27 @@ public:
             result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count,
                 assert_cast<const ToDataType &>(*removeNullable(result_type)).getScale());
         }
-        else if (isDateTime64<Name, ToDataType>(arguments))
+        else if constexpr (mightBeDateTime<Name, ToDataType>())
         {
-            UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
-            if (arguments.size() > 1)
-                scale = extractToDecimalScale(arguments[1]);
-
-            if (scale == 0)
+            if (isDateTime64<Name, ToDataType>(arguments))
             {
-                result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count, 0);
+                UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
+                if (arguments.size() > 1)
+                    scale = extractToDecimalScale(arguments[1]);
+
+                if (scale == 0)
+                {
+                    result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count, 0);
+                }
+                else
+                {
+                    result_column
+                        = executeInternal<DataTypeDateTime64>(arguments, result_type, input_rows_count, static_cast<UInt32>(scale));
+                }
             }
             else
             {
-                result_column = executeInternal<DataTypeDateTime64>(arguments, result_type, input_rows_count, static_cast<UInt32>(scale));
+                result_column = executeInternal<ToDataType>(arguments, result_type, input_rows_count, 0);
             }
         }
         else
@@ -3173,43 +3196,14 @@ private:
 
                 if constexpr (IsDataTypeNumber<LeftDataType>)
                 {
-                    if constexpr (IsDataTypeNumber<RightDataType>)
+                    if constexpr (IsDataTypeDateOrDateTime<RightDataType>)
                     {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
-            case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
-                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
-                arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ADDITIONS()); \
-                break;
-                        if (wrapper_cast_type == CastType::accurate)
-                        {
-                            switch (date_time_overflow_behavior)
-                            {
-                                GENERATE_OVERFLOW_MODE_CASE(Throw, AccurateConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Ignore, AccurateConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Saturate, AccurateConvertStrategyAdditions)
-                            }
-                        }
-                        else
-                        {
-                            switch (date_time_overflow_behavior)
-                            {
-                                GENERATE_OVERFLOW_MODE_CASE(Throw, AccurateOrNullConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Ignore, AccurateOrNullConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(Saturate, AccurateOrNullConvertStrategyAdditions)
-                            }
-                        }
-#undef GENERATE_OVERFLOW_MODE_CASE
-
-                        return true;
-                    }
-
-                    if constexpr (std::is_same_v<RightDataType, DataTypeDate> || std::is_same_v<RightDataType, DataTypeDateTime>)
-                    {
-#define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
-            case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
-            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::template execute<ADDITIONS>( \
-arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag); \
-                break;
+    case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
+        result_column \
+            = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>:: \
+                execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, ADDITIONS()); \
+        break;
                         if (wrapper_cast_type == CastType::accurate)
                         {
                             switch (date_time_overflow_behavior)
@@ -3229,6 +3223,30 @@ arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDef
                             }
                         }
 #undef GENERATE_OVERFLOW_MODE_CASE
+
+                        return true;
+                    }
+                    else if constexpr (IsDataTypeNumber<RightDataType>)
+                    {
+                        if (wrapper_cast_type == CastType::accurate)
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                                arguments,
+                                result_type,
+                                input_rows_count,
+                                BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                                AccurateConvertStrategyAdditions());
+                        }
+                        else
+                        {
+                            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                                arguments,
+                                result_type,
+                                input_rows_count,
+                                BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                                AccurateOrNullConvertStrategyAdditions());
+                        }
+
                         return true;
                     }
                 }

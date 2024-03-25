@@ -55,6 +55,7 @@ REGISTER_FUNCTION(CurrentUser)
 {
     factory.registerFunction<FunctionCurrentUser>();
     factory.registerAlias("user", FunctionCurrentUser::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("current_user", FunctionCurrentUser::name, FunctionFactory::CaseInsensitive);
 }
 
 }
