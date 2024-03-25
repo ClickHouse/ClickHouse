@@ -24,7 +24,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 
-namespace {
+namespace
+{
 constexpr auto * database_column_name = "database";
 constexpr auto * table_column_name = "table";
 constexpr auto * engine_column_name = "engine";
