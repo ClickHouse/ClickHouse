@@ -7,8 +7,8 @@
 
 #include <base/argsToConfig.h>
 #include <base/safeExit.h>
-#include <base/scope_guard.h>
 #include <Core/Block.h>
+#include <Core/BaseSettingsProgramOptions.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
@@ -16,7 +16,6 @@
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/typeid_cast.h>
-#include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -70,6 +69,7 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <iostream>
 #include <filesystem>
 #include <limits>
@@ -564,7 +564,7 @@ try
             out_buf = &std_out;
         }
 
-        String current_format = format;
+        String current_format = default_output_format;
 
         select_into_file = false;
         select_into_file_and_stdout = false;
@@ -720,6 +720,87 @@ void ClientBase::adjustSettings()
     }
 
     global_context->setSettings(settings);
+}
+
+bool ClientBase::isRegularFile(int fd)
+{
+    struct stat file_stat;
+    return fstat(fd, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
+}
+
+void ClientBase::setDefaultFormatsFromConfiguration()
+{
+    if (config().has("output-format"))
+    {
+        default_output_format = config().getString("output-format");
+        is_default_format = false;
+    }
+    else if (config().has("format"))
+    {
+        default_output_format = config().getString("format");
+        is_default_format = false;
+    }
+    else if (config().has("vertical"))
+    {
+        default_output_format = "Vertical";
+        is_default_format = false;
+    }
+    else if (isRegularFile(STDOUT_FILENO))
+    {
+        std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDOUT_FILENO);
+        if (format_from_file_name)
+            default_output_format = *format_from_file_name;
+        else
+            default_output_format = "TSV";
+    }
+    else if (is_interactive || stdout_is_a_tty)
+    {
+        default_output_format = "PrettyCompact";
+    }
+    else
+    {
+        default_output_format = "TSV";
+    }
+
+    if (config().has("input-format"))
+    {
+        default_input_format = config().getString("input-format");
+    }
+    else if (config().has("format"))
+    {
+        default_input_format = config().getString("format");
+    }
+    else if (config().getString("table-file", "-") != "-")
+    {
+        auto file_name = config().getString("table-file");
+        std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(file_name);
+        if (format_from_file_name)
+            default_input_format = *format_from_file_name;
+        else
+            default_input_format = "TSV";
+    }
+    else
+    {
+        std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDIN_FILENO);
+        if (format_from_file_name)
+            default_input_format = *format_from_file_name;
+        else
+            default_input_format = "TSV";
+    }
+
+    format_max_block_size = config().getUInt64("format_max_block_size",
+        global_context->getSettingsRef().max_block_size);
+
+    /// Setting value from cmd arg overrides one from config
+    if (global_context->getSettingsRef().max_insert_block_size.changed)
+    {
+        insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
+    }
+    else
+    {
+        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
+            global_context->getSettingsRef().max_insert_block_size);
+    }
 }
 
 void ClientBase::initTTYBuffer(ProgressOption progress)
@@ -1601,7 +1682,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
 void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data)
 {
-    String current_format = insert_format;
+    String current_format = "Values";
 
     /// Data format can be specified in the INSERT query.
     if (const auto * insert = parsed_query->as<ASTInsertQuery>())
@@ -2627,6 +2708,46 @@ void ClientBase::runNonInteractive()
 }
 
 
+#if defined(FUZZING_MODE)
+extern "C" int LLVMFuzzerRunDriver(int * argc, char *** argv, int (*callback)(const uint8_t * data, size_t size));
+ClientBase * app;
+
+void ClientBase::runLibFuzzer()
+{
+    app = this;
+    std::vector<String> fuzzer_args_holder;
+
+    if (const char * fuzzer_args_env = getenv("FUZZER_ARGS")) // NOLINT(concurrency-mt-unsafe)
+        boost::split(fuzzer_args_holder, fuzzer_args_env, isWhitespaceASCII, boost::token_compress_on);
+
+    std::vector<char *> fuzzer_args;
+    fuzzer_args.push_back(argv0);
+    for (auto & arg : fuzzer_args_holder)
+        fuzzer_args.emplace_back(arg.data());
+
+    int fuzzer_argc = fuzzer_args.size();
+    char ** fuzzer_argv = fuzzer_args.data();
+
+    LLVMFuzzerRunDriver(&fuzzer_argc, &fuzzer_argv, [](const uint8_t * data, size_t size)
+    {
+        try
+        {
+            String query(reinterpret_cast<const char *>(data), size);
+            app->processQueryText(query);
+        }
+        catch (...)
+        {
+            return -1;
+        }
+
+        return 0;
+    });
+}
+#else
+void ClientBase::runLibFuzzer() {}
+#endif
+
+
 void ClientBase::clearTerminal()
 {
     /// Clear from cursor until end of screen.
@@ -2710,9 +2831,9 @@ private:
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
     if (allow_repeated_settings)
-        cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
+        addProgramOptionsAsMultitokens(cmd_settings, options_description.main_description.value());
     else
-        cmd_settings.addProgramOptions(options_description.main_description.value());
+        addProgramOptions(cmd_settings, options_description.main_description.value());
 
     if (allow_merge_tree_settings)
     {
@@ -2733,9 +2854,9 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
                     return;
 
                 if (allow_repeated_settings)
-                    cmd_merge_tree_settings.addProgramOptionAsMultitoken(main_options, name, setting);
+                    addProgramOptionAsMultitoken(cmd_merge_tree_settings, main_options, name, setting);
                 else
-                    cmd_merge_tree_settings.addProgramOption(main_options, name, setting);
+                    addProgramOption(cmd_merge_tree_settings, main_options, name, setting);
             };
 
             const auto & setting_name = setting.getName();
@@ -2796,6 +2917,8 @@ void ClientBase::init(int argc, char ** argv)
     Arguments common_arguments = {""}; /// 0th argument is ignored.
     std::vector<Arguments> hosts_and_ports_arguments;
 
+    if (argc)
+        argv0 = argv[0];
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
     /// Support for Unicode dashes
@@ -2846,7 +2969,9 @@ void ClientBase::init(int argc, char ** argv)
 
         ("suggestion_limit", po::value<int>()->default_value(10000), "Suggestion limit for how many databases, tables and columns to fetch.")
 
-        ("format,f", po::value<std::string>(), "default output format")
+        ("format,f", po::value<std::string>(), "default output format (and input format for clickhouse-local)")
+        ("output-format", po::value<std::string>(), "default output format (this option has preference over --format)")
+
         ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
         ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
 
@@ -2860,6 +2985,8 @@ void ClientBase::init(int argc, char ** argv)
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
+
+        ("fuzzer-args", po::value<std::string>(), "Command line arguments for the LLVM's libFuzzer driver. Only relevant if the application is compiled with libFuzzer.")
     ;
 
     addOptions(options_description);
@@ -2927,6 +3054,8 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("ignore-error", true);
     if (options.count("format"))
         config().setString("format", options["format"].as<std::string>());
+    if (options.count("output-format"))
+        config().setString("output-format", options["output-format"].as<std::string>());
     if (options.count("vertical"))
         config().setBool("vertical", true);
     if (options.count("stacktrace"))

@@ -4,8 +4,8 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     ColumnInfoHandler.cpp
     IdentifierQuoteHandler.cpp
     MainHandler.cpp
-    ODBCBlockInputStream.cpp
-    ODBCBlockOutputStream.cpp
+    ODBCSource.cpp
+    ODBCSink.cpp
     ODBCBridge.cpp
     ODBCHandlerFactory.cpp
     PingHandler.cpp

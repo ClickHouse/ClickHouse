@@ -1,7 +1,5 @@
 import pytest
 import uuid
-import random
-import logging
 import time
 
 from helpers.cluster import ClickHouseCluster
@@ -22,46 +20,29 @@ def started_cluster():
 
 
 def test_undrop_drop_and_undrop_loop(started_cluster):
-    count = 0
-    while count < 10:
-        random_sec = random.randint(0, 10)
-        table_uuid = uuid.uuid1().__str__()
-        logging.info(
-            "random_sec: " + random_sec.__str__() + ", table_uuid: " + table_uuid
-        )
-
+    # create, drop, undrop, drop, undrop table 5 times
+    for _ in range(5):
+        table_uuid = str(uuid.uuid1())
+        table = f"test_undrop_loop"
         node.query(
-            "CREATE TABLE test_undrop_loop"
-            + count.__str__()
-            + " UUID '"
-            + table_uuid
-            + "' (id Int32) ENGINE = MergeTree() ORDER BY id;"
+            f"CREATE TABLE {table} "
+            f"UUID '{table_uuid}' (id Int32) "
+            f"Engine=MergeTree() ORDER BY id"
         )
 
-        node.query("DROP TABLE test_undrop_loop" + count.__str__() + ";")
+        node.query(f"DROP TABLE {table}")
+        node.query(f"UNDROP TABLE {table} UUID '{table_uuid}'")
 
-        time.sleep(random_sec)
+        node.query(f"DROP TABLE {table}")
+        # database_atomic_delay_before_drop_table_sec=3
+        time.sleep(6)
 
-        if random_sec >= 5:
-            error = node.query_and_get_error(
-                "UNDROP TABLE test_undrop_loop"
-                + count.__str__()
-                + " UUID '"
-                + table_uuid
-                + "';"
-            )
-            assert "UNKNOWN_TABLE" in error
-        elif random_sec <= 3:
-            # (*)
-            node.query(
-                "UNDROP TABLE test_undrop_loop"
-                + count.__str__()
-                + " UUID '"
-                + table_uuid
-                + "';"
-            )
-            count = count + 1
-        else:
-            pass
-            # ignore random_sec = 4 to account for communication delay with the database.
-            # if we don't do that, then the second case (*) may find the table already dropped and receive an unexpected exception from the database (Bug #55167)
+        """
+        Expect two things:
+        1. Table is dropped - UNKNOWN_TABLE in error
+        2. Table in process of dropping - Return code: 60.
+            The drop task of table ... (uuid) is in progress,
+            has been dropped or the database engine doesn't support it
+        """
+        error = node.query_and_get_error(f"UNDROP TABLE {table} UUID '{table_uuid}'")
+        assert "UNKNOWN_TABLE" in error or "The drop task of table" in error
