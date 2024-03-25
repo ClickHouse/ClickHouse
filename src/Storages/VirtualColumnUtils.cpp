@@ -101,11 +101,10 @@ void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
     }
 
     FilterDescription filter(*filter_column);
-
     for (size_t i = 0; i < block.columns(); ++i)
     {
         ColumnPtr & column = block.safeGetByPosition(i).column;
-        column = column->filter(*filter.data, -1);
+        filter.filterInPlace(column->assumeMutableRef());
     }
 }
 

@@ -196,7 +196,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
         ColumnPtr filter_column_ptr = finalized_block.getByPosition(filter_column_pos).column;
         if (remove_filter)
             finalized_block.erase(filter_column_name);
-        auto columns = finalized_block.getColumns();
+        auto columns = finalized_block.mutateColumns();
 
         ConstantFilterDescription const_filter_description(*filter_column_ptr);
 
@@ -225,17 +225,16 @@ void TotalsHavingTransform::transform(Chunk & chunk)
             addToTotals(chunk, filter_description.data);
 
         /// Filter the block by expression in HAVING.
-        for (auto & column : columns)
+        num_rows = filter_description.countBytesInFilter();
+        if (!num_rows)
         {
-            column = column->filter(*filter_description.data, -1);
-            if (column->empty())
-            {
-                chunk.clear();
-                return;
-            }
+            chunk.clear();
+            return;
         }
 
-        num_rows = columns.empty() ? countBytesInFilter(*filter_description.data) : columns.front()->size();
+        for (auto & column : columns)
+            filter_description.filterInPlace(*column);
+
         chunk.setColumns(std::move(columns), num_rows);
     }
 

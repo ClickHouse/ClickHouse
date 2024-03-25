@@ -6779,7 +6779,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     for (size_t i = 0; i < virtual_columns_block.columns(); ++i)
     {
         ColumnPtr & column = virtual_columns_block.safeGetByPosition(i).column;
-        column = column->filter(*filter.data, -1);
+        filter.filterInPlace(column->assumeMutableRef());
     }
 
     size_t pos = 0;
