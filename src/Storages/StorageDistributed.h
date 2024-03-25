@@ -5,6 +5,7 @@
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <Common/SettingsChanges.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -152,9 +153,8 @@ public:
     ClusterPtr getCluster() const;
 
     /// Used by InterpreterSystemQuery
-    void flushClusterNodesAllData(ContextPtr context);
+    void flushClusterNodesAllData(ContextPtr context, const SettingsChanges & settings_changes);
 
-    /// Used by ClusterCopier
     size_t getShardCount() const;
 
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
@@ -165,6 +165,10 @@ private:
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
     const String & getRelativeDataPath() const { return relative_data_path; }
+
+    /// @param flush - if true the do flush (DistributedAsyncInsertDirectoryQueue::flushAllData()),
+    /// otherwise only shutdown (DistributedAsyncInsertDirectoryQueue::shutdownWithoutFlush())
+    void flushClusterNodesAllDataImpl(ContextPtr context, const SettingsChanges & settings_changes, bool flush);
 
     /// create directory monitors for each existing subdirectory
     void initializeDirectoryQueuesForDisk(const DiskPtr & disk);

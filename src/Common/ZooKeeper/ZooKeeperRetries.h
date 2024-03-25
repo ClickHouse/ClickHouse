@@ -120,7 +120,7 @@ public:
 
         iteration_succeeded = false;
         user_error.code = code;
-        user_error.message = std::move(message);
+        user_error.message = message;
         user_error.exception = exception;
         keeper_error = KeeperError{};
     }
