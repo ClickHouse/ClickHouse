@@ -11,8 +11,7 @@ CLICKHOUSE_LOG_COMMENT=
 table="t_03008_async_insert"
 log_comment="${table}_$RANDOM"
 
-# sanity check that default wasn't changed
-${CLICKHOUSE_CLIENT} -q "SELECT toUInt64(value) FROM system.server_settings WHERE name = 'max_pending_async_inserts'"
+max_pending_async_inserts=$(${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.server_settings WHERE name = 'max_pending_async_inserts'")
 
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE $table(s Int32) ENGINE=MergeTree ORDER BY s"
 
@@ -33,7 +32,8 @@ client_opts=(
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 
-${CLICKHOUSE_BENCHMARK} "${client_opts[@]}" -q "INSERT INTO $table VALUES (42)" -i 999 -c 10 &> /dev/null
+concurrency=$((RANDOM % 20 + 10))
+${CLICKHOUSE_BENCHMARK} "${client_opts[@]}" -q "INSERT INTO $table VALUES (42)" -i $((max_pending_async_inserts * 2 - 1)) -c $concurrency &> /dev/null
 
 ${CLICKHOUSE_CLIENT} -nq "
   SYSTEM FLUSH LOGS;
@@ -42,8 +42,7 @@ ${CLICKHOUSE_CLIENT} -nq "
     FROM system.query_log
    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND log_comment = '$log_comment' AND type = 'QueryFinish';
 
-  # max_pending_async_inserts + max concurrency
-  SELECT throwIf(MAX(pending_inserts) > 510)
+  SELECT throwIf(MAX(pending_inserts) > $((max_pending_async_inserts + concurrency)))
     FROM (
       SELECT SUM(CurrentMetric_PendingAsyncInsert) AS pending_inserts
         FROM system.metric_log
