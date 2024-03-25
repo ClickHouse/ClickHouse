@@ -382,8 +382,8 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
                     if (settings.json.ignore_unknown_keys_in_named_tuple)
                     {
                         if constexpr (throw_exception)
-                            skipJSONField(istr, name);
-                        else if (!trySkipJSONField(istr, name))
+                            skipJSONField(istr, name, settings.json);
+                        else if (!trySkipJSONField(istr, name, settings.json))
                             return false;
 
                         skipWhitespaceIfAny(istr);
