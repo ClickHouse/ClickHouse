@@ -1,4 +1,4 @@
--- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-random-settings
+-- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-random-settings, no-debug
 
 DROP TABLE IF EXISTS test;
 

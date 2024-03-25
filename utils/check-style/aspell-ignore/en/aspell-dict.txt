@@ -161,7 +161,9 @@ ClickHouseNIO
 ClickHouseVapor
 ClickVisual
 ClickableSquare
+CloudAvailableBadge
 CloudDetails
+CloudNotSupportedBadge
 CloudStorage
 CodeBlock
 CodeLLDB

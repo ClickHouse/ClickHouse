@@ -1,7 +1,5 @@
 import pytest
 import uuid
-import random
-import logging
 import time
 
 from helpers.cluster import ClickHouseCluster
