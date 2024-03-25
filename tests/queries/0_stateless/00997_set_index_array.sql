@@ -17,6 +17,8 @@ select
 from system.numbers
 limit 10000000;
 
+OPTIMIZE TABLE set_array FINAL;
+
 SET max_rows_to_read = 8192;
 
 select count() from set_array where has(index_array, 333);
