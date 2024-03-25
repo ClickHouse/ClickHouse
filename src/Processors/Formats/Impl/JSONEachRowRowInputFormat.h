@@ -55,12 +55,12 @@ private:
 
     virtual void readRowStart(MutableColumns &) {}
     virtual void skipRowStart() {}
-    void transformFieldNameToLowerCase(StringRef & field_name)
+    String transformFieldNameToLowerCase(const StringRef & field_name)
     {
-        if (!field_name.data) return;
-        char * name_data = const_cast<char*>(field_name.data);
-        for (size_t i = 0; i < field_name.size; ++i)
-            name_data[i] = std::tolower(name_data[i]);
+        String field_name_str = field_name.toString();
+        std::transform(field_name_str.begin(), field_name_str.end(), field_name_str.begin(),
+            [](unsigned char c) { return std::tolower(c); });
+        return field_name_str;
     }
     /// Buffer for the read from the stream field name. Used when you have to copy it.
     /// Also, if processing of Nested data is in progress, it holds the common prefix
@@ -80,7 +80,8 @@ private:
 
     /// Hash table match `field name -> position in the block`. NOTE You can use perfect hash map.
     Block::NameMap name_map;
-
+    /// Hash table match `lower_case field name -> field name in the block`.
+    std::unordered_map<String, StringRef> lower_case_name_map;
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
     std::vector<Block::NameMap::const_iterator> prev_positions;
 
