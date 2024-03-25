@@ -1616,13 +1616,12 @@ def _upload_build_profile_data(
 def _add_build_to_version_history(
     pr_info: PRInfo,
     job_report: JobReport,
-    git_ref: str,
     version: str,
     docker_tag: str,
     ch_helper: ClickHouseHelper,
 ) -> None:
     # with some probability we will not silently break this logic
-    assert pr_info.sha and pr_info.commit_html_url and version and git_ref
+    assert pr_info.sha and pr_info.commit_html_url and pr_info.head_ref and version
 
     data = {
         "check_start_time": job_report.start_time,
@@ -1632,19 +1631,12 @@ def _add_build_to_version_history(
         "commit_url": pr_info.commit_html_url,
         "version": version,
         "docker_tag": docker_tag,
-        "git_ref": git_ref,
+        "git_ref": pr_info.head_ref,
     }
-
-    json_str = json.dumps(data)
 
     print(f"::notice ::Log Adding record to versions history: {json_str}")
 
-    try:
-        ch_helper.insert_json_into(
-            db="default", table="version_history", json_str=json_str
-        )
-    except InsertException:
-        logging.error("Failed to insert profile data for the build, continue")
+    ch_helper.insert_event_into(db="default", table="version_history", event=data)
 
 
 def _run_test(job_name: str, run_command: str) -> int:
@@ -2025,7 +2017,6 @@ def main() -> int:
                 _add_build_to_version_history(
                     pr_info,
                     job_report,
-                    indata["git_ref"],
                     indata["version"],
                     indata["build"],
                     ch_helper,
