@@ -28,9 +28,7 @@ def test_undrop_drop_and_undrop_loop(started_cluster):
         logging.info(f"table_uuid: {table_uuid}")
         
         node.query(
-            f"CREATE TABLE test_undrop_{i} 
-            UUID '{table_uuid}' (id Int32) 
-            ENGINE = MergeTree() ORDER BY id;"
+            f"CREATE TABLE test_undrop_{i} UUID '{table_uuid}' (id Int32) ENGINE = MergeTree() ORDER BY id;"
         )
 
         node.query(f"DROP TABLE test_undrop_{i};")
