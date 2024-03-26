@@ -102,7 +102,7 @@ void FilterDescription::filterInPlace(IColumn & column) const
     if (!indexes_holder)
         lazyInitializeForFilterInPlace();
 
-    column.filterInPlace(indexes, start);
+    column.filterInPlace(*indexes_holder, start);
 }
 
 void FilterDescription::lazyInitializeForFilterInPlace() const
@@ -112,13 +112,13 @@ void FilterDescription::lazyInitializeForFilterInPlace() const
     if (rows <= std::numeric_limits<UInt32>::max())
     {
         indexes_holder = ColumnUInt32::create();
-        auto & indexes = assert_cast<ColumnUInt32 &>(*indexes_holder).getData();
+        auto & indexes = assert_cast<ColumnUInt32 &>(indexes_holder->assumeMutableRef()).getData();
         start = filterToIndices(*data, indexes);
     }
     else
     {
         indexes_holder = ColumnUInt64::create();
-        auto & indexes = assert_cast<ColumnUInt64 &>(*indexes_holder).getData();
+        auto & indexes = assert_cast<ColumnUInt64 &>(indexes_holder->assumeMutableRef()).getData();
         start = filterToIndices(*data, indexes);
     }
 
@@ -158,10 +158,10 @@ void FilterDescription::lazyInitializeForFilterInPlace() const
 
 size_t FilterDescription::countBytesInFilter() const
 {
-    if (!initialized_for_filter_in_place)
+    if (!indexes_holder)
         lazyInitializeForFilterInPlace();
 
-    return start + indexes.size();
+    return start + indexes_holder->size();
 }
 
 SparseFilterDescription::SparseFilterDescription(const IColumn & column)

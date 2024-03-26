@@ -423,13 +423,6 @@ void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<
     }
 }
 
-template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::filterInPlace(const IColumn & indexes, size_t start)
-{
-    auto & self = static_cast<Derived &>(*this);
-    selectFilterInPlaceImpl(self, indexes, start);
-}
-
 template class IColumnHelper<ColumnVector<UInt8>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UInt16>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UInt32>, ColumnFixedSizeHelper>;

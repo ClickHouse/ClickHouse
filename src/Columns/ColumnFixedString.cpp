@@ -284,6 +284,11 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     return res;
 }
 
+void ColumnFixedString::filterInPlace(const IColumn & indexes, size_t start)
+{
+    selectFilterInPlaceImpl(*this, indexes, start);
+}
+
 template <typename Type>
 void ColumnFixedString::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
 {

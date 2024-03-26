@@ -322,8 +322,13 @@ ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
     return selectIndexImpl(*this, indexes, limit);
 }
 
+void ColumnString::filterInPlace(const IColumn & indexes, size_t start)
+{
+    selectFilterInPlaceImpl(*this, indexes, start);
+}
+
 template <typename Type>
-void ColumnString::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start);
+void ColumnString::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
 {
     Chars & res_chars = chars;
     Offsets & res_offsets = offsets;

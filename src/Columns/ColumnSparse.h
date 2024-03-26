@@ -91,6 +91,8 @@ public:
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t) const override;
 
+    void filterInPlace(const IColumn & indexes, size_t start) override;
+
     template <typename Type>
     void filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start);
 

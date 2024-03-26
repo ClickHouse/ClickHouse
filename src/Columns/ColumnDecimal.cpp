@@ -392,6 +392,12 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 }
 
 template <is_decimal T>
+void ColumnDecimal<T>::filterInPlace(const IColumn & indexes, size_t start)
+{
+    selectFilterInPlaceImpl(*this, indexes, start);
+}
+
+template <is_decimal T>
 template <typename Type>
 void ColumnDecimal<T>::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
 {

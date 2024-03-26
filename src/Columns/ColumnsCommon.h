@@ -164,4 +164,9 @@ ColumnPtr permuteImpl(const Column & column, const IColumn::Permutation & perm, 
     template ColumnPtr Column::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const; \
     template ColumnPtr Column::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const; \
     template ColumnPtr Column::indexImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, size_t limit) const;
+
+/// NOLINTNEXTLINE
+#define INSTANTIATE_FILTER_IN_PLACE_IMPL(Column) \
+    template void Column::filterInPlaceImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t start); \
+    template void Column::filterInPlaceImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, size_t start);
 }

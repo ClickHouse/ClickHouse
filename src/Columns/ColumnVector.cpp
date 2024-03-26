@@ -643,6 +643,11 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     return res;
 }
 
+template <typename T>
+void ColumnVector<T>::filterInPlace(const IColumn & indexes, size_t start)
+{
+    selectFilterInPlaceImpl(*this, indexes, start);
+}
 
 template <typename T>
 template <typename Type>

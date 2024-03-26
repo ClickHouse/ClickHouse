@@ -347,6 +347,11 @@ ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexe
 
 INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction)
 
+void ColumnAggregateFunction::filterInPlace(const IColumn & indexes, size_t start)
+{
+    selectFilterInPlaceImpl(*this, indexes, start);
+}
+
 template <typename Type>
 void ColumnAggregateFunction::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
 {

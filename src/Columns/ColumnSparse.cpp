@@ -444,6 +444,11 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     return ColumnSparse::create(std::move(res_values), std::move(res_offsets), limit);
 }
 
+void ColumnSparse::filterInPlace(const IColumn & indexes, size_t start)
+{
+    selectFilterInPlaceImpl(*this, indexes, start);
+}
+
 template <typename Type>
 void ColumnSparse::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
 {

@@ -890,6 +890,11 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
 
+void ColumnArray::filterInPlace(const IColumn & indexes, size_t start)
+{
+    selectFilterInPlaceImpl(*this, indexes, start);
+}
+
 template <typename Type>
 void ColumnArray::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
 {

@@ -717,8 +717,6 @@ class IColumnHelper : public Parent
     StringRef serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-
-    void filterInPlace(const IColumn & indexes, size_t start) override;
 };
 
 }
