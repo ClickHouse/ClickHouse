@@ -284,7 +284,8 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     return res;
 }
 
-void ColumnFixedString::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+template <typename Type>
+void ColumnFixedString::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
 {
     Chars & res_chars = chars;
     size_t offset = n * start;

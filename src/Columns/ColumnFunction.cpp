@@ -178,7 +178,7 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         recursively_convert_result_to_full_column_if_low_cardinality);
 }
 
-void ColumnFunction::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+void ColumnFunction::filterInPlace(const IColumn & indexes, size_t start)
 {
     size_t num_captured_columns = captured_columns.size();
     for (size_t i = 0; i < num_captured_columns; ++i)

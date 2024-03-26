@@ -97,7 +97,7 @@ public:
     void updateWeakHash32(WeakHash32 &) const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }
     ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeDecompressed(); }
-    void filterInPlace(const PaddedPODArray<UInt64> & /*indexes*/, size_t /*start*/) override { throwMustBeDecompressed(); }
+    void filterInPlace(const IColumn & /*indexes*/, size_t /*start*/) override { throwMustBeDecompressed(); }
     void expand(const Filter &, bool) override { throwMustBeDecompressed(); }
     ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeDecompressed(); }
     ColumnPtr index(const IColumn &, size_t) const override { throwMustBeDecompressed(); }

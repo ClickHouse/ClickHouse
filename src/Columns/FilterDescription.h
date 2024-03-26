@@ -53,12 +53,10 @@ protected:
 private:
     void lazyInitializeForFilterInPlace() const;
 
-    mutable std::atomic<bool> initialized_for_filter_in_place = false;
-
     /// Where to start filterInPlace, assuming that rows between [0, start) should all output in the result. Only used in filterInPlace.
     mutable size_t start = 0;
     /// For rows between [start, end), which indices should be output in the result. Only used in filterInPlace.
-    mutable PaddedPODArray<UInt64> indexes;
+    mutable ColumnPtr indexes_holder{};
 };
 
 struct SparseFilterDescription final : public IFilterDescription
@@ -67,7 +65,7 @@ struct SparseFilterDescription final : public IFilterDescription
     explicit SparseFilterDescription(const IColumn & column);
 
     ColumnPtr filter(const IColumn & column, ssize_t) const override { return column.index(*filter_indices, 0); }
-    void filterInPlace(IColumn & column) const override { return column.filterInPlace(filter_indices->getData(), 0); }
+    void filterInPlace(IColumn & column) const override { return column.filterInPlace(*filter_indices, 0); }
     size_t countBytesInFilter() const override { return filter_indices->size(); }
 protected:
     bool hasOneImpl() override { return filter_indices && !filter_indices->empty(); }

@@ -820,7 +820,7 @@ void ColumnVariant::expand(const Filter & mask, bool inverted)
     expandDataByMask(getOffsets(), mask, inverted);
 }
 
-void ColumnVariant::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+void ColumnVariant::filterInPlace(const IColumn & indexes, size_t start)
 {
     getLocalDiscriminatorsColumn().filterInPlace(indexes, start);
     getOffsetsColumn().filterInPlace(indexes, start);

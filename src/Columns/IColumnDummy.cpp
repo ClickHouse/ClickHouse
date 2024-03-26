@@ -60,7 +60,7 @@ ColumnPtr IColumnDummy::filter(const Filter & filt, ssize_t /*result_size_hint*/
     return cloneDummy(bytes);
 }
 
-void IColumnDummy::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+void IColumnDummy::filterInPlace(const IColumn & indexes, size_t start)
 {
     s = start + indexes.size();
 }

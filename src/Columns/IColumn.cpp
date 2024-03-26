@@ -17,6 +17,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
@@ -420,6 +421,13 @@ void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<
         for (auto & sz : sizes)
             sz += element_size;
     }
+}
+
+template <typename Derived, typename Parent>
+void IColumnHelper<Derived, Parent>::filterInPlace(const IColumn & indexes, size_t start)
+{
+    auto & self = static_cast<Derived &>(*this);
+    selectFilterInPlaceImpl(self, indexes, start);
 }
 
 template class IColumnHelper<ColumnVector<UInt8>, ColumnFixedSizeHelper>;

@@ -444,16 +444,20 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     return ColumnSparse::create(std::move(res_values), std::move(res_offsets), limit);
 }
 
-void ColumnSparse::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+template <typename Type>
+void ColumnSparse::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
 {
     const auto & offsets_data = getOffsetsData();
     const auto * offsets_bould = std::lower_bound(offsets_data.begin(), offsets_data.end(), start);
     size_t offset_start = offsets_bould - offsets_data.begin();
     size_t value_start = offset_start + 1;
 
-    PaddedPODArray<UInt64> offset_indexes;
+    auto offset_indexes_column = ColumnUInt64::create();
+    auto & offset_indexes = offset_indexes_column->getData();
     offset_indexes.reserve_exact(std::min(indexes.size(), offsets_data.size()));
-    PaddedPODArray<UInt64> value_indexes;
+
+    auto value_indexes_column = ColumnUInt64::create();
+    auto & value_indexes = value_indexes_column->getData();
     value_indexes.reserve_exact(std::min(indexes.size(), values->size()));
     for (auto index : indexes)
     {
@@ -465,8 +469,8 @@ void ColumnSparse::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t 
         }
     }
 
-    offsets->filterInPlace(offset_indexes, offset_start);
-    values->filterInPlace(value_indexes, value_start);
+    offsets->filterInPlace(*offset_indexes_column, offset_start);
+    values->filterInPlace(*value_indexes_column, value_start);
 
     _size = start + indexes.size();
 }

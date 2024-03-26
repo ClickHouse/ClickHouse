@@ -890,14 +890,17 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
 
-void ColumnArray::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+template <typename Type>
+void ColumnArray::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
 {
     size_t nested_indexes_size = 0;
     for (auto index : indexes)
         nested_indexes_size += sizeAt(index);
 
     size_t nested_start = offsetAt(start);
-    PaddedPODArray<UInt64> nested_indexes(nested_indexes_size);
+
+    auto nested_indexes_column = ColumnUInt64::create(nested_indexes_size);
+    auto & nested_indexes = nested_indexes_column->getData();
     size_t current_new_offset = nested_start;
     auto & offsets_ref = getOffsets();
     for (size_t i = 0; i < indexes.size(); ++i)
@@ -912,7 +915,7 @@ void ColumnArray::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t s
         offsets_ref[start + i]  = current_new_offset;
     }
     offsets_ref.resize_exact(start + indexes.size());
-    data->filterInPlace(nested_indexes, nested_start);
+    data->filterInPlace(*nested_indexes_column, nested_start);
 }
 
 void ColumnArray::getPermutation(PermutationSortDirection direction, PermutationSortStability stability,

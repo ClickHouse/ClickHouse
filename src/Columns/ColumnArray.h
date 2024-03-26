@@ -91,7 +91,8 @@ public:
     void insertDefault() override;
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    void filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start) override;
+    template <typename Type>
+    void filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start);
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;

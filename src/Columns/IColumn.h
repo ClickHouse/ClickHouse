@@ -287,7 +287,7 @@ public:
     [[nodiscard]] virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
     /// Filter current column by indexes in-place.
-    virtual void filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start) = 0;
+    virtual void filterInPlace(const IColumn & indexes, size_t start) = 0;
 
     /** Expand column by mask inplace. After expanding column will
       * satisfy the following: if we filter it by given mask, we will
@@ -717,6 +717,8 @@ class IColumnHelper : public Parent
     StringRef serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+
+    void filterInPlace(const IColumn & indexes, size_t start) override;
 };
 
 }

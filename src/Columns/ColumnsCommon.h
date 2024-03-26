@@ -77,8 +77,11 @@ size_t countBytesInFilter(const IColumn::Filter & filt);
 size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map, size_t start, size_t end);
 
 /// Transform filter column to indices
-void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<UInt64> & indices);
-size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<UInt64> & indices);
+template <typename Type>
+void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<Type> & indices);
+
+template <typename Type>
+size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<Type> & indices);
 
 /// Returns vector with num_columns elements. vector[i] is the count of i values in selector.
 /// Selector must contain values from 0 to num_columns - 1. NOTE: this is not checked.
@@ -130,6 +133,20 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for IColumn::select must be ColumnUInt, got {}",
                         indexes.getName());
+}
+
+template <typename Column>
+void selectFilterInPlaceImpl(Column & column, const IColumn & indexes, size_t start)
+{
+    if (const auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
+        column.template filterInplaceImpl<UInt32>(*data_uint32, start);
+    else if (const auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
+        column.template filterInplaceImpl<UInt64>(*data_uint64, start);
+    else
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Indexes column for IColumn::filterInPlace must be ColumnUInt32 or ColumnUInt64, got {}",
+            indexes.getName());
 }
 
 size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit);

@@ -645,10 +645,9 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 
 
 template <typename T>
-void ColumnVector<T>::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+template <typename Type>
+void ColumnVector<T>::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
 {
-    assert(start + indexes.size() <= data.size());
-
     for (size_t i = 0; i < indexes.size(); ++i)
         data[start + i] = data[indexes[i]];
     data.resize_exact(start + indexes.size());

@@ -176,7 +176,7 @@ ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
     return ColumnMap::create(filtered);
 }
 
-void ColumnMap::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+void ColumnMap::filterInPlace(const IColumn & indexes, size_t start)
 {
     nested->filterInPlace(indexes, start);
 }

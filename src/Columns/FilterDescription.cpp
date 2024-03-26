@@ -99,7 +99,7 @@ FilterDescription::FilterDescription(const IColumn & column_)
 
 void FilterDescription::filterInPlace(IColumn & column) const
 {
-    if (!initialized_for_filter_in_place)
+    if (!indexes_holder)
         lazyInitializeForFilterInPlace();
 
     column.filterInPlace(indexes, start);
@@ -107,7 +107,20 @@ void FilterDescription::filterInPlace(IColumn & column) const
 
 void FilterDescription::lazyInitializeForFilterInPlace() const
 {
-    start = filterToIndices(*data, indexes);
+    size_t rows = data->size();
+
+    if (rows <= std::numeric_limits<UInt32>::max())
+    {
+        indexes_holder = ColumnUInt32::create();
+        auto & indexes = assert_cast<ColumnUInt32 &>(*indexes_holder).getData();
+        start = filterToIndices(*data, indexes);
+    }
+    else
+    {
+        indexes_holder = ColumnUInt64::create();
+        auto & indexes = assert_cast<ColumnUInt64 &>(*indexes_holder).getData();
+        start = filterToIndices(*data, indexes);
+    }
 
     /*
     for (size_t i = 0; i < start; ++i)
@@ -141,8 +154,6 @@ void FilterDescription::lazyInitializeForFilterInPlace() const
         last_index = index;
     }
     */
-
-    initialized_for_filter_in_place = true;
 }
 
 size_t FilterDescription::countBytesInFilter() const

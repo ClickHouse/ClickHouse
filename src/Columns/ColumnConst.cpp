@@ -64,7 +64,7 @@ ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/)
     return ColumnConst::create(data, new_size);
 }
 
-void ColumnConst::filterInPlace(const PaddedPODArray<UInt64> & indexes, size_t start)
+void ColumnConst::filterInPlace(const IColumn & indexes, size_t start)
 {
     if (indexes.size() + start > s)
         throw Exception(

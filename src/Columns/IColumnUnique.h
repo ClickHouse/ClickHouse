@@ -130,7 +130,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method filter is not supported for ColumnUnique.");
     }
 
-    void filterInPlace(const PaddedPODArray<UInt64> &, size_t) override
+    void filterInPlace(const IColumn &, size_t) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method filterInPlace is not supported for ColumnUnique.");
     }
