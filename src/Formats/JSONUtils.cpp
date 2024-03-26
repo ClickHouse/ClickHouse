@@ -819,7 +819,7 @@ namespace JSONUtils
         }
     }
 
-    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header,  const FormatSettings::JSON & settings)
+    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header, const FormatSettings::JSON & settings)
     {
         auto names_and_types = JSONUtils::readMetadata(in, settings);
         validateMetadataByHeader(names_and_types, header);
