@@ -305,13 +305,13 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             projections_on_disk.erase(projection_file);
             checksums_txt.remove(projection_file);
 
-            const auto exception = getCurrentExceptionMessage(true);
+            const auto exception_message = getCurrentExceptionMessage(true);
 
             if (!projection->is_broken)
             {
                 LOG_WARNING(log, "Marking projection {} as broken ({}). Reason: {}",
-                            name, projection_file, exception);
-                projection->setBrokenReason(exception, getCurrentExceptionCode());
+                            name, projection_file, exception_message);
+                projection->setBrokenReason(exception_message, getCurrentExceptionCode());
             }
 
             if (throw_on_broken_projection)
@@ -321,7 +321,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
                 broken_projections_message += fmt::format(
                     "Part {} has a broken projection {} (error: {})",
-                    data_part->name, name, exception);
+                    data_part->name, name, exception_message);
             }
 
             continue;

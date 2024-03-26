@@ -409,7 +409,7 @@ MutationsInterpreter::MutationsInterpreter(
     , available_columns(std::move(available_columns_))
     , settings(std::move(settings_))
     , select_limits(SelectQueryOptions().analyze(!settings.can_execute).ignoreLimits())
-    , logger(getLogger("MutationsInterpreter"))
+    , logger(getLogger("MutationsInterpreter(" + source.getStorage()->getStorageID().getFullTableName() + ")"))
 {
     auto new_context = Context::createCopy(context_);
     if (new_context->getSettingsRef().allow_experimental_analyzer)
