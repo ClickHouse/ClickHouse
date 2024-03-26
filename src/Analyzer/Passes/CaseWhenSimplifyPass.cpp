@@ -150,15 +150,17 @@ public:
         bool values_are_all_null = value_null_num == values.size();
         auto is_else_value_found
             = [&](std::vector<size_t> pos_list) { return has_else && pos_list.size() == 1 && pos_list.front() == values.size() - 1; };
+        auto value_node_not_exists = [&](std::vector<size_t> pos_list) { return pos_list.empty(); };
         if (func_node->getFunctionName() == "equals")
         {
             auto pos_list = findPosition(values, *value_node);
-            if (pos_list.empty() || value_node->getValue().isNull())
-                // value not found in case values, always false
+            // (case x when 'a' then 1 when 'b' then 2 else 3 end) = 4 => False
+            // (case x when 'a' then 1 when 'b' then 2 else 3 end) = Null => False
+            if (value_node_not_exists(pos_list) || value_node->getValue().isNull())
                 node = std::make_shared<ConstantNode>(Field(false));
             else if (is_else_value_found(pos_list))
             {
-                // value is in else, replace equals with not in
+                // (case x when 'a' then 1 when 'b' then 2 else 3 end) = 3 => x notIn ('a', 'b')
                 Tuple tuple;
                 for (const auto * key : keys)
                     tuple.emplace_back(key->getValue());
@@ -167,18 +169,25 @@ public:
                 node = createFunctionNode(not_in_function_resolver, case_column->clone(), tuple_node);
                 if (!keys_contain_null)
                 {
-                    auto isNull_function_resolver = FunctionFactory::instance().get("isNull", getContext());
-                    auto is_null_node = createFunctionNode(isNull_function_resolver, case_column->clone());
+                    // (case x when NULL then 1 when 'b' then 2 else 3 end) = 3 => x notIn (NULL, 'b') or x is null
+                    auto is_null_function_resolver = FunctionFactory::instance().get("isNull", getContext());
+                    auto is_null_node = createFunctionNode(is_null_function_resolver, case_column->clone());
                     node = createFunctionNode(FunctionFactory::instance().get("or", getContext()), node, is_null_node);
                 }
             }
             else
             {
-                // replace case when with simple equals
+                // (case x when 'a' then 2 when 'b' then 2 else 3 end) = 2 => x = 'a' or x = 'b'
                 auto equals_resolver = createInternalFunctionEqualOverloadResolver(getContext()->getSettingsRef().decimal_check_overflow);
-                std::vector<QueryTreeNodePtr> equals_nodes(pos_list.size());
+                auto is_null_function_resolver = FunctionFactory::instance().get("isNull", getContext());
+                std::vector<QueryTreeNodePtr> equals_nodes;
                 for (size_t pos : pos_list)
-                    equals_nodes.emplace_back(createFunctionNode(equals_resolver, case_column->clone(), keys.at(pos)->clone()));
+                {
+                    if (keys[pos]->getValue().isNull())
+                        equals_nodes.emplace_back(createFunctionNode(is_null_function_resolver, case_column->clone()));
+                    else
+                        equals_nodes.emplace_back(createFunctionNode(equals_resolver, case_column->clone(), keys.at(pos)->clone()));
+                }
                 node = combineNodesWithFunction(FunctionFactory::instance().get("or", getContext()), equals_nodes);
             }
         }
@@ -191,16 +200,16 @@ public:
             if (value_node->getValue().isNull() || values_are_all_null)
                 node = std::make_shared<ConstantNode>(Field(false));
             // case x when 'a' then 1 when 'b' then 2 else 4 != 3 => True
-            else if (!values_contain_null && pos_list.empty() && has_else)
+            else if (!values_contain_null && value_node_not_exists(pos_list) && has_else)
                 node = std::make_shared<ConstantNode>(Field(true));
-            else if (!values_contain_null && pos_list.empty() && !has_else)
+            else if (!values_contain_null && value_node_not_exists(pos_list) && !has_else)
             {
                 auto not_in_function_resolver = FunctionFactory::instance().get("in", getContext());
                 node = createFunctionNode(
                     not_in_function_resolver, case_column->clone(), std::make_shared<ConstantNode>(Field(keys_which_value_not_null)));
             }
             // case x when 'a' then Null when 'b' then Null when 'c' then 3 != 4 => x notIn ('a', 'b')
-            else if (values_contain_null && pos_list.empty())
+            else if (values_contain_null && value_node_not_exists(pos_list))
             {
                 auto not_in_function_resolver = FunctionFactory::instance().get("notIn", getContext());
                 node = createFunctionNode(
@@ -227,21 +236,31 @@ public:
                 auto in_function_resolver = FunctionFactory::instance().get("in", getContext());
                 node = createFunctionNode(in_function_resolver, case_column->clone(), std::make_shared<ConstantNode>(Field(valid_value)));
             }
-            // case x when 'a' then 1 when 'b' then 2  != 2 => x != 'b' or x is null
             else
             {
+                // (case x when 'a' then 1 when 'b' then 2 else 3 end) <> 1 => x != 'a' or x is null
                 auto not_equals_resolver
                     = createInternalFunctionNotEqualOverloadResolver(getContext()->getSettingsRef().decimal_check_overflow);
-                auto isNull_function_resolver = FunctionFactory::instance().get("isNull", getContext());
+                auto is_null_function_resolver = FunctionFactory::instance().get("isNull", getContext());
+                auto is_not_null_function_resolver = FunctionFactory::instance().get("isNotNull", getContext());
                 std::vector<QueryTreeNodePtr> result_nodes;
+                bool column_is_not_null = false;
                 for (size_t pos : pos_list)
                 {
-                    auto not_equal_node = createFunctionNode(not_equals_resolver, case_column->clone(), keys.at(pos)->clone());
-                    result_nodes.push_back(not_equal_node);
+                    if (keys[pos]->getValue().isNull())
+                    {
+                        column_is_not_null = true;
+                        result_nodes.emplace_back(createFunctionNode(is_not_null_function_resolver, case_column->clone()));
+                    }
+                    else
+                        result_nodes.emplace_back(createFunctionNode(not_equals_resolver, case_column->clone(), keys.at(pos)->clone()));
                 }
-                auto is_null_node = createFunctionNode(isNull_function_resolver, case_column->clone());
-                auto equals_node = combineNodesWithFunction(FunctionFactory::instance().get("and", getContext()), result_nodes);
-                node = createFunctionNode(FunctionFactory::instance().get("or", getContext()), equals_node, is_null_node);
+                node = combineNodesWithFunction(FunctionFactory::instance().get("and", getContext()), result_nodes);
+                if (!column_is_not_null)
+                {
+                    auto is_null_node = createFunctionNode(is_null_function_resolver, case_column->clone());
+                    node = createFunctionNode(FunctionFactory::instance().get("or", getContext()), node, is_null_node);
+                }
             }
         }
 
@@ -276,7 +295,7 @@ public:
                 auto pos_list = findPosition(values, ConstantNode(value));
                 if (pos_list.empty())
                     continue;
-                if (has_else && pos_list.size() == 1 && pos_list.front() == values.size() - 1)
+                if (is_else_value_found(pos_list))
                 {
                     has_not_in = true;
                     continue;
@@ -305,24 +324,20 @@ public:
             }
             if (!in_keys.empty() && !not_in_keys.empty())
             {
-                // (case x when 'a' then 1 when 'b' then 2 else 3 end) in (1,3) => x in ('a') or x notIn ('b')
                 auto or_function_resolver = FunctionFactory::instance().get("or", getContext());
                 node = createFunctionNode(or_function_resolver, in_node, not_in_node);
             }
             else if (!in_keys.empty())
-                // (case x when 'a' then 1 when 'b' then 2 else 3 end) in (1) => x in ('a')
+                // (case x when 'a' then 1 when 'b' then 2 else 3 end) in (1,2) => x in ('a', 'b')
                 node = in_node;
             else if (!not_in_keys.empty())
             {
-                // (case x when 'a' then 1 when 'b' then 2 else 3 end) in (3) => x notIn ('a', 'b')
                 node = not_in_node;
-                auto isNull_function_resolver = FunctionFactory::instance().get("isNull", getContext());
-                auto is_null_node = createFunctionNode(isNull_function_resolver, case_column->clone());
+                auto is_null_function_resolver = FunctionFactory::instance().get("isNull", getContext());
+                auto is_null_node = createFunctionNode(is_null_function_resolver, case_column->clone());
                 node = createFunctionNode(FunctionFactory::instance().get("or", getContext()), node, is_null_node);
             }
             else
-                // (case x when 'a' then 1 when 'b' then 2 else 3 end) in (Null) => False
-                // (case x when 'a' then 1 when 'b' then 2 else 3 end) in (4) => False
                 node = std::make_shared<ConstantNode>(Field(false));
         }
 
@@ -348,7 +363,7 @@ public:
                 auto pos_list = findPosition(values, ConstantNode(value));
                 if (pos_list.empty())
                     continue;
-                if (has_else && pos_list.size() == 1 && pos_list.front() == values.size() - 1)
+                if (is_else_value_found(pos_list))
                 {
                     has_in = true;
                     continue;
@@ -377,23 +392,19 @@ public:
             }
             if (!in_keys.empty() && !not_in_keys.empty())
             {
-                // (case x when 'a' then 1 when 'b' then 2 else 3 end) not in (1,3) => x notIn ('a') or x In ('b')
                 auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
                 node = createFunctionNode(and_function_resolver, in_node, not_in_node);
             }
             else if (!not_in_keys.empty())
             {
-                // (case x when 'a' then 1 when 'b' then 2 else 3 end) not in (1) => x notIn ('a')
                 node = not_in_node;
-                auto isNull_function_resolver = FunctionFactory::instance().get("isNull", getContext());
-                auto is_null_node = createFunctionNode(isNull_function_resolver, case_column->clone());
+                auto is_null_function_resolver = FunctionFactory::instance().get("isNull", getContext());
+                auto is_null_node = createFunctionNode(is_null_function_resolver, case_column->clone());
                 node = createFunctionNode(FunctionFactory::instance().get("or", getContext()), node, is_null_node);
             }
             else if (!in_keys.empty())
-                // (case x when 'a' then 1 when 'b' then 2 else 3 end) not in (3) => x in ('a', 'b')
                 node = in_node;
             else
-                // (case x when 'a' then 1 when 'b' then 2 else 3 end) not in (4) => True
                 node = std::make_shared<ConstantNode>(Field(true));
         }
     }
