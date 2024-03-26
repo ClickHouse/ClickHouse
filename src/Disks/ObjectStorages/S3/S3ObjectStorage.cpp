@@ -172,8 +172,9 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 
     auto read_buffer_creator =
         [this, settings_ptr, disk_read_settings]
-        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
+        (bool restricted_seek, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
     {
+        auto & path = object_.remote_path;
         return std::make_unique<ReadBufferFromS3>(
             client.get(),
             uri.bucket,

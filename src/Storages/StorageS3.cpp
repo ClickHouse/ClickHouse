@@ -725,8 +725,9 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
     auto context = getContext();
     auto read_buffer_creator =
         [this, read_settings, object_size]
-        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
+        (bool restricted_seek, const StoredObject & object) -> std::unique_ptr<ReadBufferFromFileBase>
     {
+        auto & path = object.remote_path;
         return std::make_unique<ReadBufferFromS3>(
             client,
             bucket,

@@ -49,9 +49,10 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
     auto modified_settings = patchSettings(read_settings);
     auto global_context = Context::getGlobalContextInstance();
     auto read_buffer_creator =
-        [=] (bool /* restricted_seek */, const std::string & file_path)
+        [=] (bool /* restricted_seek */, const StoredObject & object)
         -> std::unique_ptr<ReadBufferFromFileBase>
     {
+        auto & file_path = object.remote_path;
         return createReadBufferFromFileBase(file_path, modified_settings, read_hint, file_size);
     };
 
