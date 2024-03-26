@@ -257,7 +257,7 @@ private:
                 }
                 case MoveType::Key:
                 {
-                    key = (*arguments[j + 1].column).getDataAt(row).toView();
+                    key = arguments[j + 1].column->getDataAt(row).toView();
                     if (!moveToElementByKey<JSONParser>(res_element, key))
                         return false;
                     break;
@@ -392,13 +392,11 @@ public:
         const NullPresence & null_presence_,
         bool allow_simdjson_,
         DataTypes argument_types_,
-        DataTypePtr return_type_,
-        DataTypePtr json_return_type_)
+        DataTypePtr return_type_)
         : null_presence(null_presence_)
         , allow_simdjson(allow_simdjson_)
         , argument_types(std::move(argument_types_))
         , return_type(std::move(return_type_))
-        , json_return_type(std::move(json_return_type_))
     {
     }
 
@@ -418,7 +416,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionJSON<Name, Impl>>(null_presence, allow_simdjson, json_return_type);
+        return std::make_unique<ExecutableFunctionJSON<Name, Impl>>(null_presence, allow_simdjson, return_type);
     }
 
 private:
@@ -426,7 +424,6 @@ private:
     bool allow_simdjson;
     DataTypes argument_types;
     DataTypePtr return_type;
-    DataTypePtr json_return_type;
 };
 
 
@@ -451,33 +448,23 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        bool has_nothing_argument = false;
-        for (const auto & arg : arguments)
-            has_nothing_argument |= isNothing(arg.type);
-
-        DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
-        NullPresence null_presence = getNullPresense(arguments);
-        DataTypePtr return_type;
-        if (has_nothing_argument)
-            return_type = std::make_shared<DataTypeNothing>();
-        else if (null_presence.has_null_constant)
-            return_type = makeNullable(std::make_shared<DataTypeNothing>());
-        else if (null_presence.has_nullable)
-            return_type = makeNullable(json_return_type);
-        else
-            return_type = json_return_type;
-
+        auto requested_return_type =  Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
         /// Top-level LowCardinality columns are processed outside JSON parser.
-        json_return_type = removeLowCardinality(json_return_type);
+        return removeLowCardinality(requested_return_type);
+    }
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        NullPresence null_presence = getNullPresense(arguments);
 
         DataTypes argument_types;
         argument_types.reserve(arguments.size());
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
         return std::make_unique<FunctionBaseFunctionJSON<Name, Impl>>(
-                null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, return_type, json_return_type);
+                null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, result_type);
     }
 };
 
