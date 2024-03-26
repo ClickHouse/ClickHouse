@@ -6,7 +6,7 @@
 
 # 2024 Changelog
 
-### <a id="243"></a> ClickHouse release 24.3 LTS, 2024-03-26
+### <a id="243"></a> ClickHouse release 24.3 LTS, 2024-03-27
 
 #### Upgrade Notes
 * The setting `allow_experimental_analyzer` is enabled by default and it switches the query analysis to a new implementation, which has better compatibility and feature completeness. The feature "analyzer" is considered beta instead of experimental. You can turn the old behavior by setting the `compatibility` to `24.2` or disabling the `allow_experimental_analyzer` setting. Watch the [video on YouTube](https://www.youtube.com/watch?v=zhrOYQpgvkk).
