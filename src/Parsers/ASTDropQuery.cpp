@@ -80,7 +80,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 
             auto identifier = dynamic_pointer_cast<ASTTableIdentifier>(*it);
             if (!identifier)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected ASTIdentifier type for list of table names.");
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected type for list of table names.");
 
             if (auto db = identifier->getDatabase())
             {
@@ -114,7 +114,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
 }
 
-ASTs ASTDropQuery::getRewrittenASTWithoutMultipleTables()
+ASTs ASTDropQuery::getRewrittenASTsOfSingleTable()
 {
     ASTs res;
     if (database_and_tables == nullptr)
@@ -133,7 +133,7 @@ ASTs ASTDropQuery::getRewrittenASTWithoutMultipleTables()
 
         auto database_and_table = dynamic_pointer_cast<ASTTableIdentifier>(child);
         if (!database_and_table)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected ASTIdentifier type for list of table names.");
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected type for list of table names.");
 
         query.database = database_and_table->getDatabase();
         query.table = database_and_table->getTable();

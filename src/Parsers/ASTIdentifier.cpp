@@ -207,6 +207,12 @@ String ASTTableIdentifier::getDatabaseName() const
     else return {};
 }
 
+String ASTTableIdentifier::getTableName() const
+{
+    if (name_parts.size() == 2) return name_parts[1];
+    else return name_parts[0];
+}
+
 ASTPtr ASTTableIdentifier::getTable() const
 {
     if (name_parts.size() == 2)

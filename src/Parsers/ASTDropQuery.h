@@ -49,7 +49,7 @@ public:
         return removeOnCluster<ASTDropQuery>(clone(), params.default_database);
     }
 
-    ASTs getRewrittenASTWithoutMultipleTables();
+    ASTs getRewrittenASTsOfSingleTable();
 
     QueryKind getQueryKind() const override { return QueryKind::Drop; }
 

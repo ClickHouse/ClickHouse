@@ -59,7 +59,7 @@ BlockIO InterpreterDropQuery::execute()
 {
     BlockIO res;
     auto & drop = query_ptr->as<ASTDropQuery &>();
-    ASTs drops = drop.getRewrittenASTWithoutMultipleTables();
+    ASTs drops = drop.getRewrittenASTsOfSingleTable();
     for (const auto & drop_query_ptr : drops)
     {
         current_query_ptr = drop_query_ptr;
@@ -460,18 +460,22 @@ void InterpreterDropQuery::extendQueryLogElemImpl(DB::QueryLogElement & elem, co
         auto & list = drop.database_and_tables->as<ASTExpressionList &>();
         for (auto & child : list.children)
         {
-            auto identifier = dynamic_pointer_cast<ASTIdentifier>(child);
-            if (identifier->name_parts.size() == 2)
+            auto identifier = dynamic_pointer_cast<ASTTableIdentifier>(child);
+            if (!identifier)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected type for list of table names.");
+
+            String query_database = identifier->getDatabaseName();
+            String query_table = identifier->getTableName();
+            if (!query_database.empty() && query_table.empty())
             {
-                auto quoted_database = backQuoteIfNeed(identifier->name_parts[0]);
-                elem.query_databases.insert(quoted_database);
-                elem.query_tables.insert(quoted_database + "." + backQuoteIfNeed(identifier->name_parts[1]));
+                elem.query_databases.insert(backQuoteIfNeed(query_database));
             }
-            else
+            else if (!query_table.empty())
             {
-                auto quoted_database = backQuoteIfNeed(context_->getCurrentDatabase());
+                auto quoted_database = query_database.empty() ? backQuoteIfNeed(context_->getCurrentDatabase())
+                                                              : backQuoteIfNeed(query_database);
                 elem.query_databases.insert(quoted_database);
-                elem.query_tables.insert(quoted_database + "." + backQuoteIfNeed(identifier->name_parts[0]));
+                elem.query_tables.insert(quoted_database + "." + backQuoteIfNeed(query_table));
             }
         }
     }
