@@ -40,11 +40,12 @@ set insert_keeper_max_retries=3;
 -- and disable the fault injection to avoid failures
 set insert_keeper_fault_injection_probability=0;
 
--- for internal_replicatio==false, distributed_insert_skip_read_only_replicas does not changes anything
+-- for internal_replication==false, distributed_insert_skip_read_only_replicas does not changes anything
+-- because in case of internal_replication=false it cannot skip any replicas, since it need to duplicate the data to all replicas on the initiator
 insert into dist_single_no_internal_replication_read_only settings distributed_foreground_insert=1, distributed_insert_skip_read_only_replicas=0 values (0); -- { serverError TABLE_IS_READ_ONLY }
 insert into dist_single_no_internal_replication_read_only settings distributed_foreground_insert=1, distributed_insert_skip_read_only_replicas=1 values (0); -- { serverError TABLE_IS_READ_ONLY }
 
--- for internal_replicatio==true, it does
+-- for internal_replication==true, it does
 insert into dist_single settings distributed_foreground_insert=1, distributed_insert_skip_read_only_replicas=0 values (0); -- { serverError TABLE_IS_READ_ONLY }
 insert into dist_single settings distributed_foreground_insert=1, distributed_insert_skip_read_only_replicas=1 values (0); -- { serverError ALL_CONNECTION_TRIES_FAILED }
 
