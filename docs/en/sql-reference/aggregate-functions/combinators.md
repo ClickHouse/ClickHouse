@@ -28,7 +28,7 @@ Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘a
 
 ## -Map
 
-The -Map suffix can be appended to any aggregate function. This will create an aggregate function which gets Map type as an argument, and aggregates values of each key of the map separately using the specified aggregate function. The result is also of a Map type.
+The -Map suffix can be appended to any aggregate function. This will create an aggregate function which gets Map type or extra argument - a key of map as an argument, and aggregates values of each key of the map separately using the specified aggregate function. The result is also of a Map type.
 
 **Example**
 
@@ -57,6 +57,13 @@ GROUP BY timeslot;
 │ 2000-01-01 00:00:00 │ {'a':10,'b':10,'c':20,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │
 │ 2000-01-01 00:01:00 │ {'d':10,'e':10,'f':20,'g':20}        │ {'d':10,'e':10,'f':10,'g':10}        │ {'d':10,'e':10,'f':10,'g':10}        │
 └─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┘
+
+SELECT argMaxMap(number, number, number)
+FROM numbers(10)
+
+┌─argMaxMap(number, number, number)─────────┐
+│ {0:0,1:1,2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9} │
+└───────────────────────────────────────────┘
 ```
 
 ## -SimpleState
