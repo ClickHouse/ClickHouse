@@ -1634,7 +1634,7 @@ def _add_build_to_version_history(
         "git_ref": pr_info.head_ref,
     }
 
-    print(f"::notice ::Log Adding record to versions history: {json_str}")
+    print(f"::notice ::Log Adding record to versions history: {data}")
 
     ch_helper.insert_event_into(db="default", table="version_history", event=data)
 
