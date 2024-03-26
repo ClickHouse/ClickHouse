@@ -27,7 +27,7 @@ system stop distributed sends dist;
 create table dist_batch as shard_0.data engine=Distributed('test_cluster_two_replicas_different_databases_internal_replication', '', 'data') settings background_insert_batch=1;
 system stop distributed sends dist_batch;
 
-create table dist_single_no_internal_replication_read_only as shard_0.data engine=Distributed('default', 'shard_1', 'data');
+create table dist_single_no_internal_replication_read_only as shard_0.data engine=Distributed('test_shard_localhost', 'shard_1', 'data');
 system stop distributed sends dist_single_no_internal_replication_read_only;
 
 create table dist_single as shard_0.data engine=Distributed('test_cluster_two_replicas_different_databases_internal_replication', 'shard_1', 'data');
