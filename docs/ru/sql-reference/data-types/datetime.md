@@ -29,7 +29,7 @@ DateTime([timezone])
 
 ClickHouse отображает значения в зависимости от значения параметра [date\_time\_output\_format](../../operations/settings/index.md#settings-date_time_output_format). Текстовый формат по умолчанию `YYYY-MM-DD hh:mm:ss`. Кроме того, вы можете поменять отображение с помощью функции [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime).
 
-При вставке данных в ClickHouse, можно использовать различные форматы даты и времени в зависимости от значения настройки [date_time_input_format](../../operations/settings/index.md#settings-date_time_output_format).
+При вставке данных в ClickHouse, можно использовать различные форматы даты и времени в зависимости от значения настройки [date_time_input_format](../../operations/settings/index.md#settings-date_time_input_format).
 
 ## Примеры {#primery}
 
@@ -119,7 +119,7 @@ FROM dt
 -   [Функции преобразования типов](../../sql-reference/functions/type-conversion-functions.md)
 -   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
 -   [Функции для работы с массивами](../../sql-reference/functions/array-functions.md)
--   [Настройка `date_time_input_format`](../../operations/settings/index.md#settings-date_time_output_format)
+-   [Настройка `date_time_input_format`](../../operations/settings/index.md#settings-date_time_input_format)
 -   [Настройка `date_time_output_format`](../../operations/settings/index.md#settings-date_time_output_format)
 -   [Конфигурационный параметр сервера `timezone`](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
 -   [Параметр `session_timezone`](../../operations/settings/settings.md#session_timezone)
