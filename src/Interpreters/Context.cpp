@@ -1219,7 +1219,7 @@ void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_nam
     /// We don't use getFlagsPath method, because it takes a shared lock.
     auto convert_databases_flag = fs::path(shared->flags_path) / "convert_ordinary_to_atomic";
     auto message = fmt::format("Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
-            "To convert this database to a new Atomic engine, please create a forcing flag {} and make sure that ClickHouse has write permission for it. "
+            "To convert this database to a new Atomic engine, create a flag {} and make sure that ClickHouse has write permission for it. "
             "Example: sudo touch '{}' && sudo chmod 666 '{}'",
             database_name,
             convert_databases_flag.string(), convert_databases_flag.string(), convert_databases_flag.string());
