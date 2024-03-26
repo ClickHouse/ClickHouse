@@ -169,7 +169,7 @@ struct OwnedRefreshTask
     RefreshTaskHolder ptr;
 
     OwnedRefreshTask() = default;
-    OwnedRefreshTask(RefreshTaskHolder p) : ptr(std::move(p)) {}
+    explicit OwnedRefreshTask(RefreshTaskHolder p) : ptr(std::move(p)) {}
     OwnedRefreshTask(OwnedRefreshTask &&) = default;
     OwnedRefreshTask & operator=(OwnedRefreshTask &&) = default;
 
@@ -177,7 +177,7 @@ struct OwnedRefreshTask
 
     RefreshTask* operator->() const { return ptr.get(); }
     RefreshTask& operator*() const { return *ptr; }
-    operator bool() const { return ptr != nullptr; }
+    explicit operator bool() const { return ptr != nullptr; }
 };
 
 }
