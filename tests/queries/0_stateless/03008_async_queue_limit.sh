@@ -31,6 +31,9 @@ client_opts=(
 )
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
+
+start=$(${CLICKHOUSE_CLIENT} -q "SELECT now64()")
 
 concurrency=$((RANDOM % 20 + 10))
 ${CLICKHOUSE_BENCHMARK} "${client_opts[@]}" -q "INSERT INTO $table VALUES (42)" -i $((max_pending_async_inserts * 2 - 1)) -c $concurrency &> /dev/null
@@ -46,7 +49,7 @@ ${CLICKHOUSE_CLIENT} -nq "
     FROM (
       SELECT SUM(CurrentMetric_PendingAsyncInsert) AS pending_inserts
         FROM system.metric_log
-       WHERE event_date >= yesterday()
+       WHERE event_date >= yesterday() AND event_time_microseconds > '$start'
     GROUP BY event_time
     );
 "

@@ -47,6 +47,8 @@ def test_failed_async_inserts(started_cluster):
     assert (
         node.query(
             """
+        SYSTEM FLUSH LOGS;
+
         SELECT SUM(ProfileEvents['AsyncInsertQueueFlushesOnLimit'])
           FROM system.query_log
     """
@@ -59,6 +61,8 @@ def test_failed_async_inserts(started_cluster):
     assert (
         node.query(
             """
+        SYSTEM FLUSH LOGS;
+
         SELECT SUM(ProfileEvents['AsyncInsertQueueFlushesOnLimit'])
           FROM system.query_log
     """
