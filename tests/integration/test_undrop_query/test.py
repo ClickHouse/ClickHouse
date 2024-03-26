@@ -23,7 +23,7 @@ def started_cluster():
 def test_undrop_drop_and_undrop_loop(started_cluster):
     uuid_list = []
 
-    for i in range(10):
+    for i in range(4):
         table_uuid = uuid.uuid1().__str__()
         uuid_list.append(table_uuid)
         logging.info(f"table_uuid: {table_uuid}")
@@ -34,12 +34,13 @@ def test_undrop_drop_and_undrop_loop(started_cluster):
 
         node.query(f"DROP TABLE test_undrop_{i};")
 
-    for i in range(10):
-        if i >= 8:  # -> setting for table to live after drop = 80 seconds
+    for i in range(4):
+        if i >= 3:  # First 3 tables are dropped after 0, 5 and 10 seconds. Fourth is dropped after 21 seconds
+            time.sleep(11)
             error = node.query_and_get_error(
                 f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';"
             )
             assert "UNKNOWN_TABLE" in error
         else:
             node.query(f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';")
-        time.sleep(10)
+        time.sleep(5)
