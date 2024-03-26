@@ -405,7 +405,7 @@ Returns the name of the current user. In case of a distributed query, the name o
 SELECT currentUser();
 ```
 
-Alias: `user()`, `USER()`.
+Aliases: `user()`, `USER()`, `current_user()`. Aliases are case insensitive.
 
 **Returned values**
 
@@ -3132,3 +3132,17 @@ Result:
 │ (616.2931945826209,108.8825,115.6175) │
 └───────────────────────────────────────┘
 ```
+
+## getClientHTTPHeader
+
+Get the value of an HTTP header.
+
+If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
+Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricted.
+
+The function requires the setting `allow_get_client_http_header` to be enabled.
+The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
+
+HTTP headers are case sensitive for this function.
+
+If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.

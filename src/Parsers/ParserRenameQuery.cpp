@@ -11,15 +11,15 @@ namespace DB
 
 bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_rename("RENAME");
-    ParserKeyword s_rename_table("RENAME TABLE");
-    ParserKeyword s_exchange_tables("EXCHANGE TABLES");
-    ParserKeyword s_rename_dictionary("RENAME DICTIONARY");
-    ParserKeyword s_exchange_dictionaries("EXCHANGE DICTIONARIES");
-    ParserKeyword s_rename_database("RENAME DATABASE");
-    ParserKeyword s_if_exists("IF EXISTS");
-    ParserKeyword s_to("TO");
-    ParserKeyword s_and("AND");
+    ParserKeyword s_rename(Keyword::RENAME);
+    ParserKeyword s_rename_table(Keyword::RENAME_TABLE);
+    ParserKeyword s_exchange_tables(Keyword::EXCHANGE_TABLES);
+    ParserKeyword s_rename_dictionary(Keyword::RENAME_DICTIONARY);
+    ParserKeyword s_exchange_dictionaries(Keyword::EXCHANGE_DICTIONARIES);
+    ParserKeyword s_rename_database(Keyword::RENAME_DATABASE);
+    ParserKeyword s_if_exists(Keyword::IF_EXISTS);
+    ParserKeyword s_to(Keyword::TO);
+    ParserKeyword s_and(Keyword::AND);
     ParserToken s_comma(TokenType::Comma);
 
     bool exchange = false;
@@ -39,7 +39,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         String cluster_str;
-        if (ParserKeyword{"ON"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
         {
             if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                 return false;
@@ -94,7 +94,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     String cluster_str;
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;

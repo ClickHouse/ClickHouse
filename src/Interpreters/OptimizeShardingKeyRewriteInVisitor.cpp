@@ -1,10 +1,17 @@
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
+
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Utils.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace
 {
@@ -117,6 +124,68 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & d
             return tuple.size() > 1 && !shardContains(child, name, data);
         });
     }
+}
+
+
+class OptimizeShardingKeyRewriteIn : public InDepthQueryTreeVisitorWithContext<OptimizeShardingKeyRewriteIn>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<OptimizeShardingKeyRewriteIn>;
+
+    OptimizeShardingKeyRewriteIn(OptimizeShardingKeyRewriteInVisitor::Data data_, ContextPtr context)
+        : Base(std::move(context))
+        , data(std::move(data_))
+    {}
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node || function_node->getFunctionName() != "in")
+            return;
+
+        auto & arguments = function_node->getArguments().getNodes();
+        auto * column = arguments[0]->as<ColumnNode>();
+        if (!column)
+            return;
+
+        auto name = column->getColumnName();
+
+        if (!data.sharding_key_expr->getRequiredColumnsWithTypes().contains(column->getColumnName()))
+            return;
+
+        if (auto * constant = arguments[1]->as<ConstantNode>())
+        {
+            if (isTuple(constant->getResultType()))
+            {
+                const auto & tuple = constant->getValue().get<Tuple &>();
+                Tuple new_tuple;
+                new_tuple.reserve(tuple.size());
+
+                for (const auto & child : tuple)
+                {
+                    if (shardContains(child, name, data))
+                        new_tuple.push_back(child);
+                }
+
+                if (new_tuple.empty())
+                    new_tuple.push_back(tuple.back());
+
+                if (new_tuple.size() == tuple.size())
+                    return;
+
+                arguments[1] = std::make_shared<ConstantNode>(new_tuple);
+                rerunFunctionResolve(function_node, getContext());
+            }
+        }
+    }
+
+    OptimizeShardingKeyRewriteInVisitor::Data data;
+};
+
+void optimizeShardingKeyRewriteIn(QueryTreeNodePtr & node, OptimizeShardingKeyRewriteInVisitor::Data data, ContextPtr context)
+{
+    OptimizeShardingKeyRewriteIn visitor(std::move(data), std::move(context));
+    visitor.visit(node);
 }
 
 }
