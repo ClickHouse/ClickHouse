@@ -1,18 +1,19 @@
-#include <Common/formatReadable.h>
-#include <Common/AsynchronousMetrics.h>
-#include <Common/Exception.h>
-#include <Common/setThreadName.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
-#include <IO/UncompressedCache.h>
+#include <chrono>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
+#include <IO/UncompressedCache.h>
 #include <base/errnoToString.h>
 #include <base/find_symbols.h>
 #include <base/getPageSize.h>
+#include <boost/locale/date_time_facet.hpp>
 #include <sys/resource.h>
-#include <chrono>
+#include <Common/AsynchronousMetrics.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 #include "config.h"
 
@@ -78,6 +79,7 @@ AsynchronousMetrics::AsynchronousMetrics(
         openFileIfExists("/sys/fs/cgroup/memory.current", cgroupmem_usage_in_bytes);
     }
     openFileIfExists("/sys/fs/cgroup/cpu.max", cgroupcpu_max);
+    openFileIfExists("/sys/fs/cgroup/cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
     if (!cgroupmem_limit_in_bytes)
@@ -90,6 +92,8 @@ AsynchronousMetrics::AsynchronousMetrics(
         openFileIfExists("/sys/fs/cgroup/cpu/cpu.cfs_period_us", cgroupcpu_cfs_period);
         openFileIfExists("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", cgroupcpu_cfs_quota);
     }
+    if (!cgroupcpu_stat)
+        openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
 
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
@@ -561,6 +565,82 @@ AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMet
 #endif
 
 
+void AsynchronousMetrics::applyCPUMetricsUpdate(
+    AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier)
+{
+    new_values["OSUserTime" + cpu_suffix]
+        = {delta_values.user * multiplier,
+           "The ratio of time the CPU core was running userspace code. This is a system-wide metric, it includes all the processes on the "
+           "host machine, not just clickhouse-server."
+           " This includes also the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline "
+           "stalls, branch mispredictions, running another SMT core)."
+           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
+           "them [0..num cores]."};
+    new_values["OSNiceTime" + cpu_suffix]
+        = {delta_values.nice * multiplier,
+           "The ratio of time the CPU core was running userspace code with higher priority. This is a system-wide metric, it includes all "
+           "the processes on the host machine, not just clickhouse-server."
+           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
+           "them [0..num cores]."};
+    new_values["OSSystemTime" + cpu_suffix]
+        = {delta_values.system * multiplier,
+           "The ratio of time the CPU core was running OS kernel (system) code. This is a system-wide metric, it includes all the "
+           "processes on the host machine, not just clickhouse-server."
+           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
+           "them [0..num cores]."};
+    new_values["OSIdleTime" + cpu_suffix]
+        = {delta_values.idle * multiplier,
+           "The ratio of time the CPU core was idle (not even ready to run a process waiting for IO) from the OS kernel standpoint. This "
+           "is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+           " This does not include the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline "
+           "stalls, branch mispredictions, running another SMT core)."
+           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
+           "them [0..num cores]."};
+    new_values["OSIOWaitTime" + cpu_suffix]
+        = {delta_values.iowait * multiplier,
+           "The ratio of time the CPU core was not running the code but when the OS kernel did not run any other process on this CPU as "
+           "the processes were waiting for IO. This is a system-wide metric, it includes all the processes on the host machine, not just "
+           "clickhouse-server."
+           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
+           "them [0..num cores]."};
+    new_values["OSIrqTime" + cpu_suffix]
+        = {delta_values.irq * multiplier,
+           "The ratio of time spent for running hardware interrupt requests on the CPU. This is a system-wide metric, it includes all the "
+           "processes on the host machine, not just clickhouse-server."
+           " A high number of this metric may indicate hardware misconfiguration or a very high network load."
+           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
+           "them [0..num cores]."};
+    new_values["OSSoftIrqTime" + cpu_suffix]
+        = {delta_values.softirq * multiplier,
+           "The ratio of time spent for running software interrupt requests on the CPU. This is a system-wide metric, it includes all the "
+           "processes on the host machine, not just clickhouse-server."
+           " A high number of this metric may indicate inefficient software running on the system."
+           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
+           "them [0..num cores]."};
+    new_values["OSStealTime" + cpu_suffix]
+        = {delta_values.steal * multiplier,
+           "The ratio of time spent in other operating systems by the CPU when running in a virtualized environment. This is a system-wide "
+           "metric, it includes all the processes on the host machine, not just clickhouse-server."
+           " Not every virtualized environments present this metric, and most of them don't."
+           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
+           "them [0..num cores]."};
+    new_values["OSGuestTime" + cpu_suffix]
+        = {delta_values.guest * multiplier,
+           "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel (See `man "
+           "procfs`). This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+           " This metric is irrelevant for ClickHouse, but still exists for completeness."
+           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
+           "them [0..num cores]."};
+    new_values["OSGuestNiceTime" + cpu_suffix]
+        = {delta_values.guest_nice * multiplier,
+           "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel, when a guest "
+           "was set to a higher priority (See `man procfs`). This is a system-wide metric, it includes all the processes on the host "
+           "machine, not just clickhouse-server."
+           " This metric is irrelevant for ClickHouse, but still exists for completeness."
+           " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
+           "them [0..num cores]."};
+}
+
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 {
     Stopwatch watch;
@@ -821,15 +901,56 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
     }
 
-    if (proc_stat)
+    int64_t hz = sysconf(_SC_CLK_TCK);
+    if (-1 == hz)
+        throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
+
+    if (cgroupcpu_stat || cgroupcpuacct_stat)
+    {
+        ReadBufferFromFilePRead & in = cgroupcpu_stat ? *cgroupcpu_stat : *cgroupcpuacct_stat;
+        ProcStatValuesCPU current_values{};
+
+        /// We re-read the file from the beginning each time
+        in.rewind();
+
+        while (!in.eof())
+        {
+            String name;
+            readStringUntilWhitespace(name, in);
+            skipWhitespaceIfAny(in);
+
+            /// `user_usec` for cgroup v2 and `user` for cgroup v1
+            if (name.starts_with("user"))
+            {
+                readText(current_values.user, in);
+                skipToNextLineOrEOF(in);
+            }
+            /// `system_usec` for cgroup v2 and `system` for cgroup v1
+            else if (name.starts_with("system"))
+            {
+                readText(current_values.system, in);
+                skipToNextLineOrEOF(in);
+            }
+            else
+                skipToNextLineOrEOF(in);
+        }
+
+        if (!first_run)
+        {
+            const ProcStatValuesCPU delta_values = current_values - proc_stat_values_all_cpus;
+            const auto cgroup_specific_divisor = cgroupcpu_stat ? 1e6 : hz;
+            const double multiplier = 1.0 / cgroup_specific_divisor
+                / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
+            applyCPUMetricsUpdate(new_values, /*cpu_suffix=*/"", delta_values, multiplier);
+        }
+
+        proc_stat_values_all_cpus = current_values;
+    }
+    else if (proc_stat)
     {
         try
         {
             proc_stat->rewind();
-
-            int64_t hz = sysconf(_SC_CLK_TCK);
-            if (-1 == hz)
-                throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
 
             double multiplier = 1.0 / hz / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
             size_t num_cpus = 0;
@@ -876,43 +997,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                         else
                             delta_values_all_cpus = delta_values;
 
-                        new_values["OSUserTime" + cpu_suffix] = { delta_values.user * multiplier,
-                            "The ratio of time the CPU core was running userspace code. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-                            " This includes also the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline stalls, branch mispredictions, running another SMT core)."
-                            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
-                        new_values["OSNiceTime" + cpu_suffix] = { delta_values.nice * multiplier,
-                            "The ratio of time the CPU core was running userspace code with higher priority. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-                            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
-                        new_values["OSSystemTime" + cpu_suffix] = { delta_values.system * multiplier,
-                            "The ratio of time the CPU core was running OS kernel (system) code. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-                            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
-                        new_values["OSIdleTime" + cpu_suffix] = { delta_values.idle * multiplier,
-                            "The ratio of time the CPU core was idle (not even ready to run a process waiting for IO) from the OS kernel standpoint. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-                            " This does not include the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline stalls, branch mispredictions, running another SMT core)."
-                            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
-                        new_values["OSIOWaitTime" + cpu_suffix] = { delta_values.iowait * multiplier,
-                            "The ratio of time the CPU core was not running the code but when the OS kernel did not run any other process on this CPU as the processes were waiting for IO. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-                            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
-                        new_values["OSIrqTime" + cpu_suffix] = { delta_values.irq * multiplier,
-                            "The ratio of time spent for running hardware interrupt requests on the CPU. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-                            " A high number of this metric may indicate hardware misconfiguration or a very high network load."
-                            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
-                        new_values["OSSoftIrqTime" + cpu_suffix] = { delta_values.softirq * multiplier,
-                            "The ratio of time spent for running software interrupt requests on the CPU. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-                            " A high number of this metric may indicate inefficient software running on the system."
-                            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
-                        new_values["OSStealTime" + cpu_suffix] = { delta_values.steal * multiplier,
-                            "The ratio of time spent in other operating systems by the CPU when running in a virtualized environment. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-                            " Not every virtualized environments present this metric, and most of them don't."
-                            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
-                        new_values["OSGuestTime" + cpu_suffix] = { delta_values.guest * multiplier,
-                            "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel (See `man procfs`). This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-                            " This metric is irrelevant for ClickHouse, but still exists for completeness."
-                            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
-                        new_values["OSGuestNiceTime" + cpu_suffix] = { delta_values.guest_nice * multiplier,
-                            "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel, when a guest was set to a higher priority (See `man procfs`). This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
-                            " This metric is irrelevant for ClickHouse, but still exists for completeness."
-                            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores]."};
+                        applyCPUMetricsUpdate(new_values, cpu_suffix, delta_values, multiplier);
                     }
 
                     prev_values = current_values;
