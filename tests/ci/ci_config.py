@@ -207,7 +207,7 @@ class JobConfig:
     digest: DigestConfig = field(default_factory=DigestConfig)
     # will be triggered for the job if omited in CI workflow yml
     run_command: str = ""
-    # job timeout
+    # job timeout, seconds
     timeout: Optional[int] = None
     # sets number of batches for multi-batch job
     num_batches: int = 1
@@ -498,10 +498,11 @@ clickbench_test_params = {
     ),
     "run_command": 'clickbench.py "$CHECK_NAME"',
 }
-install_test_params = {
-    "digest": install_check_digest,
-    "run_command": 'install_check.py "$CHECK_NAME"',
-}
+install_test_params = JobConfig(
+    digest=install_check_digest,
+    run_command='install_check.py "$CHECK_NAME"',
+    timeout=900,
+)
 
 
 @dataclass
@@ -1041,10 +1042,10 @@ CI_CONFIG = CIConfig(
     },
     test_configs={
         JobNames.INSTALL_TEST_AMD: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=JobConfig(**install_test_params)  # type: ignore
+            Build.PACKAGE_RELEASE, job_config=install_test_params
         ),
         JobNames.INSTALL_TEST_ARM: TestConfig(
-            Build.PACKAGE_AARCH64, job_config=JobConfig(**install_test_params)  # type: ignore
+            Build.PACKAGE_AARCH64, job_config=install_test_params
         ),
         JobNames.STATEFUL_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore
