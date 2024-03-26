@@ -337,13 +337,13 @@ void RefreshTask::refreshTask()
                     LOG_ERROR(log, "Znode {} indicates that this replica is running a refresh, but it isn't. Likely a bug.", coordination.path + "/running");
 #ifdef ABORT_ON_LOGICAL_ERROR
                     abortOnFailedAssertion("Unexpected refresh lock in keeper");
-#endif
-
+#else
                     coordination.running_znode_exists = false;
                     if (coordination.coordinated)
                         removeRunningZnodeIfMine(zookeeper);
                     schedule_keeper_retry();
                     break;
+#endif
                 }
                 else
                 {
@@ -498,10 +498,10 @@ void RefreshTask::refreshTask()
             "Unexpected exception in refresh scheduling, please investigate. The view will be stopped.");
 #ifdef ABORT_ON_LOGICAL_ERROR
         abortOnFailedAssertion("Unexpected exception in refresh scheduling");
-#endif
-
+#else
         if (coordination.coordinated)
             removeRunningZnodeIfMine(view->getContext()->getZooKeeper());
+#endif
     }
 }
 
@@ -841,11 +841,11 @@ String RefreshTask::CoordinationZnode::toString() const
 {
     WriteBufferFromOwnString out;
     out << "format version: 1\n"
-        << "last_completed_timeslot: " << last_completed_timeslot.time_since_epoch().count() << "\n"
-        << "last_success_time: " << last_success_time.time_since_epoch().count() << "\n"
-        << "last_success_duration_ms: " << last_success_duration.count() << "\n"
+        << "last_completed_timeslot: " << Int64(last_completed_timeslot.time_since_epoch().count()) << "\n"
+        << "last_success_time: " << Int64(last_success_time.time_since_epoch().count()) << "\n"
+        << "last_success_duration_ms: " << Int64(last_success_duration.count()) << "\n"
         << "last_success_table_uuid: " << last_success_table_uuid << "\n"
-        << "last_attempt_time: " << last_attempt_time.time_since_epoch().count() << "\n"
+        << "last_attempt_time: " << Int64(last_attempt_time.time_since_epoch().count()) << "\n"
         << "last_attempt_replica: " << escape << last_attempt_replica << "\n"
         << "last_attempt_error: " << escape << last_attempt_error << "\n"
         << "last_attempt_succeeded: " << last_attempt_succeeded << "\n"
