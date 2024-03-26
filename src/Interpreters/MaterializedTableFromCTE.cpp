@@ -1,3 +1,4 @@
+#include <atomic>
 #include <Interpreters/MaterializedTableFromCTE.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
@@ -7,8 +8,11 @@ namespace DB
 
 std::unique_ptr<QueryPlan> FutureTableFromCTE::build(ContextPtr context)
 {
-    const auto & settings = context->getSettingsRef();
+    bool expected_built = false;
+    if (built.compare_exchange_strong(expected_built, true))
+        return nullptr;
 
+    const auto & settings = context->getSettingsRef();
     auto plan = std::move(source);
 
     if (!plan)

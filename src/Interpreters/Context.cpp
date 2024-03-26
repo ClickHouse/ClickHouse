@@ -1606,6 +1606,18 @@ Tables Context::getExternalTables(bool for_sending_to_remote) const
     return res;
 }
 
+void Context::addExternalTableFromCTE(FutureTableFromCTE && future_table, TemporaryTableHolder && temporary_table)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
+    const auto & table_name = future_table.name;
+    std::lock_guard lock(mutex);
+    if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
+    materialized_cte_tables.emplace(table_name, std::make_shared<FutureTableFromCTE>(std::move(future_table)));
+    external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
+}
 
 void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
 {

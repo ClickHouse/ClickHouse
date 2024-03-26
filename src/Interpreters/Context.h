@@ -147,6 +147,8 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
+class FutureTableFromCTE;
+using FutureTablesFromCTE = std::map<String, std::shared_ptr<FutureTableFromCTE>>;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -298,6 +300,8 @@ protected:
 
     String insert_format; /// Format, used in insert query.
 
+    FutureTablesFromCTE materialized_cte_tables;
+    /// Temporary data for query execution accounting
     TemporaryTablesMapping external_tables_mapping;
     /// Query scalars
     Scalars scalars;
@@ -675,6 +679,8 @@ public:
     StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID tryResolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const;
+
+    void addExternalTableFromCTE(FutureTableFromCTE && future_table, TemporaryTableHolder && temporary_table);
 
     Tables getExternalTables(bool for_sending_to_remote = false) const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);

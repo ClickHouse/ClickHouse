@@ -12,13 +12,8 @@ class GlobalMaterializeCTEVisitor
 public:
     struct Data : WithMutableContext
     {
-        FutureTablesFromCTE & future_tables;
 
-        Data(
-            ContextMutablePtr context_,
-            FutureTablesFromCTE & future_tables_)
-            : WithMutableContext(context_)
-            , future_tables(future_tables_)
+        explicit Data(ContextMutablePtr context_) : WithMutableContext(context_)
         {
         }
 

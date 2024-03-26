@@ -981,15 +981,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (context->getSettingsRef().enable_materialized_cte)
         {
-            /// Materialize all CTE with MATERIALIZED keyword add to query context as temporary tables
+            /// Collect all CTE with MATERIALIZED keyword add to query context as temporary tables
             /// We need to do it here before analyzing the query
-            /// We also need to fill the external tables here, otherwise the following query may work incorrectly if
-            /// id is the primary key and we need it for primary key analysis:
-            /// WITH target AS (SELECT number FROM numbers(10)) SELECT * FROM t WHERE id IN target
             FutureTablesFromCTE future_materialized_cte_tables;
-            GlobalMaterializeCTEVisitor::Data data(context, future_materialized_cte_tables);
+            GlobalMaterializeCTEVisitor::Data data(context);
             GlobalMaterializeCTEVisitor(data).visit(ast);
-            buildTemporaryTablesFromCTE(std::move(future_materialized_cte_tables), context);
+            // buildTemporaryTablesFromCTE(std::move(future_materialized_cte_tables), context);
         }
 
         /// Propagate WITH statement to children ASTSelect.

@@ -63,7 +63,7 @@ void GlobalMaterializeCTEVisitor::Data::addExternalStorage(ASTWithElement & cte_
     Block sample = interpreter->getSampleBlock();
     NamesAndTypesList columns = sample.getNamesAndTypesList();
 
-    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
+    TemporaryTableHolder external_storage_holder(
         getContext(),
         ColumnsDescription{columns},
         ConstraintsDescription{},
@@ -72,18 +72,13 @@ void GlobalMaterializeCTEVisitor::Data::addExternalStorage(ASTWithElement & cte_
         cte_expr.engine);
 
     if(!context->getSettingsRef().send_materialized_cte_tables_to_remote_shard)
-        external_storage_holder->can_be_sent_to_remote = false;
-
-    StoragePtr external_storage = external_storage_holder->getTable();
-    context->addExternalTable(external_table_name, std::move(*external_storage_holder));
+        external_storage_holder.can_be_sent_to_remote = false;
+    StoragePtr external_storage = external_storage_holder.getTable();
     FutureTableFromCTE future_table;
-    future_table.name = external_table_name;
+    future_table.name = std::move(external_table_name);
     future_table.external_table = external_storage;
     future_table.source = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*future_table.source);
-    if (future_tables.emplace(external_table_name, std::move(future_table)).second)
-        LOG_DEBUG(getLogger("GlobalMaterializedCTEMatcher"), "Created external table `{}` for materialized CTE", external_table_name);
-    else
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table from CTE with name {} already exists", external_table_name);
+    context->addExternalTableFromCTE(std::move(future_table), std::move(external_storage_holder));
 }
 }
