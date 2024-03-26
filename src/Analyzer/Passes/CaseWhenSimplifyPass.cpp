@@ -191,8 +191,7 @@ public:
                 node = combineNodesWithFunction(FunctionFactory::instance().get("or", getContext()), equals_nodes);
             }
         }
-
-        if (func_node->getFunctionName() == "notEquals")
+        else if (func_node->getFunctionName() == "notEquals")
         {
             auto pos_list = findPosition(values, *value_node);
             // case x when 'a' then 1 when 'b' then 2 != null => False
@@ -263,8 +262,7 @@ public:
                 }
             }
         }
-
-        if (func_node->getFunctionName() == "in")
+        else if (func_node->getFunctionName() == "in")
         {
             Tuple in_values;
 
@@ -340,8 +338,7 @@ public:
             else
                 node = std::make_shared<ConstantNode>(Field(false));
         }
-
-        if (func_node->getFunctionName() == "notIn")
+        else if (func_node->getFunctionName() == "notIn")
         {
             Tuple not_in_values;
             if (value_node->getValue().getType() != Field::Types::Tuple && value_node->getValue().getType() != Field::Types::Array)
