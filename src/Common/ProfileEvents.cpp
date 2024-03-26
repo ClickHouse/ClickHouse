@@ -722,6 +722,9 @@ The server successfully detected this situation and will download merged part fr
     M(AddressesDiscovered, "Total count of new addresses in dns resolve results for http connections") \
     M(AddressesExpired, "Total count of expired addresses which is no longer presented in dns resolve results for http connections") \
     M(AddressesMarkedAsFailed, "Total count of addresses which has been marked as faulty due to connection errors for http connections") \
+    \
+    M(ReadWriteBufferFromHTTPRequestsSent, "Number of HTTP requests sent by ReadWriteBufferFromHTTP") \
+    M(ReadWriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by ReadWriteBufferFromHTTP. Doesn't include HTTP headers.") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
