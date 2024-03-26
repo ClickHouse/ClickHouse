@@ -93,7 +93,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
 DECLARE_DEFAULT_CODE(
 
 template <typename Type>
-void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<Type> & indices)
+static void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<Type> & indices)
 {
     size_t pos = 0;
     for (; start + 64 <= end; start += 64)
@@ -104,7 +104,7 @@ void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArra
         if (0xFF != prefix_to_copy)
         {
             for (size_t i = 0; i < prefix_to_copy; ++i)
-                indices[pos++] = start + i;
+                indices[pos++] = static_cast<Type>(start + i);
         }
         else
         {
@@ -112,14 +112,14 @@ void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArra
             if (0xFF != suffix_to_copy)
             {
                 for (size_t i = 64 - suffix_to_copy; i < 64; ++i)
-                    indices[pos++] = start + i;
+                    indices[pos++] = static_cast<Type>(start + i);
             }
             else
             {
                 while (mask)
                 {
                     size_t index = std::countr_zero(mask);
-                    indices[pos++] = start + index;
+                    indices[pos++] = static_cast<Type>(start + index);
                     mask = blsr(mask);
                 }
             }
@@ -129,14 +129,14 @@ void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArra
     for (; start != end; ++start)
     {
         if (filt[start])
-            indices[pos++] = start;
+            indices[pos++] = static_cast<Type>(start);
     }
 })
 
 
 DECLARE_AVX512F_SPECIFIC_CODE(
 template <typename Type>
-void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<Type> & indices)
+static void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<Type> & indices)
 {
     static constexpr size_t LOOPS_PER_MASK = sizeof(Type);
     static constexpr size_t MASK_BITS_PER_LOOP = 64 / LOOPS_PER_MASK;
@@ -210,7 +210,7 @@ void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArra
     for (; start != end; ++start)
     {
         if (filt[start])
-            indices[pos++] = start;
+            indices[pos++] = static_cast<Type>(start);
     }
 })
 
@@ -252,6 +252,8 @@ size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<Type> & indi
     return start;
 }
 
+template size_t filterToIndices<UInt32>(const IColumn::Filter & filt, PaddedPODArray<UInt32> & indices);
+template size_t filterToIndices<UInt64>(const IColumn::Filter & filt, PaddedPODArray<UInt64> & indices);
 
 std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector)
 {

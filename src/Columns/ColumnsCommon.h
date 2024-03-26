@@ -78,9 +78,6 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
 
 /// Transform filter column to indices
 template <typename Type>
-void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<Type> & indices);
-
-template <typename Type>
 size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<Type> & indices);
 
 /// Returns vector with num_columns elements. vector[i] is the count of i values in selector.
@@ -139,9 +136,9 @@ template <typename Column>
 void selectFilterInPlaceImpl(Column & column, const IColumn & indexes, size_t start)
 {
     if (const auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
-        column.template filterInplaceImpl<UInt32>(*data_uint32, start);
+        column.template filterInPlaceImpl<UInt32>(*data_uint32, start);
     else if (const auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
-        column.template filterInplaceImpl<UInt64>(*data_uint64, start);
+        column.template filterInPlaceImpl<UInt64>(*data_uint64, start);
     else
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
