@@ -107,6 +107,18 @@ namespace impl
             (PRIORITY), _file_function.c_str(), __LINE__, _format_string);                                          \
         _channel->log(_poco_message);                                                                               \
     }                                                                                                               \
+    catch (const Poco::Exception & logger_exception)                                                                \
+    {                                                                                                               \
+        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        const std::string & logger_exception_message = logger_exception.message();                                  \
+        ::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
+    }                                                                                                               \
+    catch (const std::exception & logger_exception)                                                                 \
+    {                                                                                                               \
+        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        const char * logger_exception_message = logger_exception.what();                                            \
+        ::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+    }                                                                                                               \
     catch (...)                                                                                                     \
     {                                                                                                               \
         ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \

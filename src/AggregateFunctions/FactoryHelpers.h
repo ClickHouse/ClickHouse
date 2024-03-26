@@ -33,21 +33,4 @@ inline void assertBinary(const std::string & name, const DataTypes & argument_ty
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires two arguments", name);
 }
 
-template<std::size_t maximal_arity>
-inline void assertArityAtMost(const std::string & name, const DataTypes & argument_types)
-{
-    if (argument_types.size() <= maximal_arity)
-        return;
-
-    if constexpr (maximal_arity == 0)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} cannot have arguments", name);
-
-    if constexpr (maximal_arity == 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires zero or one argument",
-                        name);
-
-    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at most {} arguments",
-                    name, maximal_arity);
-}
-
 }

@@ -5,6 +5,7 @@
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Formats/FormatFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -24,8 +25,8 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <filesystem>
 
+#include <filesystem>
 
 namespace fs = std::filesystem;
 

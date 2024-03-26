@@ -12,6 +12,11 @@ REGISTER_FUNCTION(NotEquals)
     factory.registerFunction<FunctionNotEquals>();
 }
 
+FunctionOverloadResolverPtr createInternalFunctionNotEqualOverloadResolver(bool decimal_check_overflow)
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionNotEquals>(decimal_check_overflow));
+}
+
 template <>
 ColumnPtr FunctionComparison<NotEqualsOp, NameNotEquals>::executeTupleImpl(
     const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count) const

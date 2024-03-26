@@ -135,8 +135,12 @@ public:
 
             auto & [_, storage, promise, with_zk_fields] = req;
 
-            auto get_status_task = [this, storage, with_zk_fields, promise] () mutable
+            auto get_status_task = [this, storage, with_zk_fields, promise, thread_group = CurrentThread::getGroup()]() mutable
             {
+                SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
+                if (thread_group)
+                    CurrentThread::attachToGroupIfDetached(thread_group);
+
                 try
                 {
                     ReplicatedTableStatus status;

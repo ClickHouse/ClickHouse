@@ -205,16 +205,17 @@ struct Client : DB::S3::Client
 {
     explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store)
         : DB::S3::Client(
-               100,
-               DB::S3::ServerSideEncryptionKMSConfig(),
-               std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
-               GetClientConfiguration(),
-               Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-               DB::S3::ClientSettings{
-                   .use_virtual_addressing = true,
-                   .disable_checksum= false,
-                   .gcs_issue_compose_request = false,
-               })
+            100,
+            DB::S3::ServerSideEncryptionKMSConfig(),
+            std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
+            GetClientConfiguration(),
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+            DB::S3::ClientSettings{
+                .use_virtual_addressing = true,
+                .disable_checksum = false,
+                .gcs_issue_compose_request = false,
+                .is_s3express_bucket = false,
+            })
         , store(mock_s3_store)
     {}
 

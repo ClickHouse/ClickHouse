@@ -223,7 +223,7 @@ bool analyzeProjectionCandidate(
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
-        if (it != created_projections.end())
+        if (it != created_projections.end() && !it->second->is_broken)
         {
             projection_parts.push_back(it->second);
         }

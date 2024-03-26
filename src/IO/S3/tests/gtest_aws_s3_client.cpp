@@ -110,7 +110,8 @@ void testServerSideEncryption(
     bool disable_checksum,
     String server_side_encryption_customer_key_base64,
     DB::S3::ServerSideEncryptionKMSConfig sse_kms_config,
-    String expected_headers)
+    String expected_headers,
+    bool is_s3express_bucket = false)
 {
     TestPocoHTTPServer http;
 
@@ -144,6 +145,7 @@ void testServerSideEncryption(
         .use_virtual_addressing = uri.is_virtual_hosted_style,
         .disable_checksum = disable_checksum,
         .gcs_issue_compose_request = false,
+        .is_s3express_bucket = is_s3express_bucket,
     };
 
     std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
@@ -293,6 +295,27 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersWrite)
         "x-amz-server-side-encryption-aws-kms-key-id: alias/test-key\n"
         "x-amz-server-side-encryption-bucket-key-enabled: true\n"
         "x-amz-server-side-encryption-context: arn:aws:s3:::bucket_ARN\n");
+}
+
+TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
+{
+    /// See https://github.com/ClickHouse/ClickHouse/pull/19748
+    testServerSideEncryption(
+        doWriteRequest,
+        /* disable_checksum= */ true,
+        "",
+        {},
+        "authorization: ... SignedHeaders="
+        "amz-sdk-invocation-id;"
+        "amz-sdk-request;"
+        "content-length;"
+        "content-type;"
+        "host;"
+        "x-amz-checksum-crc32;"
+        "x-amz-content-sha256;"
+        "x-amz-date;"
+        "x-amz-sdk-checksum-algorithm, ...\n",
+        /*is_s3express_bucket=*/true);
 }
 
 #endif

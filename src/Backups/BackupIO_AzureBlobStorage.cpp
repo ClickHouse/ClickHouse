@@ -140,12 +140,13 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     StorageAzureBlob::Configuration configuration_,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    bool attempt_to_create_container)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterAzureBlobStorage"))
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.container, false, false}
     , configuration(configuration_)
 {
-    auto client_ptr = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
+    auto client_ptr = StorageAzureBlob::createClient(configuration, /* is_read_only */ false, attempt_to_create_container);
     object_storage = std::make_unique<AzureObjectStorage>("BackupWriterAzureBlobStorage",
                                                           std::move(client_ptr),
                                                           StorageAzureBlob::createSettings(context_),
@@ -275,10 +276,9 @@ std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFile(const Strin
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client,
         key,
-        settings->max_single_part_upload_size,
-        settings->max_unexpected_write_error_retries,
         DBMS_DEFAULT_BUFFER_SIZE,
-        write_settings);
+        write_settings,
+        settings);
 }
 
 void BackupWriterAzureBlobStorage::removeFile(const String & file_name)

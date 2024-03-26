@@ -3,8 +3,14 @@
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
 
+#include <vector>
+
 namespace DB
 {
+
+class Block;
+class NamesAndTypesList;
+using NamesAndTypesLists = std::vector<NamesAndTypesList>;
 
 /// Struct with some additional information about inferred types for JSON formats.
 struct JSONInferenceInfo

@@ -173,16 +173,23 @@ function fuzz
 
     mkdir -p /var/run/clickhouse-server
 
-    # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    # server.log -> CH logs
-    # stderr.log -> Process logs (sanitizer)
+    # server.log -> All server logs, including sanitizer
+    # stderr.log -> Process logs (sanitizer) only
     clickhouse-server \
         --config-file db/config.xml \
         --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
         --  --path db \
             --logger.console=0 \
-            --logger.log=server.log > stderr.log 2>&1 &
-    server_pid=$!
+            --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1 &
+    for _ in {1..30}
+    do
+        if clickhouse-client --query "select 1"
+        then
+            break
+        fi
+        sleep 1
+    done
+    server_pid=$(cat /var/run/clickhouse-server/clickhouse-server.pid)
 
     kill -0 $server_pid
 
@@ -310,7 +317,7 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
-        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log stderr.log > description.txt
+        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi

@@ -3,7 +3,7 @@ import os.path as p
 import pytest
 import uuid
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.test_tools import TSV
 from string import Template
 
@@ -13,6 +13,9 @@ instance = cluster.add_instance(
 )
 datasource = "self"
 records = 1000
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 
 @pytest.fixture(scope="module")

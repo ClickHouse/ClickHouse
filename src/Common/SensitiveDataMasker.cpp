@@ -60,7 +60,7 @@ public:
         , replacement(replacement_string)
     {
         if (!regexp.ok())
-            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                 "SensitiveDataMasker: cannot compile re2: {}, error: {}. "
                 "Look at https://github.com/google/re2/wiki/Syntax for reference.",
                 regexp_string_, regexp.error());

@@ -34,7 +34,7 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
 {
     using namespace std::chrono;
 
-    auto * insert_queue = context->getAsynchronousInsertQueue();
+    auto * insert_queue = context->tryGetAsynchronousInsertQueue();
     if (!insert_queue)
         return;
 

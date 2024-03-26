@@ -122,6 +122,8 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     set_and_key->set = std::make_shared<Set>(size_limits, settings.use_index_for_in_with_subqueries_max_values, settings.transform_null_in);
 }
 
+FutureSetFromSubquery::~FutureSetFromSubquery() = default;
+
 SetPtr FutureSetFromSubquery::get() const
 {
     if (set_and_key->set != nullptr && set_and_key->set->isCreated())

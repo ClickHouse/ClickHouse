@@ -325,12 +325,12 @@ void KeeperDispatcher::snapshotThread()
         if (!snapshots_queue.pop(task))
             break;
 
-        if (shutdown_called)
-            break;
-
         try
         {
-            auto snapshot_file_info = task.create_snapshot(std::move(task.snapshot));
+            auto snapshot_file_info = task.create_snapshot(std::move(task.snapshot), /*execute_only_cleanup=*/shutdown_called);
+
+            if (shutdown_called)
+                break;
 
             if (snapshot_file_info.path.empty())
                 continue;

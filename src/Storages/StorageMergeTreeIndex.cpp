@@ -184,9 +184,11 @@ private:
         auto & compressed_data = compressed->getData();
         auto & uncompressed_data = uncompressed->getData();
 
+        auto marks_getter = marks_loader->loadMarks();
+
         for (size_t i = 0; i < num_rows; ++i)
         {
-            auto mark = marks_loader->getMark(i, col_idx);
+            auto mark = marks_getter->getMark(i, col_idx);
 
             compressed_data[i] = mark.offset_in_compressed_file;
             uncompressed_data[i] = mark.offset_in_decompressed_block;
