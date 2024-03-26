@@ -18,7 +18,7 @@ namespace DB
 class ExternalDictionaryLibraryBridgeRequestHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    ExternalDictionaryLibraryBridgeRequestHandler(ContextPtr context_);
+    explicit ExternalDictionaryLibraryBridgeRequestHandler(ContextPtr context_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -33,7 +33,7 @@ private:
 class ExternalDictionaryLibraryBridgeExistsHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    ExternalDictionaryLibraryBridgeExistsHandler(ContextPtr context_);
+    explicit ExternalDictionaryLibraryBridgeExistsHandler(ContextPtr context_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -61,7 +61,7 @@ private:
 class CatBoostLibraryBridgeRequestHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    CatBoostLibraryBridgeRequestHandler(ContextPtr context_);
+    explicit CatBoostLibraryBridgeRequestHandler(ContextPtr context_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -74,7 +74,7 @@ private:
 class CatBoostLibraryBridgeExistsHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    CatBoostLibraryBridgeExistsHandler(ContextPtr context_);
+    explicit CatBoostLibraryBridgeExistsHandler(ContextPtr context_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
