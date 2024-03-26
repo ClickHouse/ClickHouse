@@ -8,12 +8,12 @@ SET optimize_functions_to_subcolumns = 1;
 SET allow_experimental_analyzer = 0;
 
 EXPLAIN SYNTAX SELECT length(arr), isNull(n) FROM t_column_names;
-SELECT length(arr), isNull(n) FROM t_column_names FORMAT PrettyCompactNoEscapes;
+SELECT length(arr), isNull(n) FROM t_column_names FORMAT JSONEachRow;
 
 SET optimize_functions_to_subcolumns = 1;
 SET allow_experimental_analyzer = 1;
 
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT length(arr), isNull(n) FROM t_column_names;
-SELECT length(arr), isNull(n) FROM t_column_names FORMAT PrettyCompactNoEscapes;
+SELECT length(arr), isNull(n) FROM t_column_names FORMAT JSONEachRow;
 
 DROP TABLE t_column_names;
