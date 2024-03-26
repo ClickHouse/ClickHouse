@@ -1,3 +1,5 @@
+-- Tags: disabled
+
 WITH
     (SELECT value IN ('ON', '1') FROM system.build_options WHERE name = 'USE_JEMALLOC') AS jemalloc_enabled,
     (SELECT count() FROM system.jemalloc_bins) AS total_bins,

@@ -34,6 +34,9 @@
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
 	url = https://github.com/jemalloc/jemalloc
+[submodule "contrib/mimalloc"]
+	path = contrib/mimalloc
+	url = https://github.com/microsoft/mimalloc.git
 [submodule "contrib/unixodbc"]
 	path = contrib/unixodbc
 	url = https://github.com/ClickHouse/UnixODBC

@@ -24,6 +24,7 @@
 #cmakedefine01 USE_ODBC
 #cmakedefine01 USE_REPLXX
 #cmakedefine01 USE_JEMALLOC
+#cmakedefine01 USE_MIMALLOC
 #cmakedefine01 USE_GWP_ASAN
 #cmakedefine01 USE_H3
 #cmakedefine01 USE_S2_GEOMETRY
