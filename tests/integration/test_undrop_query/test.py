@@ -37,7 +37,7 @@ def test_undrop_drop_and_undrop_loop(started_cluster):
     for i in range(4):
         if (
             i >= 3
-        ):  # First 3 tables are dropped after 0, 5 and 10 seconds. Fourth is dropped after 21 seconds
+        ):  # First 3 tables are undropped after 0, 5 and 10 seconds. Fourth is undropped after 21 seconds
             time.sleep(6)
             error = node.query_and_get_error(
                 f"UNDROP TABLE test_undrop_loop_{i} UUID '{uuid_list[i]}';"
