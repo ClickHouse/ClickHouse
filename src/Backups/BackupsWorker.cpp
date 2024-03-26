@@ -597,6 +597,7 @@ void BackupsWorker::doBackup(
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
     backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;
+    backup_create_params.azure_attempt_to_create_container = backup_settings.azure_attempt_to_create_container;
     backup_create_params.read_settings = getReadSettingsForBackup(context, backup_settings);
     backup_create_params.write_settings = getWriteSettingsForBackup(context);
     backup = BackupFactory::instance().createBackup(backup_create_params);
