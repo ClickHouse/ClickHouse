@@ -285,11 +285,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             return {};
 
         auto projection_file = name + ".proj";
-        if (!throw_on_broken_projection && projection->is_broken)
-        {
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
-        }
 
         IMergeTreeDataPart::Checksums projection_checksums;
         try
@@ -306,13 +301,19 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             if (isRetryableException(std::current_exception()))
                 throw;
 
+            is_broken_projection = true;
+            projections_on_disk.erase(projection_file);
+            checksums_txt.remove(projection_file);
+
+            const auto exception = getCurrentExceptionMessage(true);
+
             if (!projection->is_broken)
             {
-                LOG_TEST(log, "Marking projection {} as broken ({})", name, projection_file);
-                projection->setBrokenReason(getCurrentExceptionMessage(false), getCurrentExceptionCode());
+                LOG_WARNING(log, "Marking projection {} as broken ({}). Reason: {}",
+                            name, projection_file, exception);
+                projection->setBrokenReason(exception, getCurrentExceptionCode());
             }
 
-            is_broken_projection = true;
             if (throw_on_broken_projection)
             {
                 if (!broken_projections_message.empty())
@@ -320,12 +321,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
                 broken_projections_message += fmt::format(
                     "Part {} has a broken projection {} (error: {})",
-                    data_part->name, name, getCurrentExceptionMessage(false));
-                continue;
+                    data_part->name, name, exception);
             }
 
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
+            continue;
         }
 
         checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
