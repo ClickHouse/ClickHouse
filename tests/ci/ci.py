@@ -760,18 +760,21 @@ class CiOptions:
         return CiOptions(**run_config["ci_options"])
 
     @staticmethod
-    def create_from_pr_message(commit_message: Optional[str]) -> "CiOptions":
+    def create_from_pr_message(
+        debug_message: Optional[str], update_from_api: bool
+    ) -> "CiOptions":
         """
         Creates CiOptions instance based on tags found in PR body and/or commit message
         @commit_message - may be provided directly for debugging purposes, otherwise it will be retrieved from git.
         """
         res = CiOptions()
         pr_info = PRInfo()
-        if not pr_info.is_pr():
+        if (
+            not pr_info.is_pr() and not debug_message
+        ):  # if commit_message is provided it's test/debug scenario - do not return
             # CI options can be configured in PRs only
             return res
-
-        message = commit_message or GitRunner(set_cwd_to_git_root=True).run(
+        message = debug_message or GitRunner(set_cwd_to_git_root=True).run(
             f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1"
         )
 
@@ -779,10 +782,13 @@ class CiOptions:
         matches = [match[-1] for match in re.findall(pattern, message)]
         print(f"CI tags from commit message: [{matches}]")
 
-        pr_info = PRInfo(pr_event_from_api=True)  # Fetch updated PR body from GH API
-        matches_pr = [match[-1] for match in re.findall(pattern, pr_info.body)]
-        print(f"CI tags from PR body: [{matches_pr}]")
-        matches = set(matches + matches_pr)
+        if not debug_message:  # to be skipped if debug/test
+            pr_info = PRInfo(
+                pr_event_from_api=update_from_api
+            )  # Fetch updated PR body from GH API
+            matches_pr = [match[-1] for match in re.findall(pattern, pr_info.body)]
+            print(f"CI tags from PR body: [{matches_pr}]")
+            matches = list(set(matches + matches_pr))
 
         if "do not test" in pr_info.labels:
             # do_not_test could be set in GH labels
@@ -800,11 +806,15 @@ class CiOptions:
             elif match.startswith("ci_include_"):
                 if not res.include_keywords:
                     res.include_keywords = []
-                res.include_keywords.append(match.removeprefix("ci_include_"))
+                res.include_keywords.append(
+                    normalize_check_name(match.removeprefix("ci_include_"))
+                )
             elif match.startswith("ci_exclude_"):
                 if not res.exclude_keywords:
                     res.exclude_keywords = []
-                res.exclude_keywords.append(match.removeprefix("ci_exclude_"))
+                res.exclude_keywords.append(
+                    normalize_check_name(match.removeprefix("ci_exclude_"))
+                )
             elif match == Labels.NO_CI_CACHE:
                 res.no_ci_cache = True
                 print("NOTE: CI Cache will be disabled")
@@ -845,6 +855,44 @@ class CiOptions:
         """
         jobs_to_do_requested = []  # type: List[str]
 
+        # -1. Handle "ci_exclude_" tags if any
+        if self.exclude_keywords:
+            new_jobs_to_do = list(jobs_to_do)
+            for job in jobs_to_do:
+                found = False
+                for keyword in self.exclude_keywords:
+                    if keyword in normalize_check_name(job):
+                        print(
+                            f"Job [{job}] matches Exclude keyword [{keyword}] - remove"
+                        )
+                        found = True
+                        break
+                if found:
+                    new_jobs_to_do.remove(job)
+            jobs_to_do = new_jobs_to_do
+
+        # 0. Handle "ci_include_" tags if any
+        if self.include_keywords:
+            for job in jobs_to_do:
+                found = False
+                for keyword in self.include_keywords:
+                    if keyword in normalize_check_name(job):
+                        print(f"Job [{job}] matches Include keyword [{keyword}] - add")
+                        found = True
+                        break
+                if found:
+                    job_with_parents = CI_CONFIG.get_job_with_parents(job)
+                    for job in job_with_parents:
+                        if job in jobs_to_do and job not in jobs_to_do_requested:
+                            jobs_to_do_requested.append(job)
+            assert (
+                jobs_to_do_requested
+            ), "Include tags are set but now job configured - Invalid tags, probably [{self.include_keywords}]"
+            if JobNames.STYLE_CHECK not in jobs_to_do_requested:
+                # Style check must not be omitted
+                jobs_to_do_requested.append(JobNames.STYLE_CHECK)
+
+        # FIXME: to be removed in favor of include/exclude
         # 1. Handle "ci_set_" tags if any
         if self.ci_sets:
             for tag in self.ci_sets:
@@ -855,6 +903,7 @@ class CiOptions:
                 )
                 jobs_to_do_requested += label_config.run_jobs
 
+        # FIXME: to be removed in favor of include/exclude
         # 2. Handle "job_" tags if any
         if self.ci_jobs:
             for tag in self.ci_jobs:
@@ -870,6 +919,8 @@ class CiOptions:
 
         # 3. Handle "do not test"
         if self.do_not_test:
+            label_config = CI_CONFIG.get_label_config(Labels.DO_NOT_TEST_LABEL)
+            assert label_config
             print(
                 f"NOTE: CI 'do not test' setting applied, set jobs: [{label_config.run_jobs}]"
             )
@@ -877,8 +928,7 @@ class CiOptions:
                 print(
                     "WARNING: 'do not test' is used alongside with other CI modifying tags - 'do not test' prevails"
                 )
-            label_config = CI_CONFIG.get_label_config(Labels.DO_NOT_TEST_LABEL)
-            jobs_to_do_requested = label_config.run_jobs
+            jobs_to_do_requested = list(label_config.run_jobs)
 
         if jobs_to_do_requested:
             jobs_to_do_requested = list(set(jobs_to_do_requested))
@@ -1794,7 +1844,9 @@ def main() -> int:
 
     ### CONFIGURE action: start
     if args.configure:
-        ci_options = CiOptions.create_from_pr_message(args.commit_message or None)
+        ci_options = CiOptions.create_from_pr_message(
+            args.commit_message or None, update_from_api=True
+        )
 
         # tokens = _fetch_commit_tokens(message, pr_info)
         if ci_options.no_merge_commit and CI:
