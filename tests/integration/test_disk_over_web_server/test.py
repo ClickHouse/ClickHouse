@@ -323,6 +323,7 @@ def test_replicated_database(cluster):
     node1.query("DROP DATABASE rdb SYNC")
     node2.query("DROP DATABASE rdb SYNC")
 
+
 def test_page_cache(cluster):
     node = cluster.instances["node2"]
     global uuids
@@ -338,9 +339,15 @@ def test_page_cache(cluster):
             )
         )
 
-        result1 = node.query(f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=1 -- test cold cache")
-        result2 = node.query(f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=1 -- test warm cache")
-        result3 = node.query(f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=0 -- test no cache")
+        result1 = node.query(
+            f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=1 -- test cold cache"
+        )
+        result2 = node.query(
+            f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=1 -- test warm cache"
+        )
+        result3 = node.query(
+            f"SELECT sum(cityHash64(*)) FROM test{i} SETTINGS use_page_cache_for_disks_without_file_cache=0 -- test no cache"
+        )
 
         assert result1 == result3
         assert result2 == result3
@@ -349,7 +356,9 @@ def test_page_cache(cluster):
 
         def get_profile_events(query_name):
             print(f"asdqwe {query_name}")
-            text = node.query(f"SELECT ProfileEvents.Names, ProfileEvents.Values FROM system.query_log ARRAY JOIN ProfileEvents WHERE query LIKE '% -- {query_name}' AND type = 'QueryFinish'")
+            text = node.query(
+                f"SELECT ProfileEvents.Names, ProfileEvents.Values FROM system.query_log ARRAY JOIN ProfileEvents WHERE query LIKE '% -- {query_name}' AND type = 'QueryFinish'"
+            )
             res = {}
             for line in text.split("\n"):
                 if line == "":
@@ -360,18 +369,27 @@ def test_page_cache(cluster):
             return res
 
         ev1 = get_profile_events("test cold cache")
-        assert ev1.get('PageCacheChunkMisses', 0) > 0
-        assert ev1.get('DiskConnectionsCreated', 0) + ev1.get('DiskConnectionsReused', 0) > 0
+        assert ev1.get("PageCacheChunkMisses", 0) > 0
+        assert (
+            ev1.get("DiskConnectionsCreated", 0) + ev1.get("DiskConnectionsReused", 0)
+            > 0
+        )
 
         ev2 = get_profile_events("test warm cache")
-        assert ev2.get('PageCacheChunkDataHits', 0) > 0
-        assert ev2.get('PageCacheChunkMisses', 0) == 0
-        assert ev2.get('DiskConnectionsCreated', 0) + ev2.get('DiskConnectionsReused', 0) == 0
+        assert ev2.get("PageCacheChunkDataHits", 0) > 0
+        assert ev2.get("PageCacheChunkMisses", 0) == 0
+        assert (
+            ev2.get("DiskConnectionsCreated", 0) + ev2.get("DiskConnectionsReused", 0)
+            == 0
+        )
 
         ev3 = get_profile_events("test no cache")
-        assert ev3.get('PageCacheChunkDataHits', 0) == 0
-        assert ev3.get('PageCacheChunkMisses', 0) == 0
-        assert ev3.get('DiskConnectionsCreated', 0) + ev3.get('DiskConnectionsReused', 0) > 0
+        assert ev3.get("PageCacheChunkDataHits", 0) == 0
+        assert ev3.get("PageCacheChunkMisses", 0) == 0
+        assert (
+            ev3.get("DiskConnectionsCreated", 0) + ev3.get("DiskConnectionsReused", 0)
+            > 0
+        )
 
         node.query("DROP TABLE test{} SYNC".format(i))
         print(f"Ok {i}")
