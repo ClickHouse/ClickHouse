@@ -2057,92 +2057,75 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         io.pipeline.setProgressCallback(context->getProgressCallback());
         io.pipeline.setProcessListElement(context->getProcessListElement());
 
-        if (only_analyze)
+        Block block;
+
+        while (block.rows() == 0 && executor.pull(block))
         {
-            /// If query is only analyzed, then constants are not correct.
-            scalar_block = interpreter->getSampleBlock();
-            for (auto & column : scalar_block)
+        }
+
+        if (block.rows() == 0)
+        {
+            auto types = interpreter->getSampleBlock().getDataTypes();
+            if (types.size() != 1)
+                types = {std::make_shared<DataTypeTuple>(types)};
+
+            auto & type = types[0];
+            if (!type->isNullable())
             {
-                if (column.column->empty())
-                {
-                    auto mut_col = column.column->cloneEmpty();
-                    mut_col->insertDefault();
-                    column.column = std::move(mut_col);
-                }
+                if (!type->canBeInsideNullable())
+                    throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
+                        "Scalar subquery returned empty result of type {} which cannot be Nullable",
+                        type->getName());
+
+                type = makeNullable(type);
             }
+
+            auto scalar_column = type->createColumn();
+            scalar_column->insert(Null());
+            scalar_block.insert({std::move(scalar_column), type, "null"});
         }
         else
         {
-            Block block;
+            if (block.rows() != 1)
+                throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
-            while (block.rows() == 0 && executor.pull(block))
+            Block tmp_block;
+            while (tmp_block.rows() == 0 && executor.pull(tmp_block))
             {
             }
 
-            if (block.rows() == 0)
+            if (tmp_block.rows() != 0)
+                throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+
+            block = materializeBlock(block);
+            size_t columns = block.columns();
+
+            if (columns == 1)
             {
-                auto types = interpreter->getSampleBlock().getDataTypes();
-                if (types.size() != 1)
-                    types = {std::make_shared<DataTypeTuple>(types)};
-
-                auto & type = types[0];
-                if (!type->isNullable())
+                auto & column = block.getByPosition(0);
+                /// Here we wrap type to nullable if we can.
+                /// It is needed cause if subquery return no rows, it's result will be Null.
+                /// In case of many columns, do not check it cause tuple can't be nullable.
+                if (!column.type->isNullable() && column.type->canBeInsideNullable())
                 {
-                    if (!type->canBeInsideNullable())
-                        throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
-                            "Scalar subquery returned empty result of type {} which cannot be Nullable",
-                            type->getName());
-
-                    type = makeNullable(type);
+                    column.type = makeNullable(column.type);
+                    column.column = makeNullable(column.column);
                 }
 
-                auto scalar_column = type->createColumn();
-                scalar_column->insert(Null());
-                scalar_block.insert({std::move(scalar_column), type, "null"});
+                scalar_block = block;
             }
             else
             {
-                if (block.rows() != 1)
-                    throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+                /** Make unique column names for tuple.
+                *
+                * Example: SELECT (SELECT 2 AS x, x)
+                */
+                makeUniqueColumnNamesInBlock(block);
 
-                Block tmp_block;
-                while (tmp_block.rows() == 0 && executor.pull(tmp_block))
-                {
-                }
-
-                if (tmp_block.rows() != 0)
-                    throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
-
-                block = materializeBlock(block);
-                size_t columns = block.columns();
-
-                if (columns == 1)
-                {
-                    auto & column = block.getByPosition(0);
-                    /// Here we wrap type to nullable if we can.
-                    /// It is needed cause if subquery return no rows, it's result will be Null.
-                    /// In case of many columns, do not check it cause tuple can't be nullable.
-                    if (!column.type->isNullable() && column.type->canBeInsideNullable())
-                    {
-                        column.type = makeNullable(column.type);
-                        column.column = makeNullable(column.column);
-                    }
-
-                    scalar_block = block;
-                }
-                else
-                {
-                    /** Make unique column names for tuple.
-                    *
-                    * Example: SELECT (SELECT 2 AS x, x)
-                    */
-                    makeUniqueColumnNamesInBlock(block);
-
-                    scalar_block.insert({
-                        ColumnTuple::create(block.getColumns()),
-                        std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
-                        "tuple"});
-                }
+                scalar_block.insert({
+                    ColumnTuple::create(block.getColumns()),
+                    std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
+                    "tuple"});
             }
         }
 
