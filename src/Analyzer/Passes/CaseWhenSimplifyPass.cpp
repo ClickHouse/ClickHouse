@@ -5,6 +5,8 @@
 #include <Analyzer/Passes/CaseWhenSimplifyPass.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/equals.h>
+#include <Functions/notEquals.h>
 
 namespace DB
 {
@@ -29,6 +31,7 @@ bool checkFunctionArgumentsType(const FunctionNode * node)
     return true;
 }
 
+
 template <typename... Args>
 QueryTreeNodePtr createFunctionNode(const FunctionOverloadResolverPtr & function_resolver, Args &&... args)
 {
@@ -40,12 +43,27 @@ QueryTreeNodePtr createFunctionNode(const FunctionOverloadResolverPtr & function
     return function_node;
 }
 
-size_t findPosition(const std::vector<ConstantNode *> & values, const ConstantNode & value)
+QueryTreeNodePtr
+combineNodesWithFunction(const FunctionOverloadResolverPtr & function_resolver, const std::vector<QueryTreeNodePtr> & arguments)
 {
+    if (arguments.size() > 1)
+    {
+        QueryTreeNodePtr current = arguments[0];
+        for (size_t i = 1; i < arguments.size(); ++i)
+            current = createFunctionNode(function_resolver, std::move(current), arguments[i]);
+        return current;
+    }
+    else
+        return arguments[0];
+}
+
+std::vector<size_t> findPosition(const std::vector<ConstantNode *> & values, const ConstantNode & value)
+{
+    std::vector<size_t> positions;
     for (size_t i = 0; i < values.size(); ++i)
         if (values[i]->getValue() == value.getValue())
-            return i;
-    return values.size();
+            positions.push_back(i);
+    return positions;
 }
 
 class CaseWhenSimplifyPassVisitor : public InDepthQueryTreeVisitorWithContext<CaseWhenSimplifyPassVisitor>
@@ -56,8 +74,22 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        // if parent has isNull or isNotNull function, abondon the optimization
+        if (parentHasIsNull)
+        {
+            return;
+        }
+        static const std::unordered_set<String> is_null_funcs = {"isNull", "isNotNull"};
         static const std::unordered_set<String> supported_funcs = {"in", "notIn", "equals", "notEquals"};
         auto * func_node = node->as<FunctionNode>();
+        if (!func_node)
+            return;
+        if (is_null_funcs.contains(func_node->getFunctionName()))
+        {
+            parentHasIsNull = true;
+            return;
+        }
+
         if (!checkFunctionWithArguments(node, supported_funcs, 2))
             return;
         if (!checkFunctionArgumentsType<FunctionNode, ConstantNode>(func_node))
@@ -72,8 +104,10 @@ public:
         bool has_else = (case_args.size() - 1) % 2 == 1;
         std::vector<ConstantNode *> keys;
         std::vector<ConstantNode *> values;
-        bool values_has_null = false;
+        bool values_contain_null = false;
+        bool keys_contain_null = false;
         Tuple keys_which_value_is_null;
+        Tuple keys_which_value_not_null;
         size_t value_null_num = 0;
         // extract keys and values from case
         for (size_t i = 1; i < case_args.size() - (has_else ? 1 : 0); i += 2)
@@ -82,30 +116,47 @@ public:
             auto * value = case_args[i + 1]->as<ConstantNode>();
             if (!key || !value)
                 return;
+            if (key->getValue().isNull())
+            {
+                keys_contain_null = true;
+            }
             keys.push_back(key);
             values.push_back(value);
             if (value->getValue().isNull())
             {
                 keys_which_value_is_null.push_back(key->getValue());
-                values_has_null = true;
+                values_contain_null = true;
                 value_null_num++;
+            }
+            else
+            {
+                keys_which_value_not_null.push_back(key->getValue());
             }
         }
         if (has_else)
         {
-            values.push_back(case_args.back()->as<ConstantNode>());
-            if (values.back()->getValue().isNull())
-                value_null_num++;
+            auto * else_node = case_args.back()->as<ConstantNode>();
+            if (else_node->getValue().isNull())
+            {
+                // else node is null, remove it
+                has_else = false;
+            }
+            else
+            {
+                values.push_back(else_node);
+            }
         }
-        bool values_are_all_null = value_null_num == values.size();
 
-        if (bool is_equals = func_node->getFunctionName() == "equals")
+        bool values_are_all_null = value_null_num == values.size();
+        auto is_else_value_found
+            = [&](std::vector<size_t> pos_list) { return has_else && pos_list.size() == 1 && pos_list.front() == values.size() - 1; };
+        if (func_node->getFunctionName() == "equals")
         {
-            auto pos = findPosition(values, *value_node);
-            if (pos == values.size() || value_node->getValue().isNull())
+            auto pos_list = findPosition(values, *value_node);
+            if (pos_list.empty() || value_node->getValue().isNull())
                 // value not found in case values, always false
                 node = std::make_shared<ConstantNode>(Field(false));
-            else if (has_else && pos == values.size() - 1)
+            else if (is_else_value_found(pos_list))
             {
                 // value is in else, replace equals with not in
                 Tuple tuple;
@@ -114,76 +165,241 @@ public:
                 auto tuple_node = std::make_shared<ConstantNode>(Field(tuple));
                 auto not_in_function_resolver = FunctionFactory::instance().get("notIn", getContext());
                 node = createFunctionNode(not_in_function_resolver, case_column->clone(), tuple_node);
+                if (!keys_contain_null)
+                {
+                    auto isNull_function_resolver = FunctionFactory::instance().get("isNull", getContext());
+                    auto is_null_node = createFunctionNode(isNull_function_resolver, case_column->clone());
+                    node = createFunctionNode(FunctionFactory::instance().get("or", getContext()), node, is_null_node);
+                }
             }
             else
+            {
                 // replace case when with simple equals
-                func_node->getArguments().getNodes() = {case_column->clone(), keys.at(pos)->clone()};
+                auto equals_resolver = createInternalFunctionEqualOverloadResolver(getContext()->getSettingsRef().decimal_check_overflow);
+                std::vector<QueryTreeNodePtr> equals_nodes(pos_list.size());
+                for (size_t pos : pos_list)
+                    equals_nodes.emplace_back(createFunctionNode(equals_resolver, case_column->clone(), keys.at(pos)->clone()));
+                node = combineNodesWithFunction(FunctionFactory::instance().get("or", getContext()), equals_nodes);
+            }
         }
 
-        if (bool is_not_equals = func_node->getFunctionName() == "notEquals")
+        if (func_node->getFunctionName() == "notEquals")
         {
-            auto pos = findPosition(values, *value_node);
+            auto pos_list = findPosition(values, *value_node);
             // case x when 'a' then 1 when 'b' then 2 != null => False
             // case x when 'a' then null when 'b' then null != null => False
             if (value_node->getValue().isNull() || values_are_all_null)
                 node = std::make_shared<ConstantNode>(Field(false));
-            // case x when 'a' then 1 when 'b' then 2 != 3 => True
-            else if (!values_has_null && pos == values.size())
+            // case x when 'a' then 1 when 'b' then 2 else 4 != 3 => True
+            else if (!values_contain_null && pos_list.empty() && has_else)
                 node = std::make_shared<ConstantNode>(Field(true));
+            else if (!values_contain_null && pos_list.empty() && !has_else)
+            {
+                auto not_in_function_resolver = FunctionFactory::instance().get("in", getContext());
+                node = createFunctionNode(
+                    not_in_function_resolver, case_column->clone(), std::make_shared<ConstantNode>(Field(keys_which_value_not_null)));
+            }
             // case x when 'a' then Null when 'b' then Null when 'c' then 3 != 4 => x notIn ('a', 'b')
-            else if (values_has_null && pos == values.size())
+            else if (values_contain_null && pos_list.empty())
             {
                 auto not_in_function_resolver = FunctionFactory::instance().get("notIn", getContext());
                 node = createFunctionNode(
                     not_in_function_resolver, case_column->clone(), std::make_shared<ConstantNode>(Field(keys_which_value_is_null)));
             }
             // case x when 'a' then 1 when 'b' then 2 else 3 != 3 => x in ('a', 'b')
-            else if (has_else && pos == values.size() - 1)
+            else if (is_else_value_found(pos_list))
             {
                 Tuple tuple;
                 for (const auto * key : keys)
                     tuple.emplace_back(key->getValue());
                 auto tuple_node = std::make_shared<ConstantNode>(Field(tuple));
-                auto not_in_function_resolver = FunctionFactory::instance().get("in", getContext());
-                node = createFunctionNode(not_in_function_resolver, case_column->clone(), tuple_node);
+                auto in_function_resolver = FunctionFactory::instance().get("in", getContext());
+                node = createFunctionNode(in_function_resolver, case_column->clone(), tuple_node);
             }
-            // case x when 'a' then 1 when 'b' then 2  != 2 => x != 'b'
+            else if (!has_else)
+            {
+                Tuple valid_value;
+                for (size_t i = 0; i < keys.size(); i++)
+                {
+                    if (std::find(pos_list.begin(), pos_list.end(), i) == pos_list.end())
+                        valid_value.push_back(keys[i]->getValue());
+                }
+                auto in_function_resolver = FunctionFactory::instance().get("in", getContext());
+                node = createFunctionNode(in_function_resolver, case_column->clone(), std::make_shared<ConstantNode>(Field(valid_value)));
+            }
+            // case x when 'a' then 1 when 'b' then 2  != 2 => x != 'b' or x is null
             else
-                func_node->getArguments().getNodes() = {case_column->clone(), keys.at(pos)->clone()};
+            {
+                auto not_equals_resolver
+                    = createInternalFunctionNotEqualOverloadResolver(getContext()->getSettingsRef().decimal_check_overflow);
+                auto isNull_function_resolver = FunctionFactory::instance().get("isNull", getContext());
+                std::vector<QueryTreeNodePtr> result_nodes;
+                for (size_t pos : pos_list)
+                {
+                    auto not_equal_node = createFunctionNode(not_equals_resolver, case_column->clone(), keys.at(pos)->clone());
+                    result_nodes.push_back(not_equal_node);
+                }
+                auto is_null_node = createFunctionNode(isNull_function_resolver, case_column->clone());
+                auto equals_node = combineNodesWithFunction(FunctionFactory::instance().get("and", getContext()), result_nodes);
+                node = createFunctionNode(FunctionFactory::instance().get("or", getContext()), equals_node, is_null_node);
+            }
         }
 
         if (func_node->getFunctionName() == "in")
         {
             Tuple in_values;
+
             if (value_node->getValue().getType() != Field::Types::Tuple && value_node->getValue().getType() != Field::Types::Array)
-                in_values.push_back(value_node->getValue());
+            {
+                if (!value_node->getValue().isNull())
+                    in_values.push_back(value_node->getValue());
+            }
             else if (value_node->getValue().getType() == Field::Types::Tuple)
             {
                 for (const auto & field : value_node->getValue().get<Tuple>())
-                {
-                    in_values.push_back(field);
-                }
+                    if (!field.isNull())
+                        in_values.push_back(field);
             }
             else if (value_node->getValue().getType() == Field::Types::Array)
             {
                 for (const auto & field : value_node->getValue().get<Array>())
-                {
-                    in_values.push_back(field);
-                }
+                    if (field.isNull())
+                        in_values.push_back(field);
             }
+            else
+                return;
+            Tuple in_keys;
+            Tuple not_in_keys;
+            bool has_not_in = false;
+            for (const auto & value : in_values)
+            {
+                auto pos_list = findPosition(values, ConstantNode(value));
+                if (pos_list.empty())
+                    continue;
+                if (has_else && pos_list.size() == 1 && pos_list.front() == values.size() - 1)
+                {
+                    has_not_in = true;
+                    continue;
+                }
+                for (size_t pos : pos_list)
+                    in_keys.push_back(keys.at(pos)->getValue());
+            }
+            if (has_not_in)
+            {
+                for (const auto & key : keys)
+                    if (std::find(in_keys.begin(), in_keys.end(), key->getValue()) == in_keys.end())
+                        not_in_keys.push_back(key->getValue());
+            }
+            QueryTreeNodePtr in_node, not_in_node;
+            if (!in_keys.empty())
+            {
+                auto in_function_resolver = FunctionFactory::instance().get("in", getContext());
+                auto in_keys_node = std::make_shared<ConstantNode>(Field(in_keys));
+                in_node = createFunctionNode(in_function_resolver, case_column->clone(), in_keys_node);
+            }
+            if (!not_in_keys.empty())
+            {
+                auto not_in_function_resolver = FunctionFactory::instance().get("notIn", getContext());
+                auto not_in_keys_node = std::make_shared<ConstantNode>(Field(not_in_keys));
+                not_in_node = createFunctionNode(not_in_function_resolver, case_column->clone(), not_in_keys_node);
+            }
+            if (!in_keys.empty() && !not_in_keys.empty())
+            {
+                // (case x when 'a' then 1 when 'b' then 2 else 3 end) in (1,3) => x in ('a') or x notIn ('b')
+                auto or_function_resolver = FunctionFactory::instance().get("or", getContext());
+                node = createFunctionNode(or_function_resolver, in_node, not_in_node);
+            }
+            else if (!in_keys.empty())
+                // (case x when 'a' then 1 when 'b' then 2 else 3 end) in (1) => x in ('a')
+                node = in_node;
+            else if (!not_in_keys.empty())
+            {
+                // (case x when 'a' then 1 when 'b' then 2 else 3 end) in (3) => x notIn ('a', 'b')
+                node = not_in_node;
+                auto isNull_function_resolver = FunctionFactory::instance().get("isNull", getContext());
+                auto is_null_node = createFunctionNode(isNull_function_resolver, case_column->clone());
+                node = createFunctionNode(FunctionFactory::instance().get("or", getContext()), node, is_null_node);
+            }
+            else
+                // (case x when 'a' then 1 when 'b' then 2 else 3 end) in (Null) => False
+                // (case x when 'a' then 1 when 'b' then 2 else 3 end) in (4) => False
+                node = std::make_shared<ConstantNode>(Field(false));
+        }
+
+        if (func_node->getFunctionName() == "notIn")
+        {
+            Tuple not_in_values;
+            if (value_node->getValue().getType() != Field::Types::Tuple && value_node->getValue().getType() != Field::Types::Array)
+                not_in_values.push_back(value_node->getValue());
+            else if (value_node->getValue().getType() == Field::Types::Tuple)
+                for (const auto & field : value_node->getValue().get<Tuple>())
+                    not_in_values.push_back(field);
+            else if (value_node->getValue().getType() == Field::Types::Array)
+                for (const auto & field : value_node->getValue().get<Array>())
+                    not_in_values.push_back(field);
+            else
+                return;
 
             Tuple in_keys;
             Tuple not_in_keys;
-            for (const auto & value : in_values)
+            bool has_in = false;
+            for (const auto & value : not_in_values)
             {
-                auto pos = findPosition(values, ConstantNode(value));
-                if (pos == values.size()) continue;
-                if ()
-                in_keys.push_back(keys.at(pos)->getValue());
+                auto pos_list = findPosition(values, ConstantNode(value));
+                if (pos_list.empty())
+                    continue;
+                if (has_else && pos_list.size() == 1 && pos_list.front() == values.size() - 1)
+                {
+                    has_in = true;
+                    continue;
+                }
+                for (size_t pos : pos_list)
+                    not_in_keys.push_back(keys.at(pos)->getValue());
             }
-
+            if (has_in)
+            {
+                for (const auto & key : keys)
+                    if (std::find(not_in_keys.begin(), not_in_keys.end(), key->getValue()) == not_in_keys.end())
+                        in_keys.push_back(key->getValue());
+            }
+            QueryTreeNodePtr in_node, not_in_node;
+            if (!in_keys.empty())
+            {
+                auto in_function_resolver = FunctionFactory::instance().get("in", getContext());
+                auto in_keys_node = std::make_shared<ConstantNode>(Field(in_keys));
+                in_node = createFunctionNode(in_function_resolver, case_column->clone(), in_keys_node);
+            }
+            if (!not_in_keys.empty())
+            {
+                auto not_in_function_resolver = FunctionFactory::instance().get("notIn", getContext());
+                auto not_in_keys_node = std::make_shared<ConstantNode>(Field(not_in_keys));
+                not_in_node = createFunctionNode(not_in_function_resolver, case_column->clone(), not_in_keys_node);
+            }
+            if (!in_keys.empty() && !not_in_keys.empty())
+            {
+                // (case x when 'a' then 1 when 'b' then 2 else 3 end) not in (1,3) => x notIn ('a') or x In ('b')
+                auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
+                node = createFunctionNode(and_function_resolver, in_node, not_in_node);
+            }
+            else if (!not_in_keys.empty())
+            {
+                // (case x when 'a' then 1 when 'b' then 2 else 3 end) not in (1) => x notIn ('a')
+                node = not_in_node;
+                auto isNull_function_resolver = FunctionFactory::instance().get("isNull", getContext());
+                auto is_null_node = createFunctionNode(isNull_function_resolver, case_column->clone());
+                node = createFunctionNode(FunctionFactory::instance().get("or", getContext()), node, is_null_node);
+            }
+            else if (!in_keys.empty())
+                // (case x when 'a' then 1 when 'b' then 2 else 3 end) not in (3) => x in ('a', 'b')
+                node = in_node;
+            else
+                // (case x when 'a' then 1 when 'b' then 2 else 3 end) not in (4) => True
+                node = std::make_shared<ConstantNode>(Field(true));
         }
     }
+
+private:
+    bool parentHasIsNull = false;
 };
 }
 
