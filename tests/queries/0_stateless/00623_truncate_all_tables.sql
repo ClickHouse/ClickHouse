@@ -1,14 +1,14 @@
-SET allow_deprecated_syntax_for_merge_tree = true;
+-- Tags: no-parallel
 
 DROP DATABASE IF EXISTS truncate_test;
 
-CREATE DATABASE truncate_test;
-CREATE TABLE truncate_test.truncate_test_set(id UInt64) ENGINE = Set;
-CREATE TABLE truncate_test.truncate_test_log(id UInt64) ENGINE = Log;
-CREATE TABLE truncate_test.truncate_test_memory(id UInt64) ENGINE = Memory;
-CREATE TABLE truncate_test.truncate_test_tiny_log(id UInt64) ENGINE = TinyLog;
-CREATE TABLE truncate_test.truncate_test_stripe_log(id UInt64) ENGINE = StripeLog;
-CREATE TABLE truncate_test.truncate_test_merge_tree(p Date, k UInt64) ENGINE = MergeTree(p, k, 1);
+CREATE DATABASE IF NOT EXISTS truncate_test;
+CREATE TABLE IF NOT EXISTS truncate_test.truncate_test_set(id UInt64) ENGINE = Set;
+CREATE TABLE IF NOT EXISTS truncate_test.truncate_test_log(id UInt64) ENGINE = Log;
+CREATE TABLE IF NOT EXISTS truncate_test.truncate_test_memory(id UInt64) ENGINE = Memory;
+CREATE TABLE IF NOT EXISTS truncate_test.truncate_test_tiny_log(id UInt64) ENGINE = TinyLog;
+CREATE TABLE IF NOT EXISTS truncate_test.truncate_test_stripe_log(id UInt64) ENGINE = StripeLog;
+CREATE TABLE IF NOT EXISTS truncate_test.truncate_test_merge_tree(p Date, k UInt64) ENGINE = MergeTree ORDER BY p;
 
 SELECT '======Before Truncate======';
 INSERT INTO truncate_test.truncate_test_set VALUES(0);
