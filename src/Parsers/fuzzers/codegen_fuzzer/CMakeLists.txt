@@ -39,7 +39,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR TRUE)
 
 clickhouse_add_executable(codegen_select_fuzzer ${FUZZER_SRCS})
 
-set_source_files_properties("${PROTO_SRCS}" "out.cpp" PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier")
+set_source_files_properties("${PROTO_SRCS}" "out.cpp" PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt -Wno-used-but-marked-unused")
 
 # contrib/libprotobuf-mutator/src/libfuzzer/libfuzzer_macro.h:143:44: error: no newline at end of file [-Werror,-Wnewline-eof]
 target_compile_options (codegen_select_fuzzer PRIVATE -Wno-newline-eof)
