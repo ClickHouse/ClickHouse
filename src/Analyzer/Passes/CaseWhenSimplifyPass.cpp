@@ -74,7 +74,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        // if parent has isNull or isNotNull function, abondon the optimization
+        // if parent has isNull or isNotNull function, abandon the optimization
         if (parentHasIsNull)
         {
             return;
