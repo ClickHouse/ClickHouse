@@ -875,7 +875,6 @@ tryBase58Decode
 tumble
 tumbleEnd
 tumbleStart
-tuple
 tupleConcat
 tupleDivide
 tupleDivideByNumber

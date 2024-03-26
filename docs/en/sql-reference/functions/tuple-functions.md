@@ -18,6 +18,16 @@ The function implements the operator `(x, y, …)`.
 tuple(x, y, …)
 ```
 
+## namedTuple
+
+Similar to `tuple`, but it will return a named tuple using the names of input arguments.
+
+**Syntax**
+
+``` sql
+namedTuple(x, y, …)
+```
+
 ## tupleElement
 
 A function that allows getting a column from a tuple.
@@ -257,6 +267,61 @@ Result:
 ┌─tupleToNameValuePairs(tuple(3, 2, 1))─┐
 │ [('1',3),('2',2),('3',1)]             │
 └───────────────────────────────────────┘
+```
+
+## tupleNames
+
+Turns a named tuple into a constant array of names. For a `Tuple(a T, b T, ..., c T)` returns `Array(String, ...)`
+in which the `Strings` represents the named fields of the tuple.
+
+**Syntax**
+
+``` sql
+tupleNames(tuple)
+```
+
+**Arguments**
+
+- `tuple` — Named tuple. [Tuple](../../sql-reference/data-types/tuple.md) with any types of values.
+
+**Returned value**
+
+- An array with strings.
+
+Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), ...)).
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE tupletest (col Tuple(user_ID UInt64, session_ID UInt64)) ENGINE = Memory;
+
+INSERT INTO tupletest VALUES (tuple(1, 2));
+
+SELECT tupleNames(col) FROM tupletest;
+```
+
+Result:
+
+``` text
+┌─tupleNames(col)──────────┐
+│ ['user_ID','session_ID'] │
+└──────────────────────────┘
+```
+
+If you pass a simple tuple to the function, ClickHouse uses the indexes of the values as their names:
+
+``` sql
+SELECT tupleNames(tuple(3, 2, 1));
+```
+
+Result:
+
+``` text
+┌─tupleNames((3, 2, 1))─┐
+│ ['1','2','3']         │
+└───────────────────────┘
 ```
 
 ## tuplePlus

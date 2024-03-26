@@ -469,7 +469,8 @@ static ActionsDAGPtr createWrapWithTupleActions(
 
     auto actions_dag = std::make_shared<ActionsDAG>(source_columns);
 
-    FunctionOverloadResolverPtr func_builder = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
+    FunctionOverloadResolverPtr func_builder
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple<false>>());
 
     for (const auto * input_node : actions_dag->getInputs())
     {

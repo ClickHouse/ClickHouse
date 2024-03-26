@@ -1972,6 +1972,7 @@ mysqldump
 mysqljs
 mytable
 namedatabases
+namedTuple
 namenetworks
 namenode
 namepassword
@@ -2636,6 +2637,7 @@ tupleHammingDistance
 tupleMinus
 tupleMultiply
 tupleMultiplyByNumber
+tupleNames
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
