@@ -26,7 +26,7 @@ struct BackupSettings
     String password;
 
     /// S3 storage class.
-    String s3_storage_class;
+    String s3_storage_class = "";
 
     /// If this is set to true then only create queries will be written to backup,
     /// without the data of tables.
@@ -58,9 +58,6 @@ struct BackupSettings
     /// 1-based replica index to store in the backup. 0 means all replicas (see also allow_storing_multiple_replicas).
     /// Can only be used with BACKUP ON CLUSTER.
     size_t replica_num = 0;
-
-    /// Check checksums of the data parts before writing them to a backup.
-    bool check_parts = true;
 
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.

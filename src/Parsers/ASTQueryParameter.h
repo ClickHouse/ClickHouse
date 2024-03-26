@@ -21,8 +21,6 @@ public:
 
     ASTPtr clone() const override { return std::make_shared<ASTQueryParameter>(*this); }
 
-    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;

@@ -37,15 +37,18 @@ namespace
 {
 [[noreturn]] inline void throwWithFailedToOpenFile(const std::string & filename)
 {
-    ErrnoException::throwFromPath(
-        errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, filename, "Cannot open file {}", filename);
+    throwFromErrno(
+            "Cannot open file " + filename,
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 }
 
 inline void emitErrorMsgWithFailedToCloseFile(const std::string & filename)
 {
     try
     {
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, filename, "File descriptor for {} could not be closed", filename);
+        throwFromErrno(
+                "File descriptor for \"" + filename + "\" could not be closed. "
+                "Something seems to have gone wrong. Inspect errno.", ErrorCodes::CANNOT_CLOSE_FILE);
     }
     catch (const ErrnoException &)
     {
@@ -66,7 +69,9 @@ ssize_t readFromFD(const int fd, const char * filename, char * buf, size_t buf_s
             if (errno == EINTR)
                 continue;
 
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, filename, "Cannot read from file {}", filename);
+            throwFromErrno(
+                    "Cannot read from file " + std::string(filename),
+                    ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
         }
 
         assert(res >= 0);

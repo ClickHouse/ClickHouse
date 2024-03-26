@@ -6,8 +6,6 @@
 #include "GeodataProviders/IHierarchiesProvider.h"
 #include <Core/Defines.h>
 
-namespace DB
-{
 
 class IRegionsHierarchyDataProvider;
 
@@ -131,5 +129,3 @@ public:
         return populations[region];
     }
 };
-
-}

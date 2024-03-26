@@ -1,5 +1,4 @@
 #include <IO/MMapReadBufferFromFileWithCache.h>
-#include <base/getPageSize.h>
 
 
 namespace DB

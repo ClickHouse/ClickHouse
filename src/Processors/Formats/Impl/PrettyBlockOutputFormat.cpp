@@ -6,17 +6,15 @@
 #include <IO/Operators.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
-#include <Common/formatReadable.h>
 
 
 namespace DB
 {
 
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, bool color_)
-     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), color(color_), mono_block(mono_block_)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_)
+     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), mono_block(mono_block_)
 {
-    readable_number_tip = header_.getColumns().size() == 1 && WhichDataType(header_.getDataTypes()[0]->getTypeId()).isNumber();
 }
 
 
@@ -239,7 +237,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
         const auto & col = header.getByPosition(i);
 
-        if (color)
+        if (format_settings.pretty.color)
             writeCString("\033[1m", out);
 
         if (col.type->shouldAlignRightInPrettyFormats())
@@ -257,7 +255,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                 writeChar(' ', out);
         }
 
-        if (color)
+        if (format_settings.pretty.color)
             writeCString("\033[0m", out);
     }
     writeCString(" ", out);
@@ -303,11 +301,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             const auto & type = *header.getByPosition(j).type;
             writeValueWithPadding(*columns[j], *serializations[j], i,
                 widths[j].empty() ? max_widths[j] : widths[j][i],
-                max_widths[j], type.shouldAlignRightInPrettyFormats(), isNumber(type));
+                max_widths[j], type.shouldAlignRightInPrettyFormats());
         }
 
         writeCString(grid_symbols.bar, out);
-        writeReadableNumberTip(chunk);
         writeCString("\n", out);
     }
 
@@ -322,75 +319,9 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 }
 
 
-static String highlightDigitGroups(String source)
-{
-    if (source.size() <= 4)
-        return source;
-
-    bool is_regular_number = true;
-    size_t num_digits_before_decimal = 0;
-    for (auto c : source)
-    {
-        if (c == '-' || c == ' ')
-            continue;
-        if (c == '.')
-            break;
-        if (c >= '0' && c <= '9')
-        {
-            ++num_digits_before_decimal;
-        }
-        else
-        {
-            is_regular_number = false;
-            break;
-        }
-    }
-
-    if (!is_regular_number || num_digits_before_decimal <= 4)
-        return source;
-
-    String result;
-    size_t size = source.size();
-    result.reserve(2 * size);
-
-    bool before_decimal = true;
-    size_t digit_num = 0;
-    for (size_t i = 0; i < size; ++i)
-    {
-        auto c = source[i];
-        if (before_decimal && c >= '0' && c <= '9')
-        {
-            ++digit_num;
-            size_t offset = num_digits_before_decimal - digit_num;
-            if (offset && offset % 3 == 0)
-            {
-                result += "\033[4m";
-                result += c;
-                result += "\033[0m";
-            }
-            else
-            {
-                result += c;
-            }
-        }
-        else if (c == '.')
-        {
-            before_decimal = false;
-            result += c;
-        }
-        else
-        {
-            result += c;
-        }
-    }
-
-    return result;
-}
-
-
 void PrettyBlockOutputFormat::writeValueWithPadding(
     const IColumn & column, const ISerialization & serialization, size_t row_num,
-    size_t value_width, size_t pad_to_width, bool align_right, bool is_number)
+    size_t value_width, size_t pad_to_width, bool align_right)
 {
     String serialized_value = " ";
     {
@@ -404,7 +335,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, 1 + format_settings.pretty.max_value_width));
 
         const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
-        if (color)
+        if (format_settings.pretty.color)
         {
             serialized_value += "\033[31;1m";
             serialized_value += ellipsis;
@@ -424,10 +355,6 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             for (size_t k = 0; k < pad_to_width - value_width; ++k)
                 writeChar(' ', out);
     };
-
-    /// Highlight groups of thousands.
-    if (color && is_number && format_settings.pretty.highlight_digit_groups)
-        serialized_value = highlightDigitGroups(serialized_value);
 
     if (align_right)
     {
@@ -480,27 +407,6 @@ void PrettyBlockOutputFormat::writeSuffix()
         writeCString("  Showed first ", out);
         writeIntText(format_settings.pretty.max_rows, out);
         writeCString(".\n", out);
-    }
-}
-
-void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
-{
-    auto columns = chunk.getColumns();
-    auto is_single_number = readable_number_tip && chunk.getNumRows() == 1 && chunk.getNumColumns() == 1;
-    if (!is_single_number)
-        return;
-
-    auto value = columns[0]->getFloat64(0);
-    auto threshold = format_settings.pretty.output_format_pretty_single_large_number_tip_threshold;
-
-    if (threshold && isFinite(value) && abs(value) > threshold)
-    {
-        if (color)
-            writeCString("\033[90m", out);
-        writeCString(" -- ", out);
-        formatReadableQuantity(value, out, 2);
-        if (color)
-            writeCString("\033[0m", out);
     }
 }
 

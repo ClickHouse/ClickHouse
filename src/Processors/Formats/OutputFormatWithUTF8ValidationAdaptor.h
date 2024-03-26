@@ -45,6 +45,7 @@ public:
 
     void resetFormatterImpl() override
     {
+        LOG_DEBUG(&Poco::Logger::get("RowOutputFormatWithExceptionHandlerAdaptor"), "resetFormatterImpl");
         Base::resetFormatterImpl();
         if (validating_ostr)
             validating_ostr = std::make_unique<WriteBufferValidUTF8>(*Base::getWriteBufferPtr());
