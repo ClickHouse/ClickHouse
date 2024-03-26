@@ -90,6 +90,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
     return count;
 }
 
+DECLARE_DEFAULT_CODE(
 void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<UInt64> & indices)
 {
     size_t pos = 0;
@@ -128,21 +129,75 @@ void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArra
         if (filt[start])
             indices[pos++] = start;
     }
-}
+})
+
+
+DECLARE_AVX512F_SPECIFIC_CODE(
+void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<UInt64> & indices)
+{
+    __m512i index_vec
+        = _mm512_set_epi64(start + 7, start + 6, start + 5, start + 4, start + 3, start + 2, start + 1, start); // Initial index vector
+    __m512i increment_vec = _mm512_set1_epi64(8); // Increment vector
+
+    size_t pos = 0;
+    for (; start + 64 <= end; start += 64)
+    {
+        UInt64 mask64 = bytes64MaskToBits64Mask(filt + start);
+
+        for (size_t i = 0; i < 8; ++i)
+        {
+            auto offset = std::popcount(mask64 & 0xFF);
+            if (offset)
+            {
+                __m512i compressed_indices = _mm512_maskz_compress_epi64(mask64 & 0xFF, index_vec); // Compress indices
+                _mm512_storeu_si512(&indices[pos], compressed_indices); // Store compressed indices
+                pos += offset;
+            }
+
+            index_vec = _mm512_add_epi64(index_vec, increment_vec); // Increment the index vector
+            mask64 >>= 8;
+        }
+    }
+
+    for (; start != end; ++start)
+    {
+        if (filt[start])
+            indices[pos++] = start;
+    }
+})
+
 
 size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<UInt64> & indices)
 {
+    if (filt.empty())
+        return 0;
+
     size_t start = 0;
     size_t end = filt.size();
-    for (; start != end && filt[start]; ++start)
-        ;
-
-    if (start == end)
-        return start;
+    /*
+    for (; start + 64 <= end; start += 64)
+    {
+        UInt64 mask = bytes64MaskToBits64Mask(filt.data() + start);
+        if (mask != 0xffffffffffffffff)
+            break;
+    }
+    */
 
     size_t size = countBytesInFilter(filt.data(), start, end);
+
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX512F))
+    {
+        /// Reserve padding area for AVX-512 filterToIndices
+        indices.resize_exact(size + 7);
+        TargetSpecific::AVX512F::filterToIndices(filt.data(), start, end, indices);
+        indices.resize_exact(size);
+        return start;
+    }
+#endif
+
     indices.resize_exact(size);
-    filterToIndices(filt.data(), start, end, indices);
+    TargetSpecific::Default::filterToIndices(filt.data(), start, end, indices);
     return start;
 }
 
