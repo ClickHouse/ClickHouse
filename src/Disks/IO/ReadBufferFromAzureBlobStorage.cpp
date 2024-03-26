@@ -205,6 +205,10 @@ size_t ReadBufferFromAzureBlobStorage::readBytes()
         {
             auto download_response = blob_client->DownloadTo(reinterpret_cast<uint8_t *>(data_ptr), data_capacity, download_options);
             read_bytes = download_response.Value.ContentRange.Length.Value();
+
+            if (read_settings.remote_throttler)
+                read_settings.remote_throttler->add(read_bytes, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+
             break;
         }
         catch (const Azure::Core::RequestFailedException & e)
@@ -242,12 +246,10 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
         size_t bytes_copied = 0;
         try
         {
-            Azure::Storage::Blobs::DownloadBlobOptions download_options;
+            Azure::Storage::Blobs::DownloadBlobToOptions download_options;
             download_options.Range = {static_cast<int64_t>(range_begin), n};
-            auto download_response = blob_client->Download(download_options);
-
-            std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
-            bytes_copied = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(to), body_stream->Length());
+            auto download_response = blob_client->DownloadTo(reinterpret_cast<uint8_t *>(to), n, download_options);
+            bytes_copied = download_response.Value.ContentRange.Length.Value();
 
             LOG_TEST(log, "AzureBlobStorage readBigAt read bytes {}", bytes_copied);
 
