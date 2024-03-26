@@ -52,14 +52,18 @@ public:
         /// a separate lock `EntryGuard::Lock`, it will make this part of code more coherent,
         /// but it will introduce one more mutex while it is avoidable.
         /// Introducing one more mutex just for coherency does not win the trade-off (isn't it?).
-        void setEvicting(bool evicting_, const LockedKey * locked_key, const CachePriorityGuard::Lock * lock) const
+        void setEvictingFlag(const LockedKey &, const CachePriorityGuard::Lock &) const
         {
-            if (evicting_ && (!locked_key || !lock))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Setting evicting state to `true` can be done only under lock");
+            auto prev = evicting.exchange(true, std::memory_order_relaxed);
+            chassert(!prev);
+            UNUSED(prev);
+        }
 
-            chassert(evicting.load() != evicting_);
-            evicting.store(evicting_);
+        void resetEvictingFlag() const
+        {
+            auto prev = evicting.exchange(false, std::memory_order_relaxed);
+            chassert(prev);
+            UNUSED(prev);
         }
 
     private:
@@ -189,12 +193,9 @@ public:
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
 
-    virtual void holdImpl(
-        size_t size,
-        size_t elements,
-        const CachePriorityGuard::Lock & lock);
+    virtual void holdImpl(size_t /* size */, size_t /* elements */, const CachePriorityGuard::Lock &) {}
 
-    virtual void releaseImpl(size_t size, size_t elements);
+    virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
     size_t max_size = 0;
     size_t max_elements = 0;

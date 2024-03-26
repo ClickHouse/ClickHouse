@@ -50,12 +50,20 @@ struct FileSegmentMetadata : private boost::noncopyable
         return iterator->getEntry()->isEvicting(lock);
     }
 
-    void setEvicting(bool evicting, const LockedKey * locked_key, const CachePriorityGuard::Lock * lock) const
+    void setEvictingFlag(const LockedKey & locked_key, const CachePriorityGuard::Lock & lock) const
     {
         auto iterator = getQueueIterator();
         if (!iterator)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
-        iterator->getEntry()->setEvicting(evicting, locked_key, lock);
+        iterator->getEntry()->setEvictingFlag(locked_key, lock);
+    }
+
+    void resetEvictingFlag() const
+    {
+        auto iterator = getQueueIterator();
+        if (!iterator)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
+        iterator->getEntry()->resetEvictingFlag();
     }
 
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }

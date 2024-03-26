@@ -39,7 +39,7 @@ EvictionCandidates::~EvictionCandidates()
         // Reset the evicting state
         // (as the corresponding file segments were not yet removed).
         for (const auto & candidate : key_candidates.candidates)
-            candidate->setEvicting(false, nullptr, nullptr);
+            candidate->resetEvictingFlag();
     }
 }
 
@@ -53,7 +53,7 @@ void EvictionCandidates::add(
         it->second.key_metadata = locked_key.getKeyMetadata();
 
     it->second.candidates.push_back(candidate);
-    candidate->setEvicting(true, &locked_key, &lock);
+    candidate->setEvictingFlag(locked_key, lock);
     ++candidates_size;
 }
 
