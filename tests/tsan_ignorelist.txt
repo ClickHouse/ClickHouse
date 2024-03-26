@@ -1,0 +1,10 @@
+# Note, this file is ignorelist file [1] not suppressions [2].
+#
+#  [1]: https://clang.llvm.org/docs/SanitizerSpecialCaseList.html
+#  [2]: https://github.com/google/sanitizers/wiki/ThreadSanitizerSuppressions
+#
+
+# https://github.com/ClickHouse/ClickHouse/issues/55629
+fun:rd_kafka_broker_set_nodename
+# https://github.com/ClickHouse/ClickHouse/issues/60443
+fun:rd_kafka_stats_emit_all

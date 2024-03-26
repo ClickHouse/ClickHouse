@@ -181,7 +181,15 @@ function fuzz
         --  --path db \
             --logger.console=0 \
             --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1 &
-    server_pid=$(pidof clickhouse-server)
+    for _ in {1..30}
+    do
+        if clickhouse-client --query "select 1"
+        then
+            break
+        fi
+        sleep 1
+    done
+    server_pid=$(cat /var/run/clickhouse-server/clickhouse-server.pid)
 
     kill -0 $server_pid
 
