@@ -92,7 +92,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
 
 void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<UInt64> & indices)
 {
-    auto * dst = indices.data();
+    size_t pos = 0;
     for (; start + 64 <= end; start += 64)
     {
         UInt64 mask = bytes64MaskToBits64Mask(filt + start);
@@ -101,8 +101,7 @@ void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArra
         if (0xFF != prefix_to_copy)
         {
             for (size_t i = 0; i < prefix_to_copy; ++i)
-                dst[i] = start + i;
-            dst += prefix_to_copy;
+                indices[pos++] = start + i;
         }
         else
         {
@@ -110,16 +109,14 @@ void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArra
             if (0xFF != suffix_to_copy)
             {
                 for (size_t i = 64 - suffix_to_copy; i < 64; ++i)
-                    dst[i] = start + i;
-                dst += suffix_to_copy;
+                    indices[pos++] = start + i;
             }
             else
             {
                 while (mask)
                 {
                     size_t index = std::countr_zero(mask);
-                    *dst = start + index;
-                    ++dst;
+                    indices[pos++] = start + index;
                     mask = blsr(mask);
                 }
             }
@@ -129,10 +126,7 @@ void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArra
     for (; start != end; ++start)
     {
         if (filt[start])
-        {
-            *dst = start;
-            ++dst;
-        }
+            indices[pos++] = start;
     }
 }
 
@@ -142,6 +136,9 @@ size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<UInt64> & in
     size_t end = filt.size();
     for (; start != end && filt[start]; ++start)
         ;
+
+    if (start == end)
+        return start;
 
     size_t size = countBytesInFilter(filt.data(), start, end);
     indices.resize_exact(size);

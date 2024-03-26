@@ -25,14 +25,37 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-UInt64 blsr(UInt64 mask);
+inline UInt64 blsr(UInt64 mask)
+{
+#ifdef __BMI__
+    return _blsr_u64(mask);
+#else
+    return mask & (mask-1);
+#endif
+}
 
 /// If mask is a number of this kind: [0]*[1]* function returns the length of the cluster of 1s.
 /// Otherwise it returns the special value: 0xFF.
-uint8_t prefixToCopy(UInt64 mask);
+inline uint8_t prefixToCopy(UInt64 mask)
+{
+    if (mask == 0)
+        return 0;
+    if (mask == static_cast<UInt64>(-1))
+        return 64;
+    /// Row with index 0 correspond to the least significant bit.
+    /// So the length of the prefix to copy is 64 - #(leading zeroes).
+    const UInt64 leading_zeroes = __builtin_clzll(mask);
+    if (mask == ((static_cast<UInt64>(-1) << leading_zeroes) >> leading_zeroes))
+        return 64 - leading_zeroes;
+    else
+        return 0xFF;
+}
 
-uint8_t suffixToCopy(UInt64 mask);
-
+inline uint8_t suffixToCopy(UInt64 mask)
+{
+    const auto prefix_to_copy = prefixToCopy(~mask);
+    return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;
+}
 
 /** A template for columns that use a simple array to store.
  */
