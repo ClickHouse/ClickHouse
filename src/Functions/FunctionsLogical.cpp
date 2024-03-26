@@ -720,6 +720,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
             constant_value_bool = static_cast<bool>(constant_field_value.get<UInt64>());
 
         has_true_constant = has_true_constant || constant_value_bool;
+        if constexpr (std::is_same_v<Impl, OrImpl>)
+        {
+            if (has_true_constant)
+                break;
+        }
         has_false_constant = has_false_constant || !constant_value_bool;
     }
 
