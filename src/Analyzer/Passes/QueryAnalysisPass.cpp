@@ -777,6 +777,13 @@ struct IdentifierResolveScope
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
     QueryTreeNodePtrWithHashSet nullable_group_by_keys;
+    /// Here we count the number of nullable GROUP BY keys we met resolving expression.
+    /// E.g. for a query `SELECT tuple(tuple(number)) FROM numbers(10) GROUP BY (number, tuple(number)) with cube`
+    /// both `number` and `tuple(number)` would be in nullable_group_by_keys.
+    /// But when we resolve `tuple(tuple(number))` we should figure out that `tuple(number)` is already a key,
+    /// and we should not convert `number` to nullable.
+    size_t found_nullable_group_by_key_in_scope = 0;
+
     QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> nullable_join_columns;
 
     /// Use identifier lookup to result cache
@@ -5952,6 +5959,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
         return resolved_expression_it->second;
     }
 
+    bool is_nullable_group_by_key = scope.nullable_group_by_keys.contains(node) && !scope.expressions_in_resolve_process_stack.hasAggregateFunction();
+    if (is_nullable_group_by_key)
+        ++scope.found_nullable_group_by_key_in_scope;
+
+    SCOPE_EXIT(scope.found_nullable_group_by_key_in_scope -= is_nullable_group_by_key);
+
     String node_alias = node->getAlias();
     ProjectionNames result_projection_names;
 
@@ -6243,7 +6256,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
 
     validateTreeSize(node, scope.context->getSettingsRef().max_expanded_ast_elements, node_to_tree_size);
 
-    if (scope.nullable_group_by_keys.contains(node) && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    if (is_nullable_group_by_key && scope.found_nullable_group_by_key_in_scope == 1)
     {
         node = node->clone();
         node->convertToNullable();
