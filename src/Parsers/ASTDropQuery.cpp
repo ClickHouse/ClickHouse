@@ -78,10 +78,19 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
             if (it != list.children.begin())
                 settings.ostr << ", ";
 
-            auto identifier = dynamic_pointer_cast<ASTIdentifier>(*it);
-            settings.ostr << (identifier->name_parts.size() == 2
-                    ? backQuoteIfNeed(identifier->name_parts[0]) + "." + backQuoteIfNeed(identifier->name_parts[1])
-                    : backQuoteIfNeed(identifier->name_parts[0]));
+            auto identifier = dynamic_pointer_cast<ASTTableIdentifier>(*it);
+            if (!identifier)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected ASTIdentifier type for list of table names.");
+
+            if (auto db = identifier->getDatabase())
+            {
+                db->formatImpl(settings, state, frame);
+                settings.ostr << '.';
+            }
+
+            auto tb = identifier->getTable();
+            chassert(tb);
+            tb->formatImpl(settings, state, frame);
         }
     }
     else
@@ -122,16 +131,12 @@ ASTs ASTDropQuery::getRewrittenASTWithoutMultipleTables()
         query.database_and_tables = nullptr;
         query.children.clear();
 
-        auto database_and_table = dynamic_pointer_cast<ASTIdentifier>(child);
-        if (database_and_table->name_parts.size() == 2)
-        {
-            query.database = std::make_shared<ASTIdentifier>(database_and_table->name_parts[0]);
-            query.table = std::make_shared<ASTIdentifier>(database_and_table->name_parts[1]);
-        }
-        else
-        {
-            query.table = std::make_shared<ASTIdentifier>(database_and_table->name_parts[0]);
-        }
+        auto database_and_table = dynamic_pointer_cast<ASTTableIdentifier>(child);
+        if (!database_and_table)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected ASTIdentifier type for list of table names.");
+
+        query.database = database_and_table->getDatabase();
+        query.table = database_and_table->getTable();
 
         if (query.database)
             query.children.push_back(query.database);
