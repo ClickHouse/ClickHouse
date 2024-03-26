@@ -366,7 +366,7 @@ def test_broken_ignored(cluster):
     )
 
     assert "all_3_3_0" in get_broken_projections_info(node, table_name, active=False)
-    assert "all_2_2_0" in get_broken_projections_info(node, table_name, active=False)
+    assert "all_2_2_0" in get_broken_projections_info(node, table_name, active=True)
 
     # 0 because of all_2_2_0
     check(node, table_name, 0)
