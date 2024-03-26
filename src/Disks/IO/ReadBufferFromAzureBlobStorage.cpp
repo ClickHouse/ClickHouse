@@ -91,8 +91,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         data_capacity = internal_buffer.size();
     }
 
-    if (!initialized)
-        bytes_read = initialize();
+    bytes_read = readBytes();
 
     if (bytes_read == 0)
         return false;
@@ -161,17 +160,23 @@ off_t ReadBufferFromAzureBlobStorage::getPosition()
     return offset - available();
 }
 
-size_t ReadBufferFromAzureBlobStorage::initialize()
+size_t ReadBufferFromAzureBlobStorage::readBytes()
 {
-    if (initialized)
-        return 0;
-
     Azure::Storage::Blobs::DownloadBlobToOptions download_options;
 
     Azure::Nullable<int64_t> length {};
-    if (read_until_position != 0)
-        length = {static_cast<int64_t>(read_until_position - offset)};
 
+    /// 0 means read full file
+    size_t to_read_bytes = 0;
+    if (read_until_position != 0)
+        to_read_bytes = std::min(read_until_position - offset, data_capacity);
+
+    auto file_size = getFileSize();
+    if (!to_read_bytes && (file_size > data_capacity))
+        to_read_bytes = std::min(file_size, data_capacity);
+
+    if (to_read_bytes)
+        length = {static_cast<int64_t>(to_read_bytes)};
     download_options.Range = {static_cast<int64_t>(offset), length};
 
     if (!blob_client)

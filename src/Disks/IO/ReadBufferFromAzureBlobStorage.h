@@ -50,7 +50,7 @@ public:
 
 private:
 
-    size_t initialize();
+    size_t readBytes();
 
     std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     std::unique_ptr<Azure::Storage::Blobs::BlobClient> blob_client;
