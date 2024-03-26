@@ -169,7 +169,10 @@ size_t ReadBufferFromAzureBlobStorage::readBytes()
     /// 0 means read full file
     size_t to_read_bytes = 0;
     if (read_until_position != 0)
-        to_read_bytes = std::min(read_until_position - offset, data_capacity);
+    {
+        to_read_bytes = read_until_position - offset;
+        to_read_bytes = std::min(to_read_bytes, data_capacity);
+    }
 
     auto file_size = getFileSize();
     if (!to_read_bytes && (file_size > data_capacity))
