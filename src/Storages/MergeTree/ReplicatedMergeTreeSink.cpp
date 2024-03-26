@@ -940,13 +940,24 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             });
 
             bool node_exists = false;
+            bool quorum_fail_exists = false;
             /// The loop will be executed at least once
             new_retry_controller.retryLoop([&]
             {
                 fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault, { zookeeper->forceFailureBeforeOperation(); });
                 zookeeper->setKeeper(storage.getZooKeeper());
                 node_exists = zookeeper->exists(fs::path(storage.replica_path) / "parts" / part->name);
+                if (isQuorumEnabled())
+                    quorum_fail_exists = zookeeper->exists(fs::path(storage.zookeeper_path) / "quorum" / "failed_parts" / part->name);
             });
+
+            /// if it has quorum fail node, the restarting thread will clean the garbage.
+            if (quorum_fail_exists)
+            {
+                LOG_INFO(log, "Part {} fails to commit and will not retry or clean garbage. Restarting Thread will do everything.", part->name);
+                transaction.clear();
+                return CommitRetryContext::ERROR;
+            }
 
             if (node_exists)
             {
