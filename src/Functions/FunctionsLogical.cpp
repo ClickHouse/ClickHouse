@@ -701,7 +701,19 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
         bool constant_value_bool = false;
 
         if (field_type == Field::Types::Float64)
+        {
+            const auto float_value = constant_field_value.get<Float64>();
+            if (float_value == std::numeric_limits<Float64>::infinity() || float_value == std::numeric_limits<Float64>::quiet_NaN()
+                || float_value == std::numeric_limits<Float64>::signaling_NaN())
+            {
+                throw Exception(
+                    DB::ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal Float64 argument for logical function: {}. The value has to be convertible to UInt8 or Nullable(UInt8).",
+                    argument.name);
+            }
+
             constant_value_bool = static_cast<bool>(constant_field_value.get<Float64>());
+        }
         else if (field_type == Field::Types::Int64)
             constant_value_bool = static_cast<bool>(constant_field_value.get<Int64>());
         else if (field_type == Field::Types::UInt64)
