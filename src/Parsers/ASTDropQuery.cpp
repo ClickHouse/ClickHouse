@@ -47,7 +47,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     if (temporary)
         settings.ostr << "TEMPORARY ";
 
-    if (has_all)
+    if (has_all_tables)
         settings.ostr << "ALL TABLES ";
     else if (!table && database)
         settings.ostr << "DATABASE ";

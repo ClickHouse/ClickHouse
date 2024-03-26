@@ -27,7 +27,7 @@ public:
     bool no_ddl_lock{false};
 
     /// For `TRUNCATE ALL TABLES` query
-    bool has_all{false};
+    bool has_all_tables{false};
 
     /// We dropping dictionary, so print correct word
     bool is_dictionary{false};

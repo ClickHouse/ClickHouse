@@ -32,7 +32,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     String cluster_str;
     bool if_exists = false;
     bool if_empty = false;
-    bool has_all = false;
+    bool has_all_tables = false;
     bool temporary = false;
     bool is_dictionary = false;
     bool is_view = false;
@@ -52,7 +52,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     }
     else if (s_all.ignore(pos, expected) && s_tables.ignore(pos, expected) && kind == ASTDropQuery::Kind::Truncate)
     {
-        has_all = true;
+        has_all_tables = true;
 
         if (s_if_exists.ignore(pos, expected))
             if_exists = true;
@@ -112,7 +112,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->kind = kind;
     query->if_exists = if_exists;
     query->if_empty = if_empty;
-    query->has_all = has_all;
+    query->has_all_tables = has_all_tables;
     query->temporary = temporary;
     query->is_dictionary = is_dictionary;
     query->is_view = is_view;
