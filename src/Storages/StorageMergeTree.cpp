@@ -2042,7 +2042,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
         {
             auto lock = lockParts();
-            fillNewPartName(loaded_parts[i], lock);
+            fillNewPartNameAndResetLevel(loaded_parts[i], lock);
             renameTempPartAndAdd(loaded_parts[i], transaction, lock);
             transaction.commit(&lock);
         }
@@ -2479,6 +2479,14 @@ void StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock 
 {
     part->info.min_block = part->info.max_block = increment.get();
     part->info.mutation = 0;
+    part->setName(part->getNewName(part->info));
+}
+
+void StorageMergeTree::fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock &)
+{
+    part->info.min_block = part->info.max_block = increment.get();
+    part->info.mutation = 0;
+    part->info.level = 0;
     part->setName(part->getNewName(part->info));
 }
 
