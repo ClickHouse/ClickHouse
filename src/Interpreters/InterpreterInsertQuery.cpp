@@ -7,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/QueryLog.h>
@@ -151,7 +152,7 @@ Block InterpreterInsertQuery::getSampleBlock(
         names.emplace_back(std::move(current_name));
     }
 
-    return getSampleBlock(names, table, metadata_snapshot, allow_materialized);
+    return getSampleBlockImpl(names, table, metadata_snapshot, no_destination, allow_materialized);
 }
 
 std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
@@ -173,13 +174,18 @@ std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
     return names;
 }
 
-Block InterpreterInsertQuery::getSampleBlock(
+Block InterpreterInsertQuery::getSampleBlockImpl(
     const Names & names,
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot,
+    bool no_destination,
     bool allow_materialized)
 {
     Block table_sample_physical = metadata_snapshot->getSampleBlock();
+    Block table_sample_virtuals;
+    if (no_destination)
+        table_sample_virtuals = table->getVirtualsHeader();
+
     Block table_sample_insertable = metadata_snapshot->getSampleBlockInsertable();
     Block res;
     for (const auto & current_name : names)
@@ -194,13 +200,19 @@ Block InterpreterInsertQuery::getSampleBlock(
             if (table_sample_physical.has(current_name))
             {
                 if (!allow_materialized)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column.",
-                        current_name);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column", current_name);
                 res.insert(ColumnWithTypeAndName(table_sample_physical.getByName(current_name).type, current_name));
             }
-            else /// The table does not have a column with that name
+            else if (table_sample_virtuals.has(current_name))
+            {
+                res.insert(ColumnWithTypeAndName(table_sample_virtuals.getByName(current_name).type, current_name));
+            }
+            else
+            {
+                /// The table does not have a column with that name
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "No such column {} in table {}",
                     current_name, table->getStorageID().getNameForLogs());
+            }
         }
         else
             res.insert(ColumnWithTypeAndName(table_sample_insertable.getByName(current_name).type, current_name));
@@ -276,7 +288,7 @@ Chain InterpreterInsertQuery::buildChain(
     if (!running_group)
         running_group = std::make_shared<ThreadGroup>(getContext());
 
-    auto sample = getSampleBlock(columns, table, metadata_snapshot, allow_materialized);
+    auto sample = getSampleBlockImpl(columns, table, metadata_snapshot, no_destination, allow_materialized);
     if (check_access)
         getContext()->checkAccess(AccessType::INSERT, table->getStorageID(), sample.getNames());
 

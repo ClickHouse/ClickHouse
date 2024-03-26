@@ -1,7 +1,11 @@
 #include <Planner/PlannerExpressionAnalysis.h>
 
+#include <Columns/ColumnNullable.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+
+#include <Interpreters/Context.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -109,7 +113,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                             continue;
 
                         auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                        available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
+                        auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                        available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                         aggregation_keys.push_back(expression_dag_node->result_name);
                         before_aggregation_actions->getOutputs().push_back(expression_dag_node);
                         before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
@@ -159,7 +164,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                         continue;
 
                     auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                    available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
+                    auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                    available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                     aggregation_keys.push_back(expression_dag_node->result_name);
                     before_aggregation_actions->getOutputs().push_back(expression_dag_node);
                     before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);

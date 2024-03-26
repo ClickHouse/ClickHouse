@@ -85,6 +85,15 @@ using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreat
 
 class ASTExistsDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsDatabaseQueryIDAndQueryNames>
 {
+public:
+    ASTPtr clone() const override
+    {
+        auto res = std::make_shared<ASTExistsDatabaseQuery>(*this);
+        res->children.clear();
+        cloneTableOptions(*res);
+        return res;
+    }
+
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
@@ -98,6 +107,15 @@ protected:
 
 class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShowCreateDatabaseQueryIDAndQueryNames>
 {
+public:
+    ASTPtr clone() const override
+    {
+        auto res = std::make_shared<ASTShowCreateDatabaseQuery>(*this);
+        res->children.clear();
+        cloneTableOptions(*res);
+        return res;
+    }
+
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {

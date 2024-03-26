@@ -1832,10 +1832,10 @@ using FunctionFromUnixTimestampInJodaSyntax = FunctionFormatDateTimeImpl<NameFro
 REGISTER_FUNCTION(FormatDateTime)
 {
     factory.registerFunction<FunctionFormatDateTime>();
-    factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name);
+    factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionFromUnixTimestamp>();
-    factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name);
+    factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionFormatDateTimeInJodaSyntax>();
     factory.registerFunction<FunctionFromUnixTimestampInJodaSyntax>();

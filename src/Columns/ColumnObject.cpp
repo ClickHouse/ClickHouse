@@ -20,12 +20,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
     extern const int NUMBER_OF_DIMENSIONS_MISMATCHED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
 namespace
@@ -247,7 +247,7 @@ void ColumnObject::Subcolumn::checkTypes() const
         prefix_types.push_back(current_type);
         auto prefix_common_type = getLeastSupertype(prefix_types);
         if (!prefix_common_type->equals(*current_type))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
                 "Data type {} of column at position {} cannot represent all columns from i-th prefix",
                 current_type->getName(), i);
     }
@@ -635,7 +635,7 @@ void ColumnObject::checkConsistency() const
     {
         if (num_rows != leaf->data.size())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of subcolumns are inconsistent in ColumnObject."
+            throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Sizes of subcolumns are inconsistent in ColumnObject."
                 " Subcolumn '{}' has {} rows, but expected size is {}",
                 leaf->path.getPath(), leaf->data.size(), num_rows);
         }
@@ -919,7 +919,7 @@ void ColumnObject::addSubcolumn(const PathInData & key, size_t new_size)
 void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & field_info, size_t new_size)
 {
     if (!key.hasNested())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
             "Cannot add Nested subcolumn, because path doesn't contain Nested");
 
     bool inserted = false;
