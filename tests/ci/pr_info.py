@@ -215,7 +215,6 @@ class PRInfo:
                 .replace("{base}", base_sha)
                 .replace("{head}", self.sha)
             )
-            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
 
         elif "commits" in github_event:
             self.event_type = EventType.PUSH
@@ -317,9 +316,6 @@ class PRInfo:
     def is_release_branch(self) -> bool:
         return self.number == 0
 
-    def is_pr(self):
-        return self.event_type == EventType.PULL_REQUEST
-
     def is_scheduled(self):
         return self.event_type == EventType.SCHEDULE
 
@@ -341,9 +337,6 @@ class PRInfo:
         )
 
     def fetch_changed_files(self):
-        if self.changed_files_requested:
-            return
-
         if not getattr(self, "diff_urls", False):
             raise TypeError("The event does not have diff URLs")
 

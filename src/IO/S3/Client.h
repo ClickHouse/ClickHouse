@@ -92,8 +92,6 @@ private:
     std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches;
 };
 
-bool isS3ExpressEndpoint(const std::string & endpoint);
-
 struct ClientSettings
 {
     bool use_virtual_addressing;
@@ -109,7 +107,6 @@ struct ClientSettings
     /// Ability to enable it preserved since likely it is required for old
     /// files.
     bool gcs_issue_compose_request;
-    bool is_s3express_bucket;
 };
 
 /// Client that improves the client from the AWS SDK
@@ -211,9 +208,6 @@ public:
                           const std::shared_ptr<Aws::Http::HttpRequest>& httpRequest) const override;
 
     bool supportsMultiPartCopy() const;
-
-    bool isS3ExpressBucket() const { return client_settings.is_s3express_bucket; }
-
 private:
     friend struct ::MockS3::Client;
 

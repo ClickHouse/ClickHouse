@@ -1,5 +1,7 @@
 import pytest
 import uuid
+import random
+import logging
 import time
 
 from helpers.cluster import ClickHouseCluster
@@ -20,29 +22,37 @@ def started_cluster():
 
 
 def test_undrop_drop_and_undrop_loop(started_cluster):
-    # create, drop, undrop, drop, undrop table 5 times
-    for _ in range(5):
-        table_uuid = str(uuid.uuid1())
-        table = f"test_undrop_loop"
-        node.query(
-            f"CREATE TABLE {table} "
-            f"UUID '{table_uuid}' (id Int32) "
-            f"Engine=MergeTree() ORDER BY id"
+    count = 0
+    while count < 10:
+        random_sec = random.randint(0, 10)
+        table_uuid = uuid.uuid1().__str__()
+        logging.info(
+            "random_sec: " + random_sec.__str__() + ", table_uuid: " + table_uuid
         )
-
-        node.query(f"DROP TABLE {table}")
-        node.query(f"UNDROP TABLE {table} UUID '{table_uuid}'")
-
-        node.query(f"DROP TABLE {table}")
-        # database_atomic_delay_before_drop_table_sec=3
-        time.sleep(6)
-
-        """
-        Expect two things:
-        1. Table is dropped - UNKNOWN_TABLE in error
-        2. Table in process of dropping - Return code: 60.
-            The drop task of table ... (uuid) is in progress,
-            has been dropped or the database engine doesn't support it
-        """
-        error = node.query_and_get_error(f"UNDROP TABLE {table} UUID '{table_uuid}'")
-        assert "UNKNOWN_TABLE" in error or "The drop task of table" in error
+        node.query(
+            "create table test_undrop_loop"
+            + count.__str__()
+            + " UUID '"
+            + table_uuid
+            + "' (id Int32) Engine=MergeTree() order by id;"
+        )
+        node.query("drop table test_undrop_loop" + count.__str__() + ";")
+        time.sleep(random_sec)
+        if random_sec >= 5:
+            error = node.query_and_get_error(
+                "undrop table test_undrop_loop"
+                + count.__str__()
+                + " uuid '"
+                + table_uuid
+                + "';"
+            )
+            assert "UNKNOWN_TABLE" in error
+        else:
+            node.query(
+                "undrop table test_undrop_loop"
+                + count.__str__()
+                + " uuid '"
+                + table_uuid
+                + "';"
+            )
+            count = count + 1

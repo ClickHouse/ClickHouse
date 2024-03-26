@@ -643,7 +643,7 @@ void ColumnVariant::popBack(size_t n)
     offsets->popBack(n);
 }
 
-StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr = globalDiscriminatorAt(n);
@@ -1085,6 +1085,11 @@ MutableColumns ColumnVariant::scatter(ColumnIndex num_columns, const Selector & 
     return result;
 }
 
+void ColumnVariant::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
+}
+
 bool ColumnVariant::hasEqualValues() const
 {
     if (local_discriminators->empty() || hasOnlyNulls())
@@ -1113,6 +1118,15 @@ int ColumnVariant::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_di
 
     /// If rows have the same discriminators, compare actual values from corresponding variants.
     return getVariantByGlobalDiscriminator(left_discr).compareAt(offsetAt(n), rhs_variant.offsetAt(m), rhs_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
+}
+
+void ColumnVariant::compareColumn(
+    const IColumn & rhs, size_t rhs_row_num,
+    PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+    int direction, int nan_direction_hint) const
+{
+    return doCompareColumn<ColumnVariant>(assert_cast<const ColumnVariant &>(rhs), rhs_row_num, row_indexes,
+                                         compare_results, direction, nan_direction_hint);
 }
 
 struct ColumnVariant::ComparatorBase
@@ -1290,14 +1304,7 @@ UInt64 ColumnVariant::getNumberOfDefaultRows() const
 
 void ColumnVariant::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
-    size_t to = limit && from + limit < size() ? from + limit : size();
-    indices.reserve(indices.size() + to - from);
-
-    for (size_t i = from; i < to; ++i)
-    {
-        if (!isDefaultAt(i))
-            indices.push_back(i);
-    }
+    return getIndicesOfNonDefaultRowsImpl<ColumnVariant>(indices, from, limit);
 }
 
 void ColumnVariant::finalize()

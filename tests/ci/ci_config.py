@@ -11,15 +11,7 @@ from ci_utils import WithIter
 from integration_test_images import IMAGES
 
 
-class WorkFlows(metaclass=WithIter):
-    PULL_REQUEST = "PULL_REQUEST"
-    MASTER = "MASTER"
-    BACKPORT = "BACKPORT"
-    RELEASE = "RELEASE"
-    SYNC = "SYNC"
-
-
-class CIStages(metaclass=WithIter):
+class CIStages:
     NA = "UNKNOWN"
     BUILDS_1 = "Builds_1"
     BUILDS_2 = "Builds_2"
@@ -46,14 +38,9 @@ class Labels(metaclass=WithIter):
     NO_MERGE_COMMIT = "no_merge_commit"
     NO_CI_CACHE = "no_ci_cache"
     CI_SET_REDUCED = "ci_set_reduced"
-    CI_SET_FAST = "ci_set_fast"
     CI_SET_ARM = "ci_set_arm"
     CI_SET_INTEGRATION = "ci_set_integration"
     CI_SET_ANALYZER = "ci_set_analyzer"
-    CI_SET_STATLESS = "ci_set_stateless"
-    CI_SET_STATEFUL = "ci_set_stateful"
-    CI_SET_STATLESS_ASAN = "ci_set_stateless_asan"
-    CI_SET_STATEFUL_ASAN = "ci_set_stateful_asan"
 
     libFuzzer = "libFuzzer"
 
@@ -220,7 +207,7 @@ class JobConfig:
     digest: DigestConfig = field(default_factory=DigestConfig)
     # will be triggered for the job if omited in CI workflow yml
     run_command: str = ""
-    # job timeout, seconds
+    # job timeout
     timeout: Optional[int] = None
     # sets number of batches for multi-batch job
     num_batches: int = 1
@@ -299,8 +286,6 @@ class BuildConfig:
         def process(field_name: str, field: Union[bool, str]) -> str:
             if isinstance(field, bool):
                 field = str(field).lower()
-            elif not isinstance(field, str):
-                field = ""
             if export:
                 return f"export BUILD_{field_name.upper()}={repr(field)}"
             return f"BUILD_{field_name.upper()}={field}"
@@ -385,11 +370,7 @@ upgrade_check_digest = DigestConfig(
     docker=["clickhouse/upgrade-check"],
 )
 integration_check_digest = DigestConfig(
-    include_paths=[
-        "./tests/ci/integration_test_check.py",
-        "./tests/ci/integration_tests_runner.py",
-        "./tests/integration/",
-    ],
+    include_paths=["./tests/ci/integration_test_check.py", "./tests/integration"],
     exclude_files=[".md"],
     docker=IMAGES.copy(),
 )
@@ -517,11 +498,10 @@ clickbench_test_params = {
     ),
     "run_command": 'clickbench.py "$CHECK_NAME"',
 }
-install_test_params = JobConfig(
-    digest=install_check_digest,
-    run_command='install_check.py "$CHECK_NAME"',
-    timeout=900,
-)
+install_test_params = {
+    "digest": install_check_digest,
+    "run_command": 'install_check.py "$CHECK_NAME"',
+}
 
 
 @dataclass
@@ -568,17 +548,9 @@ class CIConfig:
             stage_type = CIStages.TESTS_2
         elif self.is_test_job(job_name):
             stage_type = CIStages.TESTS_1
-            if job_name in CI_CONFIG.test_configs:
-                required_build = CI_CONFIG.test_configs[job_name].required_build
-                assert required_build
-                if required_build in CI_CONFIG.get_builds_for_report(
-                    JobNames.BUILD_CHECK
-                ):
-                    stage_type = CIStages.TESTS_1
-                else:
-                    stage_type = CIStages.TESTS_2
-            else:
-                stage_type = CIStages.TESTS_1
+            if job_name == JobNames.LIBFUZZER_TEST:
+                # since fuzzers build in Builds_2, test must be in Tests_2
+                stage_type = CIStages.TESTS_2
         assert stage_type, f"BUG [{job_name}]"
         return stage_type
 
@@ -714,18 +686,18 @@ class CIConfig:
         ), f"Invalid check_name or CI_CONFIG outdated, config not found for [{check_name}]"
         return res  # type: ignore
 
-    def job_generator(self, branch: str) -> Iterable[str]:
+    def job_generator(self) -> Iterable[str]:
         """
         traverses all check names in CI pipeline
         """
-        assert branch
         for config in (
             self.other_jobs_configs,
             self.build_config,
             self.builds_report_config,
             self.test_configs,
         ):
-            yield from config  # type: ignore
+            for check_name in config:  # type: ignore
+                yield check_name
 
     def get_builds_for_report(
         self, report_name: str, release: bool = False, backport: bool = False
@@ -819,15 +791,9 @@ class CIConfig:
 CI_CONFIG = CIConfig(
     label_configs={
         Labels.DO_NOT_TEST_LABEL: LabelConfig(run_jobs=[JobNames.STYLE_CHECK]),
-        Labels.CI_SET_FAST: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-            ]
-        ),
         Labels.CI_SET_ARM: LabelConfig(
             run_jobs=[
-                JobNames.STYLE_CHECK,
+                # JobNames.STYLE_CHECK,
                 Build.PACKAGE_AARCH64,
                 JobNames.INTEGRATION_TEST_ARM,
             ]
@@ -849,53 +815,22 @@ CI_CONFIG = CIConfig(
                 JobNames.INTEGRATION_TEST_ASAN_ANALYZER,
             ]
         ),
-        Labels.CI_SET_STATLESS: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                Build.PACKAGE_RELEASE,
-                JobNames.STATELESS_TEST_RELEASE,
-            ]
-        ),
-        Labels.CI_SET_STATLESS_ASAN: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                Build.PACKAGE_ASAN,
-                JobNames.STATELESS_TEST_ASAN,
-            ]
-        ),
-        Labels.CI_SET_STATEFUL: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                Build.PACKAGE_RELEASE,
-                JobNames.STATEFUL_TEST_RELEASE,
-            ]
-        ),
-        Labels.CI_SET_STATEFUL_ASAN: LabelConfig(
-            run_jobs=[
-                JobNames.STYLE_CHECK,
-                JobNames.FAST_TEST,
-                Build.PACKAGE_ASAN,
-                JobNames.STATEFUL_TEST_ASAN,
-            ]
-        ),
         Labels.CI_SET_REDUCED: LabelConfig(
             run_jobs=[
                 job
                 for job in JobNames
                 if not any(
-                    nogo in job
-                    for nogo in (
-                        "asan",
-                        "tsan",
-                        "msan",
-                        "ubsan",
-                        "coverage",
-                        # skip build report jobs as not all builds will be done
-                        "build check",
-                    )
+                    [
+                        nogo in job
+                        for nogo in (
+                            "asan",
+                            "tsan",
+                            "msan",
+                            "ubsan",
+                            # skip build report jobs as not all builds will be done
+                            "build check",
+                        )
+                    ]
                 )
             ]
         ),
@@ -1106,10 +1041,10 @@ CI_CONFIG = CIConfig(
     },
     test_configs={
         JobNames.INSTALL_TEST_AMD: TestConfig(
-            Build.PACKAGE_RELEASE, job_config=install_test_params
+            Build.PACKAGE_RELEASE, job_config=JobConfig(**install_test_params)  # type: ignore
         ),
         JobNames.INSTALL_TEST_ARM: TestConfig(
-            Build.PACKAGE_AARCH64, job_config=install_test_params
+            Build.PACKAGE_AARCH64, job_config=JobConfig(**install_test_params)  # type: ignore
         ),
         JobNames.STATEFUL_TEST_ASAN: TestConfig(
             Build.PACKAGE_ASAN, job_config=JobConfig(**stateful_test_common_params)  # type: ignore

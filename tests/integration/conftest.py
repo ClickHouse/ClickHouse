@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
-
+from helpers.cluster import run_and_check
+import pytest
 import logging
 import os
-
-import pytest  # pylint:disable=import-error; for style check
-from helpers.cluster import run_and_check
+from helpers.test_tools import TSV
 from helpers.network import _NetworkManager
+
 
 # This is a workaround for a problem with logging in pytest [1].
 #
@@ -33,35 +32,32 @@ def tune_local_port_range():
 def cleanup_environment():
     try:
         if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) == 1:
-            logging.debug("Cleaning all iptables rules")
+            logging.debug(f"Cleaning all iptables rules")
             _NetworkManager.clean_all_user_iptables_rules()
         result = run_and_check(["docker ps | wc -l"], shell=True)
         if int(result) > 1:
             if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) != 1:
                 logging.warning(
-                    "Docker containters(%s) are running before tests run. "
-                    "They can be left from previous pytest run and cause test failures.\n"
-                    "You can set env PYTEST_CLEANUP_CONTAINERS=1 or use runner with "
-                    "--cleanup-containers argument to enable automatic containers cleanup.",
-                    int(result),
+                    f"Docker containters({int(result)}) are running before tests run. They can be left from previous pytest run and cause test failures.\n"
+                    "You can set env PYTEST_CLEANUP_CONTAINERS=1 or use runner with --cleanup-containers argument to enable automatic containers cleanup."
                 )
             else:
                 logging.debug("Trying to kill unstopped containers...")
                 run_and_check(
-                    ["docker kill $(docker container list  --all  --quiet)"],
+                    [f"docker kill $(docker container list  --all  --quiet)"],
                     shell=True,
                     nothrow=True,
                 )
                 run_and_check(
-                    ["docker rm $docker container list  --all  --quiet)"],
+                    [f"docker rm $docker container list  --all  --quiet)"],
                     shell=True,
                     nothrow=True,
                 )
                 logging.debug("Unstopped containers killed")
                 r = run_and_check(["docker-compose", "ps", "--services", "--all"])
-                logging.debug("Docker ps before start:%s", r.stdout)
+                logging.debug(f"Docker ps before start:{r.stdout}")
         else:
-            logging.debug("No running containers")
+            logging.debug(f"No running containers")
 
         logging.debug("Pruning Docker networks")
         run_and_check(
@@ -70,7 +66,8 @@ def cleanup_environment():
             nothrow=True,
         )
     except Exception as e:
-        logging.exception("cleanup_environment:%s", e)
+        logging.exception(f"cleanup_environment:{str(e)}")
+        pass
 
     yield
 

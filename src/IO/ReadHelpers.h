@@ -154,12 +154,9 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     size_t size = 0;
     readVarUInt(size, buf);
 
-    if (size != sizeof(IPv6::UnderlyingType))
-        throw Exception(
-            ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH,
-            "Size of the string {} doesn't match size of binary IPv6 {}",
-            size,
-            sizeof(IPv6::UnderlyingType));
+    if (size != IPV6_BINARY_LENGTH)
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH,
+                        "Size of the string {} doesn't match size of binary IPv6 {}", size, IPV6_BINARY_LENGTH);
 
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }

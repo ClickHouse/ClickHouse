@@ -10,7 +10,6 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/setThreadName.h>
 
 #include <magic_enum.hpp>
 
@@ -24,7 +23,6 @@ namespace ProfileEvents
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentUseMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
-    extern const Event FileSegmentFailToIncreasePriority;
     extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
 }
@@ -196,7 +194,7 @@ bool FileSegment::isDownloaded() const
 String FileSegment::getCallerId()
 {
     if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().empty())
-        return fmt::format("None:{}:{}", getThreadName(), toString(getThreadId()));
+        return "None:" + toString(getThreadId());
 
     return std::string(CurrentThread::getQueryId()) + ":" + toString(getThreadId());
 }
@@ -497,7 +495,7 @@ LockedKeyPtr FileSegment::lockKeyMetadata(bool assert_exists) const
     return metadata->tryLock();
 }
 
-bool FileSegment::reserve(size_t size_to_reserve, size_t lock_wait_timeout_milliseconds, FileCacheReserveStat * reserve_stat)
+bool FileSegment::reserve(size_t size_to_reserve, FileCacheReserveStat * reserve_stat)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -549,7 +547,7 @@ bool FileSegment::reserve(size_t size_to_reserve, size_t lock_wait_timeout_milli
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds);
+    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat, getKeyMetadata()->user);
 
     if (!reserved)
         setDownloadFailedUnlocked(lockFileSegment());
@@ -967,10 +965,8 @@ void FileSegment::increasePriority()
     auto it = getQueueIterator();
     if (it)
     {
-        if (auto cache_lock = cache->tryLockCache())
-            hits_count = it->increasePriority(cache_lock);
-        else
-            ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
+        auto cache_lock = cache->lockCache();
+        hits_count = it->increasePriority(cache_lock);
     }
 }
 

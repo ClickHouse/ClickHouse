@@ -63,7 +63,8 @@ StorageAzureBlobCluster::StorageAzureBlobCluster(
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 void StorageAzureBlobCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const DB::StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
@@ -80,11 +81,16 @@ RemoteQueryExecutor::Extension StorageAzureBlobCluster::getTaskIteratorExtension
 {
     auto iterator = std::make_shared<StorageAzureBlobSource::GlobIterator>(
         object_storage.get(), configuration.container, configuration.blob_path,
-        predicate, getVirtualsList(), context, nullptr);
-
+        predicate, virtual_columns, context, nullptr);
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String{ return iterator->next().relative_path; });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
+
+NamesAndTypesList StorageAzureBlobCluster::getVirtuals() const
+{
+    return virtual_columns;
+}
+
 
 }
 

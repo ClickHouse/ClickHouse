@@ -1,12 +1,12 @@
 #pragma once
 
-#include <unordered_map>
 #include <IO/WriteSettings.h>
 #include <Core/Block.h>
 #include <base/types.h>
 #include <base/defines.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
@@ -48,8 +48,6 @@ class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
 
-struct MergeTreeReadTaskInfo;
-using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
 enum class DataPartRemovalState
 {
@@ -71,7 +69,6 @@ public:
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
     using ValueSizeMap = std::map<std::string, double>;
-    using VirtualFields = std::unordered_map<String, Field>;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
@@ -98,7 +95,6 @@ public:
         const NamesAndTypesList & columns_,
         const StorageSnapshotPtr & storage_snapshot,
         const MarkRanges & mark_ranges,
-        const VirtualFields & virtual_fields,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const AlterConversionsPtr & alter_conversions,
@@ -218,6 +214,7 @@ public:
 
     const MergeTreeData & storage;
 
+public:
     const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
 
@@ -229,9 +226,6 @@ public:
     MergeTreeIndexGranularityInfo index_granularity_info;
 
     size_t rows_count = 0;
-
-    /// Existing rows count (excluding lightweight deleted rows)
-    std::optional<size_t> existing_rows_count;
 
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
@@ -375,10 +369,6 @@ public:
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
     void setBytesUncompressedOnDisk(UInt64 bytes_uncompressed_on_disk_) { bytes_uncompressed_on_disk = bytes_uncompressed_on_disk_; }
 
-    /// Returns estimated size of existing rows if setting exclude_deleted_rows_for_part_size_in_merge is true
-    /// Otherwise returns bytes_on_disk
-    UInt64 getExistingBytesOnDisk() const;
-
     size_t getFileSizeOrZero(const String & file_name) const;
     auto getFilesChecksums() const { return checksums.files; }
 
@@ -503,15 +493,12 @@ public:
     bool supportLightweightDeleteMutate() const;
 
     /// True if here is lightweight deleted mask file in part.
-    bool hasLightweightDelete() const;
-
-    /// Read existing rows count from _row_exists column
-    UInt64 readExistingRowsCount();
+    bool hasLightweightDelete() const { return columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 
     /// Checks the consistency of this data part.
-    void checkConsistency(bool require_part_metadata) const;
+    virtual void checkConsistency(bool require_part_metadata) const;
 
     /// Checks the consistency of this data part, and check the consistency of its projections (if any) as well.
     void checkConsistencyWithProjections(bool require_part_metadata) const;
@@ -599,6 +586,8 @@ protected:
 
     void removeIfNeeded();
 
+    void checkConsistencyBase() const;
+
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
@@ -620,8 +609,6 @@ protected:
     void initializePartMetadataManager();
 
     void initializeIndexGranularityInfo();
-
-    virtual void doCheckConsistency(bool require_part_metadata) const;
 
 private:
     String mutable_name;
@@ -673,10 +660,6 @@ private:
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
 
-    /// Load existing rows count from _row_exists column
-    /// if load_existing_rows_count_for_old_parts and exclude_deleted_rows_for_part_size_in_merge are both enabled.
-    void loadExistingRowsCount();
-
     static void appendFilesOfRowsCount(Strings & files);
 
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
@@ -714,8 +697,6 @@ private:
     void incrementStateMetric(MergeTreeDataPartState state) const;
     void decrementStateMetric(MergeTreeDataPartState state) const;
 
-    void checkConsistencyBase() const;
-
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;
 };
@@ -725,6 +706,7 @@ using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
+bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
 
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
 std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);

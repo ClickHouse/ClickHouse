@@ -450,10 +450,8 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
             break;
         case FormatSettings::EscapingRule::JSON:
             result += fmt::format(
-                ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_bools_as_strings={}, read_objects_as_strings={}, "
-                "read_numbers_as_strings={}, "
-                "read_arrays_as_strings={}, try_infer_objects_as_tuples={}, infer_incomplete_types_as_strings={}, try_infer_objects={}, "
-                "use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects={}",
+                ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_bools_as_strings={}, read_objects_as_strings={}, read_numbers_as_strings={}, "
+                "read_arrays_as_strings={}, try_infer_objects_as_tuples={}, infer_incomplete_types_as_strings={}, try_infer_objects={}",
                 settings.json.try_infer_numbers_from_strings,
                 settings.json.read_bools_as_numbers,
                 settings.json.read_bools_as_strings,
@@ -462,8 +460,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
                 settings.json.read_arrays_as_strings,
                 settings.json.try_infer_objects_as_tuples,
                 settings.json.infer_incomplete_types_as_strings,
-                settings.json.allow_object_type,
-                settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects);
+                settings.json.allow_object_type);
             break;
         default:
             break;

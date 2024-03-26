@@ -245,7 +245,7 @@ void download(FileSegment & file_segment)
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
     ASSERT_EQ(file_segment.getDownloadedSize(), 0);
 
-    ASSERT_TRUE(file_segment.reserve(file_segment.range().size(), 1000));
+    ASSERT_TRUE(file_segment.reserve(file_segment.range().size()));
     download(cache_base_path, file_segment);
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
 
@@ -257,7 +257,7 @@ void assertDownloadFails(FileSegment & file_segment)
 {
     ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment.getDownloadedSize(), 0);
-    ASSERT_FALSE(file_segment.reserve(file_segment.range().size(), 1000));
+    ASSERT_FALSE(file_segment.reserve(file_segment.range().size()));
     file_segment.complete();
 }
 
@@ -947,7 +947,7 @@ TEST_F(FileCacheTest, temporaryData)
     file_cache.initialize();
 
     const auto user = FileCache::getCommonUser();
-    auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, TemporaryDataOnDiskSettings{});
+    auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, 0);
 
     auto some_data_holder = file_cache.getOrSet(file_cache.createKeyForPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{}, 0, user);
 
@@ -956,7 +956,7 @@ TEST_F(FileCacheTest, temporaryData)
         for (auto & segment : *some_data_holder)
         {
             ASSERT_TRUE(segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            ASSERT_TRUE(segment->reserve(segment->range().size(), 1000));
+            ASSERT_TRUE(segment->reserve(segment->range().size()));
             download(*segment);
             segment->complete();
         }
@@ -1130,7 +1130,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         DB::FileCache file_cache("cache", settings);
         file_cache.initialize();
 
-        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/nullptr, &file_cache, /*settings=*/TemporaryDataOnDiskSettings{});
+        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/nullptr, &file_cache, /*limit=*/0);
 
         auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
 
@@ -1152,7 +1152,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         disk = createDisk("temporary_data_read_buffer_size_test_dir");
         VolumePtr volume = std::make_shared<SingleDiskVolume>("volume", disk);
 
-        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/volume, /*cache=*/nullptr, /*settings=*/TemporaryDataOnDiskSettings{});
+        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/volume, /*cache=*/nullptr, /*limit=*/0);
 
         auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
 

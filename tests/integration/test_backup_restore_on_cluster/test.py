@@ -457,7 +457,6 @@ def test_replicated_database_async():
     )
 
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl2")
 
     assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV([1, 22])
     assert node2.query("SELECT * FROM mydb.tbl2 ORDER BY y") == TSV(["a", "bb"])

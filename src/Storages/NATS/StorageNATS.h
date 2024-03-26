@@ -61,6 +61,7 @@ public:
     NATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
+    NamesAndTypesList getVirtuals() const override;
 
     void incrementReader();
     void decrementReader();
@@ -136,7 +137,6 @@ private:
 
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
-    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;

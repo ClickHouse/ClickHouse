@@ -12,7 +12,6 @@
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Core/ServerUUID.h>
-#include <IO/WriteHelpers.h>
 
 #include "config.h"
 #include <Common/config_version.h>

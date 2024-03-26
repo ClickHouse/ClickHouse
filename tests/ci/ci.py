@@ -408,7 +408,7 @@ class CiCache:
                 status.dump_to_file(record_file)
             elif record_type == self.RecordType.PENDING:
                 assert isinstance(status, PendingState)
-                with open(record_file, "w", encoding="utf-8") as json_file:
+                with open(record_file, "w") as json_file:
                     json.dump(asdict(status), json_file)
             else:
                 assert False
@@ -1017,7 +1017,7 @@ def _mark_success_action(
 
 def _print_results(result: Any, outfile: Optional[str], pretty: bool = False) -> None:
     if outfile:
-        with open(outfile, "w", encoding="utf-8") as f:
+        with open(outfile, "w") as f:
             if isinstance(result, str):
                 print(result, file=f)
             elif isinstance(result, dict):
@@ -1031,6 +1031,22 @@ def _print_results(result: Any, outfile: Optional[str], pretty: bool = False) ->
             print(json.dumps(result, indent=2 if pretty else None))
         else:
             raise AssertionError(f"Unexpected type for 'res': {type(result)}")
+
+
+def _check_and_update_for_early_style_check(jobs_data: dict, docker_data: dict) -> None:
+    """
+    This is temporary hack to start style check before docker build if possible
+    FIXME: need better solution to do style check as soon as possible and as fast as possible w/o dependency on docker job
+    """
+    jobs_to_do = jobs_data.get("jobs_to_do", [])
+    docker_to_build = docker_data.get("missing_multi", [])
+    if (
+        JobNames.STYLE_CHECK in jobs_to_do
+        and docker_to_build
+        and "clickhouse/style-test" not in docker_to_build
+    ):
+        index = jobs_to_do.index(JobNames.STYLE_CHECK)
+        jobs_to_do[index] = "Style check early"
 
 
 def _update_config_for_docs_only(jobs_data: dict) -> None:
@@ -1106,7 +1122,7 @@ def _configure_jobs(
     digests: Dict[str, str] = {}
 
     print("::group::Job Digests")
-    for job in CI_CONFIG.job_generator(pr_info.head_ref):
+    for job in CI_CONFIG.job_generator():
         digest = job_digester.get_job_digest(CI_CONFIG.get_digest_config(job))
         digests[job] = digest
         print(f"    job [{job.rjust(50)}] has digest [{digest}]")
@@ -1121,7 +1137,8 @@ def _configure_jobs(
     jobs_to_wait: Dict[str, Dict[str, Any]] = {}
     randomization_buckets = {}  # type: Dict[str, Set[str]]
 
-    for job, digest in digests.items():
+    for job in digests:
+        digest = digests[job]
         job_config = CI_CONFIG.get_job_config(job)
         num_batches: int = job_config.num_batches
         batches_to_do: List[int] = []
@@ -1178,13 +1195,13 @@ def _configure_jobs(
 
         if batches_to_do:
             jobs_to_do.append(job)
-            jobs_params[job] = {
-                "batches": batches_to_do,
-                "num_batches": num_batches,
-            }
         elif add_to_skip:
             # treat job as being skipped only if it's controlled by digest
             jobs_to_skip.append(job)
+        jobs_params[job] = {
+            "batches": batches_to_do,
+            "num_batches": num_batches,
+        }
 
     if not pr_info.is_release_branch():
         # randomization bucket filtering (pick one random job from each bucket, for jobs with configured random_bucket property)
@@ -1232,7 +1249,9 @@ def _configure_jobs(
         for token_ in ci_controlling_tokens:
             label_config = CI_CONFIG.get_label_config(token_)
             assert label_config, f"Unknonwn token [{token_}]"
-            print(f"NOTE: CI modifier: [{token_}], add jobs: [{label_config.run_jobs}]")
+            print(
+                f"NOTE: CI controlling token: [{ci_controlling_tokens}], add jobs: [{label_config.run_jobs}]"
+            )
             jobs_to_do_requested += label_config.run_jobs
 
         # handle specific job requests
@@ -1246,7 +1265,7 @@ def _configure_jobs(
             for job in requested_jobs:
                 job_with_parents = CI_CONFIG.get_job_with_parents(job)
                 print(
-                    f"NOTE: CI modifier: [#job_{job}], add jobs: [{job_with_parents}]"
+                    f"NOTE: CI controlling token: [#job_{job}], add jobs: [{job_with_parents}]"
                 )
                 # always add requested job itself, even if it could be skipped
                 jobs_to_do_requested.append(job_with_parents[0])
@@ -1255,46 +1274,12 @@ def _configure_jobs(
                         jobs_to_do_requested.append(parent)
 
         if jobs_to_do_requested:
-            jobs_to_do_requested = list(set(jobs_to_do_requested))
             print(
                 f"NOTE: Only specific job(s) were requested by commit message tokens: [{jobs_to_do_requested}]"
             )
             jobs_to_do = list(
                 set(job for job in jobs_to_do_requested if job not in jobs_to_skip)
             )
-            # if requested job does not have params in jobs_params (it happens for "run_by_label" job)
-            #   we need to add params - otherwise it won't run as "batches" list will be empty
-            for job in jobs_to_do:
-                if job not in jobs_params:
-                    num_batches = CI_CONFIG.get_job_config(job).num_batches
-                    jobs_params[job] = {
-                        "batches": list(range(num_batches)),
-                        "num_batches": num_batches,
-                    }
-
-        requested_batches = set()
-        for token in commit_tokens:
-            if token.startswith("batch_"):
-                try:
-                    batches = [
-                        int(batch) for batch in token.removeprefix("batch_").split("_")
-                    ]
-                except Exception:
-                    print(f"ERROR: failed to parse commit tag [{token}]")
-                requested_batches.update(batches)
-        if requested_batches:
-            print(
-                f"NOTE: Only specific job batches were requested [{list(requested_batches)}]"
-            )
-            for job, params in jobs_params.items():
-                if params["num_batches"] > 1:
-                    params["batches"] = list(requested_batches)
-
-    if pr_info.is_merge_queue():
-        # FIXME: Quick support for MQ workflow which is only StyleCheck for now
-        jobs_to_do = [JobNames.STYLE_CHECK]
-        jobs_to_skip = []
-        print(f"NOTE: This is Merge Queue CI: set jobs to do: [{jobs_to_do}]")
 
     return {
         "digests": digests,
@@ -1396,25 +1381,11 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
     print("... CI report update - done")
 
 
-def _fetch_commit_tokens(message: str, pr_info: PRInfo) -> List[str]:
-    pattern = r"(#|- \[x\] +<!---)(\w+)"
-    matches = [match[-1] for match in re.findall(pattern, message)]
-    res = [
-        match
-        for match in matches
-        if match in Labels or match.startswith("job_") or match.startswith("batch_")
-    ]
-    print(f"CI modifyers from commit message: [{res}]")
-    res_2 = []
-    if pr_info.is_pr():
-        matches = [match[-1] for match in re.findall(pattern, pr_info.body)]
-        res_2 = [
-            match
-            for match in matches
-            if match in Labels or match.startswith("job_") or match.startswith("batch_")
-        ]
-        print(f"CI modifyers from PR body: [{res_2}]")
-    return list(set(res + res_2))
+def _fetch_commit_tokens(message: str) -> List[str]:
+    pattern = r"#[\w-]+"
+    matches = [match[1:] for match in re.findall(pattern, message)]
+    res = [match for match in matches if match in Labels or match.startswith("job_")]
+    return res
 
 
 def _upload_build_artifacts(
@@ -1676,11 +1647,11 @@ def main() -> int:
 
     indata: Optional[Dict[str, Any]] = None
     if args.infile:
-        if os.path.isfile(args.infile):
-            with open(args.infile, encoding="utf-8") as jfd:
-                indata = json.load(jfd)
-        else:
-            indata = json.loads(args.infile)
+        indata = (
+            json.loads(args.infile)
+            if not os.path.isfile(args.infile)
+            else json.load(open(args.infile))
+        )
         assert indata and isinstance(indata, dict), "Invalid --infile json"
 
     result: Dict[str, Any] = {}
@@ -1700,7 +1671,8 @@ def main() -> int:
             message = args.commit_message or git_runner.run(
                 f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1"
             )
-            tokens = _fetch_commit_tokens(message, pr_info)
+            tokens = _fetch_commit_tokens(message)
+            print(f"Commit message tokens: [{tokens}]")
             if Labels.NO_MERGE_COMMIT in tokens and CI:
                 git_runner.run(f"{GIT_PREFIX} checkout {pr_info.sha}")
                 git_ref = git_runner.run(f"{GIT_PREFIX} rev-parse HEAD")
@@ -1742,6 +1714,11 @@ def main() -> int:
             else {}
         )
 
+        # # FIXME: Early style check manipulates with job names might be not robust with await feature
+        # if pr_info.number != 0:
+        #     # FIXME: it runs style check before docker build if possible (style-check images is not changed)
+        #     #    find a way to do style check always before docker build and others
+        #     _check_and_update_for_early_style_check(jobs_data, docker_data)
         if not args.skip_jobs and pr_info.has_changes_in_documentation_only():
             _update_config_for_docs_only(jobs_data)
 
@@ -1791,8 +1768,7 @@ def main() -> int:
         result["build"] = build_digest
         result["docs"] = docs_digest
         result["ci_flags"] = ci_flags
-        if not args.skip_jobs:
-            result["stages_data"] = _generate_ci_stage_config(jobs_data)
+        result["stages_data"] = _generate_ci_stage_config(jobs_data)
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
     ### CONFIGURE action: end

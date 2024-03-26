@@ -45,6 +45,7 @@ public:
     };
 
     using Elements = std::vector<Element>;
+    Elements elements;
 
     bool exchange{false};   /// For EXCHANGE TABLES
     bool database{false};   /// For RENAME DATABASE
@@ -53,65 +54,12 @@ public:
     /// Special flag for CREATE OR REPLACE. Do not throw if the second table does not exist.
     bool rename_if_cannot_exchange{false};
 
-    explicit ASTRenameQuery(Elements elements_ = {})
-        : elements(std::move(elements_))
-    {
-        for (const auto & elem : elements)
-        {
-            if (elem.from.database)
-                children.push_back(elem.from.database);
-            if (elem.from.table)
-                children.push_back(elem.from.table);
-            if (elem.to.database)
-                children.push_back(elem.to.database);
-            if (elem.to.table)
-                children.push_back(elem.to.table);
-        }
-    }
-
-    void setDatabaseIfNotExists(const String & database_name)
-    {
-        for (auto & elem : elements)
-        {
-            if (!elem.from.database)
-            {
-                elem.from.database = std::make_shared<ASTIdentifier>(database_name);
-                children.push_back(elem.from.database);
-            }
-            if (!elem.to.database)
-            {
-                elem.to.database = std::make_shared<ASTIdentifier>(database_name);
-                children.push_back(elem.to.database);
-            }
-        }
-    }
-
-    const Elements & getElements() const { return elements; }
-
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Rename"; }
 
     ASTPtr clone() const override
     {
         auto res = std::make_shared<ASTRenameQuery>(*this);
-        res->children.clear();
-
-        auto clone_child = [&res](ASTPtr & node)
-        {
-            if (node)
-            {
-                node = node->clone();
-                res->children.push_back(node);
-            }
-        };
-
-        for (auto & elem : res->elements)
-        {
-            clone_child(elem.from.database);
-            clone_child(elem.from.table);
-            clone_child(elem.to.database);
-            clone_child(elem.to.table);
-        }
         cloneOutputOptions(*res);
         return res;
     }
@@ -125,15 +73,9 @@ public:
         for (Element & elem : query.elements)
         {
             if (!elem.from.database)
-            {
                 elem.from.database = std::make_shared<ASTIdentifier>(params.default_database);
-                query.children.push_back(elem.from.database);
-            }
             if (!elem.to.database)
-            {
                 elem.to.database = std::make_shared<ASTIdentifier>(params.default_database);
-                query.children.push_back(elem.to.database);
-            }
         }
 
         return query_ptr;
@@ -185,7 +127,6 @@ protected:
                 settings.ostr << '.';
             }
 
-            chassert(it->from.table);
             it->from.table->formatImpl(settings, state, frame);
 
             settings.ostr << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "");
@@ -196,15 +137,12 @@ protected:
                 settings.ostr << '.';
             }
 
-            chassert(it->to.table);
             it->to.table->formatImpl(settings, state, frame);
 
         }
 
         formatOnCluster(settings);
     }
-
-    Elements elements;
 };
 
 }

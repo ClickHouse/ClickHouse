@@ -1,3 +1,4 @@
+#include <boost/algorithm/string/join.hpp>
 #include <cstdlib>
 #include <fcntl.h>
 #include <map>
@@ -6,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <Common/ThreadStatus.h>
+#include <Common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
@@ -43,10 +45,15 @@
 
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
+#include <Interpreters/InterpreterSetQuery.h>
+
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
-#include <Formats/FormatFactory.h>
+
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
+#endif
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -1169,7 +1176,27 @@ void Client::processConfig()
 
     pager = config().getString("pager", "");
 
-    setDefaultFormatsFromConfiguration();
+    is_default_format = !config().has("vertical") && !config().has("format");
+    if (config().has("vertical"))
+        format = config().getString("format", "Vertical");
+    else
+        format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
+
+    format_max_block_size = config().getUInt64("format_max_block_size",
+        global_context->getSettingsRef().max_block_size);
+
+    insert_format = "Values";
+
+    /// Setting value from cmd arg overrides one from config
+    if (global_context->getSettingsRef().max_insert_block_size.changed)
+    {
+        insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
+    }
+    else
+    {
+        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
+            global_context->getSettingsRef().max_insert_block_size);
+    }
 
     global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     global_context->setQueryKindInitial();
@@ -1354,8 +1381,8 @@ void Client::readArguments(
 }
 
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

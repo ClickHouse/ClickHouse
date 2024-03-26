@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -619,6 +618,7 @@ namespace
 
 
     /// Handles a connection after a responder is started (i.e. after getting a new call).
+// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
     class Call
     {
     public:
@@ -724,6 +724,7 @@ namespace
 
         ThreadFromGlobalPool call_thread;
     };
+// NOLINTEND(clang-analyzer-optin.performance.Padding)
 
     Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
@@ -884,7 +885,7 @@ namespace
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
         ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
-        ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth);
 
         /// Choose input format.
         insert_query = ast->as<ASTInsertQuery>();
