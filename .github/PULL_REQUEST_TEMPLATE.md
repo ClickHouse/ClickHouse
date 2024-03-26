@@ -44,7 +44,7 @@ At a minimum, the following information should be added (but add more as needed)
 ---
 ### Modify your CI run:
 **NOTE:** If your merge the PR with modified CI you **MUST KNOW** what you are doing
-**NOTE:** Set desired options before CI starts or re-push after updates
+**NOTE:** You can update this config before RunConfig job is started to have it applied in CI
 
 #### Run only:
 - [ ] <!---ci_set_integration--> Integration tests
