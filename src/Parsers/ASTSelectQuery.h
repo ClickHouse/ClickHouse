@@ -26,6 +26,7 @@ public:
         HAVING,
         WINDOW,
         ORDER_BY,
+        DEPENDS_ON,
         LIMIT_BY_OFFSET,
         LIMIT_BY_LENGTH,
         LIMIT_BY,
@@ -33,7 +34,7 @@ public:
         LIMIT_LENGTH,
         SETTINGS,
         INTERPOLATE
-    }; //I think we don't need expression here
+    }; //I think we don't need expression here???
 
     static String expressionToString(Expression expr)
     {
@@ -56,6 +57,8 @@ public:
             case Expression::WINDOW:
                 return "WINDOW";
             case Expression::ORDER_BY:
+                return "ORDER BY";
+            case Expression::DEPENDS_ON:
                 return "ORDER BY";
             case Expression::LIMIT_BY_OFFSET:
                 return "LIMIT BY OFFSET";
@@ -106,6 +109,7 @@ public:
     ASTPtr having()         const { return getExpression(Expression::HAVING); }
     ASTPtr window()         const { return getExpression(Expression::WINDOW); }
     ASTPtr orderBy()        const { return getExpression(Expression::ORDER_BY); }
+    ASTPtr dependsOn()        const { return getExpression(Expression::DEPENDS_ON); }
     ASTPtr limitByOffset()  const { return getExpression(Expression::LIMIT_BY_OFFSET); }
     ASTPtr limitByLength()  const { return getExpression(Expression::LIMIT_BY_LENGTH); }
     ASTPtr limitBy()        const { return getExpression(Expression::LIMIT_BY); }

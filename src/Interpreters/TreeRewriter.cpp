@@ -1276,6 +1276,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     const Names & required_result_columns,
     std::shared_ptr<TableJoin> table_join) const
 {
+
+    // Question: Why do we need code here? I think here is no analyzation in our case. We need to choose Sorting strategy Only
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not select asts.");

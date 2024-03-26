@@ -3023,10 +3023,10 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         sort_settings,
         settings.optimize_sorting_by_input_stream_properties);
 
-//    if (sort_setting.is_depends_on)
-//        sorting_step->setStepDescription("Sorting for ORDER BY DEPENDS ON");
-//    else
-//        sorting_step->setStepDescription("Sorting for ORDER BY");
+    if (query.depends_on_order_by)
+        sorting_step->setStepDescription("Sorting for ORDER BY DEPENDS ON");
+    else
+        sorting_step->setStepDescription("Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));
 }
 
