@@ -223,14 +223,17 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
         query_id = node.query(
             f"SELECT queryID() FROM (SELECT c FROM '{table}' WHERE d == 12 ORDER BY c)"
         ).strip()
-        node.query("SYSTEM FLUSH LOGS")
-        res = node.query(
-            f"""
-        SELECT query, splitByChar('.', arrayJoin(projections))[-1]
-        FROM system.query_log
-        WHERE query_id='{query_id}' AND type='QueryFinish'
-        """
-        )
+        for _ in range(10):
+            node.query("SYSTEM FLUSH LOGS")
+            res = node.query(
+                f"""
+            SELECT query, splitByChar('.', arrayJoin(projections))[-1]
+            FROM system.query_log
+            WHERE query_id='{query_id}' AND type='QueryFinish'
+            """
+            )
+            if res != "":
+                break
         if res == "":
             res = node.query(
                 """
@@ -238,7 +241,7 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
                 FROM system.query_log ORDER BY query_start_time_microseconds DESC
             """
             )
-            print(f"LOG: {res}")
+            print(f"Looked for query id {query_id}, but to no avail: {res}")
             assert False
         assert "proj1" in res
 
@@ -250,14 +253,17 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
         query_id = node.query(
             f"SELECT queryID() FROM (SELECT d FROM '{table}' WHERE c == 12 ORDER BY d)"
         ).strip()
-        node.query("SYSTEM FLUSH LOGS")
-        res = node.query(
-            f"""
-        SELECT query, splitByChar('.', arrayJoin(projections))[-1]
-        FROM system.query_log
-        WHERE query_id='{query_id}' AND type='QueryFinish'
-        """
-        )
+        for _ in range(10):
+            node.query("SYSTEM FLUSH LOGS")
+            res = node.query(
+                f"""
+            SELECT query, splitByChar('.', arrayJoin(projections))[-1]
+            FROM system.query_log
+            WHERE query_id='{query_id}' AND type='QueryFinish'
+            """
+            )
+            if res != "":
+                break
         if res == "":
             res = node.query(
                 """
@@ -265,7 +271,7 @@ def check(node, table, check_result, expect_broken_part="", expected_error=""):
                 FROM system.query_log ORDER BY query_start_time_microseconds DESC
             """
             )
-            print(f"LOG: {res}")
+            print(f"Looked for query id {query_id}, but to no avail: {res}")
             assert False
         assert "proj2" in res
 
