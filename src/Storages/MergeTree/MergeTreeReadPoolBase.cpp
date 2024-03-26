@@ -65,7 +65,7 @@ static size_t calculateMinMarksPerTask(
             = std::min<size_t>(pool_settings.sum_marks / pool_settings.threads / 2, min_bytes_per_task / avg_mark_bytes);
         if (heuristic_min_marks > min_marks_per_task)
         {
-            LOG_DEBUG(
+            LOG_TEST(
                 &Poco::Logger::get("MergeTreeReadPoolBase"),
                 "Increasing min_marks_per_task from {} to {} based on columns size heuristic",
                 min_marks_per_task,
@@ -73,7 +73,7 @@ static size_t calculateMinMarksPerTask(
             min_marks_per_task = heuristic_min_marks;
         }
     }
-    LOG_DEBUG(&Poco::Logger::get("MergeTreeReadPoolBase"), "Will use min_marks_per_task={}", min_marks_per_task);
+    LOG_TEST(&Poco::Logger::get("MergeTreeReadPoolBase"), "Will use min_marks_per_task={}", min_marks_per_task);
     return min_marks_per_task;
 }
 
