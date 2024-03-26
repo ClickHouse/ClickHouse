@@ -211,7 +211,6 @@ bool analyzeProjectionCandidate(
     const MergeTreeDataSelectExecutor & reader,
     const Names & required_column_names,
     const RangesInDataParts & parts_with_ranges,
-    const StorageMetadataPtr & metadata,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
@@ -242,7 +241,6 @@ bool analyzeProjectionCandidate(
         std::move(projection_parts),
         nullptr,
         required_column_names,
-        metadata,
         candidate.projection->metadata,
         query_info, /// How it is actually used? I hope that for index we need only added_filter_nodes
         added_filter_nodes,

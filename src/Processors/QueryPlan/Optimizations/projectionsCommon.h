@@ -73,7 +73,6 @@ bool analyzeProjectionCandidate(
     const MergeTreeDataSelectExecutor & reader,
     const Names & required_column_names,
     const RangesInDataParts & parts_with_ranges,
-    const StorageMetadataPtr & metadata,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
