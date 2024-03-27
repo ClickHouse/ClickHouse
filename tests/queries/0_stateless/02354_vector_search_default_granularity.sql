@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-ubsan, no-cpu-aarch64, no-ordinary-database, no-asan
+-- Tags: no-fasttest, no-ubsan, no-ordinary-database, no-asan
 
 -- Tests vector search in ClickHouse, i.e. Annoy and Usearch indexes. Both index types share similarities in implementation and usage,
 -- therefore they are tested in a single file.

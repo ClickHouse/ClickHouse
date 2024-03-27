@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel, no-cpu-aarch64
+-- Tags: no-fasttest, no-parallel
 
 set output_format_orc_string_as_string = 1;
 set output_format_orc_row_index_stride = 100;
