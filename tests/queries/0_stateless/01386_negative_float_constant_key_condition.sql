@@ -15,7 +15,7 @@ INSERT INTO t0 VALUES (0, 0);
 
 SELECT t0.c1 FROM t0 WHERE NOT (t0.c1 OR (t0.c0 AND -1524532316));
 SELECT t0.c1 FROM t0 WHERE NOT (t0.c1 OR (t0.c0 AND -1.0)); -- { serverError 70 }
-SELECT t0.c1 FROM t0 WHERE NOT (t0.c1 OR (t0.c0 AND inf));
-SELECT t0.c1 FROM t0 WHERE NOT (t0.c1 OR (t0.c0 AND nan));
+SELECT t0.c1 FROM t0 WHERE NOT (t0.c1 OR (t0.c0 AND inf)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT t0.c1 FROM t0 WHERE NOT (t0.c1 OR (t0.c0 AND nan)); -- interesting that it doesn't fail
 
 DROP TABLE t0;
