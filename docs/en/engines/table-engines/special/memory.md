@@ -37,6 +37,11 @@ Upper and lower bounds can be specified to limit Memory engine table size, effec
 - `max_rows_to_keep` — Maximum rows to keep within memory table where oldest rows are deleted on each insertion (i.e circular buffer). Max rows can exceed the stated limit if the oldest batch of rows to remove falls under the `min_rows_to_keep` limit when adding a large block.
   - Default value: `0`
 
+**Modify settings**
+```sql
+ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 1000;
+```
+
 ## Usage {#usage}
 
 
