@@ -6,4 +6,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.tables \
     WHERE database IN ('system', '$CLICKHOUSE_DATABASE') \
-    SETTINGS legacy_column_name_of_tuple_literal = 1"
+    SETTINGS legacy_column_name_of_literal = 1"
