@@ -289,8 +289,6 @@ public:
 
         MutableDataParts precommitted_parts;
         MutableDataParts precommitted_parts_need_rename;
-        MutableDataParts locked_parts;
-
     };
 
     using TransactionUniquePtr = std::unique_ptr<Transaction>;
