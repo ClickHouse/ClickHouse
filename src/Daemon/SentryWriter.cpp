@@ -8,6 +8,8 @@
 #include <Common/logger_useful.h>
 
 #include <Common/formatReadable.h>
+#include <Common/Exception.h>
+#include <Common/ErrorCodes.h>
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -28,11 +30,7 @@ namespace fs = std::filesystem;
 namespace
 {
 
-bool initialized = false;
-bool anonymize = false;
-std::string server_data_path;
-
-void setExtras()
+void setExtras(bool anonymize, const std::string & server_data_path)
 {
     if (!anonymize)
         sentry_set_extra("server_name", sentry_value_new_string(getFQDNOrHostName().c_str()));
@@ -64,8 +62,18 @@ void setExtras()
 
 }
 
+std::unique_ptr<SentryWriter> SentryWriter::instance;
 
-void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
+void SentryWriter::initializeInstance(Poco::Util::LayeredConfiguration & config)
+{
+    SentryWriter::instance.reset(new SentryWriter(config));
+}
+SentryWriter * SentryWriter::getInstance()
+{
+    return SentryWriter::instance.get();
+}
+
+SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration & config)
 {
     bool enabled = false;
     bool debug = config.getBool("send_crash_reports.debug", false);
@@ -133,7 +141,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
     }
 }
 
-void SentryWriter::shutdown()
+SentryWriter::~SentryWriter()
 {
     if (initialized)
         sentry_shutdown();
@@ -164,7 +172,7 @@ void SentryWriter::onFault(int sig_or_error, const std::string & error_message, 
             sentry_set_tag("build_id", build_id_hex.c_str());
         #endif
 
-        setExtras();
+        setExtras(anonymize, server_data_path);
 
         /// Prepare data for https://develop.sentry.dev/sdk/event-payloads/stacktrace/
         sentry_value_t sentry_frames = sentry_value_new_list();
@@ -220,7 +228,6 @@ void SentryWriter::onFault(int sig_or_error, const std::string & error_message, 
 
         LOG_INFO(logger, "Sending crash report");
         sentry_capture_event(event);
-        /* shutdown(); */
     }
     else
     {
@@ -230,8 +237,11 @@ void SentryWriter::onFault(int sig_or_error, const std::string & error_message, 
 
 #else
 
-void SentryWriter::initialize(Poco::Util::LayeredConfiguration &) {}
-void SentryWriter::shutdown() {}
-void SentryWriter::onFault(int, const std::string &, const StackTrace &) {}
+void SentryWriter::initializeInstance(Poco::Util::LayeredConfiguration &) {}
+SentryWriter * SentryWriter::getInstance() { return nullptr; }
+
+SentryWriter::SentryWriter(Poco::Util::LayeredConfiguration &) {}
+SentryWriter::~SentryWriter() = default;
+void SentryWriter::onFault(int, const std::string &, const FramePointers &, size_t, size_t) {}
 
 #endif
