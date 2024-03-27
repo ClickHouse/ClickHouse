@@ -10,7 +10,7 @@
 #include <Common/assert_cast.h>
 
 #include <Core/AccurateComparison.h>
-//#include <Core/Settings.h>
+#include <Core/Settings.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
