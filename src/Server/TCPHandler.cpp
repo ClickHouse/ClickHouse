@@ -1125,6 +1125,7 @@ void TCPHandler::processTablesStatusRequest()
         {
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
+            status.is_readonly = replicated_table->isTableReadOnly();
         }
         else
             status.is_replicated = false;
