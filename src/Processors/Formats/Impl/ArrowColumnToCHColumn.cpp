@@ -463,7 +463,7 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
     {
         ArrowListArray & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
         auto arrow_offsets_array = list_chunk.offsets();
-        auto & arrow_offsets = dynamic_cast<ArrowOffsetArray<ArrowListArray>::type &>(*arrow_offsets_array);
+        auto & arrow_offsets = dynamic_cast<typename ArrowOffsetArray<ArrowListArray>::type &>(*arrow_offsets_array);
 
         /*
          * CH uses element size as "offsets", while arrow uses actual offsets as offsets.
@@ -1072,14 +1072,21 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         auto arrow_column = std::make_shared<arrow::ChunkedArray>(array_vector);
         std::unordered_map<std::string, DictionaryInfo> dict_infos;
         bool skipped = false;
-        bool allow_null_type = false;
+        bool allow_null_type = field->nullable();
         if (hint_header && hint_header->has(field->name()) && hint_header->getByName(field->name()).type->isNullable())
             allow_null_type = true;
+
         ColumnWithTypeAndName sample_column = readColumnFromArrowColumn(
             arrow_column, field->name(), format_name, false, dict_infos, allow_null_type, skip_columns_with_unsupported_types, skipped);
-        if (!skipped)
-            sample_columns.emplace_back(std::move(sample_column));
+        if (skipped)
+            continue;
+
+        if (allow_null_type && sample_column.type->canBeInsideNullable())
+            sample_column.type = makeNullable(sample_column.type);
+
+        sample_columns.emplace_back(std::move(sample_column));
     }
+
     return Block(std::move(sample_columns));
 }
 
