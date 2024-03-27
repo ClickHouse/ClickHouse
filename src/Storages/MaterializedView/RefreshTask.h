@@ -62,7 +62,7 @@ public:
     void setFakeTime(std::optional<Int64> t);
 
     /// RefreshSet will set handle for refresh tasks, to avoid race condition.
-    void setRefreshSetHandle(RefreshSet::Handle && set_handle_);
+    void setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_);
 
 private:
     LoggerPtr log = nullptr;

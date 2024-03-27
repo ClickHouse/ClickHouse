@@ -81,7 +81,7 @@ void RefreshSet::emplace(StorageID id, const std::vector<StorageID> & dependenci
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Refresh set entry already exists for table {}", id.getFullTableName());
     addDependenciesLocked(id, dependencies);
 
-    task->setRefreshSetHandle(Handle(this, id, dependencies));
+    task->setRefreshSetHandleUnlock(Handle(this, id, dependencies));
 }
 
 void RefreshSet::addDependenciesLocked(const StorageID & id, const std::vector<StorageID> & dependencies)

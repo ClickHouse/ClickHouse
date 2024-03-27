@@ -509,9 +509,8 @@ std::chrono::system_clock::time_point RefreshTask::currentTime() const
         return std::chrono::system_clock::time_point(std::chrono::seconds(fake));
 }
 
-void RefreshTask::setRefreshSetHandle(RefreshSet::Handle && set_handle_)
+void RefreshTask::setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_)
 {
-    std::lock_guard guard(mutex);
     set_handle = std::move(set_handle_);
 }
 
