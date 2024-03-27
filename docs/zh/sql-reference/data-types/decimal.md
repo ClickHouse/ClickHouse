@@ -81,3 +81,14 @@ Decimal上的一些函数返回结果为Float64（例如，var或stddev）。对
     SELECT toDecimal32(1, 8) < 100
 
     DB::Exception: Can't compare.
+
+## 允许除以0 {#yu-xu-chu-yi-0}
+
+Decimal 类型除以0时，默认会抛出异常。可以通过设置`decimal_allow_divide_zero`来不抛出异常，在这种情况下，除数为0时将返回null：
+
+    SET decimal_allow_divide_zero = 1;
+    SELECT cast(1 AS decimal(12, 5))/cast(0 AS decimal(12, 5))
+
+    ┌──────┬─cast(1 AS decimal(12, 5))/cast(0 AS decimal(12, 5))─┐
+    │ 1    │                                                null │
+    └──────┴─────────────────────────────────────────────────────┘
