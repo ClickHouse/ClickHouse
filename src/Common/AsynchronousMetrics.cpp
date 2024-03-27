@@ -641,6 +641,73 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            "them [0..num cores]."};
 }
 
+void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
+    AsynchronousMetricValues & new_values, double num_cpus_to_normalize, const ProcStatValuesCPU & delta_values_all_cpus, double multiplier)
+{
+    chassert(num_cpus_to_normalize);
+
+    new_values["OSUserTimeNormalized"]
+        = {delta_values_all_cpus.user * multiplier / num_cpus_to_normalize,
+           "The value is similar to `OSUserTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
+           "of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+    new_values["OSNiceTimeNormalized"]
+        = {delta_values_all_cpus.nice * multiplier / num_cpus_to_normalize,
+           "The value is similar to `OSNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
+           "of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+    new_values["OSSystemTimeNormalized"]
+        = {delta_values_all_cpus.system * multiplier / num_cpus_to_normalize,
+           "The value is similar to `OSSystemTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
+           "of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+    new_values["OSIdleTimeNormalized"]
+        = {delta_values_all_cpus.idle * multiplier / num_cpus_to_normalize,
+           "The value is similar to `OSIdleTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
+           "of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+    new_values["OSIOWaitTimeNormalized"]
+        = {delta_values_all_cpus.iowait * multiplier / num_cpus_to_normalize,
+           "The value is similar to `OSIOWaitTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
+           "of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+    new_values["OSIrqTimeNormalized"]
+        = {delta_values_all_cpus.irq * multiplier / num_cpus_to_normalize,
+           "The value is similar to `OSIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of "
+           "the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+    new_values["OSSoftIrqTimeNormalized"]
+        = {delta_values_all_cpus.softirq * multiplier / num_cpus_to_normalize,
+           "The value is similar to `OSSoftIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval "
+           "regardless of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+    new_values["OSStealTimeNormalized"]
+        = {delta_values_all_cpus.steal * multiplier / num_cpus_to_normalize,
+           "The value is similar to `OSStealTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
+           "of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+    new_values["OSGuestTimeNormalized"]
+        = {delta_values_all_cpus.guest * multiplier / num_cpus_to_normalize,
+           "The value is similar to `OSGuestTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
+           "of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+    new_values["OSGuestNiceTimeNormalized"]
+        = {delta_values_all_cpus.guest_nice * multiplier / num_cpus_to_normalize,
+           "The value is similar to `OSGuestNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval "
+           "regardless of the number of cores."
+           " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
+           "non-uniform, and still get the average resource utilization metric."};
+}
+
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 {
     Stopwatch watch;
@@ -907,44 +974,56 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     if (cgroupcpu_stat || cgroupcpuacct_stat)
     {
-        ReadBufferFromFilePRead & in = cgroupcpu_stat ? *cgroupcpu_stat : *cgroupcpuacct_stat;
-        ProcStatValuesCPU current_values{};
-
-        /// We re-read the file from the beginning each time
-        in.rewind();
-
-        while (!in.eof())
+        try
         {
-            String name;
-            readStringUntilWhitespace(name, in);
-            skipWhitespaceIfAny(in);
+            ReadBufferFromFilePRead & in = cgroupcpu_stat ? *cgroupcpu_stat : *cgroupcpuacct_stat;
+            ProcStatValuesCPU current_values{};
 
-            /// `user_usec` for cgroup v2 and `user` for cgroup v1
-            if (name.starts_with("user"))
+            /// We re-read the file from the beginning each time
+            in.rewind();
+
+            while (!in.eof())
             {
-                readText(current_values.user, in);
-                skipToNextLineOrEOF(in);
+                String name;
+                readStringUntilWhitespace(name, in);
+                skipWhitespaceIfAny(in);
+
+                /// `user_usec` for cgroup v2 and `user` for cgroup v1
+                if (name.starts_with("user"))
+                {
+                    readText(current_values.user, in);
+                    skipToNextLineOrEOF(in);
+                }
+                /// `system_usec` for cgroup v2 and `system` for cgroup v1
+                else if (name.starts_with("system"))
+                {
+                    readText(current_values.system, in);
+                    skipToNextLineOrEOF(in);
+                }
+                else
+                    skipToNextLineOrEOF(in);
             }
-            /// `system_usec` for cgroup v2 and `system` for cgroup v1
-            else if (name.starts_with("system"))
+
+            if (!first_run)
             {
-                readText(current_values.system, in);
-                skipToNextLineOrEOF(in);
+                const ProcStatValuesCPU delta_values = current_values - proc_stat_values_all_cpus;
+                const auto cgroup_specific_divisor = cgroupcpu_stat ? 1e6 : hz;
+                const double multiplier = 1.0 / cgroup_specific_divisor
+                    / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
+                applyCPUMetricsUpdate(new_values, /*cpu_suffix=*/"", delta_values, multiplier);
+                if (max_cpu_cgroups > 0)
+                    applyNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
             }
-            else
-                skipToNextLineOrEOF(in);
+
+            proc_stat_values_all_cpus = current_values;
         }
-
-        if (!first_run)
+        catch (...)
         {
-            const ProcStatValuesCPU delta_values = current_values - proc_stat_values_all_cpus;
-            const auto cgroup_specific_divisor = cgroupcpu_stat ? 1e6 : hz;
-            const double multiplier = 1.0 / cgroup_specific_divisor
-                / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
-            applyCPUMetricsUpdate(new_values, /*cpu_suffix=*/"", delta_values, multiplier);
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/sys/fs/cgroup/cpu.stat", cgroupcpu_stat);
+            if (!cgroupcpu_stat)
+                openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
         }
-
-        proc_stat_values_all_cpus = current_values;
     }
     else if (proc_stat)
     {
@@ -1053,38 +1132,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 Float64 num_cpus_to_normalize = max_cpu_cgroups > 0 ? max_cpu_cgroups : num_cpus;
 
                 if (num_cpus_to_normalize > 0)
-                {
-                    new_values["OSUserTimeNormalized"] = { delta_values_all_cpus.user * multiplier / num_cpus_to_normalize,
-                        "The value is similar to `OSUserTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores."
-                        " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric."};
-                    new_values["OSNiceTimeNormalized"] = { delta_values_all_cpus.nice * multiplier / num_cpus_to_normalize,
-                        "The value is similar to `OSNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores."
-                        " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric."};
-                    new_values["OSSystemTimeNormalized"] = { delta_values_all_cpus.system * multiplier / num_cpus_to_normalize,
-                        "The value is similar to `OSSystemTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores."
-                        " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric."};
-                    new_values["OSIdleTimeNormalized"] = { delta_values_all_cpus.idle * multiplier / num_cpus_to_normalize,
-                        "The value is similar to `OSIdleTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores."
-                        " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric."};
-                    new_values["OSIOWaitTimeNormalized"] = { delta_values_all_cpus.iowait * multiplier / num_cpus_to_normalize,
-                        "The value is similar to `OSIOWaitTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores."
-                        " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric."};
-                    new_values["OSIrqTimeNormalized"] = { delta_values_all_cpus.irq * multiplier / num_cpus_to_normalize,
-                        "The value is similar to `OSIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores."
-                        " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric."};
-                    new_values["OSSoftIrqTimeNormalized"] = { delta_values_all_cpus.softirq * multiplier / num_cpus_to_normalize,
-                        "The value is similar to `OSSoftIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores."
-                        " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric."};
-                    new_values["OSStealTimeNormalized"] = { delta_values_all_cpus.steal * multiplier / num_cpus_to_normalize,
-                        "The value is similar to `OSStealTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores."
-                        " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric."};
-                    new_values["OSGuestTimeNormalized"] = { delta_values_all_cpus.guest * multiplier / num_cpus_to_normalize,
-                        "The value is similar to `OSGuestTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores."
-                        " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric."};
-                    new_values["OSGuestNiceTimeNormalized"] = { delta_values_all_cpus.guest_nice * multiplier / num_cpus_to_normalize,
-                        "The value is similar to `OSGuestNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores."
-                        " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric."};
-                }
+                    applyNormalizedCPUMetricsUpdate(new_values, num_cpus_to_normalize, delta_values_all_cpus, multiplier);
             }
 
             proc_stat_values_other = current_other_values;
