@@ -7979,7 +7979,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         partitions.emplace(getPartitionIDFromQuery(partition, query_context));
     }
 
-    for (const auto & partition_id : partitions) {
+    for (const auto & partition_id : partitions)
+    {
         auto src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id);
         LOG_DEBUG(log, "Cloning {} parts from partition '{}'", src_all_parts.size(), partition_id);
 
