@@ -99,6 +99,19 @@ function(add_rust_subdirectory src)
     message(STATUS "Copy ${src} to ${dst}")
     file(COPY "${src}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
         PATTERN target EXCLUDE)
+
+    # Check is Rust available or not.
+    #
+    # `cargo update --dry-run` will not update anything, but will check the internet connectivity.
+    execute_process(COMMAND ${Rust_CARGO_CACHED} update --dry-run
+        WORKING_DIRECTORY "${dst}"
+        RESULT_VARIABLE CARGO_UPDATE_RESULT
+        OUTPUT_VARIABLE CARGO_UPDATE_STDOUT
+        ERROR_VARIABLE CARGO_UPDATE_STDERR)
+    if (CARGO_UPDATE_RESULT)
+        message(FATAL_ERROR "Rust (${Rust_CARGO_CACHED}) support is not available (likely there is no internet connectivity):\n${CARGO_UPDATE_STDERR}\nYou can disable Rust support with -DENABLE_RUST=OFF")
+    endif()
+
     add_subdirectory("${dst}" "${dst}")
 
     # cmake -E copy* do now know how to exclude files
