@@ -223,6 +223,12 @@ private:
     void applyCPUMetricsUpdate(
         AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier);
 
+    void applyNormalizedCPUMetricsUpdate(
+        AsynchronousMetricValues & new_values,
+        double num_cpus_to_normalize,
+        const ProcStatValuesCPU & delta_values_all_cpus,
+        double multiplier);
+
 #endif
 
     void run();
