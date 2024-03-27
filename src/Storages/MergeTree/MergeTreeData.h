@@ -418,7 +418,7 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
-    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason);
+    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason);
 
     StoragePolicyPtr getStoragePolicy() const override;
 
