@@ -136,6 +136,8 @@ public:
         if (has_else)
         {
             auto * else_node = case_args.back()->as<ConstantNode>();
+            if (!else_node)
+                return;
             if (else_node->getValue().isNull())
             {
                 // else node is null, remove it
@@ -183,6 +185,7 @@ public:
                 std::vector<QueryTreeNodePtr> equals_nodes;
                 for (size_t pos : pos_list)
                 {
+                    chassert(keys[pos]);
                     if (keys[pos]->getValue().isNull())
                         equals_nodes.emplace_back(createFunctionNode(is_null_function_resolver, case_column->clone()));
                     else
@@ -246,6 +249,7 @@ public:
                 bool column_is_not_null = false;
                 for (size_t pos : pos_list)
                 {
+                    chassert(keys[pos]);
                     if (keys[pos]->getValue().isNull())
                     {
                         column_is_not_null = true;
@@ -299,7 +303,10 @@ public:
                     continue;
                 }
                 for (size_t pos : pos_list)
+                {
+                    chassert(keys[pos]);
                     in_keys.push_back(keys.at(pos)->getValue());
+                }
             }
             if (has_not_in)
             {
@@ -366,7 +373,10 @@ public:
                     continue;
                 }
                 for (size_t pos : pos_list)
+                {
+                    chassert(keys[pos]);
                     not_in_keys.push_back(keys.at(pos)->getValue());
+                }
             }
             if (has_in)
             {
