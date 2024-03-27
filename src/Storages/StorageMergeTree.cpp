@@ -2280,10 +2280,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
         };
 
-<<<<<<< HEAD
         if (is_partition_exp_the_same)
         {
-            auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
+            auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
                 src_part,
                 TMP_PREFIX,
                 dst_part_info,
@@ -2292,17 +2291,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                 local_context->getReadSettings(),
                 local_context->getWriteSettings()
             );
-=======
-        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
-            src_part,
-            TMP_PREFIX,
-            dst_part_info,
-            dest_metadata_snapshot,
-            clone_params,
-            local_context->getReadSettings(),
-            local_context->getWriteSettings()
-        );
->>>>>>> master
 
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));

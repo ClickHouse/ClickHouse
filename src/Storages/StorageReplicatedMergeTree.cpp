@@ -2789,7 +2789,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
-<<<<<<< HEAD
 
             const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
             const auto src_partition_expression = source_table->getInMemoryMetadataPtr()->getPartitionKeyAST();
@@ -8406,11 +8405,10 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion()
             };
-<<<<<<< HEAD
 
             if (is_partition_exp_the_same)
             {
-                auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
+                auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
                     src_part,
                     TMP_PREFIX,
                     dst_part_info,
@@ -8442,16 +8440,6 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 dst_parts.emplace_back(std::move(dst_part));
                 temporary_parts_locks.emplace_back(std::move(part_lock));
             }
-=======
-            auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPart(
-                src_part,
-                TMP_PREFIX,
-                dst_part_info,
-                dest_metadata_snapshot,
-                clone_params,
-                query_context->getReadSettings(),
-                query_context->getWriteSettings());
->>>>>>> master
 
             src_parts.emplace_back(src_part);
             ephemeral_locks.emplace_back(std::move(*lock));

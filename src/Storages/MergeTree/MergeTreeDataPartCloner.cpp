@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_ENOUGH_SPACE;
 }
 
 namespace DistinctPartitionExpression
@@ -65,7 +66,7 @@ void updateNewPartFiles(
 
 namespace
 {
-bool doesStoragePolicyAllowSameDisk(MergeTreeData * destination_mt_storage, const MergeTreeData::DataPartPtr & src_part)
+bool isSameDisk(MergeTreeData * destination_mt_storage, const MergeTreeData::DataPartPtr & src_part)
 {
     for (const DiskPtr & disk : destination_mt_storage->getStoragePolicy()->getDisks())
         if (disk->getName() == src_part->getDataPartStorage().getDiskName())
@@ -81,7 +82,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
     const String & tmp_part_prefix,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
-    const DB::IDataPartStorage::ClonePartParams & params)
+    const DB::IDataPartStorage::ClonePartParams & params,
+    bool on_same_disk)
 {
     const auto dst_part_name = src_part->getNewName(dst_part_info);
 
@@ -89,20 +91,35 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
 
     auto temporary_directory_lock = destination_mt_storage->getTemporaryPartDirectoryHolder(tmp_dst_part_name);
 
-    src_part->getDataPartStorage().reserve(src_part->getBytesOnDisk());
+    /// Why it is needed if we only hardlink files?
+    /// Answer: In issue #59377, add copy when attach from different disk.
+    auto reservation = src_part->getDataPartStorage().reserve(src_part->getBytesOnDisk());
 
     scope_guard src_flushed_tmp_dir_lock;
     MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
 
     auto src_part_storage = src_part->getDataPartStoragePtr();
 
-    auto dst_part_storage = src_part_storage->freeze(
-        destination_mt_storage->getRelativeDataPath(),
-        tmp_dst_part_name,
-        read_settings,
-        write_settings,
-        /*save_metadata_callback=*/{},
-        params);
+    std::shared_ptr<IDataPartStorage> dst_part_storage;
+
+    if (on_same_disk && !params.copy_instead_of_hardlink)
+    {
+        dst_part_storage = src_part_storage->freeze(
+            destination_mt_storage->getRelativeDataPath(),
+            tmp_dst_part_name,
+            read_settings,
+            write_settings,
+            /* save_metadata_callback= */ {},
+            params);
+    }
+    else
+    {
+        auto reservation_on_dst = destination_mt_storage->getStoragePolicy()->reserve(src_part->getBytesOnDisk());
+        if (!reservation_on_dst)
+            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space on disk.");
+        dst_part_storage = src_part_storage->clonePart(
+            destination_mt_storage->getRelativeDataPath(), tmp_dst_part_name, reservation_on_dst->getDisk(), read_settings, write_settings, {}, {});
+    }
 
     if (params.metadata_version_to_write.has_value())
     {
@@ -194,16 +211,13 @@ std::pair<MergeTreeDataPartCloner::MutableDataPartPtr, scope_guard> cloneAndHand
     const IDataPartStorage::ClonePartParams & params)
 {
     chassert(!destination_mt_storage->isStaticStorage());
-    if (!doesStoragePolicyAllowSameDisk(destination_mt_storage, src_part))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Could not clone and load part {} because disk does not belong to storage policy",
-            quoteString(src_part->getDataPartStorage().getFullPath()));
+
+    bool on_same_disk = isSameDisk(destination_mt_storage, src_part);
 
     auto [destination_part, temporary_directory_lock] = cloneSourcePart(
-        destination_mt_storage, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, read_settings, write_settings, params);
+        destination_mt_storage, src_part, metadata_snapshot, dst_part_info, tmp_part_prefix, read_settings, write_settings, params, on_same_disk);
 
-    if (!params.copy_instead_of_hardlink && params.hardlinked_files)
+    if (on_same_disk && !params.copy_instead_of_hardlink && params.hardlinked_files)
     {
         handleHardLinkedParameterFiles(src_part, params);
         handleProjections(src_part, params);
