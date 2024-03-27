@@ -61,10 +61,13 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
         abortOnFailedAssertion(msg);
 #else
         /// In release builds send it to sentry (if it is configured)
-        SentryWriter::FramePointers frame_pointers;
-        for (size_t i = 0; i < trace.size(); ++i)
-            frame_pointers[i] = trace[i];
-        SentryWriter::onFault(-code, msg, frame_pointers, /* offset= */ 0, trace.size());
+        if (auto * sentry = SentryWriter::getInstance())
+        {
+            SentryWriter::FramePointers frame_pointers;
+            for (size_t i = 0; i < trace.size(); ++i)
+                frame_pointers[i] = trace[i];
+            sentry->onFault(-code, msg, frame_pointers, /* offset= */ 0, trace.size());
+        }
 #endif
     }
 

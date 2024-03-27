@@ -5,7 +5,6 @@
 
 
 namespace Poco { namespace Util { class LayeredConfiguration; }}
-class StackTrace;
 
 
 /// \brief Sends crash reports to ClickHouse core developer team via https://sentry.io
@@ -15,12 +14,15 @@ class StackTrace;
 ///
 /// It is possible to send those reports to your own sentry account or account of consulting company you hired
 /// by overriding "send_crash_reports.endpoint" setting. "send_crash_reports.debug" setting will allow to do that for
-namespace SentryWriter
+class SentryWriter
 {
-    void initialize(Poco::Util::LayeredConfiguration & config);
-    void shutdown();
-
+public:
     using FramePointers = StackTrace::FramePointers;
+
+    /// Initialize static SentryWriter instance
+    static void initializeInstance(Poco::Util::LayeredConfiguration & config);
+    /// @return nullptr if initializeInstance() was not called (i.e. for non-server) or SentryWriter object
+    static SentryWriter * getInstance();
 
     /// Not signal safe and can't be called from a signal handler
     /// @param sig_or_error - signal if >= 0, otherwise exception code
@@ -30,4 +32,14 @@ namespace SentryWriter
         const FramePointers & frame_pointers,
         size_t offset,
         size_t size);
-}
+
+    ~SentryWriter();
+
+private:
+    static std::unique_ptr<SentryWriter> instance;
+    bool initialized = false;
+    bool anonymize = false;
+    std::string server_data_path;
+
+    explicit SentryWriter(Poco::Util::LayeredConfiguration & config);
+};
