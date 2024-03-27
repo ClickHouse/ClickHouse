@@ -6,6 +6,7 @@ set use_page_cache_for_disks_without_file_cache = 1;
 set page_cache_inject_eviction = 0;
 set enable_filesystem_cache = 0;
 set use_uncompressed_cache = 0;
+set enable_filesystem_cache_on_write_operations = 0;
 
 create table events_snapshot engine Memory as select * from system.events;
 create view events_diff as

@@ -20,9 +20,10 @@ public:
     explicit ReadBufferFromWebServer(
         const String & url_,
         ContextPtr context_,
-        const ReadSettings & settings_ = {},
-        bool use_external_buffer_ = false,
-        size_t read_until_position = 0);
+        const ReadSettings & settings_,
+        std::optional<size_t> file_size_,
+        bool use_external_buffer_,
+        size_t read_until_position_);
 
     bool nextImpl() override;
 
