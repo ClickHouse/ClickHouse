@@ -736,7 +736,10 @@ def test_mutation_with_broken_projection(cluster):
         "all_2_2_0_5" in broken or "" == broken
     )  # second could be because of a merge.
 
-    check(node, table_name, 0)
+    if "" == broken:
+        check(node, table_name, 1)
+    else:
+        check(node, table_name, 0)
 
     node.query(
         f"ALTER TABLE {table_name} DELETE WHERE c == 13 SETTINGS mutations_sync = 1"
