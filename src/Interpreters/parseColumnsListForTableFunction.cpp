@@ -86,6 +86,10 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                 {
                     for (size_t j = i + 1; j < variants.size(); ++j)
                     {
+                        /// Don't consider bool as similar to something (like number).
+                        if (isBool(variants[i]) || isBool(variants[j]))
+                            continue;
+
                         if (auto supertype = tryGetLeastSupertype(DataTypes{variants[i], variants[j]}))
                         {
                             throw Exception(
