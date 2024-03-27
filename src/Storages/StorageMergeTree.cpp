@@ -2080,7 +2080,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
 
-    auto & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
+    auto & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot, replace);
     auto source_partition_id = src_data.getPartitionIDFromQuery(partition, local_context);
 
     auto src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, source_partition_id);
@@ -2102,14 +2102,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     const auto is_partition_exp_the_same =
         queryToStringWithEmptyTupleNormalization(my_partition_expression)
         == queryToStringWithEmptyTupleNormalization(src_partition_expression);
-
-    if (replace && !is_partition_exp_the_same)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot replace partition '{}' because it has different partition expression."
-                        "There is no way to calculate the destination partition id",
-                        source_partition_id);
-    }
 
     auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
         is_partition_exp_the_same,

@@ -7994,31 +7994,23 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
 
-    MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
-    String source_partition_id = src_data.getPartitionIDFromQuery(partition, query_context);
-
-    /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
-    DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, source_partition_id);
-
     const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
-
-    bool attach_empty_partition = !replace && src_all_parts.empty();
-    if (attach_empty_partition)
-    {
-        return;
-    }
 
     const auto is_partition_exp_the_same =
         queryToStringWithEmptyTupleNormalization(my_partition_expression)
         == queryToStringWithEmptyTupleNormalization(src_partition_expression);
 
-    if (replace && !is_partition_exp_the_same)
+    MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot, replace);
+    String source_partition_id = src_data.getPartitionIDFromQuery(partition, query_context);
+
+    /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
+    DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, source_partition_id);
+
+    bool attach_empty_partition = !replace && src_all_parts.empty();
+    if (attach_empty_partition)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot replace partition '{}' because it has different partition expression."
-                        "There is no way to calculate the destination partition id",
-                        source_partition_id);
+        return;
     }
 
     auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(

@@ -16,7 +16,7 @@ public:
     using DataPartPtr = std::shared_ptr<const DataPart>;
 
     static std::pair<MutableDataPartPtr, scope_guard> clone(
-        MergeTreeData * merge_tree_data,
+        MergeTreeData * destination_mt_storage,
         const DataPartPtr & src_part,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreePartInfo & dst_part_info,
@@ -27,7 +27,7 @@ public:
         const WriteSettings & write_settings);
 
     static std::pair<MutableDataPartPtr, scope_guard> cloneWithDistinctPartitionExpression(
-        MergeTreeData * merge_tree_data,
+        MergeTreeData * destination_mt_storage,
         const DataPartPtr & src_part,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreePartInfo & dst_part_info,

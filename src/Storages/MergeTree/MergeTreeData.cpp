@@ -7010,7 +7010,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     }
 }
 
-MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
+MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot, bool replace) const
 {
     MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(&source_table);
     if (!src_data)
@@ -7033,6 +7033,12 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (queryToStringNullable(my_snapshot->getPartitionKeyAST()) != queryToStringNullable(src_snapshot->getPartitionKeyAST()))
     {
+        if (replace)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot replace partition because it has different partition expression. "
+                            "There is no way to calculate the destination partition id");
+        }
         if (!getSettings()->allow_experimental_alter_partition_with_different_key)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key. "
@@ -7086,9 +7092,9 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 }
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
-    const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
+    const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot, bool replace) const
 {
-    return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot);
+    return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot, replace);
 }
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPart(
