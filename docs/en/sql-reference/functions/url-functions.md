@@ -122,9 +122,119 @@ For example:
 - `cutToFirstSignificantSubdomain('www.tr') = 'tr'`.
 - `cutToFirstSignificantSubdomain('tr') = ''`.
 
+### cutToFirstSignificantSubdomainRFC
+
+Used to extract the first significant subdomain from a given URL string, following the RFC rules for identifying significant subdomains
+
+**Syntax**
+
+```sql
+cutToFirstSignificantSubdomainRFC(input)
+```
+
+**Parameters**
+
+- `input`: the URL to be processed. [String literal](../syntax#syntax-string-literal)
+
+**Returned value**
+
+Returns a string representing the first significant subdomain of the input URL.
+
+**Implementation details**
+
+None.
+
+**Example**
+
+Query:
+
+```sql
+SELECT cutToFirstSignificantSubdomainRFC('http://subdomain.example.com') AS result;
+```
+
+```response
+example.com
+```
+
+<!-- ### cutToFirstSignificantSubdomainCustomRFC -->
+<!---->
+<!-- Used to extract the first significant subdomain from a given URL string. Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name. -->
+<!---->
+<!---->
+<!-- **Syntax** -->
+<!---->
+<!-- ```sql -->
+<!-- cutToFirstSignificantSubdomainCustomRFC(input, custom_tld_list) -->
+<!-- ``` -->
+<!---->
+<!-- **Parameters** -->
+<!---->
+<!-- - `input`: the URL to be processed. [String literal](../syntax#syntax-string-literal) -->
+<!-- - `custom_tld_list`: a string containing a custom TLD list. [String literal](../syntax#syntax-string-literal) -->
+<!---->
+<!-- **Returned value** -->
+<!---->
+<!-- Returns a string representing the first significant subdomain of the input URL, based on the provided custom TLD list. -->
+<!---->
+<!-- **Implementation details** -->
+<!---->
+<!-- The `custom_tld_list` parameter should be a string containing a list of top-level domains (TLDs) or effective top-level domains (eTLDs) separated by a pipe character `|`. The function will use these custom rules instead of the default Public Suffix List to identify significant subdomains. -->
+<!---->
+<!-- **Example** -->
+<!---->
+<!-- Query: -->
+<!---->
+<!-- ```sql -->
+<!-- SELECT cutToFirstSignificantSubdomainCustomRFC('http://subdomain.example.a1b', 'com|org|a1b') AS result; -->
+<!-- ``` -->
+<!---->
+<!-- Response: -->
+<!---->
+<!-- ```response -->
+<!-- example.com -->
+<!-- ``` -->
+<!---->
+<!-- ### cutToFirstSignificantSubdomainCustomWithWWWRFC -->
+<!---->
 ### cutToFirstSignificantSubdomainWithWWW
 
-Returns the part of the domain that includes top-level subdomains up to the “first significant subdomain”, without stripping "www".
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain following the RFC rules for identifying significant subdomains, without stripping `www`.
+
+**Syntax**
+
+```sql
+cutToFirstSignificantSubdomainWithWWW(input)
+```
+
+**Parameters**
+
+- `input`: the URL to be processed. [String literal](../syntax#syntax-string-literal)
+
+**Returned value**
+
+Returns a string representing the first significant subdomain of the input URL.
+
+**Implementation details**
+
+None.
+
+**Example**
+
+Query:
+
+```sql
+SELECT cutToFirstSignificantSubdomainWithWWW('https://subdomain.example.com') AS result;
+```
+
+Response:
+
+```response
+example.com
+```
+
+### cutToFirstSignificantSubdomainWithWWWRFC
+
+Returns the part of the domain that includes top-level subdomains up to the first significant subdomain, without stripping `www`.
 
 For example:
 
