@@ -40,7 +40,8 @@ StorageObjectStorageConfiguration::StorageObjectStorageConfiguration(const Stora
 bool StorageObjectStorageConfiguration::withWildcard() const
 {
     static const String PARTITION_ID_WILDCARD = "{_partition_id}";
-    return getPath().find(PARTITION_ID_WILDCARD) != String::npos;
+    return getPath().find(PARTITION_ID_WILDCARD) != String::npos
+        || getNamespace().find(PARTITION_ID_WILDCARD) != String::npos;
 }
 
 bool StorageObjectStorageConfiguration::isPathWithGlobs() const

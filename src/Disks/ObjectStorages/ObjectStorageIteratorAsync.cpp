@@ -21,6 +21,18 @@ IObjectStorageIteratorAsync::IObjectStorageIteratorAsync(
 {
 }
 
+IObjectStorageIteratorAsync::~IObjectStorageIteratorAsync()
+{
+    if (!deactivated)
+        deactivate();
+}
+
+void IObjectStorageIteratorAsync::deactivate()
+{
+    list_objects_pool.wait();
+    deactivated = true;
+}
+
 void IObjectStorageIteratorAsync::nextBatch()
 {
     std::lock_guard lock(mutex);

@@ -288,8 +288,8 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage<StorageSettings>::creat
 {
     const auto settings = StorageSettings::create(context->getSettingsRef());
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
-        configuration, object_storage, /* distributed_processing */false,
-        context, /* predicate */{}, /* virtual_columns */{}, &read_keys, settings.list_object_keys_size,
+        configuration, object_storage, settings, /* distributed_processing */false,
+        context, /* predicate */{}, /* virtual_columns */{}, &read_keys,
         StorageSettings::ObjectStorageThreads(), StorageSettings::ObjectStorageThreadsActive(), StorageSettings::ObjectStorageThreadsScheduled());
 
     return std::make_unique<ReadBufferIterator>(

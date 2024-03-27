@@ -27,9 +27,7 @@ class ObjectStorageIteratorFromList : public IObjectStorageIterator
 public:
     explicit ObjectStorageIteratorFromList(RelativePathsWithMetadata && batch_)
         : batch(std::move(batch_))
-        , batch_iterator(batch.begin())
-    {
-    }
+        , batch_iterator(batch.begin()) {}
 
     void next() override
     {
@@ -37,21 +35,23 @@ public:
             ++batch_iterator;
     }
 
-    void nextBatch() override
-    {
-        batch_iterator = batch.end();
-    }
+    void nextBatch() override { batch_iterator = batch.end(); }
 
-    bool isValid() override
-    {
-        return batch_iterator != batch.end();
-    }
+    bool isValid() override { return batch_iterator != batch.end(); }
 
     RelativePathWithMetadataPtr current() override;
 
     RelativePathsWithMetadata currentBatch() override { return batch; }
 
-    std::optional<RelativePathsWithMetadata> getCurrentBatchAndScheduleNext() override { return std::nullopt; }
+    std::optional<RelativePathsWithMetadata> getCurrentBatchAndScheduleNext() override
+    {
+        if (batch.empty())
+            return {};
+
+        auto current_batch = std::move(batch);
+        batch = {};
+        return current_batch;
+    }
 
     size_t getAccumulatedSize() const override { return batch.size(); }
 

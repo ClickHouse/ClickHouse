@@ -110,10 +110,19 @@ public:
             CurrentMetrics::ObjectStorageS3ThreadsScheduled,
             "ListObjectS3")
         , client(client_)
+        , request(std::make_unique<S3::ListObjectsV2Request>())
     {
-        request.SetBucket(bucket_);
-        request.SetPrefix(path_prefix);
-        request.SetMaxKeys(static_cast<int>(max_list_size));
+        request->SetBucket(bucket_);
+        request->SetPrefix(path_prefix);
+        request->SetMaxKeys(static_cast<int>(max_list_size));
+    }
+
+    ~S3IteratorAsync() override
+    {
+        /// Deactivate background threads before resetting the request to avoid data race.
+        deactivate();
+        request.reset();
+        client.reset();
     }
 
 private:
@@ -121,12 +130,12 @@ private:
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
 
-        auto outcome = client->ListObjectsV2(request);
+        auto outcome = client->ListObjectsV2(*request);
 
         /// Outcome failure will be handled on the caller side.
         if (outcome.IsSuccess())
         {
-            request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+            request->SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
 
             auto objects = outcome.GetResult().GetContents();
             for (const auto & object : objects)
@@ -141,12 +150,12 @@ private:
 
         throw S3Exception(outcome.GetError().GetErrorType(),
                           "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
-                          quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
+                          quoteString(request->GetBucket()), quoteString(request->GetPrefix()),
                           backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
     }
 
     std::shared_ptr<const S3::Client> client;
-    S3::ListObjectsV2Request request;
+    std::unique_ptr<S3::ListObjectsV2Request> request;
 };
 
 }

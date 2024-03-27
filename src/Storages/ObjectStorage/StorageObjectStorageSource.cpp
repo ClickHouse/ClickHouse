@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 StorageObjectStorageSource::StorageObjectStorageSource(
@@ -75,12 +76,12 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSource::createFileIterator(
     ConfigurationPtr configuration,
     ObjectStoragePtr object_storage,
+    const StorageObjectStorageSettings & settings,
     bool distributed_processing,
     const ContextPtr & local_context,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns,
     ObjectInfos * read_keys,
-    size_t list_object_keys_size,
     CurrentMetrics::Metric metric_threads_,
     CurrentMetrics::Metric metric_threads_active_,
     CurrentMetrics::Metric metric_threads_scheduled_,
@@ -99,12 +100,14 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     {
         /// Iterate through disclosed globs and make a source for each file
         return std::make_shared<GlobIterator>(
-            object_storage, configuration, predicate, virtual_columns, local_context, read_keys, list_object_keys_size, file_progress_callback);
+            object_storage, configuration, predicate, virtual_columns, local_context,
+            read_keys, settings.list_object_keys_size, settings.throw_on_zero_files_match, file_progress_callback);
     }
     else
     {
         return std::make_shared<KeysIterator>(
-            object_storage, configuration, virtual_columns, read_keys, file_progress_callback);
+            object_storage, configuration, virtual_columns, read_keys,
+            settings.throw_on_zero_files_match, file_progress_callback);
     }
 }
 
@@ -209,6 +212,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     do
     {
         object_info = file_iterator->next(processor);
+
         if (!object_info || object_info->relative_path.empty())
             return {};
 
@@ -226,8 +230,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         ? tryGetNumRowsFromCache(object_info)
         : std::nullopt;
 
+    LOG_TRACE(&Poco::Logger::get("kssenii"), "HAS NUM ROWS FROM CACHE: {}", num_rows_from_cache.has_value());
     if (num_rows_from_cache)
     {
+        LOG_TRACE(&Poco::Logger::get("kssenii"), "NUM ROWS FROM CACHE: {}", num_rows_from_cache.value());
+
         /// We should not return single chunk with all number of rows,
         /// because there is a chance that this chunk will be materialized later
         /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
@@ -324,6 +331,29 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(const S
     }
 }
 
+StorageObjectStorageSource::IIterator::IIterator(bool throw_on_zero_files_match_, const std::string & logger_name_)
+    : throw_on_zero_files_match(throw_on_zero_files_match_)
+    , logger(getLogger(logger_name_))
+{
+}
+
+ObjectInfoPtr StorageObjectStorageSource::IIterator::next(size_t processor)
+{
+    auto object_info = nextImpl(processor);
+
+    if (object_info)
+    {
+        first_iteration = false;
+        LOG_TEST(&Poco::Logger::get("KeysIterator"), "Next key: {}", object_info->relative_path);
+    }
+    else if (first_iteration && throw_on_zero_files_match)
+    {
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can not match any files");
+    }
+
+    return object_info;
+}
+
 StorageObjectStorageSource::GlobIterator::GlobIterator(
     ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
@@ -332,8 +362,10 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     ContextPtr context_,
     ObjectInfos * read_keys_,
     size_t list_object_keys_size,
+    bool throw_on_zero_files_match_,
     std::function<void(FileProgress)> file_progress_callback_)
-    : WithContext(context_)
+    : IIterator(throw_on_zero_files_match_, "GlobIterator")
+    , WithContext(context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
@@ -380,7 +412,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     }
 }
 
-ObjectInfoPtr StorageObjectStorageSource::GlobIterator::next(size_t /* processor */)
+ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImpl(size_t /* processor */)
 {
     std::lock_guard lock(next_mutex);
 
@@ -401,9 +433,10 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::next(size_t /* processor
             }
 
             new_batch = std::move(result.value());
+            LOG_TEST(logger, "Batch size: {}", new_batch.size());
+
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
-                chassert(*it);
                 if (!recursive && !re2::RE2::FullMatch((*it)->relative_path, *matcher))
                     it = new_batch.erase(it);
                 else
@@ -452,8 +485,10 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     ConfigurationPtr configuration_,
     const NamesAndTypesList & virtual_columns_,
     ObjectInfos * read_keys_,
+    bool throw_on_zero_files_match_,
     std::function<void(FileProgress)> file_progress_callback_)
-    : object_storage(object_storage_)
+    : IIterator(throw_on_zero_files_match_, "KeysIterator")
+    , object_storage(object_storage_)
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
@@ -470,7 +505,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     }
 }
 
-ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor */)
+ObjectInfoPtr StorageObjectStorageSource::KeysIterator::nextImpl(size_t /* processor */)
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= keys.size())
@@ -520,7 +555,8 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     CurrentMetrics::Metric metric_threads_,
     CurrentMetrics::Metric metric_threads_active_,
     CurrentMetrics::Metric metric_threads_scheduled_)
-    : callback(callback_)
+    : IIterator(false, "ReadTaskIterator")
+    , callback(callback_)
 {
     ThreadPool pool(metric_threads_, metric_threads_active_, metric_threads_scheduled_, max_threads_count);
     auto pool_scheduler = threadPoolCallbackRunner<String>(pool, "ReadTaskIter");
@@ -540,7 +576,7 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     }
 }
 
-ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
+ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::nextImpl(size_t)
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())

@@ -56,7 +56,7 @@ public:
         /// Note:
         /// List results in s3 are always returned in UTF-8 binary order.
         /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
-        ObjectInfoPtr next(size_t processor) override;
+        ObjectInfoPtr nextImpl(size_t processor) override;
 
         size_t estimatedKeysCount() override;
 

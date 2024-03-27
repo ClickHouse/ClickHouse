@@ -6,6 +6,7 @@
 #include <IO/Progress.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
+#include <Common/logger_useful.h>
 #include <hdfs/hdfs.h>
 #include <mutex>
 
@@ -55,10 +56,10 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         : BufferWithOwnMemory<SeekableReadBuffer>(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
-        , builder(createHDFSBuilder(hdfs_uri_, config_))
         , read_settings(read_settings_)
         , read_until_position(read_until_position_)
     {
+        builder = createHDFSBuilder(hdfs_uri_, config_);
         fs = createHDFSFS(builder.get());
         fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
 
@@ -96,11 +97,14 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     bool nextImpl() override
     {
+        auto log = &Poco::Logger::get("kssenii");
         size_t num_bytes_to_read;
         if (read_until_position)
         {
             if (read_until_position == file_offset)
+            {
                 return false;
+            }
 
             if (read_until_position < file_offset)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", file_offset, read_until_position - 1);
@@ -111,10 +115,11 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         {
             num_bytes_to_read = internal_buffer.size();
         }
-        if (file_size != 0 && file_offset >= file_size)
-        {
-            return false;
-        }
+        // if (file_size != 0 && file_offset >= file_size)
+        // {
+        //     LOG_TEST(log, "KSSENII 1 2");
+        //     return false;
+        // }
 
         ResourceGuard rlock(read_settings.resource_link, num_bytes_to_read);
         int bytes_read;
@@ -145,6 +150,8 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             file_offset += bytes_read;
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+
+            LOG_TEST(log, "KSSENII SIZE: {}", bytes_read);
             return true;
         }
 

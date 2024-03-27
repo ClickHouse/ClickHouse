@@ -45,7 +45,8 @@ StorageS3QueueSource::FileIterator::FileIterator(
     std::unique_ptr<GlobIterator> glob_iterator_,
     size_t current_shard_,
     std::atomic<bool> & shutdown_called_)
-    : metadata(metadata_)
+    : StorageObjectStorageSource::IIterator(false, "S3QueueIterator")
+    , metadata(metadata_)
     , glob_iterator(std::move(glob_iterator_))
     , shutdown_called(shutdown_called_)
     , log(&Poco::Logger::get("StorageS3QueueSource"))
@@ -59,7 +60,7 @@ StorageS3QueueSource::FileIterator::FileIterator(
     }
 }
 
-StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::next(size_t processor)
+StorageS3QueueSource::ObjectInfoPtr StorageS3QueueSource::FileIterator::nextImpl(size_t processor)
 {
     while (!shutdown_called)
     {

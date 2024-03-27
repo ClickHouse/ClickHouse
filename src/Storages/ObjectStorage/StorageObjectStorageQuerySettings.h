@@ -25,6 +25,7 @@ struct StorageObjectStorageSettings
     SchemaInferenceMode schema_inference_mode;
     bool skip_empty_files;
     size_t list_object_keys_size;
+    bool throw_on_zero_files_match;
 };
 
 struct S3StorageSettings
@@ -38,6 +39,7 @@ struct S3StorageSettings
             .schema_inference_mode = settings.schema_inference_mode,
             .skip_empty_files = settings.s3_skip_empty_files,
             .list_object_keys_size = settings.s3_list_object_keys_size,
+            .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
         };
     }
 
@@ -59,6 +61,7 @@ struct AzureStorageSettings
             .schema_inference_mode = settings.schema_inference_mode,
             .skip_empty_files = settings.s3_skip_empty_files, /// TODO: add setting for azure
             .list_object_keys_size = settings.azure_list_object_keys_size,
+            .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
         };
     }
 
@@ -80,6 +83,7 @@ struct HDFSStorageSettings
             .schema_inference_mode = settings.schema_inference_mode,
             .skip_empty_files = settings.s3_skip_empty_files, /// TODO: add setting for hdfs
             .list_object_keys_size = settings.s3_list_object_keys_size, /// TODO: add a setting for hdfs
+            .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
         };
     }
 

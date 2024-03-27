@@ -40,7 +40,7 @@ public:
     bool withGlobs() const { return isPathWithGlobs() || isNamespaceWithGlobs(); }
     bool isPathWithGlobs() const;
     bool isNamespaceWithGlobs() const;
-    std::string getPathWithoutGlob() const;
+    virtual std::string getPathWithoutGlob() const;
 
     virtual void check(ContextPtr context) const = 0;
     virtual void validateNamespace(const String & /* name */) const {}

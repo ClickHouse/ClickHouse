@@ -61,7 +61,7 @@ def test_read_write_storage_with_globs(started_cluster):
         hdfs_api.write_data("/storage" + i, i + "\tMark\t72.53\n")
         assert hdfs_api.read_data("/storage" + i) == i + "\tMark\t72.53\n"
 
-    assert node1.query("select count(*) from HDFSStorageWithRange") == "3\n"
+    assert node1.query("select count(*) from HDFSStorageWithRange settings s3_throw_on_zero_files_match=1") == "3\n"
     assert node1.query("select count(*) from HDFSStorageWithEnum") == "3\n"
     assert node1.query("select count(*) from HDFSStorageWithQuestionMark") == "3\n"
     assert node1.query("select count(*) from HDFSStorageWithAsterisk") == "3\n"
@@ -159,7 +159,7 @@ def test_bad_hdfs_uri(started_cluster):
         )
     except Exception as ex:
         print(ex)
-        assert "Unable to create builder to connect to HDFS" in str(ex)
+        assert "Unable to connect to HDFS" in str(ex)
 
     try:
         node1.query(

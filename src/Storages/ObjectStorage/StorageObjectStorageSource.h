@@ -53,12 +53,12 @@ public:
     static std::shared_ptr<IIterator> createFileIterator(
         ConfigurationPtr configuration,
         ObjectStoragePtr object_storage,
+        const StorageObjectStorageSettings & settings,
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns,
         ObjectInfos * read_keys,
-        size_t list_object_keys_size,
         CurrentMetrics::Metric metric_threads_,
         CurrentMetrics::Metric metric_threads_active_,
         CurrentMetrics::Metric metric_threads_scheduled_,
@@ -133,10 +133,21 @@ protected:
 class StorageObjectStorageSource::IIterator
 {
 public:
+    IIterator(bool throw_on_zero_files_match_, const std::string & logger_name_);
+
     virtual ~IIterator() = default;
 
     virtual size_t estimatedKeysCount() = 0;
-    virtual ObjectInfoPtr next(size_t processor) = 0;
+
+    ObjectInfoPtr next(size_t processor);
+
+protected:
+    virtual ObjectInfoPtr nextImpl(size_t processor) = 0;
+
+protected:
+    const bool throw_on_zero_files_match;
+    bool first_iteration = true;
+    LoggerPtr logger;
 };
 
 class StorageObjectStorageSource::ReadTaskIterator : public IIterator
@@ -151,9 +162,9 @@ public:
 
     size_t estimatedKeysCount() override { return buffer.size(); }
 
-    ObjectInfoPtr next(size_t) override;
-
 private:
+    ObjectInfoPtr nextImpl(size_t) override;
+
     ReadTaskCallback callback;
     ObjectInfos buffer;
     std::atomic_size_t index = 0;
@@ -170,15 +181,17 @@ public:
         ContextPtr context_,
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
+        bool throw_on_zero_files_match_,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
     ~GlobIterator() override = default;
 
     size_t estimatedKeysCount() override { return object_infos.size(); }
 
-    ObjectInfoPtr next(size_t processor) override;
-
 private:
+    ObjectInfoPtr nextImpl(size_t processor) override;
+    void createFilterAST(const String & any_key);
+
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
     ActionsDAGPtr filter_dag;
@@ -193,7 +206,6 @@ private:
 
     std::unique_ptr<re2::RE2> matcher;
 
-    void createFilterAST(const String & any_key);
     bool is_finished = false;
     std::mutex next_mutex;
 
@@ -208,15 +220,16 @@ public:
         ConfigurationPtr configuration_,
         const NamesAndTypesList & virtual_columns_,
         ObjectInfos * read_keys_,
+        bool throw_on_zero_files_match_,
         std::function<void(FileProgress)> file_progress_callback = {});
 
     ~KeysIterator() override = default;
 
     size_t estimatedKeysCount() override { return keys.size(); }
 
-    ObjectInfoPtr next(size_t processor) override;
-
 private:
+    ObjectInfoPtr nextImpl(size_t processor) override;
+
     const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;

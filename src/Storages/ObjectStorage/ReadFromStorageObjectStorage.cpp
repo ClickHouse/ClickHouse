@@ -49,8 +49,8 @@ void ReadFromStorageObejctStorage::createIterator(const ActionsDAG::Node * predi
     {
         auto context = getContext();
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-            configuration, object_storage, distributed_processing, context, predicate,
-            virtual_columns, nullptr, query_settings.list_object_keys_size, metric_threads_count,
+            configuration, object_storage, query_settings, distributed_processing,
+            context, predicate, virtual_columns, nullptr, metric_threads_count,
             metric_threads_active, metric_threads_scheduled, context->getFileProgressCallback());
     }
 }

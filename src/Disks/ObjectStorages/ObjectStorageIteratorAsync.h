@@ -19,18 +19,20 @@ public:
         CurrentMetrics::Metric threads_scheduled_metric,
         const std::string & thread_name);
 
-    void next() override;
-    void nextBatch() override;
+    ~IObjectStorageIteratorAsync() override;
+
     bool isValid() override;
+
     RelativePathWithMetadataPtr current() override;
     RelativePathsWithMetadata currentBatch() override;
+
+    void next() override;
+    void nextBatch() override;
+
     size_t getAccumulatedSize() const override;
     std::optional<RelativePathsWithMetadata> getCurrentBatchAndScheduleNext() override;
 
-    ~IObjectStorageIteratorAsync() override
-    {
-        list_objects_pool.wait();
-    }
+    void deactivate();
 
 protected:
 
@@ -46,6 +48,7 @@ protected:
 
     bool is_initialized{false};
     bool is_finished{false};
+    bool deactivated{false};
 
     mutable std::recursive_mutex mutex;
     ThreadPool list_objects_pool;
