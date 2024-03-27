@@ -190,11 +190,11 @@ SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Conversion between Variant column and other columns
+## Conversion between a Variant column and other columns
 
-There are 4 possible conversions that can be performed with Variant column.
+There are 4 possible conversions that can be performed with a column of type `Variant`.
 
-### Converting String column to a Variant column
+### Converting a String column to a Variant column
 
 Conversion from `String` to `Variant` is performed by parsing a value of `Variant` type from the string value:
 
@@ -230,7 +230,7 @@ SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String
 
 ### Converting an ordinary column to a Variant column
 
-It is possible to convert ordinary column with type `T` to a `Variant` column containing this type:
+It is possible to convert an ordinary column with type `T` to a `Variant` column containing this type:
 
 ```sql
 SELECT toTypeName(variant) as type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
