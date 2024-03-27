@@ -5,6 +5,7 @@
 
 #include <base/hex.h>
 #include <base/interpolate.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Macros.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
@@ -1468,24 +1469,6 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
 }
 
-
-/** If necessary, restore a part, replica itself adds a record for its receipt.
-  * What time should I put for this entry in the queue? Time is taken into account when calculating lag of replica.
-  * For these purposes, it makes sense to use creation time of missing part
-  *  (that is, in calculating lag, it will be taken into account how old is the part we need to recover).
-  */
-static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const String & replica_path, const String & part_name)
-{
-    time_t res = 0;
-
-    /// We get creation time of part, if it still exists (was not merged, for example).
-    Coordination::Stat stat;
-    String unused;
-    if (zookeeper->tryGet(fs::path(replica_path) / "parts" / part_name, unused, &stat))
-        res = stat.ctime / 1000;
-
-    return res;
-}
 
 void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(const Strings & parts_in_zk, const Strings & parts_to_fetch) const
 {
@@ -3219,12 +3202,19 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         return false;
     };
 
+    /// What time should I put for this entry in the queue? Time is taken into account when calculating lag of replica.
+    /// For these purposes, it makes sense to use creation time of missing part
+    /// (that is, in calculating lag, it will be taken into account how old is the part we need to recover).
+    /// We calculate the entry create time by an async `exists` request and save result in zkutil::ZooKeeper::FutureExists
+    std::vector<std::pair<LogEntryPtr, zkutil::ZooKeeper::FutureExists>> mimic_entries;
+    mimic_entries.reserve(active_parts.size());
+
     for (const String & name : active_parts)
     {
         if (should_ignore_log_entry(created_get_parts, name, "Not fetching"))
             continue;
 
-        LogEntry log_entry;
+        LogEntryPtr log_entry = std::make_shared<LogEntry>();
 
         if (are_restoring_replica)
         {
@@ -3232,7 +3222,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
             // The part we want to fetch is probably present in detached/ folder.
             // However, we need to get part's checksum to check if it's not corrupt.
-            log_entry.type = LogEntry::ATTACH_PART;
+            log_entry->type = LogEntry::ATTACH_PART;
 
             MinimalisticDataPartChecksums desired_checksums;
 
@@ -3248,19 +3238,18 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
                 desired_checksums = MinimalisticDataPartChecksums::deserializeFrom(desired_checksums_str);
             }
 
-            log_entry.part_checksum = getHexUIntUppercase(desired_checksums.hash_of_all_files);
+            log_entry->part_checksum = getHexUIntUppercase(desired_checksums.hash_of_all_files);
         }
         else
         {
-            log_entry.type = LogEntry::GET_PART;
+            log_entry->type = LogEntry::GET_PART;
         }
 
-        log_entry.source_replica = "";
-        log_entry.new_part_name = name;
-        log_entry.create_time = tryGetPartCreateTime(zookeeper, source_path, name);
+        log_entry->source_replica = "";
+        log_entry->new_part_name = name;
+        log_entry->create_time = 0;
 
-        LOG_TEST(log, "Enqueueing {} for fetch", name);
-        zookeeper->create(fs::path(replica_path) / "queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
+        mimic_entries.emplace_back(std::move(log_entry), zookeeper->asyncTryExistsNoThrow(fs::path(replica_path) / "parts" / name));
         created_get_parts.insert(name);
     }
 
@@ -3269,8 +3258,10 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
     /// Add content of the reference/master replica queue to the queue.
     size_t total_entries_to_copy = 0;
-    for (const auto & entry_info : source_queue)
+    std::vector<size_t> copy_entries;
+    for (size_t i = 0; i < source_queue.size(); ++i)
     {
+        const auto & entry_info = source_queue[i];
         assert(!entry_info.data.empty());
         if (entry_info.parsed_entry && !entry_info.parsed_entry->new_part_name.empty())
         {
@@ -3285,10 +3276,57 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
                 created_get_parts.insert(part_name);
         }
 
-        LOG_TEST(log, "Copying entry {}", entry_info.data);
-        zookeeper->create(fs::path(replica_path) / "queue/queue-", entry_info.data, zkutil::CreateMode::PersistentSequential);
+        copy_entries.push_back(i);
         ++total_entries_to_copy;
     }
+
+    std::vector<zkutil::ZooKeeper::FutureCreate> futures;
+    futures.reserve(mimic_entries.size() + copy_entries.size());
+    auto zookeeper_ops_timeout = std::chrono::milliseconds(zookeeper->getOperationTimeoutMS());
+    for (auto & [entry, future] : mimic_entries)
+    {
+        if (future.valid())
+        {
+            /// Not throwing exception because entry->create_time is optional field
+            if (future.wait_for(zookeeper_ops_timeout) == std::future_status::ready)
+            {
+                auto response = future.get();
+                Coordination::Error code = response.error;
+                if (code == Coordination::Error::ZOK)
+                    entry->create_time = response.stat.ctime / 1000;
+            }
+            else
+            {
+                zookeeper->finalize(fmt::format("Operation timeout on {} {}", Coordination::OpNum::Exists, fs::path(replica_path) / "parts" / entry->new_part_name));
+            }
+        }
+        LOG_TEST(log, "Enqueueing {} for fetch", entry->new_part_name);
+        futures.emplace_back(zookeeper->asyncCreate(fs::path(replica_path) / "queue/queue-", entry->toString(), zkutil::CreateMode::PersistentSequential));
+    }
+
+    for (const auto & index : copy_entries)
+    {
+        LOG_TEST(log, "Copying entry {}", source_queue[index].data);
+        futures.emplace_back(zookeeper->asyncCreate(fs::path(replica_path) / "queue/queue-", source_queue[index].data, zkutil::CreateMode::PersistentSequential));
+    }
+
+    for (auto & future : futures)
+    {
+        String path = fs::path(replica_path) / "queue/queue-";
+        if (future.wait_for(zookeeper_ops_timeout) == std::future_status::ready)
+        {
+            auto response = future.get();
+            Coordination::Error code = response.error;
+            if (code != Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromPath(code, path);
+        }
+        else
+        {
+            zookeeper->finalize(fmt::format("Operation timeout on {}", Coordination::OpNum::Create, path));
+            throw zkutil::KeeperException::fromPath(Coordination::Error::ZOPERATIONTIMEOUT, path);
+        }
+    }
+
 
     LOG_DEBUG(log, "Copied {} queue entries, {} entries ignored", total_entries_to_copy, source_queue.size() - total_entries_to_copy);
     LOG_TRACE(log, "Parts in ZooKeeper after mimic: {}", fmt::join(zookeeper->getChildren(replica_path + "/parts"), ", "));
