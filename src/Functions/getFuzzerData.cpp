@@ -41,7 +41,7 @@ public:
         return DataTypeString().createColumnConst(input_rows_count, fuzz_data);
     }
 
-    static void update(const String & fuzz_data_)
+    [[maybe_unused]] static void update(const String & fuzz_data_)
     {
         fuzz_data = fuzz_data_;
     }

@@ -273,7 +273,7 @@ void RestorerFromBackup::findRootPathsInBackup()
     root_paths_in_backup.push_back(root_path);
 
     /// Add shard-related part to the root path.
-    Strings shards_in_backup = backup->listFiles(root_path / "shards");
+    Strings shards_in_backup = backup->listFiles(root_path / "shards", /*recursive*/ false);
     if (shards_in_backup.empty())
     {
         if (restore_settings.shard_num_in_backup > 1)
@@ -295,7 +295,7 @@ void RestorerFromBackup::findRootPathsInBackup()
     }
 
     /// Add replica-related part to the root path.
-    Strings replicas_in_backup = backup->listFiles(root_path / "replicas");
+    Strings replicas_in_backup = backup->listFiles(root_path / "replicas", /*recursive*/ false);
     if (replicas_in_backup.empty())
     {
         if (restore_settings.replica_num_in_backup > 1)
@@ -424,7 +424,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     readStringUntilEOF(create_query_str, *read_buffer);
     read_buffer.reset();
     ParserCreateQuery create_parser;
-    ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     applyCustomStoragePolicy(create_table_query);
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
     String create_table_query_str = serializeAST(*create_table_query);
@@ -514,7 +514,7 @@ void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_i
         if (!metadata_path && !try_metadata_path.empty() && backup->fileExists(try_metadata_path))
             metadata_path = try_metadata_path;
 
-        Strings file_names = backup->listFiles(try_tables_metadata_path);
+        Strings file_names = backup->listFiles(try_tables_metadata_path, /*recursive*/ false);
         for (const String & file_name : file_names)
         {
             if (!file_name.ends_with(".sql"))
@@ -534,7 +534,7 @@ void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_i
         readStringUntilEOF(create_query_str, *read_buffer);
         read_buffer.reset();
         ParserCreateQuery create_parser;
-        ASTPtr create_database_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+        ASTPtr create_database_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         renameDatabaseAndTableNameInCreateQuery(create_database_query, renaming_map, context->getGlobalContext());
         String create_database_query_str = serializeAST(*create_database_query);
 
@@ -575,7 +575,7 @@ void RestorerFromBackup::findEverythingInBackup(const std::set<String> & except_
 
     for (const auto & root_path_in_backup : root_paths_in_backup)
     {
-        Strings file_names = backup->listFiles(root_path_in_backup / "metadata");
+        Strings file_names = backup->listFiles(root_path_in_backup / "metadata", /*recursive*/ false);
         for (String & file_name : file_names)
         {
             if (file_name.ends_with(".sql"))
