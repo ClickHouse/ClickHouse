@@ -334,6 +334,11 @@ private:
 
 };
 
+template <typename T>
+class JSONExtractImpl;
+
+template <typename T>
+class JSONExtractKeysAndValuesImpl;
 
 template <typename Name, template<typename> typename Impl>
 class ExecutableFunctionJSON : public IExecutableFunction
@@ -348,17 +353,55 @@ public:
     String getName() const override { return Name::name; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        if constexpr(std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>)
+        {
+            return false;
+        }
+        return true;
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (null_presence.has_null_constant)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
-        ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
-        if (null_presence.has_nullable)
-            return wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
-        return temporary_result;
+        if constexpr(std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>)
+        {
+            ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
+
+            /// Сonvert LowCardinality columns to full.
+            for (auto & column : columns_without_low_cardinality)
+            {
+                column.column = recursiveRemoveLowCardinality(column.column);
+                column.type = recursiveRemoveLowCardinality(column.type);
+            }
+
+            ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(columns_without_low_cardinality) : columns_without_low_cardinality;
+            ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
+
+            if (null_presence.has_nullable)
+                temporary_result = wrapInNullable(temporary_result, columns_without_low_cardinality, result_type, input_rows_count);
+
+            if (result_type->lowCardinality())
+                temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
+
+            return temporary_result;
+        }
+        else
+        {
+            ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
+            ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
+
+            if (null_presence.has_nullable)
+                temporary_result = wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
+
+            if (result_type->lowCardinality())
+                temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
+
+            return temporary_result;
+        }
     }
 
 private:
@@ -392,11 +435,13 @@ public:
         const NullPresence & null_presence_,
         bool allow_simdjson_,
         DataTypes argument_types_,
-        DataTypePtr return_type_)
+        DataTypePtr return_type_,
+        DataTypePtr json_return_type_)
         : null_presence(null_presence_)
         , allow_simdjson(allow_simdjson_)
         , argument_types(std::move(argument_types_))
         , return_type(std::move(return_type_))
+        , json_return_type(std::move(json_return_type_))
     {
     }
 
@@ -416,7 +461,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionJSON<Name, Impl>>(null_presence, allow_simdjson, return_type);
+        return std::make_unique<ExecutableFunctionJSON<Name, Impl>>(null_presence, allow_simdjson, json_return_type);
     }
 
 private:
@@ -424,8 +469,8 @@ private:
     bool allow_simdjson;
     DataTypes argument_types;
     DataTypePtr return_type;
+    DataTypePtr json_return_type;
 };
-
 
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
@@ -447,27 +492,44 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    bool useDefaultImplementationForLowCardinalityColumns() const override
     {
-        auto requested_return_type =  Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
-        /// Top-level LowCardinality columns are processed outside JSON parser.
-        return removeLowCardinality(requested_return_type);
+        if constexpr(std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>)
+        {
+            return false;
+        }
+        return true;
     }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
+        bool has_nothing_argument = false;
+        for (const auto & arg : arguments)
+            has_nothing_argument |= isNothing(arg.type);
+
+        DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
         NullPresence null_presence = getNullPresense(arguments);
+        DataTypePtr return_type;
+        if (has_nothing_argument)
+            return_type = std::make_shared<DataTypeNothing>();
+        else if (null_presence.has_null_constant)
+            return_type = makeNullable(std::make_shared<DataTypeNothing>());
+        else if (null_presence.has_nullable)
+            return_type = makeNullable(json_return_type);
+        else
+            return_type = json_return_type;
+
+        /// Top-level LowCardinality columns are processed outside JSON parser.
+        json_return_type = removeLowCardinality(json_return_type);
 
         DataTypes argument_types;
         argument_types.reserve(arguments.size());
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
         return std::make_unique<FunctionBaseFunctionJSON<Name, Impl>>(
-                null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, result_type);
+                null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, return_type, json_return_type);
     }
 };
-
 
 struct NameJSONHas { static constexpr auto name{"JSONHas"}; };
 struct NameIsValidJSON { static constexpr auto name{"isValidJSON"}; };
