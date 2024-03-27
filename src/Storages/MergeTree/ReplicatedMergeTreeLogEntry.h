@@ -183,12 +183,22 @@ struct ReplicatedMergeTreeLogEntryData
     }
 };
 
+/// Priority tag, used to prioritize log entries in queue. It's created once for each log entry, then
+/// referenced during execution of StorageReplicatedMergeTree::waitForProcessingQueue.
+struct LogEntryPriorityTag{};
+using LogEntryPriorityTags = std::vector<std::shared_ptr<LogEntryPriorityTag>>;
 
 struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std::enable_shared_from_this<ReplicatedMergeTreeLogEntry>
 {
     using Ptr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
 
     std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
+
+    std::shared_ptr<LogEntryPriorityTag> priority_tag = std::make_shared<LogEntryPriorityTag>();
+
+    bool hasPriority() const { return priority_tag.use_count() > 1; }
+
+    bool is_covered_by_future_part = false; /// Whether the part produced by this entry is covered by a part that is currently executing (fetching or merging).
 
     static Ptr parse(const String & s, const Coordination::Stat & stat, MergeTreeDataFormatVersion format_version);
 };
