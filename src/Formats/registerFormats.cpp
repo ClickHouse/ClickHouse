@@ -76,6 +76,8 @@ void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
+void registerInputFormatSQLite(FormatFactory & factory);
+void registerOutputFormatSQLite(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -212,6 +214,8 @@ void registerFormats()
     registerOutputFormatRawBLOB(factory);
     registerInputFormatCustomSeparated(factory);
     registerOutputFormatCustomSeparated(factory);
+    registerInputFormatSQLite(factory);
+    registerOutputFormatSQLite(factory);
 
     registerInputFormatORC(factory);
     registerOutputFormatORC(factory);
