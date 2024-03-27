@@ -1,0 +1,17 @@
+SELECT resolveRelativeURL('ftp://example.com/image.gif', 'https://clickhouse.com/blog/');
+SELECT resolveRelativeURL('image.gif', '');
+SELECT resolveRelativeURL('/image.gif', 'https://clickhouse.com/blog');
+SELECT resolveRelativeURL('/image.gif', 'https://clickhouse.com/blog/');
+SELECT resolveRelativeURL('/', 'https://clickhouse.com/blog/');
+SELECT resolveRelativeURL('//example.com/image.gif', 'https://clickhouse.com/blog/');
+SELECT resolveRelativeURL('//', 'https://clickhouse.com/blog/');
+SELECT resolveRelativeURL('///', 'https://clickhouse.com/blog/');
+SELECT resolveRelativeURL('///image.gif', 'https://clickhouse.com/blog/');
+SELECT resolveRelativeURL('////image.gif', 'https://clickhouse.com/blog/');
+SELECT resolveRelativeURL('image.gif', 'https://clickhouse.com/blog/');
+SELECT resolveRelativeURL('image.gif', 'https://clickhouse.com/blog');
+SELECT resolveRelativeURL('image.gif', 'https://clickhouse.com');
+SELECT resolveRelativeURL(':/image.gif', 'https://clickhouse.com/blog/');
+SELECT resolveRelativeURL(':', 'https://clickhouse.com/blog/');
+SELECT resolveRelativeURL(':', 'https://clickhouse.com/blog');
+SELECT resolveRelativeURL('Δδ', 'https://clickhouse.com/blog');

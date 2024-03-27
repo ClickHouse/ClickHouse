@@ -2274,6 +2274,8 @@ requireTLSv
 resharding
 reshards
 resolvers
+relativeURL
+resolveRelativeURL
 resultset
 retentions
 rethrow

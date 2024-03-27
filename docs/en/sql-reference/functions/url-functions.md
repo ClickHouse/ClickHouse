@@ -500,3 +500,67 @@ Result:
 │ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
 └──────────────────────────────┴──────────────────────────┘
 ```
+
+### resolveRelativeURL(RELATIVE_URL, BASE_URL)
+
+The `resolveRelativeURL` function resolves a relative URL to its absolute form based on a given base URL.
+This is particularly useful to resolve relative URLs from HTML pages.
+
+**Syntax**
+
+``` sql
+resolveRelativeURL(relative_url, base_url)
+```
+
+**Arguments**
+
+- `relative_url` — The relative URL that needs to be resolved. [String](../../sql-reference/data-types/string.md).
+- `base_url` — The base URL against which the relative URL will be resolved. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+- The function returns the absolute URL as a string after resolving the relative URL against the base.
+
+Type: `String`.
+
+**Resolve rules** :
+
+- If the relative_url is an absolute URL or the base_url is not an absolute URL containing substring of `://`, return the relative_url directly, 
+  example as `resolveRelativeURL('ftp://1.com', 'https://clickhouse.com/blog/'): ftp://1.com`.
+
+- If the relative_url starts with single slash, replace the path of the base_url with the relative_url,
+  example as `resolveRelativeURL('/1.com', 'https://clickhouse.com/blog/'): https://clickhouse.com/1.com`.
+
+- If the relative_url starts with double slashes, combine the scheme of the base_url and the relative_url without double slashes, 
+  example as `resolveRelativeURL('//', 'https://clickhouse.com/blog/'): https://clickhouse.com/blog/`.
+
+- If the relative_url only contains double slashes, return the base_url directly, 
+  example as `resolveRelativeURL('//1.com', 'https://clickhouse.com/blog/'): https://clickhouse.com/blog/`.
+
+- If the relative_url starts with triple or more slashes, replace the path of the base_url with the relative_url whose first double slashes are removed, 
+  examples as `resolveRelativeURL('///aa', 'https://clickhouse.com/a'): https://clickhouse.com/aa`
+  and `resolveRelativeURL('////aa', 'https://clickhouse.com/a'): https://clickhouse.com//aa`.
+
+- If the relative_url is not an absolute_url, and there is no slash at the beginning of the relative_url, combine the base_url at the final slash in the path and the relative_url with a slash, 
+  example as`resolveRelativeURL('aa', 'https://clickhouse.com/a/b'): https://clickhouse.com/a/aa` 
+  and `resolveRelativeURL('aa', 'https://clickhouse.com'): https://clickhouse.com/aa`.
+
+**Example**
+
+Query:
+
+``` sql
+
+SELECT
+    resolveRelativeURL('image.gif', 'https://clickhouse.com/blog/'),
+    resolveRelativeURL('/index.html', 'https://clickhouse.com/blog/')
+FORMAT Vertical
+
+```
+
+Result:
+
+``` text
+resolveRelativeURL('image.gif', 'https://clickhouse.com/blog/'):   https://clickhouse.com/blog/image.gif
+resolveRelativeURL('/index.html', 'https://clickhouse.com/blog/'): https://clickhouse.com/index.html
+```
