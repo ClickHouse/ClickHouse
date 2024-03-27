@@ -1367,7 +1367,7 @@ Default value: `1'000'000`.
 
 While importing data, when column is not found in schema default value will be used instead of error.
 
-Disabled by default.
+Enabled by default.
 
 ### input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference {#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference}
 

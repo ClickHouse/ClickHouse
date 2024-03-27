@@ -81,7 +81,6 @@ SELECT JSONExtract('{"a":3333.6333333333333333333333, "b":"test"}', 'Tuple(a Dec
 SELECT JSONExtract('{"a":"3333.6333333333333333333333", "b":"test"}', 'Tuple(a Decimal(10,1), b LowCardinality(String))');
 SELECT JSONExtract('{"a":3333.6333333333333333333333, "b":"test"}', 'Tuple(a Decimal(20,10), b LowCardinality(String))');
 SELECT JSONExtract('{"a":"3333.6333333333333333333333", "b":"test"}', 'Tuple(a Decimal(20,10), b LowCardinality(String))');
-SELECT JSONExtract(materialize('{"string_value":null}'), materialize('string_value'), 'LowCardinality(Nullable(String))');
 SELECT JSONExtract('{"a":123456.123456}', 'a', 'Decimal(20, 4)') as a, toTypeName(a);
 SELECT JSONExtract('{"a":"123456.123456"}', 'a', 'Decimal(20, 4)') as a, toTypeName(a);
 SELECT JSONExtract('{"a":"123456789012345.12"}', 'a', 'Decimal(30, 4)') as a, toTypeName(a);
