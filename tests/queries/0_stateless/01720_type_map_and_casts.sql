@@ -79,6 +79,10 @@ SELECT m[toUInt64(0)], m[toInt64(0)], m[toUInt8(0)], m[toUInt16(0)] FROM table_m
 DROP TABLE IF EXISTS table_map_with_key_integer;
 
 
-CREATE TABLE table_map_with_key_integer (m Map(Float32, String)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 36}
+CREATE TABLE table_map_with_key_integer (m Map(Float32, String)) ENGINE = MergeTree() ORDER BY tuple();
+DROP TABLE IF EXISTS table_map_with_key_integer;
+
+CREATE TABLE table_map_with_key_integer (m Map(Array(UInt32), String)) ENGINE = MergeTree() ORDER BY tuple();
+DROP TABLE IF EXISTS table_map_with_key_integer;
+
 CREATE TABLE table_map_with_key_integer (m Map(Nullable(String), String)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 36}
-CREATE TABLE table_map_with_key_integer (m Map(Array(UInt32), String)) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 36}
