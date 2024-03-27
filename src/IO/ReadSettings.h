@@ -7,6 +7,7 @@
 #include <Common/Throttler_fwd.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
+#include <IO/FileEncryptionCommon.h>
 
 namespace DB
 {
@@ -113,6 +114,8 @@ struct ReadSettings
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 
     FileCachePtr remote_fs_cache;
+
+    EncryptedObjectStorageSettingsPtr encryption_settings;
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;

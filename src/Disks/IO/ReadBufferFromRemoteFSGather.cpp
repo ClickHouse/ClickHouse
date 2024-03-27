@@ -4,6 +4,9 @@
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
+#include <Disks/ObjectStorages/Encrypted/EncryptedObjectStorage.h>
+#include <IO/FileEncryptionCommon.h>
+#include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
 #include <Interpreters/FilesystemCacheLog.h>
@@ -78,6 +81,62 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
     std::unique_ptr<ReadBufferFromFileBase> buf;
 
+    size_t current_read_until_position = read_until_position ? read_until_position : object.bytes_size;
+    // auto current_read_buffer_creator = [=, this]()
+    // {
+    //     return read_buffer_creator(object_path, current_read_until_position, true);
+    // };
+    auto current_read_buffer_creator = read_buffer_creator;
+
+    if (settings.encryption_settings)
+    {
+        current_read_until_position += FileEncryption::Header::kSize;
+        current_read_buffer_creator = [=, this]()
+        {
+            FileEncryption::Header header;
+            if (settings.encryption_settings->header_cache && with_file_cache)
+            {
+                auto cache_key = settings.encryption_settings->header_cache->createKeyForPath(object_path);
+                auto impl_buffer_creator = [=, this]()
+                {
+                    return read_buffer_creator(object_path,
+                                               true/* restricted_seek */,
+                                               current_read_until_position,
+                                               true/*use_external_buffer*/);
+                };
+                CachedOnDiskReadBufferFromFile cached_buffer(
+                    object_path,
+                    cache_key,
+                    settings.encryption_settings->header_cache,
+                    FileCache::getCommonUser(),
+                    impl_buffer_creator,
+                    settings,
+                    query_id,
+                    /* file_size */FileEncryption::Header::kSize,
+                    /* allow_seeks_after_first_read */ false,
+                    /* use_external_buffer */ false,
+                    FileEncryption::Header::kSize,
+                    cache_log);
+                header = FileEncryption::readHeader(cached_buffer);
+            }
+            else
+            {
+                Memory<> buffer;
+                auto implementation_buffer = read_buffer_creator(object_path, current_read_until_position, true);
+                if (implementation_buffer->internalBuffer().size() < FileEncryption::Header::kSize)
+                {
+                    buffer.resize(FileEncryption::Header::kSize);
+                    implementation_buffer->set(buffer.data(), buffer.size());
+                }
+                header = FileEncryption::readHeader(*implementation_buffer);
+            }
+            String key = settings.encryption_settings->findKeyByFingerprint(header.key_fingerprint, object_path);
+            auto implementation_buffer = read_buffer_creator(object_path, current_read_until_position, false);
+            return std::make_unique<ReadBufferFromEncryptedFile>(
+                settings.remote_fs_buffer_size, std::move(implementation_buffer), key, header, 0, true);
+        };
+    }
+
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     if (with_file_cache)
     {
@@ -87,7 +146,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
             cache_key,
             settings.remote_fs_cache,
             FileCache::getCommonUser(),
-            [=, this]() { return read_buffer_creator(/* restricted_seek */true, object_path); },
+            [=, this]() { return read_buffer_creator(object_path, true/* restricted_seek */, true/* use_external_buffer */, 0/* read_until_position */); },
             settings,
             query_id,
             object.bytes_size,

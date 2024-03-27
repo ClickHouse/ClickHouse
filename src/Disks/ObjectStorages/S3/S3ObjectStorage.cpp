@@ -170,9 +170,12 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 
     auto settings_ptr = s3_settings.get();
 
-    auto read_buffer_creator =
-        [this, settings_ptr, disk_read_settings]
-        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
+    auto read_buffer_creator
+        = [this, settings_ptr, disk_read_settings](
+              const std::string & path,
+              size_t read_until_position,
+              bool use_external_buffer,
+              bool restricted_seek) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromS3>(
             client.get(),
@@ -181,9 +184,9 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
             uri.version_id,
             settings_ptr->request_settings,
             disk_read_settings,
-            /* use_external_buffer */true,
-            /* offset */0,
-            /* read_until_position */0,
+            use_external_buffer,
+            /* offset */ 0,
+            read_until_position,
             restricted_seek);
     };
 

@@ -179,4 +179,20 @@ void FileCacheFactory::clear()
     caches_by_name.clear();
 }
 
+void FileCacheFactory::loadDefaultCaches(const Poco::Util::AbstractConfiguration & config)
+{
+    Poco::Util::AbstractConfiguration::Keys cache_names;
+    config.keys(FILECACHE_DEFAULT_CONFIG_PATH, cache_names);
+    auto * log = &Poco::Logger::get("FileCacheFactory");
+    LOG_DEBUG(log, "Will load {} caches from default cache config", cache_names.size());
+    for (const auto & name : cache_names)
+    {
+        FileCacheSettings settings;
+        settings.load(config, fmt::format("{}.{}", FILECACHE_DEFAULT_CONFIG_PATH, name));
+        auto cache = getOrCreate(name, settings);
+        cache->initialize();
+        LOG_DEBUG(log, "Loaded cache `{}` from default cache config", name);
+    }
+}
+
 }

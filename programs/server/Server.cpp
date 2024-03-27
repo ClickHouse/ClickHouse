@@ -64,6 +64,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Access/AccessControl.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -1285,6 +1286,8 @@ try
 #endif
 
     NamedCollectionUtils::loadIfNot();
+
+    FileCacheFactory::instance().loadDefaultCaches(config());
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
