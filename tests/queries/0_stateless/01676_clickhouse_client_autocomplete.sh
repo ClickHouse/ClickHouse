@@ -99,6 +99,8 @@ client_compwords_positive=(
     default
     # system.aggregate_function_combinators
     uniqCombined64ForEach
+    # system.keywords
+    CHANGEABLE_IN_READONLY
 
     # FIXME: one may add separate case for suggestion_limit
     # system.databases
