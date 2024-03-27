@@ -901,6 +901,10 @@ void DatabaseCatalog::updateViewDependency(const StorageID & old_source_table_id
 
 DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table)
 {
+    if (database == "default" && table == "nats_raw")
+    {
+        std::cout << "###\n" << StackTrace().toString() << "\n\n";
+    }
     std::unique_lock lock(ddl_guards_mutex);
     /// TSA does not support unique_lock
     auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
