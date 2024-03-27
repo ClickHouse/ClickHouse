@@ -122,6 +122,7 @@ void FilterDescription::lazyInitializeForFilterInPlace() const
     }
 }
 
+/*
 size_t FilterDescription::countBytesInFilter() const
 {
     if (!indexes_holder)
@@ -129,6 +130,7 @@ size_t FilterDescription::countBytesInFilter() const
 
     return start + indexes_holder->size();
 }
+*/
 
 SparseFilterDescription::SparseFilterDescription(const IColumn & column)
 {

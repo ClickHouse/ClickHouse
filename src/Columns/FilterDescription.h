@@ -45,7 +45,7 @@ struct FilterDescription final : public IFilterDescription
 
     ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const override { return column.filter(*data, result_size_hint); }
     void filterInPlace(IColumn & column) const override;
-    size_t countBytesInFilter() const override;
+    size_t countBytesInFilter() const override { return DB::countBytesInFilter(*data); }
 
 protected:
     bool hasOneImpl() override { return data ? (has_one = !memoryIsZero(data->data(), 0, data->size())) : false; }

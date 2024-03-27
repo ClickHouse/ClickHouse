@@ -365,7 +365,12 @@ void FilterTransform::doTransform(Chunk & chunk)
         if (isColumnConst(*current_column))
             current_column = current_column->cut(0, num_filtered_rows);
         else
-            filter_description->filterInPlace(current_column->assumeMutableRef());
+        {
+            if (current_column->use_count() == 1)
+                filter_description->filterInPlace(current_column->assumeMutableRef());
+            else
+                current_column = filter_description->filter(*current_column, num_filtered_rows);
+        }
     }
 
     chunk.setColumns(std::move(columns), num_filtered_rows);
