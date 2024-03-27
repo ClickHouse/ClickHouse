@@ -818,9 +818,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             }
         }
 
-        /// Save the current temporary path in case we need to revert the change to retry (ZK connection loss)
-        const String temporary_part_relative_path = part->getDataPartStorage().getPartDirectory();
-
         /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
         /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
         /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
@@ -968,7 +965,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 /// transaction: renameTempPartAndAdd
                 transaction.rollbackPartsToTemporaryState();
                 part->is_temp = true;
-                part->renameTo(temporary_part_relative_path, false);
                 /// Throw an exception to set the proper keeper error and force a retry (if possible)
                 zkutil::KeeperMultiException::check(multi_code, ops, responses);
             }
