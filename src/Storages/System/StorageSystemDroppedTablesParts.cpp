@@ -65,11 +65,16 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const ActionsDAGPtr & filte
         }
     }
 
-    block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
-    block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
-    block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), "engine"));
-    block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), "active"));
-    block_to_filter.insert(ColumnWithTypeAndName(std::move(storage_uuid_column_mut), std::make_shared<DataTypeUUID>(), "storage_uuid"));
+    block_to_filter.insert(ColumnWithTypeAndName(
+        std::move(database_column_mut), std::make_shared<DataTypeString>(), StorageSystemPartsBase::database_column_name));
+    block_to_filter.insert(
+        ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), StorageSystemPartsBase::table_column_name));
+    block_to_filter.insert(ColumnWithTypeAndName(
+        std::move(engine_column_mut), std::make_shared<DataTypeString>(), StorageSystemPartsBase::engine_column_name));
+    block_to_filter.insert(
+        ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), StorageSystemPartsBase::active_column_name));
+    block_to_filter.insert(ColumnWithTypeAndName(
+        std::move(storage_uuid_column_mut), std::make_shared<DataTypeUUID>(), StorageSystemPartsBase::storage_uuid_column_name));
 
     if (block_to_filter.rows())
     {
@@ -79,10 +84,10 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const ActionsDAGPtr & filte
         rows = block_to_filter.rows();
     }
 
-    database_column = block_to_filter.getByName("database").column;
-    table_column = block_to_filter.getByName("table").column;
-    active_column = block_to_filter.getByName("active").column;
-    storage_uuid_column = block_to_filter.getByName("storage_uuid").column;
+    database_column = block_to_filter.getByName(StorageSystemPartsBase::database_column_name).column;
+    table_column = block_to_filter.getByName(StorageSystemPartsBase::table_column_name).column;
+    active_column = block_to_filter.getByName(StorageSystemPartsBase::active_column_name).column;
+    storage_uuid_column = block_to_filter.getByName(StorageSystemPartsBase::storage_uuid_column_name).column;
 }
 
 

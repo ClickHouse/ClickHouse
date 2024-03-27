@@ -135,6 +135,12 @@ public:
 
     bool isSystemStorage() const override { return true; }
 
+    static inline const std::string database_column_name = "database";
+    static inline const std::string table_column_name = "table";
+    static inline const std::string engine_column_name = "engine";
+    static inline const std::string active_column_name = "active";
+    static inline const std::string storage_uuid_column_name = "storage_uuid";
+
 private:
     static bool hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
 
