@@ -255,7 +255,7 @@ public:
 
         DataPartsVector commit(DataPartsLock * acquired_parts_lock = nullptr);
 
-        void addPart(MutableDataPartPtr & part);
+        void addPart(MutableDataPartPtr & part, bool need_rename);
 
         void rollback(DataPartsLock * lock = nullptr);
 
@@ -286,7 +286,9 @@ public:
 
         MergeTreeData & data;
         MergeTreeTransaction * txn;
+
         MutableDataParts precommitted_parts;
+        MutableDataParts precommitted_parts_need_rename;
         MutableDataParts locked_parts;
 
     };
