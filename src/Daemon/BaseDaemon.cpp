@@ -497,7 +497,7 @@ private:
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)
         {
-            SentryWriter::onFault(sig, error_message, stack_trace);
+            SentryWriter::onFault(sig, error_message, stack_trace.getFramePointers(), stack_trace.getOffset(), stack_trace.getSize());
 
             /// Advice the user to send it manually.
             if (std::string_view(VERSION_OFFICIAL).contains("official build"))

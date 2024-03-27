@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <base/demangle.h>
 #include <Common/AtomicLogger.h>
+#include <Daemon/SentryWriter.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -52,14 +53,20 @@ thread_local bool update_error_statistics = true;
 /// - Increments error codes statistics.
 void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
 {
-    // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
-    // Log the message before we fail.
-#ifdef ABORT_ON_LOGICAL_ERROR
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
+        // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
+        // Log the message before we fail.
+#ifdef ABORT_ON_LOGICAL_ERROR
         abortOnFailedAssertion(msg);
-    }
+#else
+        /// In release builds send it to sentry (if it is configured)
+        SentryWriter::FramePointers frame_pointers;
+        for (size_t i = 0; i < trace.size(); ++i)
+            frame_pointers[i] = trace[i];
+        SentryWriter::onFault(-code, msg, frame_pointers, /* offset= */ 0, trace.size());
 #endif
+    }
 
     if (!update_error_statistics) [[unlikely]]
         return;
