@@ -52,7 +52,8 @@ static struct InitFiu
     REGULAR(prefetched_reader_pool_failpoint) \
     PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
     PAUSEABLE(dummy_pausable_failpoint) \
-    ONCE(execute_query_calling_empty_set_result_func_on_exception)
+    ONCE(execute_query_calling_empty_set_result_func_on_exception) \
+    ONCE(receive_timeout_on_table_status_response)
 
 namespace FailPoints
 {
