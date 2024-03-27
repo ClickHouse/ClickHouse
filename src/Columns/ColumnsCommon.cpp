@@ -152,7 +152,7 @@ static void filterToIndices(const UInt8 * filt, size_t start, size_t end, Padded
     size_t size = 0;
     for (; j + 64 <= end; j += 64)
     {
-        UInt64 mask64 = _mm512_cmpeq_epi8_mask(_mm512_loadu_epi8(reinterpret_cast<const void *>(filt + j)), zero_vec);
+        UInt64 mask64 = _mm512_cmpneq_epi8_mask(_mm512_loadu_epi8(reinterpret_cast<const void *>(filt + j)), zero_vec);
         size += std::popcount(mask64);
     }
     for (; j < end; ++j)
@@ -190,14 +190,14 @@ static void filterToIndices(const UInt8 * filt, size_t start, size_t end, Padded
             s + 2,
             s + 1,
             s); // Initial index vector
-        increment_vec = _mm512_set1_epi64(16); // Increment vector
+        increment_vec = _mm512_set1_epi32(16); // Increment vector
     }
 
     /// Fill indexes through compress store
     size_t pos = 0;
     for (; start + 64 <= end; start += 64)
     {
-        UInt64 mask64 = _mm512_cmpeq_epi8_mask(_mm512_loadu_epi8(reinterpret_cast<const void *>(filt + start)), zero_vec);
+        UInt64 mask64 = _mm512_cmpneq_epi8_mask(_mm512_loadu_epi8(reinterpret_cast<const void *>(filt + start)), zero_vec);
         for (size_t i = 0; i < LOOPS_PER_MASK; ++i)
         {
             auto offset = std::popcount(mask64 & MASK_IN_LOOP);
@@ -213,7 +213,6 @@ static void filterToIndices(const UInt8 * filt, size_t start, size_t end, Padded
                     __m512i compressed_indices = _mm512_maskz_compress_epi32(mask64 & MASK_IN_LOOP, index_vec); // Compress indices
                     _mm512_storeu_si512(&indices[pos], compressed_indices); // Store compressed indices
                 }
-
                 pos += offset;
             }
 
@@ -235,11 +234,14 @@ static void filterToIndices(const UInt8 * filt, size_t start, size_t end, Padded
 
     /// Resize to the actual size
     indices.resize_exact(size);
+
+    if (pos != size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "pos({}) != size({})", pos, size);
 }
 )
 
 template <typename Type>
-ALWAYS_INLINE size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<Type> & indices)
+size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<Type> & indices)
 {
     if (filt.empty())
         return 0;

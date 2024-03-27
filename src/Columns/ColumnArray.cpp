@@ -910,7 +910,7 @@ void ColumnArray::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t
     auto & offsets_ref = getOffsets();
     for (size_t i = 0; i < indexes.size(); ++i)
     {
-        size_t index = indexes[i];
+        Type index = indexes[i];
         size_t nested_offset = offsetAt(index);
         size_t nested_size = sizeAt(index);
         for (size_t j = 0; j < nested_size; ++j)

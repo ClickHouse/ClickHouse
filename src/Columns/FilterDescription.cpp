@@ -108,7 +108,6 @@ void FilterDescription::filterInPlace(IColumn & column) const
 void FilterDescription::lazyInitializeForFilterInPlace() const
 {
     size_t rows = data->size();
-
     if (rows <= std::numeric_limits<UInt32>::max())
     {
         indexes_holder = ColumnUInt32::create();
