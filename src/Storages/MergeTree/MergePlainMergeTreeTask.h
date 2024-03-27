@@ -49,6 +49,8 @@ public:
         txn = std::move(txn_);
     }
 
+    void setQueryThreadGroup(ThreadGroupPtr g) { query_thread_group = g; }
+
 private:
     void prepare();
     void finish();
@@ -89,6 +91,7 @@ private:
     MergeTreeTransactionPtr txn;
 
     ProfileEvents::Counters profile_counters;
+    ThreadGroupPtr query_thread_group;
 
     ContextMutablePtr task_context;
 

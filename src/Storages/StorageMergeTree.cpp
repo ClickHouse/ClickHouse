@@ -1126,7 +1126,8 @@ bool StorageMergeTree::merge(
     bool cleanup,
     const MergeTreeTransactionPtr & txn,
     String & out_disable_reason,
-    bool optimize_skip_merged_partitions)
+    bool optimize_skip_merged_partitions,
+    bool async)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -1160,16 +1161,39 @@ bool StorageMergeTree::merge(
     if (!merge_mutate_entry)
         return false;
 
-    /// Copying a vector of columns `deduplicate by columns.
-    IExecutableTask::TaskResultCallback f = [](bool) {};
-    auto task = std::make_shared<MergePlainMergeTreeTask>(
-        *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_mutate_entry, table_lock_holder, f);
+    if (!async)
+    {
+        /// Copying a vector of columns `deduplicate by columns.
+        IExecutableTask::TaskResultCallback f = [](bool) {};
+        auto task = std::make_shared<MergePlainMergeTreeTask>(
+            *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_mutate_entry, table_lock_holder, f);
 
-    task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
+        task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
 
-    executeHere(task);
+        executeHere(task);
 
-    return true;
+        return true;
+    }
+    else
+    {
+        auto task = std::make_shared<MergePlainMergeTreeTask>(
+            *this,
+            metadata_snapshot,
+            deduplicate,
+            deduplicate_by_columns,
+            cleanup,
+            merge_mutate_entry,
+            table_lock_holder,
+            common_assignee_trigger);
+        task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
+        task->setQueryThreadGroup(CurrentThread::getGroup());
+        bool scheduled = background_operations_assignee.scheduleMergeMutateTask(task);
+        /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
+        /// in MergePlainMergeTreeTask. So, this slot will never be freed.
+        if (!scheduled && isTTLMergeType(merge_mutate_entry->future_part->merge_type))
+            getContext()->getMergeList().cancelMergeWithTTL();
+        return scheduled;
+    }
 }
 
 
@@ -1589,7 +1613,8 @@ bool StorageMergeTree::optimize(
                     cleanup,
                     txn,
                     disable_reason,
-                    local_context->getSettingsRef().optimize_skip_merged_partitions))
+                    local_context->getSettingsRef().optimize_skip_merged_partitions,
+                    true))
             {
                 constexpr auto message = "Cannot OPTIMIZE table: {}";
                 if (disable_reason.empty())
@@ -1599,6 +1624,23 @@ bool StorageMergeTree::optimize(
                 if (local_context->getSettingsRef().optimize_throw_if_noop)
                     throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
                 return false;
+            }
+        }
+        {
+            auto timeout_ms = getSettings()->lock_acquire_timeout_for_background_operations.totalMilliseconds();
+            auto timeout = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+            std::unique_lock lock(currently_processing_in_background_mutex);
+            while (!currently_merging_mutating_parts.empty())
+            {
+                LOG_DEBUG(
+                    log,
+                    "Waiting for OPTIMIZE FINAL to complete ({} parts are merging right now)",
+                    currently_merging_mutating_parts.size());
+
+                if (std::cv_status::timeout == currently_processing_in_background_condition.wait_until(lock, timeout))
+                {
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while waiting for OPTIMIZE FINAL to complete");
+                }
             }
         }
     }
