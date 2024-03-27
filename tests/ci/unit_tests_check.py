@@ -166,7 +166,7 @@ def main():
 
     docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
-    download_unit_tests(check_name, REPORT_PATH, TEMP_PATH)
+    download_unit_tests(check_name, REPORT_PATH, temp_path)
 
     tests_binary = temp_path / "unit_tests_dbms"
     os.chmod(tests_binary, 0o777)

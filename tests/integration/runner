@@ -387,7 +387,7 @@ if __name__ == "__main__":
 
     use_analyzer = ""
     if args.analyzer:
-        use_analyzer = "-e CLICKHOUSE_USE_NEW_ANALYZER=1"
+        use_analyzer = "-e CLICKHOUSE_USE_OLD_ANALYZER=1"
 
     # NOTE: since pytest options is in the argument value already we need to additionally escape '"'
     pytest_opts = " ".join(
@@ -415,7 +415,7 @@ if __name__ == "__main__":
 
     cmd = cmd_base + " " + args.command
     cmd_pre_pull = (
-        f"{cmd_base} find /compose -name docker_compose_*.yml "
+        f"{cmd_base} find /ClickHouse/tests/integration/compose -name docker_compose_*.yml "
         r"-exec docker-compose -f '{}' pull \;"
     )
 
