@@ -364,8 +364,11 @@ def test_insert_quorum_with_ttl(started_cluster):
 
     zero.query("DROP TABLE IF EXISTS test_insert_quorum_with_ttl ON CLUSTER cluster")
 
+
 def test_insert_quorum_with_keeper_loss_connection():
-    zero.query("DROP TABLE IF EXISTS test_insert_quorum_with_keeper_fail ON CLUSTER cluster")
+    zero.query(
+        "DROP TABLE IF EXISTS test_insert_quorum_with_keeper_fail ON CLUSTER cluster"
+    )
     create_query = (
         "CREATE TABLE test_insert_quorum_with_keeper_loss"
         "(a Int8, d Date) "
@@ -373,19 +376,15 @@ def test_insert_quorum_with_keeper_loss_connection():
         "ORDER BY a "
     )
 
-    print("Create Replicated table with two replicas")
     zero.query(create_query)
     first.query(create_query)
 
-    print("Stop fetches for test_insert_quorum_with_keeper_loss at first replica.")
     first.query("SYSTEM STOP FETCHES test_insert_quorum_with_keeper_loss")
 
-    print("Inject insert fail and retry pause for server zero")
     zero.query("SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op")
     zero.query("SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_retry_pause")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        print("Inject zero")
         insert_future = executor.submit(
             lambda: zero.query(
                 "INSERT INTO test_insert_quorum_with_keeper_loss(a,d) VALUES(1, '2011-01-01')",
@@ -393,11 +392,9 @@ def test_insert_quorum_with_keeper_loss_connection():
             )
         )
 
-        print("Inject zero keeper")
         pm = PartitionManager()
         pm.drop_instance_zk_connections(zero)
 
-        print("Wait zero is not active")
         retries = 0
         zk = cluster.get_kazoo_client("zoo1")
         while True:
@@ -414,32 +411,33 @@ def test_insert_quorum_with_keeper_loss_connection():
             if retries == 120:
                 raise Exception("Can not wait cluster replica inactive")
 
-        print("Inject first wait for quorum fail")
         first.query("SYSTEM ENABLE FAILPOINT finish_set_quorum_failed_parts")
         quorum_fail_future = executor.submit(
-            lambda: first.query("SYSTEM WAIT FAILPOINT finish_set_quorum_failed_parts", timeout=300)
+            lambda: first.query(
+                "SYSTEM WAIT FAILPOINT finish_set_quorum_failed_parts", timeout=300
+            )
         )
-        print("Start fetches at first node")
         first.query("SYSTEM START FETCHES test_insert_quorum_with_keeper_loss")
 
         concurrent.futures.wait([quorum_fail_future])
 
-        assert(quorum_fail_future.exception() is None)
+        assert quorum_fail_future.exception() is None
 
-        print("Inject zero wait for clean quorum fail parts")
         zero.query("SYSTEM ENABLE FAILPOINT finish_clean_quorum_failed_parts")
         clean_quorum_fail_parts_future = executor.submit(
-            lambda: first.query("SYSTEM WAIT FAILPOINT finish_clean_quorum_failed_parts", timeout=300)
+            lambda: first.query(
+                "SYSTEM WAIT FAILPOINT finish_clean_quorum_failed_parts", timeout=300
+            )
         )
-        print("Restore zero keeper")
         pm.restore_instance_zk_connections(zero)
         concurrent.futures.wait([clean_quorum_fail_parts_future])
 
-        assert(clean_quorum_fail_parts_future.exception() is None)
+        assert clean_quorum_fail_parts_future.exception() is None
 
-        print("Disable retry pause")
         zero.query("SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause")
         concurrent.futures.wait([insert_future])
-        assert(insert_future.exception() is not None)
-        assert(not zero.contains_in_log("LOGICAL_ERROR"))
-        assert(zero.contains_in_log("fails to commit and will not retry or clean garbage"))
+        assert insert_future.exception() is not None
+        assert not zero.contains_in_log("LOGICAL_ERROR")
+        assert zero.contains_in_log(
+            "fails to commit and will not retry or clean garbage"
+        )
