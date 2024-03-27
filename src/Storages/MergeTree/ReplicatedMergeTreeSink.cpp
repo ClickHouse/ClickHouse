@@ -30,6 +30,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_commit_zk_fail_after_op[];
     extern const char replicated_merge_tree_insert_quorum_fail_0[];
     extern const char replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault[];
+    extern const char replicated_merge_tree_insert_retry_pause[];
 }
 
 namespace ErrorCodes
@@ -945,6 +946,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             new_retry_controller.retryLoop([&]
             {
                 fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault, { zookeeper->forceFailureBeforeOperation(); });
+                FailPointInjection::pauseFailPoint(FailPoints::replicated_merge_tree_insert_retry_pause);
                 zookeeper->setKeeper(storage.getZooKeeper());
                 node_exists = zookeeper->exists(fs::path(storage.replica_path) / "parts" / part->name);
                 if (isQuorumEnabled())
@@ -956,7 +958,8 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             {
                 LOG_INFO(log, "Part {} fails to commit and will not retry or clean garbage. Restarting Thread will do everything.", part->name);
                 transaction.clear();
-                return CommitRetryContext::ERROR;
+            /// `quorum/failed_parts/part_name` exists because table is read only for a while, So we return table is read only.
+                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
             }
 
             if (node_exists)
