@@ -8,6 +8,11 @@ Float64 TDigestStatistic::estimateLess(Float64 val) const
     return data.getCountLessThan(val);
 }
 
+Float64 TDigestStatistic::estimateEqual(Float64 val) const
+{
+    return data.getCountEqual(val);
+}
+
 void TDigestStatistic::serialize(WriteBuffer & buf)
 {
     data.serialize(buf);
@@ -28,11 +33,6 @@ void TDigestStatistic::update(const ColumnPtr & column)
         Float64 value = column->getFloat64(i);
         data.add(value, 1);
     }
-}
-
-UInt64 TDigestStatistic::count()
-{
-    return static_cast<UInt64>(data.count);
 }
 
 }

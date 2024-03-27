@@ -6,7 +6,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTStatisticDeclaration.h>
+#include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
@@ -91,7 +91,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         if (command->partition)
             res.partition = command->partition->clone();
         res.predicate = nullptr;
-        res.statistic_columns = command->statistic_decl->as<ASTStatisticDeclaration &>().getColumnNames();
+        res.statistic_columns = command->statistic_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
         return res;
     }
     else if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)
@@ -159,7 +159,8 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             res.partition = command->partition->clone();
         if (command->clear_index)
             res.clear = true;
-        res.statistic_columns = command->statistic_decl->as<ASTStatisticDeclaration &>().getColumnNames();
+        res.statistic_columns = command->statistic_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
+        res.statistic_types = command->statistic_decl->as<ASTStatisticsDeclaration &>().getTypeNames();
         return res;
     }
     else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_PROJECTION)

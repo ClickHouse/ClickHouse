@@ -19,7 +19,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
-    const Statistics & statistics,
+    const std::vector<ColumnStatisticsPtr> & statistics,
     CompressionCodecPtr default_codec_,
     const MergeTreeTransactionPtr & txn,
     bool reset_columns_,

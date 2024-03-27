@@ -1043,7 +1043,7 @@ The statistic declaration is in the columns section of the `CREATE` query for ta
 ``` sql
 CREATE TABLE tab
 (
-    a Int64 STATISTIC(tdigest),
+    a Int64 STATISTIC(tdigest, uniq),
     b Float64
 )
 ENGINE = MergeTree
@@ -1053,8 +1053,8 @@ ORDER BY a
 We can also manipulate statistics with `ALTER` statements.
 
 ```sql
-ALTER TABLE tab ADD STATISTIC b TYPE tdigest;
-ALTER TABLE tab DROP STATISTIC a TYPE tdigest;
+ALTER TABLE tab ADD STATISTIC b TYPE tdigest, uniq;
+ALTER TABLE tab DROP STATISTIC a;
 ```
 
 These lightweight statistics aggregate information about distribution of values in columns.
@@ -1065,6 +1065,10 @@ They can be used for query optimization when we enable `set allow_statistic_opti
 -   `tdigest`
 
     Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
+
+- `uniq`
+    
+    Estimate the number of distinct values of a column.
 
 ## Column-level Settings {#column-level-settings}
 

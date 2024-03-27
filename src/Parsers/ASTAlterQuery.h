@@ -57,6 +57,7 @@ public:
 
         ADD_STATISTIC,
         DROP_STATISTIC,
+        MODIFY_STATISTIC,
         MATERIALIZE_STATISTIC,
 
         DROP_PARTITION,

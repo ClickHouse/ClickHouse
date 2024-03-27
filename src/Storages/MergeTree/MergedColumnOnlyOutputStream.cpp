@@ -16,7 +16,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const Block & header_,
     CompressionCodecPtr default_codec,
     const MergeTreeIndices & indices_to_recalc,
-    const Statistics & stats_to_recalc_,
+    const std::vector<ColumnStatisticsPtr> & stats_to_recalc_,
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)

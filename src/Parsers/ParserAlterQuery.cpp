@@ -51,6 +51,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_add_statistic(Keyword::ADD_STATISTIC);
     ParserKeyword s_drop_statistic(Keyword::DROP_STATISTIC);
+    ParserKeyword s_modify_statistic(Keyword::MODIFY_STATISTIC);
     ParserKeyword s_clear_statistic(Keyword::CLEAR_STATISTIC);
     ParserKeyword s_materialize_statistic(Keyword::MATERIALIZE_STATISTIC);
 
@@ -127,6 +128,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
     ParserStatisticDeclaration parser_stat_decl;
+    ParserStatisticDeclarationWithoutTypes parser_stat_decl_without_types;
     ParserConstraintDeclaration parser_constraint_decl;
     ParserProjectionDeclaration parser_projection_decl;
     ParserCompoundColumnDeclaration parser_modify_col_decl(false, false, true);
@@ -378,12 +380,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->type = ASTAlterCommand::ADD_STATISTIC;
             }
+            else if (s_modify_statistic.ignore(pos, expected))
+            {
+                if (!parser_stat_decl.parse(pos, command_statistic_decl, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::MODIFY_STATISTIC;
+            }
             else if (s_drop_statistic.ignore(pos, expected))
             {
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_stat_decl.parse(pos, command_statistic_decl, expected))
+                if (!parser_stat_decl_without_types.parse(pos, command_statistic_decl, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_STATISTIC;
@@ -393,7 +402,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_stat_decl.parse(pos, command_statistic_decl, expected))
+                if (!parser_stat_decl_without_types.parse(pos, command_statistic_decl, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_STATISTIC;
@@ -411,7 +420,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_stat_decl.parse(pos, command_statistic_decl, expected))
+                if (!parser_stat_decl_without_types.parse(pos, command_statistic_decl, expected))
                     return false;
 
                 command->type = ASTAlterCommand::MATERIALIZE_STATISTIC;
