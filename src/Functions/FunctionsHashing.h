@@ -23,25 +23,28 @@
 #endif
 
 #include <bit>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeString.h>
+#include <Core/TypeId.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include "Columns/ColumnNothing.h"
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
-#include <Functions/IFunction.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Common/TargetSpecific.h>
 #include <base/IPv4andIPv6.h>
@@ -824,6 +827,7 @@ class FunctionAnyHash : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
+    static constexpr int NULL_HASH = 42;
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -1156,6 +1160,68 @@ private:
     }
 
     template <bool first>
+    void executeNothing(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
+    {
+        KeyType key{};
+        if constexpr (Keyed)
+            key = Impl::getKey(key_cols, 0);
+        if (const auto * col_from = checkAndGetColumn<ColumnNothing>(column))
+        {
+            const ToType hash{NULL_HASH};
+            if constexpr (first)
+                vec_to.assign(vec_to.size(), hash);
+            else
+                for (size_t i = 0, size = vec_to.size(); i < size; ++i)
+                    vec_to[i] = combineHashes(key, vec_to[i], hash);
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                column->getName(), getName());
+    }
+
+    template <bool first>
+    void executeNullable(const KeyColumnsType & key_cols, const IDataType * from_type, const IColumn * column, typename     ColumnVector<ToType>::Container & vec_to) const
+    {
+        KeyType key{};
+        if constexpr (Keyed)
+            key = Impl::getKey(key_cols, 0);
+        if (const auto * col_from = checkAndGetColumn<ColumnNullable>(column))
+        {
+            const auto * nested_type = typeid_cast<const DataTypeNullable &>(*from_type).getNestedType().get();
+            if (nested_type->getTypeId() != TypeIndex::Nothing)
+            {
+                const auto & nested_col = col_from->getNestedColumn();
+                typename ColumnVector<ToType>::Container vec_temp(nested_col.size());
+                bool nested_is_first = true;
+                executeForArgument(key_cols, nested_type, &nested_col, vec_temp, nested_is_first);
+                for (size_t i = 0; i < vec_to.size(); ++i)
+                {
+                    ToType hash{NULL_HASH};
+                    if (!col_from->isNullAt(i))
+                        hash = vec_temp[i];
+                    if constexpr (first)
+                        vec_to[i] = hash;
+                    else
+                        vec_to[i] = combineHashes(key, vec_to[i], hash);
+                }
+            }
+            else if constexpr (first)
+                vec_to.assign(vec_to.size(), static_cast<ToType>(NULL_HASH));
+            else
+                for (size_t i = 0; i < vec_to.size(); ++i)
+                    vec_to[i] = combineHashes(key, vec_to[i], static_cast<ToType>(NULL_HASH));
+        }
+        else if (const ColumnConst * col_from_const = checkAndGetColumnConst<ColumnNullable>(column))
+        {
+            ColumnPtr full_column = col_from_const->convertToFullColumn();
+            executeNullable<first>(key_cols, from_type, full_column.get(), vec_to);
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    column->getName(), getName());
+    }
+
+    template <bool first>
     void executeAny(const KeyColumnsType & key_cols, const IDataType * from_type, const IColumn * icolumn, typename ColumnVector<ToType>::Container & vec_to) const
     {
         WhichDataType which(from_type);
@@ -1198,6 +1264,8 @@ private:
         else if (which.isString()) executeString<first>(key_cols, icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(key_cols, icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(key_cols, from_type, icolumn, vec_to);
+        else if (which.isNothing()) executeNothing<first>(key_cols, icolumn, vec_to);
+        else if (which.isNullable()) executeNullable<first>(key_cols, from_type, icolumn, vec_to);
         else executeGeneric<first>(key_cols, icolumn, vec_to);
     }
 
