@@ -121,39 +121,6 @@ void FilterDescription::lazyInitializeForFilterInPlace() const
         auto & indexes = assert_cast<ColumnUInt64 &>(indexes_holder->assumeMutableRef()).getData();
         start = filterToIndices(*data, indexes);
     }
-
-    /*
-    for (size_t i = 0; i < start; ++i)
-    {
-        if ((*data)[i] == 0)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "FilterDescription::lazyInitializeForFilterInPlace: index {} before start {} is not set in filter",
-                i, start);
-    }
-
-    ssize_t last_index = static_cast<ssize_t>(start) - 1;
-    std::cout << "xxx check index size:" << indexes.size() << std::endl;
-    for (ssize_t index : indexes)
-    {
-        std::cout << "xxx check index:" << index << std::endl;
-        if (index <= last_index || index >= static_cast<ssize_t>(data->size()))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "FilterDescription::lazyInitializeForFilterInPlace: index {} is less than last index {} or greater than total size {}",
-                index,
-                last_index,
-                data->size());
-
-        if ((*data)[index] == 0)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "FilterDescription::lazyInitializeForFilterInPlace: index {} is not set in filter",
-                index);
-
-        last_index = index;
-    }
-    */
 }
 
 size_t FilterDescription::countBytesInFilter() const

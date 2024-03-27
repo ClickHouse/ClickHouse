@@ -95,6 +95,9 @@ DECLARE_DEFAULT_CODE(
 template <typename Type>
 static void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<Type> & indices)
 {
+    size_t size = countBytesInFilter(filt, start, end);
+    indices.resize_exact(size);
+
     size_t pos = 0;
     for (; start + 64 <= end; start += 64)
     {
@@ -131,17 +134,34 @@ static void filterToIndices(const UInt8 * filt, size_t start, size_t end, Padded
         if (filt[start])
             indices[pos++] = static_cast<Type>(start);
     }
-})
+}
+)
 
-
-DECLARE_AVX512F_SPECIFIC_CODE(
+DECLARE_AVX512BW_SPECIFIC_CODE(
 template <typename Type>
 static void filterToIndices(const UInt8 * filt, size_t start, size_t end, PaddedPODArray<Type> & indices)
 {
     static constexpr size_t LOOPS_PER_MASK = sizeof(Type);
     static constexpr size_t MASK_BITS_PER_LOOP = 64 / LOOPS_PER_MASK;
     static constexpr UInt64 MASK_IN_LOOP = (1ULL << MASK_BITS_PER_LOOP) - 1;
+    static constexpr size_t PADDING_ELEMENTS = 64 / sizeof(Type) - 1;
+    const __m512i zero_vec = _mm512_setzero_si512();
 
+    /// Calculate the expected size of indices
+    size_t j = start;
+    size_t size = 0;
+    for (; j + 64 <= end; j += 64)
+    {
+        UInt64 mask64 = _mm512_cmpeq_epi8_mask(_mm512_loadu_epi8(reinterpret_cast<const void *>(filt + j)), zero_vec);
+        size += std::popcount(mask64);
+    }
+    for (; j < end; ++j)
+        size += filt[j] != 0;
+
+    /// Reserve enough size of indices. The extra space is for padding elements.
+    indices.resize_exact(size + PADDING_ELEMENTS);
+
+    /// Initialize avx512 registers
     __m512i index_vec;
     __m512i increment_vec;
     if constexpr (std::is_same_v<Type, UInt64>)
@@ -173,11 +193,11 @@ static void filterToIndices(const UInt8 * filt, size_t start, size_t end, Padded
         increment_vec = _mm512_set1_epi64(16); // Increment vector
     }
 
+    /// Fill indexes through compress store
     size_t pos = 0;
     for (; start + 64 <= end; start += 64)
     {
-        UInt64 mask64 = bytes64MaskToBits64Mask(filt + start);
-
+        UInt64 mask64 = _mm512_cmpeq_epi8_mask(_mm512_loadu_epi8(reinterpret_cast<const void *>(filt + start)), zero_vec);
         for (size_t i = 0; i < LOOPS_PER_MASK; ++i)
         {
             auto offset = std::popcount(mask64 & MASK_IN_LOOP);
@@ -212,42 +232,30 @@ static void filterToIndices(const UInt8 * filt, size_t start, size_t end, Padded
         if (filt[start])
             indices[pos++] = static_cast<Type>(start);
     }
-})
 
+    /// Resize to the actual size
+    indices.resize_exact(size);
+}
+)
 
 template <typename Type>
-size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<Type> & indices)
+ALWAYS_INLINE size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<Type> & indices)
 {
     if (filt.empty())
         return 0;
 
     size_t start = 0;
     size_t end = filt.size();
-    for (; start + 64 <= end; start += 64)
-    {
-        UInt64 mask = bytes64MaskToBits64Mask(filt.data() + start);
-        if (mask != 0xffffffffffffffff)
-            break;
-    }
-
-    size_t size = countBytesInFilter(filt.data(), start, end);
-
 #if USE_MULTITARGET_CODE
     if constexpr (std::is_same_v<Type, UInt64> || std::is_same_v<Type, UInt32>)
     {
-        if (isArchSupported(TargetArch::AVX512F))
+        if (isArchSupported(TargetArch::AVX512BW))
         {
-            /// Reserve padding area for AVX-512 filterToIndices
-            static constexpr size_t PADDING_ELEMENTS = 64 / sizeof(Type) - 1;
-            indices.resize_exact(size + PADDING_ELEMENTS);
-            TargetSpecific::AVX512F::filterToIndices(filt.data(), start, end, indices);
-            indices.resize_exact(size);
+            TargetSpecific::AVX512BW::filterToIndices(filt.data(), start, end, indices);
             return start;
         }
     }
 #endif
-
-    indices.resize_exact(size);
     TargetSpecific::Default::filterToIndices(filt.data(), start, end, indices);
     return start;
 }
