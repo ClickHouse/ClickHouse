@@ -14,11 +14,6 @@ namespace DB
 struct FileCacheReserveStat;
 class EvictionCandidates;
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 class IFileCachePriority : private boost::noncopyable
 {
 public:
