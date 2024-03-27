@@ -153,6 +153,8 @@ public:
         std::shared_ptr<IteratorWrapper> file_iterator_,
         bool need_only_count_);
 
+    ~HDFSSource() override;
+
     String getName() const override;
 
     Chunk generate() override;

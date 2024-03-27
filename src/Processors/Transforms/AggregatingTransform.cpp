@@ -80,6 +80,8 @@ namespace
             return convertToChunk(block);
         }
 
+        std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
+
     private:
         TemporaryFileStream * tmp_stream;
     };

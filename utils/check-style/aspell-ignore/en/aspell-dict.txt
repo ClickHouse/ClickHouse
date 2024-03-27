@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2724
+personal_ws-1.1 en 2758 
 AArch
 ACLs
 ALTERs
@@ -161,7 +161,10 @@ ClickHouseNIO
 ClickHouseVapor
 ClickVisual
 ClickableSquare
+CloudAvailableBadge
 CloudDetails
+CloudNotSupportedBadge
+CloudStorage
 CodeBlock
 CodeLLDB
 Codecs
@@ -460,6 +463,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 Levenshtein
+Liao
 LibFuzzer
 LightHouse
 LineAsString
@@ -845,7 +849,6 @@ SendScalars
 ShareAlike
 SharedMergeTree
 Shortkeys
-Shortkeys
 SimHash
 Simhash
 SimpleAggregateFunction
@@ -958,6 +961,7 @@ TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
 Transactional
+Tsai
 Tukey
 TwoColumnList
 UBSan
@@ -1582,6 +1586,7 @@ gccMurmurHash
 gcem
 generateRandom
 generateRandomStructure
+generateSeries
 generateULID
 generateUUIDv
 geoDistance
@@ -1596,6 +1601,7 @@ geohashEncode
 geohashesInBox
 geoip
 geospatial
+getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -1704,7 +1710,6 @@ hudi
 hyperscan
 hypot
 hyvor
-iTerm
 iTerm
 icosahedron
 icudata
@@ -2332,6 +2337,14 @@ shortcircuit
 shortkeys
 shoutout
 simdjson
+simpleJSON
+simpleJSONExtractBool
+simpleJSONExtractFloat
+simpleJSONExtractInt
+simpleJSONExtractRaw
+simpleJSONExtractString
+simpleJSONExtractUInt
+simpleJSONHas
 simpleLinearRegression
 simpleaggregatefunction
 simplelinearregression
@@ -2686,7 +2699,9 @@ userver
 utils
 uuid
 varPop
+varPopStable
 varSamp
+varSampStable
 variadic
 variantElement
 variantType

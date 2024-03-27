@@ -66,7 +66,7 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
         {"database", std::make_shared<DataTypeString>(), "Name of the database containing the dictionary created by DDL query. Empty string for other dictionaries."},
         {"name", std::make_shared<DataTypeString>(), "Dictionary name."},
         {"uuid", std::make_shared<DataTypeUUID>(), "Dictionary UUID."},
-        {"status", std::make_shared<DataTypeEnum8>(getStatusEnumAllPossibleValues()),
+        {"status", std::make_shared<DataTypeEnum8>(getExternalLoaderStatusEnumAllPossibleValues()),
             "Dictionary status. Possible values: "
             "NOT_LOADED — Dictionary was not loaded because it was not used, "
             "LOADED — Dictionary loaded successfully, "

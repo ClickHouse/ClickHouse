@@ -5,6 +5,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
 
 #include "config.h"
 
@@ -31,7 +32,7 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context
         enablePeriodicUpdates(true);
 }
 
-ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
+ExternalLoader::LoadableMutablePtr ExternalDictionariesLoader::createObject(
         const std::string & name, const Poco::Util::AbstractConfiguration & config,
         const std::string & key_in_config, const std::string & repository_name) const
 {
@@ -39,6 +40,38 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
     /// additional checks, so we identify them here.
     bool created_from_ddl = !repository_name.empty();
     return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), created_from_ddl);
+}
+
+bool ExternalDictionariesLoader::doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & old_config, const String & old_key_in_config,
+                                                                         const Poco::Util::AbstractConfiguration & new_config, const String & new_key_in_config) const
+{
+    std::unordered_set<std::string_view> ignore_keys;
+    ignore_keys.insert("comment"); /// We always can change the comment without reloading a dictionary.
+
+    /// If the database is atomic then a dictionary can be renamed without reloading.
+    if (!old_config.getString(old_key_in_config + ".uuid", "").empty() && !new_config.getString(new_key_in_config + ".uuid", "").empty())
+    {
+        ignore_keys.insert("name");
+        ignore_keys.insert("database");
+    }
+
+    return !isSameConfiguration(old_config, old_key_in_config, new_config, new_key_in_config, ignore_keys);
+}
+
+void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const
+{
+    IDictionary & dict = static_cast<IDictionary &>(object);
+
+    auto new_dictionary_id = StorageID::fromDictionaryConfig(config, key_in_config);
+    auto old_dictionary_id = dict.getDictionaryID();
+    if ((new_dictionary_id.table_name != old_dictionary_id.table_name) || (new_dictionary_id.database_name != old_dictionary_id.database_name))
+    {
+        /// We can update the dictionary ID without reloading only if it's in the atomic database.
+        if ((new_dictionary_id.uuid == old_dictionary_id.uuid) && (new_dictionary_id.uuid != UUIDHelpers::Nil))
+            dict.updateDictionaryID(new_dictionary_id);
+    }
+
+    dict.updateDictionaryComment(config.getString(key_in_config + ".comment", ""));
 }
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
