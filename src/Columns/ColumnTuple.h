@@ -43,6 +43,8 @@ public:
     const char * getFamilyName() const override { return "Tuple"; }
     TypeIndex getDataType() const override { return TypeIndex::Tuple; }
 
+    bool canBeInsideNullable() const override { return true; }
+
     MutableColumnPtr cloneEmpty() const override;
     MutableColumnPtr cloneResized(size_t size) const override;
 
