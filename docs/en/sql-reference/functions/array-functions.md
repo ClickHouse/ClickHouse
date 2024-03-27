@@ -2283,6 +2283,55 @@ Return value type is always [Float64](../../sql-reference/data-types/float.md). 
 │ 6   │ Float64                                                                                  │
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+## arrayRemove
+
+- Returns the array after removing the elements that pass the given predicate.
+
+**Syntax**
+
+``` sql
+arrayRemove(Function,arr)
+```
+
+**Arguments**
+
+- `arr` – Array
+- `Function` – Condition/Predicate to remove elements from the array
+
+**Returned value**
+
+- Array that contains only the elements that don't satisfy the predicate.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayRemove(
+        x -> x LIKE '%World%',
+        ['Hello', 'abc World'] AS arr)
+    AS res
+```
+
+Result:
+
+``` text
+┌─res───────┐
+│ ['Hello'] │
+└───────────┘
+```
+
+``` sql
+SELECT arrayRemove(x -> x < 11, [2, 10, 11, 12]) AS x;
+```
+
+Result:
+
+``` text
+┌─x───────┐
+│ [11,12] │
+└─────────┘
+```
 
 ## arrayRotateLeft
 

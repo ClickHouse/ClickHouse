@@ -131,6 +131,7 @@ arrayPushFront
 arrayRandomSample
 arrayReduce
 arrayReduceInRanges
+arrayRemove
 arrayResize
 arrayReverse
 arrayReverseFill
