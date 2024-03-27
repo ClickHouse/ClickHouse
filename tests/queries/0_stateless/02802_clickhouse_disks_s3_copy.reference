@@ -4,3 +4,9 @@ s3_plain_no_native_copy
 Single part upload has completed.
 copy from s3_plain_native_copy to s3_plain_another
 Single operation copy has completed.
+s3_plain_rewritable_native_copy
+Single part upload has completed.
+Single operation copy has completed.
+copy from s3_plain_rewritable_native_copy to s3_plain_rewritable_another
+Single part upload has completed.
+Single operation copy has completed.
