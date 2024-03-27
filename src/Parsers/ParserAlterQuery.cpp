@@ -41,6 +41,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_reset_setting("RESET SETTING");
     ParserKeyword s_modify_query("MODIFY QUERY");
     ParserKeyword s_modify_sql_security("MODIFY SQL SECURITY");
+    ParserKeyword s_modify_definer("MODIFY DEFINER");
     ParserKeyword s_modify_refresh("MODIFY REFRESH");
 
     ParserKeyword s_add_index("ADD INDEX");
@@ -864,10 +865,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
                 command->type = ASTAlterCommand::MODIFY_QUERY;
             }
-            else if (s_modify_sql_security.ignore(pos, expected))
+            else if (s_modify_sql_security.checkWithoutMoving(pos, expected))
             {
-                /// This is a hack so we can reuse parser from create and don't have to write `MODIFY SQL SECURITY SQL SECURITY INVOKER`
-                pos -= 2;
+                s_modify.ignore(pos, expected);
+                if (!sql_security_p.parse(pos, command_sql_security, expected))
+                    return false;
+                command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;
+            }
+            else if (s_modify_definer.checkWithoutMoving(pos, expected))
+            {
+                s_modify.ignore(pos, expected);
                 if (!sql_security_p.parse(pos, command_sql_security, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;

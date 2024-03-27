@@ -70,6 +70,17 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         query->replace(ast_create_query.refresh_strategy, metadata.refresh);
     }
 
+    if (metadata.sql_security_type)
+    {
+        auto new_sql_security = std::make_shared<ASTSQLSecurity>();
+        new_sql_security->type = metadata.sql_security_type;
+
+        if (metadata.definer)
+            new_sql_security->definer = std::make_shared<ASTUserNameWithHost>(*metadata.definer);
+
+        ast_create_query.sql_security = std::move(new_sql_security);
+    }
+
     /// MaterializedView, Dictionary are types of CREATE query without storage.
     if (ast_create_query.storage)
     {
