@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int HDFS_ERROR;
     extern const int ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
 }
 
 void HDFSObjectStorage::shutdown()
