@@ -7962,7 +7962,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
 
-    const String TMP_PREFIX = "tmp_replace_from_";
+    static const String TMP_PREFIX = "tmp_replace_from_";
     auto zookeeper = getZooKeeper();
 
     std::unordered_set<String> partitions;
