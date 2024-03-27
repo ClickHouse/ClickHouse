@@ -206,6 +206,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
             break;
         }
         case Type::RELOAD_DICTIONARY:
+        case Type::RELOAD_JOIN:
         case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
         case Type::RESTART_DISK:

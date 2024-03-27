@@ -30,6 +30,7 @@ public:
         const StorageID & table_id_,
         const Names & key_names_,
         bool use_nulls_,
+        bool enable_restore_,
         SizeLimits limits_,
         JoinKind kind_,
         JoinStrictness strictness_,
@@ -87,10 +88,13 @@ public:
 
     bool supportsTrivialCountOptimization() const override { return true; }
 
+    void externalRestore();
+
 private:
     Block sample_block;
     const Names key_names;
     bool use_nulls;
+    bool enable_restore;
     SizeLimits limits;
     JoinKind kind;                    /// LEFT | INNER ...
     JoinStrictness strictness;        /// ANY | ALL
