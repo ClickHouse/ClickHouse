@@ -52,8 +52,8 @@ using QueryTreeNodeConstRawPtrWithHashMap = std::unordered_map<QueryTreeNodeCons
 
 }
 
-template <typename T>
-struct std::hash<DB::QueryTreeNodeWithHash<T>>
+template <typename T, bool compare_aliases>
+struct std::hash<DB::QueryTreeNodeWithHash<T, compare_aliases>>
 {
     size_t operator()(const DB::QueryTreeNodeWithHash<T> & node_with_hash) const
     {

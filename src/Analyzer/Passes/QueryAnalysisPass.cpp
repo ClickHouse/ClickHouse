@@ -776,7 +776,7 @@ struct IdentifierResolveScope
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
-    QueryTreeNodePtrWithHashSet nullable_group_by_keys;
+    QueryTreeNodePtrWithHashWithoutAliasSet nullable_group_by_keys;
     /// Here we count the number of nullable GROUP BY keys we met resolving expression.
     /// E.g. for a query `SELECT tuple(tuple(number)) FROM numbers(10) GROUP BY (number, tuple(number)) with cube`
     /// both `number` and `tuple(number)` would be in nullable_group_by_keys.
