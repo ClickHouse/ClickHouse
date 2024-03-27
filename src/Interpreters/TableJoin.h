@@ -139,7 +139,8 @@ private:
     SizeLimits size_limits;
     const size_t default_max_bytes = 0;
     const bool join_use_nulls = false;
-    const bool cross_join_compress_blocks = false;
+    const UInt64 cross_join_min_rows_to_compress = 1000;
+    const UInt64 cross_join_min_bytes_to_compress = 10000;
     const size_t max_joined_block_rows = 0;
     std::vector<JoinAlgorithm> join_algorithm;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
@@ -270,7 +271,9 @@ public:
 
     bool joinUseNulls() const { return join_use_nulls; }
 
-    bool crossJoinCompressBlocks() const { return cross_join_compress_blocks; }
+    UInt64 crossJoinMinRowsToCompress() const { return cross_join_min_rows_to_compress; }
+
+    UInt64 crossJoinMinBytesToCompress() const { return cross_join_min_bytes_to_compress; }
 
     bool forceNullableRight() const
     {

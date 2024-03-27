@@ -106,6 +106,8 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
               {"keeper_retry_max_backoff_ms", 5000, 5000, "Max backoff timeout for general keeper operations"},
               {"s3queue_allow_experimental_sharded_mode", false, false, "Enable experimental sharded mode of S3Queue table engine. It is experimental because it will be rewritten"},
               {"cross_join_compress_blocks", false, false, "A new setting."},
+              {"cross_join_min_rows_to_compress", 1000, 1000, "A new setting."},
+              {"cross_join_min_bytes_to_compress", 10000, 10000, "A new setting."},
               {"merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability", 0.0, 0.0, "For testing of `PartsSplitter` - split read ranges into intersecting and non intersecting every time you read from MergeTree with the specified probability."},
               {"allow_get_client_http_header", false, false, "Introduced a new function."},
               {"output_format_pretty_row_numbers", false, true, "It is better for usability."},
