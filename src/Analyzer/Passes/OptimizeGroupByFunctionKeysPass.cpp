@@ -92,7 +92,7 @@ private:
                     if (!found)
                     {
                         bool is_deterministic_function = parents_are_only_deterministic &&
-                            function->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
+                            func->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
                         for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
                             candidates.push_back({ *it, is_deterministic_function });
                     }

@@ -59,8 +59,8 @@ using ComparatorWrapper = Comparator;
 
 #endif
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wold-style-cast"
 
 #include <miniselect/floyd_rivest_select.h>
 
@@ -115,7 +115,7 @@ void partial_sort(RandomIt first, RandomIt middle, RandomIt last)
     ::partial_sort(first, middle, last, comparator());
 }
 
-#pragma GCC diagnostic pop
+#pragma clang diagnostic pop
 
 template <typename RandomIt, typename Compare>
 void sort(RandomIt first, RandomIt last, Compare compare)

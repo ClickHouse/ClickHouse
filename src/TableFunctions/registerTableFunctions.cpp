@@ -11,6 +11,7 @@ void registerTableFunctions()
     registerTableFunctionMerge(factory);
     registerTableFunctionRemote(factory);
     registerTableFunctionNumbers(factory);
+    registerTableFunctionGenerateSeries(factory);
     registerTableFunctionNull(factory);
     registerTableFunctionZeros(factory);
     registerTableFunctionExecutable(factory);
@@ -23,6 +24,7 @@ void registerTableFunctions()
     registerTableFunctionGenerate(factory);
     registerTableFunctionMongoDB(factory);
     registerTableFunctionRedis(factory);
+    registerTableFunctionMergeTreeIndex(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);
 #endif

@@ -33,7 +33,7 @@ protected:
     {
         auto status = insert_future.wait_for(std::chrono::milliseconds(timeout_ms));
         if (status == std::future_status::deferred)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: got future in deferred state");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
 
         if (status == std::future_status::timeout)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout_ms);

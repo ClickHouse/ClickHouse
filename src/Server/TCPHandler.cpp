@@ -1,5 +1,4 @@
 #include "Interpreters/AsynchronousInsertQueue.h"
-#include "Interpreters/Context_fwd.h"
 #include "Interpreters/SquashingTransform.h"
 #include "Parsers/ASTInsertQuery.h"
 #include <algorithm>
@@ -39,7 +38,6 @@
 #include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
@@ -538,7 +536,7 @@ void TCPHandler::runImpl()
             }
             else if (state.io.pipeline.pulling())
             {
-                processOrdinaryQueryWithProcessors();
+                processOrdinaryQuery();
                 finish_or_cancel();
             }
             else if (state.io.pipeline.completed())
@@ -924,7 +922,7 @@ void TCPHandler::processInsertQuery()
     Block processed_block;
     const auto & settings = query_context->getSettingsRef();
 
-    auto * insert_queue = query_context->getAsynchronousInsertQueue();
+    auto * insert_queue = query_context->tryGetAsynchronousInsertQueue();
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*state.parsed_query);
 
     bool async_insert_enabled = settings.async_insert;
@@ -934,16 +932,33 @@ void TCPHandler::processInsertQuery()
 
     if (insert_queue && async_insert_enabled && !insert_query.select)
     {
+        /// Let's agree on terminology and say that a mini-INSERT is an asynchronous INSERT
+        /// which typically contains not a lot of data inside and a big-INSERT in an INSERT
+        /// which was formed by concatenating several mini-INSERTs together.
+        /// In case when the client had to retry some mini-INSERTs then they will be properly deduplicated
+        /// by the source tables. This functionality is controlled by a setting `async_insert_deduplicate`.
+        /// But then they will be glued together into a block and pushed through a chain of Materialized Views if any.
+        /// The process of forming such blocks is not deteministic so each time we retry mini-INSERTs the resulting
+        /// block may be concatenated differently.
+        /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
+        if (settings.throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert &&
+            settings.deduplicate_blocks_in_dependent_materialized_views)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Deduplication is dependent materialized view cannot work together with async inserts. "\
+                    "Please disable eiher `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
+
         auto result = processAsyncInsertQuery(*insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
         {
+            /// Reset pipeline because it may hold write lock for some storages.
+            state.io.pipeline.reset();
             if (settings.wait_for_async_insert)
             {
                 size_t timeout_ms = settings.wait_for_async_insert_timeout.totalMilliseconds();
                 auto wait_status = result.future.wait_for(std::chrono::milliseconds(timeout_ms));
 
                 if (wait_status == std::future_status::deferred)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: got future in deferred state");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
 
                 if (wait_status == std::future_status::timeout)
                     throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout_ms);
@@ -969,14 +984,14 @@ void TCPHandler::processInsertQuery()
     else
     {
         PushingPipelineExecutor executor(state.io.pipeline);
-        run_executor(executor, processed_block);
+        run_executor(executor, std::move(processed_block));
     }
 
     sendInsertProfileEvents();
 }
 
 
-void TCPHandler::processOrdinaryQueryWithProcessors()
+void TCPHandler::processOrdinaryQuery()
 {
     auto & pipeline = state.io.pipeline;
 
@@ -1109,6 +1124,7 @@ void TCPHandler::processTablesStatusRequest()
         {
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
+            status.is_readonly = replicated_table->isTableReadOnly();
         }
         else
             status.is_replicated = false;
@@ -2168,7 +2184,7 @@ void TCPHandler::sendData(const Block & block)
         /// For testing hedged requests
         if (unknown_packet_in_send_data)
         {
-            constexpr UInt64 marker = (1ULL<<63) - 1;
+            constexpr UInt64 marker = (1ULL << 63) - 1;
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
                 writeVarUInt(marker, *out);

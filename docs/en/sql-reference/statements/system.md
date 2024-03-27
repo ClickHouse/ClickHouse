@@ -68,7 +68,7 @@ RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 
 Clears ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
 
-For more convenient (automatic) cache management, see disable_internal_dns_cache, dns_cache_max_size, dns_cache_update_period parameters.
+For more convenient (automatic) cache management, see disable_internal_dns_cache, dns_cache_max_entries, dns_cache_update_period parameters.
 
 ## DROP MARK CACHE
 
@@ -180,9 +180,15 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 
 Forces ClickHouse to send data to cluster nodes synchronously. If any nodes are unavailable, ClickHouse throws an exception and stops query execution. You can retry the query until it succeeds, which will happen when all nodes are back online.
 
+You can also override some settings via `SETTINGS` clause, this can be useful to avoid some temporary limitations, like `max_concurrent_queries_for_all_users` or `max_memory_usage`.
+
 ``` sql
-SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name] [SETTINGS ...]
 ```
+
+:::note
+Each pending block is stored in disk with settings from the initial INSERT query, so that is why sometimes you may want to override settings.
+:::
 
 ### START DISTRIBUTED SENDS
 

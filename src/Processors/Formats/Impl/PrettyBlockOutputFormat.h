@@ -38,6 +38,7 @@ protected:
     virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
     void writeMonoChunkIfNeeded();
     void writeSuffix() override;
+    void writeReadableNumberTip(const Chunk & chunk);
 
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
@@ -47,7 +48,7 @@ protected:
 
     void writeValueWithPadding(
         const IColumn & column, const ISerialization & serialization, size_t row_num,
-        size_t value_width, size_t pad_to_width, bool align_right);
+        size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number);
 
     void resetFormatterImpl() override
     {
@@ -57,6 +58,7 @@ protected:
     bool color;
 
 private:
+    bool readable_number_tip = false;
     bool mono_block;
     /// For mono_block == true only
     Chunk mono_chunk;

@@ -89,6 +89,17 @@ public:
         return constant_type;
     }
 
+    /// Check if conversion to AST requires wrapping with _CAST function.
+    bool requiresCastCall() const;
+
+    /// Check if constant is a result of _CAST function constant folding.
+    bool receivedFromInitiatorServer() const;
+
+    void setMaskId(size_t id)
+    {
+        mask_id = id;
+    }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -107,6 +118,7 @@ private:
     mutable std::optional<Field> constant_value;
     DataTypePtr constant_type;
     QueryTreeNodePtr source_expression;
+    size_t mask_id = 0;
 
     static constexpr size_t children_size = 0;
 };

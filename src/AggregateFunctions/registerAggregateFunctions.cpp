@@ -39,9 +39,11 @@ void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory &);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory &);
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory &);
 void registerAggregateFunctionRate(AggregateFunctionFactory &);
-void registerAggregateFunctionsMin(AggregateFunctionFactory &);
-void registerAggregateFunctionsMax(AggregateFunctionFactory &);
+void registerAggregateFunctionsMinMax(AggregateFunctionFactory &);
+void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory &);
 void registerAggregateFunctionsAny(AggregateFunctionFactory &);
+void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory &);
+void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsSecondMoment(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsThirdMoment(AggregateFunctionFactory &);
@@ -99,7 +101,7 @@ void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactor
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
-void registerAggregateFunctionCombinatorMinMax(AggregateFunctionCombinatorFactory & factory);
+void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
 
@@ -138,9 +140,11 @@ void registerAggregateFunctions()
         registerAggregateFunctionsSequenceMatch(factory);
         registerAggregateFunctionWindowFunnel(factory);
         registerAggregateFunctionRate(factory);
-        registerAggregateFunctionsMin(factory);
-        registerAggregateFunctionsMax(factory);
+        registerAggregateFunctionsMinMax(factory);
+        registerAggregateFunctionsArgMinArgMax(factory);
         registerAggregateFunctionsAny(factory);
+        registerAggregateFunctionAnyHeavy(factory);
+        registerAggregateFunctionsAnyRespectNulls(factory);
         registerAggregateFunctionsStatisticsStable(factory);
         registerAggregateFunctionsStatisticsSecondMoment(factory);
         registerAggregateFunctionsStatisticsThirdMoment(factory);
@@ -203,7 +207,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorResample(factory);
         registerAggregateFunctionCombinatorDistinct(factory);
         registerAggregateFunctionCombinatorMap(factory);
-        registerAggregateFunctionCombinatorMinMax(factory);
+        registerAggregateFunctionCombinatorsArgMinArgMax(factory);
     }
 }
 

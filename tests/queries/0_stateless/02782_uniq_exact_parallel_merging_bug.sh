@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-tsan, no-asan, no-ubsan, no-msan, no-parallel
+# Tags: long, no-random-settings, no-tsan, no-asan, no-ubsan, no-msan, no-parallel, no-debug
 
 # shellcheck disable=SC2154
 

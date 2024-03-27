@@ -87,6 +87,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
     - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
     - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
     - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
+    - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
 
 ### Usage examples
 
@@ -167,6 +168,28 @@ If specific partitions associated with a table need to be restored these can be 
 RESTORE TABLE test.table PARTITIONS '2', '3'
   FROM Disk('backups', 'filename.zip')
 ```
+
+### Backups as tar archives
+
+Backups can also be stored as tar archives. The functionality is the same as for zip, except that a password is not supported.
+
+Write a backup as a tar:
+```
+BACKUP TABLE test.table TO Disk('backups', '1.tar')
+```
+
+Corresponding restore:
+```
+RESTORE TABLE test.table FROM Disk('backups', '1.tar')
+```
+
+To change the compression method, the correct file suffix should be appended to the backup name. I.E to compress the tar archive using gzip:
+```
+BACKUP TABLE test.table TO Disk('backups', '1.tar.gz')
+```
+
+The supported compression file suffixes are `tar.gz`, `.tgz` `tar.bz2`, `tar.lzma`, `.tar.zst`, `.tzst` and `.tar.xz`.
+
 
 ### Check the status of backups
 
@@ -421,10 +444,6 @@ Often data that is ingested into ClickHouse is delivered through some sort of pe
 ### Filesystem Snapshots {#filesystem-snapshots}
 
 Some local filesystems provide snapshot functionality (for example, [ZFS](https://en.wikipedia.org/wiki/ZFS)), but they might not be the best choice for serving live queries. A possible solution is to create additional replicas with this kind of filesystem and exclude them from the [Distributed](../engines/table-engines/special/distributed.md) tables that are used for `SELECT` queries. Snapshots on such replicas will be out of reach of any queries that modify data. As a bonus, these replicas might have special hardware configurations with more disks attached per server, which would be cost-effective.
-
-### clickhouse-copier {#clickhouse-copier}
-
-[clickhouse-copier](../operations/utilities/clickhouse-copier.md) is a versatile tool that was initially created to re-shard petabyte-sized tables. It can also be used for backup and restore purposes because it reliably copies data between ClickHouse tables and clusters.
 
 For smaller volumes of data, a simple `INSERT INTO ... SELECT ...` to remote tables might work as well.
 

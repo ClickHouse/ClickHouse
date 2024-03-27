@@ -26,7 +26,7 @@ public:
 
     qpl_job * acquireJob(UInt32 & job_id);
     void releaseJob(UInt32 job_id);
-    const bool & isJobPoolReady() { return job_pool_ready; }
+    const bool & isJobPoolReady() const { return job_pool_ready; }
 
 private:
     bool tryLockJob(UInt32 index);
@@ -66,7 +66,7 @@ public:
     /// RET_ERROR stands for hardware codec fail, needs fallback to software codec.
     static constexpr Int32 RET_ERROR = -1;
 
-    HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl & sw_codec_);
+    explicit HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl & sw_codec_);
     ~HardwareCodecDeflateQpl();
 
     Int32 doCompressData(const char * source, UInt32 source_size, char * dest, UInt32 dest_size) const;

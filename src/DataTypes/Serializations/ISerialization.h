@@ -102,7 +102,7 @@ public:
     struct SubstreamData
     {
         SubstreamData() = default;
-        SubstreamData(SerializationPtr serialization_)
+        explicit SubstreamData(SerializationPtr serialization_)
             : serialization(std::move(serialization_))
         {
         }

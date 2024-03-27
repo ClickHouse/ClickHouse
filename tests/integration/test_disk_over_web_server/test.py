@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 
 uuids = []
 
@@ -13,7 +13,7 @@ def cluster():
             "node1",
             main_configs=["configs/storage_conf.xml"],
             with_nginx=True,
-            allow_analyzer=False,
+            use_old_analyzer=True,
         )
         cluster.add_instance(
             "node2",
@@ -21,14 +21,14 @@ def cluster():
             with_nginx=True,
             stay_alive=True,
             with_zookeeper=True,
-            allow_analyzer=False,
+            use_old_analyzer=True,
         )
         cluster.add_instance(
             "node3",
             main_configs=["configs/storage_conf_web.xml"],
             with_nginx=True,
             with_zookeeper=True,
-            allow_analyzer=False,
+            use_old_analyzer=True,
         )
 
         cluster.add_instance(
@@ -38,8 +38,7 @@ def cluster():
             stay_alive=True,
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
-            tag="22.6",
-            allow_analyzer=False,
+            tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
         )
 
         cluster.start()
@@ -278,7 +277,7 @@ def test_unavailable_server(cluster):
             "Caught exception while loading metadata.*Connection refused"
         )
         assert node2.contains_in_log(
-            "HTTP request to \`http://nginx:8080/test1/.*\` failed at try 1/10 with bytes read: 0/unknown. Error: Connection refused."
+            "Failed to make request to 'http://nginx:8080/test1/.*'. Error: 'Connection refused'. Failed at try 10/10."
         )
     finally:
         node2.exec_in_container(

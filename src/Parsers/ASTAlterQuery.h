@@ -80,6 +80,7 @@ public:
         MODIFY_DATABASE_SETTING,
 
         MODIFY_COMMENT,
+        MODIFY_SQL_SECURITY,
     };
 
     Type type = NO_TYPE;
@@ -162,8 +163,8 @@ public:
     /// For MODIFY_QUERY
     IAST * select = nullptr;
 
-    /// In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
-    IAST * values = nullptr;
+    /// For MODIFY_SQL_SECURITY
+    IAST * sql_security = nullptr;
 
     /// Target column name
     IAST * rename_to = nullptr;
