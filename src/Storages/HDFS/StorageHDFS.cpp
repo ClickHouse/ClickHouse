@@ -624,6 +624,8 @@ HDFSSource::HDFSSource(
     initialize();
 }
 
+HDFSSource::~HDFSSource() = default;
+
 bool HDFSSource::initialize()
 {
     bool skip_empty_files = getContext()->getSettingsRef().hdfs_skip_empty_files;

@@ -215,6 +215,7 @@ class PRInfo:
                 .replace("{base}", base_sha)
                 .replace("{head}", self.sha)
             )
+            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
 
         elif "commits" in github_event:
             self.event_type = EventType.PUSH

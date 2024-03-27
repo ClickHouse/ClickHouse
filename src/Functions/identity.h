@@ -42,4 +42,18 @@ struct ScalarSubqueryResultName
 using FunctionIdentity = FunctionIdentityBase<IdentityName>;
 using FunctionScalarSubqueryResult = FunctionIdentityBase<ScalarSubqueryResultName>;
 
+struct ActionNameName
+{
+    static constexpr auto name = "__actionName";
+};
+
+class FunctionActionName : public FunctionIdentityBase<ActionNameName>
+{
+public:
+    using FunctionIdentityBase::FunctionIdentityBase;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionActionName>(); }
+    size_t getNumberOfArguments() const override { return 2; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+};
+
 }

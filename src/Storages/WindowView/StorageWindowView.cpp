@@ -71,6 +71,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -339,6 +340,13 @@ namespace
         table_expr->children.push_back(table_expr->database_and_table_name);
         return fetch_query;
     }
+
+    void checkTargetTableHasQueryOutputColumns(const ColumnsDescription & target_table_columns, const ColumnsDescription & select_query_output_columns)
+    {
+        for (const auto & column : select_query_output_columns)
+            if (!target_table_columns.has(column.name))
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the window view's inner table", column.name);
+    }
 }
 
 static void extractDependentTable(ContextPtr context, ASTPtr & query, String & select_database_name, String & select_table_name)
@@ -481,6 +489,18 @@ void StorageWindowView::alter(
     fire_task->deactivate();
 
     new_metadata.setSelectQuery(new_select);
+
+    /// Check the window view's inner target table structure.
+    if (has_inner_target_table)
+    {
+        /// If this window view has an inner target table it should always have the same columns as this window view.
+        /// Try to find mistakes in the select query (it shouldn't have columns which are not in the inner target table).
+        auto target_table_metadata = getTargetTable()->getInMemoryMetadataPtr();
+        const auto & select_query_output_columns = new_metadata.columns; /// AlterCommands::alter() analyzed the query and assigned `new_metadata.columns` before.
+        checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
+        /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. in data types).
+        new_metadata.columns = target_table_metadata->columns;
+    }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);

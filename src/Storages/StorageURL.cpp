@@ -387,6 +387,8 @@ StorageURLSource::StorageURLSource(
     };
 }
 
+StorageURLSource::~StorageURLSource() = default;
+
 Chunk StorageURLSource::generate()
 {
     while (true)

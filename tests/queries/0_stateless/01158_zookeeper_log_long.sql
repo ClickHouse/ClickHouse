@@ -42,5 +42,5 @@ order by xid, type, request_idx;
 drop table rmt sync;
 
 system flush logs;
-select 'duration_ms';
-select count()>0 from system.zookeeper_log where path like '/test/01158/' || currentDatabase() || '/rmt%' and duration_ms > 0;
+select 'duration_microseconds';
+select count()>0 from system.zookeeper_log where path like '/test/01158/' || currentDatabase() || '/rmt%' and duration_microseconds > 0;

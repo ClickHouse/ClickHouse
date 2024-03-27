@@ -192,6 +192,8 @@ MySQLHandler::MySQLHandler(
     settings_replacements.emplace("NET_READ_TIMEOUT", "receive_timeout");
 }
 
+MySQLHandler::~MySQLHandler() = default;
+
 void MySQLHandler::run()
 {
     setThreadName("MySQLHandler");

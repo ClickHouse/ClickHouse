@@ -72,7 +72,7 @@ FROM (
     LEFT JOIN (SELECT 2 :: UInt32 as a) t2
     USING (a)
 ) ORDER BY 1;
-1	Int32
+1	Int64
 SELECT *, * APPLY toTypeName
 FROM (
     SELECT t2.*
@@ -80,7 +80,7 @@ FROM (
     LEFT JOIN (SELECT 2 :: UInt32 as a) t2
     USING (a)
 ) ORDER BY 1;
-\N	Nullable(UInt32)
+\N	Nullable(Int64)
 SELECT *, * APPLY toTypeName
 FROM (
     SELECT *
@@ -209,7 +209,7 @@ FROM (
     RIGHT JOIN (SELECT 2 :: UInt32 as a) t2
     USING (a)
 ) ORDER BY 1;
-2	Nullable(Int32)
+2	Nullable(Int64)
 SELECT *, * APPLY toTypeName
 FROM (
     SELECT t2.*
@@ -217,7 +217,7 @@ FROM (
     RIGHT JOIN (SELECT 2 :: UInt32 as a) t2
     USING (a)
 ) ORDER BY 1;
-2	UInt32
+2	Int64
 SELECT *, * APPLY toTypeName
 FROM (
     SELECT *
@@ -354,8 +354,8 @@ FROM (
     FULL JOIN (SELECT 2 :: UInt32 as a) t2
     USING (a)
 ) ORDER BY 1;
-1	Nullable(Int32)
-2	Nullable(Int32)
+1	Nullable(Int64)
+2	Nullable(Int64)
 SELECT *, * APPLY toTypeName
 FROM (
     SELECT t2.*
@@ -363,8 +363,8 @@ FROM (
     FULL JOIN (SELECT 2 :: UInt32 as a) t2
     USING (a)
 ) ORDER BY 1;
-2	Nullable(UInt32)
-\N	Nullable(UInt32)
+2	Nullable(Int64)
+\N	Nullable(Int64)
 SELECT *, * APPLY toTypeName
 FROM (
     SELECT *

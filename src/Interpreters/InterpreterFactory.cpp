@@ -219,6 +219,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTExplainQuery>())
     {
+        const auto kind = query->as<ASTExplainQuery>()->getKind();
+        if (kind == ASTExplainQuery::ParsedAST || kind == ASTExplainQuery::AnalyzedSyntax)
+            context->setSetting("allow_experimental_analyzer", false);
+
         interpreter_name = "InterpreterExplainQuery";
     }
     else if (query->as<ASTShowProcesslistQuery>())

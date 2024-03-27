@@ -777,7 +777,13 @@ struct IdentifierResolveScope
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
     QueryTreeNodePtrWithHashSet nullable_group_by_keys;
-    QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> nullable_join_columns;
+
+    /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
+      * (For example, after join_use_nulls or USING column casted to supertype)
+      * However, the column in the projection still refers to the table as its source.
+      * This map is used to revert these columns back to their original columns in the source table.
+      */
+    QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> join_columns_with_changed_types;
 
     /// Use identifier lookup to result cache
     bool use_identifier_lookup_to_result_cache = true;
@@ -800,6 +806,14 @@ struct IdentifierResolveScope
 
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
+
+    struct ResolvedFunctionsCache
+    {
+        FunctionOverloadResolverPtr resolver;
+        FunctionBasePtr function_base;
+    };
+
+    std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
 
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const
     {
@@ -1300,7 +1314,8 @@ private:
                 if (!resolved_expression->getResultType()->equals(*new_result_type))
                     resolved_expression = buildCastFunction(resolved_expression, new_result_type, scope.context, true);
             }
-            scope.nullable_join_columns[nullable_resolved_identifier] = resolved_identifier;
+            if (!nullable_resolved_identifier->isEqual(*resolved_identifier))
+                scope.join_columns_with_changed_types[nullable_resolved_identifier] = resolved_identifier;
             return nullable_resolved_identifier;
         }
         return nullptr;
@@ -1392,6 +1407,8 @@ private:
         const QueryTreeNodePtr & table_expression_node,
         const NamesAndTypes & matched_columns,
         const IdentifierResolveScope & scope);
+
+    void updateMatchedColumnsFromJoinUsing(QueryTreeNodesWithNames & result_matched_column_nodes_with_names, const QueryTreeNodePtr & source_table_expression, IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
@@ -2160,10 +2177,13 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         !nearest_query_scope)
     {
         auto constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), scalar_type);
-        auto constant_node = std::make_shared<ConstantNode>(std::move(constant_value), node);
+        auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
 
         if (constant_node->getValue().isNull())
+        {
             node = buildCastFunction(constant_node, constant_node->getResultType(), context);
+            node = std::make_shared<ConstantNode>(std::move(constant_value), node);
+        }
         else
             node = std::move(constant_node);
 
@@ -3301,6 +3321,78 @@ QueryTreeNodePtr checkIsMissedObjectJSONSubcolumn(const QueryTreeNodePtr & left_
     return {};
 }
 
+/// Used to replace columns that changed type because of JOIN to their original type
+class ReplaceColumnsVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsVisitor>
+{
+public:
+    explicit ReplaceColumnsVisitor(const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map_, const ContextPtr & context_)
+        : replacement_map(replacement_map_)
+        , context(context_)
+    {}
+
+    /// Apply replacement transitively, because column may change it's type twice, one to have a supertype and then because of `joun_use_nulls`
+    static QueryTreeNodePtr findTransitiveReplacement(QueryTreeNodePtr node, const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map_)
+    {
+        auto it = replacement_map_.find(node);
+        QueryTreeNodePtr result_node = nullptr;
+        for (; it != replacement_map_.end(); it = replacement_map_.find(result_node))
+        {
+            if (result_node && result_node->isEqual(*it->second))
+            {
+                Strings map_dump;
+                for (const auto & [k, v]: replacement_map_)
+                    map_dump.push_back(fmt::format("{} -> {} (is_equals: {}, is_same: {})",
+                        k.node->dumpTree(), v->dumpTree(), k.node->isEqual(*v), k.node == v));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Infinite loop in query tree replacement map: {}", fmt::join(map_dump, "; "));
+            }
+            chassert(it->second);
+
+            result_node = it->second;
+        }
+        return result_node;
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto replacement_node = findTransitiveReplacement(node, replacement_map))
+            node = replacement_node;
+
+        if (auto * function_node = node->as<FunctionNode>(); function_node && function_node->isResolved())
+            rerunFunctionResolve(function_node, context);
+    }
+
+    /// We want to re-run resolve for function _after_ its arguments are replaced
+    bool shouldTraverseTopToBottom() const { return false; }
+
+    bool needChildVisit(QueryTreeNodePtr & /* parent */, QueryTreeNodePtr & child)
+    {
+        /// Visit only expressions, but not subqueries
+        return child->getNodeType() == QueryTreeNodeType::IDENTIFIER
+            || child->getNodeType() == QueryTreeNodeType::LIST
+            || child->getNodeType() == QueryTreeNodeType::FUNCTION
+            || child->getNodeType() == QueryTreeNodeType::COLUMN;
+    }
+
+private:
+    const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map;
+    const ContextPtr & context;
+};
+
+/// Compare resolved identifiers considering columns that become nullable after JOIN
+bool resolvedIdenfiersFromJoinAreEquals(
+    const QueryTreeNodePtr & left_resolved_identifier,
+    const QueryTreeNodePtr & right_resolved_identifier,
+    const IdentifierResolveScope & scope)
+{
+    auto left_original_node = ReplaceColumnsVisitor::findTransitiveReplacement(left_resolved_identifier, scope.join_columns_with_changed_types);
+    const auto & left_resolved_to_compare = left_original_node ? left_original_node : left_resolved_identifier;
+
+    auto right_original_node = ReplaceColumnsVisitor::findTransitiveReplacement(right_resolved_identifier, scope.join_columns_with_changed_types);
+    const auto & right_resolved_to_compare = right_original_node ? right_original_node : right_resolved_identifier;
+
+    return left_resolved_to_compare->isEqual(*right_resolved_to_compare, IQueryTreeNode::CompareOptions{.compare_aliases = false});
+}
+
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -3435,9 +3527,13 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
             auto & result_column = result_column_node->as<ColumnNode &>();
             result_column.setColumnType(using_column_node.getColumnType());
 
+            const auto & join_using_left_column = using_expression_list.getNodes().at(0);
+            if (!result_column_node->isEqual(*join_using_left_column))
+                scope.join_columns_with_changed_types[result_column_node] = join_using_left_column;
+
             resolved_identifier = std::move(result_column_node);
         }
-        else if (left_resolved_identifier->isEqual(*right_resolved_identifier, IQueryTreeNode::CompareOptions{.compare_aliases = false}))
+        else if (resolvedIdenfiersFromJoinAreEquals(left_resolved_identifier, right_resolved_identifier, scope))
         {
             const auto & identifier_path_part = identifier_lookup.identifier.front();
             auto * left_resolved_identifier_column = left_resolved_identifier->as<ColumnNode>();
@@ -3513,6 +3609,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
                 auto left_resolved_column_clone = std::static_pointer_cast<ColumnNode>(left_resolved_column.clone());
                 left_resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
                 resolved_identifier = std::move(left_resolved_column_clone);
+
+                if (!resolved_identifier->isEqual(*using_column_node_it->second))
+                    scope.join_columns_with_changed_types[resolved_identifier] = using_column_node_it->second;
             }
         }
     }
@@ -3535,6 +3634,8 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
                 auto right_resolved_column_clone = std::static_pointer_cast<ColumnNode>(right_resolved_column.clone());
                 right_resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
                 resolved_identifier = std::move(right_resolved_column_clone);
+                if (!resolved_identifier->isEqual(*using_column_node_it->second))
+                    scope.join_columns_with_changed_types[resolved_identifier] = using_column_node_it->second;
             }
         }
     }
@@ -3544,9 +3645,17 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
     if (scope.join_use_nulls)
     {
+        auto projection_name_it = node_to_projection_name.find(resolved_identifier);
         auto nullable_resolved_identifier = convertJoinedColumnTypeToNullIfNeeded(resolved_identifier, join_kind, resolved_side, scope);
         if (nullable_resolved_identifier)
+        {
             resolved_identifier = nullable_resolved_identifier;
+            /// Set the same projection name for new nullable node
+            if (projection_name_it != node_to_projection_name.end())
+            {
+                node_to_projection_name.emplace(resolved_identifier, projection_name_it->second);
+            }
+        }
     }
 
     return resolved_identifier;
@@ -4205,6 +4314,95 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     return matched_column_nodes_with_names;
 }
 
+bool hasTableExpressionInJoinTree(const QueryTreeNodePtr & join_tree_node, const QueryTreeNodePtr & table_expression)
+{
+    QueryTreeNodes nodes_to_process;
+    nodes_to_process.push_back(join_tree_node);
+
+    while (!nodes_to_process.empty())
+    {
+        auto node_to_process = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
+        if (node_to_process == table_expression)
+            return true;
+
+        if (node_to_process->getNodeType() == QueryTreeNodeType::JOIN)
+        {
+            const auto & join_node = node_to_process->as<JoinNode &>();
+            nodes_to_process.push_back(join_node.getLeftTableExpression());
+            nodes_to_process.push_back(join_node.getRightTableExpression());
+        }
+    }
+    return false;
+}
+
+/// Columns that resolved from matcher can also match columns from JOIN USING.
+/// In that case we update type to type of column in USING section.
+/// TODO: It's not completely correct for qualified matchers, so t1.* should be resolved to left table column type.
+/// But in planner we do not distinguish such cases.
+void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
+    QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
+    const QueryTreeNodePtr & source_table_expression,
+    IdentifierResolveScope & scope)
+{
+    auto * nearest_query_scope = scope.getNearestQueryScope();
+    auto * nearest_query_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
+
+    /// If there are no parent query scope or query scope does not have join tree
+    if (!nearest_query_scope_query_node || !nearest_query_scope_query_node->getJoinTree())
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "There are no table sources. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+    }
+
+    const auto & join_tree = nearest_query_scope_query_node->getJoinTree();
+
+    const auto * join_node = join_tree->as<JoinNode>();
+    if (join_node && join_node->isUsingJoinExpression())
+    {
+        const auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
+        const auto & join_using_nodes = join_using_list.getNodes();
+
+        for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
+        {
+            auto & matched_column_node_typed = matched_column_node->as<ColumnNode &>();
+            const auto & matched_column_name = matched_column_node_typed.getColumnName();
+
+            for (const auto & join_using_node : join_using_nodes)
+            {
+                auto & join_using_column_node = join_using_node->as<ColumnNode &>();
+                const auto & join_using_column_name = join_using_column_node.getColumnName();
+
+                if (matched_column_name != join_using_column_name)
+                    continue;
+
+                const auto & join_using_column_nodes_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();
+                const auto & join_using_column_nodes = join_using_column_nodes_list.getNodes();
+
+                auto it = node_to_projection_name.find(matched_column_node);
+
+                if (hasTableExpressionInJoinTree(join_node->getLeftTableExpression(), source_table_expression))
+                    matched_column_node = join_using_column_nodes.at(0);
+                else if (hasTableExpressionInJoinTree(join_node->getRightTableExpression(), source_table_expression))
+                    matched_column_node = join_using_column_nodes.at(1);
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot find column {} in JOIN USING section {}",
+                        matched_column_node->dumpTree(), join_node->dumpTree());
+
+                matched_column_node = matched_column_node->clone();
+                if (it != node_to_projection_name.end())
+                    node_to_projection_name.emplace(matched_column_node, it->second);
+
+                matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
+                if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
+                    scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
+            }
+        }
+    }
+}
+
 /** Resolve qualified tree matcher.
   *
   * First try to match qualified identifier to expression. If qualified identifier matched expression node then
@@ -4321,6 +4519,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         table_expression_node,
         matched_columns,
         scope);
+
+    updateMatchedColumnsFromJoinUsing(result_matched_column_nodes_with_names, table_expression_node, scope);
 
     return result_matched_column_nodes_with_names;
 }
@@ -4457,6 +4657,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
                     matched_column_node = matched_column_node->clone();
                     matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
+                    if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
+                        scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
 
                     table_expression_column_names_to_skip.insert(join_using_column_name);
                     matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), join_using_column_name);
@@ -4576,7 +4778,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     node = nullable_node;
                     /// Set the same projection name for new nullable node
                     if (projection_name_it != node_to_projection_name.end())
+                    {
                         node_to_projection_name.emplace(node, projection_name_it->second);
+                    }
                 }
             }
         }
@@ -5586,9 +5790,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters);
     bool is_executable_udf = true;
 
+    IdentifierResolveScope::ResolvedFunctionsCache * function_cache = nullptr;
+
     if (!function)
     {
-        function = FunctionFactory::instance().tryGet(function_name, scope.context);
+        /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
+        /// Function randConstant() would return the same value for the same arguments (in scope).
+
+        auto hash = function_node_ptr->getTreeHash();
+        function_cache = &scope.functions_cache[hash];
+        if (!function_cache->resolver)
+            function_cache->resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
+
+        function = function_cache->resolver;
+
         is_executable_udf = false;
     }
 
@@ -5812,7 +6027,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     try
     {
-        auto function_base = function->build(argument_columns);
+        FunctionBasePtr function_base;
+        if (function_cache)
+        {
+            auto & cached_function = function_cache->function_base;
+            if (!cached_function)
+                cached_function = function->build(argument_columns);
+
+            function_base = cached_function;
+        }
+        else
+            function_base = function->build(argument_columns);
 
         /// Do not constant fold get scalar functions
         bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
@@ -7580,29 +7805,6 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 
-class ReplaceColumnsVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsVisitor>
-{
-public:
-    explicit ReplaceColumnsVisitor(const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map_, const ContextPtr & context_)
-        : replacement_map(replacement_map_)
-        , context(context_)
-    {}
-
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto it = replacement_map.find(node); it != replacement_map.end())
-            node = it->second;
-        if (auto * function_node = node->as<FunctionNode>())
-            rerunFunctionResolve(function_node, context);
-    }
-
-    bool shouldTraverseTopToBottom() const { return false; }
-
-private:
-    const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map;
-    const ContextPtr & context;
-};
-
 /** Resolve query.
   * This function modifies query node during resolve. It is caller responsibility to clone query node before resolve
   * if it is needed for later use.
@@ -7794,19 +7996,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     {
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        if (scope.join_use_nulls)
-        {
-            /** Expression in PREWHERE with JOIN should not be modified by join_use_nulls.
-              * Example: SELECT * FROM t1 JOIN t2 USING (id) PREWHERE b = 1
-              * Column `a` should be resolved from table and should not change its type to Nullable.
-              * More complicated example when column is somewhere inside an expression:
-              * SELECT a + 1 as b FROM t1 JOIN t2 USING (id) PREWHERE b = 1
-              * expression `a + 1 as b` in projection and in PREWHERE should have different `a`.
-              */
-            prewhere_node = prewhere_node->clone();
-            ReplaceColumnsVisitor replace_visitor(scope.nullable_join_columns, scope.context);
-            replace_visitor.visit(prewhere_node);
-        }
+        /** Expressions in PREWHERE with JOIN should not change their type.
+          * Example: SELECT * FROM t1 JOIN t2 USING (a) PREWHERE a = 1
+          * Column `a` in PREWHERE should be resolved from the left table
+          * and should not change its type to Nullable or to the supertype of `a` from t1 and t2.
+          * Here's a more complicated example where the column is somewhere inside an expression:
+          * SELECT a + 1 as b FROM t1 JOIN t2 USING (id) PREWHERE b = 1
+          * The expression `a + 1 as b` in the projection and in PREWHERE should have different `a`.
+          */
+        prewhere_node = prewhere_node->clone();
+        ReplaceColumnsVisitor replace_visitor(scope.join_columns_with_changed_types, scope.context);
+        replace_visitor.visit(prewhere_node);
     }
 
     if (query_node_typed.getWhere())

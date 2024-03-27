@@ -95,6 +95,10 @@ public:
     bool hasGrantOption(const AccessRightsElement & element) const;
     bool hasGrantOption(const AccessRightsElements & elements) const;
 
+    /// Checks if a given `access_rights` is a subset for the current access rights.
+    bool contains(const AccessRights & access_rights) const;
+    bool containsWithGrantOption(const AccessRights & access_rights) const;
+
     /// Merges two sets of access rights together.
     /// It's used to combine access rights from multiple roles.
     void makeUnion(const AccessRights & other);
@@ -152,6 +156,9 @@ private:
 
     template <bool grant_option>
     bool isGrantedImpl(const AccessRightsElements & elements) const;
+
+    template <bool grant_option>
+    bool containsImpl(const AccessRights & other) const;
 
     template <bool grant_option>
     bool isGrantedImplHelper(const AccessRightsElement & element) const;
