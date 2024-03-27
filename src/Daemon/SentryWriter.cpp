@@ -139,14 +139,25 @@ void SentryWriter::shutdown()
         sentry_shutdown();
 }
 
-void SentryWriter::onFault(int sig, const std::string & error_message, const StackTrace & stack_trace)
+void SentryWriter::onFault(int sig_or_error, const std::string & error_message, const FramePointers & frame_pointers, size_t offset, size_t size)
 {
     auto logger = getLogger("SentryWriter");
     if (initialized)
     {
         sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fault", error_message.c_str());
-        sentry_set_tag("signal", strsignal(sig)); // NOLINT(concurrency-mt-unsafe) // not thread-safe but ok in this context
-        sentry_set_extra("signal_number", sentry_value_new_int32(sig));
+        if (sig_or_error > 0)
+        {
+            int sig = sig_or_error;
+            sentry_set_tag("signal", strsignal(sig)); // NOLINT(concurrency-mt-unsafe) // not thread-safe but ok in this context
+            sentry_set_extra("signal_number", sentry_value_new_int32(sig));
+        }
+        else
+        {
+            /// Can be only LOGICAL_ERROR, but just in case.
+            int code = -sig_or_error;
+            sentry_set_tag("exception", DB::ErrorCodes::getName(code).data());
+            sentry_set_extra("exception_code", sentry_value_new_int32(code));
+        }
 
         #if defined(__ELF__) && !defined(OS_FREEBSD)
             const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
@@ -157,11 +168,8 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
 
         /// Prepare data for https://develop.sentry.dev/sdk/event-payloads/stacktrace/
         sentry_value_t sentry_frames = sentry_value_new_list();
-        size_t stack_size = stack_trace.getSize();
-        if (stack_size > 0)
+        if (size > 0)
         {
-            ssize_t offset = stack_trace.getOffset();
-
             char instruction_addr[19]
             {
                 '0', 'x',
@@ -191,7 +199,7 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
                 sentry_value_append(sentry_frames, sentry_frame);
             };
 
-            StackTrace::forEachFrame(stack_trace.getFramePointers(), offset, stack_size, sentry_add_stack_trace, /* fatal= */ true);
+            StackTrace::forEachFrame(frame_pointers, offset, size, sentry_add_stack_trace, /* fatal= */ true);
         }
 
         /// Prepare data for https://develop.sentry.dev/sdk/event-payloads/threads/
@@ -212,7 +220,7 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
 
         LOG_INFO(logger, "Sending crash report");
         sentry_capture_event(event);
-        shutdown();
+        /* shutdown(); */
     }
     else
     {

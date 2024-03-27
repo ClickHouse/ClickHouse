@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <Common/StackTrace.h>
 
 
 namespace Poco { namespace Util { class LayeredConfiguration; }}
@@ -19,9 +20,14 @@ namespace SentryWriter
     void initialize(Poco::Util::LayeredConfiguration & config);
     void shutdown();
 
+    using FramePointers = StackTrace::FramePointers;
+
     /// Not signal safe and can't be called from a signal handler
+    /// @param sig_or_error - signal if >= 0, otherwise exception code
     void onFault(
-        int sig,
+        int sig_or_error,
         const std::string & error_message,
-        const StackTrace & stack_trace);
+        const FramePointers & frame_pointers,
+        size_t offset,
+        size_t size);
 }
