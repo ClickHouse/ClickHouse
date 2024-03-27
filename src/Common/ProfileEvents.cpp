@@ -689,6 +689,8 @@ The server successfully detected this situation and will download merged part fr
     M(InterfaceMySQLReceiveBytes, "Number of bytes received through MySQL interfaces") \
     M(InterfacePostgreSQLSendBytes, "Number of bytes sent through PostgreSQL interfaces") \
     M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces") \
+    M(InterfaceMongoDBSendBytes, "Number of bytes sent through MongoDB interfaces") \
+    M(InterfaceMongoDBReceiveBytes, "Number of bytes received through MongoDB interfaces") \
     \
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas") \
     \
