@@ -113,9 +113,9 @@ class TestCIOptions(unittest.TestCase):
             jobs_to_do,
             [
                 "Style check",
-                "Integration tests (asan, analyzer)",
+                "Integration tests (asan, old analyzer)",
                 "package_release",
-                "Stateless tests (release, analyzer, s3, DatabaseReplicated)",
+                "Stateless tests (release, old analyzer, s3, DatabaseReplicated)",
                 "package_asan",
             ],
         )
