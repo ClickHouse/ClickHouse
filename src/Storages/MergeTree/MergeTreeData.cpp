@@ -3680,12 +3680,9 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
                return !may_be_cleaned_up || temporary_parts.contains(dir_name);
            }());
 
-    if (need_rename)
-        part->renameTo(part->name, true);
-
     LOG_TEST(log, "preparePartForCommit: inserting {} into data_parts_indexes", part->getNameWithState());
     data_parts_indexes.insert(part);
-    out_transaction.addPart(part);
+    out_transaction.addPart(part, need_rename);
 }
 
 bool MergeTreeData::addTempPart(
@@ -6463,9 +6460,11 @@ TransactionID MergeTreeData::Transaction::getTID() const
     return Tx::PrehistoricTID;
 }
 
-void MergeTreeData::Transaction::addPart(MutableDataPartPtr & part)
+void MergeTreeData::Transaction::addPart(MutableDataPartPtr & part, bool need_rename)
 {
     precommitted_parts.insert(part);
+    if (need_rename)
+        precommitted_parts_need_rename.insert(part);
 }
 
 void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
@@ -6511,7 +6510,9 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
 
 void MergeTreeData::Transaction::clear()
 {
+    chassert(precommitted_parts.size() >= precommitted_parts_need_rename.size());
     precommitted_parts.clear();
+    precommitted_parts_need_rename.clear();
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock * acquired_parts_lock)
@@ -6527,6 +6528,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
         for (const auto & part : precommitted_parts)
             if (part->getDataPartStorage().hasActiveTransaction())
                 part->getDataPartStorage().commitTransaction();
+
+        for (const auto & part_need_rename : precommitted_parts_need_rename)
+            part_need_rename->renameTo(part_need_rename->name, true);
 
         if (txn)
         {
