@@ -156,6 +156,7 @@
     M(DistributedConnectionFailTry, "Total count when distributed connection fails with retry.") \
     M(DistributedConnectionMissingTable, "Number of times we rejected a replica from a distributed query, because it did not contain a table needed for the query.") \
     M(DistributedConnectionStaleReplica, "Number of times we rejected a replica from a distributed query, because some table needed for a query had replication lag higher than the configured threshold.") \
+    M(DistributedConnectionSkipReadOnlyReplica, "Number of replicas skipped during INSERT into Distributed table due to replicas being read-only") \
     M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished.") \
     \
     M(HedgedRequestsChangeReplica, "Total count when timeout for changing replica expired in hedged requests.") \
@@ -476,6 +477,7 @@ The server successfully detected this situation and will download merged part fr
     M(FileSegmentRemoveMicroseconds, "File segment remove() time") \
     M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time") \
     M(FileSegmentFailToIncreasePriority, "Number of times the priority was not increased due to a high contention on the cache lock") \
+    M(FilesystemCacheFailToReserveSpaceBecauseOfLockContention, "Number of times space reservation was skipped due to a high contention on the cache lock") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segments count, which were hold") \
     M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)") \
     \
@@ -533,6 +535,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
+    M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied") \
     \
     M(MetadataFromKeeperCacheHit, "Number of times an object storage metadata request was answered from cache without making request to Keeper") \
     M(MetadataFromKeeperCacheMiss, "Number of times an object storage metadata request had to be answered from Keeper") \

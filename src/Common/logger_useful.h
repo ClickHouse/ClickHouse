@@ -19,14 +19,14 @@ namespace Poco { class Logger; }
 
 using LogSeriesLimiterPtr = std::shared_ptr<LogSeriesLimiter>;
 
-namespace
+namespace impl
 {
-    [[maybe_unused]] LoggerPtr getLoggerHelper(const LoggerPtr & logger) { return logger; }
-    [[maybe_unused]] LoggerPtr getLoggerHelper(const AtomicLogger & logger) { return logger.load(); }
-    [[maybe_unused]] const ::Poco::Logger * getLoggerHelper(const ::Poco::Logger * logger) { return logger; }
-    [[maybe_unused]] std::unique_ptr<LogToStrImpl> getLoggerHelper(std::unique_ptr<LogToStrImpl> && logger) { return logger; }
-    [[maybe_unused]] std::unique_ptr<LogFrequencyLimiterIml> getLoggerHelper(std::unique_ptr<LogFrequencyLimiterIml> && logger) { return logger; }
-    [[maybe_unused]] LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
+    [[maybe_unused]] inline LoggerPtr getLoggerHelper(const LoggerPtr & logger) { return logger; }
+    [[maybe_unused]] inline LoggerPtr getLoggerHelper(const AtomicLogger & logger) { return logger.load(); }
+    [[maybe_unused]] inline const ::Poco::Logger * getLoggerHelper(const ::Poco::Logger * logger) { return logger; }
+    [[maybe_unused]] inline std::unique_ptr<LogToStrImpl> getLoggerHelper(std::unique_ptr<LogToStrImpl> && logger) { return logger; }
+    [[maybe_unused]] inline std::unique_ptr<LogFrequencyLimiterIml> getLoggerHelper(std::unique_ptr<LogFrequencyLimiterIml> && logger) { return logger; }
+    [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
 }
 
 #define LOG_IMPL_FIRST_ARG(X, ...) X
@@ -65,7 +65,7 @@ namespace
 
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
 {                                                                                                                   \
-    auto _logger = ::getLoggerHelper(logger);                                                                             \
+    auto _logger = ::impl::getLoggerHelper(logger);                                                                 \
     const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&                                      \
         (DB::CurrentThread::get().getClientLogsLevel() >= (priority));                                              \
     if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
@@ -106,6 +106,18 @@ namespace
         Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
             (PRIORITY), _file_function.c_str(), __LINE__, _format_string);                                          \
         _channel->log(_poco_message);                                                                               \
+    }                                                                                                               \
+    catch (const Poco::Exception & logger_exception)                                                                \
+    {                                                                                                               \
+        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        const std::string & logger_exception_message = logger_exception.message();                                  \
+        ::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
+    }                                                                                                               \
+    catch (const std::exception & logger_exception)                                                                 \
+    {                                                                                                               \
+        ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
+        const char * logger_exception_message = logger_exception.what();                                            \
+        ::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
     }                                                                                                               \
     catch (...)                                                                                                     \
     {                                                                                                               \

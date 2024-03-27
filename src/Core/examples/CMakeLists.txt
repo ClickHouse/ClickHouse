@@ -6,6 +6,3 @@ target_link_libraries (field PRIVATE dbms)
 
 clickhouse_add_executable (string_ref_hash string_ref_hash.cpp)
 target_link_libraries (string_ref_hash PRIVATE clickhouse_common_io)
-
-clickhouse_add_executable (mysql_protocol mysql_protocol.cpp)
-target_link_libraries (mysql_protocol PRIVATE dbms)

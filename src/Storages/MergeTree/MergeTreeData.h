@@ -465,8 +465,13 @@ public:
 
     struct ProjectionPartsVector
     {
-        DataPartsVector projection_parts;
         DataPartsVector data_parts;
+
+        DataPartsVector projection_parts;
+        DataPartStateVector projection_parts_states;
+
+        DataPartsVector broken_projection_parts;
+        DataPartStateVector broken_projection_parts_states;
     };
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
@@ -481,7 +486,7 @@ public:
         const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
     /// Same as above but only returns projection parts
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
-        const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
+        const DataPartStates & affordable_states, MergeTreeData::DataPartStateVector * out_states) const;
 
 
     /// Returns absolutely all parts (and snapshot of their states)
@@ -835,7 +840,7 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnSameDisk(
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
         const MergeTreeData::DataPartPtr & src_part,
         const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info,
@@ -1383,7 +1388,7 @@ protected:
                 latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
             }
 
-            bool partCanBeMutated()
+            bool partCanBeMutated() const
             {
                 if (max_postpone_time_ms == 0)
                     return true;

@@ -2817,6 +2817,17 @@ Possible values:
 
 Default value: 0.
 
+## distributed_insert_skip_read_only_replicas {#distributed_insert_skip_read_only_replicas}
+
+Enables skipping read-only replicas for INSERT queries into Distributed.
+
+Possible values:
+
+- 0 — INSERT was as usual, if it will go to read-only replica it will fail
+- 1 — Initiator will skip read-only replicas before sending data to shards.
+
+Default value: `0`
+
 ## distributed_foreground_insert {#distributed_foreground_insert}
 
 Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table.
@@ -4336,6 +4347,18 @@ Possible values:
 - 1 — Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
 
 Default value: `0`.
+
+
+## function_locate_has_mysql_compatible_argument_order {#function-locate-has-mysql-compatible-argument-order}
+
+Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md#locate).
+
+Possible values:
+
+- 0 — Function `locate` accepts arguments `(haystack, needle[, start_pos])`.
+- 1 — Function `locate` accepts arguments `(needle, haystack, [, start_pos])` (MySQL-compatible behavior)
+
+Default value: `1`.
 
 ## date_time_overflow_behavior {#date_time_overflow_behavior}
 

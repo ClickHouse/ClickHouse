@@ -1,12 +1,18 @@
 #include <Databases/DatabaseOnDisk.h>
 
+#include <filesystem>
+#include <iterator>
+#include <span>
+#include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseOrdinary.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -15,14 +21,11 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Common/escapeForFileName.h>
-#include <Common/logger_useful.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/assert_cast.h>
-#include <Databases/DatabaseOrdinary.h>
-#include <Databases/DatabaseAtomic.h>
-#include <filesystem>
+#include <Common/escapeForFileName.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -526,7 +529,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
         /// If database.sql doesn't exist, then engine is Ordinary
         String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
-        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
     }
 
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
@@ -612,7 +615,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     };
 
     /// Metadata files to load: name and flag for .tmp_drop files
-    std::set<std::pair<String, bool>> metadata_files;
+    std::vector<std::pair<String, bool>> metadata_files;
 
     fs::directory_iterator dir_end;
     for (fs::directory_iterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
@@ -633,7 +636,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
         if (endsWith(file_name, ".sql.tmp_drop"))
         {
             /// There are files that we tried to delete previously
-            metadata_files.emplace(file_name, false);
+            metadata_files.emplace_back(file_name, false);
         }
         else if (endsWith(file_name, ".sql.tmp"))
         {
@@ -644,23 +647,30 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
         else if (endsWith(file_name, ".sql"))
         {
             /// The required files have names like `table_name.sql`
-            metadata_files.emplace(file_name, true);
+            metadata_files.emplace_back(file_name, true);
         }
         else
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Incorrect file extension: {} in metadata directory {}", file_name, getMetadataPath());
     }
 
+    std::sort(metadata_files.begin(), metadata_files.end());
+    metadata_files.erase(std::unique(metadata_files.begin(), metadata_files.end()), metadata_files.end());
+
     /// Read and parse metadata in parallel
     ThreadPool pool(CurrentMetrics::DatabaseOnDiskThreads, CurrentMetrics::DatabaseOnDiskThreadsActive, CurrentMetrics::DatabaseOnDiskThreadsScheduled);
-    for (const auto & file : metadata_files)
+    const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
+    for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
-        pool.scheduleOrThrowOnError([&]()
-        {
-            if (file.second)
-                process_metadata_file(file.first);
-            else
-                process_tmp_drop_metadata_file(file.first);
-        });
+        std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
+        pool.scheduleOrThrowOnError(
+            [batch, &process_metadata_file, &process_tmp_drop_metadata_file]() mutable
+            {
+                for (const auto & file : batch)
+                    if (file.second)
+                        process_metadata_file(file.first);
+                    else
+                        process_tmp_drop_metadata_file(file.first);
+            });
     }
     pool.wait();
 }
@@ -707,7 +717,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
-                             "in file " + metadata_file_path, /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
+        "in file " + metadata_file_path, /* allow_multi_statements = */ false, 0, settings.max_parser_depth, settings.max_parser_backtracks, true);
 
     if (!ast && throw_on_error)
         throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -765,12 +775,14 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     auto ast_storage = std::make_shared<ASTStorage>();
     ast_storage->set(ast_storage->engine, ast_engine);
 
-    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
-    auto create_table_query = DB::getCreateQueryFromStorage(storage,
-                                                            ast_storage,
-                                                            false,
-                                                            max_parser_depth,
-                                                            throw_on_error);
+    const Settings & settings = getContext()->getSettingsRef();
+    auto create_table_query = DB::getCreateQueryFromStorage(
+        storage,
+        ast_storage,
+        false,
+        static_cast<unsigned>(settings.max_parser_depth),
+        static_cast<unsigned>(settings.max_parser_backtracks),
+        throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
                             std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));

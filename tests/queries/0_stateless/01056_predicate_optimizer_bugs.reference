@@ -36,9 +36,9 @@ FROM
     FROM
     (
         SELECT
-            1 AS co,
-            2 AS co2,
-            3 AS co3
+            dummy + 1 AS co,
+            dummy + 2 AS co2,
+            dummy + 3 AS co3
     )
     GROUP BY
         co,
