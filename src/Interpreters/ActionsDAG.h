@@ -372,11 +372,32 @@ public:
     /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
-    ActionsDAGPtr cloneActionsForFilterPushDown(
+    ActionsDAGPtr splitActionsForFilterPushDown(
         const std::string & filter_name,
         bool can_remove_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs);
+
+    using EquivalentColumnsPair = std::pair<std::string, std::string>;
+
+    struct ActionsForJOINFilterPushDown
+    {
+        ActionsDAGPtr left_stream_filter_to_push_down;
+        bool left_stream_filter_removes_filter;
+        ActionsDAGPtr right_stream_filter_to_push_down;
+        bool right_stream_filter_removes_filter;
+    };
+
+    ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
+        const std::string & filter_name,
+        bool can_remove_filter,
+        const Names & left_stream_available_columns_to_push_down,
+        const ColumnsWithTypeAndName & left_stream_all_inputs,
+        const Names & right_stream_available_columns_to_push_down,
+        const ColumnsWithTypeAndName & right_stream_all_inputs,
+        const std::vector<EquivalentColumnsPair> & equivalent_columns,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
 
     bool
     isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;
@@ -429,7 +450,9 @@ private:
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+    static ActionsDAGPtr createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+
+    void removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool can_remove_filter);
 };
 
 class FindOriginalNodeForOutputName
