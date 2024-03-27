@@ -52,8 +52,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
         [=] (bool /* restricted_seek */, const StoredObject & object)
         -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        auto & file_path = object.remote_path;
-        return createReadBufferFromFileBase(file_path, modified_settings, read_hint, file_size);
+        return createReadBufferFromFileBase(object.remote_path, modified_settings, read_hint, file_size);
     };
 
     switch (read_settings.remote_fs_method)

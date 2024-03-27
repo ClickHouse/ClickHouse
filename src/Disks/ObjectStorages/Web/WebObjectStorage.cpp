@@ -255,9 +255,8 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
          [this, read_settings, object_size]
          (bool /* restricted_seek */, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
      {
-        auto & path_ = object_.remote_path;
         return std::make_unique<ReadBufferFromWebServer>(
-            fs::path(url) / path_,
+            fs::path(url) / object_.remote_path,
             getContext(),
             object_size,
             read_settings,
