@@ -132,7 +132,7 @@ protected:
             return {};
         }
 
-        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, &shared_data->is_cancelled);
+        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, shared_data->is_cancelled);
         Chunk chunk = convertToChunk(block);
 
         shared_data->is_bucket_processed[bucket_num] = true;
@@ -439,6 +439,7 @@ private:
 
     bool is_initialized = false;
     bool finished = false;
+    std::atomic_bool is_cancelled = false;
 
     Chunks single_level_chunks;
 
@@ -464,7 +465,7 @@ private:
 
         if (first->type == AggregatedDataVariants::Type::without_key || params->params.overflow_row)
         {
-            params->aggregator.mergeWithoutKeyDataImpl(*data);
+            params->aggregator.mergeWithoutKeyDataImpl(*data, is_cancelled);
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
 
@@ -518,6 +519,11 @@ private:
         }
 
         data.reset();
+    }
+
+    void onCancel() override
+    {
+        is_cancelled.store(true);
     }
 };
 
@@ -684,7 +690,7 @@ void AggregatingTransform::consume(Chunk chunk)
     {
         auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());
         block = materializeBlock(block);
-        if (!params->aggregator.mergeOnBlock(block, variants, no_more_keys))
+        if (!params->aggregator.mergeOnBlock(block, variants, no_more_keys, is_cancelled))
             is_consume_finished = true;
     }
     else
@@ -704,7 +710,7 @@ void AggregatingTransform::initGenerate()
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
     {
         if (params->params.only_merge)
-            params->aggregator.mergeOnBlock(getInputs().front().getHeader(), variants, no_more_keys);
+            params->aggregator.mergeOnBlock(getInputs().front().getHeader(), variants, no_more_keys, is_cancelled);
         else
             params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
     }
@@ -836,6 +842,13 @@ void AggregatingTransform::initGenerate()
 
         processors = Pipe::detachProcessors(std::move(pipe));
     }
+}
+
+void AggregatingTransform::onCancel()
+{
+    is_cancelled.store(true);
+    for (auto & processor : processors)
+        processor->cancel();
 }
 
 }

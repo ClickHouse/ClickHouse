@@ -12,6 +12,8 @@ struct GroupByModifierTransform : public IAccumulatingTransform
 {
     GroupByModifierTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_);
 
+    void onCancel() override { is_cancelled.store(true); }
+
 protected:
     void consume(Chunk chunk) override;
 
@@ -33,6 +35,8 @@ protected:
 
     Chunks consumed_chunks;
     Chunk current_chunk;
+
+    std::atomic_bool is_cancelled = false;
 };
 
 /// Takes blocks after grouping, with non-finalized aggregate functions.

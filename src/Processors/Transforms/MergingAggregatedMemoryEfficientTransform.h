@@ -112,12 +112,14 @@ public:
         AggregatingTransformParamsPtr params, const SortDescription & required_sort_description_ = {});
     String getName() const override { return "MergingAggregatedBucketTransform"; }
 
+    void onCancel() override { is_cancelled.store(true); }
 protected:
     void transform(Chunk & chunk) override;
 
 private:
     AggregatingTransformParamsPtr params;
     const SortDescription required_sort_description;
+    std::atomic_bool is_cancelled = false;
 };
 
 /// Has several inputs and single output.

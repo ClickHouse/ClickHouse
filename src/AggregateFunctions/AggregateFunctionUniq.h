@@ -485,10 +485,10 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *, std::atomic_bool & is_cancelled) const override
     {
         if constexpr (is_able_to_parallelize_merge)
-            this->data(place).set.merge(this->data(rhs).set, &thread_pool);
+            this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
         else
             this->data(place).set.merge(this->data(rhs).set);
     }
@@ -579,10 +579,10 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *, std::atomic_bool & is_cancelled) const override
     {
         if constexpr (is_able_to_parallelize_merge)
-            this->data(place).set.merge(this->data(rhs).set, &thread_pool);
+            this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
         else
             this->data(place).set.merge(this->data(rhs).set);
     }

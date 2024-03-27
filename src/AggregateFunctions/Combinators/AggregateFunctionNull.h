@@ -154,9 +154,9 @@ public:
     bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
     bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena, std::atomic_bool & is_cancelled) const override
     {
-        nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, arena);
+        nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, arena, is_cancelled);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override

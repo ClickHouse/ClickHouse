@@ -96,7 +96,7 @@ public:
         }
     }
 
-    auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr)
+    auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic_bool * is_cancelled = nullptr)
     {
         if (isSingleLevel() && other.isTwoLevel())
             convertToTwoLevel();
@@ -121,7 +121,7 @@ public:
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, thread_group = CurrentThread::getGroup()]()
+                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, thread_group = CurrentThread::getGroup(), &is_cancelled]()
                     {
                         SCOPE_EXIT_SAFE(
                             if (thread_group)
@@ -131,7 +131,7 @@ public:
                             CurrentThread::attachToGroupIfDetached(thread_group);
                         setThreadName("UniqExactMerger");
 
-                        while (true)
+                        while (!*is_cancelled)
                         {
                             const auto bucket = next_bucket_to_merge->fetch_add(1);
                             if (bucket >= rhs.NUM_BUCKETS)
@@ -213,6 +213,8 @@ public:
     bool isTwoLevel() const { return !!two_level_set; }
 
 private:
+
+
     SingleLevelSet & asSingleLevel() { return single_level_set; }
     const SingleLevelSet & asSingleLevel() const { return single_level_set; }
 

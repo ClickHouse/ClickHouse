@@ -43,6 +43,8 @@ public:
 
     void consume(Chunk chunk);
 
+    void onCancel() override { is_cancelled.store(true); }
+
 private:
     void generate();
     void finalizeCurrentChunk(Chunk chunk, size_t key_end);
@@ -82,6 +84,8 @@ private:
     Block res_header;
     Chunk current_chunk;
     Chunk to_push_chunk;
+
+    std::atomic_bool is_cancelled = false;
 
     LoggerPtr log = getLogger("AggregatingInOrderTransform");
 };

@@ -168,7 +168,7 @@ public:
 
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     virtual void
-    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, Arena * /*arena*/) const
+    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, Arena * /*arena*/, std::atomic_bool & /*is_cancelled*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
     }

@@ -168,6 +168,8 @@ public:
     void work() override;
     Processors expandPipeline() override;
 
+    void onCancel() override;
+
 protected:
     void consume(Chunk chunk);
 
@@ -209,6 +211,8 @@ private:
     bool read_current_chunk = false;
 
     bool is_consume_started = false;
+
+    std::atomic_bool is_cancelled = false;
 
     void initGenerate();
 };

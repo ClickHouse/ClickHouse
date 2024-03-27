@@ -15,6 +15,8 @@ public:
     MergingAggregatedTransform(Block header_, AggregatingTransformParamsPtr params_, size_t max_threads_);
     String getName() const override { return "MergingAggregatedTransform"; }
 
+    void onCancel() override { is_cancelled.store(true); }
+
 protected:
     void consume(Chunk chunk) override;
     Chunk generate() override;
@@ -35,6 +37,8 @@ private:
 
     bool consume_started = false;
     bool generate_started = false;
+
+    std::atomic_bool is_cancelled = false;
 };
 
 }
