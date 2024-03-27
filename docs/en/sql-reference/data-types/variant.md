@@ -192,20 +192,65 @@ SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
 
 ## Conversion between Variant column and other columns
 
-There are 3 possible conversions that can be performed with Variant column.
+There are 4 possible conversions that can be performed with Variant column.
+
+### Converting String column to a Variant column
+
+Conversion from `String` to `Variant` is performed by parsing a value of `Variant` type from the string value:
+
+```sql
+SELECT '42'::Variant(String, UInt64) as variant, variantType(variant) as variant_type
+```
+
+```text
+┌─variant─┬─variant_type─┐
+│ 42      │ UInt64       │
+└─────────┴──────────────┘
+```
+
+```sql
+SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(variant) as variant_type
+```
+
+```text
+┌─variant─┬─variant_type──┐
+│ [1,2,3] │ Array(UInt64) │
+└─────────┴───────────────┘
+```
+
+```sql
+SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') as map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) as map_of_variant_types```
+```
+
+```text
+┌─map_of_variants─────────────────────────────┬─map_of_variant_types──────────────────────────┐
+│ {'key1':42,'key2':true,'key3':'2020-01-01'} │ {'key1':'UInt64','key2':'Bool','key3':'Date'} │
+└─────────────────────────────────────────────┴───────────────────────────────────────────────┘
+```
 
 ### Converting an ordinary column to a Variant column
 
 It is possible to convert ordinary column with type `T` to a `Variant` column containing this type:
 
 ```sql
-SELECT toTypeName(variant) as type_name, 'Hello, World!'::Variant(UInt64, String, Array(UInt64)) as variant;
-```
+SELECT toTypeName(variant) as type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
+ ```
 
 ```text
-┌─type_name──────────────────────────────┬─variant───────┐
-│ Variant(Array(UInt64), String, UInt64) │ Hello, World! │
-└────────────────────────────────────────┴───────────────┘
+┌─type_name──────────────────────────────┬─variant─┬─variant_name──┐
+│ Variant(Array(UInt64), String, UInt64) │ [1,2,3] │ Array(UInt64) │
+└────────────────────────────────────────┴─────────┴───────────────┘
+```
+
+Note: converting from `String` type is always performed through parsing, if you need to convert `String` column to `String` variant of a `Variant` without parsing, you can do the following:
+```sql
+SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as variant, variantType(variant) as variant_type
+```
+
+```sql
+┌─variant───┬─variant_type─┐
+│ [1, 2, 3] │ String       │
+└───────────┴──────────────┘
 ```
 
 ### Converting a Variant column to an ordinary column
