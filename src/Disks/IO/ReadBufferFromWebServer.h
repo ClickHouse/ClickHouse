@@ -20,6 +20,7 @@ public:
     explicit ReadBufferFromWebServer(
         const String & url_,
         ContextPtr context_,
+        size_t file_size_,
         const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
         size_t read_until_position = 0);
@@ -39,7 +40,7 @@ public:
     bool supportsRightBoundedReads() const override { return true; }
 
 private:
-    std::unique_ptr<ReadBuffer> initialize();
+    std::unique_ptr<SeekableReadBuffer> initialize();
 
     LoggerPtr log;
     ContextPtr context;
@@ -47,7 +48,7 @@ private:
     const String url;
     size_t buf_size;
 
-    std::unique_ptr<ReadBuffer> impl;
+    std::unique_ptr<SeekableReadBuffer> impl;
 
     ReadSettings read_settings;
 
