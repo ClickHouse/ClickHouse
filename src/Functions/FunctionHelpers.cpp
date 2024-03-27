@@ -275,6 +275,37 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
     return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
 }
 
+ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnPtr & null_map)
+{
+    if (src->onlyNull())
+        return src;
+
+    ColumnPtr result_null_map_column;
+
+    /// If result is already nullable.
+    ColumnPtr src_not_nullable = src;
+
+    if (src->onlyNull())
+        return src;
+    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*src))
+    {
+        src_not_nullable = nullable->getNestedColumnPtr();
+        result_null_map_column = nullable->getNullMapColumnPtr();
+
+        MutableColumnPtr mutable_result_null_map_column = IColumn::mutate(std::move(result_null_map_column));
+        NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
+        const NullMap & null_map_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
+        for (size_t i = 0; i < result_null_map.size(); ++i)
+            result_null_map[i] |= null_map_data[i];
+
+        result_null_map_column = std::move(mutable_result_null_map_column);
+        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
+    }
+    else
+        return ColumnNullable::create(src->convertToFullColumnIfConst(), null_map);
+
+}
+
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
 {
     NullPresence res;
