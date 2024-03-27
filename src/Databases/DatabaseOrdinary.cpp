@@ -31,7 +31,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Core/Defines.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -128,10 +127,10 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     /// Get table's storage policy
     MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
-    auto * query_settings = create_query->storage->settings->as<ASTSetQuery>();
     auto policy = getContext()->getStoragePolicy(default_settings.storage_policy);
-    if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
-        policy = getContext()->getStoragePolicy(policy_setting->get<String>());
+    if (auto * query_settings = create_query->storage->settings->as<ASTSetQuery>())
+        if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
+            policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
 
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, policy, false);
 
