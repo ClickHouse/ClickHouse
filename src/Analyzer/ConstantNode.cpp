@@ -20,32 +20,63 @@
 namespace DB
 {
 
-ConstantNode::ConstantNode(ConstantValuePtr constant_value_, QueryTreeNodePtr source_expression_)
-    : IQueryTreeNode(children_size)
-    , constant_value(std::move(constant_value_))
-    , value_string(applyVisitor(FieldVisitorToString(), constant_value->getValue()))
+namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
+}
+
+// namespace
+// {
+
+// ColumnPtr createConstColumn(const Field & value, const DataTypePtr & data_type)
+// {
+//     std::cerr << "CreateConstColumn " << value.dump() << " data type " << data_type;
+//     std::cerr << (data_type ? data_type->getName() : "NULL") << '\n';
+
+//     return data_type->createColumnConst(0, value);
+// }
+
+// }
+
+ConstantNode::ConstantNode(ColumnPtr constant_column_, DataTypePtr constant_type_, QueryTreeNodePtr source_expression_)
+    : IQueryTreeNode(children_size)
+    , constant_column(std::move(constant_column_))
+    , constant_type(std::move(constant_type_))
+{
+    if (!isColumnConst(*constant_column))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ConstantNode must be initialized with constant column");
+
     source_expression = std::move(source_expression_);
 }
 
-ConstantNode::ConstantNode(ConstantValuePtr constant_value_)
-    : ConstantNode(constant_value_, nullptr /*source_expression*/)
+ConstantNode::ConstantNode(ColumnPtr constant_column_, DataTypePtr constant_type_)
+    : ConstantNode(std::move(constant_column_), std::move(constant_type_), {})
+{
+}
+
+ConstantNode::ConstantNode(ColumnPtr constant_column_)
+    : ConstantNode(std::move(constant_column_), applyVisitor(FieldToDataType(), (*constant_column_)[0]))
+{
+}
+
+ConstantNode::ConstantNode(const Field & constant_value_, DataTypePtr constant_type_, QueryTreeNodePtr source_expression_)
+    : ConstantNode(constant_type_->createColumnConst(1, constant_value_), constant_type_, std::move(source_expression_))
 {}
 
-ConstantNode::ConstantNode(Field value_, DataTypePtr value_data_type_)
-    : ConstantNode(std::make_shared<ConstantValue>(convertFieldToTypeOrThrow(value_, *value_data_type_), value_data_type_))
+ConstantNode::ConstantNode(const Field & constant_value_, DataTypePtr constant_type_)
+    : ConstantNode(constant_value_, constant_type_, {})
 {}
 
-ConstantNode::ConstantNode(Field value_)
-    : ConstantNode(value_, applyVisitor(FieldToDataType(), value_))
+ConstantNode::ConstantNode(const Field & constant_value_)
+    : ConstantNode(constant_value_, applyVisitor(FieldToDataType(), constant_value_))
 {}
 
 bool ConstantNode::requiresCastCall() const
 {
-    const auto & constant_value_literal = constant_value->getValue();
+    const auto & constant_value_literal = getValue();
     bool need_to_add_cast_function = false;
     auto constant_value_literal_type = constant_value_literal.getType();
-    WhichDataType constant_value_type(constant_value->getType());
+    WhichDataType constant_value_type(constant_type);
 
     switch (constant_value_literal_type)
     {
@@ -115,9 +146,9 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     if (mask_id)
         buffer << "[HIDDEN id: " << mask_id << "]";
     else
-        buffer << constant_value->getValue().dump();
+        buffer << getValue().dump();
 
-    buffer << ", constant_value_type: " << constant_value->getType()->getName();
+    buffer << ", constant_value_type: " << constant_type->getName();
 
     if (!mask_id && getSourceExpression())
     {
@@ -129,27 +160,26 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
-    return *constant_value == *rhs_typed.constant_value && value_string == rhs_typed.value_string;
+    return *constant_value == *rhs_typed.constant_value;
 }
 
 void ConstantNode::updateTreeHashImpl(HashState & hash_state) const
 {
-    auto type_name = constant_value->getType()->getName();
+    constant_column->updateHashFast(hash_state);
+
+    auto type_name = constant_type->getName();
     hash_state.update(type_name.size());
     hash_state.update(type_name);
-
-    hash_state.update(value_string.size());
-    hash_state.update(value_string);
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
-    return std::make_shared<ConstantNode>(constant_value, source_expression);
+    return std::make_shared<ConstantNode>(constant_column, constant_type, source_expression);
 }
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    const auto & constant_value_literal = constant_value->getValue();
+    const auto & constant_value_literal = getValue();
     auto constant_value_ast = std::make_shared<ASTLiteral>(constant_value_literal);
 
     if (!options.add_cast_for_constants)
@@ -157,7 +187,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (requiresCastCall())
     {
-        auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value->getType()->getName());
+        auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_type->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
     }
 

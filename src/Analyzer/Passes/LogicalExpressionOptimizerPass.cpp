@@ -314,8 +314,7 @@ private:
 
                 if (collapse_to_false)
                 {
-                    auto false_value = std::make_shared<ConstantValue>(0u, function_node.getResultType());
-                    auto false_node = std::make_shared<ConstantNode>(std::move(false_value));
+                    auto false_node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
                     node = std::move(false_node);
                     return;
                 }
