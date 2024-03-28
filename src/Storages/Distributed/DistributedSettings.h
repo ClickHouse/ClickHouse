@@ -29,6 +29,9 @@ class ASTStorage;
     M(Milliseconds, background_insert_sleep_time_ms, 0, "Default - distributed_background_insert_sleep_time_ms", 0) ALIAS(monitor_sleep_time_ms) \
     M(Milliseconds, background_insert_max_sleep_time_ms, 0, "Default - distributed_background_insert_max_sleep_time_ms", 0) ALIAS(monitor_max_sleep_time_ms) \
     M(Bool, flush_on_detach, true, "Flush data to remote nodes on DETACH/DROP/server shutdown", 0) \
+    /* ddl rewrite to corresponding local table with ON CLUSTER settings */ \
+    M(Bool, enable_ddl_optimize_rewrite_to_oncluster, false, "OPTIMIZE will be rewritten to optimize on corresponding cluster.", 0) \
+    M(Bool, enable_ddl_alter_rewrite_to_oncluster, false, "ALTER will be rewritten to optimize on corresponding cluster. Drop/Detached partition is supported currently.", 0) \
 
 DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS)
 
