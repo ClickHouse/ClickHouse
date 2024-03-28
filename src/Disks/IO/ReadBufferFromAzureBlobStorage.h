@@ -70,7 +70,6 @@ private:
     off_t read_until_position = 0;
 
     off_t offset = 0;
-    size_t total_size;
     bool initialized = false;
     char * data_ptr;
     size_t data_capacity;

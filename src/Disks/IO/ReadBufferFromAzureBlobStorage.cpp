@@ -167,20 +167,21 @@ size_t ReadBufferFromAzureBlobStorage::readBytes()
     Azure::Nullable<int64_t> length {};
 
     /// 0 means read full file
-    size_t to_read_bytes = 0;
+    int64_t to_read_bytes = 0;
     if (read_until_position != 0)
     {
         to_read_bytes = read_until_position - offset;
-        to_read_bytes = std::min(to_read_bytes, data_capacity);
+        to_read_bytes = std::min(to_read_bytes, static_cast<int64_t>(offset));
     }
 
-    auto file_size = getFileSize();
-    if (!to_read_bytes && (file_size > data_capacity))
-        to_read_bytes = std::min(file_size, data_capacity);
+    if (!to_read_bytes && (getFileSize() > data_capacity))
+        to_read_bytes = data_capacity;
 
     if (to_read_bytes)
         length = {static_cast<int64_t>(to_read_bytes)};
     download_options.Range = {static_cast<int64_t>(offset), length};
+    LOG_INFO(log, "Read bytes range is offset = {} and to_read_bytes = {}", offset, to_read_bytes);
+
 
     if (!blob_client)
         blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
@@ -216,8 +217,6 @@ size_t ReadBufferFromAzureBlobStorage::readBytes()
             handle_exception(e,i);
         }
     }
-
-    total_size = read_bytes + offset;
 
     initialized = true;
     return read_bytes;
