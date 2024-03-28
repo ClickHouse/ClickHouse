@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings
+# Tags: no-random-settings, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,6 +11,8 @@ url="${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&async_insert_busy_
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS async_inserts"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE async_inserts (id UInt32, s String) ENGINE = MergeTree ORDER BY id"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH ASYNC INSERT QUEUE;"
 
 ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT CSV
 1,"a"
