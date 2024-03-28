@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/HTTPHeaderEntries.h>
-#include <Storages/StorageAzureBlobCluster.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
@@ -29,7 +28,7 @@ namespace ErrorCodes
 }
 
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
-    StorageAzureBlob::Configuration configuration_,
+    const StorageAzureBlobConfiguration & configuration_,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
@@ -37,10 +36,10 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.container, false, false}
     , configuration(configuration_)
 {
-    auto client_ptr = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
+    auto client_ptr = configuration.createClient(/* is_read_only */ false, /* attempt_to_create_container */true);
     object_storage = std::make_unique<AzureObjectStorage>("BackupReaderAzureBlobStorage",
                                                           std::move(client_ptr),
-                                                          StorageAzureBlob::createSettings(context_),
+                                                          configuration.createSettings(context_),
                                                           configuration_.container);
     client = object_storage->getAzureBlobStorageClient();
     settings = object_storage->getSettings();
@@ -137,7 +136,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
 
 
 BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
-    StorageAzureBlob::Configuration configuration_,
+    const StorageAzureBlobConfiguration & configuration_,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_,
@@ -146,17 +145,22 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.container, false, false}
     , configuration(configuration_)
 {
-    auto client_ptr = StorageAzureBlob::createClient(configuration, /* is_read_only */ false, attempt_to_create_container);
+    auto client_ptr = configuration.createClient(/* is_read_only */ false, attempt_to_create_container);
     object_storage = std::make_unique<AzureObjectStorage>("BackupWriterAzureBlobStorage",
                                                           std::move(client_ptr),
-                                                          StorageAzureBlob::createSettings(context_),
-                                                          configuration_.container);
+                                                          configuration.createSettings(context_),
+                                                          configuration.container);
     client = object_storage->getAzureBlobStorageClient();
     settings = object_storage->getSettings();
 }
 
-void BackupWriterAzureBlobStorage::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                      bool copy_encrypted, UInt64 start_pos, UInt64 length)
+void BackupWriterAzureBlobStorage::copyFileFromDisk(
+    const String & path_in_backup,
+    DiskPtr src_disk,
+    const String & src_path,
+    bool copy_encrypted,
+    UInt64 start_pos,
+    UInt64 length)
 {
     /// Use the native copy as a more optimal way to copy a file from AzureBlobStorage to AzureBlobStorage if it's possible.
     auto source_data_source_description = src_disk->getDataSourceDescription();
@@ -205,10 +209,15 @@ void BackupWriterAzureBlobStorage::copyFile(const String & destination, const St
        /* for_disk_azure_blob_storage= */ true);
 }
 
-void BackupWriterAzureBlobStorage::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
+void BackupWriterAzureBlobStorage::copyDataToFile(
+    const String & path_in_backup,
+    const CreateReadBufferFunction & create_read_buffer,
+    UInt64 start_pos,
+    UInt64 length)
 {
-    copyDataToAzureBlobStorageFile(create_read_buffer, start_pos, length, client, configuration.container, path_in_backup, settings,
-                     threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
+    copyDataToAzureBlobStorageFile(
+        create_read_buffer, start_pos, length, client, configuration.container,
+        path_in_backup, settings, threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
 }
 
 BackupWriterAzureBlobStorage::~BackupWriterAzureBlobStorage() = default;
@@ -242,7 +251,7 @@ UInt64 BackupWriterAzureBlobStorage::getFileSize(const String & file_name)
     object_storage->listObjects(key,children,/*max_keys*/0);
     if (children.empty())
         throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Object must exist");
-    return children[0].metadata.size_bytes;
+    return children[0]->metadata->size_bytes;
 }
 
 std::unique_ptr<ReadBuffer> BackupWriterAzureBlobStorage::readFile(const String & file_name, size_t /*expected_file_size*/)

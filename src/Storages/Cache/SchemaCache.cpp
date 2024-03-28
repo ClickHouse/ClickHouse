@@ -1,5 +1,6 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include <ctime>
 
 namespace ProfileEvents

@@ -24,16 +24,16 @@ bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
     return !files.empty();
 }
 
-void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, int) const
+void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
 }
 
 
-ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix) const
+ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
 {
     RelativePathsWithMetadata files;
-    listObjects(path_prefix, files, 0);
+    listObjects(path_prefix, files, max_keys);
 
     return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
 }

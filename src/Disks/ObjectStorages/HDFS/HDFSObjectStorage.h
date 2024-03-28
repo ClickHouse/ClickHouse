@@ -6,7 +6,7 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Core/UUID.h>
 #include <memory>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -16,21 +16,13 @@ namespace DB
 
 struct HDFSObjectStorageSettings
 {
-
-    HDFSObjectStorageSettings() = default;
-
-    size_t min_bytes_for_seek;
-    int objects_chunk_size_to_delete;
-    int replication;
-
-    HDFSObjectStorageSettings(
-            int min_bytes_for_seek_,
-            int objects_chunk_size_to_delete_,
-            int replication_)
+    HDFSObjectStorageSettings(int min_bytes_for_seek_, int replication_)
         : min_bytes_for_seek(min_bytes_for_seek_)
-        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
         , replication(replication_)
     {}
+
+    size_t min_bytes_for_seek;
+    int replication;
 };
 
 
@@ -99,6 +91,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
+
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     void shutdown() override;
 

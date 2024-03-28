@@ -83,9 +83,9 @@ public:
         SettingsPtr && settings_,
         const String & object_namespace_);
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
     std::string getName() const override { return "AzureObjectStorage"; }
 

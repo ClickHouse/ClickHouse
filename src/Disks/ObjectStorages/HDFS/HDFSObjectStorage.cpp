@@ -1,12 +1,13 @@
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 
 #include <IO/copyData.h>
-#include <Storages/HDFS/WriteBufferFromHDFS.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/WriteBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/logger_useful.h>
 
 
 #if USE_HDFS
@@ -18,6 +19,8 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int HDFS_ERROR;
+    extern const int ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
 }
 
 void HDFSObjectStorage::shutdown()
@@ -36,10 +39,10 @@ ObjectStorageKey HDFSObjectStorage::generateObjectKeyForPath(const std::string &
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const
 {
-    const auto & path = object.remote_path;
-    const size_t begin_of_path = path.find('/', path.find("//") + 2);
-    const String remote_fs_object_path = path.substr(begin_of_path);
-    return (0 == hdfsExists(hdfs_fs.get(), remote_fs_object_path.c_str()));
+    // const auto & path = object.remote_path;
+    // const size_t begin_of_path = path.find('/', path.find("//") + 2);
+    // const String remote_fs_object_path = path.substr(begin_of_path);
+    return (0 == hdfsExists(hdfs_fs.get(), object.remote_path.c_str()));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
@@ -48,7 +51,7 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    return std::make_unique<ReadBufferFromHDFS>(object.remote_path, object.remote_path, config, patchSettings(read_settings));
+    return std::make_unique<ReadBufferFromHDFS>(hdfs_root_path, object.remote_path, config, patchSettings(read_settings));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT
@@ -62,13 +65,12 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
         [this, disk_read_settings]
         (bool /* restricted_seek */, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        const auto & path = object_.remote_path;
-        size_t begin_of_path = path.find('/', path.find("//") + 2);
-        auto hdfs_path = path.substr(begin_of_path);
-        auto hdfs_uri = path.substr(0, begin_of_path);
+        // size_t begin_of_path = path.find('/', path.find("//") + 2);
+        // auto hdfs_path = path.substr(begin_of_path);
+        // auto hdfs_uri = path.substr(0, begin_of_path);
 
         return std::make_unique<ReadBufferFromHDFS>(
-            hdfs_uri, hdfs_path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
+            hdfs_root_path, object_.remote_path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
     };
 
     return std::make_unique<ReadBufferFromRemoteFSGather>(
@@ -87,9 +89,12 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
             ErrorCodes::UNSUPPORTED_METHOD,
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
+    auto path = object.remote_path.starts_with('/') ? object.remote_path.substr(1) : object.remote_path;
+    path = fs::path(hdfs_root_path) / path;
+
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     return std::make_unique<WriteBufferFromHDFS>(
-        object.remote_path, config, settings->replication, patchSettings(write_settings), buf_size,
+        path, config, settings->replication, patchSettings(write_settings), buf_size,
         mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
 }
 
@@ -98,10 +103,10 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 void HDFSObjectStorage::removeObject(const StoredObject & object)
 {
     const auto & path = object.remote_path;
-    const size_t begin_of_path = path.find('/', path.find("//") + 2);
+    // const size_t begin_of_path = path.find('/', path.find("//") + 2);
 
     /// Add path from root to file name
-    int res = hdfsDelete(hdfs_fs.get(), path.substr(begin_of_path).c_str(), 0);
+    int res = hdfsDelete(hdfs_fs.get(), path.c_str(), 0);
     if (res == -1)
         throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
 
@@ -125,11 +130,67 @@ void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
-ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string &) const
+ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) const
 {
-    throw Exception(
-        ErrorCodes::UNSUPPORTED_METHOD,
-        "HDFS API doesn't support custom attributes/metadata for stored objects");
+    auto * file_info = hdfsGetPathInfo(hdfs_fs.get(), path.data());
+    if (!file_info)
+        throw Exception(ErrorCodes::HDFS_ERROR,
+                        "Cannot get file info for: {}. Error: {}", path, hdfsGetLastError());
+
+    ObjectMetadata metadata;
+    metadata.size_bytes = static_cast<size_t>(file_info->mSize);
+    metadata.last_modified = file_info->mLastMod;
+
+    hdfsFreeFileInfo(file_info, 1);
+    return metadata;
+}
+
+void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
+{
+    auto * log = &Poco::Logger::get("HDFSObjectStorage");
+    LOG_TRACE(log, "Trying to list files for {}", path);
+
+    HDFSFileInfo ls;
+    ls.file_info = hdfsListDirectory(hdfs_fs.get(), path.data(), &ls.length);
+
+    if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
+    {
+        // ignore file not found exception, keep throw other exception,
+        // libhdfs3 doesn't have function to get exception type, so use errno.
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}",
+                        path, String(hdfsGetLastError()));
+    }
+
+    if (!ls.file_info && ls.length > 0)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "file_info shouldn't be null");
+    }
+
+    LOG_TRACE(log, "Listed {} files for {}", ls.length, path);
+
+    for (int i = 0; i < ls.length; ++i)
+    {
+        const String file_path = fs::path(ls.file_info[i].mName).lexically_normal();
+        const size_t last_slash = file_path.rfind('/');
+        const String file_name = file_path.substr(last_slash);
+
+        const bool is_directory = ls.file_info[i].mKind == 'D';
+        if (is_directory)
+        {
+            listObjects(fs::path(file_path) / "", children, max_keys);
+        }
+        else
+        {
+            LOG_TEST(log, "Found file: {}", file_path);
+
+            children.emplace_back(std::make_shared<RelativePathWithMetadata>(
+                String(file_path),
+                ObjectMetadata{
+                    static_cast<uint64_t>(ls.file_info[i].mSize),
+                    Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
+                    {}}));
+        }
+    }
 }
 
 void HDFSObjectStorage::copyObject( /// NOLINT
@@ -151,7 +212,10 @@ void HDFSObjectStorage::copyObject( /// NOLINT
 }
 
 
-std::unique_ptr<IObjectStorage> HDFSObjectStorage::cloneObjectStorage(const std::string &, const Poco::Util::AbstractConfiguration &, const std::string &, ContextPtr)
+std::unique_ptr<IObjectStorage> HDFSObjectStorage::cloneObjectStorage(
+    const std::string &,
+    const Poco::Util::AbstractConfiguration &,
+    const std::string &, ContextPtr)
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HDFS object storage doesn't support cloning");
 }

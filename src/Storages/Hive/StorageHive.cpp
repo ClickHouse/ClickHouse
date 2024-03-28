@@ -38,8 +38,8 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
-#include <Storages/HDFS/AsynchronousReadBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/AsynchronousReadBufferFromHDFS.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/Hive/StorageHiveMetadata.h>
 #include <Storages/MergeTree/KeyCondition.h>

@@ -51,11 +51,9 @@
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
-#include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
-#include <Storages/StorageAzureBlob.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/MaterializedView/RefreshTask.h>
-#include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTCreateQuery.h>
