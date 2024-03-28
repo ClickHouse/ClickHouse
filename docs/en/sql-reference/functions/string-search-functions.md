@@ -126,6 +126,8 @@ Like [position](#position) but assumes `haystack` and `needle` are UTF-8 encoded
 
 Function `positionUTF8` correctly counts character `ö` (represented by two points) as a single Unicode codepoint:
 
+Query:
+
 ``` sql
 SELECT positionUTF8('Motörhead', 'r');
 ```
@@ -163,10 +165,12 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needleN])
 
 **Returned values**
 
-- Array of the starting position in bytes and counting from 1 (if the substring was found).
+- Array of the starting position in bytes and counting from 1, if the substring was found.
 - 0, if the substring was not found.
 
 **Example**
+
+Query:
 
 ``` sql
 SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world']);
@@ -207,6 +211,8 @@ Query:
 SELECT multiSearchAllPositionsCaseInsensitive('ClickHouse',['c','h']);
 ```
 
+Result:
+
 ```response
 ["1","6"]
 ```
@@ -240,6 +246,8 @@ Query:
 ```sql
 SELECT multiSearchAllPositionsUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x43','\x48']);
 ```
+
+Result:
 
 ```response
 ["1","6"]
@@ -275,6 +283,8 @@ Query:
 SELECT multiSearchAllPositionsCaseInsensitiveUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x63','\x68']);
 ```
 
+Result:
+
 ```response
 ["1","6"]
 ```
@@ -309,6 +319,8 @@ Query:
 SELECT multiSearchFirstPosition('Hello World',['llo', 'Wor', 'ld']);
 ```
 
+Result:
+
 ```response
 3
 ```
@@ -340,6 +352,8 @@ Query:
 ```sql
 SELECT multiSearchFirstPositionCaseInsensitive('HELLO WORLD',['wor', 'ld', 'ello']);
 ```
+
+Result:
 
 ```response
 2
@@ -375,6 +389,8 @@ Query:
 SELECT multiSearchFirstPositionUTF8('\x68\x65\x6c\x6c\x6f\x20\x77\x6f\x72\x6c\x64',['wor', 'ld', 'ello']);
 ```
 
+Result:
+
 ```response
 2
 ```
@@ -409,6 +425,8 @@ Query:
 SELECT multiSearchFirstPositionCaseInsensitiveUTF8('\x48\x45\x4c\x4c\x4f\x20\x57\x4f\x52\x4c\x44',['wor', 'ld', 'ello']);
 ```
 
+Result:
+
 ```response
 2
 ```
@@ -442,6 +460,8 @@ Query:
 SELECT multiSearchFirstIndex('Hello World',['World','Hello']);
 ```
 
+Result:
+
 ```response
 1
 ```
@@ -473,6 +493,8 @@ Query:
 ```sql
 SELECT multiSearchFirstIndexCaseInsensitive('hElLo WoRlD',['World','Hello']);
 ```
+
+Result:
 
 ```response
 1
@@ -508,6 +530,8 @@ Query:
 SELECT multiSearchFirstIndexUTF8('\x48\x65\x6c\x6c\x6f\x20\x57\x6f\x72\x6c\x64',['\x57\x6f\x72\x6c\x64','\x48\x65\x6c\x6c\x6f']);
 ```
 
+Result:
+
 ```response
 1
 ```
@@ -541,6 +565,8 @@ Query:
 ```sql
 SELECT multiSearchFirstIndexCaseInsensitiveUTF8('\x48\x45\x4c\x4c\x4f\x20\x57\x4f\x52\x4c\x44',['\x68\x65\x6c\x6c\x6f','\x77\x6f\x72\x6c\x64']);
 ```
+
+Result:
 
 ```response
 1
@@ -576,6 +602,8 @@ Query:
 SELECT multiSearchAny('ClickHouse',['C','H']);
 ```
 
+Result:
+
 ```response
 1
 ```
@@ -607,6 +635,8 @@ Query:
 ```sql
 SELECT multiSearchAnyCaseInsensitive('ClickHouse',['c','h']);
 ```
+
+Result:
 
 ```response
 1
@@ -642,6 +672,8 @@ Query:
 SELECT multiSearchAnyUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x43','\x48']);
 ```
 
+Result:
+
 ```response
 1
 ```
@@ -675,6 +707,8 @@ Query:
 ```sql
 SELECT multiSearchAnyCaseInsensitiveUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x68']);
 ```
+
+Result:
 
 ```response
 1
