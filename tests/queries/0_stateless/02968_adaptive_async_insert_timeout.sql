@@ -31,6 +31,15 @@ INSERT INTO async_insert_mt_test
         async_insert_busy_timeout_min_ms=500
     VALUES (3, []), (1, [1, 3]), (2, [7, 8]), (4, [5, 9]), (5, [2, 6]);
 
+INSERT INTO async_insert_mt_test
+    SETTINGS
+        async_insert=1,
+        wait_for_async_insert=1,
+        async_insert_busy_timeout_min_ms=10,
+        async_insert_busy_timeout_ms=5000,
+        async_insert_busy_timeout_max_limits_ratio=50
+    VALUES (3, []), (1, [1, 3]), (2, [7, 8]), (4, [5, 9]), (5, [2, 6]);
+
 
 INSERT INTO async_insert_mt_test
     SETTINGS
@@ -45,6 +54,13 @@ INSERT INTO async_insert_mt_test
         async_insert=1,
         wait_for_async_insert=1,
         async_insert_busy_timeout_decrease_rate=-1.0
+    VALUES (3, []), (1, [1, 3]), (2, [7, 8]), (4, [5, 9]), (5, [2, 6]); -- { serverError INVALID_SETTING_VALUE }
+
+INSERT INTO async_insert_mt_test
+    SETTINGS
+        async_insert=1,
+        wait_for_async_insert=1,
+        async_insert_busy_timeout_max_limits_ratio=0
     VALUES (3, []), (1, [1, 3]), (2, [7, 8]), (4, [5, 9]), (5, [2, 6]); -- { serverError INVALID_SETTING_VALUE }
 
 

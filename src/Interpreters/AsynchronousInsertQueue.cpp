@@ -213,7 +213,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
 
     for (size_t i = 0; i < pool_size; ++i)
         queue_shards[i].busy_timeout_ms
-            = std::min(Milliseconds(settings.async_insert_busy_timeout_min_ms), Milliseconds(settings.async_insert_busy_timeout_max_ms));
+            = std::max(Milliseconds(settings.async_insert_busy_timeout_min_ms), Milliseconds(settings.async_insert_busy_timeout_max_ms));
 
     for (size_t i = 0; i < pool_size; ++i)
         dump_by_first_update_threads.emplace_back([this, i] { processBatchDeadlines(i); });
@@ -483,7 +483,10 @@ AsynchronousInsertQueue::Milliseconds AsynchronousInsertQueue::getBusyWaitTimeou
         return settings.async_insert_busy_timeout_max_ms;
 
     const auto max_ms = Milliseconds(settings.async_insert_busy_timeout_max_ms);
-    const auto min_ms = std::min(std::max(Milliseconds(settings.async_insert_busy_timeout_min_ms), Milliseconds(1)), max_ms);
+    const double limits_ratio = settings.async_insert_busy_timeout_max_limits_ratio;
+
+    const auto min_ms = std::clamp(
+        Milliseconds(settings.async_insert_busy_timeout_min_ms), std::chrono::ceil<Milliseconds>(max_ms / limits_ratio), max_ms);
 
     auto normalize = [&min_ms, &max_ms](const auto & t_ms) { return std::min(std::max(t_ms, min_ms), max_ms); };
 
@@ -543,6 +546,9 @@ void AsynchronousInsertQueue::validateSettings(const Settings & settings, Logger
 
     if (settings.async_insert_busy_timeout_decrease_rate <= 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_decrease_rate' must be greater than zero");
+
+    if (settings.async_insert_busy_timeout_max_limits_ratio <= 1.0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_max_limits_ratio' must be greater or equal than 1.0");
 }
 
 void AsynchronousInsertQueue::flushAll()
