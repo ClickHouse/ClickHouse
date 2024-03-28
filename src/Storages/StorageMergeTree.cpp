@@ -9,6 +9,7 @@
 #include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Databases/IDatabase.h>
+#include <IO/copyData.h>
 #include "Common/Exception.h"
 #include <Common/MemoryTracker.h>
 #include <Common/escapeForFileName.h>
@@ -21,15 +22,15 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <IO/copyData.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/queryToString.h>
 #include <Planner/Utils.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -40,6 +41,8 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
+#include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -2077,47 +2080,88 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
 
-    MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
-    String partition_id = getPartitionIDFromQuery(partition, local_context);
+    auto & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot, replace);
+    auto source_partition_id = src_data.getPartitionIDFromQuery(partition, local_context);
 
-    DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    auto src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, source_partition_id);
+
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
     static const String TMP_PREFIX = "tmp_replace_from_";
 
-    for (const DataPartPtr & src_part : src_parts)
+    const auto my_partition_expression = my_metadata_snapshot->getPartitionKeyAST();
+    const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
+
+    bool attach_empty_partition = !replace && src_parts.empty();
+    if (attach_empty_partition)
+    {
+        return;
+    }
+
+    const auto is_partition_exp_the_same =
+        queryToStringWithEmptyTupleNormalization(my_partition_expression)
+        == queryToStringWithEmptyTupleNormalization(src_partition_expression);
+
+    auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
+        is_partition_exp_the_same,
+        src_data,
+        *this,
+        src_parts,
+        source_partition_id);
+
+    for (DataPartPtr & src_part : src_parts)
     {
         if (!canReplacePartition(src_part))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Cannot replace partition '{}' because part '{}' has inconsistent granularity with table",
-                            partition_id, src_part->name);
-
-        /// This will generate unique name in scope of current server process.
-        Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+                            source_partition_id, src_part->name);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
-        auto [dst_part, part_lock] = cloneAndLoadDataPart(
-            src_part,
-            TMP_PREFIX,
-            dst_part_info,
-            my_metadata_snapshot,
-            clone_params,
-            local_context->getReadSettings(),
-            local_context->getWriteSettings());
-        dst_parts.emplace_back(std::move(dst_part));
-        dst_parts_locks.emplace_back(std::move(part_lock));
-    }
+        /// This will generate unique name in scope of current server process.
+        auto index = insert_increment.get();
 
-    /// ATTACH empty part set
-    if (!replace && dst_parts.empty())
-        return;
+        MergeTreePartInfo dst_part_info(destination_partition_id, index, index, src_part->info.level);
+
+        if (is_partition_exp_the_same)
+        {
+            auto [dst_part, part_lock] = cloneAndLoadDataPart(
+                src_part,
+                TMP_PREFIX,
+                dst_part_info,
+                my_metadata_snapshot,
+                clone_params,
+                local_context->getReadSettings(),
+                local_context->getWriteSettings());
+            dst_parts.emplace_back(std::move(dst_part));
+            dst_parts_locks.emplace_back(std::move(part_lock));
+        }
+        else
+        {
+            auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
+            IMergeTreeDataPart::MinMaxIndex destination_min_max_index;
+
+            destination_min_max_index.load(*this, metadata_manager);
+
+            auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+                src_part,
+                destination_partition,
+                dst_part_info,
+                destination_min_max_index,
+                TMP_PREFIX,
+                my_metadata_snapshot,
+                clone_params,
+                local_context);
+
+            dst_parts.emplace_back(std::move(dst_part));
+            dst_parts_locks.emplace_back(std::move(part_lock));
+        }
+    }
 
     MergeTreePartInfo drop_range;
     if (replace)
     {
-        drop_range.partition_id = partition_id;
+        drop_range.partition_id = destination_partition_id;
         drop_range.min_block = 0;
         drop_range.max_block = increment.get(); // there will be a "hole" in block numbers
         drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
@@ -2184,48 +2228,86 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
-    String partition_id = getPartitionIDFromQuery(partition, local_context);
+    String source_partition_id = getPartitionIDFromQuery(partition, local_context);
 
-    DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, source_partition_id);
+
+    if (src_parts.empty())
+    {
+        return;
+    }
+
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
     static const String TMP_PREFIX = "tmp_move_from_";
+
+    const auto dst_partition_expression = dest_metadata_snapshot->getPartitionKeyAST();
+    const auto src_partition_expression = metadata_snapshot->getPartitionKeyAST();
+
+    const auto is_partition_exp_the_same =
+        queryToStringWithEmptyTupleNormalization(dst_partition_expression)
+        == queryToStringWithEmptyTupleNormalization(src_partition_expression);
+
+    auto [destination_partition, destination_partition_id] = MergeTreePartitionCompatibilityVerifier::verifyCompatibilityAndCreatePartition(
+        is_partition_exp_the_same,
+        src_data,
+        *dest_table_storage,
+        src_parts,
+        source_partition_id);
 
     for (const DataPartPtr & src_part : src_parts)
     {
         if (!dest_table_storage->canReplacePartition(src_part))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Cannot move partition '{}' because part '{}' has inconsistent granularity with table",
-                            partition_id, src_part->name);
+                            source_partition_id, src_part->name);
 
         /// This will generate unique name in scope of current server process.
         Int64 temp_index = insert_increment.get();
-        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
-
+        MergeTreePartInfo dst_part_info(destination_partition_id, temp_index, temp_index, src_part->info.level);
         IDataPartStorage::ClonePartParams clone_params
         {
             .txn = local_context->getCurrentTransaction(),
             .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
         };
 
-        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
-            src_part,
-            TMP_PREFIX,
-            dst_part_info,
-            dest_metadata_snapshot,
-            clone_params,
-            local_context->getReadSettings(),
-            local_context->getWriteSettings()
-        );
+        if (is_partition_exp_the_same)
+        {
+            auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
+                src_part,
+                TMP_PREFIX,
+                dst_part_info,
+                dest_metadata_snapshot,
+                clone_params,
+                local_context->getReadSettings(),
+                local_context->getWriteSettings()
+            );
 
-        dst_parts.emplace_back(std::move(dst_part));
-        dst_parts_locks.emplace_back(std::move(part_lock));
+            dst_parts.emplace_back(std::move(dst_part));
+            dst_parts_locks.emplace_back(std::move(part_lock));
+        }
+        else
+        {
+            auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
+            IMergeTreeDataPart::MinMaxIndex destination_min_max_index;
+
+            destination_min_max_index.load(*dest_table_storage, metadata_manager);
+
+            auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+                src_part,
+                destination_partition,
+                dst_part_info,
+                destination_min_max_index,
+                TMP_PREFIX,
+                dest_metadata_snapshot,
+                clone_params,
+                local_context);
+
+            dst_parts.emplace_back(std::move(dst_part));
+            dst_parts_locks.emplace_back(std::move(part_lock));
+        }
     }
-
-    /// empty part set
-    if (dst_parts.empty())
-        return;
 
     /// Move new parts to the destination table. NOTE It doesn't look atomic.
     try
