@@ -941,7 +941,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
     file_segment->detach(segment_lock, *this);
 
-    if (!remove_only_metadata)
+    // if (!remove_only_metadata)
     {
         try
         {

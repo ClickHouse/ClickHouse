@@ -1383,7 +1383,7 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
     if (new_settings.max_size != actual_settings.max_size
         || new_settings.max_elements != actual_settings.max_elements)
     {
-        std::vector<std::string> evicted_paths;
+        std::optional<EvictionCandidates> eviction_candidates;
         {
             cache_is_being_resized.store(true, std::memory_order_relaxed);
             SCOPE_EXIT({
@@ -1391,18 +1391,27 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
             });
 
             auto cache_lock = lockCache();
-            FileCacheReserveStat stat;
-            auto eviction_candidates = main_priority->collectCandidatesForEviction(
-                new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */, stat, cache_lock);
 
-            evicted_paths = eviction_candidates.evictFromMemory(nullptr, cache_lock);
+            FileCacheReserveStat stat;
+            eviction_candidates.emplace(main_priority->collectCandidatesForEviction(
+                new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */, stat, cache_lock));
+
+            eviction_candidates->removeQueueEntries(cache_lock);
 
             main_priority->modifySizeLimits(
                 new_settings.max_size, new_settings.max_elements, new_settings.slru_size_ratio, cache_lock);
         }
 
-        for (const auto & path : evicted_paths)
-            fs::remove(path);
+        try
+        {
+            eviction_candidates->evict();
+        }
+        catch (...)
+        {
+            auto cache_lock = lockCache();
+            eviction_candidates->finalize(nullptr, cache_lock);
+            throw;
+        }
 
         LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
                 actual_settings.max_size, new_settings.max_size,
