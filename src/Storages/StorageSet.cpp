@@ -248,7 +248,7 @@ void StorageSetOrJoinBase::restore()
     static const auto file_suffix_size = strlen(".bin");
 
     using FilePriority = std::pair<UInt64, String>;
-    std::priority_queue<FilePriority, std::vector<FilePriority>, std::greater<FilePriority>> backup_files;
+    std::priority_queue<FilePriority, std::vector<FilePriority>, std::greater<>> backup_files;
     for (auto dir_it{disk->iterateDirectory(path)}; dir_it->isValid(); dir_it->next())
     {
         const auto & name = dir_it->name();
