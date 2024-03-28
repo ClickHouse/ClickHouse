@@ -70,18 +70,27 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
     {
         auto arguments = function->arguments->children;
 
-        if ((arguments.empty()) || (arguments.size() >= 4))
+        if (arguments.size() >= 4)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'length' or 'offset, length'.", getName());
+        if (arguments.size() > 0)
+        {
+            UInt64 offset = arguments.size() >= 2 ? evaluateArgument(context, arguments[0]) : 0;
+            UInt64 length = arguments.size() >= 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
+            UInt64 step = arguments.size() == 3 ? evaluateArgument(context, arguments[2]) : 1;
 
-        UInt64 offset = arguments.size() >= 2 ? evaluateArgument(context, arguments[0]) : 0;
-        UInt64 length = arguments.size() >= 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
-        UInt64 step = arguments.size() == 3 ? evaluateArgument(context, arguments[2]) : 1;
-
-        auto res = std::make_shared<StorageSystemNumbers>(
-            StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"}, length, offset, step);
-        res->startup();
-        return res;
+            auto res = std::make_shared<StorageSystemNumbers>(
+                StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"}, length, offset, step);
+            res->startup();
+            return res;
+        }
+        else
+        {
+            auto res = std::make_shared<StorageSystemNumbers>(
+                StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"});
+            res->startup();
+            return res;
+        }
     }
     throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'limit' or 'offset, limit'.", getName());
 }
