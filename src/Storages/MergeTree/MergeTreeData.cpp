@@ -6033,6 +6033,9 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
 
     for (const auto & disk : getDisks())
     {
+        if (disk->isBroken())
+            continue;
+
         String detached_path = fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME;
 
         /// Note: we don't care about TOCTOU issue here.
