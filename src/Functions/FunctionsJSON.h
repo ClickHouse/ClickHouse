@@ -340,6 +340,21 @@ class JSONExtractImpl;
 template <typename T>
 class JSONExtractKeysAndValuesImpl;
 
+/**
+* Functions JSONExtract and JSONExtractKeysAndValues force the return type - it is specified in the last argument.
+* For example - `SELECT JSONExtract(materialize('{"a": 131231, "b": 1234}'), 'b', 'LowCardinality(FixedString(4))')`
+* But by default ClickHouse decides on its own whether the return type will be LowCardinality based on the types of
+* input arguments.
+* And for these specific functions we cannot rely on this mechanism, so these functions have their own implementation -
+* just convert all of the LowCardinality input columns to full ones, execute and wrap the resulting column in LowCardinality
+* if needed.
+*/
+template <template<typename> typename Impl>
+constexpr bool functionForcesTheReturnType()
+{
+    return std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>;
+}
+
 template <typename Name, template<typename> typename Impl>
 class ExecutableFunctionJSON : public IExecutableFunction
 {
@@ -355,11 +370,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override
     {
-        if constexpr (std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>)
-        {
-            return false;
-        }
-        return true;
+        return !functionForcesTheReturnType<Impl>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -367,7 +378,7 @@ public:
         if (null_presence.has_null_constant)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        if constexpr (std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>)
+        if constexpr (functionForcesTheReturnType<Impl>())
         {
             ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
 
@@ -493,11 +504,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override
     {
-        if constexpr (std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>)
-        {
-            return false;
-        }
-        return true;
+        return !functionForcesTheReturnType<Impl>();
     }
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
