@@ -7,6 +7,7 @@
 #include <Core/PlainRanges.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Functions/PolygonUtils.h>
 
 #include <Interpreters/Set.h>
 #include <Interpreters/ActionsDAG.h>
@@ -167,6 +168,9 @@ public:
             /// this expression will be analyzed and then represented by following:
             ///   args in hyperrectangle [10, 20] × [20, 30].
             FUNCTION_ARGS_IN_HYPERRECTANGLE,
+            /// Special for pointInPolygon to utilize minmax indices.
+            /// For example: pointInPolygon((x, y), [(0, 0), (0, 2), (2, 2), (2, 0)])
+            FUNCTION_POINT_IN_POLYGON,
             /// Can take any value.
             FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
@@ -204,6 +208,19 @@ public:
 
         /// For FUNCTION_ARGS_IN_HYPERRECTANGLE
         Hyperrectangle space_filling_curve_args_hyperrectangle;
+
+        /// For FUNCTION_POINT_IN_POLYGON.
+        /// Function like 'pointInPolygon' has multiple columns.
+        /// This struct description column part of the function, such as (x, y) in 'pointInPolygon'.
+        struct MultiColumnsFunctionDescription
+        {
+            String function_name;
+            std::vector<size_t> key_column_poss;
+            std::vector<String> key_columns;
+        };
+        std::optional<MultiColumnsFunctionDescription> point_in_polygon_column_description;
+
+        std::vector<PointInPolygonWithGrid<Float64>::Point> points_in_polygon;
 
         MonotonicFunctionsChain monotonic_functions_chain;
     };
