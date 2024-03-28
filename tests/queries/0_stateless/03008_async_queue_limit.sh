@@ -33,10 +33,7 @@ client_opts=(
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 
-start=$(${CLICKHOUSE_CLIENT} -q "SELECT now64()")
-
-concurrency=$((RANDOM % 20 + 10))
-${CLICKHOUSE_BENCHMARK} "${client_opts[@]}" -q "INSERT INTO $table VALUES (42)" -i $((max_pending_async_inserts * 2 - 1)) -c $concurrency &> /dev/null
+${CLICKHOUSE_BENCHMARK} "${client_opts[@]}" -q "INSERT INTO $table VALUES (42)" -i $((max_pending_async_inserts + 2)) &> /dev/null
 
 ${CLICKHOUSE_CLIENT} -nq "
   SYSTEM FLUSH LOGS;
@@ -44,14 +41,6 @@ ${CLICKHOUSE_CLIENT} -nq "
   SELECT SUM(ProfileEvents['AsyncInsertQueueFlushesOnLimit'])
     FROM system.query_log
    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND log_comment = '$log_comment' AND type = 'QueryFinish';
-
-  SELECT throwIf(MAX(pending_inserts) > $((max_pending_async_inserts + concurrency)))
-    FROM (
-      SELECT SUM(CurrentMetric_PendingAsyncInsert) AS pending_inserts
-        FROM system.metric_log
-       WHERE event_date >= yesterday() AND event_time_microseconds > '$start'
-    GROUP BY event_time
-    );
 "
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE $table"

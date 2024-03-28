@@ -700,9 +700,9 @@ try
         return;
 
     SCOPE_EXIT({
-        pending_inserts -= data->entries.size();
-        pending_bytes -= data->size_in_bytes;
         CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size());
+        pending_bytes -= data->size_in_bytes;
+        pending_inserts -= data->entries.size();
     });
 
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
