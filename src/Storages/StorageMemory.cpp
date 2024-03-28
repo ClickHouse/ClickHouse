@@ -46,7 +46,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
-    extern const int SETTING_CONSTRAINT_VIOLATION;
 }
 
 class MemorySink : public SinkToStorage
