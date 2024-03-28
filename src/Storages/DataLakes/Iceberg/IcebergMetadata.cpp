@@ -444,7 +444,7 @@ Strings IcebergMetadata::getDataFiles()
     auto manifest_list_buf = S3DataLakeMetadataReadHelper::createReadBuffer(manifest_list_file, getContext(), configuration);
     auto manifest_list_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
 
-    auto data_type = AvroSchemaReader::avroNodeToDataType(manifest_list_file_reader->dataSchema().root()->leafAt(0));
+    auto data_type = AvroSchemaReader::avroNodeToDataType(manifest_list_file_reader->dataSchema().root()->leafAt(0), false);
     Block header{{data_type->createColumn(), data_type, "manifest_path"}};
     auto columns = parseAvro(*manifest_list_file_reader, header, getFormatSettings(getContext()));
     auto & col = columns.at(0);
@@ -518,8 +518,10 @@ Strings IcebergMetadata::getDataFiles()
                 magic_enum::enum_name(data_file_node->type()));
         }
 
-        auto status_col_data_type = AvroSchemaReader::avroNodeToDataType(status_node);
-        auto data_col_data_type = AvroSchemaReader::avroNodeToDataType(data_file_node);
+        auto status_col_data_type = AvroSchemaReader::avroNodeToDataType(status_node, false);
+        /// 'data_file' can contain 'partition' field that can be an empty tuple.
+        /// We don't support empty Tuples, so we should skip this field.
+        auto data_col_data_type = AvroSchemaReader::avroNodeToDataType(data_file_node, /*skip_unsupported_types=*/ true);
         Block manifest_file_header
             = {{status_col_data_type->createColumn(), status_col_data_type, "status"},
                {data_col_data_type->createColumn(), data_col_data_type, "data_file"}};
