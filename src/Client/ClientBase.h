@@ -315,8 +315,6 @@ protected:
     QueryProcessingStage::Enum query_processing_stage;
     ClientInfo::QueryKind query_kind;
 
-    bool fake_drop = false;
-
     struct HostAndPort
     {
         String host;
