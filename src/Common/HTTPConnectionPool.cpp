@@ -295,8 +295,13 @@ private:
         String getTarget() const
         {
             if (!Session::getProxyConfig().host.empty())
-                return fmt::format("{} over proxy {}", Session::getHost(), Session::getProxyConfig().host);
-            return Session::getHost();
+                return fmt::format("{}:{} over proxy {}",
+                                   Session::getHost(),
+                                   Session::getPort(),
+                                   Session::getProxyConfig().host);
+            return fmt::format("{}:{}",
+                               Session::getHost(),
+                               Session::getPort());
         }
 
         void flushRequest() override
@@ -472,7 +477,8 @@ public:
     String getTarget() const
     {
         if (!proxy_configuration.isEmpty())
-            return fmt::format("{} over proxy {}", host, proxy_configuration.host);
+            return fmt::format("{} over proxy {}",
+                               host, proxy_configuration.host);
         return host;
     }
 
