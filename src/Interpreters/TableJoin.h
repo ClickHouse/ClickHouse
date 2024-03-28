@@ -301,8 +301,8 @@ public:
     std::vector<JoinOnClause> & getClauses() { return clauses; }
     const std::vector<JoinOnClause> & getClauses() const { return clauses; }
 
-    const std::shared_ptr<ExpressionActions> & getFullJoinExpression() const { return full_join_expression; }
-    std::shared_ptr<ExpressionActions> & getFullJoinExpression() { return full_join_expression; }
+    const std::shared_ptr<ExpressionActions> & getMixedJoinExpression() const { return full_join_expression; }
+    std::shared_ptr<ExpressionActions> & getMixedJoinExpression() { return full_join_expression; }
 
     Names getAllNames(JoinTableSide side) const;
 

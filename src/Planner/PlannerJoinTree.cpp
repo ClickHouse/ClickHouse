@@ -1321,7 +1321,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
         if (join_clauses_and_actions.mixed_join_expressions_actions)
         {
-            ExpressionActionsPtr & full_join_expression = table_join->getFullJoinExpression();
+            ExpressionActionsPtr & full_join_expression = table_join->getMixedJoinExpression();
             full_join_expression = std::make_shared<ExpressionActions>(
                 join_clauses_and_actions.mixed_join_expressions_actions,
                 ExpressionActionsSettings::fromContext(planner_context->getQueryContext()));

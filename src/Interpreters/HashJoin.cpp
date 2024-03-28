@@ -256,7 +256,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     LOG_TRACE(log, "{}Keys: {}, datatype: {}, kind: {}, strictness: {}, right header: {}",
         instance_log_id, TableJoin::formatClauses(table_join->getClauses(), true), data->type, kind, strictness, right_sample_block.dumpStructure());
 
-    validateAdditionalFilterExpression(table_join->getFullJoinExpression());
+    validateAdditionalFilterExpression(table_join->getMixedJoinExpression());
 
     if (isCrossOrComma(kind))
     {
@@ -712,7 +712,7 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
                             table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH) ||
                             isRightOrFull(kind) ||
                             multiple_disjuncts ||
-                            table_join->getFullJoinExpression();
+                            table_join->getMixedJoinExpression();
     if (save_key_columns)
     {
         saved_block_sample = right_table_keys.cloneEmpty();
@@ -2162,7 +2162,7 @@ Block HashJoin::joinBlockImpl(
         savedBlockSample(),
         *this,
         std::move(join_on_keys),
-        table_join->getFullJoinExpression(),
+        table_join->getMixedJoinExpression(),
         join_features.is_asof_join,
         is_join_get);
 
@@ -2809,7 +2809,7 @@ bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table
     if (!table_join_->oneDisjunct())
         return true;
     /// If it'a a all right join with inequal conditions, we need to mark each row
-    if (table_join_->getFullJoinExpression() && isRightOrFull(table_join_->kind()))
+    if (table_join_->getMixedJoinExpression() && isRightOrFull(table_join_->kind()))
         return true;
     return false;
 }
