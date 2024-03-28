@@ -1,11 +1,12 @@
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Common/Exception.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Common/Exception.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 
 
 namespace DB
