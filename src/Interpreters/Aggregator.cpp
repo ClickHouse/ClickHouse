@@ -1436,7 +1436,7 @@ void NO_INLINE Aggregator::mergeOnIntervalWithoutKey(
     size_t row_begin,
     size_t row_end,
     const AggregateColumnsConstData & aggregate_columns_data,
-    std::atomic<bool> * is_cancelled) const
+    std::atomic<bool> & is_cancelled) const
 {
     /// `data_variants` will destroy the states of aggregate functions in the destructor
     data_variants.aggregator = this;
@@ -1752,7 +1752,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     Arena * arena,
     bool final,
     Int32 bucket,
-    std::atomic<bool> * is_cancelled) const
+    std::atomic<bool> & is_cancelled) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
@@ -1762,8 +1762,8 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
     { \
-        mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena); \
-        if (is_cancelled && is_cancelled->load(std::memory_order_seq_cst)) \
+        mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena, is_cancelled); \
+        if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
         block = convertOneBucketToBlock(merged_data, *merged_data.NAME, arena, final, bucket); \
     }
@@ -2638,7 +2638,7 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 
 void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
     ManyAggregatedDataVariants & non_empty_data,
-    std::atomic<bool> * is_cancelled) const
+    std::atomic<bool> & is_cancelled) const
 {
     ThreadPool thread_pool{CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled, params.max_threads};
 
@@ -2746,7 +2746,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(
-    ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, std::atomic<bool> * is_cancelled) const
+    ManyAggregatedDataVariants & data, Int32 bucket, Arena * arena, std::atomic<bool> & is_cancelled) const
 {
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
@@ -2756,7 +2756,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
-        if (is_cancelled && is_cancelled->load(std::memory_order_seq_cst))
+        if (is_cancelled.load(std::memory_order_seq_cst))
             return;
 
         AggregatedDataVariants & current = *data[result_num];
@@ -2958,7 +2958,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 void NO_INLINE Aggregator::mergeBlockWithoutKeyStreamsImpl(
     Block block,
     AggregatedDataVariants & result,
-    std::atomic<bool> * is_cancelled) const
+    std::atomic<bool> & is_cancelled) const
 {
     AggregateColumnsConstData aggregate_columns = params.makeAggregateColumnsData(block);
     mergeWithoutKeyStreamsImpl(result, 0, block.rows(), aggregate_columns, is_cancelled);
@@ -2969,7 +2969,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
     size_t row_begin,
     size_t row_end,
     const AggregateColumnsConstData & aggregate_columns_data,
-    std::atomic<bool> * is_cancelled) const
+    std::atomic<bool> & is_cancelled) const
 {
     using namespace CurrentMetrics;
 
@@ -3005,7 +3005,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 }
 
 
-bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool & no_more_keys, std::atomic<bool> * is_cancelled) const
+bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool & no_more_keys, std::atomic<bool> & is_cancelled) const
 {
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
@@ -3075,7 +3075,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
 }
 
 
-void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads, std::atomic<bool> * is_cancelled)
+void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads, std::atomic<bool> & is_cancelled)
 {
     if (bucket_to_blocks.empty())
         return;
@@ -3207,7 +3207,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 }
 
 
-Block Aggregator::mergeBlocks(BlocksList & blocks, bool final, std::atomic<bool> * is_cancelled)
+Block Aggregator::mergeBlocks(BlocksList & blocks, bool final, std::atomic<bool> & is_cancelled)
 {
     if (blocks.empty())
         return {};

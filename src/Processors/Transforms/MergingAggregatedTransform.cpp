@@ -72,7 +72,7 @@ Chunk MergingAggregatedTransform::generate()
         next_block = blocks.begin();
 
         /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
-        params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads, &is_cancelled);
+        params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads, is_cancelled);
         blocks = params->aggregator.convertToBlocks(data_variants, params->final, max_threads);
         next_block = blocks.begin();
     }

@@ -132,7 +132,7 @@ protected:
             return {};
         }
 
-        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, &shared_data->is_cancelled);
+        Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, shared_data->is_cancelled);
         Chunk chunk = convertToChunk(block);
 
         shared_data->is_bucket_processed[bucket_num] = true;
@@ -350,7 +350,7 @@ public:
             for (auto & input : inputs)
                 input.close();
 
-            shared_data->is_cancelled.store(true);
+            shared_data->is_cancelled.store(true, std::memory_order_seq_cst);
 
             return Status::Finished;
         }
@@ -472,7 +472,7 @@ private:
 
         if (first->type == AggregatedDataVariants::Type::without_key || params->params.overflow_row)
         {
-            params->aggregator.mergeWithoutKeyDataImpl(*data, &shared_data->is_cancelled);
+            params->aggregator.mergeWithoutKeyDataImpl(*data, shared_data->is_cancelled);
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
 
@@ -692,7 +692,7 @@ void AggregatingTransform::consume(Chunk chunk)
     {
         auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());
         block = materializeBlock(block);
-        if (!params->aggregator.mergeOnBlock(block, variants, no_more_keys, &is_cancelled))
+        if (!params->aggregator.mergeOnBlock(block, variants, no_more_keys, is_cancelled))
             is_consume_finished = true;
     }
     else
@@ -712,7 +712,7 @@ void AggregatingTransform::initGenerate()
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
     {
         if (params->params.only_merge)
-            params->aggregator.mergeOnBlock(getInputs().front().getHeader(), variants, no_more_keys, &is_cancelled);
+            params->aggregator.mergeOnBlock(getInputs().front().getHeader(), variants, no_more_keys, is_cancelled);
         else
             params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
     }
