@@ -80,7 +80,7 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     # so the container can't be finished by ctrl+c
     export CLICKHOUSE_WATCHDOG_ENABLE
 
-    cd /var/lib/clickhouse
+    cd "${DATA_DIR}"
 
     # There is a config file. It is already tested with gosu (if it is readably by keeper user)
     if [ -f "$KEEPER_CONFIG" ]; then
