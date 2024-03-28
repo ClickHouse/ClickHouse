@@ -65,6 +65,12 @@ public:
         auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
         multi_if_function->getArguments().getNodes() = std::move(multi_if_arguments);
         multi_if_function->resolveAsFunction(multi_if_function_ptr->build(multi_if_function->getArgumentColumns()));
+
+        /// Ignore if returned type changed.
+        /// Example : SELECT now64(if(Null, NULL, if(Null, nan, toFloat64(number))), Null) FROM numbers(2)
+        if (!multi_if_function->getResultType()->equals(*function_node->getResultType()))
+            return;
+
         node = std::move(multi_if_function);
     }
 
