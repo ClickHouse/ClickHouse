@@ -451,6 +451,14 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         };
         right->transform(concurrent_right_filling_transform);
         right->resize(1);
+        if ((join->getTableJoin().kind() == JoinKind::Inner || join->getTableJoin().kind() == JoinKind::Left) && join->getTableJoin().strictness() == JoinStrictness::All)
+        {
+            auto right_rerange = std::make_shared<RerangeRightJoinSideTransform>(right->getHeader(), join);
+            InputPort * totals_port = nullptr;
+            if (right->hasTotals())
+                totals_port = right_rerange->addTotalsPort();
+            right->addTransform(std::move(right_rerange), totals_port, nullptr);
+        }
     }
     else
     {

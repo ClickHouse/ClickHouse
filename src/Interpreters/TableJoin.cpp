@@ -113,6 +113,8 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
+    , right_table_sort_rows_upper_limit(settings.join_right_table_sort_rows_upper_limit)
+    , right_table_sort_per_key_rows_lower_limit(settings.join_right_table_sort_per_key_rows_lower_limit)
     , max_memory_usage(settings.max_memory_usage)
     , tmp_volume(tmp_volume_)
 {
