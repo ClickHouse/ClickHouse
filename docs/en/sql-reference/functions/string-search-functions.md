@@ -178,10 +178,105 @@ Result:
 │ [0,13,0]                                                          │
 └───────────────────────────────────────────────────────────────────┘
 ```
+## multiSearchAllPositionsCaseInsensitive
+
+Like [multiSearchAllPositions](#multisearchallpositions) but ignores case.
+
+**Syntax**
+
+```sql
+multiSearchAllPositionsCaseInsensitive(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- Array of the starting position in bytes and counting from 1 (if the substring was found).
+- 0 if the substring was not found.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiSearchAllPositionsCaseInsensitive('ClickHouse',['c','h']);
+```
+
+```response
+["1","6"]
+```
 
 ## multiSearchAllPositionsUTF8
 
 Like [multiSearchAllPositions](#multiSearchAllPositions) but assumes `haystack` and the `needle`-s are UTF-8 encoded strings.
+
+**Syntax**
+
+```sql
+multiSearchAllPositionsUTF8(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — UTF-8 encoded string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — UTF-8 encoded substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- Array of the starting position in bytes and counting from 1 (if the substring was found).
+- 0 if the substring was not found.
+
+**Example**
+
+Given `ClickHouse` as a UTF-8 string, find the positions of `C` ('\x43') and `H` ('\x48').
+
+Query:
+
+```sql
+SELECT multiSearchAllPositionsUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x43','\x48']);
+```
+
+```response
+["1","6"]
+```
+
+## multiSearchAllPositionsCaseInsensitiveUTF8
+
+Like [multiSearchAllPositionsUTF8](#multisearchallpositionsutf8) but ignores case.
+
+**Syntax**
+
+```sql
+multiSearchAllPositionsCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — UTF-8 encoded string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — UTF-8 encoded substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- Array of the starting position in bytes and counting from 1 (if the substring was found).
+- 0 if the substring was not found.
+
+**Example**
+
+Given `ClickHouse` as a UTF-8 string, find the positions of `c` (`\x63`) and `h` (`\x68`).
+
+Query:
+
+```sql
+SELECT multiSearchAllPositionsCaseInsensitiveUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x63','\x68']);
+```
+
+```response
+["1","6"]
+```
 
 ## multiSearchFirstPosition
 
@@ -211,12 +306,134 @@ multiSearchFirstIndex(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, n
 
 Returns 1, if at least one string needle<sub>i</sub> matches the string `haystack` and 0 otherwise.
 
-Functions `multiSearchAnyCaseInsensitive`, `multiSearchAnyUTF8` and `multiSearchAnyCaseInsensitiveUTF8` provide case-insensitive and/or UTF-8 variants of this function.
+Functions [`multiSearchAnyCaseInsensitive`](#multiSearchAnyCaseInsensitive), [`multiSearchAnyUTF8`](#multiSearchAnyUTF8) and []`multiSearchAnyCaseInsensitiveUTF8`](#multiSearchAnyCaseInsensitiveUTF8) provide case-insensitive and/or UTF-8 variants of this function.
 
 **Syntax**
 
 ```sql
-multiSearchAny(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
+multiSearchAny(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- 1, if there was at least one match.
+- 0, if there was not at least one match.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiSearchAny('ClickHouse',['C','H']);
+```
+
+```response
+1
+```
+
+## multiSearchAnyCaseInsensitive {#multiSearchAnyCaseInsensitive}
+
+Like [multiSearchAny](#multisearchany) but ignores case.
+
+**Syntax**
+
+```sql
+multiSearchAnyCaseInsensitive(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- 1, if there was at least one case-insensitive match.
+- 0, if there was not at least one case-insensitive match.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiSearchAnyCaseInsensitive('ClickHouse',['c','h']);
+```
+
+```response
+1
+```
+
+## multiSearchAnyUTF8 {#multiSearchAnyUTF8}
+
+Like [multiSearchAny](#multisearchany) but assumes `haystack` and the `needle`-s are UTF-8 encoded strings.
+
+*Syntax**
+
+```sql
+multiSearchAnyUTF8(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — UTF-8 substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- 1, if there was at least one match.
+- 0, if there was not at least one match.
+
+**Example**
+
+Given `ClickHouse` as a UTF-8 string, check if there are any `C` ('\x43') or `H` ('\x48') letters in the word.
+
+Query:
+
+```sql
+SELECT multiSearchAnyUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x43','\x48']);
+```
+
+```response
+1
+```
+
+## multiSearchAnyCaseInsensitiveUTF8 {#multiSearchAnyCaseInsensitiveUTF8}
+
+Like [multiSearchAnyUTF8](#multiSearchAnyUTF8) but ignores case.
+
+*Syntax**
+
+```sql
+multiSearchAnyCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — UTF-8 substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- 1, if there was at least one case-insensitive match.
+- 0, if there was not at least one case-insensitive match.
+
+**Example**
+
+Given `ClickHouse` as a UTF-8 string, check if there is any letter `h`(`\x68`) in the word, ignoring case.
+
+Query:
+
+```sql
+SELECT multiSearchAnyCaseInsensitiveUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x68']);
+```
+
+```response
+1
 ```
 
 ## match {#match}
