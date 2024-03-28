@@ -369,6 +369,8 @@ public:
 protected:
     virtual void onCancel() {}
 
+    std::atomic<bool> is_cancelled{false};
+
 private:
     /// For:
     /// - elapsed_us
@@ -377,8 +379,6 @@ private:
     /// - input_wait_elapsed_us
     /// - output_wait_elapsed_us
     friend class ExecutingGraph;
-
-    std::atomic<bool> is_cancelled{false};
 
     std::string processor_description;
 
