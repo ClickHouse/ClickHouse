@@ -1757,6 +1757,10 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
         }
     }
 
+    /// All input nodes are needed by split to make sure first DAG and initial DAG have equal inputs,
+    for (const auto * input: inputs)
+        data[input].needed_by_split_node = true;
+
     /// DFS. Move nodes to one of the DAGs.
     for (const auto & node : nodes)
     {
