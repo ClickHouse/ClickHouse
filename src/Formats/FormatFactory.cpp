@@ -84,6 +84,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.csv.enum_as_number = settings.input_format_csv_enum_as_number;
     format_settings.csv.null_representation = settings.format_csv_null_representation;
     format_settings.csv.arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
+    format_settings.csv.with_names = settings.input_format_csv_with_names;
+    format_settings.csv.with_types = settings.input_format_csv_with_types;
     format_settings.csv.use_best_effort_in_schema_inference = settings.input_format_csv_use_best_effort_in_schema_inference;
     format_settings.csv.skip_first_lines = settings.input_format_csv_skip_first_lines;
     format_settings.csv.try_detect_header = settings.input_format_csv_detect_header;
