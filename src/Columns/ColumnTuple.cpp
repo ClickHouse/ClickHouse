@@ -297,10 +297,12 @@ void ColumnTuple::filterInPlace(const IColumn & indexes, size_t start)
     {
         if (columns[i]->use_count() == 1)
         {
+            // std::cout << "column " << i << " reuse, ptr:" << columns[i].get() << " " << columns[i]->getName() << std::endl;
             columns[i]->filterInPlace(indexes, start);
         }
         else
         {
+            // std::cout << "column " << i << " clone, ptr:" << columns[i].get() << " " << columns[i]->getName() << std::endl;
             auto column = IColumn::mutate(columns[i]);
             column->filterInPlace(indexes, start);
             columns[i] = std::move(column);

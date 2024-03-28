@@ -654,7 +654,9 @@ template <typename Type>
 void ColumnVector<T>::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
 {
     for (size_t i = 0; i < indexes.size(); ++i)
+    {
         data[start + i] = data[indexes[i]];
+    }
     data.resize_exact(start + indexes.size());
 }
 
