@@ -348,7 +348,6 @@ public:
     String getName() const override { return Name::name; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -469,6 +468,9 @@ public:
             return_type = makeNullable(json_return_type);
         else
             return_type = json_return_type;
+
+        /// Top-level LowCardinality columns are processed outside JSON parser.
+        json_return_type = removeLowCardinality(json_return_type);
 
         DataTypes argument_types;
         argument_types.reserve(arguments.size());
@@ -865,9 +867,11 @@ struct JSONExtractTree
         explicit LowCardinalityFixedStringNode(const size_t fixed_length_) : fixed_length(fixed_length_) { }
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            // For types other than string, delegate the insertion to JSONExtractRawImpl.
-            if (!element.isString())
+            // If element is an object we delegate the insertion to JSONExtractRawImpl
+            if (element.isObject())
                 return JSONExtractRawImpl<JSONParser>::insertResultToLowCardinalityFixedStringColumn(dest, element, fixed_length);
+            else if (!element.isString())
+                return false;
 
             auto str = element.getString();
             if (str.size() > fixed_length)
@@ -1482,6 +1486,9 @@ public:
     // We use insertResultToLowCardinalityFixedStringColumn in case we are inserting raw data in a Low Cardinality FixedString column
     static bool insertResultToLowCardinalityFixedStringColumn(IColumn & dest, const Element & element, size_t fixed_length)
     {
+        if (element.getObject().size() > fixed_length)
+            return false;
+
         ColumnFixedString::Chars chars;
         WriteBufferFromVector<ColumnFixedString::Chars> buf(chars, AppendModeTag());
         traverse(element, buf);

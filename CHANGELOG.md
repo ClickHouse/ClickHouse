@@ -6,7 +6,7 @@
 
 # 2024 Changelog
 
-### <a id="243"></a> ClickHouse release 24.3 LTS, 2024-03-26
+### <a id="243"></a> ClickHouse release 24.3 LTS, 2024-03-27
 
 #### Upgrade Notes
 * The setting `allow_experimental_analyzer` is enabled by default and it switches the query analysis to a new implementation, which has better compatibility and feature completeness. The feature "analyzer" is considered beta instead of experimental. You can turn the old behavior by setting the `compatibility` to `24.2` or disabling the `allow_experimental_analyzer` setting. Watch the [video on YouTube](https://www.youtube.com/watch?v=zhrOYQpgvkk).
@@ -38,7 +38,6 @@
 * Optimized function `dotProduct` to omit unnecessary and expensive memory copies. [#60928](https://github.com/ClickHouse/ClickHouse/pull/60928) ([Robert Schulze](https://github.com/rschu1ze)).
 * 30x faster printing for 256-bit integers. [#61100](https://github.com/ClickHouse/ClickHouse/pull/61100) ([Raúl Marín](https://github.com/Algunenano)).
 * If the table's primary key contains mostly useless columns, don't keep them in memory. This is controlled by a new setting `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns` with the value `0.9` by default, which means: for a composite primary key, if a column changes its value for at least 0.9 of all the times, the next columns after it will be not loaded. [#60255](https://github.com/ClickHouse/ClickHouse/pull/60255) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Make all format names case insensitive, like Tsv, or TSV, or tsv, or even rowbinary. [#60420](https://github.com/ClickHouse/ClickHouse/pull/60420) ([豪肥肥](https://github.com/HowePa)). I appreciate if you will continue to write it correctly, e.g., `JSON` 😇, not `Json` 🤮, but we don't mind if you spell it as you prefer.
 * Improve the performance of serialized aggregation method when involving multiple `Nullable` columns. [#55809](https://github.com/ClickHouse/ClickHouse/pull/55809) ([Amos Bird](https://github.com/amosbird)).
 * Lazy build JSON's output to improve performance of ALL JOIN. [#58278](https://github.com/ClickHouse/ClickHouse/pull/58278) ([LiuNeng](https://github.com/liuneng1994)).
 * Make HTTP/HTTPs connections with external services, such as AWS S3 reusable for all uses cases. Even when response is 3xx or 4xx. [#58845](https://github.com/ClickHouse/ClickHouse/pull/58845) ([Sema Checherinda](https://github.com/CheSema)).
@@ -72,6 +71,7 @@
 * Add ability to override initial INSERT settings via `SYSTEM FLUSH DISTRIBUTED`. [#61832](https://github.com/ClickHouse/ClickHouse/pull/61832) ([Azat Khuzhin](https://github.com/azat)).
 * Enable processors profiling (time spent/in and out bytes for sorting, aggregation, ...) by default. [#61096](https://github.com/ClickHouse/ClickHouse/pull/61096) ([Azat Khuzhin](https://github.com/azat)).
 * Support files without format extension in Filesystem database. [#60795](https://github.com/ClickHouse/ClickHouse/pull/60795) ([Kruglov Pavel](https://github.com/Avogar)).
+* Make all format names case insensitive, like Tsv, or TSV, or tsv, or even rowbinary. [#60420](https://github.com/ClickHouse/ClickHouse/pull/60420) ([豪肥肥](https://github.com/HowePa)). I appreciate if you will continue to write it correctly, e.g., `JSON` 😇, not `Json` 🤮, but we don't mind if you spell it as you prefer.
 * Added `none_only_active` mode for `distributed_ddl_output_mode` setting. [#60340](https://github.com/ClickHouse/ClickHouse/pull/60340) ([Alexander Tokmakov](https://github.com/tavplubix)).
 * The advanced dashboard has slightly better colors for multi-line graphs. [#60391](https://github.com/ClickHouse/ClickHouse/pull/60391) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * The Advanced dashboard now has controls always visible on scrolling. This allows you to add a new chart without scrolling up. [#60692](https://github.com/ClickHouse/ClickHouse/pull/60692) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -81,7 +81,7 @@
 * Consider lightweight deleted rows when selecting parts to merge, so the disk size of the resulting part will be estimated better. [#58223](https://github.com/ClickHouse/ClickHouse/pull/58223) ([Zhuo Qiu](https://github.com/jewelzqiu)).
 * Added comments for columns for more system tables. Continuation of https://github.com/ClickHouse/ClickHouse/pull/58356. [#59016](https://github.com/ClickHouse/ClickHouse/pull/59016) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * Now we can use virtual columns in PREWHERE. It's worthwhile for non-const virtual columns like `_part_offset`. [#59033](https://github.com/ClickHouse/ClickHouse/pull/59033) ([Amos Bird](https://github.com/amosbird)). Improved overall usability of virtual columns. Now it is allowed to use virtual columns in `PREWHERE` (it's worthwhile for non-const virtual columns like `_part_offset`). Now a builtin documentation is available for virtual columns as a comment of column in `DESCRIBE` query with enabled setting `describe_include_virtual_columns`. [#60205](https://github.com/ClickHouse/ClickHouse/pull/60205) ([Anton Popov](https://github.com/CurtizJ)).
-* Instead using a constant key, now object storage generates key for determining remove objects capability. [#59495](https://github.com/ClickHouse/ClickHouse/pull/59495) ([Sema Checherinda](https://github.com/CheSema)).
+* Instead of using a constant key, now object storage generates key for determining remove objects capability. [#59495](https://github.com/ClickHouse/ClickHouse/pull/59495) ([Sema Checherinda](https://github.com/CheSema)).
 * Allow "local" as object storage type instead of "local_blob_storage". [#60165](https://github.com/ClickHouse/ClickHouse/pull/60165) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Parallel flush of pending INSERT blocks of Distributed engine on `DETACH`/server shutdown and `SYSTEM FLUSH DISTRIBUTED` (Parallelism will work only if you have multi-disk policy for a table (like everything in the Distributed engine right now)). [#60225](https://github.com/ClickHouse/ClickHouse/pull/60225) ([Azat Khuzhin](https://github.com/azat)).
 * Add a setting to force read-through cache for merges. [#60308](https://github.com/ClickHouse/ClickHouse/pull/60308) ([Kseniia Sumarokova](https://github.com/kssenii)).
@@ -148,7 +148,7 @@
 * Fix crash with different allow_experimental_analyzer value in subqueries [#60770](https://github.com/ClickHouse/ClickHouse/pull/60770) ([Dmitry Novik](https://github.com/novikd)).
 * Remove recursion when reading from S3 [#60849](https://github.com/ClickHouse/ClickHouse/pull/60849) ([Antonio Andelic](https://github.com/antonio2368)).
 * Fix possible stuck on error in HashedDictionaryParallelLoader [#60926](https://github.com/ClickHouse/ClickHouse/pull/60926) ([vdimir](https://github.com/vdimir)).
-* Fix async RESTORE with Replicated database [#60934](https://github.com/ClickHouse/ClickHouse/pull/60934) ([Antonio Andelic](https://github.com/antonio2368)).
+* Fix async RESTORE with Replicated database (experimental feature) [#60934](https://github.com/ClickHouse/ClickHouse/pull/60934) ([Antonio Andelic](https://github.com/antonio2368)).
 * Fix deadlock in async inserts to `Log` tables via native protocol [#61055](https://github.com/ClickHouse/ClickHouse/pull/61055) ([Anton Popov](https://github.com/CurtizJ)).
 * Fix lazy execution of default argument in dictGetOrDefault for RangeHashedDictionary [#61196](https://github.com/ClickHouse/ClickHouse/pull/61196) ([Kruglov Pavel](https://github.com/Avogar)).
 * Fix multiple bugs in groupArraySorted [#61203](https://github.com/ClickHouse/ClickHouse/pull/61203) ([Raúl Marín](https://github.com/Algunenano)).
@@ -166,8 +166,8 @@
 * Allow queuing in restore pool [#61475](https://github.com/ClickHouse/ClickHouse/pull/61475) ([Nikita Taranov](https://github.com/nickitat)).
 * Fix an inconsistency when reading system.parts using UUID. [#61479](https://github.com/ClickHouse/ClickHouse/pull/61479) ([Dan Wu](https://github.com/wudanzy)).
 * Fix ALTER QUERY MODIFY SQL SECURITY [#61480](https://github.com/ClickHouse/ClickHouse/pull/61480) ([pufit](https://github.com/pufit)).
-* Fix crash in window view [#61526](https://github.com/ClickHouse/ClickHouse/pull/61526) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
-* Fix `repeat` with non native integers [#61527](https://github.com/ClickHouse/ClickHouse/pull/61527) ([Antonio Andelic](https://github.com/antonio2368)).
+* Fix a crash in window view (experimental feature) [#61526](https://github.com/ClickHouse/ClickHouse/pull/61526) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Fix `repeat` with non-native integers [#61527](https://github.com/ClickHouse/ClickHouse/pull/61527) ([Antonio Andelic](https://github.com/antonio2368)).
 * Fix client's `-s` argument [#61530](https://github.com/ClickHouse/ClickHouse/pull/61530) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
 * Fix crash in arrayPartialReverseSort [#61539](https://github.com/ClickHouse/ClickHouse/pull/61539) ([Raúl Marín](https://github.com/Algunenano)).
 * Fix string search with const position [#61547](https://github.com/ClickHouse/ClickHouse/pull/61547) ([Antonio Andelic](https://github.com/antonio2368)).

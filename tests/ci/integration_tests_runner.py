@@ -265,7 +265,7 @@ class ClickhouseIntegrationTestsRunner:
         self.start_time = time.time()
         self.soft_deadline_time = self.start_time + (TASK_TIMEOUT - MAX_TIME_IN_SANDBOX)
 
-        self.use_analyzer = os.environ.get("CLICKHOUSE_USE_NEW_ANALYZER") is not None
+        self.use_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
 
         if "run_by_hash_total" in self.params:
             self.run_by_hash_total = self.params["run_by_hash_total"]
