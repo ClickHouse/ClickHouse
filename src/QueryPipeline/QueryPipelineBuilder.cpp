@@ -55,34 +55,6 @@ void QueryPipelineBuilder::checkInitializedAndNotCompleted()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPipeline is already completed");
 }
 
-static void checkSource(const ProcessorPtr & source, bool can_have_totals)
-{
-    if (!source->getInputs().empty())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Source for query pipeline shouldn't have any input, but {} has {} inputs",
-            source->getName(),
-            source->getInputs().size());
-
-    if (source->getOutputs().empty())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Source for query pipeline should have single output, but {} doesn't have any", source->getName());
-
-    if (!can_have_totals && source->getOutputs().size() != 1)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Source for query pipeline should have single output, but {} has {} outputs",
-            source->getName(),
-            source->getOutputs().size());
-
-    if (source->getOutputs().size() > 2)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Source for query pipeline should have 1 or 2 output, but {} has {} outputs",
-            source->getName(),
-            source->getOutputs().size());
-}
-
 void QueryPipelineBuilder::init(Pipe pipe_)
 {
     if (initialized())
@@ -175,20 +147,6 @@ void QueryPipelineBuilder::setSinks(const Pipe::ProcessorGetterWithStreamKind & 
     pipe.setSinks(getter);
 }
 
-void QueryPipelineBuilder::addDelayedStream(ProcessorPtr source)
-{
-    checkInitializedAndNotCompleted();
-
-    checkSource(source, false);
-    assertBlocksHaveEqualStructure(getHeader(), source->getOutputs().front().getHeader(), "QueryPipeline");
-
-    IProcessor::PortNumbers delayed_streams = { pipe.numOutputPorts() };
-    pipe.addSource(std::move(source));
-
-    auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams);
-    addTransform(std::move(processor));
-}
-
 void QueryPipelineBuilder::addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors)
 {
     DB::addMergingAggregatedMemoryEfficientTransform(pipe, std::move(params), num_merging_processors);
@@ -273,8 +231,6 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
 {
     if (pipelines.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite an empty set of pipelines");
-
-    Block common_header = pipelines.front()->getHeader();
 
     /// Should we limit the number of threads for united pipeline. True if all pipelines have max_threads != 0.
     /// If true, result max_threads will be sum(max_threads).

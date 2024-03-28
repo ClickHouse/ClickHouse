@@ -3,6 +3,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/GlobalMaterializeCTEVisitor.h>
+#include <Interpreters/MaterializedTableFromCTE.h>
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -31,9 +33,19 @@ public:
             context->addSpecialScalar(
                 "_shard_count",
                 Block{{DataTypeUInt32().createColumnConst(1, *options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
+
+        if (context->getSettingsRef().enable_materialized_cte)
+        {
+            /// Collect all CTE with MATERIALIZED keyword add to query context as temporary tables
+            /// We need to do it here before analyzing the query
+            GlobalMaterializeCTEVisitor::Data data(context);
+            GlobalMaterializeCTEVisitor(data).visit(query_ptr, has_materialized_cte);
+        }
     }
 
-    virtual void buildQueryPlan(QueryPlan & query_plan) = 0;
+    void buildQueryPlan(QueryPlan & query_plan);
+    virtual void buildQueryPlanImpl(QueryPlan & query_plan) = 0;
+    BlockIO execute() override;
     QueryPipelineBuilder buildQueryPipeline();
     QueryPipelineBuilder buildQueryPipeline(QueryPlan & query_plan);
 
@@ -70,11 +82,14 @@ protected:
     bool settings_limit_offset_needed = false;
     bool settings_limit_offset_done = false;
     bool uses_view_source = false;
+    bool has_materialized_cte = false;
 
     /// Set quotas to query pipeline.
     void setQuota(QueryPipeline & pipeline) const;
     /// Add filter from additional_post_filter setting.
     void addAdditionalPostFilter(QueryPlan & plan) const;
+    /// Add delayed step to build materialized CTE tables
+    void addDelayedMaterializingCTETables(QueryPlan & plan) const;
 
     static StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options);
 };

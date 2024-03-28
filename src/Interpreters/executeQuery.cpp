@@ -296,49 +296,6 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
 }
 
-static void buildTemporaryTablesFromCTE(
-    FutureTablesFromCTE future_tables,
-    ContextPtr context
-)
-{
-    if (future_tables.empty())
-        return;
-
-    /// Build query plan
-    auto query_plan = QueryPlan();
-    DataStreams input_streams;
-    std::vector<std::unique_ptr<QueryPlan>> plans;
-    for (auto & [_, future_table] : future_tables)
-    {
-        auto plan = future_table.build(context);
-        input_streams.emplace_back(plan->getCurrentDataStream());
-        plans.emplace_back(std::move(plan));
-    }
-
-    if (plans.size() > 1)
-    {
-        /// Create a dummy UNION step to merge all plans into a single plans. The output is unused.
-        auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
-        union_step->setStepDescription("Dummy Union");
-        query_plan.unitePlans(std::move(union_step), std::move(plans));
-    }
-    else
-        query_plan = std::move(*plans.front());
-
-    LOG_DEBUG(getLogger("executeQuery"), "Plan to build temporary tables from CTE:\n{}\n", dumpQueryPlan(query_plan));
-    LOG_DEBUG(getLogger("executeQuery"), "Pipeline to build temporary tables from CTE:\n{}\n", dumpQueryPipeline(query_plan));
-
-    /// Execute the plan
-    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-    pipeline.complete(std::make_shared<EmptySink>(pipeline.getHeader()));
-
-    {
-        CompletedPipelineExecutor executor(pipeline);
-        executor.execute();
-    }
-}
-
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
     const ContextMutablePtr & context,
@@ -978,16 +935,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         logQuery(query_for_logging, context, internal, stage);
-
-        if (context->getSettingsRef().enable_materialized_cte)
-        {
-            /// Collect all CTE with MATERIALIZED keyword add to query context as temporary tables
-            /// We need to do it here before analyzing the query
-            FutureTablesFromCTE future_materialized_cte_tables;
-            GlobalMaterializeCTEVisitor::Data data(context);
-            GlobalMaterializeCTEVisitor(data).visit(ast);
-            // buildTemporaryTablesFromCTE(std::move(future_materialized_cte_tables), context);
-        }
 
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)

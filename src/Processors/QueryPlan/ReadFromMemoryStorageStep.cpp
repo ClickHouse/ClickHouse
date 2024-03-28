@@ -102,7 +102,7 @@ ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(
     const ContextPtr & context_,
     StoragePtr storage_,
     const size_t num_streams_,
-    const bool delay_read_for_global_sub_queries_)
+    const bool delay_read_)
     : SourceStepWithFilter(
         DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)},
         columns_to_read_,
@@ -112,7 +112,7 @@ ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(
     , columns_to_read(columns_to_read_)
     , storage(std::move(storage_))
     , num_streams(num_streams_)
-    , delay_read_for_global_sub_queries(delay_read_for_global_sub_queries_)
+    , delay_read(delay_read_)
 {
 }
 
@@ -136,7 +136,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
     auto current_data = snapshot_data.blocks;
 
-    if (delay_read_for_global_sub_queries)
+    if (delay_read)
     {
         /// Note: for global subquery we use single source.
         /// Mainly, the reason is that at this point table is empty,

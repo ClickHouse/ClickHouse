@@ -23,7 +23,7 @@ public:
     explicit GlobalMaterializeCTEVisitor(Data & data_) : data(data_) {}
 
     /// Not visiting subqueries
-    void visit(ASTPtr & ast);
+    void visit(ASTPtr & ast, bool & has_materialized_cte);
 
 private:
     Data & data;

@@ -185,7 +185,7 @@ void StorageMemory::read(
     size_t num_streams)
 {
     query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(
-        column_names, query_info, storage_snapshot, context, shared_from_this(), num_streams, delay_read_for_global_subqueries));
+        column_names, query_info, storage_snapshot, context, shared_from_this(), num_streams, delay_read));
 }
 
 

@@ -91,9 +91,6 @@ public:
     /// Forget about current totals and extremes. It is needed before aggregation, cause they will be calculated again.
     void dropTotalsAndExtremes();
 
-    /// Will read from this stream after all data was read from other streams.
-    void addDelayedStream(ProcessorPtr source);
-
     void addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors);
 
     /// Changes the number of output ports if needed. Adds ResizeTransform.
@@ -199,6 +196,8 @@ public:
     {
         return concurrency_control;
     }
+
+    const Processors & getProcessors() { return pipe.getProcessors(); }
 
     void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }

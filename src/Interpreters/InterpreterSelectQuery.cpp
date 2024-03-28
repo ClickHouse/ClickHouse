@@ -959,7 +959,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     return false;
 }
 
-void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
+void InterpreterSelectQuery::buildQueryPlanImpl(QueryPlan & query_plan)
 {
     executeImpl(query_plan, std::move(input_pipe));
 
@@ -984,22 +984,6 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
         query_plan.addStorageHolder(storage);
 }
 
-BlockIO InterpreterSelectQuery::execute()
-{
-    BlockIO res;
-    QueryPlan query_plan;
-
-    buildQueryPlan(query_plan);
-
-    auto builder = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-
-    setQuota(res.pipeline);
-
-    return res;
-}
 
 Block InterpreterSelectQuery::getSampleBlockImpl()
 {

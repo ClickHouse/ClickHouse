@@ -128,7 +128,7 @@ TemporaryTableHolder::TemporaryTableHolder(
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     const ASTPtr & query,
-    bool create_for_global_subquery,
+    bool delay_read,
     const ASTPtr & custom_engine)
     : TemporaryTableHolder(
         context_,
@@ -138,8 +138,8 @@ TemporaryTableHolder::TemporaryTableHolder(
             auto create_memory_table = [&]
             {
                 auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
-                if (create_for_global_subquery)
-                    storage->delayReadForGlobalSubqueries();
+                if (delay_read)
+                    storage->delayRead();
                 return storage;
             };
             if (!engine || engine->name == "Memory")

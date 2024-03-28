@@ -276,7 +276,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
         ColumnsDescription{columns},
         ConstraintsDescription{},
         nullptr /*query*/,
-        true /*create_for_global_subquery*/);
+        true /*delay_read*/);
 
     StoragePtr external_storage = external_storage_holder.getTable();
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);

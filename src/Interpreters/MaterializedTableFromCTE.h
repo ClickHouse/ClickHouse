@@ -8,6 +8,7 @@ namespace DB
 
 struct FutureTableFromCTE
 {
+    FutureTableFromCTE() = default;
     /// Name of the table
     String name;
     /// The external table that will hold data from the CTE.

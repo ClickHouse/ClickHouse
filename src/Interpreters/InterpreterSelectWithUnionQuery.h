@@ -31,9 +31,7 @@ public:
     ~InterpreterSelectWithUnionQuery() override;
 
     /// Builds QueryPlan for current query.
-    void buildQueryPlan(QueryPlan & query_plan) override;
-
-    BlockIO execute() override;
+    void buildQueryPlanImpl(QueryPlan & query_plan) override;
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }

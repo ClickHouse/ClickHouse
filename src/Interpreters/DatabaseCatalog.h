@@ -95,7 +95,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         const ASTPtr & query = {},
-        bool create_for_global_subquery = false,
+        bool delay_read = false,
         const ASTPtr & custom_engine = {});
 
     TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept;

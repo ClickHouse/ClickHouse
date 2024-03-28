@@ -83,7 +83,7 @@ public:
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0);
-    void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
+    void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options, size_t offset = 0);
     void explainEstimate(MutableColumns & columns);
 
     /// Do not allow to change the table while the pipeline alive.
