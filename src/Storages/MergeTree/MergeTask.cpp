@@ -309,7 +309,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->createRawStream();
             ctx->rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*ctx->rows_sources_uncompressed_write_buf);
 
-            MergeTreeDataPartInMemory::ColumnToSize local_merged_column_to_size;
+            std::map<String, UInt64> local_merged_column_to_size;
             for (const MergeTreeData::DataPartPtr & part : global_ctx->future_part->parts)
                 part->accumulateColumnSizes(local_merged_column_to_size);
 
@@ -730,8 +730,9 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         MergeTreeData::DataPartsVector projection_parts;
         for (const auto & part : global_ctx->future_part->parts)
         {
-            auto it = part->getProjectionParts().find(projection.name);
-            if (it != part->getProjectionParts().end())
+            auto actual_projection_parts = part->getProjectionParts();
+            auto it = actual_projection_parts.find(projection.name);
+            if (it != actual_projection_parts.end() && !it->second->is_broken)
                 projection_parts.push_back(it->second);
         }
         if (projection_parts.size() < global_ctx->future_part->parts.size())

@@ -6,12 +6,17 @@ from helpers.cluster import (
     ClickHouseCluster,
     ClickHouseInstance,
     get_docker_compose_path,
+    is_arm,
 )
 import logging
 
 from . import materialized_with_ddl
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
+
+# skip all test on arm due to no arm support in mysql57
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 mysql_node = None
