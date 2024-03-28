@@ -903,6 +903,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             throw;
         }
 
+        /// Rename parts before committing to ZooKeeper without holding DataPartsLock.
+        transaction.renameParts();
+
         ThreadFuzzer::maybeInjectSleep();
 
         fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_after_op, { zookeeper->forceFailureAfterOperation(); });

@@ -6674,6 +6674,7 @@ void MergeTreeData::Transaction::renameParts()
 {
     for (const auto & part_need_rename : precommitted_parts_need_rename)
         part_need_rename->renameTo(part_need_rename->name, true);
+    precommitted_parts_need_rename.clear();
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock * acquired_parts_lock)
