@@ -320,40 +320,14 @@ void FilterTransform::doTransform(Chunk & chunk)
     if (!filter_description->has_one)
         return;
 
-    /** Let's find out how many rows will be in result.
-      * To do this, we filter out the first non-constant column
-      *  or calculate number of set bytes in the filter.
-      */
-    size_t first_non_constant_column = num_columns;
-    size_t min_size_in_memory = std::numeric_limits<size_t>::max();
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        DataTypePtr type_not_null = removeNullableOrLowCardinalityNullable(types[i]);
-        if (i != filter_column_position && !isColumnConst(*columns[i]) && type_not_null->isValueRepresentedByNumber())
-        {
-            size_t size_in_memory = type_not_null->getSizeOfValueInMemory() + (isNullableOrLowCardinalityNullable(types[i]) ? 1 : 0);
-            if (size_in_memory < min_size_in_memory)
-            {
-                min_size_in_memory = size_in_memory;
-                first_non_constant_column = i;
-            }
-        }
-    }
-    (void)min_size_in_memory; /// Suppress error of clang-analyzer-deadcode.DeadStores
-
-    size_t num_filtered_rows = 0;
-    if (first_non_constant_column != num_columns)
-    {
-        columns[first_non_constant_column] = filter_description->filter(*columns[first_non_constant_column], -1);
-        num_filtered_rows = columns[first_non_constant_column]->size();
-    }
-    else
-        num_filtered_rows = filter_description->countBytesInFilter();
+    size_t num_filtered_rows = filter_description->countBytesInFilter();
 
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
+    {
         /// SimpleTransform will skip it.
         return;
+    }
 
     /// If all the rows pass through the filter.
     if (num_filtered_rows == num_rows_before_filtration)
@@ -388,13 +362,16 @@ void FilterTransform::doTransform(Chunk & chunk)
             continue;
         }
 
-        if (i == first_non_constant_column)
-            continue;
-
         if (isColumnConst(*current_column))
             current_column = current_column->cut(0, num_filtered_rows);
         else
-            current_column = filter_description->filter(*current_column, num_filtered_rows);
+        {
+            // std::cout << "column " << current_column->getName() << " use_count:" << current_column->use_count() << std::endl;
+            if (current_column->use_count() == 1)
+                filter_description->filterInPlace(current_column->assumeMutableRef());
+            else
+                current_column = filter_description->filter(*current_column, num_filtered_rows);
+        }
     }
 
     chunk.setColumns(std::move(columns), num_filtered_rows);

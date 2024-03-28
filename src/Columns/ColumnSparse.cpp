@@ -444,6 +444,70 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     return ColumnSparse::create(std::move(res_values), std::move(res_offsets), limit);
 }
 
+void ColumnSparse::filterInPlace(const IColumn & indexes, size_t start)
+{
+    selectFilterInPlaceImpl(*this, indexes, start);
+}
+
+template <typename Type>
+void ColumnSparse::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
+{
+    const auto & offsets_data = getOffsetsData();
+
+    auto new_offsets = ColumnUInt64::create();
+    auto & new_offsets_data = new_offsets->getData();
+    new_offsets_data.reserve_exact(std::min(start + indexes.size(), offsets_data.size()));
+
+    const auto * offsets_bould = std::lower_bound(offsets_data.begin(), offsets_data.end(), start);
+    size_t offset_start = offsets_bould - offsets_data.begin();
+    for (size_t i = 0; i < offset_start; ++i)
+        new_offsets_data.push_back(offsets_data[i]);
+
+    auto value_indexes_column = ColumnUInt64::create();
+    auto & value_indexes = value_indexes_column->getData();
+    value_indexes.reserve_exact(std::min(start + indexes.size(), values->size()));
+    for (size_t i = 0; i < indexes.size(); ++i)
+    {
+        size_t index = indexes[i];
+        size_t value_index = getValueIndex(index);
+        if (value_index != 0)
+        {
+            new_offsets_data.push_back(start + i);
+            value_indexes.push_back(value_index);
+        }
+    }
+
+    /*
+    std::cout << "old offsets" << std::endl;
+    for (size_t i = 0; i < offsets->size(); ++i)
+        std::cout << i << ":" << toString((*offsets)[i]) << std::endl;
+
+    std::cout << "old values" << std::endl;
+    for (size_t i = 0; i < values->size(); ++i)
+        std::cout << i << ":" << toString((*values)[i]) << std::endl;
+    std::cout << "value start:" << value_start << std::endl;
+    for (size_t i = 0; i < value_indexes_column->size(); ++i)
+        std::cout << "values index[" << i << "]"
+                  << ":" << toString((*value_indexes_column)[i]) << std::endl;
+    */
+
+    offsets = std::move(new_offsets);
+    size_t value_start = offset_start + 1;
+    values->filterInPlace(*value_indexes_column, value_start);
+
+    /*
+    std::cout << "new offsets" << std::endl;
+    for (size_t i = 0; i < offsets->size(); ++i)
+        std::cout << i << ":" << toString((*offsets)[i]) << std::endl;
+
+    std::cout << "new values" << std::endl;
+    for (size_t i = 0; i < values->size(); ++i)
+        std::cout << i << ":" << toString((*values)[i]) << std::endl;
+    */
+
+    _size = start + indexes.size();
+}
+
 int ColumnSparse::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
 {
     if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs_))

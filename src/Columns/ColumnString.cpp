@@ -12,6 +12,7 @@
 #include <base/sort.h>
 #include <base/unaligned.h>
 #include <base/scope_guard.h>
+#include <iostream>
 
 
 namespace DB
@@ -322,6 +323,59 @@ ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
     return selectIndexImpl(*this, indexes, limit);
 }
 
+void ColumnString::filterInPlace(const IColumn & indexes, size_t start)
+{
+    /*
+    if (indexes.size() <= 2)
+    {
+        std::cout << "before:" << std::endl;
+        for (size_t i = 0; i < size(); ++i)
+            std::cout << i << ":" << toString((*this)[i]) << std::endl;
+
+        std::cout << "start:" << start << std::endl;
+        for (size_t i = 0; i < indexes.size(); ++i)
+            std::cout << "index[" << i << "]"
+                      << ":" << toString(indexes[i]) << std::endl;
+    }
+    */
+
+    selectFilterInPlaceImpl(*this, indexes, start);
+
+    /*
+    if (indexes.size() <= 2)
+    {
+        std::cout << "after:" << std::endl;
+        for (size_t i = 0; i < size(); ++i)
+            std::cout << i << ":" << toString((*this)[i]) << std::endl;
+    }
+    */
+}
+
+template <typename Type>
+void ColumnString::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
+{
+    Chars & res_chars = chars;
+    Offsets & res_offsets = offsets;
+    Offset current_new_offset = res_offsets[start - 1];
+    for (size_t i = 0; i < indexes.size(); ++i)
+    {
+        size_t index = indexes[i];
+        // std::cout << "start:" << start << ", index:" << index << ", indexes size:" << indexes.size() << ", offsets size:" << offsets.size()
+                //   << ", index-1:" << index - 1 << std::endl;
+        size_t string_offset = offsets[index - 1];
+        size_t string_size = offsets[index] - string_offset;
+
+        memmove(&res_chars[current_new_offset], &chars[string_offset], string_size);
+
+        current_new_offset += string_size;
+        res_offsets[start + i] = current_new_offset;
+        // std::cout << "res_offsets[" << start + i << "]:" << res_offsets[i] << std::endl;
+    }
+
+    res_chars.resize_exact(current_new_offset);
+    res_offsets.resize_exact(start + indexes.size());
+}
+
 template <typename Type>
 ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
@@ -337,12 +391,11 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     size_t new_chars_size = 0;
     for (size_t i = 0; i < limit; ++i)
         new_chars_size += sizeAt(indexes[i]);
-    res_chars.resize(new_chars_size);
 
-    res_offsets.resize(limit);
+    res_chars.resize_exact(new_chars_size);
+    res_offsets.resize_exact(limit);
 
     Offset current_new_offset = 0;
-
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = indexes[i];

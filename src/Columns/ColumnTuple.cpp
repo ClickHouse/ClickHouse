@@ -290,6 +290,26 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
     return ColumnTuple::create(new_columns);
 }
 
+void ColumnTuple::filterInPlace(const IColumn & indexes, size_t start)
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        if (columns[i]->use_count() == 1)
+        {
+            // std::cout << "column " << i << " reuse, ptr:" << columns[i].get() << " " << columns[i]->getName() << std::endl;
+            columns[i]->filterInPlace(indexes, start);
+        }
+        else
+        {
+            // std::cout << "column " << i << " clone, ptr:" << columns[i].get() << " " << columns[i]->getName() << std::endl;
+            auto column = IColumn::mutate(columns[i]);
+            column->filterInPlace(indexes, start);
+            columns[i] = std::move(column);
+        }
+    }
+}
+
 void ColumnTuple::expand(const Filter & mask, bool inverted)
 {
     for (auto & column : columns)

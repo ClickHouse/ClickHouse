@@ -392,6 +392,22 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 }
 
 template <is_decimal T>
+void ColumnDecimal<T>::filterInPlace(const IColumn & indexes, size_t start)
+{
+    selectFilterInPlaceImpl(*this, indexes, start);
+}
+
+template <is_decimal T>
+template <typename Type>
+void ColumnDecimal<T>::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
+{
+    assert(start + indexes.size() <= data.size());
+    for (size_t i = 0; i < indexes.size(); ++i)
+        data[start + i] = data[indexes[i]];
+    data.resize_exact(start + indexes.size());
+}
+
+template <is_decimal T>
 void ColumnDecimal<T>::expand(const IColumn::Filter & mask, bool inverted)
 {
     expandDataByMask<T>(data, mask, inverted);

@@ -828,6 +828,16 @@ MutableColumnPtr ColumnObject::applyForSubcolumns(Func && func) const
     return res;
 }
 
+template <typename Func>
+void ColumnObject::applyForSubcolumnsInPlace(Func && func)
+{
+    if (!isFinalized())
+        finalize();
+
+    for (const auto & subcolumn : subcolumns)
+        func(subcolumn->data.getFinalizedColumn());
+}
+
 ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
 {
     return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.permute(perm, limit); });
@@ -836,6 +846,11 @@ ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
 ColumnPtr ColumnObject::filter(const Filter & filter, ssize_t result_size_hint) const
 {
     return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.filter(filter, result_size_hint); });
+}
+
+void ColumnObject::filterInPlace(const IColumn & indexes, size_t start)
+{
+    applyForSubcolumnsInPlace([&](auto & subcolumn) { return subcolumn.filterInPlace(indexes, start); });
 }
 
 ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const

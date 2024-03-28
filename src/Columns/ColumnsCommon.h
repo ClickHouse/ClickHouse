@@ -76,6 +76,10 @@ size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end);
 size_t countBytesInFilter(const IColumn::Filter & filt);
 size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map, size_t start, size_t end);
 
+/// Transform filter column to indices
+template <typename Type>
+size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<Type> & indices);
+
 /// Returns vector with num_columns elements. vector[i] is the count of i values in selector.
 /// Selector must contain values from 0 to num_columns - 1. NOTE: this is not checked.
 std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector);
@@ -128,6 +132,20 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
                         indexes.getName());
 }
 
+template <typename Column>
+void selectFilterInPlaceImpl(Column & column, const IColumn & indexes, size_t start)
+{
+    if (const auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
+        column.template filterInPlaceImpl<UInt32>(*data_uint32, start);
+    else if (const auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
+        column.template filterInPlaceImpl<UInt64>(*data_uint64, start);
+    else
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Indexes column for IColumn::filterInPlace must be ColumnUInt32 or ColumnUInt64, got {}",
+            indexes.getName());
+}
+
 size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit);
 
 template <typename Column>
@@ -143,4 +161,9 @@ ColumnPtr permuteImpl(const Column & column, const IColumn::Permutation & perm, 
     template ColumnPtr Column::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const; \
     template ColumnPtr Column::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const; \
     template ColumnPtr Column::indexImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, size_t limit) const;
+
+/// NOLINTNEXTLINE
+#define INSTANTIATE_FILTER_IN_PLACE_IMPL(Column) \
+    template void Column::filterInPlaceImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t start); \
+    template void Column::filterInPlaceImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, size_t start);
 }

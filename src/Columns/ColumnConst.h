@@ -198,6 +198,7 @@ public:
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filterInPlace(const IColumn & indexes, size_t start) override;
     void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr replicate(const Offsets & offsets) const override;

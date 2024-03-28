@@ -18,6 +18,7 @@
 #include <base/unaligned.h>
 #include <base/sort.h>
 #include <cstring> // memcpy
+// #include <iostream>
 
 
 namespace DB
@@ -634,6 +635,7 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
     return filterGeneric(filt, result_size_hint);
 }
 
+
 void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
 {
     auto & offsets_data = getOffsets();
@@ -889,8 +891,49 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
 
-void ColumnArray::getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
-                                size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnArray::filterInPlace(const IColumn & indexes, size_t start)
+{
+    selectFilterInPlaceImpl(*this, indexes, start);
+}
+
+template <typename Type>
+void ColumnArray::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t start)
+{
+    size_t nested_indexes_size = 0;
+    for (auto index : indexes)
+        nested_indexes_size += sizeAt(index);
+
+    size_t nested_start = offsetAt(start);
+
+    auto nested_indexes_column = ColumnUInt64::create(nested_indexes_size);
+    auto & nested_indexes = nested_indexes_column->getData();
+    size_t current_new_offset = nested_start;
+    auto & offsets_ref = getOffsets();
+    for (size_t i = 0; i < indexes.size(); ++i)
+    {
+        size_t index = indexes[i];
+        size_t nested_offset = offsetAt(index);
+        size_t nested_size = sizeAt(index);
+        // std::cout << "index:" << index << " nested_offset:" << nested_offset << " nested_size:" << nested_size << std::endl;
+        for (size_t j = 0; j < nested_size; ++j)
+        {
+            nested_indexes[current_new_offset - nested_start + j] = nested_offset + j;
+            // std::cout << "nested_indexes[" << current_new_offset - nested_start + j << "] = " << nested_offset + j << std::endl;
+        }
+
+        current_new_offset += nested_size;
+        offsets_ref[start + i]  = current_new_offset;
+        // std::cout << "offsets_ref[" << start + i << "] = " << current_new_offset << std::endl;
+    }
+    offsets_ref.resize_exact(start + indexes.size());
+
+    // std::cout << "nested_indexes_size:" << nested_indexes_size << ", nested_indexes_column size:" << nested_indexes_column->size()
+            //   << " nested_start:" << nested_start << std::endl;
+    data->filterInPlace(*nested_indexes_column, nested_start);
+}
+
+void ColumnArray::getPermutation(
+    PermutationSortDirection direction, PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
         getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
