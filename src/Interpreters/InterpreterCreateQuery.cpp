@@ -1092,8 +1092,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
-        auto database = DatabaseCatalog::instance().getDatabase(database_name);
-        if (database->shouldReplicateQuery(getContext(), query_ptr))
+        // In case of an ON CLUSTER query, the database may not be present on the initiator node
+        auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        if (database && database->shouldReplicateQuery(getContext(), query_ptr))
         {
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
             create.setDatabase(database_name);
@@ -1103,6 +1104,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         if (!create.cluster.empty())
             return executeQueryOnCluster(create);
+
+        if (!database)
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
         /// For short syntax of ATTACH query we have to lock table name here, before reading metadata
         /// and hold it until table is attached
@@ -1255,6 +1259,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
+    // In case of an ON CLUSTER query, the database may not be present on the initiator node
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
@@ -1275,7 +1280,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "CREATE AS SELECT is not supported with Replicated databases. Use separate CREATE and INSERT queries");
     }
 
-    if (need_add_to_database && database && database->shouldReplicateQuery(getContext(), query_ptr))
+    if (database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
