@@ -6,14 +6,17 @@ sidebar_label: Searching in Strings
 
 # Functions for Searching in Strings
 
-All functions in this section search by default case-sensitively. Case-insensitive search is usually provided by separate function variants.
-Note that case-insensitive search follows the lowercase-uppercase rules of the English language. E.g. Uppercased `i` in English language is
-`I` whereas in Turkish language it is `İ` - results for languages other than English may be unexpected.
+All functions in this section search case-sensitively by default. Case-insensitive search is usually provided by separate function variants.
 
-Functions in this section also assume that the searched string and the search string are single-byte encoded text. If this assumption is
+:::note
+Case-insensitive search follows the lowercase-uppercase rules of the English language. E.g. Uppercased `i` in the English language is
+`I` whereas in the Turkish language it is `İ` - results for languages other than English may be unexpected.
+:::
+
+Functions in this section also assume that the searched string (refered to in this section as `haystack`) and the search string (refered to in this section as `needle`) are single-byte encoded text. If this assumption is
 violated, no exception is thrown and results are undefined. Search with UTF-8 encoded strings is usually provided by separate function
 variants. Likewise, if a UTF-8 function variant is used and the input strings are not UTF-8 encoded text, no exception is thrown and the
-results are undefined. Note that no automatic Unicode normalization is performed, you can use the
+results are undefined. Note that no automatic Unicode normalization is performed, however you can use the
 [normalizeUTF8*()](https://clickhouse.com/docs/en/sql-reference/functions/string-functions/) functions for that.
 
 [General strings functions](string-functions.md) and [functions for replacing in strings](string-replace-functions.md) are described separately.
@@ -55,6 +58,8 @@ Type: `Integer`.
 
 **Examples**
 
+Query:
+
 ``` sql
 SELECT position('Hello, world!', '!');
 ```
@@ -69,11 +74,15 @@ Result:
 
 Example with `start_pos` argument:
 
+Query:
+
 ``` sql
 SELECT
     position('Hello, world!', 'o', 1),
     position('Hello, world!', 'o', 7)
 ```
+
+Result:
 
 ``` text
 ┌─position('Hello, world!', 'o', 1)─┬─position('Hello, world!', 'o', 7)─┐
@@ -82,6 +91,8 @@ SELECT
 ```
 
 Example for `needle IN haystack` syntax:
+
+Query:
 
 ```sql
 SELECT 6 = position('/' IN s) FROM (SELECT 'Hello/World' AS s);
@@ -97,6 +108,8 @@ Result:
 
 Examples with empty `needle` substring:
 
+Query:
+
 ``` sql
 SELECT
     position('abc', ''),
@@ -108,6 +121,8 @@ SELECT
     position('abc', '', 5)
 ```
 
+Result:
+
 ``` text
 ┌─position('abc', '')─┬─position('abc', '', 0)─┬─position('abc', '', 1)─┬─position('abc', '', 2)─┬─position('abc', '', 3)─┬─position('abc', '', 4)─┬─position('abc', '', 5)─┐
 │                   1 │                      1 │                      1 │                      2 │                      3 │                      4 │                      0 │
@@ -116,7 +131,23 @@ SELECT
 
 ## positionCaseInsensitive
 
-Like [position](#position) but searches case-insensitively.
+A case insensitive invariant of [position](#position).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT position('Hello, world!', 'hello');
+```
+
+Result:
+
+``` text
+┌─position('Hello, world!', 'hello')─┐
+│                                  0 │
+└────────────────────────────────────┘
+```
 
 ## positionUTF8
 
