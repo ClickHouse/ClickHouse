@@ -47,14 +47,14 @@ struct FileCacheReserveStat
         }
     };
 
-    Stat stat;
+    Stat total_stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
     void update(size_t size, FileSegmentKind kind, bool releasable);
 
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
-        stat += other.stat;
+        total_stat += other.total_stat;
         for (const auto & [name, stat_] : other.stat_by_kind)
             stat_by_kind[name] += stat_;
         return *this;

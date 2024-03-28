@@ -72,7 +72,7 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 
 # Randomize cache policies.
 cache_policy=""
-if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
+if [ $(($RANDOM%2)) -eq 1 ]; then
     cache_policy="SLRU"
 else
     cache_policy="LRU"
