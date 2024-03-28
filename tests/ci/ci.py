@@ -788,9 +788,10 @@ def _run_test(job_name: str, run_command: str) -> int:
         run_command or CI_CONFIG.get_job_config(job_name).run_command
     ), "Run command must be provided as input argument or be configured in job config"
 
+    if CI_CONFIG.get_job_config(job_name).timeout:
+        os.environ["KILL_TIMEOUT"] = str(CI_CONFIG.get_job_config(job_name).timeout)
+
     if not run_command:
-        if CI_CONFIG.get_job_config(job_name).timeout:
-            os.environ["KILL_TIMEOUT"] = str(CI_CONFIG.get_job_config(job_name).timeout)
         run_command = "/".join(
             (os.path.dirname(__file__), CI_CONFIG.get_job_config(job_name).run_command)
         )
