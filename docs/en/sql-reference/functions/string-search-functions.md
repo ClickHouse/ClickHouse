@@ -192,7 +192,7 @@ multiSearchAllPositionsCaseInsensitive(haystack, [needle1, needle2, ..., needleN
 **Parameters**
 
 - `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
@@ -213,7 +213,7 @@ SELECT multiSearchAllPositionsCaseInsensitive('ClickHouse',['c','h']);
 
 ## multiSearchAllPositionsUTF8
 
-Like [multiSearchAllPositions](#multiSearchAllPositions) but assumes `haystack` and the `needle`-s are UTF-8 encoded strings.
+Like [multiSearchAllPositions](#multiSearchAllPositions) but assumes `haystack` and the `needle` substrings are UTF-8 encoded strings.
 
 **Syntax**
 
@@ -224,7 +224,7 @@ multiSearchAllPositionsUTF8(haystack, [needle1, needle2, ..., needleN])
 **Parameters**
 
 - `haystack` — UTF-8 encoded string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — UTF-8 encoded substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+- `needle` — UTF-8 encoded substrings to be searched. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
@@ -233,7 +233,7 @@ multiSearchAllPositionsUTF8(haystack, [needle1, needle2, ..., needleN])
 
 **Example**
 
-Given `ClickHouse` as a UTF-8 string, find the positions of `C` ('\x43') and `H` ('\x48').
+Given `ClickHouse` as a UTF-8 string, find the positions of `C` (`\x43`) and `H` (`\x48`).
 
 Query:
 
@@ -258,7 +258,7 @@ multiSearchAllPositionsCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., nee
 **Parameters**
 
 - `haystack` — UTF-8 encoded string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — UTF-8 encoded substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+- `needle` — UTF-8 encoded substrings to be searched. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
@@ -279,9 +279,9 @@ SELECT multiSearchAllPositionsCaseInsensitiveUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\
 ["1","6"]
 ```
 
-## multiSearchFirstPosition {#multiSearchFirstPosition}
+## multiSearchFirstPosition
 
-Like `position` but returns the leftmost offset in a `haystack` string which matches any of multiple `needle` strings.
+Like [`position`](#position) but returns the leftmost offset in a `haystack` string which matches any of multiple `needle` strings.
 
 Functions [`multiSearchFirstPositionCaseInsensitive`](#multiSearchFirstPositionCaseInsensitive), [`multiSearchFirstPositionUTF8`](#multiSearchFirstPositionUTF8) and [`multiSearchFirstPositionCaseInsensitiveUTF8`](#multiSearchFirstPositionCaseInsensitiveUTF8) provide case-insensitive and/or UTF-8 variants of this function.
 
@@ -294,7 +294,7 @@ multiSearchFirstPosition(haystack, [needle1, needle2, ..., needleN])
 **Parameters**
 
 - `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` —  Substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+- `needle` —  Substrings to be searched. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
@@ -326,7 +326,7 @@ multiSearchFirstPositionCaseInsensitive(haystack, [needle1, needle2, ..., needle
 **Parameters**
 
 - `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — Array of substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+- `needle` — Array of substrings to be searched. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
@@ -345,7 +345,7 @@ SELECT multiSearchFirstPositionCaseInsensitive('HELLO WORLD',['wor', 'ld', 'ello
 2
 ```
 
-## multiSearchFirstPositionUTF8 {#multiSearchFirstPositionUTF8}
+## multiSearchFirstPositionUTF8
 
 Like [`multiSearchFirstPosition`](#multiSearchFirstPosition) but assumes `haystack` and `needle` to be UTF-8 strings.
 
@@ -358,7 +358,7 @@ multiSearchFirstPositionUTF8(haystack, [needle1, needle2, ..., needleN])
 **Parameters**
 
 - `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — Array of UTF-8 substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+- `needle` — Array of UTF-8 substrings to be searched. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
@@ -379,7 +379,7 @@ SELECT multiSearchFirstPositionUTF8('\x68\x65\x6c\x6c\x6f\x20\x77\x6f\x72\x6c\x6
 2
 ```
 
-## multiSearchFirstPositionCaseInsensitiveUTF8 {#multiSearchFirstPositionCaseInsensitiveUTF8}
+## multiSearchFirstPositionCaseInsensitiveUTF8
 
 Like [`multiSearchFirstPosition`](#multiSearchFirstPosition) but assumes `haystack` and `needle` to be UTF-8 strings and ignores case.
 
@@ -427,7 +427,7 @@ multiSearchFirstIndex(haystack, [needle1, needle2, ..., needleN])
 **Parameters**
 
 - `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
@@ -446,7 +446,7 @@ SELECT multiSearchFirstIndex('Hello World',['World','Hello']);
 1
 ```
 
-## multiSearchFirstIndexCaseInsensitive {#multiSearchFirstIndexCaseInsensitive}
+## multiSearchFirstIndexCaseInsensitive
 
 Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise. Ignores case.
 
@@ -459,7 +459,7 @@ multiSearchFirstIndexCaseInsensitive(haystack, [needle1, needle2, ..., needleN])
 **Parameters**
 
 - `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
@@ -478,7 +478,7 @@ SELECT multiSearchFirstIndexCaseInsensitive('hElLo WoRlD',['World','Hello']);
 1
 ```
 
-## multiSearchFirstIndexUTF8 {#multiSearchFirstIndexUTF8}
+## multiSearchFirstIndexUTF8
 
 Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise. Assumes `haystack` and `needle` are UTF-8 encoded strings.
 
@@ -512,7 +512,7 @@ SELECT multiSearchFirstIndexUTF8('\x48\x65\x6c\x6c\x6f\x20\x57\x6f\x72\x6c\x64',
 1
 ```
 
-## multiSearchFirstIndexCaseInsensitiveUTF8 {#multiSearchFirstIndexCaseInsensitiveUTF8}
+## multiSearchFirstIndexCaseInsensitiveUTF8
 
 Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise. Assumes `haystack` and `needle` are UTF-8 encoded strings. Ignores case.
 
@@ -525,7 +525,7 @@ multiSearchFirstIndexCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needl
 **Parameters**
 
 - `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — Array of UTF-8 substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+- `needle` — Array of UTF-8 substrings to be searched. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
@@ -546,7 +546,7 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('\x48\x45\x4c\x4c\x4f\x20\x57\x4
 1
 ```
 
-## multiSearchAny {#multisearchany}
+## multiSearchAny
 
 Returns 1, if at least one string needle<sub>i</sub> matches the string `haystack` and 0 otherwise.
 
@@ -561,7 +561,7 @@ multiSearchAny(haystack, [needle1, needle2, ..., needleN])
 **Parameters**
 
 - `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
@@ -580,7 +580,7 @@ SELECT multiSearchAny('ClickHouse',['C','H']);
 1
 ```
 
-## multiSearchAnyCaseInsensitive {#multiSearchAnyCaseInsensitive}
+## multiSearchAnyCaseInsensitive
 
 Like [multiSearchAny](#multisearchany) but ignores case.
 
@@ -612,9 +612,9 @@ SELECT multiSearchAnyCaseInsensitive('ClickHouse',['c','h']);
 1
 ```
 
-## multiSearchAnyUTF8 {#multiSearchAnyUTF8}
+## multiSearchAnyUTF8
 
-Like [multiSearchAny](#multisearchany) but assumes `haystack` and the `needle`-s are UTF-8 encoded strings.
+Like [multiSearchAny](#multisearchany) but assumes `haystack` and the `needle` substrings are UTF-8 encoded strings.
 
 *Syntax**
 
@@ -625,7 +625,7 @@ multiSearchAnyUTF8(haystack, [needle1, needle2, ..., needleN])
 **Parameters**
 
 - `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — UTF-8 substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+- `needle` — UTF-8 substrings to be searched. [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
@@ -646,7 +646,7 @@ SELECT multiSearchAnyUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\x75\x73\x65',['\x43','\x
 1
 ```
 
-## multiSearchAnyCaseInsensitiveUTF8 {#multiSearchAnyCaseInsensitiveUTF8}
+## multiSearchAnyCaseInsensitiveUTF8
 
 Like [multiSearchAnyUTF8](#multiSearchAnyUTF8) but ignores case.
 
