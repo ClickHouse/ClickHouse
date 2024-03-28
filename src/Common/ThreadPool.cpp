@@ -1,11 +1,14 @@
+#include <Common/thread_local_rng.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
+#include <Common/FunctionsFuzzer.h>
 
 #include <cassert>
+#include <random>
 #include <type_traits>
 
 #include <Poco/Util/Application.h>
@@ -179,6 +182,11 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         else
             return false;
     };
+
+    double schedule_fault_probability = getFunctionFaultProbability(FaultFunctionType::ThreadPoolSchedule);
+    std::bernoulli_distribution fault(schedule_fault_probability);
+    if (unlikely(schedule_fault_probability >= 0) && fault(thread_local_rng))
+        return static_cast<ReturnType>(on_error("no free thread fault"));
 
     {
         std::unique_lock lock(mutex);
