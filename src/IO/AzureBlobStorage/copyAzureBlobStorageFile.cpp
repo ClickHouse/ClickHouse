@@ -326,7 +326,7 @@ void copyAzureBlobStorageFile(
         LOG_TRACE(&Poco::Logger::get("copyAzureBlobStorageFile"), "Reading from Container: {}, Blob: {}", src_container_for_logging, src_blob);
         auto create_read_buffer = [&]
         {
-            return std::make_unique<ReadBufferFromAzureBlobStorage>(src_client, src_blob, read_settings, settings->max_single_read_retries,
+            return std::make_unique<ReadBufferFromAzureBlobStorage>(src_client, src_blob, read_settings,
             settings->max_single_download_retries);
         };
 
