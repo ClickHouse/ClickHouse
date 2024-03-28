@@ -451,8 +451,7 @@ def get_processlist_size(args):
                 """
                 SELECT
                     count()
-                FROM
-                    FROM system.processes
+                FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
                 WHERE query NOT LIKE '%system.processes%'
                 """,
             ).strip()
