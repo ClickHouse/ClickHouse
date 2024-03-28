@@ -7,7 +7,8 @@
 namespace Poco { namespace Util { class LayeredConfiguration; }}
 
 
-/// \brief Sends crash reports to ClickHouse core developer team via https://sentry.io
+/// \brief Sends crash reports and LOGICAL_ERRORs (if "send_logical_errors" is
+/// enabled) to ClickHouse core developer team via https://sentry.io
 ///
 /// This feature can enabled with "send_crash_reports.enabled" server setting,
 /// in this case reports are sent only for official ClickHouse builds.

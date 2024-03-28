@@ -1017,19 +1017,23 @@ extern const char * GIT_HASH;
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
     SentryWriter::initializeInstance(config());
-    /// In release builds send it to sentry (if it is configured)
-    if (auto * sentry = SentryWriter::getInstance())
+    if (config().getBool("send_crash_reports.send_logical_errors", false))
     {
-        Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+        /// In release builds send it to sentry (if it is configured)
+        if (auto * sentry = SentryWriter::getInstance())
         {
-            if (!remote && code == ErrorCodes::LOGICAL_ERROR)
+            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
+            Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
             {
-                SentryWriter::FramePointers frame_pointers;
-                for (size_t i = 0; i < trace.size(); ++i)
-                    frame_pointers[i] = trace[i];
-                sentry->onFault(-code, msg, frame_pointers, /* offset= */ 0, trace.size());
-            }
-        };
+                if (!remote && code == ErrorCodes::LOGICAL_ERROR)
+                {
+                    SentryWriter::FramePointers frame_pointers;
+                    for (size_t i = 0; i < trace.size(); ++i)
+                        frame_pointers[i] = trace[i];
+                    sentry->onFault(-code, msg, frame_pointers, /* offset= */ 0, trace.size());
+                }
+            };
+        }
     }
     std::set_terminate(terminate_handler);
 
