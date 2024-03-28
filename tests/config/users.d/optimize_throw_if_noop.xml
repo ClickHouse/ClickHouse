@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <optimize_throw_if_noop>1</optimize_throw_if_noop>
+        </default>
+    </profiles>
+</clickhouse>
