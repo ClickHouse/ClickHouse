@@ -1,16 +1,13 @@
 #include <Storages/System/StorageSystemNumbers.h>
 
 #include <mutex>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
-#include <Processors/Sources/NullSource.h>
-#include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
+
 
 namespace DB
 {
