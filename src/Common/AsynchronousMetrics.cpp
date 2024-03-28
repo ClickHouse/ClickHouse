@@ -565,6 +565,7 @@ AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMet
 #endif
 
 
+#if defined(OS_LINUX)
 void AsynchronousMetrics::applyCPUMetricsUpdate(
     AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier)
 {
@@ -707,6 +708,7 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
            "non-uniform, and still get the average resource utilization metric."};
 }
+#endif
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 {
@@ -968,10 +970,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
     }
 
-    int64_t hz = sysconf(_SC_CLK_TCK);
-    if (-1 == hz)
-        throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
-
     if (cgroupcpu_stat || cgroupcpuacct_stat)
     {
         try
@@ -1006,10 +1004,14 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
             if (!first_run)
             {
-                const ProcStatValuesCPU delta_values = current_values - proc_stat_values_all_cpus;
-                const auto cgroup_specific_divisor = cgroupcpu_stat ? 1e6 : hz;
-                const double multiplier = 1.0 / cgroup_specific_divisor
+                int64_t hz = sysconf(_SC_CLK_TCK);
+                if (-1 == hz)
+                    throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
+                const auto cgroup_version_specific_divisor = cgroupcpu_stat ? 1e6 : hz;
+                const double multiplier = 1.0 / cgroup_version_specific_divisor
                     / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
+
+                const ProcStatValuesCPU delta_values = current_values - proc_stat_values_all_cpus;
                 applyCPUMetricsUpdate(new_values, /*cpu_suffix=*/"", delta_values, multiplier);
                 if (max_cpu_cgroups > 0)
                     applyNormalizedCPUMetricsUpdate(new_values, max_cpu_cgroups, delta_values, multiplier);
@@ -1030,6 +1032,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         try
         {
             proc_stat->rewind();
+
+            int64_t hz = sysconf(_SC_CLK_TCK);
+            if (-1 == hz)
+                throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
 
             double multiplier = 1.0 / hz / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
             size_t num_cpus = 0;
