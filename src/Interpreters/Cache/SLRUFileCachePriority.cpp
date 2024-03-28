@@ -266,7 +266,7 @@ EvictionCandidates SLRUFileCachePriority::collectCandidatesForEviction(
         desired_probationary_size, desired_probationary_elements_num, max_candidates_to_evict, stat, lock);
 
     chassert(res.size() <= max_candidates_to_evict);
-    chassert(res.size() == stat.stat.releasable_count);
+    chassert(res.size() == stat.total_stat.releasable_count);
 
     if (res.size() == max_candidates_to_evict)
         return res;

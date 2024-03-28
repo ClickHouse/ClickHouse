@@ -7,15 +7,17 @@ namespace DB
 class EvictionCandidates
 {
 public:
+    using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
+
     EvictionCandidates() = default;
     EvictionCandidates(EvictionCandidates && other) noexcept
     {
         candidates = std::move(other.candidates);
         candidates_size = std::move(other.candidates_size);
+        on_finalize = std::move(other.on_finalize);
         queue_entries_to_invalidate = std::move(other.queue_entries_to_invalidate);
-        finalize_eviction_func = std::move(other.finalize_eviction_func);
+        hold_space = std::move(other.hold_space);
     }
-    using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
 
     ~EvictionCandidates();
 

@@ -275,10 +275,43 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
     auto can_fit = [&]
     {
-        return canFit(size, 1, stat.stat.releasable_size, stat.stat.releasable_count, nullptr, nullptr, lock);
+        return canFit(size, elements, stat.total_stat.releasable_size, stat.total_stat.releasable_count, lock);
     };
+
     iterateForEviction(res, stat, can_fit, lock);
-    return can_fit();
+
+    if (can_fit())
+    {
+        /// As eviction is done without a cache priority lock,
+        /// then if some space was partially available and some needed
+        /// to be freed via eviction, we need to make sure that this
+        /// partially available space is still available
+        /// after we finish with eviction for non-available space.
+        /// So we create a space holder for the currently available part
+        /// of the required space for the duration of eviction of the other
+        /// currently non-available part of the space.
+
+        const size_t hold_size = size > stat.total_stat.releasable_size
+            ? size - stat.total_stat.releasable_size
+            : 0;
+
+        const size_t hold_elements = elements > stat.total_stat.releasable_count
+            ? elements - stat.total_stat.releasable_count
+            : 0;
+
+        if (hold_size || hold_elements)
+            res.setSpaceHolder(hold_size, hold_elements, *this, lock);
+
+        // LOG_TEST(log, "Collected {} candidates for eviction (total size: {}). "
+        //          "Took hold of size {} and elements {}",
+        //          res.size(), stat.total_stat.releasable_size, hold_size, hold_elements);
+
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
 
 EvictionCandidates LRUFileCachePriority::collectCandidatesForEviction(
@@ -332,41 +365,6 @@ void LRUFileCachePriority::iterateForEviction(
     {
         return stop_condition() ? IterationResult::BREAK : iterate_func(locked_key, segment_metadata);
     }, lock);
-}
-
-
-    if (can_fit())
-    {
-        /// As eviction is done without a cache priority lock,
-        /// then if some space was partially available and some needed
-        /// to be freed via eviction, we need to make sure that this
-        /// partially available space is still available
-        /// after we finish with eviction for non-available space.
-        /// So we create a space holder for the currently available part
-        /// of the required space for the duration of eviction of the other
-        /// currently non-available part of the space.
-
-        const size_t hold_size = size > stat.total_stat.releasable_size
-            ? size - stat.total_stat.releasable_size
-            : 0;
-
-        const size_t hold_elements = elements > stat.total_stat.releasable_count
-            ? elements - stat.total_stat.releasable_count
-            : 0;
-
-        if (hold_size || hold_elements)
-            res.setSpaceHolder(hold_size, hold_elements, *this, lock);
-
-        // LOG_TEST(log, "Collected {} candidates for eviction (total size: {}). "
-        //          "Took hold of size {} and elements {}",
-        //          res.size(), stat.total_stat.releasable_size, hold_size, hold_elements);
-
-        return true;
-    }
-    else
-    {
-        return false;
-    }
 }
 
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(

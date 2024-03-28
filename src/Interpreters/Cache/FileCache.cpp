@@ -997,7 +997,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
                     main_priority->getSize(lock), size_limit,
                     main_priority->getElementsCount(lock), elements_limit,
                     desired_size, desired_elements_num,
-                    eviction_candidates.size(), stat.stat.non_releasable_count);
+                    eviction_candidates.size(), stat.total_stat.non_releasable_count);
 
             lock.unlock();
             eviction_candidates.evict();
@@ -1345,7 +1345,8 @@ void FileCache::deactivateBackgroundOperations()
 {
     shutdown.store(true);
     metadata.shutdown();
-    keep_up_free_space_ratio_task->deactivate();
+    if (keep_up_free_space_ratio_task)
+        keep_up_free_space_ratio_task->deactivate();
 }
 
 std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const UserID & user_id)
