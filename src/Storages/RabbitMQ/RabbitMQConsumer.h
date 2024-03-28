@@ -39,6 +39,7 @@ public:
     {
         UInt64 delivery_tag = 0;
         String channel_id;
+        std::vector<UInt64> failed_delivery_tags;
     };
 
     struct MessageData

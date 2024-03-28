@@ -106,6 +106,18 @@ bool RabbitMQConsumer::ackMessages(const CommitInfo & commit_info)
     if (commit_info.channel_id != channel_id)
         return false;
 
+    for (const auto & delivery_tag : commit_info.failed_delivery_tags)
+    {
+        if (consumer_channel->reject(delivery_tag))
+            LOG_TRACE(
+                log, "Consumer rejected message with deliveryTag {} on channel {}",
+                delivery_tag, channel_id);
+        else
+            LOG_WARNING(
+                log, "Failed to reject message with deliveryTag {} on channel {}",
+                delivery_tag, channel_id);
+    }
+
     /// Duplicate ack?
     if (commit_info.delivery_tag > last_commited_delivery_tag
         && consumer_channel->ack(commit_info.delivery_tag, AMQP::multiple))
