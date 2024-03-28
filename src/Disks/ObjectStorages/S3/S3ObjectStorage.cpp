@@ -48,6 +48,7 @@ namespace ErrorCodes
 {
     extern const int S3_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -171,12 +172,12 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 
     auto read_buffer_creator =
         [this, settings_ptr, disk_read_settings]
-        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
+        (bool restricted_seek, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromS3>(
             client.get(),
             uri.bucket,
-            path,
+            object_.remote_path,
             uri.version_id,
             settings_ptr->request_settings,
             disk_read_settings,
@@ -562,6 +563,8 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
 
 ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
+    if (!key_generator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
     return key_generator->generate(path);
 }
 

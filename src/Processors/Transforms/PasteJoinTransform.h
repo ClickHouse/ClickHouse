@@ -32,9 +32,9 @@ public:
     explicit PasteJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_);
 
     const char * getName() const override { return "PasteJoinAlgorithm"; }
-    virtual void initialize(Inputs inputs) override;
-    virtual void consume(Input & input, size_t source_num) override;
-    virtual Status merge() override;
+    void initialize(Inputs inputs) override;
+    void consume(Input & input, size_t source_num) override;
+    Status merge() override;
 
     void logElapsed(double seconds);
 

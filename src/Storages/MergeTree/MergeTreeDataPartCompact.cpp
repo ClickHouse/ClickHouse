@@ -1,11 +1,8 @@
 #include "MergeTreeDataPartCompact.h"
 #include <DataTypes/NestedUtils.h>
-#include <Storages/MergeTree/MergeTreeReaderCompact.h>
+#include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Compression/CompressedReadBufferFromFile.h>
-#include <Storages/BlockNumberColumn.h>
 
 
 namespace DB
@@ -33,6 +30,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MarkRanges & mark_ranges,
+    const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
     const AlterConversionsPtr & alter_conversions,
@@ -41,12 +39,12 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
 {
     auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
-    auto * load_marks_threadpool = reader_settings.read_settings.load_marks_asynchronously ? &read_info->getContext()->getLoadMarksThreadpool() : nullptr;
 
-    return std::make_unique<MergeTreeReaderCompact>(
-        read_info, columns_to_read, storage_snapshot, uncompressed_cache,
-        mark_cache, mark_ranges, reader_settings, load_marks_threadpool,
-        avg_value_size_hints, profile_callback);
+    return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
+        read_info, columns_to_read, virtual_fields,
+        storage_snapshot, uncompressed_cache,
+        mark_cache, mark_ranges, reader_settings,
+        avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
@@ -65,12 +63,6 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     /// Order of writing is important in compact format
     ordered_columns_list.sort([this](const auto & lhs, const auto & rhs)
         { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
-
-    /// _block_number column is not added by user, but is persisted in a part after merge
-    /// If _block_number is not present in the parts to be merged, then it won't have a position
-    /// So check if its not present and add it at the end
-    if (columns_list.contains(BlockNumberColumn::name) && !ordered_columns_list.contains(BlockNumberColumn::name))
-        ordered_columns_list.emplace_back(NameAndTypePair{BlockNumberColumn::name, BlockNumberColumn::type});
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
         shared_from_this(), ordered_columns_list, metadata_snapshot,
@@ -157,9 +149,8 @@ std::optional<time_t> MergeTreeDataPartCompact::getColumnModificationTime(const 
     return getDataPartStorage().getFileLastModified(DATA_FILE_NAME_WITH_EXTENSION).epochTime();
 }
 
-void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) const
+void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) const
 {
-    checkConsistencyBase();
     String mrk_file_name = DATA_FILE_NAME + getMarksFileExtension();
 
     if (!checksums.empty())

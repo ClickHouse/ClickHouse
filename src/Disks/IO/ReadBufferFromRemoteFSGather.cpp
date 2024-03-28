@@ -1,7 +1,5 @@
 #include "ReadBufferFromRemoteFSGather.h"
 
-#include <IO/SeekableReadBuffer.h>
-
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
@@ -9,7 +7,6 @@
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <base/hex.h>
 #include <Common/logger_useful.h>
 
 using namespace DB;
@@ -17,16 +14,15 @@ using namespace DB;
 
 namespace
 {
-bool withFileCache(const ReadSettings & settings)
-{
-    return settings.remote_fs_cache && settings.enable_filesystem_cache
-        && (!CurrentThread::getQueryId().empty() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
-            || !settings.avoid_readthrough_cache_outside_query_context);
-}
-bool withPageCache(const ReadSettings & settings, bool with_file_cache)
-{
-    return settings.page_cache && !with_file_cache && settings.use_page_cache_for_disks_without_file_cache;
-}
+    bool withFileCache(const ReadSettings & settings)
+    {
+        return settings.remote_fs_cache && settings.enable_filesystem_cache;
+    }
+
+    bool withPageCache(const ReadSettings & settings, bool with_file_cache)
+    {
+        return settings.page_cache && !with_file_cache && settings.use_page_cache_for_disks_without_file_cache;
+    }
 }
 
 namespace DB
@@ -91,7 +87,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
             cache_key,
             settings.remote_fs_cache,
             FileCache::getCommonUser(),
-            [=, this]() { return read_buffer_creator(/* restricted_seek */true, object_path); },
+            [=, this]() { return read_buffer_creator(/* restricted_seek */true, object); },
             settings,
             query_id,
             object.bytes_size,
@@ -106,14 +102,14 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     /// former doesn't support seeks.
     if (with_page_cache && !buf)
     {
-        auto inner = read_buffer_creator(/* restricted_seek */false, object_path);
+        auto inner = read_buffer_creator(/* restricted_seek */false, object);
         auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_path };
         buf = std::make_unique<CachedInMemoryReadBufferFromFile>(
             cache_key, settings.page_cache, std::move(inner), settings);
     }
 
     if (!buf)
-        buf = read_buffer_creator(/* restricted_seek */true, object_path);
+        buf = read_buffer_creator(/* restricted_seek */true, object);
 
     if (read_until_position > start_offset && read_until_position < start_offset + object.bytes_size)
         buf->setReadUntilPosition(read_until_position - start_offset);

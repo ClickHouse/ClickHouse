@@ -14,7 +14,7 @@ namespace DB
 
 void ASTSQLSecurity::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    if (!type.has_value())
+    if (!type)
         return;
 
     if (definer || is_definer_current_user)
@@ -337,6 +337,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             settings.ostr << '.';
         }
 
+        chassert(table);
         table->formatImpl(settings, state, frame);
 
         if (uuid != UUIDHelpers::Nil)
@@ -370,6 +371,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             settings.ostr << '.';
         }
 
+        chassert(table);
         table->formatImpl(settings, state, frame);
 
         if (uuid != UUIDHelpers::Nil)

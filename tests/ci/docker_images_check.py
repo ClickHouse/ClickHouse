@@ -195,18 +195,21 @@ def main():
 
     ok_cnt = 0
     status = SUCCESS  # type: StatusType
-    image_tags = (
-        json.loads(args.image_tags)
-        if not os.path.isfile(args.image_tags)
-        else json.load(open(args.image_tags))
-    )
-    missing_images = (
-        image_tags
-        if args.missing_images == "all"
-        else json.loads(args.missing_images)
-        if not os.path.isfile(args.missing_images)
-        else json.load(open(args.missing_images))
-    )
+
+    if os.path.isfile(args.image_tags):
+        with open(args.image_tags, "r", encoding="utf-8") as jfd:
+            image_tags = json.load(jfd)
+    else:
+        image_tags = json.loads(args.image_tags)
+
+    if args.missing_images == "all":
+        missing_images = image_tags
+    elif os.path.isfile(args.missing_images):
+        with open(args.missing_images, "r", encoding="utf-8") as jfd:
+            missing_images = json.load(jfd)
+    else:
+        missing_images = json.loads(args.missing_images)
+
     images_build_list = get_images_oredered_list()
 
     for image in images_build_list:

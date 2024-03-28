@@ -84,7 +84,7 @@ struct ArraysDepths
 };
 
 /// Return depth info about passed arrays
-ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments);
+ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments, const char * function_name);
 
 template <typename Derived>
 class FunctionArrayEnumerateRankedExtended : public IFunction
@@ -105,7 +105,7 @@ public:
                 "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
                 getName(), arguments.size());
 
-        const ArraysDepths arrays_depths = getArraysDepths(arguments);
+        const ArraysDepths arrays_depths = getArraysDepths(arguments, Derived::name);
 
         /// Return type is the array of the depth as the maximum effective depth of arguments, containing UInt32.
 
@@ -154,7 +154,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     Columns array_holders;
     ColumnPtr offsets_column;
 
-    const ArraysDepths arrays_depths = getArraysDepths(arguments);
+    const ArraysDepths arrays_depths = getArraysDepths(arguments, Derived::name);
 
     /// If the column is Array - return it. If the const Array - materialize it, keep ownership and return.
     auto get_array_column = [&](const auto & column) -> const DB::ColumnArray *
@@ -213,17 +213,23 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             {
                 if (*offsets_by_depth[col_depth] != array->getOffsets())
                 {
-                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                                "Lengths and effective depths of all arrays passed to {} must be equal.", getName());
+                    throw Exception(
+                        ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                        "Lengths and effective depths of all arrays passed to {} must be equal",
+                        getName());
                 }
             }
         }
 
         if (col_depth < arrays_depths.depths[array_num])
         {
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                            "{}: Passed array number {} depth ({}) is more than the actual array depth ({}).",
-                            getName(), array_num, std::to_string(arrays_depths.depths[array_num]), col_depth);
+            throw Exception(
+                ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                "{}: Passed array number {} depth ({}) is more than the actual array depth ({})",
+                getName(),
+                array_num,
+                std::to_string(arrays_depths.depths[array_num]),
+                col_depth);
         }
 
         auto * array_data = &array->getData();
