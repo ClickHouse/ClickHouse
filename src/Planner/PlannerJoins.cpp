@@ -351,7 +351,7 @@ void buildJoinClause(
         }
         else
         {
-            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().enable_mixed_join_condition;
+            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().allow_experimental_join_condition;
             if (support_mixed_join_condition)
             {
                 /// expression involves both tables.
@@ -385,7 +385,7 @@ void buildJoinClause(
         }
         else
         {
-            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().enable_mixed_join_condition;
+            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef().allow_experimental_join_condition;
             if (support_mixed_join_condition)
             {
                 /// expression involves both tables.
@@ -663,29 +663,29 @@ JoinClausesAndActions buildJoinClausesAndActions(//const ColumnsWithTypeAndName 
     {
         if (result.join_clauses.size() > 1)
         {
-            auto full_join_expressions_actions = std::make_shared<ActionsDAG>(mixed_table_expression_columns);
+            auto mixed_join_expressions_actions = std::make_shared<ActionsDAG>(mixed_table_expression_columns);
             PlannerActionsVisitor join_expression_visitor(planner_context);
-            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(full_join_expressions_actions, join_expression);
+            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(mixed_join_expressions_actions, join_expression);
             if (join_expression_dag_node_raw_pointers.size() != 1)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "JOIN {} ON clause contains multiple expressions", join_node.formatASTForErrorMessage());
 
-            full_join_expressions_actions->addOrReplaceInOutputs(*join_expression_dag_node_raw_pointers[0]);
+            mixed_join_expressions_actions->addOrReplaceInOutputs(*join_expression_dag_node_raw_pointers[0]);
             Names required_names{join_expression_dag_node_raw_pointers[0]->result_name};
-            full_join_expressions_actions->removeUnusedActions(required_names);
-            result.full_join_expressions_actions = full_join_expressions_actions;
+            mixed_join_expressions_actions->removeUnusedActions(required_names);
+            result.mixed_join_expressions_actions = mixed_join_expressions_actions;
         }
         else
         {
             const auto & join_clause = result.join_clauses.front();
             const auto & mixed_filter_condition_nodes = join_clause.getMixedFilterConditionNodes();
-            auto full_join_expressions_actions = ActionsDAG::buildFilterActionsDAG(mixed_filter_condition_nodes, {}, true);
-            result.full_join_expressions_actions = full_join_expressions_actions;
+            auto mixed_join_expressions_actions = ActionsDAG::buildFilterActionsDAG(mixed_filter_condition_nodes, {}, true);
+            result.mixed_join_expressions_actions = mixed_join_expressions_actions;
         }
-        auto outputs = result.full_join_expressions_actions->getOutputs();
+        auto outputs = result.mixed_join_expressions_actions->getOutputs();
         if (outputs.size() != 1)
         {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Only one output is expected. but got:\n{}", result.full_join_expressions_actions->dumpDAG());
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Only one output is expected. but got:\n{}", result.mixed_join_expressions_actions->dumpDAG());
         }
         auto output_type = removeNullable(outputs[0]->result_type);
         WhichDataType which_type(output_type);
@@ -693,8 +693,8 @@ JoinClausesAndActions buildJoinClausesAndActions(//const ColumnsWithTypeAndName 
         {
             DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
             auto true_col = ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true");
-            const auto * true_node = &result.full_join_expressions_actions->addColumn(true_col);
-            result.full_join_expressions_actions = ActionsDAG::buildFilterActionsDAG({outputs[0], true_node});
+            const auto * true_node = &result.mixed_join_expressions_actions->addColumn(true_col);
+            result.mixed_join_expressions_actions = ActionsDAG::buildFilterActionsDAG({outputs[0], true_node});
         }
     }
 
@@ -913,7 +913,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     const PlannerContextPtr & planner_context)
 {
     if (table_join->getFullJoinExpression() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
-        && !(table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH) && table_join->oneDisjunct()))
+        && !table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "JOIN with mixed conditions supports only hash join or grace hash join with one disjunct.");

@@ -1574,9 +1574,7 @@ ColumnPtr buildAdditionalFilter(
             sample_right_block.dumpNames(),
             added_columns.left_block.dumpNames());
     }
-    LOG_TRACE(getLogger("HashJoin"), "Additional filter execute block:\n{}", executed_block.dumpContent());
     added_columns.additional_filter_expression->execute(executed_block);
-    LOG_TRACE(getLogger("HashJoin"), "Addition filter execute result block:\n{}", executed_block.dumpContent());
     return executed_block.getByPosition(0).column;
 }
 

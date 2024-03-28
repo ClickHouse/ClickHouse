@@ -1319,11 +1319,11 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             }
         }
 
-        if (join_clauses_and_actions.full_join_expressions_actions)
+        if (join_clauses_and_actions.mixed_join_expressions_actions)
         {
             ExpressionActionsPtr & full_join_expression = table_join->getFullJoinExpression();
             full_join_expression = std::make_shared<ExpressionActions>(
-                join_clauses_and_actions.full_join_expressions_actions,
+                join_clauses_and_actions.mixed_join_expressions_actions,
                 ExpressionActionsSettings::fromContext(planner_context->getQueryContext()));
         }
     }

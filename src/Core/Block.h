@@ -126,9 +126,6 @@ public:
     /** List of column names and positions from index */
     std::string dumpIndex() const;
 
-    /// Print all the values in this block.
-    std::string dumpContent() const;
-
     /** Get the same block, but empty. */
     Block cloneEmpty() const;
 

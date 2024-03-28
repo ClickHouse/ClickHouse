@@ -433,16 +433,6 @@ std::string Block::dumpIndex() const
     return out.str();
 }
 
-std::string Block::dumpContent() const
-{
-    WriteBufferFromOwnString buf;
-    auto output_format = Context::getGlobalContextInstance()->getOutputFormat("PrettyCompact", buf, *this);
-    output_format->write(materializeBlock(*this));
-    output_format->flush();
-    buf.finalize();
-    return buf.str();
-}
-
 Block Block::cloneEmpty() const
 {
     Block res;
