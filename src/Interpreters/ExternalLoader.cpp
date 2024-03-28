@@ -996,6 +996,14 @@ private:
             if (!new_object && !new_exception)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No object created and no exception raised for {}", type_name);
 
+            if (!info->object && new_object)
+            {
+                /// If we loaded the object for the first time then we should set `invalidate_query_response` to the current value.
+                /// Otherwise we will immediately try to reload the object again despite the fact that it was just loaded.
+                bool is_modified = new_object->isModified();
+                LOG_TRACE(log, "Object '{}' was{} modified", name, (is_modified ? "" : " not"));
+            }
+
             /// Saving the result of the loading.
             {
                 LoadingGuardForAsyncLoad lock(async, mutex);
