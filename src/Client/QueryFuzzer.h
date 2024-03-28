@@ -39,6 +39,9 @@ struct QueryFuzzer
 {
     pcg64 fuzz_rand{randomSeed()};
 
+    bool rollTheDice(size_t edges) { return fuzz_rand(edges) == 0; }
+    bool coinToss() { return fuzz_rand(2) == 0; }
+
     // We add elements to expression lists with fixed probability. Some elements
     // are so large, that the expected number of elements we add to them is
     // one or higher, hence this process might never finish. Put some limit on the
@@ -57,6 +60,9 @@ struct QueryFuzzer
     std::unordered_map<std::string, ASTPtr> table_like_map;
     std::vector<std::pair<std::string, ASTPtr>> table_like;
 
+    size_t max_donors = 10000;
+    std::set<ASTPtr> donors;
+
     // Some debug fields for detecting problematic ASTs with loops.
     // These are reset for each fuzzMain call.
     std::unordered_set<const IAST *> debug_visited_nodes;
@@ -69,6 +75,9 @@ struct QueryFuzzer
     // This is the only function you have to call -- it will modify the passed
     // ASTPtr to point to new AST with some random changes.
     void fuzzMain(ASTPtr & ast);
+
+    // Borrows some parts from the donor AST.
+    void crossover(ASTPtr main, const ASTPtr & donor);
 
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
