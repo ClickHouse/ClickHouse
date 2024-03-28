@@ -23,7 +23,7 @@ protected:
     void onFinish() override;
 
 private:
-    SquashingTransform squashing;
+    NewSquashingTransform squashing;
     Chunk cur_chunk;
     Chunk finish_chunk;
 };
@@ -32,7 +32,7 @@ private:
 class SimpleSquashingChunksTransform : public ISimpleTransform
 {
 public:
-    explicit SimpleSquashingChunksTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
+    explicit SimpleSquashingChunksTransform(const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, bool skip_empty_chunks_ = true);
 
     String getName() const override { return "SimpleSquashingTransform"; }
 
@@ -42,9 +42,8 @@ protected:
     IProcessor::Status prepare() override;
 
 private:
-    SquashingTransform squashing;
+    NewSquashingTransform squashing;
 
-    /// When consumption is finished we need to release the final chunk regardless of its size.
     bool finished = false;
 };
 }
