@@ -50,6 +50,7 @@ public:
 
     ~MergeTreeMarksLoader();
 
+    void startAsyncLoad();
     MergeTreeMarksGetterPtr loadMarks();
     size_t getNumColumns() const { return num_columns_in_mark; }
 

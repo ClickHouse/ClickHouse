@@ -48,6 +48,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
 {
+    marks_loader->startAsyncLoad();
 }
 
 void MergeTreeReaderCompact::fillColumnPositions()

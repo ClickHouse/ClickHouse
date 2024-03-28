@@ -81,6 +81,11 @@ size_t MarkRanges::getNumberOfMarks() const
     return result;
 }
 
+bool MarkRanges::isOneRangeForWholePart(size_t num_marks_in_part) const
+{
+    return size() == 1 && front().begin == 0 && front().end == num_marks_in_part;
+}
+
 void MarkRanges::serialize(WriteBuffer & out) const
 {
     writeBinaryLittleEndian(this->size(), out);
