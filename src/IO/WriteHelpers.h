@@ -665,47 +665,52 @@ void writeProbablyBackQuotedStringMySQL(StringRef s, WriteBuffer & buf);
 
 /** Outputs the string in for the CSV format.
   * Rules:
-  * - the string is outputted in quotation marks;
+  * - if allow quote, the string is outputted in quotation marks;
   * - the quotation mark inside the string is outputted as two quotation marks in sequence.
   */
 template <char quote = '"'>
-void writeCSVString(const char * begin, const char * end, WriteBuffer & buf)
+inline void writeCSVString(const char * begin, const char * end, WriteBuffer & buf, bool allow_quote = true)
 {
-    writeChar(quote, buf);
-
-    const char * pos = begin;
-    while (true)
+    if (allow_quote)
     {
-        const char * next_pos = find_first_symbols<quote>(pos, end);
+        writeChar(quote, buf);
 
-        if (next_pos == end)
+        const char * pos = begin;
+        while (true)
         {
-            buf.write(pos, end - pos);
-            break;
+            const char * next_pos = find_first_symbols<quote>(pos, end);
+
+            if (next_pos == end)
+            {
+                buf.write(pos, end - pos);
+                break;
+            }
+            else /// Quotation.
+            {
+                ++next_pos;
+                buf.write(pos, next_pos - pos);
+                writeChar(quote, buf);
+            }
+
+            pos = next_pos;
         }
-        else /// Quotation.
-        {
-            ++next_pos;
-            buf.write(pos, next_pos - pos);
+
             writeChar(quote, buf);
-        }
-
-        pos = next_pos;
     }
-
-    writeChar(quote, buf);
+    else
+        buf.write(begin, end - begin);
 }
 
 template <char quote = '"'>
-void writeCSVString(const String & s, WriteBuffer & buf)
+inline void writeCSVString(const String & s, WriteBuffer & buf, bool allow_quote = true)
 {
-    writeCSVString<quote>(s.data(), s.data() + s.size(), buf);
+    writeCSVString(s.data(), s.data() + s.size(), buf, allow_quote);
 }
 
 template <char quote = '"'>
-void writeCSVString(StringRef s, WriteBuffer & buf)
+inline void writeCSVString(StringRef s, WriteBuffer & buf, bool allow_quote = true)
 {
-    writeCSVString<quote>(s.data, s.data + s.size, buf);
+    writeCSVString(s.data, s.data + s.size, buf, allow_quote);
 }
 
 inline void writeXMLStringForTextElementOrAttributeValue(const char * begin, const char * end, WriteBuffer & buf)
@@ -1270,7 +1275,7 @@ template <typename T>
 requires is_arithmetic_v<T>
 inline void writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
-inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, buf); }
+inline void writeCSV(const String & x, WriteBuffer & buf, bool allow_quote = true) { writeCSVString(x, buf, allow_quote); }
 inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }

@@ -91,7 +91,8 @@ void SerializationMap::serializeTextImpl(
     size_t row_num,
     WriteBuffer & ostr,
     KeyWriter && key_writer,
-    ValueWriter && value_writer) const
+    ValueWriter && value_writer,
+    const FormatSettings & settings) const
 {
     const auto & column_map = assert_cast<const ColumnMap &>(column);
 
@@ -102,17 +103,19 @@ void SerializationMap::serializeTextImpl(
     size_t offset = offsets[row_num - 1];
     size_t next_offset = offsets[row_num];
 
-    writeChar('{', ostr);
+    if (!settings.csv.hive_style)
+        writeChar('{', ostr);
     for (size_t i = offset; i < next_offset; ++i)
     {
         if (i != offset)
-            writeChar(',', ostr);
+            writeChar(settings.csv.hive_style ? settings.csv.delimiter + 1 : ',', ostr);
 
         key_writer(ostr, key, nested_tuple.getColumn(0), i);
-        writeChar(':', ostr);
+        writeChar(settings.csv.hive_style ? settings.csv.delimiter + 2 : ':', ostr);
         value_writer(ostr, value, nested_tuple.getColumn(1), i);
     }
-    writeChar('}', ostr);
+    if (!settings.csv.hive_style)
+        writeChar('}', ostr);
 }
 
 template <typename ReturnType, typename Reader>
@@ -220,10 +223,17 @@ void SerializationMap::serializeText(const IColumn & column, size_t row_num, Wri
 {
     auto writer = [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
     {
-        subcolumn_serialization->serializeTextQuoted(subcolumn, pos, buf, settings);
+        if (settings.csv.hive_style)
+        {
+            auto child_settings = settings;
+            child_settings.csv.delimiter = settings.csv.delimiter + 1;
+            subcolumn_serialization->serializeTextCSV(subcolumn, pos, buf, child_settings);
+        }
+	else
+            subcolumn_serialization->serializeTextQuoted(subcolumn, pos, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, writer, writer);
+    serializeTextImpl(column, row_num, ostr, writer, writer, settings);
 }
 
 void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
@@ -276,7 +286,8 @@ void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num,
         [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
         {
             subcolumn_serialization->serializeTextJSON(subcolumn, pos, buf, settings);
-        });
+        },
+	settings);
 }
 
 void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
@@ -370,7 +381,7 @@ void SerializationMap::serializeTextCSV(const IColumn & column, size_t row_num, 
 {
     WriteBufferFromOwnString wb;
     serializeText(column, row_num, wb, settings);
-    writeCSV(wb.str(), ostr);
+    writeCSV(wb.str(), ostr, !settings.csv.hive_style);
 }
 
 void SerializationMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

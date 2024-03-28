@@ -192,7 +192,7 @@ void writeStringByEscapingRule(
             writeString(value, out);
             break;
         case FormatSettings::EscapingRule::CSV:
-            writeCSVString(value, out);
+            writeCSVString(value, out, !format_settings.csv.hive_style);
             break;
         case FormatSettings::EscapingRule::Escaped:
             writeEscapedString(value, out);

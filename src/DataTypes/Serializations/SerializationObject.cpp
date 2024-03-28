@@ -522,7 +522,7 @@ void SerializationObject<Parser>::serializeTextCSV(const IColumn & column, size_
 {
     WriteBufferFromOwnString ostr_str;
     serializeTextImpl(column, row_num, ostr_str, settings);
-    writeCSVString(ostr_str.str(), ostr);
+    writeCSVString(ostr_str.str(), ostr, !settings.csv.hive_style);
 }
 
 template <typename Parser>
