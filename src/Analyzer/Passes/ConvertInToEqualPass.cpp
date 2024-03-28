@@ -40,10 +40,9 @@ public:
             return ;
         auto result_func_name = MAPPING.at(func_node->getFunctionName());
         auto equal = std::make_shared<FunctionNode>(result_func_name);
-        QueryTreeNodes arguments{
-            column_node->clone(),
-            std::make_shared<ConstantNode>(constant_node->getValue(), removeNullable(constant_node->getResultType()))
-        };
+        auto new_const = std::make_shared<ConstantNode>(constant_node->getValue(), removeNullable(constant_node->getResultType()));
+        new_const->getSourceExpression() = constant_node->getSourceExpression();
+        QueryTreeNodes arguments{column_node->clone(), new_const};
         equal->getArguments().getNodes() = std::move(arguments);
         FunctionOverloadResolverPtr resolver;
         bool decimal_check_overflow = getContext()->getSettingsRef().decimal_check_overflow;
