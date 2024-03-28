@@ -257,10 +257,10 @@ do
     echo "$err"
     [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        err=$( { clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
+        err=$( { clickhouse-client -q --port 19000 "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
         echo "$err"
         [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
-        err=$( { clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst; } 2>&1 )
+        err=$( { clickhouse-client -q --port 29000 "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst; } 2>&1 )
         echo "$err"
         [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
     fi
