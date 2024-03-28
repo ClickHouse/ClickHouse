@@ -278,16 +278,138 @@ SELECT multiSearchAllPositionsCaseInsensitiveUTF8('\x43\x6c\x69\x63\x6b\x48\x6f\
 ["1","6"]
 ```
 
-## multiSearchFirstPosition
+## multiSearchFirstPosition {#multiSearchFirstPosition}
 
 Like `position` but returns the leftmost offset in a `haystack` string which matches any of multiple `needle` strings.
 
-Functions `multiSearchFirstPositionCaseInsensitive`, `multiSearchFirstPositionUTF8` and `multiSearchFirstPositionCaseInsensitiveUTF8` provide case-insensitive and/or UTF-8 variants of this function.
+Functions [`multiSearchFirstPositionCaseInsensitive`](#multiSearchFirstPositionCaseInsensitive), [`multiSearchFirstPositionUTF8`](#multiSearchFirstPositionUTF8) and [`multiSearchFirstPositionCaseInsensitiveUTF8`](#multiSearchFirstPositionCaseInsensitiveUTF8) provide case-insensitive and/or UTF-8 variants of this function.
 
 **Syntax**
 
 ```sql
-multiSearchFirstPosition(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
+multiSearchFirstPosition(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` —  Substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- Leftmost offset in a `haystack` string which matches any of multiple `needle` strings.
+- 0, if there was no match.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiSearchFirstPosition('Hello World',['llo', 'Wor', 'ld']);
+```
+
+```response
+3
+```
+
+## multiSearchFirstPositionCaseInsensitive
+
+Like [`multiSearchFirstPosition`](#multiSearchFirstPosition) but ignores case.
+
+**Syntax**
+
+```sql
+multiSearchFirstPositionCaseInsensitive(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Array of substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- Leftmost offset in a `haystack` string which matches any of multiple `needle` strings.
+- 0, if there was no match.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiSearchFirstPositionCaseInsensitive('HELLO WORLD',['wor', 'ld', 'ello']);
+```
+
+```response
+2
+```
+
+## multiSearchFirstPositionUTF8 {#multiSearchFirstPositionUTF8}
+
+Like [`multiSearchFirstPosition`](#multiSearchFirstPosition) but assumes `haystack` and `needle` to be UTF-8 strings.
+
+**Syntax**
+
+```sql
+multiSearchFirstPositionUTF8(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Array of UTF-8 substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- Leftmost offset in a `haystack` string which matches any of multiple `needle` strings.
+- 0, if there was no match.
+
+**Example**
+
+Find the leftmost offset in UTF-8 string `hello world` which matches any of the given needles.
+
+Query:
+
+```sql
+SELECT multiSearchFirstPositionUTF8('\x68\x65\x6c\x6c\x6f\x20\x77\x6f\x72\x6c\x64',['wor', 'ld', 'ello']);
+```
+
+```response
+2
+```
+
+## multiSearchFirstPositionCaseInsensitiveUTF8 {#multiSearchFirstPositionCaseInsensitiveUTF8}
+
+Like [`multiSearchFirstPosition`](#multiSearchFirstPosition) but assumes `haystack` and `needle` to be UTF-8 strings and ignores case.
+
+**Syntax**
+
+```sql
+multiSearchFirstPositionCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Array of UTF-8 substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- Leftmost offset in a `haystack` string which matches any of multiple `needle` strings, ignoring case.
+- 0, if there was no match.
+
+**Example**
+
+Find the leftmost offset in UTF-8 string `HELLO WORLD` which matches any of the given needles.
+
+Query:
+
+```sql
+SELECT multiSearchFirstPositionCaseInsensitiveUTF8('\x48\x45\x4c\x4c\x4f\x20\x57\x4f\x52\x4c\x44',['wor', 'ld', 'ello']);
+```
+
+```response
+2
 ```
 
 ## multiSearchFirstIndex
