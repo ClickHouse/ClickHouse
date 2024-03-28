@@ -180,6 +180,7 @@ void FileCache::initialize()
     }
 
     metadata.startup();
+
     is_initialized = true;
 }
 
@@ -1382,34 +1383,42 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
     if (new_settings.max_size != actual_settings.max_size
         || new_settings.max_elements != actual_settings.max_elements)
     {
-        cache_is_being_resized.store(true, std::memory_order_relaxed);
-        SCOPE_EXIT({
-            cache_is_being_resized.store(false, std::memory_order_relaxed);
-        });
+        std::optional<EvictionCandidates> eviction_candidates;
+        {
+            cache_is_being_resized.store(true, std::memory_order_relaxed);
+            SCOPE_EXIT({
+                cache_is_being_resized.store(false, std::memory_order_relaxed);
+            });
 
-        auto cache_lock = lockCache();
-        bool updated = false;
+            auto cache_lock = lockCache();
+
+            FileCacheReserveStat stat;
+            eviction_candidates.emplace(main_priority->collectCandidatesForEviction(
+                new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */, stat, cache_lock));
+
+            eviction_candidates->removeQueueEntries(cache_lock);
+
+            main_priority->modifySizeLimits(
+                new_settings.max_size, new_settings.max_elements, new_settings.slru_size_ratio, cache_lock);
+        }
+
         try
         {
-            updated = main_priority->modifySizeLimits(
-                new_settings.max_size, new_settings.max_elements, new_settings.slru_size_ratio, cache_lock);
+            eviction_candidates->evict();
         }
         catch (...)
         {
-            actual_settings.max_size = main_priority->getSizeLimit(cache_lock);
-            actual_settings.max_elements = main_priority->getElementsLimit(cache_lock);
+            auto cache_lock = lockCache();
+            eviction_candidates->finalize(nullptr, cache_lock);
             throw;
         }
 
-        if (updated)
-        {
-            LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
-                    actual_settings.max_size, new_settings.max_size,
-                    actual_settings.max_elements, new_settings.max_elements);
+        LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
+                actual_settings.max_size, new_settings.max_size,
+                actual_settings.max_elements, new_settings.max_elements);
 
-            actual_settings.max_size = main_priority->getSizeLimit(cache_lock);
-            actual_settings.max_elements = main_priority->getElementsLimit(cache_lock);
-        }
+        actual_settings.max_size = new_settings.max_size;
+        actual_settings.max_elements = new_settings.max_elements;
     }
 
     if (new_settings.max_file_segment_size != actual_settings.max_file_segment_size)

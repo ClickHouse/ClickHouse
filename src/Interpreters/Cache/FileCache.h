@@ -18,6 +18,7 @@
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/UserInfo.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
 

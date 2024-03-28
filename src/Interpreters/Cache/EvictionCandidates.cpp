@@ -57,13 +57,25 @@ void EvictionCandidates::add(
     ++candidates_size;
 }
 
+void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & lock)
+{
+    for (const auto & [key, key_candidates] : candidates)
+    {
+        for (const auto & candidate : key_candidates.candidates)
+            candidate->getQueueIterator()->remove(lock);
+    }
+    invalidated_queue_entries = true;
+}
+
 void EvictionCandidates::evict()
 {
     if (candidates.empty())
         return;
 
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::FilesystemCacheEvictMicroseconds);
-    queue_entries_to_invalidate.reserve(candidates_size);
+
+    if (!invalidated_queue_entries)
+        queue_entries_to_invalidate.reserve(candidates_size);
 
     for (auto & [key, key_candidates] : candidates)
     {
@@ -111,7 +123,9 @@ void EvictionCandidates::evict()
             ///   it was freed in favour of some reserver, so we can make it visibly
             ///   free only for that particular reserver.
 
-            queue_entries_to_invalidate.push_back(iterator);
+            if (!invalidated_queue_entries)
+                queue_entries_to_invalidate.push_back(iterator);
+
             key_candidates.candidates.pop_back();
         }
     }
@@ -163,6 +177,11 @@ void EvictionCandidates::setSpaceHolder(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Space hold is already set");
     else
         hold_space = std::make_unique<IFileCachePriority::HoldSpace>(size, elements, priority, lock);
+}
+
+void EvictionCandidates::insert(EvictionCandidates && other, const CachePriorityGuard::Lock &)
+{
+    candidates.insert(make_move_iterator(other.candidates.begin()), make_move_iterator(other.candidates.end()));
 }
 
 }
