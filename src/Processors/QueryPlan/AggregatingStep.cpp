@@ -191,20 +191,24 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         const size_t streams = pipeline.getNumStreams();
 
         auto input_header = pipeline.getHeader();
-        pipeline.transform([&](OutputPortRawPtrs ports)
+
+        if (grouping_sets_size > 1)
         {
-            Processors copiers;
-            copiers.reserve(ports.size());
-
-            for (auto * port : ports)
+            pipeline.transform([&](OutputPortRawPtrs ports)
             {
-                auto copier = std::make_shared<CopyTransform>(input_header, grouping_sets_size);
-                connect(*port, copier->getInputPort());
-                copiers.push_back(copier);
-            }
+                Processors copiers;
+                copiers.reserve(ports.size());
 
-            return copiers;
-        });
+                for (auto * port : ports)
+                {
+                    auto copier = std::make_shared<CopyTransform>(input_header, grouping_sets_size);
+                    connect(*port, copier->getInputPort());
+                    copiers.push_back(copier);
+                }
+
+                return copiers;
+            });
+        }
 
         pipeline.transform([&](OutputPortRawPtrs ports)
         {
