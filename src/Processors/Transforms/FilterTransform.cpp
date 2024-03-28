@@ -366,6 +366,7 @@ void FilterTransform::doTransform(Chunk & chunk)
             current_column = current_column->cut(0, num_filtered_rows);
         else
         {
+            std::cout << "column " << current_column->getName() << " use_count:" << current_column->use_count() << std::endl;
             if (current_column->use_count() == 1)
                 filter_description->filterInPlace(current_column->assumeMutableRef());
             else

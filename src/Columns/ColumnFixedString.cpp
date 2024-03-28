@@ -295,7 +295,7 @@ void ColumnFixedString::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, 
     Chars & res_chars = chars;
     size_t offset = n * start;
     for (size_t i = 0; i < indexes.size(); ++i, offset += n)
-        memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[indexes[i] * n], n);
+        memcpy(&res_chars[offset], &chars[indexes[i] * n], n);
 
     res_chars.resize_exact(n * (start + indexes.size()));
 }
