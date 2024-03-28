@@ -8,3 +8,9 @@
 00000000-0000-0000-0000-000000000000	6666_2_2_0	users	uid
 00000000-0000-0000-0000-000000000000	6666_2_2_0	users	name
 00000000-0000-0000-0000-000000000000	6666_2_2_0	users	age
+without_uuid_filter	all_1_1_0	mt_with_uuid
+without_uuid_filter	all_2_2_0	mt_with_uuid
+with_uuid_filter	all_1_1_0	mt_with_uuid
+without_uuid_filter	all_1_1_0	mt_with_uuid	x
+without_uuid_filter	all_2_2_0	mt_with_uuid	x
+with_uuid_filter	all_1_1_0	mt_with_uuid	x

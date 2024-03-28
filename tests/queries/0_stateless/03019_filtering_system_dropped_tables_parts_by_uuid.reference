@@ -1,0 +1,5 @@
+without_uuid_filter	default	mt	all_1_1_0
+with_uuid_filter	default	mt	all_1_1_0
+without_uuid_filter	default	mt_with_uuid	all_1_1_0
+without_uuid_filter	default	mt_with_uuid	all_2_2_0
+with_uuid_filter	default	mt_with_uuid	all_1_1_0
