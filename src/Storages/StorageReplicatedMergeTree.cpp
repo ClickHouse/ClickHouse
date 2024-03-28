@@ -7998,10 +7998,19 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             replace = false;
         }
 
+        scope_guard intent_guard;
         if (!replace)
         {
             /// It's ATTACH PARTITION FROM, not REPLACE PARTITION. We have to reset drop range
             drop_range = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(partition_id);
+            queue.addDropReplaceIntent(drop_range);
+            intent_guard = scope_guard{[this, my_drop_range = drop_range]() { queue.removeDropReplaceIntent(my_drop_range); }};
+
+            getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.partition_id, drop_range.max_block);
+            {
+                auto pause_checking_parts = part_check_thread.pausePartsCheck();
+                part_check_thread.cancelRemovedPartsCheck(drop_range);
+            }
         }
 
         assert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
@@ -8174,8 +8183,11 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         lock2.reset();
         lock1.reset();
 
-        /// We need to pull the DROP_RANGE before cleaning the replaced parts (otherwise CHeckThread may decide that parts are lost)
+        /// We need to pull the REPLACE_RANGE before cleaning the replaced parts (otherwise CHeckThread may decide that parts are lost)
         queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
+        // No need to block operations further, especially that in case we have to wait for mutation to finish, the intent would block
+        // the execution of REPLACE_RANGE
+        intent_guard.reset();
         parts_holder.clear();
         cleanup_thread.wakeup();
 
@@ -8227,10 +8239,20 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         Coordination::Stat alter_partition_version_stat;
         zookeeper->get(alter_partition_version_path, &alter_partition_version_stat);
 
-        MergeTreePartInfo drop_range;
         std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
+        MergeTreePartInfo drop_range;
         getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
         String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
+
+        queue.addDropReplaceIntent(drop_range);
+        // Let's copy drop_range to make sure it doesn't get modified, otherwise we might run into issue on removal
+        scope_guard intent_guard{[this, my_drop_range = drop_range]() { queue.removeDropReplaceIntent(my_drop_range); }};
+
+        getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.partition_id, drop_range.max_block);
+        {
+            auto pause_checking_parts = part_check_thread.pausePartsCheck();
+            part_check_thread.cancelRemovedPartsCheck(drop_range);
+        }
 
         DataPartPtr covering_part;
         DataPartsVector src_all_parts;
@@ -8436,6 +8458,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         /// We need to pull the DROP_RANGE before cleaning the replaced parts (otherwise CHeckThread may decide that parts are lost)
         queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
+        // No need to block operations further, especially that in case we have to wait for mutation to finish, the intent would block
+        // the execution of DROP_RANGE
+        intent_guard.reset();
         parts_holder.clear();
         cleanup_thread.wakeup();
 
