@@ -312,7 +312,9 @@ public:
 private:
     bool isOptimalEndpoint(size_t id) const
     {
-        return priorities[id] == *std::min(priorities.begin(), priorities.end());
+        LOG_INFO(getLogger("debug"), "original index {}, priority {}, best {}, priorities[0] {}, priorities[1] {}, priorities[2] {}",
+            id, priorities[id], *std::min_element(priorities.begin(), priorities.end()), priorities[0], priorities[1], priorities[2]);
+        return priorities[id] == *std::min_element(priorities.begin(), priorities.end());
     }
 
     std::vector<size_t> priorities;
@@ -328,6 +330,8 @@ public:
 private:
     std::optional<EndpointInfo> getHostToConnect() override
     {
+        LOG_INFO(getLogger("debug"), "current keeper original round robin id is {}, address is {}",
+         round_robin_id, findEndpointById(round_robin_id).address);
         auto round_robin_status = registry.findEndpointById(round_robin_id).status;
         if (round_robin_status == ONLINE)
             return selectEndpoint(round_robin_id);
@@ -337,7 +341,7 @@ private:
             return selectEndpoint(online_endpoints[0]);
 
         if (round_robin_status == UNDEF)
-            return asOptimalEndpoint(round_robin_id);
+            return selectEndpoint(round_robin_id);
 
         auto undef_endpoints = getRangeByStatus(UNDEF);
         if (!undef_endpoints.empty())
@@ -401,6 +405,7 @@ class NearestHostname : public IBalancerWithPriorities
 public:
     size_t getPriority(const EndpointInfo & endpoint) const override
     {
+        LOG_INFO(getLogger("debug"), "Nearest host address current {}, node {}, priority {}",  getFQDNOrHostName(), endpoint.host, Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), endpoint.host));
         return Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), endpoint.host);
     }
 };
@@ -472,11 +477,18 @@ bool isKeeperHostDNSAvailable(LoggerPtr log, const std::string & address, bool &
 }
 
 std::unique_ptr<Coordination::IKeeper> ZooKeeperImplFactory::create(
-    const Coordination::ZooKeeper::Node & node,
-    zkutil::ZooKeeperArgs & args,
+    const std::string & address,
+    size_t original_index,
+    bool secure,
+    const zkutil::ZooKeeperArgs & args,
     std::shared_ptr<ZooKeeperLog> zk_log)
 {
-    return std::make_unique<Coordination::ZooKeeper>(node, args, zk_log);
+    auto zknode = Coordination::ZooKeeper::Node {
+                .address = Poco::Net::SocketAddress(address),
+                .original_index = UInt8(original_index),
+                .secure = secure,
+            };
+    return std::make_unique<Coordination::ZooKeeper>(zknode, args, zk_log);
 }
 
 
@@ -540,10 +552,10 @@ std::unique_ptr<Coordination::IKeeper> ZooKeeperLoadBalancer::createClient()
 
         const auto endpoint = endpoint_or.value();
         LOG_INFO(log, "Connecting to ZooKeeper host {},"
-                      " number of attempted hosts {}/{}",
-                 endpoint.address, attempts, connection_balancer->getEndpointsCount());
+                      " number of attempted hosts {}/{}, check dns error {}",
+                 endpoint.address, attempts, connection_balancer->getEndpointsCount(), check_dns_error);
 
-        if (!isKeeperHostDNSAvailable(log, endpoint.address, dns_error_occurred))
+        if (check_dns_error && !isKeeperHostDNSAvailable(log, endpoint.address, dns_error_occurred))
         {
             LOG_ERROR(log, "Skip the host {} due to DNS error.", endpoint.address);
             connection_balancer->markHostOffline(endpoint.id);
@@ -558,7 +570,9 @@ std::unique_ptr<Coordination::IKeeper> ZooKeeperLoadBalancer::createClient()
                 .secure = endpoint.secure,
             };
 
-            auto client  = keeper_factory->create(zknode, args, zk_log);
+            auto client  = keeper_factory->create(
+                endpoint.address, endpoint.id, endpoint.secure, args, zk_log);
+            LOG_INFO(log, "debug original index {} host {}", endpoint.id, endpoint.address);
 
             if (endpoint.settings.use_fallback_session_lifetime)
             {

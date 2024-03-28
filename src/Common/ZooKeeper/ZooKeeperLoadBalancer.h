@@ -73,15 +73,20 @@ class IKeeperFactory
 {
 public:
     virtual std::unique_ptr<Coordination::IKeeper> create(
-        const Coordination::ZooKeeper::Node & node, zkutil::ZooKeeperArgs & args, std::shared_ptr<ZooKeeperLog> zk_log_) = 0;
+        const std::string & address, size_t original_index, bool secure,
+        const zkutil::ZooKeeperArgs & args, std::shared_ptr<ZooKeeperLog> zk_log_
+    ) = 0;
     virtual ~IKeeperFactory() = default;
 };
 
 class ZooKeeperImplFactory : public IKeeperFactory
 {
 public:
+    
     std::unique_ptr<Coordination::IKeeper> create(
-        const Coordination::ZooKeeper::Node & node, zkutil::ZooKeeperArgs & args, std::shared_ptr<ZooKeeperLog> zk_log_) override;
+        const std::string & address, size_t original_index, bool secure,
+        const zkutil::ZooKeeperArgs & args, std::shared_ptr<ZooKeeperLog> zk_log_
+    ) override;
 };
 
 class ZooKeeperLoadBalancer
@@ -104,6 +109,9 @@ public:
 
     std::unique_ptr<Coordination::IKeeper> createClient();
 
+    // Used only for test.
+    void disableDNSCheckForTest() {  check_dns_error = false; }
+
 private:
     void recordKeeperHostError(UInt8 id);
 
@@ -115,6 +123,8 @@ private:
     LoggerPtr log;
 
     std::shared_ptr<IKeeperFactory> keeper_factory;
+
+    bool check_dns_error = true;
 };
 
 }
