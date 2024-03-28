@@ -159,11 +159,12 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needleN])
 **Arguments**
 
 - `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — Substrings to be searched. Array
+- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md).
 
 **Returned values**
 
-- Array of the starting position in bytes and counting from 1 (if the substring was found) or 0 (if the substring was not found)
+- Array of the starting position in bytes and counting from 1 (if the substring was found).
+- 0, if the substring was not found.
 
 **Example**
 
