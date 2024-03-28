@@ -14,11 +14,6 @@ namespace DB
 struct FileCacheReserveStat;
 class EvictionCandidates;
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 class IFileCachePriority : private boost::noncopyable
 {
 public:
@@ -39,14 +34,31 @@ public:
         std::atomic<size_t> size;
         size_t hits = 0;
 
+        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size); }
+
         bool isEvicting(const CachePriorityGuard::Lock &) const { return evicting; }
         bool isEvicting(const LockedKey &) const { return evicting; }
-        void setEvicting(bool evicting_, const LockedKey * locked_key, const CachePriorityGuard::Lock * lock) const
+        /// This does not look good to have isEvicting with two options for locks,
+        /// but still it is valid as we do setEvicting always under both of them.
+        /// (Well, not always - only always for setting it to True,
+        /// but for False we have lower guarantees and allow a logical race,
+        /// physical race is not possible because the value is atomic).
+        /// We can avoid this ambiguity for isEvicting by introducing
+        /// a separate lock `EntryGuard::Lock`, it will make this part of code more coherent,
+        /// but it will introduce one more mutex while it is avoidable.
+        /// Introducing one more mutex just for coherency does not win the trade-off (isn't it?).
+        void setEvictingFlag(const LockedKey &, const CachePriorityGuard::Lock &) const
         {
-            if (evicting_ && (!locked_key || !lock))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Setting evicting state to `true` can be done only under lock");
-            evicting.store(evicting_);
+            auto prev = evicting.exchange(true, std::memory_order_relaxed);
+            chassert(!prev);
+            UNUSED(prev);
+        }
+
+        void resetEvictingFlag() const
+        {
+            auto prev = evicting.exchange(false, std::memory_order_relaxed);
+            chassert(prev);
+            UNUSED(prev);
         }
 
     private:
@@ -92,6 +104,10 @@ public:
 
     virtual size_t getElementsCountApprox() const = 0;
 
+    virtual std::string getStateInfoForLog(const CachePriorityGuard::Lock &) const = 0;
+
+    virtual void check(const CachePriorityGuard::Lock &) const;
+
     /// Throws exception if there is not enough size to fit it.
     virtual IteratorPtr add( /// NOLINT
         KeyMetadataPtr key_metadata,
@@ -124,12 +140,11 @@ public:
     /// Collect eviction candidates sufficient to free `size` bytes.
     virtual bool collectCandidatesForEviction(
         size_t size,
+        size_t elements,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IteratorPtr reservee,
         const UserID & user_id,
-        bool & reached_size_limit,
-        bool & reached_elements_limit,
         const CachePriorityGuard::Lock &) = 0;
 
     /// Collect eviction `candidates_num` candidates for eviction.
@@ -142,31 +157,49 @@ public:
 
     virtual bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) = 0;
 
-    struct HoldSpace : boost::noncopyable
+    /// A space holder implementation, which allows to take hold of
+    /// some space in cache given that this space was freed.
+    /// Takes hold of the space in constructor and releases it in destructor.
+    struct HoldSpace : private boost::noncopyable
     {
-        HoldSpace(size_t size_, size_t elements_, IteratorPtr reservee_, IFileCachePriority & priority_, const CachePriorityGuard::Lock & lock)
-            : size(size_), elements(elements_), reservee(reservee_), priority(priority_)
+        HoldSpace(
+            size_t size_,
+            size_t elements_,
+            IFileCachePriority & priority_,
+            const CachePriorityGuard::Lock & lock)
+            : size(size_), elements(elements_), priority(priority_)
         {
-            priority.holdImpl(size, elements, reservee, lock);
+            priority.holdImpl(size, elements, lock);
+        }
+
+        void release()
+        {
+            if (released)
+                return;
+            released = true;
+            priority.releaseImpl(size, elements);
         }
 
         ~HoldSpace()
         {
-            priority.releaseImpl(size, elements, reservee);
+            if (!released)
+                release();
         }
 
-        size_t size;
-        size_t elements;
-        IteratorPtr reservee;
+    private:
+        const size_t size;
+        const size_t elements;
         IFileCachePriority & priority;
+        bool released = false;
     };
-    HoldSpace takeHold();
+    using HoldSpacePtr = std::unique_ptr<HoldSpace>;
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
 
-    virtual void holdImpl(size_t size, size_t elements, IteratorPtr reservee, const CachePriorityGuard::Lock & lock) = 0;
-    virtual void releaseImpl(size_t size, size_t elements, IteratorPtr) = 0;
+    virtual void holdImpl(size_t /* size */, size_t /* elements */, const CachePriorityGuard::Lock &) {}
+
+    virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
     size_t max_size = 0;
     size_t max_elements = 0;

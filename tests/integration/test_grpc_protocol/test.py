@@ -5,7 +5,7 @@ import time
 import pytz
 import uuid
 import grpc
-from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.cluster import ClickHouseCluster, is_arm, run_and_check
 from threading import Thread
 import gzip
 import lz4.frame
@@ -19,6 +19,10 @@ import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute pb2/generate.py 
 
 GRPC_PORT = 9100
 DEFAULT_ENCODING = "utf-8"
+
+# GRPC is disabled on ARM build - skip tests
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 
 # Utilities
@@ -391,6 +395,9 @@ def test_progress():
             )
         ),
     ]
+
+    # Stats data can be returned, which broke the test
+    results = [i for i in results if not isinstance(i, clickhouse_grpc_pb2.Stats)]
 
     assert results == expected_results
 

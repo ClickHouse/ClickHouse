@@ -64,16 +64,16 @@ void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, bool releas
     auto & local_stat = stat_by_kind[kind];
     if (releasable)
     {
-        stat.releasable_size += size;
-        ++stat.releasable_count;
+        total_stat.releasable_size += size;
+        ++total_stat.releasable_count;
 
         local_stat.releasable_size += size;
         ++local_stat.releasable_count;
     }
     else
     {
-        stat.non_releasable_size += size;
-        ++stat.non_releasable_count;
+        total_stat.non_releasable_size += size;
+        ++total_stat.non_releasable_count;
 
         local_stat.non_releasable_size += size;
         ++local_stat.non_releasable_count;
@@ -809,10 +809,8 @@ bool FileCache::tryReserve(
     }
 
     LOG_TEST(
-        log, "Trying to reserve space ({} bytes) for {}:{}, current usage {}/{} in size, {}/{} in elements",
-        size, file_segment.key(), file_segment.offset(),
-        main_priority->getSize(cache_lock), main_priority->getSizeLimit(cache_lock),
-        main_priority->getElementsCount(cache_lock), main_priority->getElementsLimit(cache_lock));
+        log, "Trying to reserve space ({} bytes) for {}:{}, current usage: {}",
+        size, file_segment.key(), file_segment.offset(), main_priority->getStateInfoForLog(cache_lock));
 
     /// In case of per query cache limit (by default disabled), we add/remove entries from both
     /// (main_priority and query_priority) priority queues, but iterate entries in order of query_priority,
@@ -839,43 +837,49 @@ bool FileCache::tryReserve(
             file_segment.key(), file_segment.offset());
     }
 
-    EvictionCandidates eviction_candidates;
-    bool reached_size_limit = false;
-    bool reached_elements_limit = false;
+    auto queue_iterator = file_segment.getQueueIterator();
 
+    /// A file_segment_metadata acquires a priority iterator
+    /// on first successful space reservation attempt,
+    /// so queue_iterator == nullptr, if no space reservation took place yet.
+    chassert(!queue_iterator || file_segment.getReservedSize() > 0);
+
+    /// If it is the first space reservatiob attempt for a file segment
+    /// we need to make space for 1 element in cache,
+    /// otherwise space is already taken and we need 0 elements to free.
+    size_t required_elements_num = queue_iterator ? 0 : 1;
+
+    EvictionCandidates eviction_candidates;
+
+    /// If user has configured fs cache limit per query,
+    /// we take into account query limits here.
     if (query_priority)
     {
         if (!query_priority->collectCandidatesForEviction(
-                size, reserve_stat, eviction_candidates, {}, user.user_id, reached_size_limit, reached_elements_limit, cache_lock))
+                size, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
+        {
             return false;
+        }
 
-        LOG_TEST(log, "Query limits satisfied (while reserving for {}:{})", file_segment.key(), file_segment.offset());
+        LOG_TEST(log, "Query limits satisfied (while reserving for {}:{})",
+                 file_segment.key(), file_segment.offset());
+
         /// If we have enough space in query_priority, we are not interested about stat there anymore.
         /// Clean the stat before iterating main_priority to avoid calculating any segment stat twice.
         reserve_stat.stat_by_kind.clear();
     }
 
-    /// A file_segment_metadata acquires a priority iterator on first successful space reservation attempt,
-    auto queue_iterator = file_segment.getQueueIterator();
-    chassert(!queue_iterator || file_segment.getReservedSize() > 0);
-
     if (!main_priority->collectCandidatesForEviction(
-            size, reserve_stat, eviction_candidates, queue_iterator, user.user_id, reached_size_limit, reached_elements_limit, cache_lock))
+            size, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
+    {
         return false;
+    }
 
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
         return false;
 
     if (eviction_candidates.size() > 0)
     {
-        chassert(reached_size_limit || reached_elements_limit);
-
-        size_t hold_size = reached_size_limit
-            ? size > reserve_stat.stat.releasable_size ? size - reserve_stat.stat.releasable_size : 0
-            : size;
-        size_t hold_elements = reached_elements_limit ? 0 : 1;
-        auto hold_space = std::make_unique<IFileCachePriority::HoldSpace>(hold_size, hold_elements, queue_iterator, *main_priority, cache_lock);
-
         cache_lock.unlock();
         try
         {
@@ -891,13 +895,20 @@ bool FileCache::tryReserve(
         }
 
         cache_lock.lock();
-        /// Invalidate and remove queue entries and execute (only for SLRU) finalize func.
+
+        /// Invalidate and remove queue entries and execute finalize func.
         eviction_candidates.finalize(query_context.get(), cache_lock);
     }
+    else if (!main_priority->canFit(size, required_elements_num, cache_lock, queue_iterator))
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot fit {} in cache, but collection of eviction candidates succeeded with no candidates. "
+            "This is a bug. Queue entry type: {}. Cache info: {}",
+            size, queue_iterator ? queue_iterator->getType() : FileCacheQueueEntryType::None,
+            main_priority->getStateInfoForLog(cache_lock));
+    }
 
-    /// Space reservation is incremental, so file_segment_metadata is created first (with state Empty),
-    /// and queue_iterator is assigned on first space reservation attempt
-    /// (so it is nullptr here if we are reserving for the first time).
     if (queue_iterator)
     {
         /// Increase size of queue entry.
@@ -909,6 +920,8 @@ bool FileCache::tryReserve(
         queue_iterator = main_priority->add(file_segment.getKeyMetadata(), file_segment.offset(), size, user, cache_lock);
         file_segment.setQueueIterator(queue_iterator);
     }
+
+    main_priority->check(cache_lock);
 
     if (query_context)
     {
