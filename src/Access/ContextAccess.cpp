@@ -547,6 +547,9 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     if (flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
         flags &= ~AccessType::CLUSTER;
 
+    if (flags & AccessType::TABLE_ENGINE && !access_control->doesTableEnginesRequireGrant())
+        flags &= ~AccessType::TABLE_ENGINE;
+
     if (!flags)
         return true;
 

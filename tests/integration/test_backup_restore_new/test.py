@@ -1036,6 +1036,7 @@ def test_required_privileges():
     )
 
     instance.query("GRANT INSERT, CREATE ON test.table2 TO u1")
+    instance.query("GRANT TABLE ENGINE ON MergeTree TO u1")
     instance.query(
         f"RESTORE TABLE test.table AS test.table2 FROM {backup_name}", user="u1"
     )

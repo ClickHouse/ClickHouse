@@ -209,6 +209,7 @@ Hierarchy of privileges:
     - `SHOW NAMED COLLECTIONS`
     - `SHOW NAMED COLLECTIONS SECRETS`
     - `NAMED COLLECTION`
+- [TABLE ENGINE](#grant-table-engine)
 
 Examples of how this hierarchy is treated:
 
@@ -505,6 +506,7 @@ and
 [`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
 are turned on.
 
+
 ### NAMED COLLECTION ADMIN
 
 Allows a certain operation on a specified named collection. Before version 23.7 it was called NAMED COLLECTION CONTROL, and after 23.7 NAMED COLLECTION ADMIN was added and NAMED COLLECTION CONTROL is preserved as an alias.
@@ -523,6 +525,17 @@ Unlike all other grants (CREATE, DROP, ALTER, SHOW) grant NAMED COLLECTION was a
 
 Assuming a named collection is called abc, we grant privilege CREATE NAMED COLLECTION to user john.
 - `GRANT CREATE NAMED COLLECTION ON abc TO john`
+
+
+### TABLE ENGINE
+
+Allows using a specified table engine when creating a table. Applies to [table engines](../../engines/table-engines/index.md).
+
+**Examples**
+
+- `GRANT TABLE ENGINE ON * TO john`
+- `GRANT TABLE ENGINE ON TinyLog TO john`
+
 
 ### ALL
 

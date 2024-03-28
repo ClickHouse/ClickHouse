@@ -989,6 +989,7 @@ def test_predefined_connection_configuration(started_cluster):
     instance.query("GRANT CREATE ON *.* TO user")
     instance.query("GRANT SOURCES ON *.* TO user")
     instance.query("GRANT SELECT ON *.* TO user")
+    instance.query("GRANT TABLE ENGINE ON S3 TO user")
 
     instance.query(f"drop table if exists {name}", user="user")
     error = instance.query_and_get_error(
