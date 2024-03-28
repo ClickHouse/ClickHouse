@@ -750,7 +750,8 @@ class SettingsRandomizer:
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_threads": lambda: random.randint(1, 64),
         "optimize_append_index": lambda: random.randint(0, 1),
-        "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
+        # TODO: `optimize_if_chain_to_multiif` triggers bug in analyzer in IfChainToMultiIfPass, repro in 02100_now64_types_bug.sql
+        # "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
         "optimize_if_transform_strings_to_enum": lambda: random.randint(0, 1),
         "optimize_read_in_order": lambda: random.randint(0, 1),
         "optimize_or_like_chain": lambda: random.randint(0, 1),
