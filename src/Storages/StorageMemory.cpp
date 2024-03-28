@@ -105,7 +105,7 @@ public:
         auto new_data = std::make_unique<Blocks>(*(storage.data.get()));
         UInt64 new_total_rows = storage.total_size_rows.load(std::memory_order_relaxed) + inserted_rows;
         UInt64 new_total_bytes = storage.total_size_bytes.load(std::memory_order_relaxed) + inserted_bytes;
-        auto & memory_settings = storage.getMemorySettingsRef();
+        const auto & memory_settings = storage.getMemorySettingsRef();
         while (!new_data->empty()
                && ((memory_settings.max_bytes_to_keep && new_total_bytes > memory_settings.max_bytes_to_keep)
                    || (memory_settings.max_rows_to_keep && new_total_rows > memory_settings.max_rows_to_keep)))
