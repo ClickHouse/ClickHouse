@@ -29,8 +29,13 @@ public:
 
     size_t getElementsCountApprox() const override;
 
+    std::string getStateInfoForLog(const CachePriorityGuard::Lock & lock) const override;
+
+    void check(const CachePriorityGuard::Lock &) const override;
+
     bool canFit( /// NOLINT
         size_t size,
+        size_t elements,
         const CachePriorityGuard::Lock &,
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const override;
@@ -45,10 +50,10 @@ public:
 
     bool collectCandidatesForEviction(
         size_t size,
+        size_t elements,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
-        FinalizeEvictionFunc & finalize_eviction_func,
         const UserID & user_id,
         const CachePriorityGuard::Lock &) override;
 
@@ -65,6 +70,22 @@ private:
     LoggerPtr log = getLogger("SLRUFileCachePriority");
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock);
+
+    void downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock &);
+
+    bool collectCandidatesForEvictionInProtected(
+        size_t size,
+        size_t elements,
+        FileCacheReserveStat & stat,
+        EvictionCandidates & res,
+        IFileCachePriority::IteratorPtr reservee,
+        const UserID & user_id,
+        const CachePriorityGuard::Lock & lock);
+
+    LRUFileCachePriority::LRUIterator addOrThrow(
+        EntryPtr entry,
+        LRUFileCachePriority & queue,
+        const CachePriorityGuard::Lock & lock);
 };
 
 class SLRUFileCachePriority::SLRUIterator : public IFileCachePriority::Iterator
@@ -84,7 +105,9 @@ public:
 
     void invalidate() override;
 
-    void updateSize(int64_t size) override;
+    void incrementSize(size_t size, const CachePriorityGuard::Lock &) override;
+
+    void decrementSize(size_t size) override;
 
     QueueEntryType getType() const override { return is_protected ? QueueEntryType::SLRU_Protected : QueueEntryType::SLRU_Probationary; }
 
@@ -98,6 +121,16 @@ private:
     /// but needed only in order to do FileSegment::getInfo() without any lock,
     /// which is done for system tables and logging.
     std::atomic<bool> is_protected;
+    /// Iterator can me marked as non-movable in case we are reserving
+    /// space for it. It means that we start space reservation
+    /// and prepare space in probationary queue, then do eviction without lock,
+    /// then take the lock again to finalize the eviction and we need to be sure
+    /// that the element is still in probationary queue.
+    /// Therefore we forbid concurrent priority increase for probationary entries.
+    /// Same goes for the downgrade of queue entries from protected to probationary.
+    /// (For downgrade there is no explicit check because it will fall into unreleasable state,
+    /// e.g. will not be taken for eviction anyway).
+    bool movable{true};
 };
 
 }
