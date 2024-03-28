@@ -22,7 +22,8 @@ from github.Repository import Repository
 
 from ci_config import CHECK_DESCRIPTIONS, REQUIRED_CHECKS, CheckDescription
 from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL, TEMP_PATH
-from pr_info import SKIP_MERGEABLE_CHECK_LABEL, PRInfo
+from lambda_shared_package.lambda_shared.pr import Labels
+from pr_info import PRInfo
 from report import (
     ERROR,
     FAILURE,
@@ -436,7 +437,7 @@ def set_mergeable_check(
 def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> None:
     "check if the check_name in REQUIRED_CHECKS and then trigger update"
     not_run = (
-        pr_info.labels.intersection({SKIP_MERGEABLE_CHECK_LABEL, "release"})
+        pr_info.labels.intersection({Labels.SKIP_MERGEABLE_CHECK, Labels.RELEASE})
         or check_name not in REQUIRED_CHECKS
         or pr_info.release_pr
         or pr_info.number == 0
