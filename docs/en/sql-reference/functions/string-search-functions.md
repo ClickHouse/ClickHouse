@@ -685,3 +685,154 @@ Like [hasSubsequence](#hasSubsequence) but assumes `haystack` and `needle` are U
 ## hasSubsequenceCaseInsensitiveUTF8
 
 Like [hasSubsequenceUTF8](#hasSubsequenceUTF8) but searches case-insensitively.
+
+## hasToken
+
+Returns 1 if a given token is present in a haystack, or 0 otherwise.
+
+**Syntax**
+
+```sql
+hasToken(haystack, token)
+```
+
+**Parameters**
+
+- `haystack`: String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `token`: Maximal length substring between two non alphanumeric ASCII characters (or boundaries of haystack).
+
+**Returned value**
+
+- 1, if the token is present in the haystack.
+- 0, if the token is not present.
+
+**Implementation details**
+
+Token must be a constant string. Supported by tokenbf_v1 index specialization.
+
+**Example**
+
+Query:
+
+```sql
+SELECT hasToken('Hello World','Hello');
+```
+
+```response
+1
+```
+
+## hasTokenOrNull
+
+Returns 1 if a given token is present, 0 if not present, and null if the token is ill-formed.
+
+**Syntax**
+
+```sql
+hasTokenOrNull(haystack, token)
+```
+
+**Parameters**
+
+- `haystack`: String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `token`: Maximal length substring between two non alphanumeric ASCII characters (or boundaries of haystack).
+
+**Returned value**
+
+- 1, if the token is present in the haystack.
+- 0, if the token is not present in the haystack.
+- null, if the token is ill-formed.
+
+**Implementation details**
+
+Token must be a constant string. Supported by tokenbf_v1 index specialization.
+
+**Example**
+
+Where `hasToken` would throw an error for an ill-formed token, `hasTokenOrNull` returns `null` for an ill-formed token.
+
+Query:
+
+```sql
+SELECT hasTokenOrNull('Hello World','Hello,World');
+```
+
+```response
+null
+```
+
+## hasTokenCaseInsensitive
+
+Returns 1 if a given token is present in a haystack, 0 otherwise. Ignores case.
+
+**Syntax**
+
+```sql
+hasTokenCaseInsensitive(haystack, token)
+```
+
+**Parameters**
+
+- `haystack`: String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `token`: Maximal length substring between two non alphanumeric ASCII characters (or boundaries of haystack).
+
+**Returned value**
+
+- 1, if the token is present in the haystack.
+- 0, otherwise.
+
+**Implementation details**
+
+Token must be a constant string. Supported by tokenbf_v1 index specialization.
+
+**Example**
+
+Query:
+
+```sql
+SELECT hasTokenCaseInsensitive('Hello World','hello');
+```
+
+```response
+1
+```
+
+## hasTokenCaseInsensitiveOrNull
+
+Returns 1 if a given token is present in a haystack, 0 otherwise. Ignores case and returns null if the token is ill-formed.
+
+**Syntax**
+
+```sql
+hasTokenCaseInsensitive(haystack, token)
+```
+
+**Parameters**
+
+- `haystack`: String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `token`: Maximal length substring between two non alphanumeric ASCII characters (or boundaries of haystack).
+
+**Returned value**
+
+- 1, if the token is present in the haystack.
+- 0, if token is not present.
+- null, if the token is ill-formed.
+
+**Implementation details**
+
+Token must be a constant string. Supported by tokenbf_v1 index specialization.
+
+**Example**
+
+
+Where `hasTokenCaseInsensitive` would throw an error for an ill-formed token, `hasTokenCaseInsensitiveOrNull` returns `null` for an ill-formed token.
+
+Query:
+
+```sql
+SELECT hasTokenCaseInsensitiveOrNull('Hello World','hello,world');
+```
+
+```response
+null
+```
