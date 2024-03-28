@@ -1453,6 +1453,7 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
     OutputFormatPtr output_format;
+    String format_name;
 
     auto update_format_on_exception_if_needed = [&]()
     {
@@ -1460,7 +1461,7 @@ void executeQuery(
         {
             try
             {
-                String format_name = context->getDefaultFormat();
+                format_name = context->getDefaultFormat();
                 output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
                 if (output_format && output_format->supportsWritingException())
                 {
@@ -1501,7 +1502,7 @@ void executeQuery(
         {
             update_format_on_exception_if_needed();
             if (output_format)
-                handle_exception_in_output_format(*output_format);
+                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
         }
         throw;
     }
@@ -1543,7 +1544,7 @@ void executeQuery(
                 );
             }
 
-            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+            format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
                                     ? getIdentifierName(ast_query_with_output->format)
                                     : context->getDefaultFormat();
 
@@ -1609,7 +1610,7 @@ void executeQuery(
         {
             update_format_on_exception_if_needed();
             if (output_format)
-                handle_exception_in_output_format(*output_format);
+                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
         }
         throw;
     }
