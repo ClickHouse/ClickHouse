@@ -44,7 +44,7 @@ public:
     /// Maximum number of threads is based on the number of physical cores.
     ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_);
 
-    /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
+    /// Size is constant. Up to max_threads are created on demand and then run until shutdown.
     explicit ThreadPoolImpl(
         Metric metric_threads_,
         Metric metric_active_threads_,
@@ -115,6 +115,7 @@ private:
     mutable std::mutex mutex;
     std::condition_variable job_finished;
     std::condition_variable new_job_or_shutdown;
+    std::condition_variable no_jobs;
 
     Metric metric_threads;
     Metric metric_active_threads;

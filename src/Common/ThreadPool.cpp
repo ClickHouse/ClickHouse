@@ -185,7 +185,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
 
-        if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is zero.
+        if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set
         {
             if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
                 return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
@@ -196,12 +196,16 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         if (shutdown)
             return on_error("shutdown");
 
-        /// We must not to allocate any memory after we emplaced a job in a queue.
+        bool scheduled_jobs_incremented = false;
+
+        /// We must not allocate any memory after we emplaced a job in a queue.
         /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
 
         /// Check if there are enough threads to process job.
         if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
         {
+            auto thread_it = threads.end();
+
             try
             {
                 threads.emplace_front();
@@ -211,16 +215,26 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 /// Most likely this is a std::bad_alloc exception
                 return on_error("cannot allocate thread slot");
             }
+            thread_it = threads.begin();
+
+            ++scheduled_jobs;
+            scheduled_jobs_incremented = true;
+            lock.unlock();
+
 
             try
             {
-                threads.front() = Thread([this, it = threads.begin()] { worker(it); });
+                *thread_it = Thread([this, thread_it] { worker(thread_it); });
             }
             catch (...)
             {
-                threads.pop_front();
+                lock.lock();
+                --scheduled_jobs;
+                threads.erase(thread_it);
                 return on_error("cannot allocate thread");
             }
+            lock.lock();
+
         }
 
         jobs.emplace(std::move(job),
@@ -231,7 +245,10 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                      /// capture_frame_pointers
                      DB::Exception::enable_job_stack_trace);
 
-        ++scheduled_jobs;
+        if (!scheduled_jobs_incremented)
+        {
+            ++scheduled_jobs;
+        }
     }
 
     /// Wake up a free thread to run the new job.
@@ -296,7 +313,7 @@ void ThreadPoolImpl<Thread>::wait()
     /// If threads are waiting on condition variables, but there are some jobs in the queue
     /// then it will prevent us from deadlock.
     new_job_or_shutdown.notify_all();
-    job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
+    no_jobs.wait(lock, [this] { return scheduled_jobs == 0; });
 
     if (first_exception)
     {
@@ -406,9 +423,20 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
                 --scheduled_jobs;
 
-                job_finished.notify_all();
-                if (shutdown)
+                if (!shutdown)
+                {
+                    job_finished.notify_one();
+                    if (!scheduled_jobs)
+                    {
+                        no_jobs.notify_all();
+                    }
+                }
+                else
+                {
+                    job_finished.notify_one();
                     new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
+                    no_jobs.notify_all();
+                }
             }
 
             new_job_or_shutdown.wait(lock, [&] { return !jobs.empty() || shutdown || threads.size() > std::min(max_threads, scheduled_jobs + max_free_threads); });
