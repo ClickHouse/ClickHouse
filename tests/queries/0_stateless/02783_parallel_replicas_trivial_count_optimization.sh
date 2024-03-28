@@ -25,7 +25,7 @@ function run_query_with_pure_parallel_replicas () {
     $CLICKHOUSE_CLIENT \
         --query "$2" \
         --query_id "${1}_disabled" \
-        --max_parallel_replicas 0
+        --max_parallel_replicas 1
 
     $CLICKHOUSE_CLIENT \
         --query "$2" \
@@ -50,7 +50,7 @@ function run_query_with_custom_key_parallel_replicas () {
     $CLICKHOUSE_CLIENT \
         --query "$2" \
         --query_id "${1}_disabled" \
-        --max_parallel_replicas 0
+        --max_parallel_replicas 1
 
     $CLICKHOUSE_CLIENT \
         --query "$2" \
