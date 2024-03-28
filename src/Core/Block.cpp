@@ -3,6 +3,7 @@
 
 #include <Core/Block.h>
 
+#include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -11,6 +12,8 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
+
+#include <Processors/Formats/IOutputFormat.h>
 
 #include <iterator>
 #include <base/sort.h>
