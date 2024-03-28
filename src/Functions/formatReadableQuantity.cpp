@@ -16,6 +16,8 @@ namespace
         {
             formatReadableQuantity(value, out);
         }
+
+        static void format(double value, DB::WriteBuffer & out, int precision) { formatReadableQuantity(value, out, precision); }
     };
 }
 

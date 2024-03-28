@@ -16,6 +16,11 @@ namespace
         {
             formatReadableSizeWithBinarySuffix(value, out);
         }
+
+        static void format(double value, DB::WriteBuffer & out, int precision)
+        {
+            formatReadableSizeWithBinarySuffix(value, out, precision);
+        }
     };
 }
 

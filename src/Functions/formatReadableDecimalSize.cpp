@@ -16,6 +16,11 @@ namespace
         {
             formatReadableSizeWithDecimalSuffix(value, out);
         }
+
+        static void format(double value, DB::WriteBuffer & out, int precision)
+        {
+            formatReadableSizeWithDecimalSuffix(value, out, precision);
+        }
     };
 }
 
