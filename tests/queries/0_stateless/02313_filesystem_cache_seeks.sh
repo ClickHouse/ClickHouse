@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-for STORAGE_POLICY in 's3_cache' 'local_cache' 's3_cache_multi'; do
+for STORAGE_POLICY in 's3_cache' 'local_cache' 's3_cache_multi' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
     $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
 
