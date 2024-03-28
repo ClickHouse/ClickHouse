@@ -365,7 +365,12 @@ def test_truncate_table(started_cluster):
     assert hdfs_api.read_data("/tr") == "1\tMark\t72.53\n"
     assert node1.query("select * from test_truncate") == "1\tMark\t72.53\n"
     node1.query("truncate table test_truncate")
-    assert node1.query("select * from test_truncate settings hdfs_ignore_file_doesnt_exist=1") == ""
+    assert (
+        node1.query(
+            "select * from test_truncate settings hdfs_ignore_file_doesnt_exist=1"
+        )
+        == ""
+    )
     node1.query("drop table test_truncate")
 
 
@@ -502,7 +507,9 @@ def test_hdfsCluster(started_cluster):
 def test_hdfs_directory_not_exist(started_cluster):
     ddl = "create table HDFSStorageWithNotExistDir (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/data/not_eixst', 'TSV')"
     node1.query(ddl)
-    assert "" == node1.query("select * from HDFSStorageWithNotExistDir settings hdfs_ignore_file_doesnt_exist=1")
+    assert "" == node1.query(
+        "select * from HDFSStorageWithNotExistDir settings hdfs_ignore_file_doesnt_exist=1"
+    )
 
 
 def test_overwrite(started_cluster):
