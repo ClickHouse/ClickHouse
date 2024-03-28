@@ -604,14 +604,14 @@ void SerializationVariant::serializeTextEscaped(const IColumn & column, size_t r
 bool SerializationVariant::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    readEscapedString(field, istr);
+    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field, istr) : readEscapedString(field, istr);
     return tryDeserializeTextEscapedImpl(column, field, settings);
 }
 
 void SerializationVariant::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    readEscapedString(field, istr);
+    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field, istr) : readEscapedString(field, istr);
     if (!tryDeserializeTextEscapedImpl(column, field, settings))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse escaped value of type {} here: {}", variant_name, field);
 }
