@@ -80,6 +80,7 @@ namespace DB
         extern const int CANNOT_SET_SIGNAL_HANDLER;
         extern const int CANNOT_SEND_SIGNAL;
         extern const int SYSTEM_ERROR;
+        extern const int LOGICAL_ERROR;
     }
 }
 
@@ -1016,6 +1017,20 @@ extern const char * GIT_HASH;
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
     SentryWriter::initializeInstance(config());
+    /// In release builds send it to sentry (if it is configured)
+    if (auto * sentry = SentryWriter::getInstance())
+    {
+        Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+        {
+            if (!remote && code == ErrorCodes::LOGICAL_ERROR)
+            {
+                SentryWriter::FramePointers frame_pointers;
+                for (size_t i = 0; i < trace.size(); ++i)
+                    frame_pointers[i] = trace[i];
+                sentry->onFault(-code, msg, frame_pointers, /* offset= */ 0, trace.size());
+            }
+        };
+    }
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.

@@ -5,7 +5,6 @@
 #include <IO/WriteHelpers.h>
 #include <base/demangle.h>
 #include <Common/AtomicLogger.h>
-#include <Daemon/SentryWriter.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -48,28 +47,23 @@ void abortOnFailedAssertion(const String & description)
 bool terminate_on_any_exception = false;
 static int terminate_status_code = 128 + SIGABRT;
 thread_local bool update_error_statistics = true;
+std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
-void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+void handle_error_code(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
 {
+    // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
+    // Log the message before we fail.
+#ifdef ABORT_ON_LOGICAL_ERROR
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
-        // Log the message before we fail.
-#ifdef ABORT_ON_LOGICAL_ERROR
         abortOnFailedAssertion(msg);
-#else
-        /// In release builds send it to sentry (if it is configured)
-        if (auto * sentry = SentryWriter::getInstance())
-        {
-            SentryWriter::FramePointers frame_pointers;
-            for (size_t i = 0; i < trace.size(); ++i)
-                frame_pointers[i] = trace[i];
-            sentry->onFault(-code, msg, frame_pointers, /* offset= */ 0, trace.size());
-        }
-#endif
     }
+#endif
+
+    if (Exception::callback)
+        Exception::callback(msg, code, remote, trace);
 
     if (!update_error_statistics) [[unlikely]]
         return;
