@@ -30,8 +30,10 @@ Also see [UNDROP TABLE](/docs/en/sql-reference/statements/undrop.md)
 Syntax:
 
 ``` sql
-DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY] [db.]name [ON CLUSTER cluster] [SYNC]
+DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY]  [db1.]name_1[, [db2.]name_2, ...] [ON CLUSTER cluster] [SYNC]
 ```
+
+Note that deleting multiple tables at the same time is a non-atomic deletion. If a table fails to be deleted, subsequent tables will not be deleted.
 
 ## DROP DICTIONARY
 

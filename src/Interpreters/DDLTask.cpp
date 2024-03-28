@@ -16,6 +16,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTDropQuery.h>
 
 
 namespace DB
@@ -200,6 +201,14 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     String description;
     query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    if (auto * query_drop = query->as<ASTDropQuery>())
+    {
+        ASTs drops = query_drop->getRewrittenASTsOfSingleTable();
+        if (drops.size() > 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supports drop multiple tables for ddl task.");
+
+        query = drops[0];
+    }
 }
 
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
