@@ -1,4 +1,4 @@
-set asterisk_include_materialized_columns=1;
+SET asterisk_include_materialized_columns=1;
 
 DROP TABLE IF EXISTS queue_mode_test;
 
