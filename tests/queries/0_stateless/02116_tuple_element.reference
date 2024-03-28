@@ -1,17 +1,17 @@
 1
-SELECT `t1.a`
+SELECT `t1.a` AS `tupleElement(t1, 1)`
 FROM t_tuple_element
 a
-SELECT `t1.s`
+SELECT `t1.s` AS `tupleElement(t1, 2)`
 FROM t_tuple_element
 1
-SELECT `t1.a`
+SELECT `t1.a` AS `tupleElement(t1, \'a\')`
 FROM t_tuple_element
 2
-SELECT `t2.1`
+SELECT `t2.1` AS `tupleElement(t2, 1)`
 FROM t_tuple_element
 2
-SELECT `t2.1`
+SELECT `t2.1` AS `tupleElement(t2, 1)`
 FROM t_tuple_element
 1	2
 WITH (1, 2) AS t

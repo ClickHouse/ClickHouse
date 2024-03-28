@@ -7,6 +7,7 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 
 
 namespace DB
@@ -67,23 +68,7 @@ public:
         if (!replaced_argument)
             return;
 
-        const auto & function_node_argument_nodes = function_node->getArguments().getNodes();
-
-        DataTypes argument_types;
-        argument_types.reserve(function_node_argument_nodes.size());
-
-        for (const auto & function_node_argument : function_node_argument_nodes)
-            argument_types.emplace_back(function_node_argument->getResultType());
-
-        AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(
-            function_node->getFunctionName(),
-            NullsAction::EMPTY,
-            argument_types,
-            function_node->getAggregateFunction()->getParameters(),
-            properties);
-
-        function_node->resolveAsAggregateFunction(std::move(aggregate_function));
+        resolveAggregateFunctionNodeByName(*function_node, function_node->getFunctionName());
     }
 };
 

@@ -294,6 +294,7 @@ public:
     }
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsOptimizationToSubcolumns() const override { return false; }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 

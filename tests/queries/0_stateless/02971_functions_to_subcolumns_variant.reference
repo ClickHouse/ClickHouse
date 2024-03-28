@@ -1,0 +1,8 @@
+SELECT `v.String` AS `variantElement(v, \'String\')`
+FROM t_func_to_subcolumns_variant
+foo
+\N
+SELECT __table1.`v.String` AS `variantElement(v, \'String\')`
+FROM default.t_func_to_subcolumns_variant AS __table1
+foo
+\N

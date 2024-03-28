@@ -13,6 +13,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -58,8 +59,7 @@ public:
                 function_arguments_nodes.resize(2);
                 function_arguments_nodes[0] = std::move(if_arguments_nodes[1]);
                 function_arguments_nodes[1] = std::move(if_arguments_nodes[0]);
-                resolveAsAggregateFunctionWithIf(
-                    *function_node, {function_arguments_nodes[0]->getResultType(), function_arguments_nodes[1]->getResultType()});
+                resolveAsAggregateFunctionWithIf(*function_node);
             }
         }
         else if (first_const_node)
@@ -79,30 +79,17 @@ public:
                 function_arguments_nodes.resize(2);
                 function_arguments_nodes[0] = std::move(if_arguments_nodes[2]);
                 function_arguments_nodes[1] = std::move(not_function);
-                resolveAsAggregateFunctionWithIf(
-                    *function_node, {function_arguments_nodes[0]->getResultType(), function_arguments_nodes[1]->getResultType()});
+                resolveAsAggregateFunctionWithIf(*function_node);
             }
         }
     }
 
 private:
-    static inline void resolveAsAggregateFunctionWithIf(FunctionNode & function_node, const DataTypes & argument_types)
+    static inline void resolveAsAggregateFunctionWithIf(FunctionNode & function_node)
     {
         auto result_type = function_node.getResultType();
-
-        std::string suffix = "If";
-        if (result_type->isNullable())
-            suffix = "OrNullIf";
-
-        AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(
-            function_node.getFunctionName() + suffix,
-            function_node.getNullsAction(),
-            argument_types,
-            function_node.getAggregateFunction()->getParameters(),
-            properties);
-
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+        const auto * suffix = result_type->isNullable() ? "OrNullIf" : "If";
+        resolveAggregateFunctionNodeByName(function_node, function_node.getFunctionName() + suffix);
     }
 };
 
