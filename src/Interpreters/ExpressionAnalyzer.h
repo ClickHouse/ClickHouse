@@ -109,6 +109,11 @@ public:
     {
     }
 
+    ExpressionAnalyzer(const ASTPtr & query_, const TreeRewriterResultPtr & syntax_analyzer_result_, ContextPtr context_, bool is_projection_optimized_)
+    : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, false, {}, false, is_projection_optimized_)
+    {
+    }
+
     ~ExpressionAnalyzer();
 
     void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
@@ -156,7 +161,8 @@ protected:
         bool do_global_,
         bool is_explain_,
         PreparedSetsPtr prepared_sets_,
-        bool is_create_parameterized_view_ = false);
+        bool is_create_parameterized_view_ = false,
+        bool is_projection_optimized_ = false);
 
     ASTPtr query;
     const ExtractedSettings settings;
@@ -164,6 +170,7 @@ protected:
 
     TreeRewriterResultPtr syntax;
     bool is_create_parameterized_view;
+    bool is_projection_optimized;
 
     const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
     const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
@@ -318,7 +325,8 @@ public:
             do_global_,
             options_.is_explain,
             prepared_sets_,
-            options_.is_create_parameterized_view)
+            options_.is_create_parameterized_view,
+            options_.is_projection_optimized)
         , metadata_snapshot(metadata_snapshot_)
         , required_result_columns(required_result_columns_)
         , query_options(options_)

@@ -502,7 +502,8 @@ ActionsMatcher::Data::Data(
     bool only_consts_,
     AggregationKeysInfo aggregation_keys_info_,
     bool build_expression_with_window_functions_,
-    bool is_create_parameterized_view_)
+    bool is_create_parameterized_view_,
+    bool is_projection_optimized_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -516,6 +517,7 @@ ActionsMatcher::Data::Data(
     , aggregation_keys_info(aggregation_keys_info_)
     , build_expression_with_window_functions(build_expression_with_window_functions_)
     , is_create_parameterized_view(is_create_parameterized_view_)
+    , is_projection_optimized(is_projection_optimized_)
     , next_unique_suffix(actions_stack.getLastActions().getOutputs().size() + 1)
 {
 }
@@ -994,7 +996,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             data.no_subqueries,
             data.no_makeset,
             data.only_consts,
-            data.aggregation_keys_info);
+            data.aggregation_keys_info,
+            false, /* build_expression_with_window_functions */
+            false, /* is_create_parameterized_view */
+            data.is_projection_optimized);
 
         NamesWithAliases args;
 
@@ -1462,7 +1467,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
         {
-            auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
+            auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {}, data.is_projection_optimized);
             interpreter->buildQueryPlan(*source);
         }
 

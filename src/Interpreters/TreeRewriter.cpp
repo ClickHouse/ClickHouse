@@ -1011,7 +1011,8 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
 /// Calculate which columns are required to execute the expression.
 /// Then, delete all other columns from the list of available columns.
 /// After execution, columns will only contain the list of columns needed to read from the table.
-bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select, bool no_throw)
+
+bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select, bool optimize_project_query, bool no_throw)
 {
     /// We calculate required_source_columns with source_columns modifications and swap them on exit
     required_source_columns = source_columns;
@@ -1058,6 +1059,19 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         for (const auto & column_name_type : source_columns)
             if (array_join_sources.contains(column_name_type.name))
                 required.insert(column_name_type.name);
+    }
+
+    if (storage && optimize_project_query)
+    {
+        if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
+        {
+            auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+            if (metadata_snapshot->hasPrimaryKey())
+            {
+                for (const auto & key: metadata_snapshot->getPrimaryKeyColumns())
+                    required.insert(key);
+            }
+        }
     }
 
     /// Figure out if we're able to use the trivial count optimization.
@@ -1391,7 +1405,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.window_function_asts = getWindowFunctions(query, *select_query);
     result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
 
-    result.collectUsedColumns(query, true);
+    result.collectUsedColumns(query, true, settings.optimize_project_query);
 
     if (!result.missed_subcolumns.empty())
     {
@@ -1428,7 +1442,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             result.aggregates = getAggregates(query, *select_query);
             result.window_function_asts = getWindowFunctions(query, *select_query);
             result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
-            result.collectUsedColumns(query, true);
+            result.collectUsedColumns(query, true, settings.optimize_project_query);
         }
     }
 
@@ -1505,7 +1519,8 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     else
         assertNoAggregates(query, "in wrong place");
 
-    bool is_ok = result.collectUsedColumns(query, false, no_throw);
+    bool is_ok = result.collectUsedColumns(query, false, settings.optimize_project_query, no_throw);
+
     if (!is_ok)
         return {};
 

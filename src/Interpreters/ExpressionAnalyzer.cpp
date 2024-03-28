@@ -169,12 +169,14 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     bool do_global,
     bool is_explain,
     PreparedSetsPtr prepared_sets_,
-    bool is_create_parameterized_view_)
+    bool is_create_parameterized_view_,
+    bool is_projection_optimized_)
     : WithContext(context_)
     , query(query_), settings(getContext()->getSettings())
     , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
     , is_create_parameterized_view(is_create_parameterized_view_)
+    , is_projection_optimized(is_projection_optimized_)
 {
     /// Cache prepared sets because we might run analysis multiple times
     if (prepared_sets_)
@@ -446,7 +448,7 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global, b
     if (do_global)
     {
         GlobalSubqueriesVisitor::Data subqueries_data(
-            getContext(), subquery_depth, isRemoteStorage(), is_explain, external_tables, prepared_sets, has_global_subqueries, syntax->analyzed_join.get());
+            getContext(), subquery_depth, isRemoteStorage(), is_explain, is_projection_optimized, external_tables, prepared_sets, has_global_subqueries, syntax->analyzed_join.get());
         GlobalSubqueriesVisitor(subqueries_data).visit(query);
     }
 }
@@ -480,7 +482,8 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         only_consts,
         getAggregationKeysInfo(),
         false /* build_expression_with_window_functions */,
-        is_create_parameterized_view);
+        is_create_parameterized_view,
+        is_projection_optimized);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }

@@ -126,7 +126,8 @@ public:
     static Block getBlockWithConstants(
         const ASTPtr & query,
         const TreeRewriterResultPtr & syntax_analyzer_result,
-        ContextPtr context);
+        ContextPtr context,
+        bool is_projection_optimized = false);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
