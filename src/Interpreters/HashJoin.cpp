@@ -1510,7 +1510,7 @@ ColumnPtr buildAdditionalFilter(
         filter->insertMany(1, selected_rows.size());
         return filter;
     }
-    
+
     if (!added_columns.additional_filter_expression)
     {
         auto filter = ColumnUInt8::create();
