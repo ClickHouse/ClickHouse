@@ -325,6 +325,7 @@ ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 
 void ColumnString::filterInPlace(const IColumn & indexes, size_t start)
 {
+    /*
     if (indexes.size() <= 2)
     {
         std::cout << "before:" << std::endl;
@@ -336,15 +337,18 @@ void ColumnString::filterInPlace(const IColumn & indexes, size_t start)
             std::cout << "index[" << i << "]"
                       << ":" << toString(indexes[i]) << std::endl;
     }
+    */
 
     selectFilterInPlaceImpl(*this, indexes, start);
 
+    /*
     if (indexes.size() <= 2)
     {
         std::cout << "after:" << std::endl;
         for (size_t i = 0; i < size(); ++i)
             std::cout << i << ":" << toString((*this)[i]) << std::endl;
     }
+    */
 }
 
 template <typename Type>
@@ -355,17 +359,17 @@ void ColumnString::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_
     Offset current_new_offset = res_offsets[start - 1];
     for (size_t i = 0; i < indexes.size(); ++i)
     {
-        Type index = indexes[i];
+        size_t index = indexes[i];
+        // std::cout << "start:" << start << ", index:" << index << ", indexes size:" << indexes.size() << ", offsets size:" << offsets.size()
+                //   << ", index-1:" << index - 1 << std::endl;
         size_t string_offset = offsets[index - 1];
         size_t string_size = offsets[index] - string_offset;
-        std::cout << "index:" << index << ", string_offset:" << string_offset << ", string_size:" << string_size
-                  << ", string_to_copy:" << std::string(reinterpret_cast<const char *>(&chars[string_offset]), string_size) << std::endl;
 
-        memcpy(&res_chars[current_new_offset], &chars[string_offset], string_size);
+        memmove(&res_chars[current_new_offset], &chars[string_offset], string_size);
 
         current_new_offset += string_size;
-        res_offsets[i] = current_new_offset;
-        std::cout << "res_offsets[" << i << "]:" << res_offsets[i] << std::endl;
+        res_offsets[start + i] = current_new_offset;
+        // std::cout << "res_offsets[" << start + i << "]:" << res_offsets[i] << std::endl;
     }
 
     res_chars.resize_exact(current_new_offset);

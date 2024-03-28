@@ -153,15 +153,15 @@ static void filterToIndices(const UInt8 * filt, size_t start, size_t end, Padded
     const __m512i zero_vec = _mm512_setzero_si512();
 
     /// Calculate the expected size of indices
-    size_t j = start;
+    size_t row_i = start;
     size_t size = 0;
-    for (; j + 64 <= end; j += 64)
+    for (; row_i + 64 <= end; row_i += 64)
     {
-        UInt64 mask64 = _mm512_cmpneq_epi8_mask(_mm512_loadu_epi8(reinterpret_cast<const void *>(filt + j)), zero_vec);
+        UInt64 mask64 = _mm512_cmpneq_epi8_mask(_mm512_loadu_epi8(reinterpret_cast<const void *>(filt + row_i)), zero_vec);
         size += std::popcount(mask64);
     }
-    for (; j < end; ++j)
-        size += filt[j] != 0;
+    for (; row_i < end; ++row_i)
+        size += filt[row_i] != 0;
 
     /// Reserve enough size of indices. The extra space is for padding elements.
     indices.resize_exact(size + PADDING_ELEMENTS);
@@ -253,6 +253,23 @@ size_t filterToIndices(const IColumn::Filter & filt, PaddedPODArray<Type> & indi
 
     size_t start = 0;
     size_t end = filt.size();
+    while (start + 64 <= end)
+    {
+        UInt64 mask = bytes64MaskToBits64Mask(&filt[start]);
+        uint8_t prefix_to_copy = prefixToCopy(mask);
+        if (prefix_to_copy != 64)
+        {
+            start += prefix_to_copy == 0xFF ? 0 : prefix_to_copy;
+            break;
+        }
+        start += 64;
+    }
+    if (start == ((end >> 6) << 6))
+    {
+        while (start != end && filt[start])
+            ++start;
+    }
+
 #if USE_MULTITARGET_CODE
     if constexpr (std::is_same_v<Type, UInt64> || std::is_same_v<Type, UInt32>)
     {

@@ -294,7 +294,18 @@ void ColumnTuple::filterInPlace(const IColumn & indexes, size_t start)
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
-        columns[i]->filterInPlace(indexes, start);
+    {
+        if (columns[i]->use_count() == 1)
+        {
+            columns[i]->filterInPlace(indexes, start);
+        }
+        else
+        {
+            auto column = IColumn::mutate(columns[i]);
+            column->filterInPlace(indexes, start);
+            columns[i] = std::move(column);
+        }
+    }
 }
 
 void ColumnTuple::expand(const Filter & mask, bool inverted)

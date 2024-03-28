@@ -18,6 +18,7 @@
 #include <base/unaligned.h>
 #include <base/sort.h>
 #include <cstring> // memcpy
+// #include <iostream>
 
 
 namespace DB
@@ -910,21 +911,29 @@ void ColumnArray::filterInPlaceImpl(const PaddedPODArray<Type> & indexes, size_t
     auto & offsets_ref = getOffsets();
     for (size_t i = 0; i < indexes.size(); ++i)
     {
-        Type index = indexes[i];
+        size_t index = indexes[i];
         size_t nested_offset = offsetAt(index);
         size_t nested_size = sizeAt(index);
+        // std::cout << "index:" << index << " nested_offset:" << nested_offset << " nested_size:" << nested_size << std::endl;
         for (size_t j = 0; j < nested_size; ++j)
+        {
             nested_indexes[current_new_offset - nested_start + j] = nested_offset + j;
+            // std::cout << "nested_indexes[" << current_new_offset - nested_start + j << "] = " << nested_offset + j << std::endl;
+        }
 
         current_new_offset += nested_size;
         offsets_ref[start + i]  = current_new_offset;
+        // std::cout << "offsets_ref[" << start + i << "] = " << current_new_offset << std::endl;
     }
     offsets_ref.resize_exact(start + indexes.size());
+
+    // std::cout << "nested_indexes_size:" << nested_indexes_size << ", nested_indexes_column size:" << nested_indexes_column->size()
+            //   << " nested_start:" << nested_start << std::endl;
     data->filterInPlace(*nested_indexes_column, nested_start);
 }
 
-void ColumnArray::getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
-                                size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnArray::getPermutation(
+    PermutationSortDirection direction, PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
         getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
