@@ -294,12 +294,133 @@ multiSearchFirstPosition(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …
 
 Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise.
 
-Functions `multiSearchFirstIndexCaseInsensitive`, `multiSearchFirstIndexUTF8` and `multiSearchFirstIndexCaseInsensitiveUTF8` provide case-insensitive and/or UTF-8 variants of this function.
+Functions [`multiSearchFirstIndexCaseInsensitive`](#multiSearchFirstIndexCaseInsensitive), [`multiSearchFirstIndexUTF8`](#multiSearchFirstIndexUTF8) and [`multiSearchFirstIndexCaseInsensitiveUTF8`](#multiSearchFirstIndexCaseInsensitiveUTF8) provide case-insensitive and/or UTF-8 variants of this function.
 
 **Syntax**
 
 ```sql
-multiSearchFirstIndex(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
+multiSearchFirstIndex(haystack, [needle1, needle2, ..., needleN])
+```
+**Parameters**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- index (starting from 1) of the leftmost found needle.
+- 0, if there was no match.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiSearchFirstIndex('Hello World',['World','Hello']);
+```
+
+```response
+1
+```
+
+## multiSearchFirstIndexCaseInsensitive {#multiSearchFirstIndexCaseInsensitive}
+
+Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise. Ignores case.
+
+**Syntax**
+
+```sql
+multiSearchFirstIndexCaseInsensitive(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- index (starting from 1) of the leftmost found needle.
+- 0, if there was no match.
+
+**Example**
+
+Query:
+
+```sql
+SELECT multiSearchFirstIndexCaseInsensitive('hElLo WoRlD',['World','Hello']);
+```
+
+```response
+1
+```
+
+## multiSearchFirstIndexUTF8 {#multiSearchFirstIndexUTF8}
+
+Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise. Assumes `haystack` and `needle` are UTF-8 encoded strings.
+
+**Syntax**
+
+```sql
+multiSearchFirstIndexUTF8(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Array of UTF-8 substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- index (starting from 1) of the leftmost found needle.
+- 0, if there was no match.
+
+**Example**
+
+Given `Hello World` as a UTF-8 string, find the first index of UTF-8 strings `Hello` and `World`.
+
+Query:
+
+```sql
+SELECT multiSearchFirstIndexUTF8('\x48\x65\x6c\x6c\x6f\x20\x57\x6f\x72\x6c\x64',['\x57\x6f\x72\x6c\x64','\x48\x65\x6c\x6c\x6f']);
+```
+
+```response
+1
+```
+
+## multiSearchFirstIndexCaseInsensitiveUTF8 {#multiSearchFirstIndexCaseInsensitiveUTF8}
+
+Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise. Assumes `haystack` and `needle` are UTF-8 encoded strings. Ignores case.
+
+**Syntax**
+
+```sql
+multiSearchFirstIndexCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needleN])
+```
+
+**Parameters**
+
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Array of UTF-8 substrings to be searched. [Array](../../sql-reference/data-types/array.md)
+
+**Returned value**
+
+- index (starting from 1) of the leftmost found needle.
+- 0, if there was no match.
+
+**Example**
+
+Given `HELLO WORLD` as a UTF-8 string, find the first index of UTF-8 strings `hello` and `world`.
+
+Query:
+
+```sql
+SELECT multiSearchFirstIndexCaseInsensitiveUTF8('\x48\x45\x4c\x4c\x4f\x20\x57\x4f\x52\x4c\x44',['\x68\x65\x6c\x6c\x6f','\x77\x6f\x72\x6c\x64']);
+```
+
+```response
+1
 ```
 
 ## multiSearchAny {#multisearchany}
