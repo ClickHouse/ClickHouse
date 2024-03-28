@@ -1,0 +1,35 @@
+
+{% for engine in [
+    "MergeTree() ORDER BY a",
+    "MergeTree() ORDER BY a SETTINGS min_bytes_for_wide_part = 0",
+    "MergeTree() ORDER BY a SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 0.0",
+    "MergeTree() ORDER BY a SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1.1",
+    "ReplicatedMergeTree('/clickhouse/tables/{database}/test_order', 'r1') ORDER BY a",
+] %}
+
+DROP TABLE IF EXISTS test_order;
+
+CREATE TABLE test_order(a UInt32, c UInt32)
+ENGINE = {{ engine }}
+;
+
+INSERT INTO test_order(a, c) SELECT toUInt32(0) a, number as c FROM numbers(10);
+ALTER TABLE test_order ADD COLUMN IF NOT EXISTS b UInt32 AFTER a, MODIFY ORDER BY (a, b);
+
+ALTER TABLE test_order MODIFY COLUMN b DEFAULT (11 - c); -- { serverError INCORRECT_QUERY }
+ALTER TABLE test_order MODIFY COLUMN b UInt32 DEFAULT (11 - c);
+
+-- For some reason `c` is different for `optimize_read_in_order`
+-- Since a, b have the same values for any c, result is correct
+
+SELECT '-';
+
+SELECT a, b, ignore(c) FROM test_order ORDER BY a, b LIMIT 1
+SETTINGS optimize_read_in_order = 1;
+
+SELECT '-';
+
+SELECT a, b, ignore(c) FROM test_order ORDER BY a, b LIMIT 1
+SETTINGS optimize_read_in_order = 0;
+
+{% endfor %}
