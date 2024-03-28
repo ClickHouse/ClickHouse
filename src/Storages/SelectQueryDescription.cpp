@@ -59,6 +59,20 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPt
     else if (auto subquery = extractTableExpression(query, 0))
     {
         auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
+        auto * func = subquery->as<ASTFunction>();
+        if (func)
+        {
+            for (auto & arg : func->arguments->children)
+            {
+                auto * ast_sub = arg->as<ASTSubquery>();
+                if (ast_sub)
+                {
+                    ast_select = ast_sub->children.at(0)->as<ASTSelectWithUnionQuery>();
+                    if (ast_select)
+                        break;
+                }
+            }
+        }
         if (!ast_select)
             throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW,
                             "StorageMaterializedView cannot be created from table functions ({})",
