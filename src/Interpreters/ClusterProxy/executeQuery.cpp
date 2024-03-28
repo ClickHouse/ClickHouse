@@ -245,7 +245,12 @@ void executeQuery(
             const auto & shard_info = cluster->getShardsInfo()[i];
 
             auto query_for_shard = query_info.query_tree->clone();
-            if (sharding_key_expr && query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
+            if (sharding_key_expr &&
+                query_info.optimized_cluster &&
+                settings.optimize_skip_unused_shards_rewrite_in &&
+                shards > 1 &&
+                /// TODO: support composite sharding key
+                sharding_key_expr->getRequiredColumns().size() == 1)
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
@@ -281,7 +286,12 @@ void executeQuery(
             const auto & shard_info = cluster->getShardsInfo()[i];
 
             ASTPtr query_ast_for_shard = query_info.query->clone();
-            if (sharding_key_expr && query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
+            if (sharding_key_expr &&
+                query_info.optimized_cluster &&
+                settings.optimize_skip_unused_shards_rewrite_in &&
+                shards > 1 &&
+                /// TODO: support composite sharding key
+                sharding_key_expr->getRequiredColumns().size() == 1)
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
