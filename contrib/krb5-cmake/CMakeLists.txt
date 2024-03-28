@@ -224,6 +224,7 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/prf_rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/s2k_pbkdf2.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/aes.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c"
     # "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des3.c"
@@ -473,14 +474,6 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/krb5/asn.1/ldap_key_seq.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb5_libinit.c"
 )
-
-if (NOT (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC))
-    add_compile_definitions(USE_BORINGSSL=1)
-else()
-    set(ALL_SRCS ${ALL_SRCS}
-        "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c"
-    )
-endif()
 
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/compile_et"

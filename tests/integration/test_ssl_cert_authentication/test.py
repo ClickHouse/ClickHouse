@@ -122,7 +122,7 @@ def test_native_wrong_cert():
         execute_query_native(
             instance, "SELECT currentUser()", user="john", cert_name="wrong"
         )
-    assert "UNKNOWN_CA" in str(err.value)
+    assert "unknown ca" in str(err.value)
 
 
 def test_native_fallback_to_password():

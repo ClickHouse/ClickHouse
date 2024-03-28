@@ -167,7 +167,6 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
-          python3 merge_pr.py --check-approved
 
 
 #############################################################################################

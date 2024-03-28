@@ -5,10 +5,10 @@
             <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
             <dhParamsFile>/etc/clickhouse-server/config.d/dhparam.pem</dhParamsFile>
             <verificationMode>none</verificationMode>
-            <cacheSessions>true</cacheSessions>
+            <cacheSessions>false</cacheSessions>
         </server>
         <client>
-            <cacheSessions>true</cacheSessions>
+            <cacheSessions>false</cacheSessions>
             <verificationMode>none</verificationMode>
             <invalidCertificateHandler>
                 <name>AcceptCertificateHandler</name>

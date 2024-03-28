@@ -455,8 +455,6 @@ endif ()
 
 enable_testing() # Enable for tests without binary
 
-option(ENABLE_OPENSSL "This option performs a build with OpenSSL. NOTE! This option is insecure and should never be used. By default, ClickHouse uses and only supports BoringSSL" OFF)
-
 if (ARCH_S390X)
     set(ENABLE_OPENSSL_DYNAMIC_DEFAULT ON)
 else ()

@@ -78,7 +78,7 @@ class Build(metaclass=WithIter):
     BINARY_AMD64_COMPAT = "binary_amd64_compat"
     BINARY_AMD64_MUSL = "binary_amd64_musl"
     BINARY_RISCV64 = "binary_riscv64"
-    BINARY_S390X = "binary_s390x"
+    # BINARY_S390X = "binary_s390x" # disabled because s390x refused to build in the migration to OpenSSL
     FUZZERS = "fuzzers"
 
 
@@ -1022,12 +1022,13 @@ CI_CONFIG = CIConfig(
             package_type="binary",
             static_binary_name="riscv64",
         ),
-        Build.BINARY_S390X: BuildConfig(
-            name=Build.BINARY_S390X,
-            compiler="clang-17-s390x",
-            package_type="binary",
-            static_binary_name="s390x",
-        ),
+        # disabled because s390x refused to build in the migration to OpenSSL
+        # Build.BINARY_S390X: BuildConfig(
+        #     name=Build.BINARY_S390X,
+        #     compiler="clang-17-s390x",
+        #     package_type="binary",
+        #     static_binary_name="s390x",
+        # ),
         Build.FUZZERS: BuildConfig(
             name=Build.FUZZERS,
             compiler="clang-17",
@@ -1057,7 +1058,7 @@ CI_CONFIG = CIConfig(
                 Build.BINARY_DARWIN_AARCH64,
                 Build.BINARY_PPC64LE,
                 Build.BINARY_RISCV64,
-                Build.BINARY_S390X,
+                # Build.BINARY_S390X, # disabled because s390x refused to build in the migration to OpenSSL
                 Build.BINARY_AMD64_COMPAT,
                 Build.BINARY_AMD64_MUSL,
                 Build.PACKAGE_RELEASE_COVERAGE,
