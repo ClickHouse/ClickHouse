@@ -215,6 +215,11 @@ bool DataPartStorageOnDiskBase::supportZeroCopyReplication() const
     return volume->getDisk()->supportZeroCopyReplication();
 }
 
+bool DataPartStorageOnDiskBase::supportVFS() const
+{
+    return volume->getDisk()->isObjectStorageVFS();
+}
+
 bool DataPartStorageOnDiskBase::supportParallelWrite() const
 {
     return volume->getDisk()->supportParallelWrite();
@@ -260,45 +265,44 @@ ReservationPtr DataPartStorageOnDiskBase::tryReserve(UInt64 bytes) const
 }
 
 IDataPartStorage::ReplicatedFilesDescription
-DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_names) const
+DataPartStorageOnDiskBase::getReplicatedFilesDescription(
+    const NameSet & file_names, RemoteDiskFeature feature) const
 {
     ReplicatedFilesDescription description;
     auto relative_path = fs::path(root_path) / part_dir;
+    auto actual_file_names = getActualFileNamesOnDisk(file_names);
     auto disk = volume->getDisk();
 
-    auto actual_file_names = getActualFileNamesOnDisk(file_names);
-    for (const auto & name : actual_file_names)
+    using enum RemoteDiskFeature;
+    if (feature == None)
     {
-        auto path = relative_path / name;
-        size_t file_size = disk->getFileSize(path);
-
-        auto & file_desc = description.files[name];
-
-        file_desc.file_size = file_size;
-        file_desc.input_buffer_getter = [disk, path, file_size]
+        for (const auto & name : actual_file_names)
         {
-            return disk->readFile(path, ReadSettings{}.adjustBufferSize(file_size), file_size, file_size);
-        };
+            auto path = relative_path / name;
+            size_t file_size = disk->getFileSize(path);
+
+            auto & file_desc = description.files[name];
+
+            file_desc.file_size = file_size;
+            file_desc.input_buffer_getter = [disk, path, file_size]
+            {
+                return disk->readFile(path, ReadSettings{}.adjustBufferSize(file_size), file_size, file_size);
+            };
+        }
+
+        return description;
     }
 
-    return description;
-}
+    if (feature == Zerocopy && !disk->supportZeroCopyReplication())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Disk {} doesn't support zero-copy replication", disk->getName());
+    if (feature == VFS && !disk->isObjectStorageVFS())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk {} doesn't support VFS", disk->getName());
 
-IDataPartStorage::ReplicatedFilesDescription
-DataPartStorageOnDiskBase::getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const
-{
-    ReplicatedFilesDescription description;
-    auto relative_path = fs::path(root_path) / part_dir;
-
-    auto disk = volume->getDisk();
-    if (!disk->supportZeroCopyReplication())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk {} doesn't support zero-copy replication", disk->getName());
-
-    description.unique_id = getUniqueId();
+    if (feature == Zerocopy)
+        description.unique_id = getUniqueId();
 
     Names paths;
-    auto actual_file_names = getActualFileNamesOnDisk(file_names);
-
     for (const auto & name : actual_file_names)
     {
         /// Just some additional checks

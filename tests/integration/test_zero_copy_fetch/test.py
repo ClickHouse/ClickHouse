@@ -10,34 +10,34 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 
-cluster = ClickHouseCluster(__file__)
-
-
-@pytest.fixture(scope="module")
-def started_cluster():
+@pytest.fixture(scope="module", params=[[], ["configs/vfs.xml"]], ids=["0copy", "vfs"])
+def started_cluster(request):
+    cluster = ClickHouseCluster(__file__)
     try:
         cluster.add_instance(
             "node1",
-            main_configs=["configs/storage_conf.xml"],
+            main_configs=["configs/storage_conf.xml"] + request.param,
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
         )
         cluster.add_instance(
             "node2",
-            main_configs=["configs/storage_conf.xml"],
+            main_configs=["configs/storage_conf.xml"] + request.param,
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
         )
         cluster.start()
 
-        yield cluster
+        testing_vfs = len(request.param) != 0
+        yield cluster, testing_vfs
     finally:
         cluster.shutdown()
 
 
 def test_fetch_correct_volume(started_cluster):
+    cluster, _ = started_cluster
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -107,6 +107,7 @@ SETTINGS index_granularity = 8192, storage_policy = 's3'"""
 
 
 def test_concurrent_move_to_s3(started_cluster):
+    cluster, _ = started_cluster
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -183,6 +184,7 @@ SETTINGS index_granularity = 8192, storage_policy = 's3'"""
 
 
 def test_zero_copy_mutation(started_cluster):
+    cluster, testing_vfs = started_cluster
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
 
@@ -231,6 +233,8 @@ SETTINGS index_granularity = 8192, storage_policy = 's3_only'"""
 
     job.get()
 
+    if testing_vfs:
+        return
     assert node2.contains_in_log("all_0_0_0_1/part_exclusive_lock exists")
     assert node2.contains_in_log("Removing zero-copy lock on")
     assert node2.contains_in_log("all_0_0_0_1/part_exclusive_lock doesn't exist")

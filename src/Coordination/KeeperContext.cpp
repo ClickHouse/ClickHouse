@@ -75,7 +75,8 @@ bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::
         "local"sv
     };
 
-    if (std::all_of(
+    const bool allow_vfs = config.getBool(disk_config_prefix + ".allow_vfs", false);
+    if (allow_vfs || std::all_of(
             supported_disk_types.begin(),
             supported_disk_types.end(),
             [&](const auto supported_type) { return disk_type != supported_type; }))

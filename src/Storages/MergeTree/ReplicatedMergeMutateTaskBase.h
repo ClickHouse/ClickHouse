@@ -71,6 +71,8 @@ protected:
     ProfileEvents::Counters profile_counters;
     ContextMutablePtr task_context;
 
+    void mitigateReplicaSkew(size_t estimated_space) const;
+
 private:
     enum class CheckExistingPartResult
     {

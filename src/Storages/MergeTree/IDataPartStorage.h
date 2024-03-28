@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include "Disks/RemoteDiskFeature.h"
 #include <Disks/IDiskTransaction.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
@@ -168,6 +169,7 @@ public:
     virtual bool isStoredOnRemoteDisk() const { return false; }
     virtual std::optional<String> getCacheName() const { return std::nullopt; }
     virtual bool supportZeroCopyReplication() const { return false; }
+    virtual bool supportVFS() const { return false; }
     virtual bool supportParallelWrite() const = 0;
     virtual bool isBroken() const = 0;
     virtual bool isReadonly() const = 0;
@@ -208,8 +210,11 @@ public:
         String unique_id;
     };
 
-    virtual ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const = 0;
-    virtual ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const = 0;
+    // This is a leaked abstraction as currently a feature-aware disk may be asked to
+    // send list of data instead of metadata (see Service::sendPartFromDisk).
+    // Example: a 0copy replica is asked to supply data to a non-0copy disk
+    virtual ReplicatedFilesDescription getReplicatedFilesDescription(
+        const NameSet & file_names, RemoteDiskFeature feature) const = 0;
 
     /// Create a backup of a data part.
     /// This method adds a new entry to backup_entries.

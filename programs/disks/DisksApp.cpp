@@ -5,7 +5,9 @@
 
 #include <Common/TerminalSize.h>
 #include <Formats/registerFormats.h>
+#include "magic_enum.hpp"
 
+using namespace magic_enum::bitwise_operators;
 
 namespace DB
 {
@@ -189,7 +191,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
     }
 
-    registerDisks(/* global_skip_access_check= */ true);
+    registerDisks(DiskStartupFlags::GLOBAL_SKIP_ACCESS_CHECK | DiskStartupFlags::ALLOW_VFS);
     registerFormats();
 
     shared_context = Context::createShared();

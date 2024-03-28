@@ -12,17 +12,34 @@ from helpers.cluster import ClickHouseCluster
 REPLICA_COUNT = 2
 
 
-@pytest.fixture(scope="module")
-def cluster():
+@pytest.fixture(
+    scope="module",
+    params=[
+        # vfs config, replicated engine, 0copy
+        ([], False, False),
+        ([], True, False),
+        ([], True, True),
+        (["configs/vfs.xml"], True, False),
+    ],
+    ids=[
+        "normal",
+        "replicated-engine",
+        "0copy-replicated-engine",
+        "vfs-replicated-engine",
+    ],
+)
+def cluster_started(request):
+    vfs_config, replicated_engine, zero_copy = request.param
+    cluster = ClickHouseCluster(__file__)
     try:
-        cluster = ClickHouseCluster(__file__)
         for i in range(1, REPLICA_COUNT + 1):
             cluster.add_instance(
                 f"node{i}",
                 main_configs=[
                     "configs/config.d/storage_conf.xml",
                     "configs/config.d/remote_servers.xml",
-                ],
+                ]
+                + vfs_config,
                 with_minio=True,
                 with_zookeeper=True,
             )
@@ -31,7 +48,8 @@ def cluster():
         cluster.start()
         logging.info("Cluster started")
 
-        yield cluster
+        testing_vfs = len(vfs_config) != 0
+        yield cluster, testing_vfs, zero_copy, replicated_engine
     finally:
         cluster.shutdown()
 
@@ -69,16 +87,11 @@ def create_table(node, table_name, replicated, additional_settings):
         node.query(create_table_statement)
 
 
-@pytest.mark.parametrize(
-    "allow_remote_fs_zero_copy_replication,replicated_engine",
-    [(False, False), (False, True), (True, True)],
-)
-def test_alter_moving(
-    cluster, allow_remote_fs_zero_copy_replication, replicated_engine
-):
+def test_alter_moving(cluster_started):
     """
     Test that we correctly move parts during ALTER TABLE
     """
+    cluster, testing_vfs, zero_copy, replicated_engine = cluster_started
 
     if replicated_engine:
         nodes = list(cluster.instances.values())
@@ -89,7 +102,7 @@ def test_alter_moving(
 
     # Different names for logs readability
     table_name = "test_table"
-    if allow_remote_fs_zero_copy_replication:
+    if zero_copy:
         table_name = "test_table_zero_copy"
         additional_settings["allow_remote_fs_zero_copy_replication"] = 1
     if replicated_engine:
@@ -159,11 +172,11 @@ def test_alter_moving(
     assert data_digest == "1000\n"
 
 
-def test_delete_race_leftovers(cluster):
+def test_delete_race_leftovers(cluster_started):
     """
     Test that we correctly delete outdated parts and do not leave any leftovers on s3
     """
-
+    cluster, testing_vfs, zero_copy, replicated_engine = cluster_started
     node = cluster.instances["node1"]
 
     table_name = "test_delete_race_leftovers"
@@ -235,6 +248,11 @@ def test_delete_race_leftovers(cluster):
                 cluster.minio_bucket, "data2/", recursive=True
             )
         )
+
+        if testing_vfs:  # remove snapshot
+            all_remote_paths = all_remote_paths - set(
+                (e for e in all_remote_paths if e.startswith("data2/vfs/s32/snapshots"))
+            )
 
         # Some blobs can be deleted after we listed remote_data_paths
         # It's alright, thus we check only that all remote paths are known

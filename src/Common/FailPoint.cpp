@@ -48,6 +48,7 @@ static struct InitFiu
     ONCE(meta_in_keeper_create_metadata_failure) \
     REGULAR(cache_warmer_stall) \
     REGULAR(check_table_query_delay_for_part) \
+    REGULAR(vfs_gc_optimistic_lock_delay) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
     PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
