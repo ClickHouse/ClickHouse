@@ -2170,7 +2170,7 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
 ///
 /// Result actions add single column with conjunction result (it is always first in outputs).
 /// No other columns are added or removed.
-ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
+ActionsDAGPtr ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
     if (conjunction.empty())
         return nullptr;
@@ -2265,7 +2265,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
     return actions;
 }
 
-ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
+ActionsDAGPtr ActionsDAG::splitActionsForFilterPushDown(
     const std::string & filter_name,
     bool can_remove_filter,
     const Names & available_inputs,
@@ -2321,13 +2321,166 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
         }
     }
 
-    auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
+    auto actions = createActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return nullptr;
 
     /// Now, when actions are created, update the current DAG.
+    removeUnusedConjunctions(std::move(conjunction.rejected), predicate, can_remove_filter);
 
-    if (conjunction.rejected.empty())
+    return actions;
+}
+
+ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPushDown(
+    const std::string & filter_name,
+    bool can_remove_filter,
+    const Names & left_stream_available_columns_to_push_down,
+    const ColumnsWithTypeAndName & left_stream_all_inputs,
+    const Names & right_stream_available_columns_to_push_down,
+    const ColumnsWithTypeAndName & right_stream_all_inputs,
+    const std::vector<EquivalentColumnsPair> & equivalent_columns,
+    const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
+    const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column)
+{
+    Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
+    if (!predicate)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
+            filter_name,
+            dumpDAG());
+
+    /// If condition is constant let's do nothing.
+    /// It means there is nothing to push down or optimization was already applied.
+    if (predicate->type == ActionType::COLUMN)
+        return {};
+
+    Names equivalent_columns_to_push_down;
+    for (auto & [lhs_column, rhs_column] : equivalent_columns)
+    {
+        equivalent_columns_to_push_down.emplace_back(lhs_column);
+        equivalent_columns_to_push_down.emplace_back(rhs_column);
+    }
+
+    auto get_input_nodes = [this](const Names & inputs_names)
+    {
+        std::unordered_set<const Node *> allowed_nodes;
+
+        std::unordered_map<std::string_view, std::list<const Node *>> inputs_map;
+        for (const auto & input_node : inputs)
+            inputs_map[input_node->result_name].emplace_back(input_node);
+
+        for (const auto & name : inputs_names)
+        {
+            auto & inputs_list = inputs_map[name];
+            if (inputs_list.empty())
+                continue;
+
+            allowed_nodes.emplace(inputs_list.front());
+            inputs_list.pop_front();
+        }
+
+        return allowed_nodes;
+    };
+
+    auto left_stream_allowed_nodes = get_input_nodes(left_stream_available_columns_to_push_down);
+    auto right_stream_allowed_nodes = get_input_nodes(right_stream_available_columns_to_push_down);
+    auto both_streams_allowed_nodes = get_input_nodes(equivalent_columns_to_push_down);
+
+    auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes);
+    auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes);
+    auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes);
+
+    std::unordered_set<const Node *> left_stream_allowed_conjunctions(left_stream_push_down_conjunctions.allowed.begin(), left_stream_push_down_conjunctions.allowed.end());
+    std::unordered_set<const Node *> right_stream_allowed_conjunctions(right_stream_push_down_conjunctions.allowed.begin(), right_stream_push_down_conjunctions.allowed.end());
+
+    for (const auto * node : both_streams_push_down_conjunctions.allowed)
+    {
+        left_stream_allowed_conjunctions.insert(node);
+        right_stream_allowed_conjunctions.insert(node);
+    }
+
+    auto left_stream_filter_to_push_down = createActionsForConjunction(NodeRawConstPtrs(left_stream_allowed_conjunctions.begin(), left_stream_allowed_conjunctions.end()),
+        left_stream_all_inputs);
+    auto right_stream_filter_to_push_down = createActionsForConjunction(NodeRawConstPtrs(right_stream_allowed_conjunctions.begin(), right_stream_allowed_conjunctions.end()),
+        right_stream_all_inputs);
+
+    auto replace_equivalent_columns_in_filter = [](const ActionsDAGPtr & filter, const std::unordered_map<std::string, ColumnWithTypeAndName> & columns_to_replace)
+    {
+        auto updated_filter = ActionsDAG::buildFilterActionsDAG({filter->getOutputs()[0]}, columns_to_replace);
+        std::unordered_set<std::string> updated_filter_inputs_names;
+
+        for (auto & input : updated_filter->getInputs())
+            updated_filter_inputs_names.insert(input->result_name);
+
+        for (auto & input : filter->getInputs())
+        {
+            if (updated_filter_inputs_names.contains(input->result_name))
+                continue;
+
+            auto it = columns_to_replace.find(input->result_name);
+            if (it != columns_to_replace.end())
+            {
+                updated_filter->addInput(it->second);
+                continue;
+            }
+
+            updated_filter->addInput({input->column, input->result_type, input->result_name});
+        }
+
+        for (auto & input : updated_filter->getInputs())
+            updated_filter->addOrReplaceInOutputs(*input);
+
+        return updated_filter;
+    };
+
+    if (left_stream_filter_to_push_down)
+        left_stream_filter_to_push_down = replace_equivalent_columns_in_filter(left_stream_filter_to_push_down, equivalent_right_stream_column_to_left_stream_column);
+
+    if (right_stream_filter_to_push_down)
+        right_stream_filter_to_push_down = replace_equivalent_columns_in_filter(right_stream_filter_to_push_down, equivalent_left_stream_column_to_right_stream_column);
+
+    std::unordered_set<const Node *> rejected_conjunctions_set;
+    rejected_conjunctions_set.insert(left_stream_push_down_conjunctions.rejected.begin(), left_stream_push_down_conjunctions.rejected.end());
+    rejected_conjunctions_set.insert(right_stream_push_down_conjunctions.rejected.begin(), right_stream_push_down_conjunctions.rejected.end());
+    rejected_conjunctions_set.insert(both_streams_push_down_conjunctions.rejected.begin(), both_streams_push_down_conjunctions.rejected.end());
+
+    for (auto & left_stream_allowed_conjunction : left_stream_allowed_conjunctions)
+        rejected_conjunctions_set.erase(left_stream_allowed_conjunction);
+
+    for (auto & right_stream_allowed_conjunction : right_stream_allowed_conjunctions)
+        rejected_conjunctions_set.erase(right_stream_allowed_conjunction);
+
+    NodeRawConstPtrs rejected_conjunctions(rejected_conjunctions_set.begin(), rejected_conjunctions_set.end());
+
+    bool left_stream_filter_removes_filter = can_remove_filter;
+    bool right_stream_filter_removes_filter = can_remove_filter;
+
+    if (left_stream_filter_to_push_down && !can_remove_filter)
+        left_stream_filter_removes_filter = left_stream_filter_to_push_down->getOutputs()[0]->result_name != filter_name;
+
+    if (right_stream_filter_to_push_down && !can_remove_filter)
+        right_stream_filter_removes_filter = right_stream_filter_to_push_down->getOutputs()[0]->result_name != filter_name;
+
+    ActionsDAG::ActionsForJOINFilterPushDown result
+    {
+        .left_stream_filter_to_push_down = left_stream_filter_to_push_down ? left_stream_filter_to_push_down : nullptr,
+        .left_stream_filter_removes_filter = left_stream_filter_removes_filter,
+        .right_stream_filter_to_push_down = right_stream_filter_to_push_down ? right_stream_filter_to_push_down : nullptr,
+        .right_stream_filter_removes_filter = right_stream_filter_removes_filter
+    };
+
+    if (!result.left_stream_filter_to_push_down && !result.right_stream_filter_to_push_down)
+        return result;
+
+    /// Now, when actions are created, update the current DAG.
+    removeUnusedConjunctions(std::move(rejected_conjunctions), predicate, can_remove_filter);
+
+    return result;
+}
+
+void ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool can_remove_filter)
+{
+    if (rejected_conjunctions.empty())
     {
         /// The whole predicate was split.
         if (can_remove_filter)
@@ -2362,7 +2515,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     {
         /// Predicate is conjunction, where both allowed and rejected sets are not empty.
 
-        NodeRawConstPtrs new_children = std::move(conjunction.rejected);
+        NodeRawConstPtrs new_children = std::move(rejected_conjunctions);
 
         if (new_children.size() == 1 && new_children.front()->result_type->equals(*predicate->result_type))
         {
@@ -2409,7 +2562,6 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     }
 
     removeUnusedActions(used_inputs);
-    return actions;
 }
 
 static bool isColumnSortingPreserved(const ActionsDAG::Node * start_node, const String & sorted_column)
@@ -2554,10 +2706,16 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
 
         const ActionsDAG::Node * result_node = nullptr;
 
+        auto result_input_node_it = result_inputs.find(node->result_name);
+        if (result_input_node_it != result_inputs.end())
+            result_node = result_input_node_it->second;
+
         auto input_node_it = node_name_to_input_node_column.find(node->result_name);
         if (input_node_it != node_name_to_input_node_column.end())
-        {
             result_node = &result_dag->addInput(input_node_it->second);
+
+        if (result_node)
+        {
             node_to_result_node.emplace(node, result_node);
             nodes_to_process.pop_back();
             continue;
