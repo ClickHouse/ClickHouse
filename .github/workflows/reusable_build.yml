@@ -43,7 +43,7 @@ jobs:
     runs-on: [self-hosted, '${{inputs.runner_type}}']
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: ClickHouse/checkout@submodules-retries
         with:
           clear-repository: true
           ref: ${{ fromJson(inputs.data).git_ref }}
