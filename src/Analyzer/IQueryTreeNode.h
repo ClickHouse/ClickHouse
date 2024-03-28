@@ -114,7 +114,7 @@ public:
       * Alias of query tree node is part of query tree hash.
       * Original AST is not part of query tree hash.
       */
-    Hash getTreeHash() const;
+    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true }) const;
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
