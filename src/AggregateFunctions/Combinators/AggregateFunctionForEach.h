@@ -110,6 +110,13 @@ private:
 
             state.array_of_aggregate_datas = new_state;
             state.dynamic_array_size = new_size;
+
+            // Since destroyImpl cleans up state.array_of_aggregate_datas. we should to clean up old_states after
+            // state.array_of_aggregate_datas set to new_state to avoid double free problem.
+            for (i = 0; i < old_size; ++i)
+            {
+                nested_func->destroy(&old_state[i * nested_size_of_data]);
+            }
         }
 
         return state;
