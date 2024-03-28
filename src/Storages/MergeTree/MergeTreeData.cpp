@@ -516,7 +516,7 @@ bool MergeTreeData::supportsFinal() const
 {
     return merging_params.mode == MergingParams::Collapsing
         || merging_params.mode == MergingParams::Summing
-        || merging_params.mode == MergingParams::Aggregating
+        || merging_params.mode == MergingParams::StatelessAggregating || merging_params.mode == MergingParams::Aggregating
         || merging_params.mode == MergingParams::Replacing
         || merging_params.mode == MergingParams::Graphite
         || merging_params.mode == MergingParams::VersionedCollapsing;
@@ -886,6 +886,9 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
     if (!columns_to_sum.empty() && mode != MergingParams::Summing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "List of columns to sum for MergeTree cannot be specified in all modes except Summing.");
 
+    if (!columns_to_aggregate.empty() && mode != MergingParams::StatelessAggregating)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "List of columns to aggregate for MergeTree cannot be specified in all modes except StatelessAggregating.");
+
     /// Check that if the sign column is needed, it exists and is of type Int8.
     auto check_sign_column = [this, & columns](bool is_optional, const std::string & storage)
     {
@@ -1011,6 +1014,37 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
         }
     }
 
+    if (mode == MergingParams::StatelessAggregating)
+    {
+        /// If columns_to_aggregate are set, then check that such columns exist.
+        for (const auto & column_to_aggregate : columns_to_aggregate)
+        {
+            auto check_column_to_aggregate_exists = [& column_to_aggregate](const NameAndTypePair & name_and_type)
+            {
+                return column_to_aggregate == Nested::extractTableName(name_and_type.name);
+            };
+            if (columns.end() == std::find_if(columns.begin(), columns.end(), check_column_to_aggregate_exists))
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                                "Column {} listed in columns to aggregate does not exist in table declaration.",
+                                column_to_aggregate);
+        }
+
+        /// Check that summing columns are not in partition key.
+        if (metadata.isPartitionKeyDefined())
+        {
+            auto partition_key_columns = metadata.getPartitionKey().column_names;
+
+            Names names_intersection;
+            std::set_intersection(columns_to_aggregate.begin(), columns_to_aggregate.end(),
+                                  partition_key_columns.begin(), partition_key_columns.end(),
+                                  std::back_inserter(names_intersection));
+
+            if (!names_intersection.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Columns: {} listed both in columns to aggregate and in partition key. "
+                                                           "That is not allowed.", boost::algorithm::join(names_intersection, ", "));
+        }
+    }
+
     if (mode == MergingParams::Replacing)
     {
         check_is_deleted_column(true, "ReplacingMergeTree");
@@ -1109,13 +1143,14 @@ String MergeTreeData::MergingParams::getModeName() const
 {
     switch (mode)
     {
-        case Ordinary:      return "";
-        case Collapsing:    return "Collapsing";
-        case Summing:       return "Summing";
-        case Aggregating:   return "Aggregating";
-        case Replacing:     return "Replacing";
-        case Graphite:      return "Graphite";
-        case VersionedCollapsing: return "VersionedCollapsing";
+        case Ordinary:                return "";
+        case Collapsing:              return "Collapsing";
+        case Summing:                 return "Summing";
+        case StatelessAggregating:    return "StatelessAggregating";
+        case Aggregating:             return "Aggregating";
+        case Replacing:               return "Replacing";
+        case Graphite:                return "Graphite";
+        case VersionedCollapsing:     return "VersionedCollapsing";
     }
 
     UNREACHABLE();

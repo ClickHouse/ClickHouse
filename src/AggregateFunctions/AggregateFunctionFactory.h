@@ -47,7 +47,7 @@ struct AggregateFunctionWithProperties
     }
 };
 
-
+class StatelessAggregatingSortedAlgorithm;
 /** Creates an aggregate function by name.
   */
 class AggregateFunctionFactory final : private boost::noncopyable, public IFactoryWithAliases<AggregateFunctionWithProperties>
@@ -80,6 +80,7 @@ public:
     std::optional<AggregateFunctionProperties> tryGetProperties(String name, NullsAction action) const;
 
     bool isAggregateFunctionName(const String & name) const;
+    friend class StatelessAggregatingSortedAlgorithm;
 
 private:
     AggregateFunctionPtr getImpl(

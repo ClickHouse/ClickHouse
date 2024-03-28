@@ -2391,6 +2391,8 @@ startsWithUTF
 startswith
 statbox
 stateful
+statelessAggregatingMergeTree
+statelessaggregatingmergetree
 stddev
 stddevPop
 stddevSamp

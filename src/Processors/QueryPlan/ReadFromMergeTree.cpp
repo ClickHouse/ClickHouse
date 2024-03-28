@@ -8,12 +8,15 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/GraphiteRollupSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Merges/ReplacingSortedTransform.h>
+#include <Processors/Merges/StatelessAggregatingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
@@ -26,8 +29,8 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
 #include <Storages/MergeTree/MergeTreeIndexUSearch.h>
-#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
@@ -41,8 +44,6 @@
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <algorithm>
@@ -1118,6 +1119,11 @@ static void addMergingFinal(
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
                             sort_description, merging_params.columns_to_sum, partition_key_columns, max_block_size_rows, /*max_block_size_bytes=*/0);
+
+            case MergeTreeData::MergingParams::StatelessAggregating:
+                return std::make_shared<StatelessAggregatingSortedTransform>(header, num_outputs,
+                            sort_description, merging_params.columns_to_aggregate, merging_params.simple_aggregate_functions,
+                            partition_key_columns, max_block_size_rows, /*max_block_size_bytes=*/0);
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,

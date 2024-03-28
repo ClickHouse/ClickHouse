@@ -341,6 +341,7 @@ public:
             Replacing           = 5,
             Graphite            = 6,
             VersionedCollapsing = 7,
+            StatelessAggregating = 8,
         };
 
         Mode mode;
@@ -353,6 +354,16 @@ public:
 
         /// For Summing mode. If empty - columns_to_sum is determined automatically.
         Names columns_to_sum;
+
+        /*
+         * This may look like a redundancy. Indeed, Summing can be considered a case of StatelessAggregating.
+         * However, StatelessAggregating is a new feature.
+         * It is a good idea to completely decouple it from old ones (at least for now) to avoid breaking anything.
+         * Later we will probably remove columns_to_sum and use columns_to_aggregate in SummingMT instead.
+         */
+        /// For StatelessAggregating mode. If empty - columns_to_aggregate is determined automatically.
+        Names columns_to_aggregate;
+        Strings simple_aggregate_functions;
 
         /// For Replacing and VersionedCollapsing mode. Can be empty for Replacing.
         String version_column;

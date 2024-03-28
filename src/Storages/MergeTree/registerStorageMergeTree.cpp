@@ -125,7 +125,7 @@ static void verifySortingKey(const KeyDescription & sorting_key)
 
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
-    /** [Replicated][|Summing|VersionedCollapsing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
+    /** [Replicated][|Summing|VersionedCollapsing|Collapsing|Aggregating|StatelessAggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
         * The argument for the engine should be:
         *  - (for Replicated) The path to the table in ZooKeeper
         *  - (for Replicated) Replica name in ZooKeeper
@@ -175,6 +175,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.mode = MergeTreeData::MergingParams::Collapsing;
     else if (name_part == "Summing")
         merging_params.mode = MergeTreeData::MergingParams::Summing;
+    else if (name_part == "StatelessAggregating")
+        merging_params.mode = MergeTreeData::MergingParams::StatelessAggregating;
     else if (name_part == "Aggregating")
         merging_params.mode = MergeTreeData::MergingParams::Aggregating;
     else if (name_part == "Replacing")
@@ -236,6 +238,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             break;
         case MergeTreeData::MergingParams::Summing:
             add_optional_param("list of columns to sum");
+            break;
+        case MergeTreeData::MergingParams::StatelessAggregating:
+            add_mandatory_param("name of one simple aggregate function or tuple of several names");
+            add_optional_param("list of columns to aggregate");
             break;
         case MergeTreeData::MergingParams::Replacing:
             add_optional_param("is_deleted column");
@@ -474,6 +480,24 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
             merging_params.columns_to_sum = extractColumnNames(engine_args[arg_cnt - 1]);
+            --arg_cnt;
+        }
+    }
+    else if (merging_params.mode == MergeTreeData::MergingParams::StatelessAggregating)
+    {
+        /// If the last element is not index_granularity or replica_name (a literal), then this is a list of columns to aggregate.
+        if (arg_cnt - arg_num == 2 && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        {
+            merging_params.columns_to_aggregate = extractColumnNames(engine_args[arg_cnt - 1]);
+            --arg_cnt;
+        }
+        else
+            merging_params.columns_to_aggregate = {};
+
+        /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
+        if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        {
+            merging_params.simple_aggregate_functions = extractColumnNames(engine_args[arg_cnt - 1]);
             --arg_cnt;
         }
     }
@@ -779,6 +803,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplacingMergeTree", create, features);
     factory.registerStorage("AggregatingMergeTree", create, features);
     factory.registerStorage("SummingMergeTree", create, features);
+    factory.registerStorage("StatelessAggregatingMergeTree", create, features);
     factory.registerStorage("GraphiteMergeTree", create, features);
     factory.registerStorage("VersionedCollapsingMergeTree", create, features);
 
@@ -786,6 +811,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
 
+    // TODO: fix ReplicatedStatelessAggregatingMergeTree
     factory.registerStorage("ReplicatedMergeTree", create, features);
     factory.registerStorage("ReplicatedCollapsingMergeTree", create, features);
     factory.registerStorage("ReplicatedReplacingMergeTree", create, features);
