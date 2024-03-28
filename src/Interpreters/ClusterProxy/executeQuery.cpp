@@ -249,7 +249,6 @@ void executeQuery(
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
-                    sharding_key_expr->getSampleBlock().getByPosition(0).type,
                     sharding_key_column_name,
                     shard_info,
                     not_optimized_cluster->getSlotToShard(),
@@ -286,7 +285,6 @@ void executeQuery(
             {
                 OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                     sharding_key_expr,
-                    sharding_key_expr->getSampleBlock().getByPosition(0).type,
                     sharding_key_column_name,
                     shard_info,
                     not_optimized_cluster->getSlotToShard(),
