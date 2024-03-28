@@ -79,6 +79,16 @@ Engines in the family:
 - [Buffer](../../engines/table-engines/special/buffer.md#buffer)
 - [KeeperMap](../../engines/table-engines/special/keepermap.md)
 
+### Engine summary
+
+The following comparison table is not meant to be exhaustive.
+
+| Features                  | MergeTree          | ReplicatedMergeTree | Log             | Memory          | KeeperMap         | RocksDB          |
+|---------------------------|--------------------|---------------------|-----------------|-----------------|-------------------|------------------|
+| Replication               | Local              | Replicated          | Local           | Local           | Replicated        | Local            |
+| Consistency               | -                  | Eventual            | Eventual        | -               | Strictly          | -                |
+| Use                       | OLTP               | OLTP                | Logs            | OLTP            | key-value         | key-value        |
+
 ## Virtual Columns {#table_engines-virtual_columns}
 
 Virtual column is an integral table engine attribute that is defined in the engine source code.
