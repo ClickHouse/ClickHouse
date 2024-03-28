@@ -592,7 +592,9 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     {
         bool need_recalculate =
             materialized_projections.contains(projection.name)
-            || (!is_full_part_storage && source_part->hasProjection(projection.name));
+            || (!is_full_part_storage
+                && source_part->hasProjection(projection.name)
+                && !source_part->hasBrokenProjection(projection.name));
 
         if (need_recalculate)
             projections_to_recalc.insert(&projection);
@@ -936,7 +938,8 @@ void finalizeMutatedPart(
     new_data_part->modification_time = time(nullptr);
 
     /// Load rest projections which are hardlinked
-    new_data_part->loadProjections(false, false, true /* if_not_loaded */);
+    bool noop;
+    new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
 
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
@@ -1534,7 +1537,9 @@ private:
 
             bool need_recalculate =
                 ctx->materialized_projections.contains(projection.name)
-                || (!is_full_part_storage && ctx->source_part->hasProjection(projection.name));
+                || (!is_full_part_storage
+                    && ctx->source_part->hasProjection(projection.name)
+                    && !ctx->source_part->hasBrokenProjection(projection.name));
 
             if (need_recalculate)
             {
@@ -1671,8 +1676,9 @@ private:
 
     void finalize()
     {
+        bool noop;
         ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
-        ctx->new_data_part->loadProjections(false, false, true /* if_not_loaded */);
+        ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
@@ -2138,7 +2144,7 @@ bool MutateTask::prepare()
         scope_guard lock;
 
         {
-            std::tie(part, lock) = ctx->data->cloneAndLoadDataPartOnSameDisk(
+            std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
                 ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings());
             part->getDataPartStorage().beginTransaction();
             ctx->temporary_directory_lock = std::move(lock);
