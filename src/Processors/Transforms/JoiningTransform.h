@@ -123,6 +123,7 @@ public:
 
 private:
     JoinPtr join;
+    bool to_execute = false;
 };
 
 

@@ -342,6 +342,11 @@ IProcessor::Status RerangeRightJoinSideTransform::prepare()
         input.setNeeded();
         return Status::Ready;
     }
+    else if (!to_execute)
+    {
+        to_execute = true;
+        return Status::Ready;
+    }
     output.finish();
     for (auto & in : inputs)
         in.close();
@@ -350,8 +355,7 @@ IProcessor::Status RerangeRightJoinSideTransform::prepare()
 
 void RerangeRightJoinSideTransform::work()
 {
-    auto input = inputs.front();
-    if (input.isFinished())
+    if (to_execute)
     {
         join->tryRerangeRightTableData();
     }
