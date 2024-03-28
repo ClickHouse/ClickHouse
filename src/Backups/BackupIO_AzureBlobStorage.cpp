@@ -50,44 +50,20 @@ BackupReaderAzureBlobStorage::~BackupReaderAzureBlobStorage() = default;
 
 bool BackupReaderAzureBlobStorage::fileExists(const String & file_name)
 {
-    String key;
-    if (startsWith(file_name, "."))
-    {
-        key= configuration.blob_path + file_name;
-    }
-    else
-    {
-        key = file_name;
-    }
+    String key = fs::path(configuration.blob_path) / file_name;
     return object_storage->exists(StoredObject(key));
 }
 
 UInt64 BackupReaderAzureBlobStorage::getFileSize(const String & file_name)
 {
-    String key;
-    if (startsWith(file_name, "."))
-    {
-        key= configuration.blob_path + file_name;
-    }
-    else
-    {
-        key = file_name;
-    }
+    String key = fs::path(configuration.blob_path) / file_name;
     ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
     return object_metadata.size_bytes;
 }
 
 std::unique_ptr<SeekableReadBuffer> BackupReaderAzureBlobStorage::readFile(const String & file_name)
 {
-    String key;
-    if (startsWith(file_name, "."))
-    {
-        key= configuration.blob_path + file_name;
-    }
-    else
-    {
-        key = file_name;
-    }
+    String key = fs::path(configuration.blob_path) / file_name;
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         client, key, read_settings, settings->max_single_read_retries,
         settings->max_single_download_retries);
@@ -215,29 +191,13 @@ BackupWriterAzureBlobStorage::~BackupWriterAzureBlobStorage() = default;
 
 bool BackupWriterAzureBlobStorage::fileExists(const String & file_name)
 {
-    String key;
-    if (startsWith(file_name, "."))
-    {
-        key= configuration.blob_path + file_name;
-    }
-    else
-    {
-        key = file_name;
-    }
+    String key = fs::path(configuration.blob_path) / file_name;
     return object_storage->exists(StoredObject(key));
 }
 
 UInt64 BackupWriterAzureBlobStorage::getFileSize(const String & file_name)
 {
-    String key;
-    if (startsWith(file_name, "."))
-    {
-        key= configuration.blob_path + file_name;
-    }
-    else
-    {
-        key = file_name;
-    }
+    String key = fs::path(configuration.blob_path) / file_name;
     RelativePathsWithMetadata children;
     object_storage->listObjects(key,children,/*max_keys*/0);
     if (children.empty())
@@ -247,15 +207,7 @@ UInt64 BackupWriterAzureBlobStorage::getFileSize(const String & file_name)
 
 std::unique_ptr<ReadBuffer> BackupWriterAzureBlobStorage::readFile(const String & file_name, size_t /*expected_file_size*/)
 {
-    String key;
-    if (startsWith(file_name, "."))
-    {
-        key= configuration.blob_path + file_name;
-    }
-    else
-    {
-        key = file_name;
-    }
+    String key = fs::path(configuration.blob_path) / file_name;
 
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         client, key, read_settings, settings->max_single_read_retries,
@@ -264,15 +216,7 @@ std::unique_ptr<ReadBuffer> BackupWriterAzureBlobStorage::readFile(const String 
 
 std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFile(const String & file_name)
 {
-    String key;
-    if (startsWith(file_name, "."))
-    {
-        key= configuration.blob_path + file_name;
-    }
-    else
-    {
-        key = file_name;
-    }
+    String key = fs::path(configuration.blob_path) / file_name;
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client,
         key,
@@ -283,15 +227,7 @@ std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFile(const Strin
 
 void BackupWriterAzureBlobStorage::removeFile(const String & file_name)
 {
-    String key;
-    if (startsWith(file_name, "."))
-    {
-        key= configuration.blob_path + file_name;
-    }
-    else
-    {
-        key = file_name;
-    }
+    String key = fs::path(configuration.blob_path) / file_name;
     StoredObject object(key);
     object_storage->removeObjectIfExists(object);
 }
