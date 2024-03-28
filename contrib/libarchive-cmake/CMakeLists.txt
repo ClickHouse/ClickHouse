@@ -135,10 +135,18 @@ set(SRCS
 )
 
 add_library(_libarchive ${SRCS})
-target_include_directories(_libarchive PUBLIC 
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    "${LIBRARY_DIR}/libarchive"
-)
+if (OS_SUNOS)
+	target_include_directories(_libarchive PUBLIC
+	    ${CMAKE_CURRENT_SOURCE_DIR}/illumos
+	    "${LIBRARY_DIR}/libarchive"
+	    "/usr/include/libxml2"
+	)
+else()
+	target_include_directories(_libarchive PUBLIC
+	    ${CMAKE_CURRENT_SOURCE_DIR}
+	    "${LIBRARY_DIR}/libarchive"
+	)
+endif()
 
 target_compile_definitions(_libarchive PUBLIC
     HAVE_CONFIG_H
