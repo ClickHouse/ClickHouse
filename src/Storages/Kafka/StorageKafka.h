@@ -42,6 +42,8 @@ public:
         std::unique_ptr<KafkaSettings> kafka_settings_,
         const String & collection_name_);
 
+    ~StorageKafka() override;
+
     std::string getName() const override { return "Kafka"; }
 
     bool noPushingToViews() const override { return true; }

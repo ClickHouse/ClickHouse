@@ -87,7 +87,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
             cache_key,
             settings.remote_fs_cache,
             FileCache::getCommonUser(),
-            [=, this]() { return read_buffer_creator(/* restricted_seek */true, object_path); },
+            [=, this]() { return read_buffer_creator(/* restricted_seek */true, object); },
             settings,
             query_id,
             object.bytes_size,
@@ -102,14 +102,14 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     /// former doesn't support seeks.
     if (with_page_cache && !buf)
     {
-        auto inner = read_buffer_creator(/* restricted_seek */false, object_path);
+        auto inner = read_buffer_creator(/* restricted_seek */false, object);
         auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_path };
         buf = std::make_unique<CachedInMemoryReadBufferFromFile>(
             cache_key, settings.page_cache, std::move(inner), settings);
     }
 
     if (!buf)
-        buf = read_buffer_creator(/* restricted_seek */true, object_path);
+        buf = read_buffer_creator(/* restricted_seek */true, object);
 
     if (read_until_position > start_offset && read_until_position < start_offset + object.bytes_size)
         buf->setReadUntilPosition(read_until_position - start_offset);
