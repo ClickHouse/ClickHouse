@@ -303,7 +303,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseS3::getTablesForBackup(const 
  * Returns an empty iterator because the database does not have its own tables
  * But only caches them for quick access
  */
-DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const FilterByNameFunction &) const
+DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }

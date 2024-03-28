@@ -1324,7 +1324,6 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
 void DatabaseReplicated::stopReplication()
 {
-    stopLoading();
     if (ddl_worker)
         ddl_worker->shutdown();
 }

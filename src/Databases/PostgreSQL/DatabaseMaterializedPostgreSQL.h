@@ -45,7 +45,7 @@ public:
     void stopLoading() override;
 
     DatabaseTablesIteratorPtr
-    getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
+    getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 

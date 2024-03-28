@@ -229,7 +229,18 @@ public:
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}) const = 0; /// NOLINT
+    /// Wait for all tables to be loaded and started up. If `skip_not_loaded` is true, then not yet loaded or not yet started up (at the moment of iterator creation) tables are excluded.
+    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const = 0; /// NOLINT
+
+    /// Returns list of table names.
+    virtual Strings getAllTableNames(ContextPtr context) const
+    {
+        // NOTE: This default implementation wait for all tables to be loaded and started up. It should be reimplemented for databases that support async loading.
+        Strings result;
+        for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
+            result.emplace_back(table_it->name());
+        return result;
+    }
 
     /// Is the database empty.
     virtual bool empty() const = 0;
