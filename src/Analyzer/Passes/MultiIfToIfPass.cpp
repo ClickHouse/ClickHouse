@@ -38,7 +38,7 @@ public:
         if (!if_function_value->getResultType()->equals(*function_node->getResultType()))
         {
             /** We faced some corner case, when result type of `if` and `multiIf` are different.
-              * For example, currently `if(NULL`, a, b)` returns type of `a` column,
+              * For example, currently `if(NULL, a, b)` returns type of `a` column,
               * but multiIf(NULL, a, b) returns supertypetype of `a` and `b`.
               */
             return;

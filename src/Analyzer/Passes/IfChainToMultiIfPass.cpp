@@ -65,6 +65,15 @@ public:
         auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
         multi_if_function->getArguments().getNodes() = std::move(multi_if_arguments);
         multi_if_function->resolveAsFunction(multi_if_function_ptr->build(multi_if_function->getArgumentColumns()));
+
+        if (!function_node->getResultType()->equals(*multi_if_function->getResultType()))
+        {
+            /** We faced some corner case, when result type of `if` and `multiIf` are different.
+              * For example, currently `if(NULL, a, b)` returns type of `a` column,
+              * but multiIf(NULL, a, b) returns supertypetype of `a` and `b`.
+              */
+            return;
+        }
         node = std::move(multi_if_function);
     }
 
