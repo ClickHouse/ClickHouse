@@ -431,14 +431,12 @@ void Runner::createConnections()
 std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx)
 {
     Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{connection_info.host}, static_cast<UInt8>(connection_info_idx), connection_info.secure};
-    std::vector<Coordination::ZooKeeper::Node> nodes;
-    nodes.push_back(node);
     zkutil::ZooKeeperArgs args;
     args.session_timeout_ms = connection_info.session_timeout_ms;
     args.connection_timeout_ms = connection_info.connection_timeout_ms;
     args.operation_timeout_ms = connection_info.operation_timeout_ms;
     args.use_compression = connection_info.use_compression;
-    return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
+    return std::make_shared<Coordination::ZooKeeper>(node, args, nullptr);
 }
 
 std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::refreshConnections()

@@ -1,15 +1,23 @@
 #include "ZooKeeper.h"
 #include "Coordination/KeeperConstants.h"
 #include "Coordination/KeeperFeatureFlags.h"
+#include <Core/SettingsEnums.h>
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
 #include "TestKeeper.h"
+#include <base/types.h>
 
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <ranges>
+#include <string_view>
 #include <vector>
 
+#include "Common/ZooKeeper/ZooKeeperLoadBalancer.h"
+#include "Common/logger_useful.h"
+#include <Common/Priority.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/randomSeed.h>
@@ -22,8 +30,10 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 
+#include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
+#include <Poco/String.h>
 
 
 namespace fs = std::filesystem;
@@ -58,64 +68,14 @@ static void check(Coordination::Error code, const std::string & path)
 
 
 void ZooKeeper::init(ZooKeeperArgs args_)
-
 {
     args = std::move(args_);
     log = getLogger("ZooKeeper");
 
     if (args.implementation == "zookeeper")
     {
-        if (args.hosts.empty())
-            throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No hosts passed to ZooKeeper constructor.");
-
-        Coordination::ZooKeeper::Nodes nodes;
-        nodes.reserve(args.hosts.size());
-
-        /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        std::vector<ShuffleHost> shuffled_hosts = shuffleHosts();
-
-        bool dns_error = false;
-        for (auto & host : shuffled_hosts)
-        {
-            auto & host_string = host.host;
-            try
-            {
-                const bool secure = startsWith(host_string, "secure://");
-
-                if (secure)
-                    host_string.erase(0, strlen("secure://"));
-
-                /// We want to resolve all hosts without DNS cache for keeper connection.
-                Coordination::DNSResolver::instance().removeHostFromCache(host_string);
-
-                const Poco::Net::SocketAddress host_socket_addr{host_string};
-                LOG_TEST(log, "Adding ZooKeeper host {} ({})", host_string, host_socket_addr.toString());
-                nodes.emplace_back(Coordination::ZooKeeper::Node{host_socket_addr, host.original_index, secure});
-            }
-            catch (const Poco::Net::HostNotFoundException & e)
-            {
-                /// Most likely it's misconfiguration and wrong hostname was specified
-                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
-            }
-            catch (const Poco::Net::DNSException & e)
-            {
-                /// Most likely DNS is not available now
-                dns_error = true;
-                LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", host_string, e.displayText());
-            }
-        }
-
-        if (nodes.empty())
-        {
-            /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
-            if (dns_error)
-                throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot resolve any of provided ZooKeeper hosts due to DNS error");
-            else
-                throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
-        }
-
-        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
-
+        auto & zk_load_balancer = Coordination::ZooKeeperLoadBalancer::instance(config_name);
+        impl = zk_load_balancer.createClient();
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
@@ -153,44 +113,29 @@ void ZooKeeper::init(ZooKeeperArgs args_)
     }
 }
 
-
-ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
-    : zk_log(std::move(zk_log_))
+ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::string config_name_, bool reload_load_balancer_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+    : config_name(config_name_), zk_log(std::move(zk_log_))
 {
+    if (reload_load_balancer_ && args_.implementation == "zookeeper")
+        Coordination::ZooKeeperLoadBalancer::instance(config_name).init(args_, zk_log);
     init(args_);
 }
 
 
-ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
-    : zk_log(std::move(zk_log_))
+ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+    :  config_name(config_name_), zk_log(std::move(zk_log_))
 {
-    init(ZooKeeperArgs(config, config_name));
-}
-
-std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
-{
-    std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
-    std::vector<ShuffleHost> shuffle_hosts;
-    for (size_t i = 0; i < args.hosts.size(); ++i)
-    {
-        ShuffleHost shuffle_host;
-        shuffle_host.host = args.hosts[i];
-        shuffle_host.original_index = static_cast<UInt8>(i);
-        if (get_priority)
-            shuffle_host.priority = get_priority(i);
-        shuffle_host.randomize();
-        shuffle_hosts.emplace_back(shuffle_host);
-    }
-
-    ::sort(shuffle_hosts.begin(), shuffle_hosts.end(), ShuffleHost::compare);
-
-    return shuffle_hosts;
+    auto zk_args = ZooKeeperArgs(config, config_name);
+    // When we invoke this constructor, it implies the configuration has changed, therefore we should reload configuration to load balancer as well.
+    if (zk_args.implementation == "zookeeper")
+        Coordination::ZooKeeperLoadBalancer::instance(config_name).init(zk_args, zk_log);
+    init(zk_args);
 }
 
 
-bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const
+bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name_) const
 {
-    ZooKeeperArgs new_args(config, config_name);
+    ZooKeeperArgs new_args(config, config_name_);
 
     // skip reload testkeeper cause it's for test and data in memory
     if (new_args.implementation == args.implementation && args.implementation == "testkeeper")
@@ -969,7 +914,7 @@ ZooKeeperPtr ZooKeeper::create(const Poco::Util::AbstractConfiguration & config,
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(args, zk_log));
+    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(args, config_name, false, zk_log));
     res->initSession();
     return res;
 }
@@ -1373,6 +1318,8 @@ void ZooKeeper::finalize(const String & reason)
 void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 {
     zk_log = std::move(zk_log_);
+    if (args.implementation == "zookeeper")
+        Coordination::ZooKeeperLoadBalancer::instance(config_name).setZooKeeperLog(zk_log);
     if (auto * zk = dynamic_cast<Coordination::ZooKeeper *>(impl.get()))
         zk->setZooKeeperLog(zk_log);
 }

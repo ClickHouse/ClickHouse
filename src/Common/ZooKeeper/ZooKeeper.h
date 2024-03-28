@@ -12,10 +12,10 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperLoadBalancer.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
-#include <Common/thread_local_rng.h>
 #include <Coordination/KeeperFeatureFlags.h>
 #include <unistd.h>
 #include <random>
@@ -49,24 +49,6 @@ namespace zkutil
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
-struct ShuffleHost
-{
-    String host;
-    UInt8 original_index = 0;
-    Priority priority;
-    UInt64 random = 0;
-
-    void randomize()
-    {
-        random = thread_local_rng();
-    }
-
-    static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
-    {
-        return std::forward_as_tuple(lhs.priority, lhs.random)
-               < std::forward_as_tuple(rhs.priority, rhs.random);
-    }
-};
 
 struct RemoveException
 {
@@ -198,7 +180,10 @@ class ZooKeeper
     /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
-    explicit ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+    explicit ZooKeeper(const ZooKeeperArgs & args_,
+        std::string config_name_ = "zookeeper",
+        bool reload_load_balancer_ = true,
+        std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /** Config of the form:
         <zookeeper>
@@ -230,8 +215,6 @@ class ZooKeeper
 public:
         using Ptr = std::shared_ptr<ZooKeeper>;
         using ErrorsList = std::initializer_list<Coordination::Error>;
-
-    std::vector<ShuffleHost> shuffleHosts() const;
 
     static Ptr create(const Poco::Util::AbstractConfiguration & config,
                       const std::string & config_name,
@@ -678,6 +661,7 @@ private:
 
     std::unique_ptr<Coordination::IKeeper> impl;
 
+    const std::string config_name;
     ZooKeeperArgs args;
 
     LoggerPtr log = nullptr;

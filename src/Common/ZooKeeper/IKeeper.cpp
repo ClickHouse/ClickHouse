@@ -84,6 +84,18 @@ SimpleFaultInjection::~SimpleFaultInjection() noexcept(false)
         throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (after {})", description);
 }
 
+UInt32 IKeeper::setClientSessionDeadline(UInt32 min_seconds, UInt32 max_seconds)
+{
+    std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
+    {
+        min_seconds,
+        max_seconds,
+    };
+    UInt32 session_lifetime_seconds = fallback_session_lifetime_distribution(thread_local_rng);
+    client_session_deadline = clock::now() + std::chrono::seconds(session_lifetime_seconds);
+    return session_lifetime_seconds;
+}
+
 using namespace DB;
 
 

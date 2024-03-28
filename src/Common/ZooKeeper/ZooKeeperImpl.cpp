@@ -1,3 +1,6 @@
+#include <memory>
+#include <type_traits>
+
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
@@ -21,8 +24,10 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Poco/Net/StreamSocket.h>
 
 #include "Coordination/KeeperConstants.h"
+#include "base/types.h"
 #include "config.h"
 
 #if USE_SSL
@@ -335,9 +340,8 @@ ZooKeeper::~ZooKeeper()
     }
 }
 
-
 ZooKeeper::ZooKeeper(
-    const Nodes & nodes,
+    const Node & node,
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
@@ -374,7 +378,7 @@ ZooKeeper::ZooKeeper(
     try
     {
         use_compression = args.use_compression;
-        connect(nodes, args.connection_timeout_ms * 1000);
+        connect(node, args.connection_timeout_ms * 1000);
     }
     catch (...)
     {
@@ -383,7 +387,7 @@ ZooKeeper::ZooKeeper(
         if (use_compression)
         {
             use_compression = false;
-            connect(nodes, args.connection_timeout_ms * 1000);
+            connect(node, args.connection_timeout_ms * 1000);
         }
         else
             throw;
@@ -399,6 +403,8 @@ ZooKeeper::ZooKeeper(
 
         initFeatureFlags();
         keeper_feature_flags.logFlags(log);
+
+        initAvailabilityZone();
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
     }
@@ -425,125 +431,89 @@ ZooKeeper::ZooKeeper(
 
 
 void ZooKeeper::connect(
-    const Nodes & nodes,
+    const Node & node,
     Poco::Timespan connection_timeout)
 {
-    if (nodes.empty())
-        throw Exception::fromMessage(Error::ZBADARGUMENTS, "No nodes passed to ZooKeeper constructor");
-
     static constexpr size_t num_tries = 3;
     bool connected = false;
 
     WriteBufferFromOwnString fail_reasons;
+
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
-        for (size_t i = 0; i < nodes.size(); ++i)
+        try
         {
-            const auto & node = nodes[i];
+            /// Reset the state of previous attempt.
+            if (node.secure)
+            {
+#if USE_SSL
+                socket = Poco::Net::SecureStreamSocket();
+#else
+                throw Poco::Exception(
+                    "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
+#endif
+            }
+            else
+            {
+                socket = Poco::Net::StreamSocket();
+            }
+
+            socket.connect(node.address, connection_timeout);
+            socket_address = socket.peerAddress();
+
+            socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
+            socket.setSendTimeout(args.operation_timeout_ms * 1000);
+            socket.setNoDelay(true);
+
+            in.emplace(socket);
+            out.emplace(socket);
+            compressed_in.reset();
+            compressed_out.reset();
+
             try
             {
-                /// Reset the state of previous attempt.
-                if (node.secure)
-                {
-#if USE_SSL
-                    socket = Poco::Net::SecureStreamSocket();
-#else
-                    throw Poco::Exception(
-                        "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
-#endif
-                }
-                else
-                {
-                    socket = Poco::Net::StreamSocket();
-                }
+                sendHandshake();
+            }
+            catch (DB::Exception & e)
+            {
+                e.addMessage("while sending handshake to ZooKeeper");
+                throw;
+            }
 
-                socket.connect(node.address, connection_timeout);
-                socket_address = socket.peerAddress();
+            try
+            {
+                receiveHandshake();
+            }
+            catch (DB::Exception & e)
+            {
+                e.addMessage("while receiving handshake from ZooKeeper");
+                throw;
+            }
 
-                socket.setReceiveTimeout(args.operation_timeout_ms * 1000);
-                socket.setSendTimeout(args.operation_timeout_ms * 1000);
-                socket.setNoDelay(true);
+            connected = true;
+            if (use_compression)
+            {
+                compressed_in.emplace(*in);
+                compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4", {}));
+            }
 
-                in.emplace(socket);
-                out.emplace(socket);
-                compressed_in.reset();
-                compressed_out.reset();
-
-                try
-                {
-                    sendHandshake();
-                }
-                catch (DB::Exception & e)
-                {
-                    e.addMessage("while sending handshake to ZooKeeper");
-                    throw;
-                }
-
-                try
-                {
-                    receiveHandshake();
-                }
-                catch (DB::Exception & e)
-                {
-                    e.addMessage("while receiving handshake from ZooKeeper");
-                    throw;
-                }
-
-                connected = true;
-                if (use_compression)
-                {
-                    compressed_in.emplace(*in);
-                    compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4", {}));
-                }
-
-                original_index = static_cast<Int8>(node.original_index);
-
-                if (i != 0)
-                {
-                    std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
-                    {
-                        args.fallback_session_lifetime.min_sec,
-                        args.fallback_session_lifetime.max_sec,
-                    };
-                    UInt32 session_lifetime_seconds = fallback_session_lifetime_distribution(thread_local_rng);
-                    client_session_deadline = clock::now() + std::chrono::seconds(session_lifetime_seconds);
-
-                    LOG_DEBUG(log, "Connected to a suboptimal ZooKeeper host ({}, index {})."
-                    " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
-                    node.address.toString(), i, session_lifetime_seconds);
-                }
-
-                break;
+            original_index = static_cast<Int8>(node.original_index);
+            break;
             }
             catch (...)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address.toString();
             }
-        }
-
-        if (connected)
-            break;
     }
 
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        bool first = true;
-        for (const auto & node : nodes)
-        {
-            if (first)
-                first = false;
-            else
-                message << ", ";
-
-            if (node.secure)
-                message << "secure://";
-
-            message << node.address.toString();
-        }
-
+        if (node.secure)
+            message << "secure://";
+        message << node.address.toString();
         message << fail_reasons.str() << "\n";
-        throw Exception(Error::ZCONNECTIONLOSS, "All connection tries failed while connecting to ZooKeeper. nodes: {}", message.str());
+        throw Exception(Error::ZCONNECTIONLOSS, "All connection tries failed while connecting to ZooKeeper node: {}", message.str());
     }
     else
     {
@@ -1253,6 +1223,43 @@ void ZooKeeper::initFeatureFlags()
     keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
     LOG_TRACE(log, "Detected server's API version: {}", keeper_api_version);
     keeper_feature_flags.fromApiVersion(keeper_api_version);
+}
+
+void ZooKeeper::initAvailabilityZone()
+{
+    const auto try_get = [&]() -> std::optional<String>
+    {
+        auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
+        auto future = promise->get_future();
+        const String az_zk_path = "/keeper/availability_zone";
+
+        auto callback = [promise](const Coordination::GetResponse & response) mutable
+        {
+            promise->set_value(response);
+        };
+
+        get(az_zk_path, std::move(callback), {});
+        if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
+            throw Exception(Error::ZOPERATIONTIMEOUT, "Failed to get {}: timeout", az_zk_path);
+        auto response = future.get();
+        if (response.error == Coordination::Error::ZNONODE)
+        {
+            LOG_TRACE(log, "Failed to get {}", az_zk_path);
+            return std::nullopt;
+        }
+        else if (response.error != Coordination::Error::ZOK)
+        {
+            LOG_TRACE(log, "Failed to get {}: {}", az_zk_path, response.error);
+            return std::nullopt;
+        }
+        return std::move(response.data);
+    };
+    if (auto az = try_get(); az.has_value())
+    {
+        LOG_INFO(log, "Set keeper availability zone: {}", *az);
+        availability_zone = std::move(*az);
+        return;
+    }
 }
 
 

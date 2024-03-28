@@ -109,19 +109,18 @@ public:
         bool secure;
     };
 
-    using Nodes = std::vector<Node>;
-
-    /** Connection to nodes is performed in order. If you want, shuffle them manually.
+    /** Connection to the specified Keeper host.
       * Operation timeout couldn't be greater than session timeout.
       * Operation timeout applies independently for network read, network write, waiting for events and synchronization.
       */
     ZooKeeper(
-        const Nodes & nodes,
+        const Node & node,
         const zkutil::ZooKeeperArgs & args_,
         std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
 
+    void setSendRecvErrorCallback(std::function<void()> callback);
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
@@ -224,6 +223,9 @@ public:
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
+    // // Update session deadline to be in range [min_seconds, max_seconds].
+    // UInt32 setClientSessionDeadline(UInt32 min_seconds, UInt32 max_seconds) override;
+
 private:
     ACLs default_acls;
 
@@ -270,7 +272,6 @@ private:
         clock::time_point time;
     };
 
-    std::optional<clock::time_point> client_session_deadline {};
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
     RequestsQueue requests_queue{1024};
@@ -315,7 +316,7 @@ private:
     LoggerPtr log;
 
     void connect(
-        const Nodes & node,
+        const Node & node,
         Poco::Timespan connection_timeout);
 
     void sendHandshake();
@@ -346,6 +347,7 @@ private:
     void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
 
     void initFeatureFlags();
+    void initAvailabilityZone();
 
     void checkSessionDeadline() const;
 
@@ -353,6 +355,8 @@ private:
     std::shared_ptr<ZooKeeperLog> zk_log;
 
     DB::KeeperFeatureFlags keeper_feature_flags;
+
+    String availability_zone;
 };
 
 }

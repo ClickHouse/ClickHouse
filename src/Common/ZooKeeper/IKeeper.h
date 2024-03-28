@@ -635,12 +635,19 @@ public:
 
     virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
 
+    virtual UInt32 setClientSessionDeadline(UInt32, UInt32);
+    // Used for testing only.
+    bool isClientSessionDeadlineSet() const { return client_session_deadline.has_value(); }
+
     /// A ZooKeeper session can have an optional deadline set on it.
     /// After it has been reached, the session needs to be finalized.
     virtual bool hasReachedDeadline() const = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;
+protected:
+    using clock = std::chrono::steady_clock;
+    std::optional<clock::time_point> client_session_deadline {};
 };
 
 }
