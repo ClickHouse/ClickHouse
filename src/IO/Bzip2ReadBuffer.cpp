@@ -1,7 +1,6 @@
-#include "config.h"
+#include "Bzip2ReadBuffer.h"
 
 #if USE_BZIP2
-#    include <IO/Bzip2ReadBuffer.h>
 #    include <bzlib.h>
 #    include <IO/WithFileName.h>
 

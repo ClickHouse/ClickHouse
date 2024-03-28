@@ -85,6 +85,11 @@ ThreadPool & StaticThreadPool::get()
     return *instance;
 }
 
+ThreadPool * StaticThreadPool::tryGet()
+{
+    return instance.get();
+}
+
 void StaticThreadPool::enableTurboMode()
 {
     if (!instance)
