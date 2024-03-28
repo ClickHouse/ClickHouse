@@ -26,6 +26,7 @@ struct StorageObjectStorageSettings
     bool skip_empty_files;
     size_t list_object_keys_size;
     bool throw_on_zero_files_match;
+    bool ignore_non_existent_file;
 };
 
 struct S3StorageSettings
@@ -40,6 +41,7 @@ struct S3StorageSettings
             .skip_empty_files = settings.s3_skip_empty_files,
             .list_object_keys_size = settings.s3_list_object_keys_size,
             .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
+            .ignore_non_existent_file = settings.s3_ignore_file_doesnt_exist,
         };
     }
 
@@ -62,6 +64,7 @@ struct AzureStorageSettings
             .skip_empty_files = settings.s3_skip_empty_files, /// TODO: add setting for azure
             .list_object_keys_size = settings.azure_list_object_keys_size,
             .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
+            .ignore_non_existent_file = settings.azure_ignore_file_doesnt_exist,
         };
     }
 
@@ -84,6 +87,7 @@ struct HDFSStorageSettings
             .skip_empty_files = settings.s3_skip_empty_files, /// TODO: add setting for hdfs
             .list_object_keys_size = settings.s3_list_object_keys_size, /// TODO: add a setting for hdfs
             .throw_on_zero_files_match = settings.s3_throw_on_zero_files_match,
+            .ignore_non_existent_file = settings.hdfs_ignore_file_doesnt_exist,
         };
     }
 

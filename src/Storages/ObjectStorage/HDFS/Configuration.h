@@ -36,7 +36,7 @@ public:
 private:
     void fromNamedCollection(const NamedCollection &) override;
     void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
-    void setURL(const std::string url_);
+    void setURL(const std::string & url_);
 
     String url;
     String path;

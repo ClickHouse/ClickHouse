@@ -133,7 +133,7 @@ protected:
 class StorageObjectStorageSource::IIterator
 {
 public:
-    IIterator(bool throw_on_zero_files_match_, const std::string & logger_name_);
+    explicit IIterator(const std::string & logger_name_);
 
     virtual ~IIterator() = default;
 
@@ -143,10 +143,6 @@ public:
 
 protected:
     virtual ObjectInfoPtr nextImpl(size_t processor) = 0;
-
-protected:
-    const bool throw_on_zero_files_match;
-    bool first_iteration = true;
     LoggerPtr logger;
 };
 
@@ -190,23 +186,26 @@ public:
 
 private:
     ObjectInfoPtr nextImpl(size_t processor) override;
+    ObjectInfoPtr nextImplUnlocked(size_t processor);
     void createFilterAST(const String & any_key);
 
-    ObjectStoragePtr object_storage;
-    ConfigurationPtr configuration;
-    ActionsDAGPtr filter_dag;
-    NamesAndTypesList virtual_columns;
+    const ObjectStoragePtr object_storage;
+    const ConfigurationPtr configuration;
+    const NamesAndTypesList virtual_columns;
+    const bool throw_on_zero_files_match;
 
     size_t index = 0;
 
     ObjectInfos object_infos;
     ObjectInfos * read_keys;
+    ActionsDAGPtr filter_dag;
     ObjectStorageIteratorPtr object_storage_iterator;
     bool recursive{false};
 
     std::unique_ptr<re2::RE2> matcher;
 
     bool is_finished = false;
+    bool first_iteration = true;
     std::mutex next_mutex;
 
     std::function<void(FileProgress)> file_progress_callback;
@@ -220,7 +219,7 @@ public:
         ConfigurationPtr configuration_,
         const NamesAndTypesList & virtual_columns_,
         ObjectInfos * read_keys_,
-        bool throw_on_zero_files_match_,
+        bool ignore_non_existent_files_,
         std::function<void(FileProgress)> file_progress_callback = {});
 
     ~KeysIterator() override = default;
@@ -236,5 +235,6 @@ private:
     const std::function<void(FileProgress)> file_progress_callback;
     const std::vector<String> keys;
     std::atomic<size_t> index = 0;
+    bool ignore_non_existent_files;
 };
 }

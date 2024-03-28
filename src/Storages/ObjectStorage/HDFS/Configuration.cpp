@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguration & other)
@@ -62,6 +63,13 @@ void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool wit
     std::string url_str;
     url_str = checkAndGetLiteralArgument<String>(args[0], "url");
 
+    const size_t max_args_num = with_structure ? 4 : 3;
+    if (args.size() > max_args_num)
+    {
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Expected not more than {} arguments", max_args_num);
+    }
+
     if (args.size() > 1)
     {
         args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context);
@@ -72,6 +80,7 @@ void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool wit
     {
         if (args.size() > 2)
         {
+            args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context);
             structure = checkAndGetLiteralArgument<String>(args[2], "structure");
         }
         if (args.size() > 3)
@@ -100,13 +109,14 @@ void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & colle
         url_str = collection.get<String>("url");
 
     format = collection.getOrDefault<String>("format", "auto");
-    compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+    compression_method = collection.getOrDefault<String>("compression_method",
+                                                         collection.getOrDefault<String>("compression", "auto"));
     structure = collection.getOrDefault<String>("structure", "auto");
 
     setURL(url_str);
 }
 
-void StorageHDFSConfiguration::setURL(const std::string url_)
+void StorageHDFSConfiguration::setURL(const std::string & url_)
 {
     auto pos = url_.find("//");
     if (pos == std::string::npos)
@@ -117,8 +127,10 @@ void StorageHDFSConfiguration::setURL(const std::string url_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}", url_);
 
     path = url_.substr(pos + 1);
+    if (!path.starts_with('/'))
+        path = '/' + path;
+
     url = url_.substr(0, pos);
-    path = '/' + path;
     paths = {path};
 
     LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using url: {}, path: {}", url, path);

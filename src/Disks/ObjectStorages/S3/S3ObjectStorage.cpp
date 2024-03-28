@@ -432,7 +432,9 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path) const
 {
     auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true, /* for_disk_s3= */ true, /* throw_on_error= */ false);
+    auto object_info = S3::getObjectInfo(
+        *client.get(), uri.bucket, path, {}, settings_ptr->request_settings,
+        /* with_metadata= */ true, /* for_disk_s3= */ true, /* throw_on_error= */ false);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
@@ -448,7 +450,9 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) const
 {
     auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true, /* for_disk_s3= */ true);
+    auto object_info = S3::getObjectInfo(
+        *client.get(), uri.bucket, path, {}, settings_ptr->request_settings,
+        /* with_metadata= */ true, /* for_disk_s3= */ true);
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;

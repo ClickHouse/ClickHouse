@@ -326,7 +326,7 @@ def test_virtual_columns(started_cluster):
     hdfs_api.write_data("/file1", "1\n")
     hdfs_api.write_data("/file2", "2\n")
     hdfs_api.write_data("/file3", "3\n")
-    expected = "1\tfile1\thdfs://hdfs1:9000/file1\n2\tfile2\thdfs://hdfs1:9000/file2\n3\tfile3\thdfs://hdfs1:9000/file3\n"
+    expected = "1\tfile1\t/file1\n2\tfile2\t/file2\n3\tfile3\t/file3\n"
     assert (
         node1.query(
             "select id, _file as file_name, _path as file_path from virtual_cols order by id"
@@ -365,7 +365,7 @@ def test_truncate_table(started_cluster):
     assert hdfs_api.read_data("/tr") == "1\tMark\t72.53\n"
     assert node1.query("select * from test_truncate") == "1\tMark\t72.53\n"
     node1.query("truncate table test_truncate")
-    assert node1.query("select * from test_truncate") == ""
+    assert node1.query("select * from test_truncate settings hdfs_ignore_file_doesnt_exist=1") == ""
     node1.query("drop table test_truncate")
 
 
@@ -488,13 +488,13 @@ def test_hdfsCluster(started_cluster):
     actual = node1.query(
         "select id, _file as file_name, _path as file_path from hdfs('hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id"
     )
-    expected = "1\tfile1\thdfs://hdfs1:9000/test_hdfsCluster/file1\n2\tfile2\thdfs://hdfs1:9000/test_hdfsCluster/file2\n3\tfile3\thdfs://hdfs1:9000/test_hdfsCluster/file3\n"
+    expected = "1\tfile1\t/test_hdfsCluster/file1\n2\tfile2\t/test_hdfsCluster/file2\n3\tfile3\t/test_hdfsCluster/file3\n"
     assert actual == expected
 
     actual = node1.query(
         "select id, _file as file_name, _path as file_path from hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id"
     )
-    expected = "1\tfile1\thdfs://hdfs1:9000/test_hdfsCluster/file1\n2\tfile2\thdfs://hdfs1:9000/test_hdfsCluster/file2\n3\tfile3\thdfs://hdfs1:9000/test_hdfsCluster/file3\n"
+    expected = "1\tfile1\t/test_hdfsCluster/file1\n2\tfile2\t/test_hdfsCluster/file2\n3\tfile3\t/test_hdfsCluster/file3\n"
     assert actual == expected
     fs.delete(dir, recursive=True)
 
@@ -502,7 +502,7 @@ def test_hdfsCluster(started_cluster):
 def test_hdfs_directory_not_exist(started_cluster):
     ddl = "create table HDFSStorageWithNotExistDir (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/data/not_eixst', 'TSV')"
     node1.query(ddl)
-    assert "" == node1.query("select * from HDFSStorageWithNotExistDir")
+    assert "" == node1.query("select * from HDFSStorageWithNotExistDir settings hdfs_ignore_file_doesnt_exist=1")
 
 
 def test_overwrite(started_cluster):
@@ -658,7 +658,7 @@ def test_virtual_columns_2(started_cluster):
     node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
 
     result = node1.query(f"SELECT _path FROM {table_function}")
-    assert result.strip() == "hdfs://hdfs1:9000/parquet_2"
+    assert result.strip() == "/parquet_2"
 
     table_function = (
         f"hdfs('hdfs://hdfs1:9000/parquet_3', 'Parquet', 'a Int32, _path String')"

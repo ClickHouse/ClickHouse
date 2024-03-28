@@ -45,7 +45,7 @@ StorageS3QueueSource::FileIterator::FileIterator(
     std::unique_ptr<GlobIterator> glob_iterator_,
     size_t current_shard_,
     std::atomic<bool> & shutdown_called_)
-    : StorageObjectStorageSource::IIterator(false, "S3QueueIterator")
+    : StorageObjectStorageSource::IIterator("S3QueueIterator")
     , metadata(metadata_)
     , glob_iterator(std::move(glob_iterator_))
     , shutdown_called(shutdown_called_)

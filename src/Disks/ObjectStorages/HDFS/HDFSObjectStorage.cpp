@@ -103,10 +103,10 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 void HDFSObjectStorage::removeObject(const StoredObject & object)
 {
     const auto & path = object.remote_path;
-    const size_t begin_of_path = path.find('/', path.find("//") + 2);
+    // const size_t begin_of_path = path.find('/', path.find("//") + 2);
 
     /// Add path from root to file name
-    int res = hdfsDelete(hdfs_fs.get(), path.substr(begin_of_path).c_str(), 0);
+    int res = hdfsDelete(hdfs_fs.get(), path.c_str(), 0);
     if (res == -1)
         throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
 

@@ -100,14 +100,15 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     {
         /// Iterate through disclosed globs and make a source for each file
         return std::make_shared<GlobIterator>(
-            object_storage, configuration, predicate, virtual_columns, local_context,
-            read_keys, settings.list_object_keys_size, settings.throw_on_zero_files_match, file_progress_callback);
+            object_storage, configuration, predicate, virtual_columns,
+            local_context, read_keys, settings.list_object_keys_size,
+            settings.throw_on_zero_files_match, file_progress_callback);
     }
     else
     {
         return std::make_shared<KeysIterator>(
             object_storage, configuration, virtual_columns, read_keys,
-            settings.throw_on_zero_files_match, file_progress_callback);
+            settings.ignore_non_existent_file, file_progress_callback);
     }
 }
 
@@ -331,9 +332,8 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(const S
     }
 }
 
-StorageObjectStorageSource::IIterator::IIterator(bool throw_on_zero_files_match_, const std::string & logger_name_)
-    : throw_on_zero_files_match(throw_on_zero_files_match_)
-    , logger(getLogger(logger_name_))
+StorageObjectStorageSource::IIterator::IIterator(const std::string & logger_name_)
+    : logger(getLogger(logger_name_))
 {
 }
 
@@ -343,12 +343,7 @@ ObjectInfoPtr StorageObjectStorageSource::IIterator::next(size_t processor)
 
     if (object_info)
     {
-        first_iteration = false;
         LOG_TEST(&Poco::Logger::get("KeysIterator"), "Next key: {}", object_info->relative_path);
-    }
-    else if (first_iteration && throw_on_zero_files_match)
-    {
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can not match any files");
     }
 
     return object_info;
@@ -364,11 +359,12 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     size_t list_object_keys_size,
     bool throw_on_zero_files_match_,
     std::function<void(FileProgress)> file_progress_callback_)
-    : IIterator(throw_on_zero_files_match_, "GlobIterator")
+    : IIterator("GlobIterator")
     , WithContext(context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
+    , throw_on_zero_files_match(throw_on_zero_files_match_)
     , read_keys(read_keys_)
     , file_progress_callback(file_progress_callback_)
 {
@@ -412,10 +408,24 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     }
 }
 
-ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImpl(size_t /* processor */)
+ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImpl(size_t processor)
 {
     std::lock_guard lock(next_mutex);
+    auto object_info = nextImplUnlocked(processor);
+    if (object_info)
+    {
+        if (first_iteration)
+            first_iteration = false;
+    }
+    else if (first_iteration && throw_on_zero_files_match)
+    {
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can not match any files");
+    }
+    return object_info;
+}
 
+ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImplUnlocked(size_t /* processor */)
+{
     bool current_batch_processed = object_infos.empty() || index >= object_infos.size();
     if (is_finished && current_batch_processed)
         return {};
@@ -485,14 +495,15 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     ConfigurationPtr configuration_,
     const NamesAndTypesList & virtual_columns_,
     ObjectInfos * read_keys_,
-    bool throw_on_zero_files_match_,
+    bool ignore_non_existent_files_,
     std::function<void(FileProgress)> file_progress_callback_)
-    : IIterator(throw_on_zero_files_match_, "KeysIterator")
+    : IIterator("KeysIterator")
     , object_storage(object_storage_)
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
     , keys(configuration->getPaths())
+    , ignore_non_existent_files(ignore_non_existent_files_)
 {
     if (read_keys_)
     {
@@ -507,20 +518,29 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
 
 ObjectInfoPtr StorageObjectStorageSource::KeysIterator::nextImpl(size_t /* processor */)
 {
-    size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-    if (current_index >= keys.size())
-        return {};
-
-    auto key = keys[current_index];
-
-    ObjectMetadata metadata{};
-    if (file_progress_callback)
+    while (true)
     {
-        metadata = object_storage->getObjectMetadata(key);
-        file_progress_callback(FileProgress(0, metadata.size_bytes));
-    }
+        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+        if (current_index >= keys.size())
+            return {};
 
-    return std::make_shared<ObjectInfo>(key, metadata);
+        auto key = keys[current_index];
+
+        ObjectMetadata object_metadata{};
+        if (ignore_non_existent_files)
+        {
+            auto metadata = object_storage->tryGetObjectMetadata(key);
+            if (!metadata)
+                continue;
+        }
+        else
+            object_metadata = object_storage->getObjectMetadata(key);
+
+        if (file_progress_callback)
+            file_progress_callback(FileProgress(0, object_metadata.size_bytes));
+
+        return std::make_shared<ObjectInfo>(key, object_metadata);
+    }
 }
 
 StorageObjectStorageSource::ReaderHolder::ReaderHolder(
@@ -555,7 +575,7 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     CurrentMetrics::Metric metric_threads_,
     CurrentMetrics::Metric metric_threads_active_,
     CurrentMetrics::Metric metric_threads_scheduled_)
-    : IIterator(false, "ReadTaskIterator")
+    : IIterator("ReadTaskIterator")
     , callback(callback_)
 {
     ThreadPool pool(metric_threads_, metric_threads_active_, metric_threads_scheduled_, max_threads_count);
