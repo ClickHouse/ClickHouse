@@ -12,10 +12,11 @@ SETTINGS index_granularity = 3;
 
 Insert into tt values(1,2),(2,3),(3,4),(4,5),(5,6);
 
-select * from tt where pointInPolygon((x, y), [(2, 0), (3.5, 4), (3.5, 0)]);
+select '1/2 marks filtered by minmax index';
+select * from tt where pointInPolygon((x, y), [(2, 0), (3.5, 4), (3.5, 0)]) format JSON;
+select * from tt where pointInPolygon((x, y), [(0, 0), (2, 3), (4, 0)])  format JSON;
 
---select * from tt where pointInPolygon((x, y), [(0, 0), (2, 3), (4, 0)]);
-
-select * from tt where pointInPolygon((x, y), [(3, 0), (4, 4), (4, 1)]);
+select '2/2 marks filtered by minmax index';
+select * from tt where pointInPolygon((x, y), [(3, 0), (4, 4), (4, 1)]) format JSON;
 
 drop table if exists tt;

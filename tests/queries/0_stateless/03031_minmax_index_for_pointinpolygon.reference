@@ -1,0 +1,86 @@
+1/2 marks filtered by minmax index
+{
+	"meta":
+	[
+		{
+			"name": "x",
+			"type": "UInt32"
+		},
+		{
+			"name": "y",
+			"type": "UInt32"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"statistics":
+	{
+		"elapsed": 0.068087078,
+		"rows_read": 3,
+		"bytes_read": 24
+	}
+}
+{
+	"meta":
+	[
+		{
+			"name": "x",
+			"type": "UInt32"
+		},
+		{
+			"name": "y",
+			"type": "UInt32"
+		}
+	],
+
+	"data":
+	[
+		{
+			"x": 2,
+			"y": 3
+		}
+	],
+
+	"rows": 1,
+
+	"statistics":
+	{
+		"elapsed": 0.057847735,
+		"rows_read": 3,
+		"bytes_read": 24
+	}
+}
+2/2 marks filtered by minmax index
+{
+	"meta":
+	[
+		{
+			"name": "x",
+			"type": "UInt32"
+		},
+		{
+			"name": "y",
+			"type": "UInt32"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"statistics":
+	{
+		"elapsed": 0.062109529,
+		"rows_read": 0,
+		"bytes_read": 0
+	}
+}

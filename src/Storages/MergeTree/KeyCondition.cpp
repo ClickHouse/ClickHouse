@@ -1655,7 +1655,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 else
                     return false;
             }
-            else if (func_name == "pointInPolygon")
+            else if (func_name == "pointInPolygon") /// TODO support hole in polygon
             {
                 /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
 
