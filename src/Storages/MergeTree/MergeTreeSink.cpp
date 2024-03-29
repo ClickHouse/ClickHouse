@@ -88,9 +88,13 @@ void MergeTreeSink::consume(Chunk chunk)
             elapsed_ns = watch.elapsed();
         }
 
-        /// Reset earlier to free memory
-        current_block.block.clear();
-        current_block.partition.clear();
+        /// Reset block earlier to free memory only if there are no running subscriptions.
+        /// If any we need to push this block to them.
+        if (storage.subscription_manager.getSubscriptionsCount() == 0)
+        {
+            current_block.block.clear();
+            current_block.partition.clear();
+        }
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.
@@ -191,8 +195,10 @@ void MergeTreeSink::finishDelayedChunk()
             added = storage.renameTempPartAndAdd(part, transaction, lock);
             transaction.commit(&lock);
 
-            /// if block is added: push current_block to all subscribers under the same lock as commit
-            if (added)
+            /// if block is added: push current_block to all subscribers under the same lock as commit.
+            /// But there may be a race between insert and creating a new subscription, in which case
+            /// the block may already have been cleared, but this is normal, because this is concurrent operations.
+            if (added && partition.block_with_partition.block.columns() > 0)
                 storage.subscription_manager.pushToAll(std::move(partition.block_with_partition.block));
         }
 

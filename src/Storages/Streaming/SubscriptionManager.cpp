@@ -54,6 +54,12 @@ void StreamSubscriptionManager::pushToAll(Block block)
     }
 }
 
+size_t StreamSubscriptionManager::getSubscriptionsCount()
+{
+    auto lock = lockShared();
+    return subscriptions.size();
+}
+
 void StreamSubscriptionManager::clean()
 {
     auto lock = lockExclusive();

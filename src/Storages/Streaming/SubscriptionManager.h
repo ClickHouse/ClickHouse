@@ -30,6 +30,9 @@ public:
     // push new chunk to all subscriptions
     void pushToAll(Block block);
 
+    // returns count of currently running subcriptions
+    size_t getSubscriptionsCount();
+
 private:
     // Lock required for all changes with subscriptions:
     // - Add new listener
