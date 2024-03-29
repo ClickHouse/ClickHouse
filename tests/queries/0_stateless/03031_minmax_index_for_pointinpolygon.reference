@@ -14,14 +14,25 @@
 
 	"data":
 	[
-
+		{
+			"x": 4,
+			"y": 4
+		},
+		{
+			"x": 6,
+			"y": 6
+		},
+		{
+			"x": 8,
+			"y": 8
+		}
 	],
 
-	"rows": 0,
+	"rows": 3,
 
 	"statistics":
 	{
-		"elapsed": 0.03813443,
+		"elapsed": 0.038033741,
 		"rows_read": 3,
 		"bytes_read": 24
 	}
@@ -42,8 +53,8 @@
 	"data":
 	[
 		{
-			"x": 2,
-			"y": 3
+			"x": 12,
+			"y": 12
 		}
 	],
 
@@ -51,9 +62,9 @@
 
 	"statistics":
 	{
-		"elapsed": 0.042239761,
-		"rows_read": 3,
-		"bytes_read": 24
+		"elapsed": 0.035586858,
+		"rows_read": 2,
+		"bytes_read": 16
 	}
 }
 2/2 marks filtered by minmax index, read_rows should be 0
@@ -79,8 +90,35 @@
 
 	"statistics":
 	{
-		"elapsed": 0.033527044,
+		"elapsed": 0.031489374,
 		"rows_read": 0,
 		"bytes_read": 0
+	}
+}
+{
+	"meta":
+	[
+		{
+			"name": "x",
+			"type": "UInt32"
+		},
+		{
+			"name": "y",
+			"type": "UInt32"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"statistics":
+	{
+		"elapsed": 0.04847489,
+		"rows_read": 5,
+		"bytes_read": 40
 	}
 }

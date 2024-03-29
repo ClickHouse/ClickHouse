@@ -1698,7 +1698,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             }
             else if (func_name == "pointInPolygon")
             {
-                /// case non hole in polygon
+                /// Case1 no holes in polygon
                 return analyze_point_in_polygon();
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
@@ -1767,7 +1767,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             {
                 if (func_name == "pointInPolygon")
                 {
-                    /// case has holes in polygon
+                    /// Case 2: has holes in polygon
+                    /// When checking skip index, the hole will be ignored.
                     return analyze_point_in_polygon();
                 }
                 else
@@ -1866,7 +1867,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
         }
         else
-            return false;
+        {
+            if (func_name == "pointInPolygon")
+            {
+                /// Case2 has holes in polygon, just ignore them
+                return analyze_point_in_polygon();
+            }
+            else
+                return false;
+        }
 
         const auto atom_it = atom_map.find(func_name);
 
@@ -2894,7 +2903,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             boost::geometry::intersection(polygon_by_minmax_index, polygon_by_user, intersection);
             has_intersection = !intersection.empty();
 
-                if (has_intersection)
+            if (has_intersection)
                 rpn_stack.emplace_back(true, true);
             else
                 rpn_stack.emplace_back(false, true);
