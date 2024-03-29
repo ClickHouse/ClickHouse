@@ -465,7 +465,7 @@ void InterpreterDropQuery::extendQueryLogElemImpl(DB::QueryLogElement & elem, co
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected type for list of table names.");
 
             String query_database = identifier->getDatabaseName();
-            String query_table = identifier->getTableName();
+            String query_table = identifier->shortName();
             if (!query_database.empty() && query_table.empty())
             {
                 elem.query_databases.insert(backQuoteIfNeed(query_database));

@@ -86,7 +86,6 @@ public:
 
     StorageID getTableId() const;
     String getDatabaseName() const;
-    String getTableName() const;
 
     ASTPtr getTable() const;
     ASTPtr getDatabase() const;
