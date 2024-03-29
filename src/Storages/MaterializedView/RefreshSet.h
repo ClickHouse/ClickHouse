@@ -82,7 +82,7 @@ public:
 
     RefreshSet();
 
-    Handle emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskHolder task);
+    void emplace(StorageID id, const std::vector<StorageID> & dependencies, RefreshTaskHolder task);
 
     RefreshTaskHolder getTask(const StorageID & id) const;
 

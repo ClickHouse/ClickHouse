@@ -1,22 +1,18 @@
-#include "config.h"
-
-#if USE_AWS_S3
-
-#include <IO/WriteBufferFromS3.h>
+#include "BufferAllocationPolicy.h"
 
 #include <memory>
 
-namespace
+namespace DB
 {
 
-class FixedSizeBufferAllocationPolicy : public DB::WriteBufferFromS3::IBufferAllocationPolicy
+class FixedSizeBufferAllocationPolicy : public BufferAllocationPolicy
 {
     const size_t buffer_size = 0;
     size_t buffer_number = 0;
 
 public:
-    explicit FixedSizeBufferAllocationPolicy(const DB::S3Settings::RequestSettings::PartUploadSettings & settings_)
-        : buffer_size(settings_.strict_upload_part_size)
+    explicit FixedSizeBufferAllocationPolicy(const BufferAllocationPolicy::Settings & settings_)
+        : buffer_size(settings_.strict_size)
     {
         chassert(buffer_size > 0);
     }
@@ -36,7 +32,7 @@ public:
 };
 
 
-class ExpBufferAllocationPolicy : public DB::WriteBufferFromS3::IBufferAllocationPolicy
+class ExpBufferAllocationPolicy : public DB::BufferAllocationPolicy
 {
     const size_t first_size = 0;
     const size_t second_size = 0;
@@ -49,12 +45,12 @@ class ExpBufferAllocationPolicy : public DB::WriteBufferFromS3::IBufferAllocatio
     size_t buffer_number = 0;
 
 public:
-    explicit ExpBufferAllocationPolicy(const DB::S3Settings::RequestSettings::PartUploadSettings & settings_)
-        : first_size(std::max(settings_.max_single_part_upload_size, settings_.min_upload_part_size))
-        , second_size(settings_.min_upload_part_size)
-        , multiply_factor(settings_.upload_part_size_multiply_factor)
-        , multiply_threshold(settings_.upload_part_size_multiply_parts_count_threshold)
-        , max_size(settings_.max_upload_part_size)
+    explicit ExpBufferAllocationPolicy(const BufferAllocationPolicy::Settings & settings_)
+        : first_size(std::max(settings_.max_single_size, settings_.min_size))
+        , second_size(settings_.min_size)
+        , multiply_factor(settings_.multiply_factor)
+        , multiply_threshold(settings_.multiply_parts_count_threshold)
+        , max_size(settings_.max_size)
     {
         chassert(first_size > 0);
         chassert(second_size > 0);
@@ -92,16 +88,12 @@ public:
     }
 };
 
-}
 
-namespace DB
+BufferAllocationPolicy::~BufferAllocationPolicy() = default;
+
+BufferAllocationPolicyPtr BufferAllocationPolicy::create(BufferAllocationPolicy::Settings settings_)
 {
-
-WriteBufferFromS3::IBufferAllocationPolicy::~IBufferAllocationPolicy() = default;
-
-WriteBufferFromS3::IBufferAllocationPolicyPtr WriteBufferFromS3::ChooseBufferPolicy(const S3Settings::RequestSettings::PartUploadSettings & settings_)
-{
-    if (settings_.strict_upload_part_size > 0)
+    if (settings_.strict_size > 0)
         return std::make_unique<FixedSizeBufferAllocationPolicy>(settings_);
     else
         return std::make_unique<ExpBufferAllocationPolicy>(settings_);
@@ -109,4 +101,3 @@ WriteBufferFromS3::IBufferAllocationPolicyPtr WriteBufferFromS3::ChooseBufferPol
 
 }
 
-#endif

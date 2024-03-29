@@ -1,20 +1,16 @@
 #pragma once
 
 #include "config.h"
+#include "threadPoolCallbackRunner.h"
+#include "IO/WriteBufferFromS3.h"
 
-#if USE_AWS_S3
-
-#include "WriteBufferFromS3.h"
-
-#include <Common/logger_useful.h>
+#include "logger_useful.h"
 
 #include <list>
 
 namespace DB
 {
 
-/// That class is used only in WriteBufferFromS3 for now.
-/// Therefore it declared as a part of  WriteBufferFromS3.
 /// TaskTracker takes a Callback which is run by scheduler in some external shared ThreadPool.
 /// TaskTracker brings the methods waitIfAny, waitAll/safeWaitAll
 /// to help with coordination of the running tasks.
@@ -22,7 +18,7 @@ namespace DB
 /// Basic exception safety is provided. If exception occurred the object has to be destroyed.
 /// No thread safety is provided. Use this object with no concurrency.
 
-class WriteBufferFromS3::TaskTracker
+class TaskTracker
 {
 public:
     using Callback = std::function<void()>;
@@ -68,5 +64,3 @@ private:
 };
 
 }
-
-#endif
