@@ -47,7 +47,7 @@ size_t getNumberOfDimensions(const IDataType & type)
 
 size_t getNumberOfDimensions(const IColumn & column)
 {
-    if (const auto * column_array = checkAndGetColumn<ColumnArray>(column))
+    if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))
         return column_array->getNumberOfDimensions();
     return 0;
 }

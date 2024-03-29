@@ -108,7 +108,7 @@ struct BloomFilterHash
         {
             const auto * array_col = typeid_cast<const ColumnArray *>(column.get());
 
-            if (checkAndGetColumn<ColumnNullable>(array_col->getData()))
+            if (checkAndGetColumn<ColumnNullable>(&array_col->getData()))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
 
             const auto & offsets = array_col->getOffsets();

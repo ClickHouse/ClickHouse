@@ -640,12 +640,16 @@ template <>
 struct IsMutableColumns<> { static const bool value = true; };
 
 
+/// Throws LOGICAL_ERROR if the type doesn't match.
 template <typename Type>
-const Type * checkAndGetColumn(const IColumn & column)
+const Type & checkAndGetColumn(const IColumn & column)
 {
-    return typeid_cast<const Type *>(&column);
+    return typeid_cast<const Type &>(column);
 }
 
+/// Returns nullptr if the type doesn't match.
+/// If you're going to dereference the returned pointer without checking for null, use the
+/// `const IColumn &` overload above instead.
 template <typename Type>
 const Type * checkAndGetColumn(const IColumn * column)
 {

@@ -305,7 +305,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
 
     const NullMap * null_map = nullptr;
 
-    if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(*column))
+    if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(&*column))
     {
         col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
         null_map = &col_nullable->getNullMapData();

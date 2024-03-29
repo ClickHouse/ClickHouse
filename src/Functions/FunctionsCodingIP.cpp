@@ -536,7 +536,7 @@ public:
         const auto & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
 
-        if (const auto * col_in = checkAndGetColumn<ColumnIPv4>(*column))
+        if (const auto * col_in = checkAndGetColumn<ColumnIPv4>(&*column))
         {
             auto col_res = ColumnIPv6::create();
 
@@ -551,7 +551,7 @@ public:
             return col_res;
         }
 
-        if (const auto * col_in = checkAndGetColumn<ColumnUInt32>(*column))
+        if (const auto * col_in = checkAndGetColumn<ColumnUInt32>(&*column))
         {
             auto col_res = ColumnFixedString::create(IPV6_BINARY_LENGTH);
 

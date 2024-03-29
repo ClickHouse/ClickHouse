@@ -48,8 +48,8 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 {
     if constexpr (has_left_nulls && has_right_nulls)
     {
-        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column);
-        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column);
+        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column);
+        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column);
 
         if (left_nullable && right_nullable)
         {
@@ -67,7 +67,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_left_nulls)
     {
-        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column))
+        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column))
         {
             if (left_nullable->isNullAt(lhs_pos))
                 return null_direction_hint;
@@ -77,7 +77,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_right_nulls)
     {
-        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column))
+        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column))
         {
             if (right_nullable->isNullAt(rhs_pos))
                 return -null_direction_hint;

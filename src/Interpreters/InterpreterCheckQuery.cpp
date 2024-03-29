@@ -334,10 +334,10 @@ public:
         if ((columns.size() != 3 && columns.size() != 5) || column_position_to_check >= columns.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns: {}, position {}", columns.size(), column_position_to_check);
 
-        const auto * col = checkAndGetColumn<ColumnUInt8>(columns[column_position_to_check].get());
-        for (size_t i = 0; i < col->size(); ++i)
+        const auto & col = checkAndGetColumn<ColumnUInt8>(*columns[column_position_to_check]);
+        for (size_t i = 0; i < col.size(); ++i)
         {
-            if (col->getElement(i) == 0)
+            if (col.getElement(i) == 0)
             {
                 result_value = 0;
                 return;

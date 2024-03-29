@@ -198,7 +198,7 @@ public:
                 if (cond_col->onlyNull())
                     continue;
 
-                if (const auto * column_const = checkAndGetColumn<ColumnConst>(*cond_col))
+                if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*cond_col))
                 {
                     Field value = column_const->getField();
 

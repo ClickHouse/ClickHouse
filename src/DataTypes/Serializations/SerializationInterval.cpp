@@ -17,7 +17,7 @@ namespace ErrorCodes
 void SerializationKustoInterval::serializeText(
     const IColumn & column, const size_t row, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const auto * interval_column = checkAndGetColumn<ColumnInterval>(column);
+    const auto * interval_column = checkAndGetColumn<ColumnInterval>(&column);
     if (!interval_column)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected column of underlying type of Interval");
 
