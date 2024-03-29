@@ -1,4 +1,4 @@
-1/2 marks filtered by minmax index
+1/2 marks filtered by minmax index, read_rows should be 3
 {
 	"meta":
 	[
@@ -21,7 +21,7 @@
 
 	"statistics":
 	{
-		"elapsed": 0.068087078,
+		"elapsed": 0.03813443,
 		"rows_read": 3,
 		"bytes_read": 24
 	}
@@ -51,12 +51,12 @@
 
 	"statistics":
 	{
-		"elapsed": 0.057847735,
+		"elapsed": 0.042239761,
 		"rows_read": 3,
 		"bytes_read": 24
 	}
 }
-2/2 marks filtered by minmax index
+2/2 marks filtered by minmax index, read_rows should be 0
 {
 	"meta":
 	[
@@ -79,7 +79,7 @@
 
 	"statistics":
 	{
-		"elapsed": 0.062109529,
+		"elapsed": 0.033527044,
 		"rows_read": 0,
 		"bytes_read": 0
 	}

@@ -1613,6 +1613,47 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         if (atom_map.find(func_name) == std::end(atom_map))
             return false;
 
+        auto analyze_point_in_polygon = [&, this]() -> bool
+        {
+            /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
+
+            const auto atom_it = atom_map.find(func_name);
+            if (!func.getArgumentAt(1).tryGetConstant(const_value, const_type))
+                return false;
+
+            /// Analyze (x, y)
+            RPNElement::MultiColumnsFunctionDescription column_desc;
+            column_desc.function_name = func_name;
+            auto first_argument = func.getArgumentAt(0).toFunctionNode();
+            chassert(first_argument.getArgumentsSize() == 2);
+            chassert(first_argument.getFunctionName() == "tuple");
+
+            for (size_t i =0; i< first_argument.getArgumentsSize(); i++)
+            {
+                auto name = first_argument.getArgumentAt(i).getColumnName();
+                auto it = key_columns.find(name);
+                if (it == key_columns.end())
+                    return false;
+                column_desc.key_columns.push_back(name);
+                column_desc.key_column_poss.push_back(key_columns[name]);
+            }
+            out.point_in_polygon_column_description = column_desc;
+
+            /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
+            chassert(WhichDataType(const_type).isArray());
+            for (const auto & ele : const_value.get<Array>())
+            {
+                chassert(ele.getType() == Field::Types::Tuple);
+                const auto & ele_tuple = ele.get<Tuple>();
+                chassert(ele_tuple.size() == 2);
+                auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[0]);
+                auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[1]);
+                out.points_in_polygon.push_back({x, y});
+            }
+
+            return atom_it->second(out, const_value);
+        };
+
         if (num_args == 1)
         {
             if (!(isKeyPossiblyWrappedByMonotonicFunctions(
@@ -1655,45 +1696,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 else
                     return false;
             }
-            else if (func_name == "pointInPolygon") /// TODO support hole in polygon
+            else if (func_name == "pointInPolygon")
             {
-                /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
-
-                const auto atom_it = atom_map.find(func_name);
-                if (!func.getArgumentAt(1).tryGetConstant(const_value, const_type))
-                    return false;
-
-                /// Analyze (x, y)
-                RPNElement::MultiColumnsFunctionDescription column_desc;
-                column_desc.function_name = func_name;
-                auto first_argument = func.getArgumentAt(0).toFunctionNode();
-                chassert(first_argument.getArgumentsSize() == 2);
-                chassert(first_argument.getFunctionName() == "tuple");
-                
-                for (size_t i =0; i< first_argument.getArgumentsSize(); i++)
-                {
-                    auto name = first_argument.getArgumentAt(i).getColumnName();
-                    auto it = key_columns.find(name);
-                    if (it == key_columns.end())
-                        return false;
-                    column_desc.key_columns.push_back(name);
-                    column_desc.key_column_poss.push_back(key_columns[name]);
-                }
-                out.point_in_polygon_column_description = column_desc;
-
-                /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
-                chassert(WhichDataType(const_type).isArray());
-                for (const auto & ele : const_value.get<Array>())
-                {
-                    chassert(ele.getType() == Field::Types::Tuple);
-                    const auto & ele_tuple = ele.get<Tuple>();
-                    chassert(ele_tuple.size() == 2);
-                    auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[0]);
-                    auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[1]);
-                    out.points_in_polygon.push_back({x, y});
-                }
-
-                return atom_it->second(out, const_value);
+                /// case non hole in polygon
+                return analyze_point_in_polygon();
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
             {
@@ -1758,7 +1764,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                     return false;
             }
             else
-                return false;
+            {
+                if (func_name == "pointInPolygon")
+                {
+                    /// case has holes in polygon
+                    return analyze_point_in_polygon();
+                }
+                else
+                    return false;
+            }
 
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
@@ -2842,10 +2856,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
               *   For hyperactangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
               *
               * Algorithm:
-              *   1. Check polygon 1 contains any points in polygon 2
-              *   2. Check polygon 2 contains any points in polygon 1
-              *
-              * If any of the 2 conditions is true return {true, true}, else return {false, true}.
+              *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
             bool has_intersection = false;
             const auto & key_column_poss = element.point_in_polygon_column_description->key_column_poss;
@@ -2855,8 +2866,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
             Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_poss[1]].left);
             Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_poss[1]].right);
 
-            using Point = PointInPolygonWithGrid<Float64>::Point;
-            using Polygon = PointInPolygonWithGrid<Float64>::Polygon;
+            using Point = boost::geometry::model::d2::point_xy<Float64>;
+            using Polygon = boost::geometry::model::polygon<Point, false>;
+            using MultiPolygon = boost::geometry::model::multi_polygon<Polygon>;
 
             std::vector<Point> points_by_minmax_index;
             points_by_minmax_index.push_back({x_min, y_min});
@@ -2868,40 +2880,21 @@ BoolMask KeyCondition::checkInHyperrectangle(
             Polygon polygon_by_minmax_index;
             for (const auto & point : points_by_minmax_index)
                 polygon_by_minmax_index.outer().push_back(point);
-            /// close ring
-            boost::geometry::correct(polygon_by_minmax_index);
 
-            PointInPolygonWithGrid<Float64> polygon_func_by_minmax_index(polygon_by_minmax_index);
+            /// Ignore holes
+            Polygon polygon_by_user;
             for (const auto & point : element.points_in_polygon)
-            {
-                if (polygon_func_by_minmax_index.contains(point.x(), point.y()))
-                {
-                    has_intersection = true;
-                    break;
-                }
-            }
+                polygon_by_user.outer().push_back(point);
 
-            /// Check 2
-            if (!has_intersection)
-            {
-                Polygon polygon_by_user;
-                for (const auto & point : element.points_in_polygon)
-                    polygon_by_user.outer().push_back(point);
-                /// close ring
-                boost::geometry::correct(polygon_by_user);
+            /// Close ring
+            boost::geometry::correct(polygon_by_minmax_index);
+            boost::geometry::correct(polygon_by_user);
 
-                PointInPolygonWithGrid<Float64> polygon_func_by_user(polygon_by_user);
-                for (const auto & point : points_by_minmax_index)
-                {
-                    if (polygon_func_by_user.contains(point.x(), point.y()))
-                    {
-                        has_intersection = true;
-                        break;
-                    }
-                }
-            }
+            MultiPolygon intersection{};
+            boost::geometry::intersection(polygon_by_minmax_index, polygon_by_user, intersection);
+            has_intersection = !intersection.empty();
 
-            if (has_intersection)
+                if (has_intersection)
                 rpn_stack.emplace_back(true, true);
             else
                 rpn_stack.emplace_back(false, true);
