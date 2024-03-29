@@ -257,8 +257,13 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     if (!filter_dag)
         return;
 
-    if (checkDAGUseless(*filter_dag->getOutputs().at(0), context))
+    std::vector<FutureSetPtr> sets_to_prepare;
+    if (checkDAGUseless(*filter_dag->getOutputs().at(0), context, sets_to_prepare))
         return;
+    /// Try to run subqueries, don't use index if failed (e.g. if use_index_for_in_with_subqueries is disabled).
+    for (auto & set : sets_to_prepare)
+        if (!set->buildOrderedSetInplace(context))
+            return;
 
     auto filter_actions_dag = filter_dag->clone();
     const auto * filter_actions_dag_node = filter_actions_dag->getOutputs().at(0);
@@ -370,7 +375,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    if (node_to_check->column && isColumnConst(*node_to_check->column))
+    if (node_to_check->column && (isColumnConst(*node_to_check->column) || WhichDataType(node.result_type).isSet()))
         return &node;
 
     RPNBuilderTreeContext tree_context(context);
@@ -417,7 +422,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
         node_to_check = node_to_check->children[0];
 
-    if (node_to_check->column && isColumnConst(*node_to_check->column))
+    if (node_to_check->column && (isColumnConst(*node_to_check->column) || WhichDataType(node.result_type).isSet()))
         return nullptr;
 
     if (node_to_check->type != ActionsDAG::ActionType::FUNCTION)
@@ -473,7 +478,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
     return nullptr;
 }
 
-bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, bool atomic) const
+bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic) const
 {
     const auto * node_to_check = &node;
     while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
@@ -482,13 +487,17 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);
 
-    if (node.column && isColumnConst(*node.column))
+    if (WhichDataType(node.result_type).isSet())
     {
-        if (!atomic || WhichDataType(node.result_type).isSet())
-            return false;
+        if (auto set = tree_node.tryGetPreparedSet())
+            sets_to_prepare.push_back(set);
+        return false;
+    }
+    else if (node.column && isColumnConst(*node.column))
+    {
         Field literal;
         node.column->get(0, literal);
-        return literal.safeGet<bool>();
+        return !atomic && literal.safeGet<bool>();
     }
     else if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
@@ -500,14 +509,14 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
         const auto & arguments = getArguments(node, nullptr, nullptr);
 
         if (function_name == "and" || function_name == "indexHint")
-            return std::all_of(arguments.begin(), arguments.end(), [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, atomic); });
+            return std::all_of(arguments.begin(), arguments.end(), [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, atomic); });
         else if (function_name == "or")
-            return std::any_of(arguments.begin(), arguments.end(), [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, atomic); });
+            return std::any_of(arguments.begin(), arguments.end(), [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, atomic); });
         else if (function_name == "not")
-            return checkDAGUseless(*arguments.at(0), context, atomic);
+            return checkDAGUseless(*arguments.at(0), context, sets_to_prepare, atomic);
         else
             return std::any_of(arguments.begin(), arguments.end(),
-                [&](const auto & arg) { return checkDAGUseless(*arg, context, true /*atomic*/); });
+                [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, true /*atomic*/); });
     }
 
     auto column_name = tree_node.getColumnName();
