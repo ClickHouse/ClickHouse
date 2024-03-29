@@ -482,12 +482,13 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);
 
-    if (node.column && isColumnConst(*node.column)
-        && !WhichDataType(node.result_type).isSet())
+    if (node.column && isColumnConst(*node.column))
     {
+        if (!atomic || WhichDataType(node.result_type).isSet())
+            return false;
         Field literal;
         node.column->get(0, literal);
-        return !atomic && literal.safeGet<bool>();
+        return literal.safeGet<bool>();
     }
     else if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
