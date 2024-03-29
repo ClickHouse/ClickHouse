@@ -406,6 +406,7 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 {
     if (useDefaultImplementationForLowCardinalityColumns())
     {
+        bool has_low_cardinality = false;
         size_t num_full_low_cardinality_columns = 0;
         size_t num_full_ordinary_columns = 0;
 
@@ -420,6 +421,7 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
             if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(arg.type.get()))
             {
                 arg.type = low_cardinality_type->getDictionaryType();
+                has_low_cardinality = true;
 
                 if (!is_const)
                     ++num_full_low_cardinality_columns;
@@ -432,8 +434,8 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 
         auto type_without_low_cardinality = getReturnTypeWithoutLowCardinality(args_without_low_cardinality);
 
-        if (canBeExecutedOnLowCardinalityDictionary()
-            && num_full_low_cardinality_columns == 1 && num_full_ordinary_columns == 0
+        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality
+            && num_full_low_cardinality_columns <= 1 && num_full_ordinary_columns == 0
             && type_without_low_cardinality->canBeInsideLowCardinality())
             return std::make_shared<DataTypeLowCardinality>(type_without_low_cardinality);
         else
