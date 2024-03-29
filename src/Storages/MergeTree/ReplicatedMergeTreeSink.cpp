@@ -128,7 +128,8 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     bool deduplicate_,
     bool majority_quorum,
     ContextPtr context_,
-    bool is_attach_)
+    bool is_attach_,
+    bool allow_attach_while_readonly_)
     : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -136,6 +137,7 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     , quorum_timeout_ms(quorum_timeout_ms_)
     , max_parts_per_block(max_parts_per_block_)
     , is_attach(is_attach_)
+    , allow_attach_while_readonly(allow_attach_while_readonly_)
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
     , log(getLogger(storage.getLogName() + " (Replicated OutputStream)"))
@@ -440,7 +442,7 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
         try
         {
-            bool deduplicated = commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num, false).second;
+            bool deduplicated = commitPart(zookeeper, part, partition.block_id, delayed_chunk->replicas_num).second;
 
             last_block_is_duplicate = last_block_is_duplicate || deduplicated;
 
@@ -485,7 +487,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
         while (true)
         {
             partition.temp_part.finalize();
-            auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num, false).first;
+            auto conflict_block_ids = commitPart(zookeeper, partition.temp_part.part, partition.block_id, delayed_chunk->replicas_num).first;
             if (conflict_block_ids.empty())
             {
                 auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
@@ -556,7 +558,7 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
         String block_id = deduplicate ? fmt::format("{}_{}", part->info.partition_id, part->checksums.getTotalChecksumHex()) : "";
-        bool deduplicated = commitPart(zookeeper, part, block_id, replicas_num, /* writing_existing_part */ true).second;
+        bool deduplicated = commitPart(zookeeper, part, block_id, replicas_num).second;
 
         /// Set a special error code if the block is duplicate
         int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
@@ -647,8 +649,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const BlockIDsType & block_id,
-    size_t replicas_num,
-    bool writing_existing_part)
+    size_t replicas_num)
 {
     /// It is possible that we alter a part with different types of source columns.
     /// In this case, if column was not altered, the result type will be different with what we have in metadata.
@@ -800,7 +801,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
             /// When we attach existing parts it's okay to be in read-only mode
             /// For example during RESTORE REPLICA.
-            if (!writing_existing_part)
+            if (!allow_attach_while_readonly)
             {
                 retries_ctl.setUserError(
                     Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path));
