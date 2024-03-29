@@ -27,3 +27,6 @@ select '-------------------';
 explain query tree select * from test where x not in (NULL);
 select '-------------------';
 explain query tree select * from test where x in (NULL);
+select '-------------------';
+--- fuzzed
+SELECT number FROM numbers(2) WHERE arrayExists(_ -> (_ IN toNullable(4294967290)), [number]);
