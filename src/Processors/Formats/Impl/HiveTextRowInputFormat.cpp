@@ -15,10 +15,10 @@ static FormatSettings updateFormatSettings(const FormatSettings & settings, cons
 {
     FormatSettings updated = settings;
     updated.skip_unknown_fields = true;
-    updated.with_names_use_header = true;
     updated.date_time_input_format = FormatSettings::DateTimeInputFormat::BestEffort;
     updated.defaults_for_omitted_fields = true;
     updated.csv.delimiter = updated.hive_text.fields_delimiter;
+    updated.csv.allow_variable_number_of_columns = true;
     if (settings.hive_text.input_field_names.empty())
         updated.hive_text.input_field_names = header.getNames();
     return updated;
@@ -40,14 +40,6 @@ HiveTextRowInputFormat::HiveTextRowInputFormat(
 HiveTextFormatReader::HiveTextFormatReader(PeekableReadBuffer & buf_, const FormatSettings & format_settings_)
     : CSVFormatReader(buf_, format_settings_), input_field_names(format_settings_.hive_text.input_field_names)
 {
-}
-
-std::vector<String> HiveTextFormatReader::readNames()
-{
-    PeekableReadBufferCheckpoint checkpoint{*buf, true};
-    auto values = readHeaderRow();
-    input_field_names.resize(values.size());
-    return input_field_names;
 }
 
 std::vector<String> HiveTextFormatReader::readTypes()

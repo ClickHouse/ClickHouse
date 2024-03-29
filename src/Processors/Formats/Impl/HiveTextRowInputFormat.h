@@ -27,8 +27,6 @@ class HiveTextFormatReader final : public CSVFormatReader
 {
 public:
     HiveTextFormatReader(PeekableReadBuffer & buf_, const FormatSettings & format_settings_);
-
-    std::vector<String> readNames() override;
     std::vector<String> readTypes() override;
 
 private:
