@@ -42,6 +42,11 @@ HiveTextFormatReader::HiveTextFormatReader(PeekableReadBuffer & buf_, const Form
 {
 }
 
+std::vector<String> HiveTextFormatReader::readNames()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HiveTextRowInputFormat::readNames is not implemented");
+}
+
 std::vector<String> HiveTextFormatReader::readTypes()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HiveTextRowInputFormat::readTypes is not implemented");
