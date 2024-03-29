@@ -107,7 +107,7 @@ private:
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
 
-    bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, bool atomic = false) const;
+    bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic = false) const;
 
     String index_name;
     size_t max_rows;
