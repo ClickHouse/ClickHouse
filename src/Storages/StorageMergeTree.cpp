@@ -1405,7 +1405,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         has_mutations = !current_mutations_by_version.empty();
     }
 
-    auto isCancelled = [&merges_blocker = merger_mutator.merges_blocker] (const MergeMutateSelectedEntryPtr & entry) {
+    auto isCancelled = [&merges_blocker = merger_mutator.merges_blocker](const MergeMutateSelectedEntryPtr & entry)
+    {
         if (entry->future_part)
             return merges_blocker.isCancelledForPartition(entry->future_part->part_info.partition_id);
 
