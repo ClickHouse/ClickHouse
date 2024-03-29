@@ -591,6 +591,16 @@ SELECT hasColumnInTable('system','metrics','non-existing_column')
 0
 ```
 
+## hasThreadFuzzer
+
+Returns whether Thread Fuzzer is effective. It can be used in tests to prevent too long runs.
+
+**Syntax**
+
+```sql
+hasThreadFuzzer();
+```
+
 ## bar
 
 Builds a bar chart.
