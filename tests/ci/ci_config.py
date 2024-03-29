@@ -99,7 +99,7 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
     STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
     STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE = (
-        "Stateless tests (release, analyzer, s3, DatabaseReplicated)"
+        "Stateless tests (release, old analyzer, s3, DatabaseReplicated)"
     )
     # merged into STATELESS_TEST_ANALYZER_S3_REPLICATED_RELEASE:
     # STATELESS_TEST_ANALYZER_RELEASE = "Stateless tests (release, analyzer)"
@@ -132,7 +132,7 @@ class JobNames(metaclass=WithIter):
 
     INTEGRATION_TEST = "Integration tests (release)"
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
-    INTEGRATION_TEST_ASAN_ANALYZER = "Integration tests (asan, analyzer)"
+    INTEGRATION_TEST_ASAN_ANALYZER = "Integration tests (asan, old analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
     INTEGRATION_TEST_ARM = "Integration tests (aarch64)"
     INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"

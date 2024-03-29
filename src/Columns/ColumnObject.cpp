@@ -20,12 +20,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int DUPLICATE_COLUMN;
+    extern const int EXPERIMENTAL_FEATURE_ERROR;
+    extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_DIMENSIONS_MISMATCHED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
 namespace
@@ -334,7 +334,18 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     if (type_changed || info.need_convert)
         field = convertFieldToTypeOrThrow(field, *least_common_type.get());
 
-    data.back()->insert(field);
+    if (!data.back()->tryInsert(field))
+    {
+        /** Normalization of the field above is pretty complicated (it uses several FieldVisitors),
+          * so in the case of a bug, we may get mismatched types.
+          * The `IColumn::insert` method does not check the type of the inserted field, and it can lead to a segmentation fault.
+          * Therefore, we use the safer `tryInsert` method to get an exception instead of a segmentation fault.
+          */
+        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
+            "Cannot insert field {} to column {}",
+            field.dump(), data.back()->dumpStructure());
+    }
+
     ++num_rows;
 }
 
