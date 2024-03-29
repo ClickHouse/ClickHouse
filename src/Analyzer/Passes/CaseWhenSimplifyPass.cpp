@@ -60,8 +60,10 @@ QueryTreeNodePtr notEquals(QueryTreeNodePtr left, const ConstantNode & right, Co
 }
 
 QueryTreeNodePtr
-combineNodesWithFunction(const FunctionOverloadResolverPtr & function_resolver, const std::vector<QueryTreeNodePtr> & arguments)
+combineNodesWithFunction(const FunctionOverloadResolverPtr & function_resolver, const std::vector<QueryTreeNodePtr> & arguments, QueryTreeNodePtr default_result)
 {
+    if (arguments.empty())
+        return default_result;
     if (arguments.size() > 1)
     {
         QueryTreeNodePtr current = arguments[0];
@@ -80,6 +82,12 @@ public:
         chassert(case_node.getFunctionName() == "caseWithExpression");
         auto case_args = case_node.getArguments().getNodes();
         if (case_args.size() < 3)
+        {
+            failed = true;
+            return;
+        }
+        // invalid case function
+        if (case_args.size() % 2 != 0)
         {
             failed = true;
             return;
@@ -199,14 +207,14 @@ protected:
             std::vector<QueryTreeNodePtr> not_equals_conditions;
             for (const auto & key_value_pair : key_value_pairs)
                 if (!key_value_pair.first.getValue().isNull())
-                    not_equals_conditions.emplace_back(notEquals(case_column->clone(), key_value_pair.first, context));
-            return combineNodesWithFunction(FunctionFactory::instance().get("and", context), not_equals_conditions);
+                    not_equals_conditions.emplace_back(notEquals(case_column, key_value_pair.first, context));
+            return combineNodesWithFunction(FunctionFactory::instance().get("and", context), not_equals_conditions, std::make_shared<ConstantNode>(Field(true)));
         }
         Tuple tuple;
         for (const auto & key_value_pair : key_value_pairs)
             tuple.emplace_back(key_value_pair.first.getValue());
         if (tuple.size() == 1)
-            return notEquals(case_column->clone(), *std::make_shared<ConstantNode>(tuple.front()), context);
+            return notEquals(case_column, *std::make_shared<ConstantNode>(tuple.front()), context);
         auto not_in_function_resolver = FunctionFactory::instance().get("notIn", context);
         auto not_in_node = createFunctionNode(not_in_function_resolver, case_column, std::make_shared<ConstantNode>(tuple));
         auto is_null_node = createFunctionNode(FunctionFactory::instance().get("isNull", context), case_column);
@@ -217,8 +225,8 @@ protected:
     {
         QueryTreeNodes equals_conditions;
         for (const auto & item : right_value_map)
-            equals_conditions.emplace_back(equals(case_column->clone(), *item.second, context));
-        return combineNodesWithFunction(FunctionFactory::instance().get("or", context), equals_conditions);
+            equals_conditions.emplace_back(equals(case_column, *item.second, context));
+        return combineNodesWithFunction(FunctionFactory::instance().get("or", context), equals_conditions, nullptr);
     }
 };
 
@@ -238,9 +246,9 @@ protected:
         for (const auto & item : key_value_pairs)
         {
             if (std::find(right_values.begin(), right_values.end(), item.second.getValue()) == right_values.end())
-                conditions.emplace_back(equals(case_column->clone(), item.first, context));
+                conditions.emplace_back(equals(case_column, item.first, context));
         }
-        return combineNodesWithFunction(FunctionFactory::instance().get("or", context), conditions);
+        return combineNodesWithFunction(FunctionFactory::instance().get("or", context), conditions, std::make_shared<ConstantNode>(Field(false)));
     }
 
     QueryTreeNodePtr replaceImplNotFound() override
@@ -253,9 +261,9 @@ protected:
             QueryTreeNodes conditions;
             for (const auto & item : key_value_pairs)
             {
-                conditions.emplace_back(equals(case_column->clone(), item.first, context));
+                conditions.emplace_back(equals(case_column, item.first, context));
             }
-            return combineNodesWithFunction(FunctionFactory::instance().get("or", context), conditions);
+            return combineNodesWithFunction(FunctionFactory::instance().get("or", context), conditions, nullptr);
         }
         return std::make_shared<ConstantNode>(Field(true));
     }
@@ -265,7 +273,7 @@ protected:
         for (const auto & key_value_pair : key_value_pairs)
             tuple.emplace_back(key_value_pair.first.getValue());
         if (tuple.size() == 1)
-            return notEquals(case_column->clone(), *std::make_shared<ConstantNode>(tuple.front()), context);
+            return notEquals(case_column, *std::make_shared<ConstantNode>(tuple.front()), context);
         auto resolver = FunctionFactory::instance().get("in", context);
         return createFunctionNode(resolver, case_column, std::make_shared<ConstantNode>(tuple));
     }
@@ -276,11 +284,11 @@ protected:
         bool key_has_null = false;
         for (const auto & item : right_value_map)
         {
-            conditions.emplace_back(notEquals(case_column->clone(), *item.second, context));
+            conditions.emplace_back(notEquals(case_column, *item.second, context));
             if (item.second->getValue().isNull())
                 key_has_null = true;
         }
-        auto not_equals_node = combineNodesWithFunction(FunctionFactory::instance().get("and", context), conditions);
+        auto not_equals_node = combineNodesWithFunction(FunctionFactory::instance().get("and", context), conditions, nullptr);
         if (key_has_null)
             return not_equals_node;
         auto is_null_node = createFunctionNode(FunctionFactory::instance().get("isNull", context), case_column);
@@ -321,13 +329,13 @@ protected:
         {
             QueryTreeNodes conditions;
             for (const auto & field : tuple)
-                conditions.emplace_back(notEquals(case_column->clone(), *std::make_shared<ConstantNode>(field), context));
-            return combineNodesWithFunction(FunctionFactory::instance().get("and", context), conditions);
+                conditions.emplace_back(notEquals(case_column, *std::make_shared<ConstantNode>(field), context));
+            return combineNodesWithFunction(FunctionFactory::instance().get("and", context), conditions, nullptr);
         }
         if (tuple.size() == 1)
-            return notEquals(case_column->clone(), *std::make_shared<ConstantNode>(tuple.front()), context);
+            return notEquals(case_column, *std::make_shared<ConstantNode>(tuple.front()), context);
         return createFunctionNode(
-            FunctionFactory::instance().get("notIn", context), case_column->clone(), std::make_shared<ConstantNode>(tuple));
+            FunctionFactory::instance().get("notIn", context), case_column, std::make_shared<ConstantNode>(tuple));
     }
 
     QueryTreeNodePtr replaceImpl() override
@@ -335,9 +343,9 @@ protected:
         QueryTreeNodes conditions;
         for (const auto & item : right_value_map)
         {
-            conditions.emplace_back(equals(case_column->clone(), *item.second, context));
+            conditions.emplace_back(equals(case_column, *item.second, context));
         }
-        return combineNodesWithFunction(FunctionFactory::instance().get("or", context), conditions);
+        return combineNodesWithFunction(FunctionFactory::instance().get("or", context), conditions, nullptr);
     }
 };
 
@@ -373,13 +381,13 @@ protected:
         {
             QueryTreeNodes conditions;
             for (const auto & field : tuple)
-                conditions.emplace_back(equals(case_column->clone(), *std::make_shared<ConstantNode>(field), context));
-            return combineNodesWithFunction(FunctionFactory::instance().get("or", context), conditions);
+                conditions.emplace_back(equals(case_column, *std::make_shared<ConstantNode>(field), context));
+            return combineNodesWithFunction(FunctionFactory::instance().get("or", context), conditions, nullptr);
         }
         if (tuple.size() == 1)
-            return equals(case_column->clone(), *std::make_shared<ConstantNode>(tuple.front()), context);
+            return equals(case_column, *std::make_shared<ConstantNode>(tuple.front()), context);
         return createFunctionNode(
-            FunctionFactory::instance().get("in", context), case_column->clone(), std::make_shared<ConstantNode>(tuple));
+            FunctionFactory::instance().get("in", context), case_column, std::make_shared<ConstantNode>(tuple));
     }
 
     QueryTreeNodePtr replaceImpl() override
@@ -387,9 +395,9 @@ protected:
         QueryTreeNodes conditions;
         for (const auto & item : right_value_map)
         {
-            conditions.emplace_back(notEquals(case_column->clone(), *item.second, context));
+            conditions.emplace_back(notEquals(case_column, *item.second, context));
         }
-        auto result = combineNodesWithFunction(FunctionFactory::instance().get("and", context), conditions);
+        auto result = combineNodesWithFunction(FunctionFactory::instance().get("and", context), conditions, nullptr);
         if (!keys_contain_null)
         {
             auto is_null_node = createFunctionNode(FunctionFactory::instance().get("isNull", context), case_column);
@@ -399,7 +407,6 @@ protected:
 
     }
 };
-
 
 class CaseWhenSimplifyPassVisitor : public InDepthQueryTreeVisitorWithContext<CaseWhenSimplifyPassVisitor>
 {
@@ -421,6 +428,7 @@ public:
         if (disabled_parent_funcs.contains(func_node->getFunctionName()))
         {
             in_disabled_function = true;
+            return;
         }
 
         if (!checkFunctionWithArguments(node, supported_funcs, 2))
@@ -429,7 +437,8 @@ public:
             return;
         auto * case_node = func_node->getArguments().getNodes()[0]->as<FunctionNode>();
         auto * value_node = func_node->getArguments().getNodes()[1]->as<ConstantNode>();
-        if (case_node->getFunctionName() != "caseWithExpression")
+        auto case_args_num = case_node->getArguments().getNodes().size();
+        if (case_node->getFunctionName() != "caseWithExpression" || case_args_num < 4 || case_args_num % 2 != 0)
             return;
         QueryTreeNodePtr new_node;
         if (func_node->getFunctionName() == "equals")

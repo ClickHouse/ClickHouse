@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (x Nullable(String), y Nullable(Int32)) ENGINE = MergeTree() order by tuple();
 INSERT INTO test VALUES ('a', 1), ('b', 2), ('c', 3), ('d', 4), (null, 0);
-set allow_experimental_analyzer = 1;
+set allow_experimental_analyzer = 0;
 
 select '------------------------';
 select * from test where (case x when 'a' then 1 when 'b' then 2 else 3 end) = 1;
@@ -75,3 +75,5 @@ select '------------------------';
 select * from test where (case x when 'a' then 1 when 'b' then 2 else 3 end) in (NULL,NULL);
 select '------------------------';
 select * from test where (case x when 'a' then 1 when 'b' then 2 else 3 end) not in (NULL,NULL);
+-- fuzzy test
+SELECT * FROM test WHERE caseWithExpression(x, null, 2, null, 2, 3) = 3;
