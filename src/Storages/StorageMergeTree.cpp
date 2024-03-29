@@ -1406,9 +1406,16 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         has_mutations = !current_mutations_by_version.empty();
     }
 
+    auto isCancelled = [&merges_blocker = merger_mutator.merges_blocker] (const MergeMutateSelectedEntryPtr & entry) {
+        if (entry->future_part)
+            return merges_blocker.isCancelledForPartition(entry->future_part->part_info.partition_id);
+
+        return merges_blocker.isCancelled();
+    };
+
     if (merge_entry)
     {
-        if (merger_mutator.merges_blocker.isCancelledForPartition(merge_entry->future_part->part_info.partition_id))
+        if (isCancelled(merge_entry))
             return false;
 
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, /* cleanup */ false, merge_entry, shared_lock, common_assignee_trigger);
@@ -1422,7 +1429,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
     if (mutate_entry)
     {
-        if (merger_mutator.merges_blocker.isCancelledForPartition(mutate_entry->future_part->part_info.partition_id))
+        if (isCancelled(mutate_entry))
             return false;
 
         /// We take new metadata snapshot here. It's because mutation commands can be executed only with metadata snapshot

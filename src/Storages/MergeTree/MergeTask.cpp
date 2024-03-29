@@ -130,7 +130,7 @@ static void addMissedColumnsToSerializationInfos(
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
 {
-    return merges_blocker->isCancelledForPartition(future_part->part_info.partition_id)
+    return (future_part ? merges_blocker->isCancelledForPartition(future_part->part_info.partition_id) : merges_blocker->isCancelled())
         || merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed);
 }
 
@@ -407,7 +407,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         merge_list_element = global_ctx->merge_list_element_ptr,
         partition_id = global_ctx->future_part->part_info.partition_id]() -> bool
     {
-        // TODO(vnemkov): we might want capture global_ctx here and use it's `isCancelled` method, but I'm not sure about object lifetimes.
         return merges_blocker->isCancelledForPartition(partition_id)
             || (need_remove && ttl_merges_blocker->isCancelled())
             || merge_list_element->is_cancelled.load(std::memory_order_relaxed);

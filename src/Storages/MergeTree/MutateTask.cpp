@@ -1000,7 +1000,7 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (merges_blocker->isCancelledForPartition(new_data_part->info.partition_id)
+        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.partition_id) : merges_blocker->isCancelled()
             || (*mutate_entry)->is_cancelled)
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
