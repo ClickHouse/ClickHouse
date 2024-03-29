@@ -38,6 +38,7 @@ struct ASTWindowDefinition;
 struct QueryFuzzer
 {
     pcg64 fuzz_rand{randomSeed()};
+    bool debug_output = true;
 
     // We add elements to expression lists with fixed probability. Some elements
     // are so large, that the expected number of elements we add to them is

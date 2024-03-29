@@ -68,22 +68,21 @@ Field QueryFuzzer::getRandomField(int type)
     {
     case 0:
     {
-        return bad_int64_values[fuzz_rand() % (sizeof(bad_int64_values)
-                / sizeof(*bad_int64_values))];
+        return bad_int64_values[fuzz_rand() % std::size(bad_int64_values)];
     }
     case 1:
     {
         static constexpr double values[]
                 = {NAN, INFINITY, -INFINITY, 0., -0., 0.0001, 0.5, 0.9999,
                    1., 1.0001, 2., 10.0001, 100.0001, 1000.0001, 1e10, 1e20,
-                  FLT_MIN, FLT_MIN + FLT_EPSILON, FLT_MAX, FLT_MAX + FLT_EPSILON}; return values[fuzz_rand() % (sizeof(values) / sizeof(*values))];
+                  FLT_MIN, FLT_MIN + FLT_EPSILON, FLT_MAX, FLT_MAX + FLT_EPSILON}; return values[fuzz_rand() % std::size(values)];
     }
     case 2:
     {
         static constexpr UInt64 scales[] = {0, 1, 2, 10};
         return DecimalField<Decimal64>(
-            bad_int64_values[fuzz_rand() % (sizeof(bad_int64_values) / sizeof(*bad_int64_values))],
-            static_cast<UInt32>(scales[fuzz_rand() % (sizeof(scales) / sizeof(*scales))])
+            bad_int64_values[fuzz_rand() % std::size(bad_int64_values)],
+            static_cast<UInt32>(scales[fuzz_rand() % std::size(scales)])
         );
     }
     default:
@@ -165,7 +164,8 @@ Field QueryFuzzer::fuzzField(Field field)
         {
             size_t pos = fuzz_rand() % arr.size();
             arr.erase(arr.begin() + pos);
-            std::cerr << "erased\n";
+            if (debug_output)
+                std::cerr << "erased\n";
         }
 
         if (fuzz_rand() % 5 == 0)
@@ -174,12 +174,14 @@ Field QueryFuzzer::fuzzField(Field field)
             {
                 size_t pos = fuzz_rand() % arr.size();
                 arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
-                std::cerr << fmt::format("inserted (pos {})\n", pos);
+                if (debug_output)
+                    std::cerr << fmt::format("inserted (pos {})\n", pos);
             }
             else
             {
                 arr.insert(arr.begin(), getRandomField(0));
-                std::cerr << "inserted (0)\n";
+                if (debug_output)
+                    std::cerr << "inserted (0)\n";
             }
 
         }
@@ -197,7 +199,9 @@ Field QueryFuzzer::fuzzField(Field field)
         {
             size_t pos = fuzz_rand() % arr.size();
             arr.erase(arr.begin() + pos);
-            std::cerr << "erased\n";
+
+            if (debug_output)
+                std::cerr << "erased\n";
         }
 
         if (fuzz_rand() % 5 == 0)
@@ -206,12 +210,16 @@ Field QueryFuzzer::fuzzField(Field field)
             {
                 size_t pos = fuzz_rand() % arr.size();
                 arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
-                std::cerr << fmt::format("inserted (pos {})\n", pos);
+
+                if (debug_output)
+                    std::cerr << fmt::format("inserted (pos {})\n", pos);
             }
             else
             {
                 arr.insert(arr.begin(), getRandomField(0));
-                std::cerr << "inserted (0)\n";
+
+                if (debug_output)
+                    std::cerr << "inserted (0)\n";
             }
 
         }
@@ -344,7 +352,8 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast)
         }
         else
         {
-            std::cerr << "No random column.\n";
+            if (debug_output)
+                std::cerr << "No random column.\n";
         }
     }
 
@@ -378,7 +387,8 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
         if (col)
             impl->children.insert(pos, col);
         else
-            std::cerr << "No random column.\n";
+            if (debug_output)
+                std::cerr << "No random column.\n";
     }
 
     // We don't have to recurse here to fuzz the children, this is handled by
@@ -1360,11 +1370,15 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     collectFuzzInfoMain(ast);
     fuzz(ast);
 
-    std::cout << std::endl;
-    WriteBufferFromOStream ast_buf(std::cout, 4096);
-    formatAST(*ast, ast_buf, false /*highlight*/);
-    ast_buf.finalize();
-    std::cout << std::endl << std::endl;
+    if (debug_output)
+    {
+        std::cout << std::endl;
+
+        WriteBufferFromOStream ast_buf(std::cout, 4096);
+        formatAST(*ast, ast_buf, false /*highlight*/);
+        ast_buf.finalize();
+        std::cout << std::endl << std::endl;
+    }
 }
 
 }
