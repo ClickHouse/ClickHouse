@@ -63,7 +63,7 @@ MarksInCompressedFile::MarksInCompressedFile(const PlainArray & marks)
 
     // Overallocate by +1 element to let the bit packing/unpacking do less bounds checking.
     size_t packed_length = (packed_bits + 63) / 64 + 1;
-    packed.reserve_exact(packed_length);
+    packed.reserve(packed_length);
     packed.resize_fill(packed_length);
 
     // Second pass: write out the packed marks.

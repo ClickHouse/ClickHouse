@@ -257,6 +257,11 @@ void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_messa
     tryLogCurrentException(logger.get(), start_of_message);
 }
 
+void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message)
+{
+    tryLogCurrentException(logger.load(), start_of_message);
+}
+
 static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
 {
     path = std::filesystem::absolute(path);
@@ -527,6 +532,11 @@ void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string &
     {
         tryLogCurrentException(logger, start_of_message);
     }
+}
+
+void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const std::string & start_of_message)
+{
+    tryLogException(e, logger.load(), start_of_message);
 }
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)

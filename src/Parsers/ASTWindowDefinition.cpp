@@ -94,9 +94,9 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
     if (!frame_is_default)
     {
         if (need_space)
-        {
             settings.ostr << " ";
-        }
+
+        format_frame.need_parens = true;
 
         settings.ostr << frame_type << " BETWEEN ";
         if (frame_begin_type == WindowFrame::BoundaryType::Current)

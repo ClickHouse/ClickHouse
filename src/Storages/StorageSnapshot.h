@@ -2,11 +2,15 @@
 
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/Streaming/Subscription_fwd.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
 {
 
 class IStorage;
+class ICompressionCodec;
+
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 struct StorageSnapshotSettings
 {
@@ -20,6 +24,7 @@ struct StorageSnapshot
 {
     const IStorage & storage;
     const StorageMetadataPtr metadata;
+    const VirtualsDescriptionPtr virtual_columns;
     const ColumnsDescription object_columns;
     const StorageSnapshotSettings additional_settings;
 
@@ -44,29 +49,21 @@ struct StorageSnapshot
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
         StorageSnapshotSettings additional_settings_ = {},
-        StreamSubscriptionPtr stream_subscription_ = nullptr)
-        : storage(storage_)
-        , metadata(std::move(metadata_))
-        , additional_settings(std::move(additional_settings_))
-        , stream_subscription(std::move(stream_subscription_))
-    {
-        init();
-    }
+        StreamSubscriptionPtr stream_subscription_ = nullptr);
+
+    StorageSnapshot(
+        const IStorage & storage_,
+        StorageMetadataPtr metadata_,
+        VirtualsDescriptionPtr virtual_columns_,
+        StorageSnapshotSettings additional_settings_ = {},
+        StreamSubscriptionPtr stream_subscription_ = nullptr);
 
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
         ColumnsDescription object_columns_,
         StorageSnapshotSettings additional_settings_ = {},
-        StreamSubscriptionPtr stream_subscription_ = nullptr)
-        : storage(storage_)
-        , metadata(std::move(metadata_))
-        , object_columns(std::move(object_columns_))
-        , additional_settings(std::move(additional_settings_))
-        , stream_subscription(std::move(stream_subscription_))
-    {
-        init();
-    }
+        StreamSubscriptionPtr stream_subscription_ = nullptr);
 
     StorageSnapshot(
         const IStorage & storage_,
@@ -74,18 +71,12 @@ struct StorageSnapshot
         ColumnsDescription object_columns_,
         DataPtr data_,
         StorageSnapshotSettings additional_settings_ = {},
-        StreamSubscriptionPtr stream_subscription_ = nullptr)
-        : storage(storage_)
-        , metadata(std::move(metadata_))
-        , object_columns(std::move(object_columns_))
-        , additional_settings(std::move(additional_settings_))
-        , data(std::move(data_))
-        , stream_subscription(std::move(stream_subscription_))
-    {
-        init();
-    }
+        StreamSubscriptionPtr stream_subscription_ = nullptr);
 
     std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;
+
+    /// Get columns description
+    ColumnsDescription getAllColumnsDescription() const;
 
     /// Get all available columns with types according to options.
     NamesAndTypesList getColumns(const GetColumnsOptions & options) const;
@@ -96,6 +87,10 @@ struct StorageSnapshot
     /// Get column with type according to options for requested name.
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
     NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
+
+    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
+    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;
@@ -115,15 +110,6 @@ struct StorageSnapshot
 
     /// If we have a projection then we should use its metadata.
     StorageMetadataPtr getMetadataForQuery() const { return projection ? projection->metadata : metadata; }
-
-private:
-    void init();
-
-    std::unordered_map<String, DataTypePtr> virtual_columns;
-
-    /// System columns are not visible in the schema but might be persisted in the data.
-    /// One example of such column is lightweight delete mask '_row_exists'.
-    std::unordered_map<String, DataTypePtr> system_columns;
 };
 
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;

@@ -67,7 +67,7 @@ private:
 
 }
 
-void AutoFinalOnQueryPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void AutoFinalOnQueryPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     auto visitor = AutoFinalOnQueryPassVisitor(std::move(context));
     visitor.visit(query_tree_node);

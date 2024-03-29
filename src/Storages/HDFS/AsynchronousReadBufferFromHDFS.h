@@ -21,7 +21,7 @@ namespace DB
 
 class IAsynchronousReader;
 
-class AsynchronousReadBufferFromHDFS : public ReadBufferFromFileBase
+class AsynchronousReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
 {
 public:
     AsynchronousReadBufferFromHDFS(

@@ -80,6 +80,8 @@ namespace
             return convertToChunk(block);
         }
 
+        std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
+
     private:
         TemporaryFileStream * tmp_stream;
     };
@@ -600,6 +602,12 @@ IProcessor::Status AggregatingTransform::prepare()
         if (is_consume_finished)
         {
             output.finish();
+            /// input.isFinished() means that merging is done. Now we can release our reference to aggregation states.
+            /// TODO: there is another case, when output port is getting closed first.
+            /// E.g. `select ... group by x limit 10`, if it was two-level aggregation and first few buckets contained already enough rows
+            /// limit will stop merging. It turned out to be not trivial to both release aggregation states and ensure that
+            /// ManyAggregatedData holds the last references to them to trigger parallel destruction in its dtor. Will work on that.
+            many_data.reset();
             return Status::Finished;
         }
         else
@@ -828,8 +836,6 @@ void AggregatingTransform::initGenerate()
 
         processors = Pipe::detachProcessors(std::move(pipe));
     }
-
-    many_data.reset();
 }
 
 }

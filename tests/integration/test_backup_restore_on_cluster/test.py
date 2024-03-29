@@ -1,4 +1,3 @@
-from time import sleep
 import pytest
 import re
 import os.path
@@ -164,7 +163,14 @@ def test_replicated_database():
     node2.query("INSERT INTO mydb.tbl VALUES (2, 'count')")
     node1.query("INSERT INTO mydb.tbl VALUES (3, 'your')")
     node2.query("INSERT INTO mydb.tbl VALUES (4, 'chickens')")
+    node1.query("OPTIMIZE TABLE mydb.tbl ON CLUSTER 'cluster' FINAL")
+
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
+
+    # check data in sync
+    expect = TSV([[1, "Don\\'t"], [2, "count"], [3, "your"], [4, "chickens"]])
+    assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == expect
+    assert node2.query("SELECT * FROM mydb.tbl ORDER BY x") == expect
 
     # Make backup.
     backup_name = new_backup_name()
@@ -179,13 +185,62 @@ def test_replicated_database():
     node1.query(f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
 
-    assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV(
-        [[1, "Don\\'t"], [2, "count"], [3, "your"], [4, "chickens"]]
+    assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == expect
+    assert node2.query("SELECT * FROM mydb.tbl ORDER BY x") == expect
+
+
+def test_replicated_database_compare_parts():
+    """
+    stop merges and fetches then write data to two nodes and
+    compare that parts are restored from single node (second) after backup
+    replica is selected by settings replica_num=2, replica_num_in_backup=2
+    """
+    node1.query(
+        "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
     )
 
-    assert node2.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV(
-        [[1, "Don\\'t"], [2, "count"], [3, "your"], [4, "chickens"]]
+    node1.query(
+        "CREATE TABLE mydb.tbl(x UInt8, y String) ENGINE=ReplicatedMergeTree ORDER BY x"
     )
+
+    node2.query("SYSTEM SYNC DATABASE REPLICA mydb")
+
+    node1.query("SYSTEM STOP MERGES mydb.tbl")
+    node2.query("SYSTEM STOP MERGES mydb.tbl")
+
+    node1.query("SYSTEM STOP FETCHES mydb.tbl")
+    node2.query("SYSTEM STOP FETCHES mydb.tbl")
+
+    node1.query("INSERT INTO mydb.tbl VALUES (1, 'a')")
+    node1.query("INSERT INTO mydb.tbl VALUES (2, 'b')")
+
+    node2.query("INSERT INTO mydb.tbl VALUES (3, 'x')")
+    node2.query("INSERT INTO mydb.tbl VALUES (4, 'y')")
+
+    p2 = node2.query("SELECT * FROM mydb.tbl ORDER BY x")
+
+    # Make backup.
+    backup_name = new_backup_name()
+    node1.query(
+        f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} SETTINGS replica_num=2"
+    )
+
+    # Drop table on both nodes.
+    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' SYNC")
+
+    # Restore from backup on node2.
+    node1.query(
+        f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} SETTINGS replica_num_in_backup=2"
+    )
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
+
+    # compare parts
+    p1_ = node1.query("SELECT _part, * FROM mydb.tbl ORDER BY x")
+    p2_ = node2.query("SELECT _part, * FROM mydb.tbl ORDER BY x")
+    assert p1_ == p2_
+
+    # compare data
+    assert p2 == node2.query("SELECT * FROM mydb.tbl ORDER BY x")
 
 
 def test_different_tables_on_nodes():
@@ -427,7 +482,12 @@ def test_replicated_database_async():
     node1.query("INSERT INTO mydb.tbl VALUES (22)")
     node2.query("INSERT INTO mydb.tbl2 VALUES ('a')")
     node2.query("INSERT INTO mydb.tbl2 VALUES ('bb')")
+
+    node1.query("OPTIMIZE TABLE mydb.tbl ON CLUSTER 'cluster' FINAL")
+    node1.query("OPTIMIZE TABLE mydb.tbl2 ON CLUSTER 'cluster' FINAL")
+
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl2")
 
     backup_name = new_backup_name()
     [id, status] = node1.query(
@@ -457,6 +517,7 @@ def test_replicated_database_async():
     )
 
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl2")
 
     assert node1.query("SELECT * FROM mydb.tbl ORDER BY x") == TSV([1, 22])
     assert node2.query("SELECT * FROM mydb.tbl2 ORDER BY y") == TSV(["a", "bb"])
@@ -1087,9 +1148,11 @@ def test_stop_other_host_during_backup(kill):
     status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
 
     if kill:
-        assert status in ["BACKUP_CREATED", "BACKUP_FAILED"]
+        expected_statuses = ["BACKUP_CREATED", "BACKUP_FAILED"]
     else:
-        assert status == "BACKUP_CREATED"
+        expected_statuses = ["BACKUP_CREATED", "BACKUP_CANCELLED"]
+
+    assert status in expected_statuses
 
     node2.start_clickhouse()
 

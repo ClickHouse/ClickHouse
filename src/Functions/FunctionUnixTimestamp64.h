@@ -45,7 +45,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"value", &isDateTime64<IDataType>, nullptr, "DateTime64"}
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime64), nullptr, "DateTime64"}
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 

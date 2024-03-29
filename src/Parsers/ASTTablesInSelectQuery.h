@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/EnumReflection.h>
-
 #include <Core/Joins.h>
 
 #include <Parsers/IAST.h>

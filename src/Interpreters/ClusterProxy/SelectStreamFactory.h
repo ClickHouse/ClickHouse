@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Analyzer/IQueryTreeNode.h>
 #include <Client/ConnectionPool.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Cluster.h>
@@ -50,9 +51,13 @@ public:
     {
         /// Query and header may be changed depending on shard.
         ASTPtr query;
+        QueryTreeNodePtr query_tree;
+
         /// Used to check the table existence on remote node
         StorageID main_table;
         Block header;
+
+        bool has_missing_objects = false;
 
         Cluster::ShardInfo shard_info;
 
@@ -83,10 +88,37 @@ public:
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator);
 
+    void createForShard(
+        const Cluster::ShardInfo & shard_info,
+        const QueryTreeNodePtr & query_tree,
+        const StorageID & main_table,
+        const ASTPtr & table_func_ptr,
+        ContextPtr context,
+        std::vector<QueryPlanPtr> & local_plans,
+        Shards & remote_shards,
+        UInt32 shard_count,
+        bool parallel_replicas_enabled,
+        AdditionalShardFilterGenerator shard_filter_generator);
+
     const Block header;
     const ColumnsDescriptionByShardNum objects_by_shard;
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
+
+private:
+    void createForShardImpl(
+        const Cluster::ShardInfo & shard_info,
+        const ASTPtr & query_ast,
+        const QueryTreeNodePtr & query_tree,
+        const StorageID & main_table,
+        const ASTPtr & table_func_ptr,
+        ContextPtr context,
+        std::vector<QueryPlanPtr> & local_plans,
+        Shards & remote_shards,
+        UInt32 shard_count,
+        bool parallel_replicas_enabled,
+        AdditionalShardFilterGenerator shard_filter_generator,
+        bool has_missing_objects = false);
 };
 
 }

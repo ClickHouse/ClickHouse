@@ -2,7 +2,6 @@
 #include <cstdlib>
 #include <csignal>
 #include <iostream>
-#include <fstream>
 #include <iomanip>
 #include <optional>
 #include <random>
@@ -35,6 +34,7 @@
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
+#include <Core/BaseSettingsProgramOptions.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -568,10 +568,6 @@ public:
 }
 
 
-#ifndef __clang__
-#pragma GCC optimize("-fno-var-tracking-assignments")
-#endif
-
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;
@@ -628,7 +624,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         ;
 
         Settings settings;
-        settings.addProgramOptions(desc);
+        addProgramOptions(settings, desc);
 
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
@@ -640,7 +636,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
-            return 1;
+            std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/\n";
+            return 0;
         }
 
         print_stacktrace = options.count("stacktrace");

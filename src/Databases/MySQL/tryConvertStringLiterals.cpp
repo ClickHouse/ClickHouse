@@ -61,7 +61,7 @@ static bool tryReadCharset(
 bool tryConvertStringLiterals(String & query)
 {
     Tokens tokens(query.data(), query.data() + query.size());
-    IParser::Pos pos(tokens, 0);
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     Expected expected;
     String rewritten_query;
     rewritten_query.reserve(query.size());

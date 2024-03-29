@@ -1,17 +1,17 @@
 #include <Analyzer/ColumnTransformers.h>
 
 #include <Common/SipHash.h>
+#include <Common/re2.h>
 
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsTransformers.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
+
 
 namespace DB
 {
@@ -133,7 +133,7 @@ ExceptColumnTransformerNode::ExceptColumnTransformerNode(std::shared_ptr<re2::RE
 bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_name) const
 {
     if (column_matcher)
-        return RE2::PartialMatch(column_name, *column_matcher);
+        return re2::RE2::PartialMatch(column_name, *column_matcher);
 
     for (const auto & name : except_column_names)
         if (column_name == name)

@@ -5,10 +5,12 @@
     <title>ClickHouse Dashboard</title>
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
     <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
     <style>
         :root {
             --color: black;
-            --background: linear-gradient(to bottom, #00CCFF, #00D0D0);
+            --background-color-1: #00CCFF;
+            --background: linear-gradient(to bottom, var(--background-color-1), #00D0D0);
             --chart-background: white;
             --shadow-color: rgba(0, 0, 0, 0.25);
             --moving-shadow-color: rgba(0, 0, 0, 0.5);
@@ -32,7 +34,8 @@
 
         [data-theme="dark"] {
             --color: white;
-            --background: #151C2C;
+            --background-color-1: #151C2C;
+            --background: var(--background-color-1);
             --chart-background: #1b2834;
             --shadow-color: rgba(0, 0, 0, 0);
             --moving-shadow-color: rgba(255, 255, 255, 0.25);
@@ -84,11 +87,10 @@
             gap: 1rem;
         }
         .chart {
-            flex: 1 40%;
-            min-width: 20rem;
+            flex: 1 1 40rem;
             min-height: 16rem;
             background: var(--chart-background);
-            box-shadow: 0 0 1rem var(--shadow-color);
+            box-shadow: 1px 1px 0 var(--shadow-color);
             overflow: hidden;
             position: relative;
         }
@@ -119,6 +121,18 @@
             display: flex;
             flex-flow: column nowrap;
             justify-content: center;
+
+            position: sticky;
+            top: -1rem;
+            margin-top: -1rem;
+            margin-left: -1rem;
+            margin-right: -1rem;
+            border-top: 1rem solid var(--background-color-1);
+            border-left: 1rem solid var(--background-color-1);
+            border-right: 1rem solid var(--background-color-1);
+            box-sizing: content-box;
+            z-index: 1000;
+            background: var(--background-color-1);
         }
 
         .inputs.unconnected {
@@ -194,7 +208,7 @@
         }
 
         .inputs input {
-            box-shadow: 0 0 1rem var(--shadow-color);
+            box-shadow: 1px 1px 0 var(--shadow-color);
             padding: 0.25rem;
         }
 
@@ -254,8 +268,6 @@
             font-weight: bold;
             user-select: none;
             cursor: pointer;
-            padding-left: 0.5rem;
-            padding-right: 0.5rem;
             background: var(--new-chart-background-color);
             color: var(--new-chart-text-color);
             float: right;
@@ -273,7 +285,6 @@
             float: right;
             width: 36%;
         }
-
 
         #global-error {
             align-self: center;
@@ -297,7 +308,7 @@
             background: var(--param-background-color);
             color: var(--param-text-color);
             display: inline-block;
-            box-shadow: 0 0 1rem var(--shadow-color);
+            box-shadow: 1px 1px 0 var(--shadow-color);
             margin-bottom: 1rem;
         }
 
@@ -484,24 +495,16 @@
   *
   * TODO:
   * - zoom on the graphs should work on touch devices;
-  * - compress the state for URL's #hash;
   * - footer with "about" or a link to source code;
   * - allow to configure a table on a server to save the dashboards;
   * - if a query returned one value, display this value instead of a diagram;
   * - if a query returned something unusual, display the table;
   */
 
-let host = 'https://play.clickhouse.com/';
-let user = 'explorer';
+let host = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
+let user = 'default';
 let password = '';
-let add_http_cors_header = true;
-
-/// If it is hosted on server, assume that it is the address of ClickHouse.
-if (location.protocol != 'file:') {
-    host = location.origin;
-    user = 'default';
-    add_http_cors_header = false;
-}
+let add_http_cors_header = (location.protocol != 'file:');
 
 const errorCodeMessageMap = {
     516: 'Error authenticating with database. Please check your connection params and try again.'
@@ -521,59 +524,25 @@ const errorMessages = [
 
 
 /// Query to fill `queries` list for the dashboard
-let search_query = `SELECT title, query FROM system.dashboards WHERE dashboard = 'overview'`;
+let search_query = `SELECT title, query FROM system.dashboards WHERE dashboard = 'Overview'`;
 let customized = false;
 let queries = [];
 
 /// Query parameters with predefined default values.
 /// All other parameters will be automatically found in the queries.
-let params = {
+let default_params = {
     'rounding': '60',
     'seconds': '86400'
 };
+let params = default_params;
 
 /// Palette generation for charts
-function generatePalette(baseColor, numColors) {
-    const baseHSL = hexToHsl(baseColor);
-    const hueStep = 360 / numColors;
-    const palette = [];
+function generatePalette(numColors) {
+    palette = [];
     for (let i = 0; i < numColors; i++) {
-        const hue = Math.round((baseHSL.h + i * hueStep) % 360);
-        const color = `hsl(${hue}, ${baseHSL.s}%, ${baseHSL.l}%)`;
-        palette.push(color);
+        palette.push(`oklch(${theme != 'dark' ? 0.75 : 0.5}, 0.15, ${360 * i / numColors})`);
     }
     return palette;
-}
-
-/// Helper function to convert hex color to HSL
-function hexToHsl(hex) {
-    hex = hex.replace(/^#/, '');
-    const bigint = parseInt(hex, 16);
-    const r = (bigint >> 16) & 255;
-    const g = (bigint >> 8) & 255;
-    const b = bigint & 255;
-    const r_norm = r / 255;
-    const g_norm = g / 255;
-    const b_norm = b / 255;
-    const max = Math.max(r_norm, g_norm, b_norm);
-    const min = Math.min(r_norm, g_norm, b_norm);
-    const l = (max + min) / 2;
-    let s = 0;
-    if (max !== min) {
-        s = l > 0.5 ? (max - min) / (2 - max - min) : (max - min) / (max + min);
-    }
-    let h = 0;
-    if (max !== min) {
-        if (max === r_norm) {
-            h = (g_norm - b_norm) / (max - min) + (g_norm < b_norm ? 6 : 0);
-        } else if (max === g_norm) {
-            h = (b_norm - r_norm) / (max - min) + 2;
-        } else {
-            h = (r_norm - g_norm) / (max - min) + 4;
-        }
-    }
-    h = Math.round(h * 60);
-    return { h, s: Math.round(s * 100), l: Math.round(l * 100) };
 }
 
 let theme = 'light';
@@ -594,13 +563,19 @@ let plots = [];
 let charts = document.getElementById('charts');
 
 /// This is not quite correct (we cannot really parse SQL with regexp) but tolerable.
-const query_param_regexp = /\{(\w+):[^}]+\}/g;
+const query_param_regexp = /\{(\w+):([^}]+)\}/g;
 
 /// Automatically parse more parameters from the queries.
 function findParamsInQuery(query, new_params) {
+    const typeDefault = (type) => type.includes('Int') ? '0'
+        : (type.includes('Float') ? '0.0'
+        : (type.includes('Bool') ? 'false'
+        : (type.includes('Date') ? new Date().toISOString().slice(0, 10)
+        : (type.includes('UUID') ? '00000000-0000-0000-0000-000000000000'
+        : ''))));
     for (let match of query.matchAll(query_param_regexp)) {
         const name = match[1];
-        new_params[name] = params[name] || '';
+        new_params[name] = params[name] || default_params[name] || typeDefault(match[2]);
     }
 }
 
@@ -1211,7 +1186,7 @@ async function draw(idx, chart, url_params, query) {
     // Treat every column as series
     const series_count = reply.meta.length;
     const fill = series_count == 2 ? fill_color : undefined;
-    const palette = generatePalette(line_color, series_count);
+    const palette = series_count == 2 ? [line_color] : generatePalette(series_count);
     let max_value = Number.NEGATIVE_INFINITY;
     for (let i = 1; i < series_count; i++) {
         let label = reply.meta[i].name;
@@ -1266,8 +1241,11 @@ function hideError() {
 }
 
 let firstLoad = true;
-
+let is_drawing = false; // Prevent race condition leading to duplicate/dangling charts.
 async function drawAll() {
+    if (is_drawing) return;
+    is_drawing = true;
+
     let params = getParamsForURL();
     const chartsArray = document.getElementsByClassName('chart');
 
@@ -1294,12 +1272,12 @@ async function drawAll() {
             document.getElementById('edit').style.display = 'inline-block';
             document.getElementById('search-span').style.display = '';
             hideError();
-        }
-        else {
-            const charts = document.getElementById('charts')
-            charts.style.height = '0px';
+        } else {
+            document.getElementById('charts').style.height = '0px';
         }
     });
+
+    is_drawing = false;
 }
 
 function resize() {
@@ -1380,11 +1358,13 @@ document.getElementById('params').onsubmit = function(event) {
     event.preventDefault();
 }
 
+const decodeState = (x) => JSON.parse(LZString.decompressFromEncodedURIComponent(x) || atob(x));
+const encodeState = (x) => LZString.compressToEncodedURIComponent(JSON.stringify(x));
 
 function saveState() {
     const state = { host, user, queries, params, search_query, customized };
     history.pushState(state, '',
-        window.location.pathname + (window.location.search || '') + '#' + btoa(JSON.stringify(state)));
+        window.location.pathname + (window.location.search || '') + '#' + encodeState(state));
 }
 
 async function searchQueries() {
@@ -1450,7 +1430,8 @@ window.onpopstate = function(event) {
 if (window.location.hash) {
     try {
         let search_query_, customized_;
-        ({host, user, queries, params, search_query_, customized_} = JSON.parse(atob(window.location.hash.substring(1))));
+        ({host, user, queries, params, search_query_, customized_} = decodeState(window.location.hash.substring(1)));
+
         // For compatibility with old URLs' hashes
         search_query = search_query_ !== undefined ? search_query_ : search_query;
         customized = customized_ !== undefined ? customized_ : true;
