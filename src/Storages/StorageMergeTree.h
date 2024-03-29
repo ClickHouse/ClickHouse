@@ -261,6 +261,7 @@ private:
                                                                         std::set<String> * mutation_ids = nullptr, bool from_another_mutation = false) const;
 
     void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
+    void fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
 
     void startBackgroundMovesIfNeeded() override;
 

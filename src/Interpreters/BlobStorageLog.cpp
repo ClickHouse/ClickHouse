@@ -26,23 +26,23 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
 
     return ColumnsDescription
     {
-        {"event_date", std::make_shared<DataTypeDate>()},
-        {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+        {"event_date", std::make_shared<DataTypeDate>(), "Date of the event."},
+        {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the event."},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the event with microseconds precision."},
 
-        {"event_type", event_enum_type},
+        {"event_type", event_enum_type, "Type of the event. Possible values: 'Upload', 'Delete', 'MultiPartUploadCreate', 'MultiPartUploadWrite', 'MultiPartUploadComplete', 'MultiPartUploadAbort'"},
 
-        {"query_id", std::make_shared<DataTypeString>()},
-        {"thread_id", std::make_shared<DataTypeUInt64>()},
-        {"thread_name", std::make_shared<DataTypeString>()},
+        {"query_id", std::make_shared<DataTypeString>(), "Identifier of the query associated with the event, if any."},
+        {"thread_id", std::make_shared<DataTypeUInt64>(), "Identifier of the thread performing the operation."},
+        {"thread_name", std::make_shared<DataTypeString>(), "Name of the thread performing the operation."},
 
-        {"disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"bucket", std::make_shared<DataTypeString>()},
-        {"remote_path", std::make_shared<DataTypeString>()},
-        {"local_path", std::make_shared<DataTypeString>()},
-        {"data_size", std::make_shared<DataTypeUInt64>()},
+        {"disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the associated disk."},
+        {"bucket", std::make_shared<DataTypeString>(), "Name of the bucket."},
+        {"remote_path", std::make_shared<DataTypeString>(), "Path to the remote resource."},
+        {"local_path", std::make_shared<DataTypeString>(), "Path to the metadata file on the local system, which references the remote resource."},
+        {"data_size", std::make_shared<DataTypeUInt64>(), "Size of the data involved in the upload event."},
 
-        {"error", std::make_shared<DataTypeString>()},
+        {"error", std::make_shared<DataTypeString>(), "Error message associated with the event, if any."},
     };
 }
 

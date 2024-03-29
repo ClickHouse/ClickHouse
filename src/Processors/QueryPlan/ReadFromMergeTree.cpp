@@ -43,6 +43,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <algorithm>
 #include <iterator>
@@ -130,6 +131,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_ROWS;
     extern const int CANNOT_PARSE_TEXT;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 static MergeTreeReaderSettings getMergeTreeReaderSettings(
@@ -347,7 +349,14 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
     /// merge states of aggregate functions or do some other important stuff other than reading from Disk.
-    pool_settings.min_marks_for_concurrent_read = static_cast<size_t>(pool_settings.min_marks_for_concurrent_read * context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier);
+    const auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+    if (auto result = pool_settings.min_marks_for_concurrent_read * multiplier; canConvertTo<size_t>(result))
+        pool_settings.min_marks_for_concurrent_read = static_cast<size_t>(result);
+    else
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Exceeded limit for the number of marks per a single task for parallel replicas. "
+            "Make sure that `parallel_replicas_single_task_marks_count_multiplier` is in some reasonable boundaries, current value is: {}",
+            multiplier);
 
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
         std::move(extension),
@@ -511,8 +520,14 @@ Pipe ReadFromMergeTree::readInOrder(
             .columns_to_read = required_columns,
         };
 
-        pool_settings.min_marks_for_concurrent_read = static_cast<size_t>(
-            pool_settings.min_marks_for_concurrent_read * context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier);
+        const auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+        if (auto result = pool_settings.min_marks_for_concurrent_read * multiplier; canConvertTo<size_t>(result))
+            pool_settings.min_marks_for_concurrent_read = static_cast<size_t>(result);
+        else
+            throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                "Exceeded limit for the number of marks per a single task for parallel replicas. "
+                "Make sure that `parallel_replicas_single_task_marks_count_multiplier` is in some reasonable boundaries, current value is: {}",
+                multiplier);
 
         CoordinationMode mode = read_type == ReadType::InOrder
             ? CoordinationMode::WithOrder
@@ -750,6 +765,82 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
     }
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
+
+    double read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = settings.merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability;
+    std::bernoulli_distribution fault(read_split_ranges_into_intersecting_and_non_intersecting_injection_probability);
+
+    if (read_type != ReadType::ParallelReplicas &&
+        num_streams > 1 &&
+        read_split_ranges_into_intersecting_and_non_intersecting_injection_probability > 0.0 &&
+        fault(thread_local_rng) &&
+        !isQueryWithFinal() &&
+        data.merging_params.is_deleted_column.empty() &&
+        !prewhere_info)
+    {
+        NameSet column_names_set(column_names.begin(), column_names.end());
+        Names in_order_column_names_to_read(column_names);
+
+        /// Add columns needed to calculate the sorting expression
+        for (const auto & column_name : metadata_for_reading->getColumnsRequiredForSortingKey())
+        {
+            if (column_names_set.contains(column_name))
+                continue;
+
+            in_order_column_names_to_read.push_back(column_name);
+            column_names_set.insert(column_name);
+        }
+
+        auto in_order_reading_step_getter = [this, &in_order_column_names_to_read, &info](auto parts)
+        {
+            return this->read(
+                std::move(parts),
+                in_order_column_names_to_read,
+                ReadType::InOrder,
+                1 /* num_streams */,
+                0 /* min_marks_for_concurrent_read */,
+                info.use_uncompressed_cache);
+        };
+
+        auto sorting_expr = std::make_shared<ExpressionActions>(metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
+
+        SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
+            metadata_for_reading->getPrimaryKey(),
+            std::move(sorting_expr),
+            std::move(parts_with_ranges),
+            num_streams,
+            context,
+            std::move(in_order_reading_step_getter),
+            true /*split_parts_ranges_into_intersecting_and_non_intersecting_final*/,
+            true /*split_intersecting_parts_ranges_into_layers*/);
+
+        auto merging_pipes = std::move(split_ranges_result.merging_pipes);
+        auto non_intersecting_parts_ranges_read_pipe = read(std::move(split_ranges_result.non_intersecting_parts_ranges),
+            column_names,
+            read_type,
+            num_streams,
+            info.min_marks_for_concurrent_read,
+            info.use_uncompressed_cache);
+
+        if (merging_pipes.empty())
+            return non_intersecting_parts_ranges_read_pipe;
+
+        Pipes pipes;
+        pipes.resize(2);
+        pipes[0] = Pipe::unitePipes(std::move(merging_pipes));
+        pipes[1] = std::move(non_intersecting_parts_ranges_read_pipe);
+
+        auto conversion_action = ActionsDAG::makeConvertingActions(
+            pipes[0].getHeader().getColumnsWithTypeAndName(),
+            pipes[1].getHeader().getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+        pipes[0].addSimpleTransform(
+            [conversion_action](const Block & header)
+            {
+                auto converting_expr = std::make_shared<ExpressionActions>(conversion_action);
+                return std::make_shared<ExpressionTransform>(header, converting_expr);
+            });
+        return Pipe::unitePipes(std::move(pipes));
+    }
 
     return read(std::move(parts_with_ranges),
         column_names,
@@ -1342,7 +1433,7 @@ static void buildIndexes(
     {
         const auto & indices = settings.ignore_data_skipping_indices.toString();
         Tokens tokens(indices.data(), indices.data() + indices.size(), settings.max_query_size);
-        IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth));
+        IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
         Expected expected;
 
         /// Use an unordered list rather than string vector
@@ -1405,6 +1496,20 @@ static void buildIndexes(
         }
     }
 
+    // move minmax indices to first positions, so they will be applied first as cheapest ones
+    std::stable_sort(begin(skip_indexes.useful_indices), end(skip_indexes.useful_indices), [](const auto & l, const auto & r)
+    {
+        const bool l_min_max = (typeid_cast<const MergeTreeIndexMinMax *>(l.index.get()));
+        const bool r_min_max = (typeid_cast<const MergeTreeIndexMinMax *>(r.index.get()));
+        if (l_min_max == r_min_max)
+            return false;
+
+        if (l_min_max)
+            return true; // left is min max but right is not
+
+        return false; // right is min max but left is not
+    });
+
     indexes->skip_indexes = std::move(skip_indexes);
 }
 
@@ -1418,8 +1523,13 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         if (query_info.planner_context)
         {
             const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
+            const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
             for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
             {
+                /// ALIAS columns cannot be used in the filter expression without being calculated in ActionsDAG,
+                /// so they should not be added to the input nodes.
+                if (alias_column_expressions.contains(column_name))
+                    continue;
                 const auto & column = table_expression_data.getColumnOrThrow(column_name);
                 node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
             }

@@ -15,6 +15,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitors.h>
+#include "Columns/ColumnsDateTime.h"
+#include "Columns/ColumnsNumber.h"
 
 #include <base/range.h>
 #include <base/unaligned.h>
@@ -669,7 +671,7 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     size_t max_dictionary_size)
 {
     auto overflowed_keys = column_holder->cloneEmpty();
-    auto overflowed_keys_ptr = typeid_cast<ColumnType *>(overflowed_keys.get());
+    auto * overflowed_keys_ptr = typeid_cast<ColumnType *>(overflowed_keys.get());
     if (!overflowed_keys_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid keys type for ColumnUnique.");
 
@@ -735,5 +737,24 @@ UInt128 ColumnUnique<ColumnType>::IncrementalHash::getHash(const ColumnType & co
 
     return cur_hash;
 }
+
+
+extern template class ColumnUnique<ColumnInt8>;
+extern template class ColumnUnique<ColumnUInt8>;
+extern template class ColumnUnique<ColumnInt16>;
+extern template class ColumnUnique<ColumnUInt16>;
+extern template class ColumnUnique<ColumnInt32>;
+extern template class ColumnUnique<ColumnUInt32>;
+extern template class ColumnUnique<ColumnInt64>;
+extern template class ColumnUnique<ColumnUInt64>;
+extern template class ColumnUnique<ColumnInt128>;
+extern template class ColumnUnique<ColumnUInt128>;
+extern template class ColumnUnique<ColumnInt256>;
+extern template class ColumnUnique<ColumnUInt256>;
+extern template class ColumnUnique<ColumnFloat32>;
+extern template class ColumnUnique<ColumnFloat64>;
+extern template class ColumnUnique<ColumnString>;
+extern template class ColumnUnique<ColumnFixedString>;
+extern template class ColumnUnique<ColumnDateTime64>;
 
 }

@@ -634,6 +634,7 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
             settings.ostr << '.';
         }
 
+        chassert(table);
         table->formatImpl(settings, state, frame);
     }
     else if (alter_object == AlterObjectType::DATABASE && database)

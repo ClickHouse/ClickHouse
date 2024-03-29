@@ -68,7 +68,8 @@ ColumnsDescription StorageSystemQuotaLimits::getColumnsDescription()
             data_type = std::make_shared<DataTypeFloat64>();
         else
             data_type = std::make_shared<DataTypeUInt64>();
-        result.add({column_name, std::make_shared<DataTypeNullable>(data_type)});
+
+        result.add({column_name, std::make_shared<DataTypeNullable>(data_type), type_info.max_allowed_usage_description});
     }
 
     return result;

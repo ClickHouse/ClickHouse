@@ -20,6 +20,7 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -812,7 +813,8 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     ParserCreateQuery parser;
     auto size = context->getSettingsRef().max_query_size;
     auto depth = context->getSettingsRef().max_parser_depth;
-    ASTPtr query = parseQuery(parser, metadata, size, depth);
+    auto backtracks = context->getSettingsRef().max_parser_backtracks;
+    ASTPtr query = parseQuery(parser, metadata, size, depth, backtracks);
     const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
     if (!create.storage || !create.storage->engine)
         return UUIDHelpers::Nil;
@@ -1234,7 +1236,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 {
     ParserCreateQuery parser;
     String description = "in ZooKeeper " + zookeeper_path + "/metadata/" + node_name;
-    auto ast = parseQuery(parser, query, description, 0, getContext()->getSettingsRef().max_parser_depth);
+    auto ast = parseQuery(parser, query, description, 0, getContext()->getSettingsRef().max_parser_depth, getContext()->getSettingsRef().max_parser_backtracks);
 
     auto & create = ast->as<ASTCreateQuery &>();
     if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
@@ -1559,7 +1561,7 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     for (const auto & [table_name, metadata] : snapshot)
     {
         ParserCreateQuery parser;
-        auto create_table_query = parseQuery(parser, metadata, 0, getContext()->getSettingsRef().max_parser_depth);
+        auto create_table_query = parseQuery(parser, metadata, 0, getContext()->getSettingsRef().max_parser_depth, getContext()->getSettingsRef().max_parser_backtracks);
 
         auto & create = create_table_query->as<ASTCreateQuery &>();
         create.attach = false;
