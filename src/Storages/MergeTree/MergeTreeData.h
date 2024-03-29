@@ -1556,12 +1556,6 @@ protected:
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
-    bool addTempPart(
-        MutableDataPartPtr & part,
-        Transaction & out_transaction,
-        DataPartsLock & lock,
-        DataPartsVector * out_covered_parts);
-
 private:
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, DataPartsLock & lock) const;
