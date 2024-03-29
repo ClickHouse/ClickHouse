@@ -109,14 +109,6 @@ private:
 
     bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, bool atomic = false) const;
 
-    void traverseAST(ASTPtr & node) const;
-
-    bool atomFromAST(ASTPtr & node) const;
-
-    static bool operatorFromAST(ASTPtr & node);
-
-    bool checkASTUseless(const ASTPtr & node, bool atomic = false) const;
-
     String index_name;
     size_t max_rows;
 
