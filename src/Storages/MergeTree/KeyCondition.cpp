@@ -5,8 +5,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
@@ -39,6 +37,10 @@
 #include <cassert>
 #include <stack>
 #include <limits>
+
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
+#include <boost/geometry/geometries/multi_polygon.hpp>
 
 
 namespace DB
@@ -2876,7 +2878,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
             points_by_minmax_index.push_back({x_max, y_max});
             points_by_minmax_index.push_back({x_max, y_min});
 
-            /// Check 1
             Polygon polygon_by_minmax_index;
             for (const auto & point : points_by_minmax_index)
                 polygon_by_minmax_index.outer().push_back(point);
@@ -2979,6 +2980,15 @@ String KeyCondition::RPNElement::toString() const
 {
     if (argument_num_of_space_filling_curve)
         return toString(fmt::format("argument {} of column {}", *argument_num_of_space_filling_curve, key_column), false);
+    else if (point_in_polygon_column_description)
+    {
+        return toString(
+            fmt::format(
+                "column ({}, {})",
+                point_in_polygon_column_description->key_columns[0],
+                point_in_polygon_column_description->key_columns[1]),
+            false);
+    }
     else
         return toString(fmt::format("column {}", key_column), false);
 }
@@ -3063,7 +3073,14 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
             buf << "(";
             print_wrapped_column(buf);
             buf << " in ";
-            buf << DB::toString(space_filling_curve_args_hyperrectangle);
+            buf << "[";
+            for (size_t i = 0; i < points_in_polygon.size(); ++i)
+            {
+                if (i != 0)
+                    buf << ", ";
+                buf << "(" << points_in_polygon[i].x() << ", " << points_in_polygon[i].y() << ")";
+            }
+            buf << "]";
             buf << ")";
             return buf.str();
         }
