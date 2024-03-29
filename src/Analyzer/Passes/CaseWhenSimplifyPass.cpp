@@ -79,6 +79,11 @@ public:
     {
         chassert(case_node.getFunctionName() == "caseWithExpression");
         auto case_args = case_node.getArguments().getNodes();
+        if (case_args.size() < 3)
+        {
+            failed = true;
+            return;
+        }
         has_else = (case_args.size() - 1) % 2 == 1;
         case_column = case_args.at(0);
         for (size_t i = 1; i < case_args.size() - (has_else ? 1 : 0); i += 2)
@@ -405,17 +410,17 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         // if parent has isNull or isNotNull function, abandon the optimization
-        if (parentHasIsNull)
+        if (in_disabled_function)
             return;
-        static const std::unordered_set<String> is_null_funcs = {"isNull", "isNotNull"};
+        // null property is hard to handle, so abandon the optimization
+        static const std::unordered_set<String> disabled_parent_funcs = {"isNull", "isNotNull"};
         static const std::unordered_set<String> supported_funcs = {"in", "notIn", "equals", "notEquals"};
         auto * func_node = node->as<FunctionNode>();
         if (!func_node)
             return;
-        if (is_null_funcs.contains(func_node->getFunctionName()))
+        if (disabled_parent_funcs.contains(func_node->getFunctionName()))
         {
-            parentHasIsNull = true;
-            return;
+            in_disabled_function = true;
         }
 
         if (!checkFunctionWithArguments(node, supported_funcs, 2))
@@ -448,12 +453,12 @@ public:
             CaseWhenNotInReplace replace(*case_node, *value_node, getContext());
             new_node = replace.replace();
         }
-        if (new_node)
+        if (new_node && new_node->getResultType()->equals(*node->getResultType()))
             node = new_node;
     }
 
 private:
-    bool parentHasIsNull = false;
+    bool in_disabled_function = false;
 };
 }
 
