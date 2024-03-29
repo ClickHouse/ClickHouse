@@ -14,6 +14,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
+#include "Interpreters/Context_fwd.h"
 #include <Formats/NativeWriter.h>
 #include <IO/WriteBuffer.h>
 #include <IO/SharedThreadPools.h>
@@ -318,7 +319,7 @@ void StorageJoin::convertRightBlock(Block & block) const
         JoinCommon::convertColumnToNullable(col);
 }
 
-StoragePtr StorageJoin::create(
+std::shared_ptr<StorageJoin> StorageJoin::create(
     String disk_name,
     const String & relative_path,
     const StorageID & table_id,
@@ -495,37 +496,49 @@ size_t rawSize(const StringRef & t)
 class JoinSource : public ISource
 {
 public:
-    JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, Block sample_block_)
+    JoinSource(StoragePtr storage_, UInt64 max_block_size_, Block sample_block_, ContextPtr context_)
         : ISource(sample_block_)
-        , join(join_)
-        , lock_holder(lock_holder_)
+        , storage_holder(std::move(storage_))
+        , storage(typeid_cast<StorageJoin &>(*storage_holder))
+        , context(std::move(context_))
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
     {
-        if (!join->getTableJoin().oneDisjunct())
-            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin does not support OR for keys in JOIN ON section");
-
-        column_indices.resize(sample_block.columns());
-
-        auto & saved_block = join->getJoinedData()->sample_block;
-
-        for (size_t i = 0; i < sample_block.columns(); ++i)
+        delay_read_initializer = [this]()
         {
-            auto & [_, type, name] = sample_block.getByPosition(i);
-            if (join->right_table_keys.has(name))
-            {
-                key_pos = i;
-                const auto & column = join->right_table_keys.getByName(name);
-                restored_block.insert(column);
-            }
-            else
-            {
-                size_t pos = saved_block.getPositionByName(name);
-                column_indices[i] = pos;
+            lock_holder = storage.tryLockTimedWithContext(storage.rwlock, RWLockImpl::Type::Read, context);
+            join = storage.join;
+            if (!join->getTableJoin().oneDisjunct())
+                throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin does not support OR for keys in JOIN ON section");
 
-                const auto & column = saved_block.getByPosition(pos);
-                restored_block.insert(column);
+            column_indices.resize(sample_block.columns());
+
+            auto & saved_block = join->getJoinedData()->sample_block;
+
+            for (size_t i = 0; i < sample_block.columns(); ++i)
+            {
+                auto & [_, type, name] = sample_block.getByPosition(i);
+                if (join->right_table_keys.has(name))
+                {
+                    key_pos = i;
+                    const auto & column = join->right_table_keys.getByName(name);
+                    restored_block.insert(column);
+                }
+                else
+                {
+                    size_t pos = saved_block.getPositionByName(name);
+                    column_indices[i] = pos;
+
+                    const auto & column = saved_block.getByPosition(pos);
+                    restored_block.insert(column);
+                }
             }
+        };
+
+        if (!storage.delay_read)
+        {
+            delay_read_initializer();
+            delay_read_initializer = {};
         }
     }
 
@@ -534,6 +547,12 @@ public:
 protected:
     Chunk generate() override
     {
+        if (delay_read_initializer)
+        {
+            delay_read_initializer();
+            delay_read_initializer = {};
+        }
+
         if (join->data->blocks.empty())
             return {};
 
@@ -545,6 +564,9 @@ protected:
     }
 
 private:
+    StoragePtr storage_holder;
+    StorageJoin & storage;
+    ContextPtr context;
     HashJoinPtr join;
     TableLockHolder lock_holder;
 
@@ -555,6 +577,7 @@ private:
     ColumnNumbers column_indices;
     std::optional<size_t> key_pos;
 
+    std::function<void()> delay_read_initializer;
     std::unique_ptr<void, std::function<void(void *)>> position; /// type erasure
 
 
@@ -703,8 +726,7 @@ Pipe StorageJoin::read(
     storage_snapshot->check(column_names);
 
     Block source_sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
-    RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
-    return Pipe(std::make_shared<JoinSource>(join, std::move(holder), max_block_size, source_sample_block));
+    return Pipe(std::make_shared<JoinSource>(shared_from_this(), max_block_size, source_sample_block, std::move(context)));
 }
 
 }

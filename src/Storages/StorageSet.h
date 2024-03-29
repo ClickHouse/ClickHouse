@@ -30,6 +30,9 @@ public:
     bool storesDataOnDisk() const override { return disk != nullptr; }
     Strings getDataPaths() const override { return storesDataOnDisk() ? Strings{path} : Strings{}; }
 
+    /// Delay read until the first call
+    void delayRead() { delay_read = true; }
+
 protected:
     StorageSetOrJoinBase(
         DiskPtr disk_,
@@ -45,6 +48,8 @@ protected:
     bool persistent;
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
+
+    bool delay_read = false;
 
     /// Restore from backup.
     void restore();

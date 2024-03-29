@@ -34,12 +34,12 @@ public:
                 "_shard_count",
                 Block{{DataTypeUInt32().createColumnConst(1, *options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
 
-        if (context->getSettingsRef().enable_materialized_cte)
+        if (!options.is_subquery && context->getSettingsRef().enable_materialized_cte)
         {
             /// Collect all CTE with MATERIALIZED keyword add to query context as temporary tables
             /// We need to do it here before analyzing the query
-            GlobalMaterializeCTEVisitor::Data data(context);
-            GlobalMaterializeCTEVisitor(data).visit(query_ptr, has_materialized_cte);
+            GlobalMaterializeCTEVisitor::Data data(context, future_tables);
+            GlobalMaterializeCTEVisitor(data).visit(query_ptr);
         }
     }
 
@@ -78,18 +78,19 @@ protected:
     SelectQueryOptions options;
     StorageLimitsList storage_limits;
 
+    FutureTablesFromCTE future_tables;
+
     size_t max_streams = 1;
     bool settings_limit_offset_needed = false;
     bool settings_limit_offset_done = false;
     bool uses_view_source = false;
-    bool has_materialized_cte = false;
 
     /// Set quotas to query pipeline.
     void setQuota(QueryPipeline & pipeline) const;
     /// Add filter from additional_post_filter setting.
     void addAdditionalPostFilter(QueryPlan & plan) const;
     /// Add delayed step to build materialized CTE tables
-    void addDelayedMaterializingCTETables(QueryPlan & plan) const;
+    void addDelayedMaterializingCTETables(QueryPlan & plan);
 
     static StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options);
 };

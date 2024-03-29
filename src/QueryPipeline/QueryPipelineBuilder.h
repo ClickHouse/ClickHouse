@@ -6,6 +6,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/Context_fwd.h>
+#include "Interpreters/MaterializedTableFromCTE.h"
 
 namespace DB
 {
@@ -151,8 +152,7 @@ public:
     void addMaterializingCTEsTransform(
         ContextPtr context,
         const Block & res_header,
-        StoragePtr external_table,
-        const String & cte_table_name,
+        FutureTableFromCTEPtr future_table,
         const SizeLimits & limits);
 
     PipelineExecutorPtr execute();

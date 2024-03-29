@@ -1606,7 +1606,7 @@ Tables Context::getExternalTables(bool for_sending_to_remote) const
     return res;
 }
 
-void Context::addExternalTableFromCTE(std::shared_ptr<FutureTableFromCTE> && future_table, TemporaryTableHolder && temporary_table)
+void Context::addExternalTableFromCTE(std::shared_ptr<FutureTableFromCTE> future_table, TemporaryTableHolder && temporary_table)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
@@ -1615,17 +1615,23 @@ void Context::addExternalTableFromCTE(std::shared_ptr<FutureTableFromCTE> && fut
     std::lock_guard lock(mutex);
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
-    materialized_cte_tables.emplace(table_name, std::move(future_table));
+    future_tables_mapping.emplace(future_table->external_table.get(), std::move(future_table));
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
-FutureTablesFromCTE Context::detachFutureTablesFromCTE()
+FutureTablesFromCTE Context::getFutureTables(const std::vector<StoragePtr> & storages) const
 {
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    std::lock_guard lock(mutex);
-    return std::move(materialized_cte_tables);
+    FutureTablesFromCTE res;
+    {
+        SharedLockGuard lock(mutex);
+        for (const auto & storage : storages)
+        {
+            auto it = future_tables_mapping.find(storage.get());
+            if (it != future_tables_mapping.end())
+                res.emplace_back(it->second->shared_from_this());
+        }
+    }
+    return res;
 }
 
 void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)

@@ -1440,7 +1440,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
                     return set;
 
                 if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
-                    return data.prepared_sets->addFromStorage(set_key, storage_set->getSet());
+                    return data.prepared_sets->addFromStorage(set_key, storage_set);
             }
 
             if (!data.getContext()->isGlobalContext())

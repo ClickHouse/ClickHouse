@@ -111,6 +111,7 @@ public:
     using Nodes = std::list<Node>;
 
     Node * getRootNode() const { return root; }
+    const std::vector<StoragePtr> & getRequiredStorages() const { return resources.storage_holders; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
 
 private:

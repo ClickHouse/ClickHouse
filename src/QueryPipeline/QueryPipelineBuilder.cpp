@@ -31,6 +31,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
+#include "Interpreters/MaterializedTableFromCTE.h"
 #include "Processors/Transforms/MaterializingCTETransform.h"
 
 namespace DB
@@ -566,7 +567,7 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
     pipe.addTransform(std::move(transform));
 }
 
-void QueryPipelineBuilder::addMaterializingCTEsTransform(ContextPtr context, const Block & res_header, StoragePtr external_table, const String & cte_table_name, const SizeLimits & limits)
+void QueryPipelineBuilder::addMaterializingCTEsTransform(ContextPtr context, const Block & res_header, FutureTableFromCTEPtr future_table, const SizeLimits & limits)
 {
     dropTotalsAndExtremes();
     resize(1);
@@ -575,8 +576,7 @@ void QueryPipelineBuilder::addMaterializingCTEsTransform(ContextPtr context, con
         context,
         getHeader(),
         res_header,
-        std::move(external_table),
-        cte_table_name,
+        std::move(future_table),
         limits);
     pipe.addTransform(std::move(transform));
 }

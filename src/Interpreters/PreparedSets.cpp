@@ -5,6 +5,8 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <IO/Operators.h>
 #include <Common/logger_useful.h>
+#include "Interpreters/Context.h"
+#include "Storages/StorageSet.h"
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -45,13 +47,70 @@ static bool equals(const DataTypes & lhs, const DataTypes & rhs)
     return true;
 }
 
+static bool materializeFutureTables(ContextPtr context, const FutureTablesFromCTE & required_future_tables)
+{
+    std::vector<std::shared_future<bool>> futures_table_to_wait;
+    QueryPipelineBuilders pipelines_to_build_future_tables;
+    for (const auto & future_table : required_future_tables)
+    {
+        auto [plan, promise] = future_table->buildPlanOrGetPromiseToMaterialize(context);
+        if (plan)
+            pipelines_to_build_future_tables.emplace_back(plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
 
-FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {}
+        futures_table_to_wait.push_back(std::move(promise));
+    }
+
+    if (!pipelines_to_build_future_tables.empty())
+    {
+        QueryPipelineBuilder builder;
+        if (pipelines_to_build_future_tables.size() > 1)
+            builder = QueryPipelineBuilder::unitePipelines(std::move(pipelines_to_build_future_tables), context->getSettingsRef().max_threads, nullptr);
+        else
+            builder = std::move(*pipelines_to_build_future_tables.front());
+
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        pipeline.complete(std::make_shared<EmptySink>(Block()));
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
+    }
+
+    for (auto & future_table : futures_table_to_wait)
+    {
+        future_table.wait();
+        if (const auto & materialized = future_table.get(); !materialized)
+            return false;
+    }
+
+    return true;
+}
+
+
+FutureSetFromStorage::FutureSetFromStorage(StorageSet * storage_set_)
+: set(storage_set_->getSet())
+, storage(storage_set_->shared_from_this())
+{
+}
+
+FutureSetFromStorage::FutureSetFromStorage(SetPtr set_)
+: set(std::move(set_))
+{
+}
+
 SetPtr FutureSetFromStorage::get() const { return set; }
 DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
 
-SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
+SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr & context)
 {
+    if (storage)
+    {
+        auto future_tables = context->getFutureTables({storage});
+        if (!future_tables.empty())
+        {
+            set->fillSetElements();
+            if(!materializeFutureTables(context, future_tables))
+                return nullptr;
+        }
+    }
     return set->hasExplicitSetElements() ? set : nullptr;
 }
 
@@ -211,6 +270,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     if (!plan)
         return nullptr;
 
+    if (!materializeFutureTables(context, context->getFutureTables(plan->getRequiredStorages())))
+        return nullptr;
+
     set_and_key->set->fillSetElements();
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
@@ -263,9 +325,9 @@ FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, Block block, 
     return from_tuple;
 }
 
-FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, SetPtr set_)
+FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, StorageSet * storage_set)
 {
-    auto from_storage = std::make_shared<FutureSetFromStorage>(std::move(set_));
+    auto from_storage = std::make_shared<FutureSetFromStorage>(storage_set);
     auto [it, inserted] = sets_from_storage.emplace(key, from_storage);
 
     if (!inserted)

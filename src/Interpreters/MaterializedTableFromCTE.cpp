@@ -6,28 +6,29 @@
 namespace DB
 {
 
-std::unique_ptr<QueryPlan> FutureTableFromCTE::build(ContextPtr context)
+std::pair<std::unique_ptr<QueryPlan>, std::shared_future<bool>> FutureTableFromCTE::buildPlanOrGetPromiseToMaterialize(ContextPtr context)
 {
-    bool expected_built = false;
-    if (built.compare_exchange_strong(expected_built, true))
+    bool expected = false;
+    QueryPlanPtr plan;
+
+    if (get_permission_to_build_plan.compare_exchange_strong(expected, true))
     {
         const auto & settings = context->getSettingsRef();
-        auto plan = std::move(source);
+        plan = std::move(source);
 
         if (!plan)
-            return nullptr;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan to fill CTE must not be not NULL.");
 
         auto creating_set = std::make_unique<MaterializingCTEStep>(
                 plan->getCurrentDataStream(),
-                external_table,
-                name,
+                shared_from_this(),
                 SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
                 context);
         creating_set->setStepDescription("Create temporary table from CTE.");
         plan->addStep(std::move(creating_set));
-        return plan;
     }
-    return nullptr;
+
+    return {std::move(plan), fully_materialized};
 }
 
 }

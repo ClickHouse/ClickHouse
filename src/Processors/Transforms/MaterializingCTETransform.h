@@ -7,6 +7,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Interpreters/PreparedSets.h>
 #include <Common/Stopwatch.h>
+#include "Interpreters/MaterializedTableFromCTE.h"
 
 #include <Poco/Logger.h>
 
@@ -30,8 +31,7 @@ public:
         ContextPtr context_,
         Block in_header_,
         Block out_header_,
-        StoragePtr external_table_,
-        const String & cte_table_name,
+        FutureTableFromCTEPtr future_table_,
         SizeLimits network_transfer_limits_);
 
     ~MaterializingCTETransform() override;
@@ -43,15 +43,16 @@ public:
     Chunk generate() override;
 
 private:
-    String cte_table_name;
+    FutureTableFromCTEPtr future_table;
     StoragePtr external_table;
+    String table_name;
 
     QueryPipeline table_out;
     std::unique_ptr<PushingPipelineExecutor> executor;
     UInt64 read_rows = 0;
     Stopwatch watch;
 
-    bool done_with_table = true;
+    bool consume_all_block = true;
 
     SizeLimits network_transfer_limits;
 

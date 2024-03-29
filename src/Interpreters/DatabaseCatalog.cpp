@@ -135,19 +135,17 @@ TemporaryTableHolder::TemporaryTableHolder(
         [&](const StorageID & table_id) -> StoragePtr
         {
             ASTFunction * engine = custom_engine ? custom_engine->as<ASTFunction>() : nullptr;
-            auto create_memory_table = [&]
+            if (!engine || engine->name == "Memory")
             {
                 auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
                 if (delay_read)
                     storage->delayRead();
                 return storage;
-            };
-            if (!engine || engine->name == "Memory")
-                return create_memory_table();
+            }
 
             if (engine->name == "Join")
             {
-                return StorageJoin::create(
+                auto storage = StorageJoin::create(
                     /*disk_name*/ "",
                     /*relative_path*/ "",
                     table_id,
@@ -159,16 +157,21 @@ TemporaryTableHolder::TemporaryTableHolder(
                     ConstraintsDescription{constraints},
                     /*comment*/ "For materializing CTE",
                     context_);
+                storage->delayRead();
+                return storage;
             }
-            else if (engine->name == "Set")
+
+            if (engine->name == "Set")
             {
-                return std::make_shared<StorageSet>(
+                auto storage = std::make_shared<StorageSet>(
                     /*disk*/ nullptr, /*relative_path*/ "",
                     table_id,
                     ColumnsDescription{columns},
                     ConstraintsDescription{constraints},
                     /*comments*/ "For materializing CTE",
                     /*persistent*/ false);
+                storage->delayRead();
+                return storage;
             }
 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} is not supported for temporary table", engine->name);

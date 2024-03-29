@@ -27,6 +27,7 @@ using HashJoinPtr = std::shared_ptr<HashJoin>;
   */
 class StorageJoin final : public StorageSetOrJoinBase
 {
+friend class JoinSource;
 public:
     /// For temporary in-memory join table, disk_ can be nullptr.
     StorageJoin(
@@ -92,7 +93,7 @@ public:
 
     bool supportsTrivialCountOptimization() const override { return true; }
 
-    static StoragePtr create(
+    static std::shared_ptr<StorageJoin> create(
         String disk_name,
         const String & relative_path,
         const StorageID & table_id,
