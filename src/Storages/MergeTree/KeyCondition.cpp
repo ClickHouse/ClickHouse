@@ -1764,16 +1764,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                     return false;
             }
             else
-            {
-                if (func_name == "pointInPolygon")
-                {
-                    /// Case 2: has holes in polygon
-                    /// When checking skip index, the hole will be ignored.
-                    return analyze_point_in_polygon();
-                }
-                else
-                    return false;
-            }
+                return false;
 
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
@@ -1870,7 +1861,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
         {
             if (func_name == "pointInPolygon")
             {
-                /// Case2 has holes in polygon, just ignore them
+                /// Case2 has holes in polygon, when checking skip index, the hole will be ignored.
                 return analyze_point_in_polygon();
             }
             else
