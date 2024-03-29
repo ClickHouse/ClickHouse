@@ -8,6 +8,7 @@
 #include <base/getFQDNOrHostName.h>
 #include "Common/Logger.h"
 #include "Common/Priority.h"
+#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeperLoadBalancer.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
@@ -37,6 +38,8 @@ public:
         size_t id;
         Status status = UNDEF;
     };
+
+    typedef std::function<std::string(const Coordination::IClientsConnectionBalancer::EndpointInfo &)> AdditionalInfoFn;
 
     size_t addEndpoint(EndpointInternal endpoint)
     {
@@ -82,11 +85,19 @@ public:
         return ids;
     }
 
-    void logAllEndpoints(LoggerPtr logger) const
+    void logAllEndpoints(LoggerPtr logger, AdditionalInfoFn info) const
     {
         LOG_INFO(logger, "Reporting Endpoint status information.");
         for (const auto & endpoint : endpoints)
-            LOG_INFO(logger, "Endpoint ID {}, address {}, status {}", endpoint.id, endpoint.address, endpoint.status);
+        {
+            LOG_INFO(logger, "Endpoint ID {}, address {}, status {}, additional info {}", endpoint.id, endpoint.address, endpoint.status,
+                info(Coordination::IClientsConnectionBalancer::EndpointInfo{
+                    .address = endpoint.address,
+                    .host = endpoint.address.substr(0, endpoint.address.find_last_of(':')),
+                    .secure = endpoint.secure,
+                    .id = endpoint.id,
+                }));
+        }
     }
 
 private:
@@ -167,8 +178,12 @@ public:
 
     void logAllEndpoints(LoggerPtr logger) const override
     {
-        registry.logAllEndpoints(logger);
+        registry.logAllEndpoints(logger, [this] (const EndpointInfo & endpoint) -> std::string {
+            return additionalInformation(endpoint);
+        });
     }
+
+    virtual std::string additionalInformation(const EndpointInfo &) const { return ""; }
 
 protected:
     using EndpointInternal = EndpointRegistry::EndpointInternal;
@@ -309,11 +324,15 @@ public:
             return true;
         return false;
     }
+
+    std::string additionalInformation(const EndpointInfo & endpoint) const override
+    {
+        return "priority: " + std::to_string(getPriority(endpoint));
+    }
+
 private:
     bool isOptimalEndpoint(size_t id) const
     {
-        LOG_INFO(getLogger("debug"), "original index {}, priority {}, best {}, priorities[0] {}, priorities[1] {}, priorities[2] {}",
-            id, priorities[id], *std::min_element(priorities.begin(), priorities.end()), priorities[0], priorities[1], priorities[2]);
         return priorities[id] == *std::min_element(priorities.begin(), priorities.end());
     }
 
@@ -330,8 +349,6 @@ public:
 private:
     std::optional<EndpointInfo> getHostToConnect() override
     {
-        LOG_INFO(getLogger("debug"), "current keeper original round robin id is {}, address is {}",
-         round_robin_id, findEndpointById(round_robin_id).address);
         auto round_robin_status = registry.findEndpointById(round_robin_id).status;
         if (round_robin_status == ONLINE)
             return selectEndpoint(round_robin_id);
@@ -405,7 +422,6 @@ class NearestHostname : public IBalancerWithPriorities
 public:
     size_t getPriority(const EndpointInfo & endpoint) const override
     {
-        LOG_INFO(getLogger("debug"), "Nearest host address current {}, node {}, priority {}",  getFQDNOrHostName(), endpoint.host, Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), endpoint.host));
         return Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), endpoint.host);
     }
 };
@@ -492,23 +508,26 @@ std::unique_ptr<Coordination::IKeeper> ZooKeeperImplFactory::create(
 }
 
 
-ZooKeeperLoadBalancer & ZooKeeperLoadBalancer::instance(const std::string & config_name)
+template<typename KeeperClient>
+ZooKeeperLoadBalancer<KeeperClient> & ZooKeeperLoadBalancer<KeeperClient>::instance(const std::string & config_name, std::shared_ptr<IKeeperFactory<KeeperClient>> factory)
 {
-    static std::unordered_map<std::string, ZooKeeperLoadBalancer> load_balancer_by_name;
+    static std::unordered_map<std::string, ZooKeeperLoadBalancer<KeeperClient>> load_balancer_by_name;
     static std::mutex mutex;
 
     std::lock_guard<std::mutex> lock{mutex};
     if (load_balancer_by_name.contains(config_name))
         return load_balancer_by_name.at(config_name);
-    return load_balancer_by_name.emplace(config_name, ZooKeeperLoadBalancer(config_name)).first->second;
+    return load_balancer_by_name.emplace(config_name, ZooKeeperLoadBalancer<KeeperClient>(config_name, factory)).first->second;
 }
 
-ZooKeeperLoadBalancer::ZooKeeperLoadBalancer(const std::string & config_name, std::shared_ptr<IKeeperFactory> factory)
+template<typename KeeperClient>
+ZooKeeperLoadBalancer<KeeperClient>::ZooKeeperLoadBalancer(const std::string & config_name, std::shared_ptr<IKeeperFactory<KeeperClient>> factory)
     : log(getLogger("ZooKeeperLoadBalancer/" + config_name)), keeper_factory(factory)
 {
 }
 
-void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_)
+template<typename KeeperClient>
+void ZooKeeperLoadBalancer<KeeperClient>::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_)
 {
     if (args_.hosts.empty())
         throw zkutil::KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No hosts specified in ZooKeeperArgs.");
@@ -530,7 +549,8 @@ void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<Zo
         throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
 }
 
-std::unique_ptr<Coordination::IKeeper> ZooKeeperLoadBalancer::createClient()
+template<typename KeeperClient>
+std::unique_ptr<KeeperClient> ZooKeeperLoadBalancer<KeeperClient>::createClient()
 {
     // We want to retry a better host later if it becomes offline temporarily. But currently we don't have background thread to check endpoint status,
     // so instead we reset all offline status when creating a new client.
@@ -564,16 +584,8 @@ std::unique_ptr<Coordination::IKeeper> ZooKeeperLoadBalancer::createClient()
 
         try
         {
-            auto zknode = Coordination::ZooKeeper::Node {
-                .address = Poco::Net::SocketAddress(endpoint.address),
-                .original_index = UInt8(endpoint.id),
-                .secure = endpoint.secure,
-            };
-
             auto client  = keeper_factory->create(
                 endpoint.address, endpoint.id, endpoint.secure, args, zk_log);
-            LOG_INFO(log, "debug original index {} host {}", endpoint.id, endpoint.address);
-
             if (endpoint.settings.use_fallback_session_lifetime)
             {
                 auto session_timeout_seconds = client->setClientSessionDeadline(
@@ -601,4 +613,8 @@ std::unique_ptr<Coordination::IKeeper> ZooKeeperLoadBalancer::createClient()
         }
     }
 }
+
+template class ZooKeeperLoadBalancer<IKeeper>;
+template class ZooKeeperLoadBalancer<FakeKeeperClient>;
+
 }
