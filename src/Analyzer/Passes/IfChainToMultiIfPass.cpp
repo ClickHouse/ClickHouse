@@ -65,6 +65,14 @@ public:
         auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
         multi_if_function->getArguments().getNodes() = std::move(multi_if_arguments);
         multi_if_function->resolveAsFunction(multi_if_function_ptr->build(multi_if_function->getArgumentColumns()));
+        /// if() and multif() may has different return value:
+        ///
+        /// - multiIf(dummy % NULL, NULL, dummy % NULL, 1, 2) = Nullable(UInt8)
+        /// - if(dummy % NULL, NULL, if(dummy % NULL, 1, 2)) = UInt8
+        ///
+        /// Do not rewrite if() to multiIf() in this case.
+        if (!function_node->getResultType()->equals(*multi_if_function->getResultType()))
+            return;
         node = std::move(multi_if_function);
     }
 
