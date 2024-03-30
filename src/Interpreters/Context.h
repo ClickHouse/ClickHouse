@@ -529,7 +529,7 @@ public:
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
 
-    DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> f, std::optional<Exception> * exception) const;
+    DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter, std::optional<Exception> * exception) const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
