@@ -609,18 +609,148 @@ ngramDistanceCaseInsensitiveUTF8(haystack, needle)
 
 ## ngramSearch
 
-Like `ngramDistance` but calculates the non-symmetric difference between a `needle` string and a `haystack` string, i.e. the number of n-grams from needle minus the common number of n-grams normalized by the number of `needle` n-grams. Returns a Float32 between 0 and 1. The bigger the result is, the more likely `needle` is in the `haystack`. This function is useful for fuzzy string search. Also see function `soundex`.
+Like `ngramDistance` but calculates the non-symmetric difference between a `needle` string and a `haystack` string, i.e. the number of n-grams from the needle minus the common number of n-grams normalized by the number of `needle` n-grams. Returns a [Float32](../../sql-reference/data-types/float.md/#float32-float64) between 0 and 1. The bigger the result is, the more likely `needle` is in the `haystack`. This function is useful for fuzzy string search. Also see function [`soundex`](../../sql-reference/functions/string-functions#soundex).
 
-Functions `ngramSearchCaseInsensitive, ngramSearchUTF8, ngramSearchCaseInsensitiveUTF8` provide case-insensitive and/or UTF-8 variants of this function.
-
-:::note
-The UTF-8 variants use the 3-gram distance. These are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables – collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function – we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one – this works for Latin and mostly for all Cyrillic letters.
-:::
+Functions [`ngramSearchCaseInsensitive`](#ngramsearchcaseinsensitive), [`ngramSearchUTF8`](#ngramsearchutf8), [`ngramSearchCaseInsensitiveUTF8`](#ngramsearchcaseinsensitiveutf8) provide case-insensitive and/or UTF-8 variants of this function.
 
 **Syntax**
 
 ```sql
 ngramSearch(haystack, needle)
+```
+
+**Parameters**
+
+- `haystack`: First comparison string. [String literal](../syntax#syntax-string-literal)
+- `needle`: Second comparison string. [String literal](../syntax#syntax-string-literal)
+
+**Returned value**
+
+- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
+
+**Implementation details**
+
+:::note
+The UTF-8 variants use the 3-gram distance. These are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables – collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function – we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one – this works for Latin and mostly for all Cyrillic letters.
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT ngramSearch('Hello World','World Hello');
+```
+
+Result:
+
+```response
+0.5
+```
+
+## ngramSearchCaseInsensitive
+
+Provides a case-insensitive variant of [ngramSearch](#ngramSearch).
+
+**Syntax**
+
+```sql
+ngramSearchCaseInsensitive(haystack, needle)
+```
+
+**Parameters**
+
+- `haystack`: First comparison string. [String literal](../syntax#syntax-string-literal)
+- `needle`: Second comparison string. [String literal](../syntax#syntax-string-literal)
+
+**Returned value**
+
+- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
+
+The bigger the result is, the more likely `needle` is in the `haystack`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT ngramSearchCaseInsensitive('Hello World','hello');
+```
+
+Result:
+
+```response
+1
+```
+
+## ngramSearchUTF8
+
+Provides a UTF-8 variant of [ngramSearch](#ngramsearch) in which `needle` and `haystack` are assumed to be UTF-8 encoded strings.
+
+**Syntax**
+
+```sql
+ngramSearchUTF8(haystack, needle)
+```
+
+**Parameters**
+
+- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
+- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
+
+**Returned value**
+
+- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
+
+The bigger the result is, the more likely `needle` is in the `haystack`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT ngramSearchUTF8('абвгдеёжз', 'гдеёзд');
+```
+
+Result:
+
+```response
+0.5
+```
+
+## ngramSearchCaseInsensitiveUTF8
+
+Provides a case-insensitive variant of [ngramSearchUTF8](#ngramsearchutf8) in which `needle` and `haystack`.
+
+**Syntax**
+
+```sql
+ngramSearchCaseInsensitiveUTF8(haystack, needle)
+```
+
+**Parameters**
+
+- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
+- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
+
+**Returned value**
+
+- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
+
+The bigger the result is, the more likely `needle` is in the `haystack`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз');
+```
+
+Result:
+
+```response
+0.57142854
 ```
 
 ## countSubstrings
