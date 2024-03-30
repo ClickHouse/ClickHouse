@@ -2087,7 +2087,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
 
         src_parts = src_data.getVisibleDataPartsVector(local_context);
-    } else
+    }
+    else
     {
         partition_id = getPartitionIDFromQuery(partition, local_context);
         src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
