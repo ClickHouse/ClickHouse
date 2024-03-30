@@ -683,7 +683,7 @@ Like [hasSubsequence](#hasSubsequence) but searches case-insensitively.
 **Syntax**
 
 ``` sql
-hasSubsequence(haystack, needle)
+hasSubsequenceCaseInsensitive(haystack, needle)
 ```
 
 **Arguments**
@@ -908,7 +908,7 @@ Returns 1 if a given token is present in a haystack, 0 otherwise. Ignores case a
 **Syntax**
 
 ```sql
-hasTokenCaseInsensitive(haystack, token)
+hasTokenCaseInsensitiveOrNull(haystack, token)
 ```
 
 **Parameters**

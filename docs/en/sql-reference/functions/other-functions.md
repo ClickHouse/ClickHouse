@@ -593,7 +593,7 @@ SELECT hasColumnInTable('system','metrics','non-existing_column')
 
 ## hasThreadFuzzer
 
-Returns whether Thread Fuzzer is effective. It can be used in tests to prevent too long runs.
+Returns whether Thread Fuzzer is effective. It can be used in tests to prevent runs from being too long.
 
 **Syntax**
 
