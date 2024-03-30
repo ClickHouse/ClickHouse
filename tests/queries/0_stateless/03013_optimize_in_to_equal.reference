@@ -186,3 +186,4 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: x, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: NULL, constant_value_type: Nullable(Nothing)
+-------------------
