@@ -662,8 +662,10 @@ Type: `UInt8`.
 
 **Examples**
 
+Query:
+
 ``` sql
-SELECT hasSubsequence('garbage', 'arg') ;
+SELECT hasSubsequence('garbage', 'arg');
 ```
 
 Result:
@@ -678,13 +680,115 @@ Result:
 
 Like [hasSubsequence](#hasSubsequence) but searches case-insensitively.
 
+**Syntax**
+
+``` sql
+hasSubsequence(haystack, needle)
+```
+
+**Arguments**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Subsequence to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+
+**Returned values**
+
+- 1, if needle is a subsequence of haystack.
+- 0, otherwise.
+
+Type: `UInt8`.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT hasSubsequenceCaseInsensitive('garbage', 'ARG');
+```
+
+Result:
+
+``` text
+┌─hasSubsequenceCaseInsensitive('garbage', 'ARG')─┐
+│                                               1 │
+└─────────────────────────────────────────────────┘
+```
+
 ## hasSubsequenceUTF8
 
 Like [hasSubsequence](#hasSubsequence) but assumes `haystack` and `needle` are UTF-8 encoded strings.
 
+**Syntax**
+
+``` sql
+hasSubsequenceUTF8(haystack, needle)
+```
+
+**Arguments**
+
+- `haystack` — String in which the search is performed. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Subsequence to be searched. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
+
+**Returned values**
+
+- 1, if needle is a subsequence of haystack.
+- 0, otherwise.
+
+Type: `UInt8`.
+
+Query:
+
+**Examples**
+
+``` sql
+select hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
+```
+
+Result:
+
+``` text
+┌─hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система')─┐
+│                                                                                         1 │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## hasSubsequenceCaseInsensitiveUTF8
 
 Like [hasSubsequenceUTF8](#hasSubsequenceUTF8) but searches case-insensitively.
+
+**Syntax**
+
+``` sql
+hasSubsequenceCaseInsensitiveUTF8(haystack, needle)
+```
+
+**Arguments**
+
+- `haystack` — String in which the search is performed. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Subsequence to be searched. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
+
+**Returned values**
+
+- 1, if needle is a subsequence of haystack.
+- 0, otherwise.
+
+Type: `UInt8`.
+
+**Examples**
+
+Query:
+
+``` sql
+select hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
+```
+
+Result:
+
+``` text
+┌─hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА')─┐
+│                                                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## hasToken
 
