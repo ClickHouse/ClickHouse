@@ -816,8 +816,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                     bool is_final = table_expression_query_info.table_expression_modifiers
                         && table_expression_query_info.table_expression_modifiers->hasFinal();
+                    bool is_stream = table_expression_query_info.table_expression_modifiers
+                        && table_expression_query_info.table_expression_modifiers->hasStream();
                     bool optimize_move_to_prewhere
-                        = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
+                        = settings.optimize_move_to_prewhere && !is_stream && (!is_final || settings.optimize_move_to_prewhere_if_final);
 
                     if (storage->supportsPrewhere() && optimize_move_to_prewhere)
                     {

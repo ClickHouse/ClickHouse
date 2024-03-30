@@ -221,6 +221,13 @@ public:
                     storage->getName(),
                     storage->getStorageID().getNameForLogs());
 
+            const auto & table_expression_modifiers = table_column_source ? table_column_source->getTableExpressionModifiers()
+                                                                          : table_function_column_source->getTableExpressionModifiers();
+
+            if (table_expression_modifiers && table_expression_modifiers->hasStream())
+                throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                    "PREWHERE does not supported for Streaming Queries");
+
             table_expression = std::move(column_source);
             table_supported_prewhere_columns = storage->supportedPrewhereColumns();
         }
@@ -245,7 +252,7 @@ private:
     std::optional<NameSet> table_supported_prewhere_columns;
 };
 
-void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
+void checkPrewhereSupport(const QueryTreeNodePtr & table_expression)
 {
     if (auto * table_node = table_expression->as<TableNode>())
     {
@@ -255,6 +262,9 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
                 "Storage {} (table {}) does not support PREWHERE",
                 storage->getName(),
                 storage->getStorageID().getNameForLogs());
+        if (table_node->hasTableExpressionModifiers() && table_node->getTableExpressionModifiers()->hasStream())
+            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                "PREWHERE does not supported for Streaming Queries");
     }
     else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
     {
@@ -264,6 +274,9 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
                 "Table function storage {} (table {}) does not support PREWHERE",
                 storage->getName(),
                 storage->getStorageID().getNameForLogs());
+        if (table_function_node->hasTableExpressionModifiers() && table_function_node->getTableExpressionModifiers()->hasStream())
+            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                "PREWHERE does not supported for Streaming Queries");
     }
     else
     {
@@ -343,7 +356,7 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         if (!prewhere_table_expression)
         {
             prewhere_table_expression = table_expressions_nodes[0];
-            checkStorageSupportPrewhere(prewhere_table_expression);
+            checkPrewhereSupport(prewhere_table_expression);
         }
 
         auto & table_expression_data = planner_context->getOrCreateTableExpressionData(prewhere_table_expression);

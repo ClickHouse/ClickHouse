@@ -64,7 +64,8 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     const auto & settings = context->getSettingsRef();
 
     bool is_final = source_step_with_filter->isQueryWithFinal();
-    bool optimize_move_to_prewhere = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
+    bool is_stream = source_step_with_filter->isQueryWithStream();
+    bool optimize_move_to_prewhere = settings.optimize_move_to_prewhere && !is_stream && (!is_final || settings.optimize_move_to_prewhere_if_final);
     if (!optimize_move_to_prewhere)
         return;
 
