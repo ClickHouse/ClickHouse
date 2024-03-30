@@ -521,7 +521,7 @@ Result:
 
 ## ngramDistanceCaseInsensitive
 
-Provides a case-insensitve variant of [ngramDistance](#ngramdistance).
+Provides a case-insensitive variant of [ngramDistance](#ngramdistance).
 
 **Syntax**
 
