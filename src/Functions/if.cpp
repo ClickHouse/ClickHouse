@@ -1278,16 +1278,16 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments[0]->onlyNull())
-            return arguments[2];
+        if (!arguments[0]->onlyNull())
+        {
+            if (arguments[0]->isNullable())
+                return getReturnTypeImpl({
+                    removeNullable(arguments[0]), arguments[1], arguments[2]});
 
-        if (arguments[0]->isNullable())
-            return getReturnTypeImpl({
-                removeNullable(arguments[0]), arguments[1], arguments[2]});
-
-        if (!WhichDataType(arguments[0]).isUInt8())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument (condition) of function if. "
-                "Must be UInt8.", arguments[0]->getName());
+            if (!WhichDataType(arguments[0]).isUInt8())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument (condition) of function if. "
+                    "Must be UInt8.", arguments[0]->getName());
+        }
 
         if (use_variant_when_no_common_type)
             return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]});
