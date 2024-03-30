@@ -465,15 +465,147 @@ Alias: `haystack NOT ILIKE pattern` (operator)
 
 ## ngramDistance
 
-Calculates the 4-gram distance between a `haystack` string and a `needle` string. For that, it counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns a Float32 between 0 and 1. The smaller the result is, the more strings are similar to each other. Throws an exception if constant `needle` or `haystack` arguments are more than 32Kb in size. If any of non-constant `haystack` or `needle` arguments is more than 32Kb in size, the distance is always 1.
+Calculates the 4-gram distance between a `haystack` string and a `needle` string. For this, it counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns a [Float32](../../sql-reference/data-types/float.md/#float32-float64) between 0 and 1. The smaller the result is, the more similar the strings are to each other.
 
-Functions `ngramDistanceCaseInsensitive, ngramDistanceUTF8, ngramDistanceCaseInsensitiveUTF8` provide case-insensitive and/or UTF-8 variants of this function.
+Functions [`ngramDistanceCaseInsensitive`](#ngramdistancecaseinsensitive), [`ngramDistanceUTF8`](#ngramdistanceutf8), [`ngramDistanceCaseInsensitiveUTF8`](#ngramdistancecaseinsensitiveutf8) provide case-insensitive and/or UTF-8 variants of this function.
 
 **Syntax**
 
 ```sql
 ngramDistance(haystack, needle)
 ```
+
+**Parameters**
+
+- `haystack`: First comparison string. [String literal](../syntax#syntax-string-literal)
+- `needle`: Second comparison string. [String literal](../syntax#syntax-string-literal)
+
+**Returned value**
+
+- Value between 0 and 1 representing the similarity between the two strings. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
+
+**Implementation details**
+
+This function will throw an exception if constant `needle` or `haystack` arguments are more than 32Kb in size. If any non-constant `haystack` or `needle` arguments are more than 32Kb in size, then the distance is always 1.
+
+**Examples**
+
+The more similar two strings are to each other, the closer the result will be to 0 (identical).
+
+Query:
+
+```sql
+SELECT ngramDistance('ClickHouse','ClickHouse!');
+```
+
+Result:
+
+```response
+0.06666667
+```
+
+The less similar two strings are to each, the larger the result will be.
+
+
+Query:
+
+```sql
+SELECT ngramDistance('ClickHouse','House');
+```
+
+Result:
+
+```response
+0.5555556
+```
+
+## ngramDistanceCaseInsensitive
+
+Provides a case-insensitve variant of [ngramDistance](#ngramdistance).
+
+**Syntax**
+
+```sql
+ngramDistanceCaseInsensitive(haystack, needle)
+```
+
+**Parameters**
+
+- `haystack`: First comparison string. [String literal](../syntax#syntax-string-literal)
+- `needle`: Second comparison string. [String literal](../syntax#syntax-string-literal)
+
+**Returned value**
+
+- Value between 0 and 1 representing the similarity between the two strings. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
+
+**Examples**
+
+With [ngramDistance](#ngramdistance) differences in case will drive up the similarity score:
+
+Query:
+
+```sql
+SELECT ngramDistance('ClickHouse','clickhouse');
+```
+
+Result:
+
+```response
+0.71428573
+```
+
+With [ngramDistanceCaseInsensitive](#ngramdistancecaseinsensitive) case is ignored so two identical strings differing only in case will now read as identical:
+
+Query:
+
+```sql
+SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse');
+```
+
+Result:
+
+```response
+0
+```
+
+## ngramDistanceUTF8
+
+Provides a UTF-8 variant of [ngramDistance](#ngramdistance). Assumes that `needle` and `haystack` strings are UTF-8 encoded strings.
+
+**Syntax**
+
+```sql
+ngramDistanceUTF8(haystack, needle)
+```
+
+**Parameters**
+
+- `haystack`: First comparison string. [String literal](../syntax#syntax-string-literal)
+- `needle`: Second comparison string. [String literal](../syntax#syntax-string-literal)
+
+**Returned value**
+
+- Value between 0 and 1 representing the similarity between the two strings. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
+
+## ngramDistanceCaseInsensitiveUTF8
+
+Provides a case-insensitive variant of [ngramDistanceUTF8](#ngramdistanceutf8).
+
+**Syntax**
+
+```sql
+ngramDistanceCaseInsensitiveUTF8(haystack, needle)
+```
+
+**Parameters**
+
+- `haystack`: First comparison string. [String literal](../syntax#syntax-string-literal)
+- `needle`: Second comparison string. [String literal](../syntax#syntax-string-literal)
+
+**Returned value**
+
+- Value between 0 and 1 representing the similarity between the two strings. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
+
 
 ## ngramSearch
 
