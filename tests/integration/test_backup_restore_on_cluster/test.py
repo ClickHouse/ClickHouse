@@ -10,7 +10,8 @@ from helpers.test_tools import TSV, assert_eq_with_retry
 cluster = ClickHouseCluster(__file__)
 
 main_configs = [
-    "configs/remote_servers.xml",
+    "configs/cluster.xml",
+    "configs/cluster3.xml",
     "configs/replicated_access_storage.xml",
     "configs/replicated_user_defined_sql_objects.xml",
     "configs/backups_disk.xml",
