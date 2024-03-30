@@ -18,10 +18,8 @@ namespace ErrorCodes
 
 static Block checkHeaders(DataStream storage_stream, DataStream subscription_stream)
 {
-    Block res = storage_stream.header;
-    assertBlocksHaveEqualStructure(subscription_stream.header, res, "StreamingAdapterStep");
-
-    return res;
+    assertBlocksHaveEqualStructure(subscription_stream.header, storage_stream.header, "StreamingAdapterStep");
+    return storage_stream.header;
 }
 
 StreamingAdapterStep::StreamingAdapterStep(DataStream storage_stream, DataStream subscription_stream)
