@@ -28,8 +28,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 {
                     "title": "ClickHouse Over the Years with Benchmarks",
                     "theme": "ClickHouse Journey",
-                }
-             ]
+                },
+            ]
             self.wfile.write(bytes(json.dumps(sample_data), "UTF-8"))
 
     def do_POST(self):
