@@ -278,7 +278,7 @@ bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, E
 bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr id_list;
-    if (!ParserList(std::make_unique<ParserIdentifier>(allow_query_parameter), std::make_unique<ParserToken>(TokenType::Dot), false)
+    if (!ParserList(std::make_unique<ParserIdentifier>(allow_query_parameter, highlight_type), std::make_unique<ParserToken>(TokenType::Dot), false)
              .parse(pos, id_list, expected))
         return false;
 

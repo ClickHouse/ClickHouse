@@ -1,10 +1,10 @@
 #include "ClientBaseHelpers.h"
 
-
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
-#include <Parsers/Lexer.h>
+#include <Parsers/ParserQuery.h>
 #include <Common/UTF8Helpers.h>
+
 
 namespace DB
 {
@@ -96,77 +96,64 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 {
     using namespace replxx;
 
-    static const std::unordered_map<TokenType, Replxx::Color> token_to_color
-        = {{TokenType::Whitespace, Replxx::Color::DEFAULT},
-            {TokenType::Comment, Replxx::Color::GRAY},
-            {TokenType::BareWord, Replxx::Color::DEFAULT},
-            {TokenType::Number, Replxx::Color::GREEN},
-            {TokenType::StringLiteral, Replxx::Color::CYAN},
-            {TokenType::QuotedIdentifier, Replxx::Color::MAGENTA},
-            {TokenType::OpeningRoundBracket, Replxx::Color::BROWN},
-            {TokenType::ClosingRoundBracket, Replxx::Color::BROWN},
-            {TokenType::OpeningSquareBracket, Replxx::Color::BROWN},
-            {TokenType::ClosingSquareBracket, Replxx::Color::BROWN},
-            {TokenType::DoubleColon, Replxx::Color::BROWN},
-            {TokenType::OpeningCurlyBrace, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::ClosingCurlyBrace, replxx::color::bold(Replxx::Color::DEFAULT)},
+    if (colors.empty())
+        return;
 
-            {TokenType::Comma, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Semicolon, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::VerticalDelimiter, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Dot, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Asterisk, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::HereDoc, Replxx::Color::CYAN},
-            {TokenType::Plus, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Minus, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Slash, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Percent, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Arrow, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::QuestionMark, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Colon, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Equals, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::NotEquals, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Less, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Greater, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::LessOrEquals, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::GreaterOrEquals, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Spaceship, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::Concatenation, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::At, replxx::color::bold(Replxx::Color::DEFAULT)},
-            {TokenType::DoubleAt, Replxx::Color::MAGENTA},
-
-            {TokenType::EndOfStream, Replxx::Color::DEFAULT},
-
-            {TokenType::Error, Replxx::Color::RED},
-            {TokenType::ErrorMultilineCommentIsNotClosed, Replxx::Color::RED},
-            {TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED},
-            {TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED},
-            {TokenType::ErrorSinglePipeMark, Replxx::Color::RED},
-            {TokenType::ErrorWrongNumber, Replxx::Color::RED},
-            {TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED}};
-
-    const Replxx::Color unknown_token_color = Replxx::Color::RED;
-
-    Lexer lexer(query.data(), query.data() + query.size());
-    size_t pos = 0;
-
-    for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+    static const std::unordered_map<Highlight, Replxx::Color> type_to_color =
     {
-        if (token.type == TokenType::Semicolon || token.type == TokenType::VerticalDelimiter)
-            ReplxxLineReader::setLastIsDelimiter(true);
-        else if (token.type != TokenType::Whitespace)
-            ReplxxLineReader::setLastIsDelimiter(false);
+        {Highlight::keyword, replxx::color::bold(Replxx::Color::DEFAULT)},
+        {Highlight::identifier, Replxx::Color::CYAN},
+        {Highlight::function, Replxx::Color::BROWN},
+        {Highlight::alias, Replxx::Color::MAGENTA},
+        {Highlight::substitution, Replxx::Color::MAGENTA},
+        {Highlight::number, Replxx::Color::BRIGHTGREEN},
+        {Highlight::string, Replxx::Color::GREEN},
+    };
 
-        size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
-        for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
+    const char * begin = query.data();
+    const char * end = begin + query.size();
+    Tokens tokens(begin, end, 1000, true);
+    IParser::Pos token_iterator(tokens, static_cast<uint32_t>(1000), static_cast<uint32_t>(10000));
+    Expected expected;
+    ParserQuery parser(end);
+    ASTPtr ast;
+    bool parse_res = false;
+
+    try
+    {
+        parse_res = parser.parse(token_iterator, ast, expected);
+    }
+    catch (...)
+    {
+        return;
+    }
+
+    size_t pos = 0;
+    const char * prev = begin;
+    for (const auto & range : expected.highlights)
+    {
+        auto it = type_to_color.find(range.highlight);
+        if (it != type_to_color.end())
         {
-            if (token_to_color.find(token.type) != token_to_color.end())
-                colors[pos + code_point_index] = token_to_color.at(token.type);
-            else
-                colors[pos + code_point_index] = unknown_token_color;
-        }
+            pos += UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(prev), range.begin - prev);
+            size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(range.begin), range.end - range.begin);
 
-        pos += utf8_len;
+            for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
+                colors[pos + code_point_index] = it->second;
+
+            pos += utf8_len;
+            prev = range.end;
+        }
+    }
+
+    if (!parse_res)
+    {
+        pos += UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(prev), expected.max_parsed_pos - prev);
+
+        if (pos >= colors.size())
+            pos = colors.size() - 1;
+
+        colors[pos] = Replxx::Color::BRIGHTRED;
     }
 }
 #endif
