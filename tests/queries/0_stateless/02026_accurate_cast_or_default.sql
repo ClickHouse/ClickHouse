@@ -58,3 +58,6 @@ select accurateCastOrDefault('test', 'IPv6');
 select accurateCastOrDefault('192.0.2.1', 'IPv6');
 select accurateCastOrDefault('2001:db8::1', 'IPv6');
 select accurateCastOrDefault('2001:db8::1x', 'IPv6');
+
+SELECT accurateCastOrDefault(-1, $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$);
+SELECT accurateCastOrDefault('xxx', $$Enum8('None' = 1, 'Hello' = 2, 'World' = 3)$$);

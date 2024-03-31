@@ -91,6 +91,7 @@ namespace ErrorCodes
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int CANNOT_PARSE_BOOL;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 namespace
@@ -2838,12 +2839,16 @@ template <> struct FunctionTo<DataTypeDecimal<Decimal64>> { using Type = Functio
 template <> struct FunctionTo<DataTypeDecimal<Decimal128>> { using Type = FunctionToDecimal128; };
 template <> struct FunctionTo<DataTypeDecimal<Decimal256>> { using Type = FunctionToDecimal256; };
 
-template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
-    : FunctionTo<DataTypeNumber<FieldType>>
+template <typename FieldType>
+struct FunctionTo<DataTypeEnum<FieldType>> : FunctionTo<DataTypeNumber<FieldType>>
 {
 };
 
-struct NameToUInt8OrZero { static constexpr auto name = "toUInt8OrZero"; };
+
+struct NameToUInt8OrZero
+{
+    static constexpr auto name = "toUInt8OrZero";
+};
 struct NameToUInt16OrZero { static constexpr auto name = "toUInt16OrZero"; };
 struct NameToUInt32OrZero { static constexpr auto name = "toUInt32OrZero"; };
 struct NameToUInt64OrZero { static constexpr auto name = "toUInt64OrZero"; };
@@ -4183,7 +4188,6 @@ arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDef
     WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type) const
     {
         using EnumType = DataTypeEnum<FieldType>;
-        using Function = typename FunctionTo<EnumType>::Type;
 
         if (const auto * from_enum8 = checkAndGetDataType<DataTypeEnum8>(from_type.get()))
             checkEnumToEnumConversion(from_enum8, to_type);
@@ -4194,10 +4198,9 @@ arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDef
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (isNativeNumber(from_type) || isEnum(from_type))
+        else if (isNativeNumber(from_type))
         {
-            auto function = Function::create(context);
-            return createFunctionAdaptor(function, from_type);
+            return createNumberToEnumWrapper<EnumType>();
         }
         else
         {
@@ -4238,8 +4241,11 @@ arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDef
     WrapperType createStringToEnumWrapper() const
     {
         const char * function_name = cast_name;
-        return [function_name] (
-            ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
+        return [wrapper_cast_type = cast_type, function_name](
+                   ColumnsWithTypeAndName & arguments,
+                   const DataTypePtr & res_type,
+                   const ColumnNullable * nullable_col,
+                   size_t /*input_rows_count*/)
         {
             const auto & first_col = arguments.front().column.get();
             const auto & result_type = typeid_cast<const EnumType &>(*res_type);
@@ -4264,7 +4270,10 @@ arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDef
                     for (size_t i = 0; i < size; ++i)
                     {
                         if (!nullable_col->isNullAt(i))
-                            out_data[i] = result_type.getValue(col->getDataAt(i));
+                        {
+                            out_data[i] = (wrapper_cast_type == CastType::accurateOrNull) ? result_type.getValueOrDefault(col->getDataAt(i))
+                                                                                          : result_type.getValue(col->getDataAt(i));
+                        }
                         else
                             out_data[i] = default_enum_value;
                     }
@@ -4272,7 +4281,8 @@ arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDef
                 else
                 {
                     for (size_t i = 0; i < size; ++i)
-                        out_data[i] = result_type.getValue(col->getDataAt(i));
+                        out_data[i] = (wrapper_cast_type == CastType::accurateOrNull) ? result_type.getValueOrDefault(col->getDataAt(i))
+                                                                                      : result_type.getValue(col->getDataAt(i));
                 }
 
                 return res;
@@ -4284,13 +4294,108 @@ arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDef
     }
 
     template <typename EnumType>
+    WrapperType createNumberToEnumWrapper() const
+    {
+        const char * function_name = cast_name;
+        return [wrapper_cast_type = cast_type, function_name](
+                   ColumnsWithTypeAndName & arguments,
+                   const DataTypePtr & res_type,
+                   const ColumnNullable * nullable_col,
+                   size_t /*input_rows_count*/)
+        {
+            const auto & first_col = arguments.front().column.get();
+            const auto & result_type = typeid_cast<const EnumType &>(*res_type);
+
+            MutableColumnPtr res = nullptr;
+
+            if (castTypeToEither<
+                    DataTypeUInt8,
+                    DataTypeUInt16,
+                    DataTypeUInt32,
+                    DataTypeUInt64,
+                    DataTypeInt8,
+                    DataTypeInt16,
+                    DataTypeInt32,
+                    DataTypeInt64>(
+                    arguments.front().type.get(),
+                    [&](auto & type)
+                    {
+                        using FieldType = typename std::decay_t<decltype(type)>::FieldType;
+                        const ColumnVector<FieldType> * col = typeid_cast<const ColumnVector<FieldType> *>(first_col);
+
+                        if (col && nullable_col && nullable_col->size() != col->size())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnNullable is not compatible with original");
+
+                        if (col)
+                        {
+                            const auto size = col->size();
+
+                            res = result_type.createColumn();
+                            auto & out_data = static_cast<typename EnumType::ColumnType &>(*res).getData();
+                            out_data.resize(size);
+
+                            auto default_enum_value = result_type.getValues().front().second;
+
+                            if (nullable_col)
+                            {
+                                for (size_t i = 0; i < size; ++i)
+                                {
+                                    if (!nullable_col->isNullAt(i))
+                                    {
+                                        /// Does not consider overflow here.
+                                        FieldType value = static_cast<FieldType>(col->get64(i));
+                                        if (result_type.hasValue(value))
+                                            out_data[i] = value;
+                                        else if (wrapper_cast_type == CastType::accurateOrNull)
+                                            out_data[i] = default_enum_value;
+                                        else
+                                            throw Exception(
+                                                ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown element {} for enum", toString(value));
+                                    }
+                                    else
+                                        out_data[i] = default_enum_value;
+                                }
+                            }
+                            else
+                            {
+                                for (size_t i = 0; i < size; ++i)
+                                {
+                                    FieldType value = static_cast<FieldType>(col->get64(i));
+                                    if (result_type.hasValue(value))
+                                        out_data[i] = value;
+                                    else if (wrapper_cast_type == CastType::accurateOrNull)
+                                        out_data[i] = default_enum_value;
+                                    else
+                                        throw Exception(
+                                            ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown element {} for enum", toString(value));
+                                }
+                            }
+                            return true;
+                        }
+                        return false;
+                    }))
+            {
+                return res;
+            }
+
+
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
+                    first_col->getName(), function_name);
+        };
+    }
+
+    template <typename EnumType>
     WrapperType createEnumToStringWrapper() const
     {
         const char * function_name = cast_name;
-        return [function_name] (
-            ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
+        return [function_name](
+                   ColumnsWithTypeAndName & arguments,
+                   const DataTypePtr & res_type,
+                   const ColumnNullable * nullable_col,
+                   size_t /*input_rows_count*/)
         {
-            using ColumnEnumType = EnumType::ColumnType;
+            using ColumnEnumType = typename EnumType::ColumnType;
 
             const auto & first_col = arguments.front().column.get();
             const auto & first_type = arguments.front().type.get();
@@ -4486,7 +4591,7 @@ arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDef
 
                 const ColumnNullable * nullable_source = nullptr;
 
-                /// Add original ColumnNullable for createStringToEnumWrapper()
+                /// Add original ColumnNullable for createStringToEnumWrapper() and createNumberToEnumWrapper()
                 if (source_is_nullable)
                 {
                     if (arguments.size() != 1)

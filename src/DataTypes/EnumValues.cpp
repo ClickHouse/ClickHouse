@@ -75,6 +75,17 @@ T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id) const
 }
 
 template <typename T>
+T EnumValues<T>::getValueOrDefault(StringRef field_name) const
+{
+    const auto it = name_to_value_map.find(field_name);
+    if (!it)
+    {
+        return getValues().front().second;
+    }
+    return it->getMapped();
+}
+
+template <typename T>
 bool EnumValues<T>::tryGetValue(T & x, StringRef field_name, bool try_treat_as_id) const
 {
     const auto it = name_to_value_map.find(field_name);

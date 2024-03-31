@@ -65,6 +65,7 @@ public:
     }
 
     T getValue(StringRef field_name, bool try_treat_as_id = false) const;
+    T getValueOrDefault(StringRef field_name) const;
     bool tryGetValue(T & x, StringRef field_name, bool try_treat_as_id = false) const;
 
     template <typename TValues>
