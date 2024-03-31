@@ -192,7 +192,7 @@ ASTPtr DatabaseFilesystem::getCreateDatabaseQuery() const
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.comment = std::make_shared<ASTLiteral>(database_comment);
     }
 
     return ast;

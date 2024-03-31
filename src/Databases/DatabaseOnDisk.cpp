@@ -535,7 +535,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.comment = std::make_shared<ASTLiteral>(database_comment);
     }
 
     return ast;
@@ -784,8 +784,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         static_cast<unsigned>(settings.max_parser_backtracks),
         throw_on_error);
 
-    create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
+    create_table_query->as<ASTCreateQuery>()->comment = std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly.");
 
     return create_table_query;
 }

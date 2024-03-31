@@ -107,7 +107,7 @@ ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
     create_query->storage->set(create_query->storage->engine, engine);
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+        create_query->comment = std::make_shared<ASTLiteral>(comment_value);
 
     return create_query;
 }

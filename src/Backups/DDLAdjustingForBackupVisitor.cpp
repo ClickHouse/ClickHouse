@@ -20,7 +20,7 @@ namespace
         /// If this is a definition of a system table we'll remove columns and comment because they're redundant for backups.
         auto & create = data.create_query->as<ASTCreateQuery &>();
         create.reset(create.columns_list);
-        create.reset(create.comment);
+        create.comment.reset();
     }
 
     void visitStorageReplicatedTableEngine(ASTStorage & storage, const DDLAdjustingForBackupVisitor::Data & data)

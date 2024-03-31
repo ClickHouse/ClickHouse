@@ -656,7 +656,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
 
     create->set(create->storage, storage_with_comment.storage);
-    create->set(create->comment, storage_with_comment.comment);
+    create->comment  = storage_with_comment.comment;
 
     /// Write additional (default) settings for MergeTree engine to make it make it possible to compare ASTs
     /// and recreate tables on settings changes.
