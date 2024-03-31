@@ -346,10 +346,10 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         {
             if (!mute_logging)
                 LOG_ERROR(log,
-                          "Failed to make request to `{}`{}. "
+                          "Failed to make request to '{}'{}. "
                           "Error: '{}'. "
                           "Failed at try {}/{}.",
-                          initial_uri.toString(), current_uri == initial_uri ? String() : fmt::format(" redirect to `{}`", current_uri.toString()),
+                          initial_uri.toString(), current_uri == initial_uri ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
                           error_message,
                           attempt, read_settings.http_max_tries);
 
@@ -362,11 +362,11 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
             if (!mute_logging)
                 LOG_INFO(log,
-                         "Failed to make request to `{}`{}. "
+                         "Failed to make request to '{}'{}. "
                          "Error: {}. "
                          "Failed at try {}/{}. "
                          "Will retry with current backoff wait is {}/{} ms.",
-                         initial_uri.toString(), current_uri == initial_uri ? String() : fmt::format(" redirect to `{}`", current_uri.toString()),
+                         initial_uri.toString(), current_uri == initial_uri ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
                          error_message,
                          attempt + 1, read_settings.http_max_tries,
                          milliseconds_to_wait, read_settings.http_retry_max_backoff_ms);
