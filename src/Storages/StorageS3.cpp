@@ -210,32 +210,36 @@ public:
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
             throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Expression can not have wildcards inside bucket name");
 
-        const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
-
-        /// We don't have to list bucket, because there is no asterisks.
-        if (key_prefix.size() == globbed_uri.key.size())
+        for (const auto & key : expandSelectionGlob(globbed_uri.key))
         {
-            buffer.emplace_back(std::make_shared<KeyWithInfo>(globbed_uri.key, std::nullopt));
-            buffer_iter = buffer.begin();
-            is_finished = true;
-            return;
+            const String key_prefix = key.substr(0, key.find_first_of("*?{"));
+
+            /// We don't have to list bucket, because there is no asterisks.
+            if (key_prefix.size() == key.size())
+            {
+                buffer.emplace_back(std::make_shared<KeyWithInfo>(key, std::nullopt));
+                buffer_iter = buffer.begin();
+                is_finished = true;
+                return;
+            }
+
+            request.SetBucket(globbed_uri.bucket);
+            request.SetPrefix(key_prefix);
+            request.SetMaxKeys(static_cast<int>(request_settings.list_object_keys_size));
+
+            outcome_future = listObjectsAsync();
+
+            matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key));
+            if (!matcher->ok())
+                throw Exception(
+                    ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key, matcher->error());
+
+            recursive = key == "/**";
+
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+            updateInternalBufferAssumeLocked();
         }
-
-        request.SetBucket(globbed_uri.bucket);
-        request.SetPrefix(key_prefix);
-        request.SetMaxKeys(static_cast<int>(request_settings.list_object_keys_size));
-
-        outcome_future = listObjectsAsync();
-
-        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
-        if (!matcher->ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", globbed_uri.key, matcher->error());
-
-        recursive = globbed_uri.key == "/**" ? true : false;
-
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
-        fillInternalBufferAssumeLocked();
+        buffer_iter = buffer.begin();
     }
 
     KeyWithInfoPtr next(size_t)
@@ -299,6 +303,76 @@ private:
                 throw;
             }
         } while (true);
+    }
+
+    void updateInternalBufferAssumeLocked()
+    {
+        assert(outcome_future.valid());
+        auto outcome = outcome_future.get();
+
+        if (!outcome.IsSuccess())
+        {
+            throw S3Exception(outcome.GetError().GetErrorType(), "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
+                              quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
+                              backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
+        }
+
+        const auto & result_batch = outcome.GetResult().GetContents();
+
+        /// It returns false when all objects were returned
+        is_finished = !outcome.GetResult().GetIsTruncated();
+
+        if (!is_finished)
+        {
+            /// Even if task is finished the thread may be not freed in pool.
+            /// So wait until it will be freed before scheduling a new task.
+            list_objects_pool.wait();
+            outcome_future = listObjectsAsync();
+        }
+
+        if (request_settings.throw_on_zero_files_match && result_batch.empty())
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can not match any files using prefix {}", request.GetPrefix());
+
+        KeysWithInfo temp_buffer;
+        temp_buffer.reserve(result_batch.size());
+
+        for (const auto & row : result_batch)
+        {
+            String key = row.GetKey();
+            if (recursive || re2::RE2::FullMatch(key, *matcher))
+            {
+                S3::ObjectInfo info =
+                    {
+                        .size = size_t(row.GetSize()),
+                        .last_modification_time = row.GetLastModified().Millis() / 1000,
+                    };
+                temp_buffer.emplace_back(std::make_shared<KeyWithInfo>(std::move(key), std::move(info)));
+            }
+        }
+
+        if (temp_buffer.empty())
+            return;
+
+        if (filter_dag)
+        {
+            std::vector<String> paths;
+            paths.reserve(temp_buffer.size());
+            for (const auto & key_with_info : temp_buffer)
+                paths.push_back(fs::path(globbed_uri.bucket) / key_with_info->key);
+
+            VirtualColumnUtils::filterByPathOrFile(temp_buffer, paths, filter_dag, virtual_columns, getContext());
+        }
+
+        buffer.insert(buffer.end(), temp_buffer.begin(), temp_buffer.end());
+
+        if (read_keys)
+            read_keys->insert(read_keys->end(), temp_buffer.begin(), temp_buffer.end());
+
+        if (file_progress_callback)
+        {
+            for (const auto & key_with_info : buffer)
+                file_progress_callback(FileProgress(0, key_with_info->info->size));
+        }
     }
 
     void fillInternalBufferAssumeLocked()
