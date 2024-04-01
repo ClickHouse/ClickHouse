@@ -22,8 +22,8 @@ SELECT partition, count(partition) FROM system.parts WHERE database==currentData
 1	2
 2	1
 SYSTEM START MERGES t1;
-starting merge on t1 partiton 1 by OPTIMIZE DEDUPLICATEing in background process
-Give server a moment to start merge
+Starting merge on t1 partition 1 by 'OPTIMIZE DEDUPLICATE'ing in a background process
+Give the server a moment to start merge
 -- { echo }
 -- assume merge started
 SELECT is_mutation, partition_id FROM system.merges WHERE database==currentDatabase() AND table=='t1';
@@ -32,7 +32,7 @@ SELECT is_mutation, partition_id FROM system.merges WHERE database==currentDatab
 ALTER TABLE t1 REPLACE PARTITION id '2' FROM t2;
 SELECT * FROM t1 WHERE p=2;
 2	2000	1
--- expect merge is still running
+-- Expecting that merge is still running
 SELECT is_mutation, partition_id FROM system.merges WHERE database==currentDatabase() AND table=='t1';
 0	1
 -- Expecting that merge hasn't finished yet (since ALTER TABLE .. REPLACE wasn't waiting for it),
