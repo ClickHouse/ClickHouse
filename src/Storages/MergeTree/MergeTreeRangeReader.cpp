@@ -946,7 +946,7 @@ String addDummyColumnWithRowCount(Block & block, size_t num_rows)
 }
 
 
-MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, MarkRanges & ranges)
+MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, MarkRanges & ranges, bool add_virtual_row)
 {
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
@@ -961,7 +961,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
     if (prev_reader)
     {
-        read_result = prev_reader->read(max_rows, ranges);
+        read_result = prev_reader->read(max_rows, ranges, add_virtual_row);
 
         size_t num_read_rows;
         Columns columns = continueReadingChain(read_result, num_read_rows);
@@ -1026,8 +1026,15 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
     }
     else
     {
+        // if (add_virtual_row)
+        // {
+        //     generate the virtual row
+        // }
+        // else
+        // {
         read_result = startReadingChain(max_rows, ranges);
         read_result.num_rows = read_result.numReadRows();
+        // }
 
         LOG_TEST(log, "First reader returned: {}, requested columns: {}",
             read_result.dumpInfo(), dumpNames(merge_tree_reader->getColumns()));
@@ -1062,7 +1069,11 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         read_result.addNumBytesRead(total_bytes);
     }
 
-    executePrewhereActionsAndFilterColumns(read_result);
+    /// If add_virtual_row is enabled, don't turn on prewhere so that virtual row can always pass through.
+    // if (!add_virtual_row)
+    // {
+        executePrewhereActionsAndFilterColumns(read_result);
+    // }
 
     read_result.checkInternalConsistency();
 

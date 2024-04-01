@@ -65,6 +65,8 @@ public:
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
+    void addVirtualRowToChunk(bool add_virtual_row_) { add_virtual_row = add_virtual_row_; }
+
 private:
     /// This struct allow to return block with no columns but with non-zero number of rows similar to Chunk
     struct BlockAndProgress
@@ -98,6 +100,10 @@ private:
 
     /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
     bool add_part_level = false;
+
+    /// Should we add a virtual row as the single first chunk.
+    /// Virtual row is useful for read-in-order optimization when multiple parts exist.
+    bool add_virtual_row = false;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};

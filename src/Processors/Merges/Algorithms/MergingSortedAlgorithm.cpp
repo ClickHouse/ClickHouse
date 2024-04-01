@@ -1,3 +1,4 @@
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
@@ -238,6 +239,15 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
 
         auto [current_ptr, initial_batch_size] = queue.current();
         auto current = *current_ptr;
+
+        if (getVirtualRowFromChunk(current_inputs[current.impl->order].chunk))
+        {
+            /// If virtual row is detected, there should be only one row as a single chunk,
+            /// and always skip this chunk to pull the next one.
+            assert(initial_batch_size == 1);
+            queue.removeTop();
+            return Status(current.impl->order);
+        }
 
         bool batch_skip_last_row = false;
         if (current.impl->isLast(initial_batch_size) && current_inputs[current.impl->order].skip_last_row)

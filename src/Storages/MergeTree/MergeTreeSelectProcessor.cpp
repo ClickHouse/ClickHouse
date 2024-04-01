@@ -6,7 +6,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Chunk.h>
@@ -134,6 +134,13 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         if (!task->getMainRangeReader().isInitialized())
             initializeRangeReaders();
 
+        if (add_virtual_row)
+        {
+            /// Turn on virtual row just once.
+            task->addVirtualRow();
+            add_virtual_row = false;
+        }
+
         auto res = algorithm->readFromTask(*task, block_size_params);
 
         if (res.row_count)
@@ -148,7 +155,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             }
 
             return ChunkAndProgress{
-                .chunk = Chunk(ordered_columns, res.row_count, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level) : nullptr),
+                .chunk = Chunk(ordered_columns, res.row_count,
+                    add_part_level || res.is_virtual_row ? std::make_shared<MergeTreeReadInfo>(
+                        (add_part_level ? task->getInfo().data_part->info.level : 0), res.is_virtual_row) : nullptr),
                 .num_read_rows = res.num_read_rows,
                 .num_read_bytes = res.num_read_bytes,
                 .is_finished = false};

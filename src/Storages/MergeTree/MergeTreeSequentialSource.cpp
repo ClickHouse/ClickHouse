@@ -13,7 +13,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
-#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
 namespace DB
 {
@@ -262,7 +262,8 @@ try
                 ++it;
             }
 
-            return Chunk(std::move(res_columns), rows_read, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(data_part->info.level) : nullptr);
+            return Chunk(std::move(res_columns), rows_read,
+                add_part_level ? std::make_shared<MergeTreeReadInfo>(data_part->info.level, false) : nullptr);
         }
     }
     else
