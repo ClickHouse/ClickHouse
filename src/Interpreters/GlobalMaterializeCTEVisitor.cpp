@@ -1,7 +1,9 @@
 #include <Interpreters/GlobalMaterializeCTEVisitor.h>
 #include <Interpreters/Context.h>
-#include <Common/tests/gtest_global_context.h>
-#include "Interpreters/MaterializedTableFromCTE.h"
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/MaterializedTableFromCTE.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -44,7 +46,7 @@ void DB::GlobalMaterializeCTEVisitor::visit(ASTPtr & ast)
             /// WITH t AS MATERIALIZED (subquery)
             if (auto * with = child->as<ASTWithElement>(); with && with->has_materialized_keyword)
             {
-                data.addExternalStorage(*with, {});
+                data.addExternalStorage(*with);
                 child = nullptr;
             }
         }
@@ -55,13 +57,24 @@ void DB::GlobalMaterializeCTEVisitor::visit(ASTPtr & ast)
     }
 }
 
-void GlobalMaterializeCTEVisitor::Data::addExternalStorage(ASTWithElement & cte_expr, const Names & required_columns)
+void GlobalMaterializeCTEVisitor::Data::addExternalStorage(const ASTWithElement & cte_expr)
 {
     String external_table_name = cte_expr.name;
+    auto & select_query = cte_expr.subquery->as<ASTSubquery &>().children.at(0);
     auto context = getContext();
-    auto interpreter = interpretSubquery(cte_expr.subquery, context, /*subquery_depth*/ 1, required_columns);
+    std::variant<std::unique_ptr<InterpreterSelectWithUnionQuery>, std::unique_ptr<InterpreterSelectQueryAnalyzer>> interpreter;
+    Block sample;
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(select_query, Context::createCopy(context), SelectQueryOptions().subquery());
+        sample = std::get<1>(interpreter)->getSampleBlock();
+    }
+    else
+    {
+        interpreter = std::make_unique<InterpreterSelectWithUnionQuery>(select_query, Context::createCopy(context), SelectQueryOptions().subquery());
+        sample = std::get<0>(interpreter)->getSampleBlock();
+    }
 
-    Block sample = interpreter->getSampleBlock();
     NamesAndTypesList columns = sample.getNamesAndTypesList();
 
     TemporaryTableHolder external_storage_holder(
@@ -81,7 +94,10 @@ void GlobalMaterializeCTEVisitor::Data::addExternalStorage(ASTWithElement & cte_
     future_table->name = std::move(external_table_name);
     future_table->external_table = std::move(external_storage);
     future_table->source = std::make_unique<QueryPlan>();
-    interpreter->buildQueryPlan(*future_table->source);
+    if (context->getSettingsRef().allow_experimental_analyzer)
+        *future_table->source = std::move(*std::get<1>(interpreter)).extractQueryPlan();
+    else
+        std::get<0>(interpreter)->buildQueryPlan(*future_table->source);
 
     future_tables.push_back(future_table);
     context->addExternalTableFromCTE(std::move(future_table), std::move(external_storage_holder));

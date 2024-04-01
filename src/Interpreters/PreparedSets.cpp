@@ -49,24 +49,24 @@ static bool equals(const DataTypes & lhs, const DataTypes & rhs)
 
 static bool materializeFutureTables(ContextPtr context, const FutureTablesFromCTE & required_future_tables)
 {
-    std::vector<std::shared_future<bool>> futures_table_to_wait;
-    QueryPipelineBuilders pipelines_to_build_future_tables;
+    std::vector<std::shared_future<bool>> promise_to_materialize_future_tables;
+    QueryPipelineBuilders pipeline_to_build_future_tables;
     for (const auto & future_table : required_future_tables)
     {
         auto [plan, promise] = future_table->buildPlanOrGetPromiseToMaterialize(context);
         if (plan)
-            pipelines_to_build_future_tables.emplace_back(plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
+            pipeline_to_build_future_tables.emplace_back(plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
 
-        futures_table_to_wait.push_back(std::move(promise));
+        promise_to_materialize_future_tables.push_back(std::move(promise));
     }
 
-    if (!pipelines_to_build_future_tables.empty())
+    if (!pipeline_to_build_future_tables.empty())
     {
         QueryPipelineBuilder builder;
-        if (pipelines_to_build_future_tables.size() > 1)
-            builder = QueryPipelineBuilder::unitePipelines(std::move(pipelines_to_build_future_tables), context->getSettingsRef().max_threads, nullptr);
+        if (pipeline_to_build_future_tables.size() > 1)
+            builder = QueryPipelineBuilder::unitePipelines(std::move(pipeline_to_build_future_tables), context->getSettingsRef().max_threads, nullptr);
         else
-            builder = std::move(*pipelines_to_build_future_tables.front());
+            builder = std::move(*pipeline_to_build_future_tables.front());
 
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         pipeline.complete(std::make_shared<EmptySink>(Block()));
@@ -74,10 +74,10 @@ static bool materializeFutureTables(ContextPtr context, const FutureTablesFromCT
         executor.execute();
     }
 
-    for (auto & future_table : futures_table_to_wait)
+    for (auto & promise : promise_to_materialize_future_tables)
     {
-        future_table.wait();
-        if (const auto & materialized = future_table.get(); !materialized)
+        promise.wait();
+        if (const auto & materialized = promise.get(); !materialized)
             return false;
     }
 
@@ -101,9 +101,9 @@ DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(
 
 SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr & context)
 {
-    if (storage)
+    if (auto required_storage = storage.lock(); required_storage)
     {
-        auto future_tables = context->getFutureTables({storage});
+        auto future_tables = context->getFutureTables({required_storage});
         if (!future_tables.empty())
         {
             set->fillSetElements();

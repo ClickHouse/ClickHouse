@@ -1221,13 +1221,10 @@ bool KeyCondition::tryPrepareSetIndex(
         printable_rhs = right_arg.getASTNode()->formatForLogging();
     else if (right_arg.getDAGNode())
         printable_rhs = right_arg.getDAGNode()->result_name;
-    LOG_DEBUG(getLogger("KeyCondition"), "Trying to prepare set index for IN function with {}: ", printable_rhs);
 
     auto future_set = right_arg.tryGetPreparedSet();
     if (!future_set)
         return false;
-
-    LOG_DEBUG(getLogger("KeyCondition"), "Prepared set successfully");
 
     const auto set_types = future_set->getTypes();
     size_t set_types_size = set_types.size();

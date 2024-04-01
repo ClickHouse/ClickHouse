@@ -11,6 +11,7 @@
 
 #include <Planner/TableExpressionData.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/MaterializedTableFromCTE.h>
 
 namespace DB
 {
@@ -178,6 +179,8 @@ public:
     /// 2. ignore_ast_optimizations is set.
     bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
 
+
+    FutureTablesFromCTE & getFutureTablesFromCTE() { return future_tables; }
 private:
     /// Query context
     ContextMutablePtr query_context;
@@ -195,6 +198,9 @@ private:
 
     /// Set key to set
     PreparedSets prepared_sets;
+
+    /// Future tables from CTE
+    FutureTablesFromCTE future_tables;
 };
 
 }

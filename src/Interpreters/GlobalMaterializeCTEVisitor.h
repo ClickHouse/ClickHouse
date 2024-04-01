@@ -20,7 +20,7 @@ public:
         {
         }
         FutureTablesFromCTE & future_tables;
-        void addExternalStorage(ASTWithElement & cte_expr, const Names & required_columns);
+        void addExternalStorage(const ASTWithElement & cte_expr);
     };
 
     explicit GlobalMaterializeCTEVisitor(Data & data_) : data(data_) {}

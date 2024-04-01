@@ -3,6 +3,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Columns/ColumnSet.h>
 
 #include <DataTypes/DataTypeString.h>
@@ -1150,6 +1151,15 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     query_plan.addStep(std::move(filter_step));
 }
 
+void addDelayedMaterializingCTETablesStepIfNeeded(QueryPlan & query_plan,
+    const PlannerContextPtr & planner_context)
+{
+    auto & future_tables = planner_context->getFutureTablesFromCTE();
+    if (future_tables.empty())
+        return;
+    query_plan.addStep(std::make_unique<MaterializingCTEsStep>(planner_context->getQueryContext(), std::move(future_tables), query_plan.getCurrentDataStream()));
+}
+
 }
 
 PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
@@ -1236,6 +1246,8 @@ void Planner::buildQueryPlanIfNeeded()
         buildPlanForUnionNode();
     else
         buildPlanForQueryNode();
+
+    addDelayedMaterializingCTETablesStepIfNeeded(query_plan, planner_context);
 
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }

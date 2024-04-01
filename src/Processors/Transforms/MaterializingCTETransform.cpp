@@ -29,6 +29,16 @@ MaterializingCTETransform::~MaterializingCTETransform()
     {
         try
         {
+            future_table->setExceptionWhileMaterializing(
+                std::make_exception_ptr(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while materializing CTE table")));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to set exception for CTE table");
+        }
+
+        try
+        {
             executor->cancel();
         }
         catch (...)

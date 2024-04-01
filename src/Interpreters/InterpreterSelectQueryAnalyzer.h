@@ -6,6 +6,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Planner/Planner.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/MaterializedTableFromCTE.h>
 
 namespace DB
 {
@@ -72,9 +73,11 @@ public:
     const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
 
 private:
-    ASTPtr query;
+
     ContextMutablePtr context;
     SelectQueryOptions select_query_options;
+    FutureTablesFromCTE future_tables;
+    ASTPtr query;
     QueryTreeNodePtr query_tree;
     Planner planner;
 };

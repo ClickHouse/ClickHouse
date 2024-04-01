@@ -70,7 +70,8 @@ public:
 
 private:
     SetPtr set;
-    StoragePtr storage;
+    /// Avoid circular reference
+    std::weak_ptr<IStorage> storage;
 };
 
 using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
