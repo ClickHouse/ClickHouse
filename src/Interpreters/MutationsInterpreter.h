@@ -126,6 +126,7 @@ public:
         bool materializeTTLRecalculateOnly() const;
         bool hasSecondaryIndex(const String & name) const;
         bool hasProjection(const String & name) const;
+        bool hasBrokenProjection(const String & name) const;
         bool isCompactPart() const;
 
         void read(
@@ -173,6 +174,8 @@ private:
     ContextPtr context;
     Settings settings;
     SelectQueryOptions select_limits;
+
+    LoggerPtr logger;
 
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the

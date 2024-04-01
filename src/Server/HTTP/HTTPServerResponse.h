@@ -90,7 +90,7 @@ public:
         resizeIfNeeded(buf_size);
     }
 
-    bool isChunked()
+    bool isChunked() const
     {
         return chunked;
     }
@@ -103,7 +103,7 @@ public:
         resizeIfNeeded(length);
     }
 
-    size_t isFixedLength()
+    size_t isFixedLength() const
     {
         return chunked ? 0 : fixed_length;
     }
@@ -116,7 +116,7 @@ public:
         resizeIfNeeded(buf_size);
     }
 
-    bool isPlain()
+    bool isPlain() const
     {
         return !(isChunked() || isFixedLength());
     }
