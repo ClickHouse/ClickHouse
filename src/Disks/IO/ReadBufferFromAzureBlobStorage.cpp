@@ -171,7 +171,7 @@ size_t ReadBufferFromAzureBlobStorage::readBytes()
     if (read_until_position != 0)
     {
         to_read_bytes = read_until_position - offset;
-        to_read_bytes = std::min(to_read_bytes, static_cast<int64_t>(offset));
+        to_read_bytes = std::min(to_read_bytes, static_cast<int64_t>(data_capacity));
     }
 
     if (!to_read_bytes && (getFileSize() > data_capacity))
