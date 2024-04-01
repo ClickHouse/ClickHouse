@@ -16,11 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TABLE_ALREADY_EXISTS;
-}
-
 void DB::GlobalMaterializeCTEVisitor::visit(ASTPtr & ast)
 {
     if (auto * explain = ast->as<ASTExplainQuery>())

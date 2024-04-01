@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 std::pair<std::unique_ptr<QueryPlan>, std::shared_future<bool>> FutureTableFromCTE::buildPlanOrGetPromiseToMaterialize(ContextPtr context)
 {
     bool expected = false;

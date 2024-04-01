@@ -75,7 +75,7 @@ void MaterializingCTETransform::work()
 void MaterializingCTETransform::startSubquery()
 {
     if (!external_table)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "External table fof CTE cannot be NULL.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "External table for CTE cannot be NULL.");
 
     LOG_TRACE(log, "Materializing CTE table {}", table_name);
 
