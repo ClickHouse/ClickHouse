@@ -191,7 +191,7 @@ public:
     Impl(
         const S3::Client & client_,
         const S3::URI & globbed_uri_,
-        const ActionsDAG::Node * predicate,
+        const ActionsDAG::Node * predicate_,
         const NamesAndTypesList & virtual_columns_,
         ContextPtr context_,
         KeysWithInfo * read_keys_,
@@ -200,6 +200,7 @@ public:
         : WithContext(context_)
         , client(client_.clone())
         , globbed_uri(globbed_uri_)
+        , predicate(predicate_)
         , virtual_columns(virtual_columns_)
         , read_keys(read_keys_)
         , request_settings(request_settings_)
@@ -210,32 +211,13 @@ public:
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
             throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Expression can not have wildcards inside bucket name");
 
-        const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
+        expanded_keys = expandSelectionGlob(globbed_uri.key);
+        expanded_keys_iter = expanded_keys.begin();
 
-        /// We don't have to list bucket, because there is no asterisks.
-        if (key_prefix.size() == globbed_uri.key.size())
-        {
-            buffer.emplace_back(std::make_shared<KeyWithInfo>(globbed_uri.key, std::nullopt));
-            buffer_iter = buffer.begin();
+        bool no_globs_in_key = fillBufferForKey(*expanded_keys_iter);
+        expanded_keys_iter++;
+        if (expanded_keys_iter == expanded_keys.end() && no_globs_in_key)
             is_finished = true;
-            return;
-        }
-
-        request.SetBucket(globbed_uri.bucket);
-        request.SetPrefix(key_prefix);
-        request.SetMaxKeys(static_cast<int>(request_settings.list_object_keys_size));
-
-        outcome_future = listObjectsAsync();
-
-        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
-        if (!matcher->ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", globbed_uri.key, matcher->error());
-
-        recursive = globbed_uri.key == "/**" ? true : false;
-
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
-        fillInternalBufferAssumeLocked();
     }
 
     KeyWithInfoPtr next(size_t)
@@ -257,6 +239,37 @@ public:
 private:
     using ListObjectsOutcome = Aws::S3::Model::ListObjectsV2Outcome;
 
+    bool fillBufferForKey(const std::string & uri_key)
+    {
+        const String key_prefix = uri_key.substr(0, uri_key.find_first_of("*?{"));
+
+        /// We don't have to list bucket, because there is no asterisks.
+        if (key_prefix.size() == uri_key.size())
+        {
+            buffer.clear();
+            buffer.emplace_back(std::make_shared<KeyWithInfo>(uri_key, std::nullopt));
+            buffer_iter = buffer.begin();
+            return true;
+        }
+
+        request.SetBucket(globbed_uri.bucket);
+        request.SetPrefix(key_prefix);
+        request.SetMaxKeys(static_cast<int>(request_settings.list_object_keys_size));
+
+        outcome_future = listObjectsAsync();
+
+        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(uri_key));
+        if (!matcher->ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                            "Cannot compile regex from glob ({}): {}", uri_key, matcher->error());
+
+        recursive = globbed_uri.key == "/**";
+
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        fillInternalBufferAssumeLocked();
+        return false;
+    }
+
     KeyWithInfoPtr nextAssumeLocked()
     {
         do
@@ -276,6 +289,15 @@ private:
                 }
 
                 return answer;
+            }
+
+            if (expanded_keys_iter != expanded_keys.end())
+            {
+                bool no_globs_in_key = fillBufferForKey(*expanded_keys_iter);
+                expanded_keys_iter++;
+                if (expanded_keys_iter == expanded_keys.end() && no_globs_in_key)
+                    is_finished = true;
+                continue;
             }
 
             if (is_finished)
@@ -399,8 +421,12 @@ private:
     KeysWithInfo buffer;
     KeysWithInfo::iterator buffer_iter;
 
+    std::vector<String> expanded_keys;
+    std::vector<String>::iterator expanded_keys_iter;
+
     std::unique_ptr<S3::Client> client;
     S3::URI globbed_uri;
+    const ActionsDAG::Node * predicate;
     ASTPtr query;
     NamesAndTypesList virtual_columns;
     ActionsDAGPtr filter_dag;
