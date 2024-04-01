@@ -15,7 +15,7 @@ static FormatSettings updateFormatSettings(const FormatSettings & settings, cons
 {
     FormatSettings updated = settings;
     updated.skip_unknown_fields = true;
-    updated.with_names_use_header = false;
+    updated.with_names_use_header = true;
     updated.date_time_input_format = FormatSettings::DateTimeInputFormat::BestEffort;
     updated.defaults_for_omitted_fields = true;
     updated.csv.delimiter = updated.hive_text.fields_delimiter;
@@ -34,7 +34,7 @@ HiveTextRowInputFormat::HiveTextRowInputFormat(
 HiveTextRowInputFormat::HiveTextRowInputFormat(
     const Block & header_, std::shared_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_)
     : CSVRowInputFormat(
-        header_, buf_, params_, false, false, format_settings_, std::make_unique<HiveTextFormatReader>(*buf_, format_settings_))
+        header_, buf_, params_, true, false, format_settings_, std::make_unique<HiveTextFormatReader>(*buf_, header_, format_settings_))
 {
 }
 
@@ -45,7 +45,8 @@ HiveTextFormatReader::HiveTextFormatReader(PeekableReadBuffer & buf_, const Form
 
 std::vector<String> HiveTextFormatReader::readNames()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HiveTextRowInputFormat::readNames is not implemented");
+    PeekableReadBufferCheckpoint checkpoint{*buf, true};
+    return input_field_names;
 }
 
 std::vector<String> HiveTextFormatReader::readTypes()
