@@ -416,8 +416,8 @@ SELECT * FROM destination ORDER BY timestamp;
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 all
 -- Should not be allowed because data would be split into two different partitions
-DROP TABLE IF EXISTS source SYNC;
-DROP TABLE IF EXISTS destination SYNC;
+DROP TABLE IF EXISTS source;
+DROP TABLE IF EXISTS destination;
 CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMMDD(timestamp);
 ALTER TABLE destination MODIFY SETTING allow_experimental_alter_partition_with_different_key = 1;
