@@ -1247,9 +1247,10 @@ void Planner::buildQueryPlanIfNeeded()
     else
         buildPlanForQueryNode();
 
-    addDelayedMaterializingCTETablesStepIfNeeded(query_plan, planner_context);
-
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
+
+    if (!select_query_options.only_analyze)
+        addDelayedMaterializingCTETablesStepIfNeeded(query_plan, planner_context);
 }
 
 void Planner::buildPlanForUnionNode()

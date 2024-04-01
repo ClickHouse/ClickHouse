@@ -5,8 +5,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
-#include <Interpreters/Context_fwd.h>
-#include "Interpreters/MaterializedTableFromCTE.h"
+#include <Interpreters/MaterializedTableFromCTE.h>
 
 namespace DB
 {

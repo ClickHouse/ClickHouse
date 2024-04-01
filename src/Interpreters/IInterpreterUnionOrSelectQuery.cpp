@@ -12,8 +12,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
-#include "Common/logger_useful.h"
-#include "Planner/Utils.h"
 
 
 namespace DB
@@ -22,7 +20,8 @@ namespace DB
 void IInterpreterUnionOrSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     buildQueryPlanImpl(query_plan);
-    addDelayedMaterializingCTETables(query_plan);
+    if (!options.only_analyze)
+        addDelayedMaterializingCTETables(query_plan);
 }
 
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
