@@ -1776,7 +1776,7 @@ Default value: 0 (no restriction).
 ## insert_quorum {#insert_quorum}
 
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
 :::
 
 Enables the quorum writes.
@@ -1819,7 +1819,7 @@ See also:
 ## insert_quorum_parallel {#insert_quorum_parallel}
 
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
 :::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
@@ -1840,7 +1840,7 @@ See also:
 ## select_sequential_consistency {#select_sequential_consistency}
 
 :::note
-This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree. 
+This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
 :::
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
@@ -2816,6 +2816,17 @@ Possible values:
 - 2 — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 
 Default value: 0.
+
+## distributed_insert_skip_read_only_replicas {#distributed_insert_skip_read_only_replicas}
+
+Enables skipping read-only replicas for INSERT queries into Distributed.
+
+Possible values:
+
+- 0 — INSERT was as usual, if it will go to read-only replica it will fail
+- 1 — Initiator will skip read-only replicas before sending data to shards.
+
+Default value: `0`
 
 ## distributed_foreground_insert {#distributed_foreground_insert}
 
@@ -5442,3 +5453,7 @@ Enabling this setting can lead to incorrect result as in case of evolved schema 
 :::
 
 Default value: 'false'.
+
+## allow_suspicious_primary_key {#allow_suspicious_primary_key}
+
+Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).

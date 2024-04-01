@@ -17,6 +17,8 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     ParserKeyword s_dictionary(Keyword::DICTIONARY);
     ParserKeyword s_view(Keyword::VIEW);
     ParserKeyword s_database(Keyword::DATABASE);
+    ParserKeyword s_all(Keyword::ALL);
+    ParserKeyword s_tables(Keyword::TABLES);
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists(Keyword::IF_EXISTS);
     ParserKeyword s_if_empty(Keyword::IF_EMPTY);
@@ -30,6 +32,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     String cluster_str;
     bool if_exists = false;
     bool if_empty = false;
+    bool has_all_tables = false;
     bool temporary = false;
     bool is_dictionary = false;
     bool is_view = false;
@@ -43,6 +46,16 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 
         if (s_if_empty.ignore(pos, expected))
             if_empty = true;
+
+        if (!name_p.parse(pos, database, expected))
+            return false;
+    }
+    else if (s_all.ignore(pos, expected) && s_tables.ignore(pos, expected) && kind == ASTDropQuery::Kind::Truncate)
+    {
+        has_all_tables = true;
+
+        if (s_if_exists.ignore(pos, expected))
+            if_exists = true;
 
         if (!name_p.parse(pos, database, expected))
             return false;
@@ -99,6 +112,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->kind = kind;
     query->if_exists = if_exists;
     query->if_empty = if_empty;
+    query->has_all_tables = has_all_tables;
     query->temporary = temporary;
     query->is_dictionary = is_dictionary;
     query->is_view = is_view;
