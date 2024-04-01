@@ -283,7 +283,18 @@ private:
                 /// So we get object info lazily here on 'next()' request.
                 if (!answer->info)
                 {
-                    answer->info = S3::getObjectInfo(*client, globbed_uri.bucket, answer->key, globbed_uri.version_id, request_settings);
+                    try
+                    {
+                        answer->info = S3::getObjectInfo(*client, globbed_uri.bucket, answer->key, globbed_uri.version_id, request_settings);
+                    }
+                    catch (...)
+                    {
+                        /// if no such file AND there was no `{}` glob -- this is an exception
+                        /// otherwise ignore it, this is acceptable
+                        if (expanded_keys.size() == 1)
+                            throw;
+                        continue;
+                    }
                     if (file_progress_callback)
                         file_progress_callback(FileProgress(0, answer->info->size));
                 }
