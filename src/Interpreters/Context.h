@@ -684,7 +684,7 @@ public:
     void addExternalTableFromCTE(std::shared_ptr<FutureTableFromCTE> future_table, TemporaryTableHolder && temporary_table);
     FutureTablesFromCTE getFutureTables(const std::vector<StoragePtr> & storages) const;
 
-    Tables getExternalTables(bool for_sending_to_remote = false) const;
+    Tables getExternalTables(const NameSet & names = {}) const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);

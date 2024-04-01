@@ -8,6 +8,7 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Storages/ConstraintsDescription.h>
 
 
@@ -84,9 +85,6 @@ void GlobalMaterializeCTEVisitor::Data::addExternalStorage(const ASTWithElement 
         /*query*/ nullptr,
         /*delay_read*/ true,
         cte_expr.engine);
-
-    if(!context->getSettingsRef().send_materialized_cte_tables_to_remote_shard)
-        external_storage_holder.can_be_sent_to_remote = false;
 
     StoragePtr external_storage = external_storage_holder.getTable();
     auto future_table = std::make_shared<FutureTableFromCTE>();

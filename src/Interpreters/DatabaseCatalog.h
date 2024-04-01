@@ -113,7 +113,6 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
     UUID id = UUIDHelpers::Nil;
 
     FutureSetFromSubqueryPtr future_set;
-    bool can_be_sent_to_remote = true;
 };
 
 ///TODO maybe remove shared_ptr from here?

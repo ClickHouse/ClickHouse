@@ -185,7 +185,6 @@ TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
     , temporary_tables(rhs.temporary_tables)
     , id(rhs.id)
     , future_set(std::move(rhs.future_set))
-    , can_be_sent_to_remote(rhs.can_be_sent_to_remote)
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -193,7 +192,6 @@ TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
 TemporaryTableHolder & TemporaryTableHolder::operator=(TemporaryTableHolder && rhs) noexcept
 {
     id = rhs.id;
-    can_be_sent_to_remote = rhs.can_be_sent_to_remote;
     rhs.id = UUIDHelpers::Nil;
     return *this;
 }
