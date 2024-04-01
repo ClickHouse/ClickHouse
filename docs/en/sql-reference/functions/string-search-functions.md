@@ -580,12 +580,26 @@ ngramDistanceUTF8(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First comparison string. [String literal](../syntax#syntax-string-literal)
-- `needle`: Second comparison string. [String literal](../syntax#syntax-string-literal)
+- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
+- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
 
 **Returned value**
 
 - Value between 0 and 1 representing the similarity between the two strings. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
+
+**Example**
+
+Query:
+
+```sql
+SELECT ngramDistanceUTF8('abcde','cde');
+```
+
+Result:
+
+```response
+0.5
+```
 
 ## ngramDistanceCaseInsensitiveUTF8
 
@@ -599,13 +613,26 @@ ngramDistanceCaseInsensitiveUTF8(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First comparison string. [String literal](../syntax#syntax-string-literal)
-- `needle`: Second comparison string. [String literal](../syntax#syntax-string-literal)
+- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
+- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
 
 **Returned value**
 
 - Value between 0 and 1 representing the similarity between the two strings. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
 
+**Example**
+
+Query:
+
+```sql
+SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE');
+```
+
+Result:
+
+```response
+0.5
+```
 
 ## ngramSearch
 
@@ -627,6 +654,7 @@ ngramSearch(haystack, needle)
 **Returned value**
 
 - Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
+
 
 **Implementation details**
 
