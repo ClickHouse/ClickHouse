@@ -638,6 +638,13 @@ IProcessor::Status AggregatingTransform::prepare()
     current_chunk = input.pull(/*set_not_needed = */ !is_consume_finished);
     read_current_chunk = true;
 
+    if (block_end_reached) {
+        output.push(std::move(to_push_chunk));
+        need_generate = false;
+        block_end_reached = false;
+        return Status::Ready;
+    }
+
     if (is_consume_finished)
     {
         output.push(std::move(current_chunk));
@@ -650,7 +657,7 @@ IProcessor::Status AggregatingTransform::prepare()
 
 void AggregatingTransform::work()
 {
-    if (is_consume_finished)
+    if (is_consume_finished || need_generate)
     {
         initGenerate();
     }
@@ -658,6 +665,15 @@ void AggregatingTransform::work()
     {
         consume(std::move(current_chunk));
         read_current_chunk = false;
+        if (params->params.group_by_each_block_no_merge) {
+            to_push_chunk = convertToChunk(params->aggregator.convertToBlocks(variants, /* final= */ true, 1).front());
+            variants.invalidate();
+            variants.aggregates_pools = { std::make_shared<Arena>() };
+            variants.aggregates_pool = variants.aggregates_pools.at(0).get();
+            params->aggregator.createStates(variants);
+            block_end_reached = true;
+            need_generate = true;
+        }
     }
 }
 
@@ -745,7 +761,7 @@ void AggregatingTransform::initGenerate()
 
     if (!params->aggregator.hasTemporaryData())
     {
-        if (!skip_merging)
+        if (!skip_merging && !params->params.group_by_each_block_no_merge)
         {
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));

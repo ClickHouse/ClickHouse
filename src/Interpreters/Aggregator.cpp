@@ -1429,6 +1429,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
             inst->batch_that->addBatchSinglePlace(
                 row_begin, row_end, res + inst->state_offset, inst->batch_arguments, data_variants.aggregates_pool);
     }
+
 }
 
 void NO_INLINE Aggregator::mergeOnIntervalWithoutKey(
@@ -1645,6 +1646,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// Checking the constraints.
     if (!checkLimits(result_size, no_more_keys))
         return false;
+
 
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
@@ -2248,6 +2250,11 @@ void Aggregator::addArenasToAggregateColumns(
         for (const auto & pool : data_variants.aggregates_pools)
             column_aggregate_func.addArena(pool);
     }
+}
+
+void Aggregator::createStates(AggregatedDataVariants & data_variants) const {
+    AggregateDataPtr place = data_variants.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+    createAggregateStates(place);
 }
 
 void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(

@@ -93,6 +93,7 @@ public:
         const bool overflow_row;    /// Do we need to put into AggregatedDataVariants::without_key aggregates for keys that are not in max_rows_to_group_by.
         const size_t max_rows_to_group_by;
         const OverflowMode group_by_overflow_mode;
+        bool group_by_each_block_no_merge;
 
         /// Two-level aggregation settings (used for a large number of keys).
         /** With how many keys or the size of the aggregation state in bytes,
@@ -168,7 +169,8 @@ public:
             bool only_merge_, // true for projections
             bool optimize_group_by_constant_keys_,
             double min_hit_rate_to_use_consecutive_keys_optimization_,
-            const StatsCollectingParams & stats_collecting_params_)
+            const StatsCollectingParams & stats_collecting_params_,
+            bool group_by_each_block_no_merge_)
             : keys(keys_)
             , aggregates(aggregates_)
             , keys_size(keys.size())
@@ -176,6 +178,7 @@ public:
             , overflow_row(overflow_row_)
             , max_rows_to_group_by(max_rows_to_group_by_)
             , group_by_overflow_mode(group_by_overflow_mode_)
+            , group_by_each_block_no_merge(group_by_each_block_no_merge_)
             , group_by_two_level_threshold(group_by_two_level_threshold_)
             , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
             , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
@@ -197,7 +200,7 @@ public:
         /// Only parameters that matter during merge.
         Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_, size_t max_block_size_, double min_hit_rate_to_use_consecutive_keys_optimization_)
             : Params(
-                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, false, true, false, min_hit_rate_to_use_consecutive_keys_optimization_, {})
+                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, false, true, false, min_hit_rate_to_use_consecutive_keys_optimization_, {}, false)
         {
         }
 
@@ -328,6 +331,8 @@ private:
     friend class ConvertingAggregatedToChunksSource;
     friend class ConvertingAggregatedToChunksWithMergingSource;
     friend class AggregatingInOrderTransform;
+    friend class AggregatingPartialResultTransform;
+    friend class AggregatingTransform;
 
     /// Data structure of source blocks.
     Block header;
@@ -653,6 +658,8 @@ private:
     void addArenasToAggregateColumns(
         const AggregatedDataVariants & data_variants,
         MutableColumns & aggregate_columns) const;
+
+    void createStates(AggregatedDataVariants & data_variants) const;
 
     void createStatesAndFillKeyColumnsWithSingleKey(
         AggregatedDataVariants & data_variants,

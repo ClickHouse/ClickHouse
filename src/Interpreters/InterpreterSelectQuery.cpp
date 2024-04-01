@@ -2689,7 +2689,8 @@ static Aggregator::Params getAggregatorParams(
         /* only_merge */ false,
         settings.optimize_group_by_constant_keys,
         settings.min_hit_rate_to_use_consecutive_keys_optimization,
-        stats_collecting_params
+        stats_collecting_params,
+        settings.group_by_each_block_no_merge,
     };
 }
 
