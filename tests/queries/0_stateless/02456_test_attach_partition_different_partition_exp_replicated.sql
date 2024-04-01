@@ -1,3 +1,5 @@
+-- Tags: long, zookeeper
+
 -- { echoOn }
 SET send_logs_level='error';
 -- Should be allowed, it is a local operation, no different than regular attach. Replicated to replicated.

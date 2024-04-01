@@ -1,3 +1,5 @@
+-- Tags: long, zookeeper
+
 -- { echoOn }
 -- Should be allowed since destination partition expr is monotonically increasing and compatible
 DROP TABLE IF EXISTS source;

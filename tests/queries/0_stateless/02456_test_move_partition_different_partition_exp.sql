@@ -1,3 +1,5 @@
+-- Tags: long, zookeeper
+
 -- { echoOn }
 SET send_logs_level='error';
 -- Should be allowed since destination partition expr is monotonically increasing and compatible

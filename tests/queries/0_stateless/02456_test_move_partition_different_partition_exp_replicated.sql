@@ -1,3 +1,5 @@
+-- Tags: long, zookeeper
+
 -- { echoOn }
 -- Should be allowed
 DROP TABLE IF EXISTS source SYNC;
