@@ -112,10 +112,9 @@ SELECT
 
 ## locate
 
-类似于 [position](#position) but with arguments `haystack` and `locate` switched.
+类似于 [position](#position) 但交换了 `haystack` 和 `locate` 参数。
 
 此函数的行为取决于 ClickHouse 版本：
-- in versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`.
 - 在 v24.3 以下的版本中，`locate` 是函数`position`的别名，参数为 `(haystack, needle[, start_pos])`。
 - 在 v24.3 及以上的版本中,, `locate` 是独立的函数 (以更好地兼容 MySQL) ,参数为 `(needle, haystack[, start_pos])`。 之前的行为
   可以在设置中恢复 [function_locate_has_mysql_compatible_argument_order = false](../../operations/settings/settings.md#function-locate-has-mysql-compatible-argument-order);
@@ -200,7 +199,7 @@ SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world']);
 
 类似于 `position` , 在字符串`haystack`中匹配多个`needle`子字符串，从左开始任一匹配的子串，返回其位置。
 
-函数 `multiSearchFirstPositionCaseInsensitive`, `multiSearchFirstPositionUTF8` and `multiSearchFirstPositionCaseInsensitiveUTF8` 提供此函数的不区分大小写 以及/或 UTF-8 变体。
+函数 `multiSearchFirstPositionCaseInsensitive`, `multiSearchFirstPositionUTF8` 和 `multiSearchFirstPositionCaseInsensitiveUTF8` 提供此函数的不区分大小写 以及/或 UTF-8 变体。
 
 **语法**
 
@@ -374,7 +373,7 @@ extractAllGroupsHorizontal(haystack, pattern)
 **参数**
 
 - `haystack` — 输入的字符串，数据类型为[String](../../sql-reference/data-types/string.md).
-- `pattern` — 正则表达式（[re2正则语法参考](https://github.com/google/re2/wiki/Syntax) ，必须包含group，每个group用括号括起来。 如果 `pattern` 不包含group则会抛出异常。 数据类型为[String](../../sql-reference/data-types/string.md).
+- `pattern` — 正则表达式（[re2正则语法参考](https://github.com/google/re2/wiki/Syntax) ，必须包含 group，每个 group 用括号括起来。 如果 `pattern` 不包含 group 则会抛出异常。 数据类型为[String](../../sql-reference/data-types/string.md).
 
 **返回值**
 
@@ -627,7 +626,7 @@ regexpExtract(haystack, pattern[, index])
 **参数**
 
 - `haystack` — 被匹配字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
-- `pattern` — 正则表达式，必须是常量。 [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `pattern` — 正则表达式，必须是常量。类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
 - `index` – 一个大于等于 0 的整数，默认为 1 ，它代表要提取哪个正则表达式组。 [UInt or Int](../../sql-reference/data-types/int-uint.md) 可选。
 
 **返回值**
