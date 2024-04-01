@@ -63,7 +63,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartCloner.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/Statistics/Estimator.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/StorageMergeTree.h>
