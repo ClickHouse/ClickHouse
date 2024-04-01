@@ -9,7 +9,7 @@ slug: /zh/sql-reference/functions/string-search-functions
 例如。英语中大写的`i`是`I`，而在土耳其语中则是`İ`, 对于英语以外的语言，结果可能会不符合预期。
 
 本节中的函数还假设搜索字符串和被搜索字符串是单字节编码文本(例如ASCII)。如果违反此假设，不会抛出异常且结果为undefined。   
-UTF-8 编码字符串的搜索通常由单独的函数变体提供。同样，如果使用 UTF-8 函数变体但输入字符串不是 UTF-8 编码文本，不会抛出异常且结果为undefined。  
+UTF-8 编码字符串的搜索通常由单独的函数变体提供。同样，如果使用 UTF-8 函数变体但输入字符串不是 UTF-8 编码文本，不会抛出异常且结果为 undefined。
 需要注意，函数不会执行自动 Unicode 规范化，您可以使用[normalizeUTF8*()](https://clickhouse.com/docs/zh/sql-reference/functions/string-functions/) 函数来执行此操作。
 在[字符串函数](string-functions.md) 和 [字符串替换函数](string-replace-functions.md) 会分别说明.
 
@@ -29,17 +29,17 @@ position(haystack, needle[, start_pos])
 **参数**
 
 - `haystack` — 被检索查询字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — 子字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
-- `start_pos` – 在字符串`haystack` 中开始检索的位置(从1开始)，类型为[UInt](../../sql-reference/data-types/int-uint.md)，可选
+- `needle` — 进行查询的子字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` – 在字符串`haystack` 中开始检索的位置(从1开始)，类型为[UInt](../../sql-reference/data-types/int-uint.md)，可选。
 
 **返回值**
 
 - 若子字符串存在，返回位置(以字节为单位，从 1 开始）。
-- 如果不存在子字符串,返回0。
+- 如果不存在子字符串，返回 0。
 
 如果子字符串 `needle` 为空，则：
 - 如果未指定 `start_pos`，返回 `1`
-- 如果 `start_pos` 为 0，则返回 `1`
+- 如果 `start_pos = 0`，则返回 `1`
 - 如果 `start_pos >= 1` 且 `start_pos <= length(haystack) + 1`，则返回 `start_pos` 
 - 否则返回 `0` 
 
@@ -68,14 +68,16 @@ SELECT
     position('Hello, world!', 'o', 1),
     position('Hello, world!', 'o', 7)
 ```
+
 结果：
+
 ``` text
 ┌─position('Hello, world!', 'o', 1)─┬─position('Hello, world!', 'o', 7)─┐
 │                                 5 │                                 9 │
 └───────────────────────────────────┴───────────────────────────────────┘
 ```
 
-示例，语法别名 `needle IN haystack`:
+示例，`needle IN haystack`:
 
 ```sql
 SELECT 6 = position('/' IN s) FROM (SELECT 'Hello/World' AS s);
@@ -154,11 +156,11 @@ SELECT positionUTF8('Motörhead', 'r');
 
 ## multiSearchAllPositions
 
-类似于 [position](#position)返回多个在字符串 `haystack` 中 `needle` 子字符串的位置的数组（以字节为单位，从 1 开始）。
+类似于 [position](#position) 但是返回多个在字符串 `haystack` 中 `needle` 子字符串的位置的数组（以字节为单位，从 1 开始）。
 
 
 :::note
-所有以 `multiSearch*()` 开头的函数最多支持2<sup>8</sup> 个`needle`.
+所有以 `multiSearch*()` 开头的函数仅支持最多 2<sup>8</sup> 个`needle`.
 :::
 
 **语法**
@@ -208,7 +210,7 @@ multiSearchFirstPosition(haystack, [needle1, needle2, …, needleN])
 
 ## multiSearchFirstIndex
 
-在字符串`haystack`中匹配多个`needle`子字符串，从左开始任一匹配的子串，返回其索引 `i` (从1开始)，如无法匹配则返回0。
+在字符串`haystack`中匹配最左侧的`needle`子字符串<sub>i</sub>，返回其索引 `i` (从1开始)，如无法匹配则返回0。
 
 函数 `multiSearchFirstIndexCaseInsensitive`, `multiSearchFirstIndexUTF8` 和 `multiSearchFirstIndexCaseInsensitiveUTF8` 提供此函数的不区分大小写以及/或 UTF-8 变体。
 
@@ -220,7 +222,6 @@ multiSearchFirstIndex(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, n
 
 ## multiSearchAny {#multisearchany}
 
-Returns 1, if at least one string needle<sub>i</sub> matches the string `haystack` and 0 otherwise.
 至少已有一个子字符串`needle`匹配 `haystack` 时返回1，否则返回 0 。
 
 函数 `multiSearchAnyCaseInsensitive`, `multiSearchAnyUTF8` 和 `multiSearchAnyCaseInsensitiveUTF8` 提供此函数的不区分大小写以及/或 UTF-8 变体。
@@ -237,7 +238,6 @@ multiSearchAny(haystack, [needle1, needle2, …, needleN])
 返回字符串 `haystack` 是否匹配正则表达式 `pattern` （[re2正则语法参考](https://github.com/google/re2/wiki/Syntax)
 
 匹配基于 UTF-8，例如`.` 匹配 Unicode 代码点 `¥`，它使用两个字节以 UTF-8 表示。T正则表达式不得包含空字节。如果 `haystack` 或`pattern`不是有效的 UTF-8，则此行为为undefined。
-
 与 re2 的默认行为不同，`.` 会匹配换行符。要禁用此功能，请在模式前面添加`(?-s)`。
 
 如果仅希望搜索子字符串，可以使用函数 [like](#like)或 [position](#position) 来替代，这些函数的性能比此函数更高。
@@ -447,8 +447,8 @@ SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[
 
 不会自动执行 Unicode 规范化，您可以使用[normalizeUTF8*()](https://clickhouse.com/docs/zh/sql-reference/functions/string-functions/) 函数来执行此操作。
 
-匹配字面上的 `%`, `_` 和 `/`（这些是 LIKE 元字符），请在其前面加上反斜杠：`\%`, `\_` 和 `\\`。
-如果在反斜杠前使用非 `%`, `_` 或 `\` 字符，则反斜杠将失去其特殊含义（即被解释为字面值）。
+如果需要匹配字符 `%`, `_` 和 `/`（这些是 LIKE 元字符），请在其前面加上反斜杠：`\%`, `\_` 和 `\\`。
+如果在非 `%`, `_` 或 `\` 字符前使用反斜杠，则反斜杠将失去其特殊含义（即被解释为字面值）。
 请注意，ClickHouse 要求字符串中使用反斜杠 [也需要被转义](../syntax.md#string), 因此您实际上需要编写 `\\%`、`\\_` 和 `\\\\`。
 
 
@@ -483,7 +483,7 @@ like(haystack, pattern)
 
 ## ngramDistance
 
-计算字符串`haystack` 和子字符串`needle`的4-gram距离。 为此，它计算两个 4-gram 多重集之间的对称差异，并通过它们的基数之和对其进行标准化。返回0-1之间的Float32。返回值越小，代表字符串越相似. Throws an exception if constant `needle` or `haystack` arguments are more than 32Kb in size. If any of non-constant `haystack` or `needle` arguments is more than 32Kb in size, the distance is always 1.
+计算字符串 `haystack`  和子字符串 `needle` 的 4-gram 距离。 为此，它计算两个 4-gram 多重集之间的对称差异，并通过它们的基数之和对其进行标准化。返回 0 到 1 之间的 Float32 浮点数。返回值越小，代表字符串越相似. 如果参数 `needle` or `haystack` 是常数且大小超过 32Kb，则抛出异常。如果参数 `haystack` 或 `needle` 是非常数且大小超过 32Kb ，则返回值恒为 1。
 
 函数 `ngramDistanceCaseInsensitive, ngramDistanceUTF8, ngramDistanceCaseInsensitiveUTF8` 提供此函数的不区分大小写以及/或 UTF-8 变体。
 
@@ -495,11 +495,12 @@ ngramDistance(haystack, needle)
 
 ## ngramSearch
 
-类似于`ngramDistance`，但计算`needle`字符串和`haystack`字符串之间的非对称差异，即来自needle的n-gram数量减去由`needle`数量归一化的n-gram的公共数量n-gram。返回 0 到 1 之间的 Float32。结果越大，’needle’越有可能在’haystack’中。该函数对于模糊字符串搜索很有用。另请参阅函数’soundex’。
+类似于`ngramDistance`，但计算`needle`字符串和 `haystack` 字符串之间的非对称差异，即来自 `needle` 的 n-gram 数量减去由`needle`数量归一化的 n-gram 的公共数量 n-gram。返回 0 到 1 之间的 Float32 浮点数。结果越大，`needle` 越有可能在 `haystack` 中。该函数对于模糊字符串搜索很有用。另请参阅函数 `soundex``。
+
 函数 `ngramSearchCaseInsensitive, ngramSearchUTF8, ngramSearchCaseInsensitiveUTF8` 提供此函数的不区分大小写以及/或 UTF-8 变体。
 
 :::note
-UTF-8变体使用了3-gram距离。这些并不是完全公平的n-gram距离。我们使用2字节的哈希函数来哈希n-gram，然后计算这些哈希表之间的(非)对称差异——可能会发生冲突。在使用UTF-8大小写不敏感格式时，我们并不使用公平的tolower函数——我们将每个码点字节的第5位（从零开始）和如果字节超过一个的零字节的第一位置零——这对拉丁字母和大部分西里尔字母都有效。
+UTF-8 变体使用了 3-gram 距离。这些并不是完全公平的 n-gram 距离。我们使用 2 字节的哈希函数来哈希 n-gram，然后计算这些哈希表之间的(非)对称差异——可能会发生冲突。在使用 UTF-8 大小写不敏感格式时，我们并不使用公平的 `tolower` 函数——我们将每个码点字节的第 5 位（从零开始）和第零字节的第一个比特位位置为零（如果该串的大小超过一个字节）——这对拉丁字母和大部分西里尔字母都有效。
 :::
 
 **语法**
@@ -512,7 +513,7 @@ ngramSearch(haystack, needle)
 
 返回字符串 `haystack` 中子字符串 `needle` 出现的次数。
 
-函数 `countSubstringsCaseInsensitive` and `countSubstringsCaseInsensitiveUTF8` 提供此函数的不区分大小写以及/或 UTF-8 变体。
+函数 `countSubstringsCaseInsensitive` 和 `countSubstringsCaseInsensitiveUTF8` 提供此函数的不区分大小写以及 UTF-8 变体。
 
 **语法**
 
@@ -522,9 +523,9 @@ countSubstrings(haystack, needle[, start_pos])
 
 **参数**
 
-- `haystack` — 被检索查询字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — 子字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
-- `start_pos` – 在字符串`haystack` 中开始检索的位置(从1开始)，类型为[UInt](../../sql-reference/data-types/int-uint.md)，可选
+- `haystack` — 被搜索的字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — 用于搜索的模式子字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
+- `start_pos` – 在字符串`haystack` 中开始检索的位置(从 1 开始)，类型为[UInt](../../sql-reference/data-types/int-uint.md)，可选。
 
 **返回值**
 
@@ -562,7 +563,7 @@ SELECT countSubstrings('abc___abc', 'abc', 4);
 
 ## countMatches
 
-返回正则表达式成功匹配的次数。
+返回正则表达式 `pattern` 在 `haystack` 中成功匹配的次数。
 
 **语法**
 
@@ -573,7 +574,7 @@ countMatches(haystack, pattern)
 **参数**
 
 - `haystack` — 输入的字符串，数据类型为[String](../../sql-reference/data-types/string.md).
-- `pattern` — 正则表达式（[re2正则语法参考](https://github.com/google/re2/wiki/Syntax) ，必须包含group，每个group用括号括起来。 如果 `pattern` 不包含group则会抛出异常。 数据类型为[String](../../sql-reference/data-types/string.md).
+- `pattern` — 正则表达式（[re2正则语法参考](https://github.com/google/re2/wiki/Syntax)） 数据类型为[String](../../sql-reference/data-types/string.md).
 
 **返回值**
 
@@ -627,11 +628,11 @@ regexpExtract(haystack, pattern[, index])
 
 - `haystack` — 被匹配字符串，类型为[String](../../sql-reference/syntax.md#syntax-string-literal).
 - `pattern` — 正则表达式，必须是常量。 [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `index` – 一个大于等于0的整数，默认为1，它代表要提取哪个正则表达式组。 [UInt or Int](../../sql-reference/data-types/int-uint.md) 可选。
+- `index` – 一个大于等于 0 的整数，默认为 1 ，它代表要提取哪个正则表达式组。 [UInt or Int](../../sql-reference/data-types/int-uint.md) 可选。
 
 **返回值**
 
-`pattern`可以包含多个正则组, `index` 代表要提取哪个正则表达式组。如果 `index` 为0，则返回整个匹配的字符串。
+`pattern`可以包含多个正则组, `index` 代表要提取哪个正则表达式组。如果 `index` 为 0，则返回整个匹配的字符串。
 
 数据类型: `String`.
 
@@ -655,7 +656,7 @@ SELECT
 
 ## hasSubsequence
 
-如果`needle`是`haystack`的子序列，返回1，否贼返回0。
+如果`needle`是`haystack`的子序列，返回1，否则返回0。
 子序列是从给定字符串中删除零个或多个元素而不改变剩余元素的顺序得到的序列。
 
 **语法**
@@ -691,7 +692,7 @@ SELECT hasSubsequence('garbage', 'arg') ;
 ```
 
 ## hasSubsequenceCaseInsensitive
-类似于[hasSubsequence](#hasSubsequence)但是不区分大小写。
+类似于 [hasSubsequence](#hasSubsequence) 但是不区分大小写。
 
 ## hasSubsequenceUTF8
 
