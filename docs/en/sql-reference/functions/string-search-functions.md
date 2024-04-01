@@ -477,8 +477,8 @@ ngramDistance(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First comparison string. [String literal](../syntax#syntax-string-literal)
-- `needle`: Second comparison string. [String literal](../syntax#syntax-string-literal)
+- `haystack`: First comparison string. [String literal](../syntax#string)
+- `needle`: Second comparison string. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -531,8 +531,8 @@ ngramDistanceCaseInsensitive(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First comparison string. [String literal](../syntax#syntax-string-literal)
-- `needle`: Second comparison string. [String literal](../syntax#syntax-string-literal)
+- `haystack`: First comparison string. [String literal](../syntax#string)
+- `needle`: Second comparison string. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -580,8 +580,8 @@ ngramDistanceUTF8(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
-- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
+- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#string)
+- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -613,8 +613,8 @@ ngramDistanceCaseInsensitiveUTF8(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
-- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
+- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#string)
+- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -648,8 +648,8 @@ ngramSearch(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First comparison string. [String literal](../syntax#syntax-string-literal)
-- `needle`: Second comparison string. [String literal](../syntax#syntax-string-literal)
+- `haystack`: First comparison string. [String literal](../syntax#string)
+- `needle`: Second comparison string. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -688,8 +688,8 @@ ngramSearchCaseInsensitive(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First comparison string. [String literal](../syntax#syntax-string-literal)
-- `needle`: Second comparison string. [String literal](../syntax#syntax-string-literal)
+- `haystack`: First comparison string. [String literal](../syntax#string)
+- `needle`: Second comparison string. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -723,8 +723,8 @@ ngramSearchUTF8(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
-- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
+- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#string)
+- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#string)
 
 **Returned value**
 
@@ -758,8 +758,8 @@ ngramSearchCaseInsensitiveUTF8(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
-- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#syntax-string-literal)
+- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#string)
+- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#string)
 
 **Returned value**
 
