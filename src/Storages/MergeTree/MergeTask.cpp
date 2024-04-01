@@ -224,13 +224,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
 
-    if (supportsBlockNumberColumn(global_ctx) && !global_ctx->storage_columns.contains(BlockNumberColumn::name))
-    {
-        global_ctx->storage_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
-        global_ctx->all_column_names.emplace_back(BlockNumberColumn::name);
-        global_ctx->gathering_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
-        global_ctx->gathering_column_names.emplace_back(BlockNumberColumn::name);
-    }
+    if (enabledBlockNumberColumn(global_ctx))
+        addGatheringColumn(global_ctx, BlockNumberColumn::name, BlockNumberColumn::type);
+
+    if (enabledBlockOffsetColumn(global_ctx))
+        addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
 
     SerializationInfo::Settings info_settings =
     {
@@ -400,6 +398,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     /// This is the end of preparation. Execution will be per block.
     return false;
+}
+
+void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)
+{
+    if (global_ctx->storage_columns.contains(name))
+        return;
+
+    global_ctx->storage_columns.emplace_back(name, type);
+    global_ctx->all_column_names.emplace_back(name);
+    global_ctx->gathering_columns.emplace_back(name, type);
+    global_ctx->gathering_column_names.emplace_back(name);
 }
 
 
@@ -730,8 +739,9 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         MergeTreeData::DataPartsVector projection_parts;
         for (const auto & part : global_ctx->future_part->parts)
         {
-            auto it = part->getProjectionParts().find(projection.name);
-            if (it != part->getProjectionParts().end())
+            auto actual_projection_parts = part->getProjectionParts();
+            auto it = actual_projection_parts.find(projection.name);
+            if (it != actual_projection_parts.end() && !it->second->is_broken)
                 projection_parts.push_back(it->second);
         }
         if (projection_parts.size() < global_ctx->future_part->parts.size())
