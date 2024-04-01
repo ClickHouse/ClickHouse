@@ -10,8 +10,8 @@ namespace DB
 template <int Length>
 using StringLiteral = const char(&)[Length];
 
-template<typename StorageT, int CommentSize, typename... StorageArgs>
-void attach(ContextPtr context, IDatabase & system_database, const String & table_name, StringLiteral<CommentSize> comment, StorageArgs && ... args)
+template<typename StorageT, int CommentSize, bool with_description, typename... StorageArgs>
+void attachImpl(ContextPtr context, IDatabase & system_database, const String & table_name, StringLiteral<CommentSize> comment, StorageArgs && ... args)
 {
     static_assert(CommentSize > 15, "The comment for a system table is too short or empty");
     assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
@@ -21,7 +21,10 @@ void attach(ContextPtr context, IDatabase & system_database, const String & tabl
     {
         /// Attach to Ordinary database.
         table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name);
-        system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...));
+        if constexpr (with_description)
+            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, StorageT::getColumnsDescription(), std::forward<StorageArgs>(args)...));
+        else
+            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...));
     }
     else
     {
@@ -31,7 +34,10 @@ void attach(ContextPtr context, IDatabase & system_database, const String & tabl
         table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name, UUIDHelpers::generateV4());
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid);
         String path = "store/" + DatabaseCatalog::getPathForUUID(table_id.uuid);
-        system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...), path);
+        if constexpr (with_description)
+            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, StorageT::getColumnsDescription(), std::forward<StorageArgs>(args)...), path);
+        else
+            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...), path);
     }
 
     /// Set the comment
@@ -40,6 +46,19 @@ void attach(ContextPtr context, IDatabase & system_database, const String & tabl
     auto metadata = table->getInMemoryMetadata();
     metadata.comment = comment;
     table->setInMemoryMetadata(metadata);
+}
+
+
+template<typename StorageT, int CommentSize, typename... StorageArgs>
+void attach(ContextPtr context, IDatabase & system_database, const String & table_name, StringLiteral<CommentSize> comment, StorageArgs && ... args)
+{
+    attachImpl<StorageT, CommentSize, true>(context, system_database, table_name, comment, std::forward<StorageArgs>(args)...);
+}
+
+template<typename StorageT, int CommentSize, typename... StorageArgs>
+void attachNoDescription(ContextPtr context, IDatabase & system_database, const String & table_name, StringLiteral<CommentSize> comment, StorageArgs && ... args)
+{
+    attachImpl<StorageT, CommentSize, false>(context, system_database, table_name, comment, std::forward<StorageArgs>(args)...);
 }
 
 }

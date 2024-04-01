@@ -12,10 +12,9 @@ from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import CiLogsCredentials
-
-from docker_images_helper import DockerImage, pull_image, get_docker_image
+from docker_images_helper import DockerImage, get_docker_image, pull_image
 from download_release_packages import download_last_release
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from pr_info import PRInfo
 from report import ERROR, SUCCESS, JobReport, StatusType, TestResults, read_test_results
 from stopwatch import Stopwatch
@@ -40,7 +39,7 @@ def get_additional_envs(
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
         result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
     if "analyzer" in check_name:
-        result.append("USE_NEW_ANALYZER=1")
+        result.append("USE_OLD_ANALYZER=1")
 
     if run_by_hash_total != 0:
         result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")
@@ -54,8 +53,7 @@ def get_image_name(check_name: str) -> str:
         return "clickhouse/stateless-test"
     if "stateful" in check_name.lower():
         return "clickhouse/stateful-test"
-    else:
-        raise Exception(f"Cannot deduce image name based on check name {check_name}")
+    raise ValueError(f"Cannot deduce image name based on check name {check_name}")
 
 
 def get_run_command(
@@ -96,7 +94,7 @@ def get_run_command(
     env_str = " ".join(envs)
     volume_with_broken_test = (
         f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt "
-        if "analyzer" in check_name
+        if "analyzer" not in check_name
         else ""
     )
 
@@ -107,6 +105,7 @@ def get_run_command(
         f"{volume_with_broken_test}"
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
+        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
     )
 

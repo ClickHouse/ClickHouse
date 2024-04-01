@@ -456,11 +456,13 @@ class Backport:
         tomorrow = date.today() + timedelta(days=1)
         logging.info("Receive PRs suppose to be backported")
 
-        query_args = dict(
-            query=f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
-            label=",".join(self.labels_to_backport + [self.must_create_backport_label]),
-            merged=[since_date, tomorrow],
-        )
+        query_args = {
+            "query": f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
+            "label": ",".join(
+                self.labels_to_backport + [self.must_create_backport_label]
+            ),
+            "merged": [since_date, tomorrow],
+        }
         logging.info("Query to find the backport PRs:\n %s", query_args)
         self.prs_for_backport = self.gh.get_pulls_from_search(**query_args)
         logging.info(

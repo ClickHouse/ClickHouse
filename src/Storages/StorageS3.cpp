@@ -129,6 +129,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int FILE_DOESNT_EXIST;
+    extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 
@@ -161,7 +162,7 @@ public:
         , num_streams(num_streams_)
     {
         query_configuration = storage.updateConfigurationAndGetCopy(context);
-        virtual_columns = storage.getVirtuals();
+        virtual_columns = storage.getVirtualsList();
     }
 
 private:
@@ -258,45 +259,46 @@ private:
 
     KeyWithInfoPtr nextAssumeLocked()
     {
-        if (buffer_iter != buffer.end())
+        do
         {
-            auto answer = *buffer_iter;
-            ++buffer_iter;
-
-            /// If url doesn't contain globs, we didn't list s3 bucket and didn't get object info for the key.
-            /// So we get object info lazily here on 'next()' request.
-            if (!answer->info)
+            if (buffer_iter != buffer.end())
             {
-                answer->info = S3::getObjectInfo(*client, globbed_uri.bucket, answer->key, globbed_uri.version_id, request_settings);
-                if (file_progress_callback)
-                    file_progress_callback(FileProgress(0, answer->info->size));
+                auto answer = *buffer_iter;
+                ++buffer_iter;
+
+                /// If url doesn't contain globs, we didn't list s3 bucket and didn't get object info for the key.
+                /// So we get object info lazily here on 'next()' request.
+                if (!answer->info)
+                {
+                    answer->info = S3::getObjectInfo(*client, globbed_uri.bucket, answer->key, globbed_uri.version_id, request_settings);
+                    if (file_progress_callback)
+                        file_progress_callback(FileProgress(0, answer->info->size));
+                }
+
+                return answer;
             }
 
-            return answer;
-        }
+            if (is_finished)
+                return {};
 
-        if (is_finished)
-            return {};
-
-        try
-        {
-            fillInternalBufferAssumeLocked();
-        }
-        catch (...)
-        {
-            /// In case of exception thrown while listing new batch of files
-            /// iterator may be partially initialized and its further using may lead to UB.
-            /// Iterator is used by several processors from several threads and
-            /// it may take some time for threads to stop processors and they
-            /// may still use this iterator after exception is thrown.
-            /// To avoid this UB, reset the buffer and return defaults for further calls.
-            is_finished = true;
-            buffer.clear();
-            buffer_iter = buffer.begin();
-            throw;
-        }
-
-        return nextAssumeLocked();
+            try
+            {
+                fillInternalBufferAssumeLocked();
+            }
+            catch (...)
+            {
+                /// In case of exception thrown while listing new batch of files
+                /// iterator may be partially initialized and its further using may lead to UB.
+                /// Iterator is used by several processors from several threads and
+                /// it may take some time for threads to stop processors and they
+                /// may still use this iterator after exception is thrown.
+                /// To avoid this UB, reset the buffer and return defaults for further calls.
+                is_finished = true;
+                buffer.clear();
+                buffer_iter = buffer.begin();
+                throw;
+            }
+        } while (true);
     }
 
     void fillInternalBufferAssumeLocked()
@@ -723,12 +725,12 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
     auto context = getContext();
     auto read_buffer_creator =
         [this, read_settings, object_size]
-        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
+        (bool restricted_seek, const StoredObject & object) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromS3>(
             client,
             bucket,
-            path,
+            object.remote_path,
             version_id,
             request_settings,
             read_settings,
@@ -1083,8 +1085,7 @@ StorageS3::StorageS3(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
@@ -1151,7 +1152,7 @@ void StorageS3::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), virtual_columns);
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context));
 
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
@@ -1408,6 +1409,9 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
     const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
     const Settings & local_settings = context->getSettingsRef();
 
+    if (S3::isS3ExpressEndpoint(url.endpoint) && auth_settings.region.empty())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Region should be explicitly specified for directory buckets");
+
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         auth_settings.region,
         context->getRemoteHostFilter(),
@@ -1420,8 +1424,10 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
         url.uri.getScheme());
 
     client_configuration.endpointOverride = url.endpoint;
+    /// seems as we don't use it
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);
-    client_configuration.http_connection_pool_size = global_settings.s3_http_connection_pool_size;
+    client_configuration.connectTimeoutMs = local_settings.s3_connect_timeout_ms;
+
     auto headers = auth_settings.headers;
     if (!headers_from_ast.empty())
         headers.insert(headers.end(), headers_from_ast.begin(), headers_from_ast.end());
@@ -1432,6 +1438,7 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
         .use_virtual_addressing = url.is_virtual_hosted_style,
         .disable_checksum = local_settings.s3_disable_checksum,
         .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
+        .is_s3express_bucket = S3::isS3ExpressEndpoint(url.endpoint),
     };
 
     auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key, auth_settings.session_token);
@@ -1449,7 +1456,8 @@ void StorageS3::Configuration::connect(const ContextPtr & context)
             auth_settings.expiration_window_seconds.value_or(
                 context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
             auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
-        });
+        },
+        credentials.GetSessionToken());
 }
 
 void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)
@@ -1536,7 +1544,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
                 no_sign_request = true;
                 engine_args_to_idx = {{"format", 2}};
             }
-            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+            else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
                 engine_args_to_idx = {{"format", 1}, {"compression_method", 2}};
             else
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
@@ -1557,7 +1565,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
             else
             {
                 auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
-                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+                if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
                 {
                     engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
                 }
@@ -1573,7 +1581,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
         else if (count == 5)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
-            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"compression", 4}};
             }
@@ -1982,16 +1990,6 @@ void registerStorageCOS(StorageFactory & factory)
 void registerStorageOSS(StorageFactory & factory)
 {
     return registerStorageS3Impl("OSS", factory);
-}
-
-NamesAndTypesList StorageS3::getVirtuals() const
-{
-    return virtual_columns;
-}
-
-Names StorageS3::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
 }
 
 bool StorageS3::supportsPartitionBy() const

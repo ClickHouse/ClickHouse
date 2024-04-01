@@ -13,10 +13,10 @@ namespace DB
 bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier s_ident;
-    ParserKeyword s_as("AS");
-    ParserKeyword s_materialized("MATERIALIZED");
+    ParserKeyword s_as(Keyword::AS);
+    ParserKeyword s_materialized(Keyword::MATERIALIZED);
     ParserSubquery s_subquery;
-    ParserKeyword s_engine("ENGINE");
+    ParserKeyword s_engine(Keyword::ENGINE);
     ParserToken s_eq(TokenType::Equals);
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
 

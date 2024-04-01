@@ -69,7 +69,7 @@ public:
         ASTPtr partition_by_);
 
     static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context);
-    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only);
+    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only, bool attempt_to_create_container = true);
 
     static AzureObjectStorage::SettingsPtr createSettings(const ContextPtr & local_context);
 
@@ -93,9 +93,6 @@ public:
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /* metadata_snapshot */, ContextPtr context, bool /*async_insert*/) override;
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
-
-    NamesAndTypesList getVirtuals() const override;
-    static Names getVirtualColumnNames();
 
     bool supportsPartitionBy() const override;
 
@@ -136,7 +133,6 @@ private:
     std::string name;
     Configuration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    NamesAndTypesList virtual_columns;
 
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
