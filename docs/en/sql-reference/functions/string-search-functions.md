@@ -540,7 +540,7 @@ ngramDistanceCaseInsensitive(haystack, needle)
 
 **Examples**
 
-With [ngramDistance](#ngramdistance) differences in case will drive up the similarity score:
+With [ngramDistance](#ngramdistance) differences in case will affect the similarity value:
 
 Query:
 
@@ -554,7 +554,7 @@ Result:
 0.71428573
 ```
 
-With [ngramDistanceCaseInsensitive](#ngramdistancecaseinsensitive) case is ignored so two identical strings differing only in case will now read as identical:
+With [ngramDistanceCaseInsensitive](#ngramdistancecaseinsensitive) case is ignored so two identical strings differing only in case will now return a low similarity value:
 
 Query:
 
