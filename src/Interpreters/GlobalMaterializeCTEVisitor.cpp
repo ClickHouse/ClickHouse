@@ -10,6 +10,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB

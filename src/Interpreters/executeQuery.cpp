@@ -81,7 +81,6 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Storages/StorageDictionary.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Sources/KeyValueSource.h>
 
 #include <IO/CompressionMethod.h>
 

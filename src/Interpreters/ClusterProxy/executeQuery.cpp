@@ -377,7 +377,7 @@ void executeQuery(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
 
         NameSet external_table_names;
-        CollectTemporaryTablesVisitor(external_table_names).visit(query_ast);
+        CollectTemporaryTablesVisitor(external_table_names).visit(query_info.query);
         auto external_tables = context->getExternalTables(external_table_names);
 
         auto plan = std::make_unique<QueryPlan>();
