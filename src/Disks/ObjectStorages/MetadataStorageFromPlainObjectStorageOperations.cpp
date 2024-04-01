@@ -161,7 +161,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
 
     key_prefix = path_it->second;
     auto object_key = ObjectStorageKey::createAsRelative(key_prefix, PREFIX_PATH_FILE_NAME);
-    auto object = StoredObject(path_it->second, path / PREFIX_PATH_FILE_NAME);
+    auto object = StoredObject(object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
     object_storage->removeObject(object);
     path_map.erase(path_it);
 }

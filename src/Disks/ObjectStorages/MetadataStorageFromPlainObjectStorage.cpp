@@ -20,6 +20,8 @@ namespace DB
 namespace
 {
 
+constexpr auto PREFIX_PATH_FILE_NAME = "prefix.path";
+
 std::filesystem::path normalizePath(const std::filesystem::path & path)
 {
     return std::filesystem::path(path).lexically_normal();
@@ -32,7 +34,6 @@ std::filesystem::path normalizeDirectoryPath(const std::filesystem::path & path)
 
 MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::string & root, ObjectStoragePtr object_storage)
 {
-    constexpr auto PREFIX_PATH_FILE_NAME = "prefix.path";
     MetadataStorageFromPlainObjectStorage::PathMap result;
 
     RelativePathsWithMetadata files;
@@ -146,7 +147,7 @@ std::vector<std::string> getDirectChildrenOnRewritableDisk(
     std::unordered_set<std::string> duplicates_filter;
 
     /// Map remote paths into local subdirectories.
-    std::unordered_map<PathMap::mapped_type, PathMap::key_type> reversed;
+    std::unordered_map<PathMap::mapped_type, PathMap::key_type> remote_to_local_subdir;
 
     {
         std::shared_lock lock(shared_mutex);
@@ -160,10 +161,11 @@ std::vector<std::string> getDirectChildrenOnRewritableDisk(
                 continue;
 
             chassert(k.back() == '/');
-            reversed.emplace(v, std::string(k.begin() + local_path.size(), k.end() - 1));
+            remote_to_local_subdir.emplace(v, std::string(k.begin() + local_path.size(), k.end() - 1));
         }
     }
 
+    auto skip_list = std::set<std::string>{PREFIX_PATH_FILE_NAME};
     for (const auto & elem : remote_paths)
     {
         const auto & path = elem.relative_path;
@@ -172,15 +174,19 @@ std::vector<std::string> getDirectChildrenOnRewritableDisk(
 
         auto slash_pos = path.find('/', child_pos);
 
-        /// File names.
         if (slash_pos == std::string::npos)
-            duplicates_filter.emplace(path.substr(child_pos));
-        /// Subdirectories.
+        {
+            /// File names.
+            auto filename = path.substr(child_pos);
+            if (!skip_list.contains(filename))
+                duplicates_filter.emplace(std::move(filename));
+        }
         else
         {
-            auto it = reversed.find(path.substr(0, slash_pos));
+            /// Subdirectories.
+            auto it = remote_to_local_subdir.find(path.substr(0, slash_pos));
             /// Mapped subdirectories.
-            if (it != reversed.end())
+            if (it != remote_to_local_subdir.end())
                 duplicates_filter.emplace(it->second);
             /// The remote subdirectory name is the same as the local subdirectory.
             else
@@ -249,7 +255,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
     else
     {
         addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
-            path, *metadata_storage.path_map, object_storage));
+            normalizeDirectoryPath(path), *metadata_storage.path_map, object_storage));
     }
 }
 
@@ -258,9 +264,10 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std
     if (metadata_storage.object_storage->isWriteOnce())
         return;
 
-    auto key_prefix = object_storage->generateObjectKeyPrefixForDirectoryPath(std::filesystem::path(path) / "");
+    auto normalized_path = normalizeDirectoryPath(path);
+    auto key_prefix = object_storage->generateObjectKeyPrefixForDirectoryPath(normalized_path);
     auto op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
-        normalizeDirectoryPath(path), std::move(key_prefix), *metadata_storage.path_map, object_storage);
+        std::move(normalized_path), std::move(key_prefix), *metadata_storage.path_map, object_storage);
     addOperation(std::move(op));
 }
 
