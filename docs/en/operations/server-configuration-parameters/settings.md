@@ -379,6 +379,18 @@ Type: UInt64
 
 Default: 0
 
+## max_waiting_queries
+
+Limit on total number of concurrently waiting queries. Execution of a waiting query is blocked while required tables are loading asynchronously (see `async_load_databases`). Note that waiting queries are not counted when `max_concurrent_queries`, `max_concurrent_insert_queries`, `max_concurrent_select_queries`, `max_concurrent_queries_for_user` and `max_concurrent_queries_for_all_users` limits are checked. This correction is done to avoid hitting these limits just after server startup. Zero means unlimited.
+
+:::note
+This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
+
+Type: UInt64
+
+Default: 0
+
 ## max_connections
 
 Max server connections.
@@ -933,7 +945,7 @@ Hard limit is configured via system tools
 
 ## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
-The delay before a table data is dropped in seconds. If the `DROP TABLE` query has a `SYNC` modifier, this setting is ignored.
+The delay during which a dropped table can be restored using the [UNDROP](/docs/en/sql-reference/statements/undrop.md) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
 
 Default value: `480` (8 minutes).
 
@@ -1342,6 +1354,7 @@ Keys:
 - `count` – The number of archived log files that ClickHouse stores.
 - `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
 - `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
+- `formatting` – Specify log format to be printed in console log (currently only `json` supported).
 
 Both log and error log file names (only file names, not directories) support date and time format specifiers.
 
@@ -1410,6 +1423,8 @@ Writing to the console can be configured. Config example:
 </logger>
 ```
 
+### syslog
+
 Writing to the syslog is also supported. Config example:
 
 ``` xml
@@ -1432,6 +1447,52 @@ Keys for syslog:
 - facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the “LOG_” prefix: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, and so on).
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
 - format – Message format. Possible values: `bsd` and `syslog.`
+
+### Log formats
+
+You can specify the log format that will be outputted in the console log. Currently, only JSON is supported. Here is an example of an output JSON log:
+
+```json
+{
+  "date_time": "1650918987.180175",
+  "thread_name": "#1",
+  "thread_id": "254545",
+  "level": "Trace",
+  "query_id": "",
+  "logger_name": "BaseDaemon",
+  "message": "Received signal 2",
+  "source_file": "../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()",
+  "source_line": "192"
+}
+```
+To enable JSON logging support, use the following snippet:
+
+```xml
+<logger>
+    <formatting>
+        <type>json</type>
+        <names>
+            <date_time>date_time</date_time>
+            <thread_name>thread_name</thread_name>
+            <thread_id>thread_id</thread_id>
+            <level>level</level>
+            <query_id>query_id</query_id>
+            <logger_name>logger_name</logger_name>
+            <message>message</message>
+            <source_file>source_file</source_file>
+            <source_line>source_line</source_line>
+        </names>
+    </formatting>
+</logger>
+```
+
+**Renaming keys for JSON logs**
+
+Key names can be modified by changing tag values inside the `<names>` tag. For example, to change `DATE_TIME` to `MY_DATE_TIME`, you can use `<date_time>MY_DATE_TIME</date_time>`.
+
+**Omitting keys for JSON logs**
+
+Log properties can be omitted by commenting out the property.  For example, if you do not want your log to print `query_id`, you can comment out the `<query_id>` tag.
 
 ## send_crash_reports {#send_crash_reports}
 
@@ -1725,7 +1786,7 @@ Default value: `0.5`.
 
 Asynchronous loading of databases and tables.
 
-If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up.
+If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up. Also consider setting a limit `max_waiting_queries` for the total number of waiting queries.
 
 If `false`, all databases are loaded when the server starts.
 
@@ -2926,7 +2987,7 @@ Default: 0
 
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
-If true, ClickHouse doesn't write defaults for empty SQL security statement in CREATE VIEW queries. 
+If true, ClickHouse doesn't write defaults for empty SQL security statement in CREATE VIEW queries.
 
 :::note
 This setting is only necessary for the migration period and will become obsolete in 24.4

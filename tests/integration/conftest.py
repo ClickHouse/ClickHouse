@@ -13,6 +13,34 @@ from helpers.network import _NetworkManager
 logging.raiseExceptions = False
 
 
+@pytest.fixture(scope="session", autouse=True)
+def pdb_history(request):
+    """
+    Fixture loads and saves pdb history to file, so it can be preserved between runs
+    """
+    if request.config.getoption("--pdb"):
+        import readline  # pylint:disable=import-outside-toplevel
+        import pdb  # pylint:disable=import-outside-toplevel
+
+        def save_history():
+            readline.write_history_file(".pdb_history")
+
+        def load_history():
+            try:
+                readline.read_history_file(".pdb_history")
+            except FileNotFoundError:
+                pass
+
+        load_history()
+        pdb.Pdb.use_rawinput = True
+
+        yield
+
+        save_history()
+    else:
+        yield
+
+
 @pytest.fixture(autouse=True, scope="session")
 def tune_local_port_range():
     # Lots of services uses non privileged ports:

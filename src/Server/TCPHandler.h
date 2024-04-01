@@ -278,8 +278,6 @@ private:
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
 
-    void processOrdinaryQueryWithProcessors();
-
     void processTablesStatusRequest();
 
     void sendHello();
