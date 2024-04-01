@@ -307,6 +307,40 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
         auto copy = memory_settings;
         copy.applyChanges(settings_changes.changes);
         copy.sanityCheck();
+
+        /// When modifying the values of max_bytes_to_keep and max_rows_to_keep to be smaller than the old values,
+        /// the old data needs to be removed.
+        if (!memory_settings.max_bytes_to_keep || memory_settings.max_bytes_to_keep > copy.max_bytes_to_keep
+            || !memory_settings.max_rows_to_keep || memory_settings.max_rows_to_keep > copy.max_rows_to_keep)
+        {
+            std::lock_guard lock(mutex);
+
+            auto new_data = std::make_unique<Blocks>(*(data.get()));
+            UInt64 new_total_rows = total_size_rows.load(std::memory_order_relaxed);
+            UInt64 new_total_bytes = total_size_bytes.load(std::memory_order_relaxed);
+            while (!new_data->empty()
+                   && ((copy.max_bytes_to_keep && new_total_bytes > copy.max_bytes_to_keep)
+                       || (copy.max_rows_to_keep && new_total_rows > copy.max_rows_to_keep)))
+            {
+                Block oldest_block = new_data->front();
+                UInt64 rows_to_remove = oldest_block.rows();
+                UInt64 bytes_to_remove = oldest_block.allocatedBytes();
+                if (new_total_bytes - bytes_to_remove < copy.min_bytes_to_keep
+                    || new_total_rows - rows_to_remove < copy.min_rows_to_keep)
+                {
+                    break; // stop - removing next block will put us under min_bytes / min_rows threshold
+                }
+
+                // delete old block from current storage table
+                new_total_rows -= rows_to_remove;
+                new_total_bytes -= bytes_to_remove;
+                new_data->erase(new_data->begin());
+            }
+
+            data.set(std::move(new_data));
+            total_size_rows.store(new_total_rows, std::memory_order_relaxed);
+            total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
+        }
         memory_settings = std::move(copy);
     }
 
