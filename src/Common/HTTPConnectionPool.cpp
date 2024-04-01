@@ -10,14 +10,15 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
 
-#include <Poco/Net/HTTPClientSession.h>
-#include <Poco/Net/HTTPStream.h>
-#include <Poco/Net/HTTPFixedLengthStream.h>
 #include <Poco/Net/HTTPChunkedStream.h>
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPFixedLengthStream.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Poco/Net/HTTPStream.h>
 #include <Poco/Timespan.h>
 
-#include <Poco/Net/HTTPResponse.h>
-#include <Poco/Net/HTTPRequest.h>
+#include <queue>
 
 #include "config.h"
 

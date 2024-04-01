@@ -62,11 +62,18 @@ public:
         uint32_t depth = 0;
         uint32_t max_depth = 0;
 
-        Pos(Tokens & tokens_, uint32_t max_depth_) : TokenIterator(tokens_), max_depth(max_depth_)
+        uint32_t backtracks = 0;
+        uint32_t max_backtracks = 0;
+
+        Pos(Tokens & tokens_, uint32_t max_depth_, uint32_t max_backtracks_)
+            : TokenIterator(tokens_), max_depth(max_depth_), max_backtracks(max_backtracks_)
         {
         }
 
-        Pos(TokenIterator token_iterator_, uint32_t max_depth_) : TokenIterator(token_iterator_), max_depth(max_depth_) { }
+        Pos(TokenIterator token_iterator_, uint32_t max_depth_, uint32_t max_backtracks_)
+            : TokenIterator(token_iterator_), max_depth(max_depth_), max_backtracks(max_backtracks_)
+        {
+        }
 
         ALWAYS_INLINE void increaseDepth()
         {
@@ -97,6 +104,10 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in parser: incorrect calculation of parse depth");
             --depth;
         }
+
+        Pos(const Pos & rhs) = default;
+
+        Pos & operator=(const Pos & rhs);
     };
 
     /** Get the text of this parser parses. */
