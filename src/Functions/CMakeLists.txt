@@ -14,8 +14,6 @@ extract_into_parent_list(clickhouse_functions_sources dbms_sources
     multiMatchAny.cpp
     checkHyperscanRegexp.cpp
     array/has.cpp
-    equals.cpp
-    notEquals.cpp
     CastOverloadResolver.cpp
 )
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
