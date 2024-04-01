@@ -209,7 +209,7 @@ multiSearchFirstPosition(haystack, [needle1, needle2, …, needleN])
 
 ## multiSearchFirstIndex
 
-在字符串`haystack`中匹配最左侧的`needle`子字符串<sub>i</sub>，返回其索引 `i` (从1开始)，如无法匹配则返回0。
+在字符串`haystack`中匹配最左侧的 needle<sub>i</sub> 子字符串，返回其索引 `i` (从1开始)，如无法匹配则返回0。
 
 函数 `multiSearchFirstIndexCaseInsensitive`, `multiSearchFirstIndexUTF8` 和 `multiSearchFirstIndexCaseInsensitiveUTF8` 提供此函数的不区分大小写以及/或 UTF-8 变体。
 
