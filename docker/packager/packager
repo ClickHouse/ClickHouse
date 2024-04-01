@@ -276,7 +276,6 @@ def parse_env_variables(
     elif package_type == "fuzzers":
         cmake_flags.append("-DENABLE_FUZZING=1")
         cmake_flags.append("-DENABLE_PROTOBUF=1")
-        cmake_flags.append("-DWITH_COVERAGE=1")
         # Reduce linking and building time by avoid *install/all dependencies
         cmake_flags.append("-DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON")
 
