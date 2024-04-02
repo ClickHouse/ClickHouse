@@ -37,6 +37,8 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/CollectSets.h>
 
+#include <stack>
+
 namespace DB
 {
 
@@ -130,6 +132,34 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
     return result_ast;
 }
 
+static void removeCTEs(ASTPtr & ast)
+{
+    std::stack<IAST *> stack;
+    stack.push(ast.get());
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+
+        if (auto * subquery = typeid_cast<ASTSubquery *>(node))
+            subquery->cte_name = {};
+
+        for (const auto & child : node->children)
+            stack.push(child.get());
+    }
+}
+
+ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
+{
+    auto ast = queryNodeToSelectQuery(query_node);
+    /// Remove CTEs information from distributed queries.
+    /// Now, if cte_name is set for subquery node, AST -> String serialization will only print cte name.
+    /// But CTE is defined only for top-level query part, so may not be sent.
+    /// Removing cte_name forces subquery to be always printed.
+    removeCTEs(ast);
+    return ast;
+}
+
 /** There are no limits on the maximum size of the result for the subquery.
   * Since the result of the query is not the result of the entire query.
   */
@@ -179,6 +209,7 @@ StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQue
     limits.speed_limits.max_execution_rps = settings.max_execution_speed;
     limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
     limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+    limits.speed_limits.max_estimated_execution_time = settings.max_estimated_execution_time;
 
     return limits;
 }
@@ -355,66 +386,37 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
     return function_node;
 }
 
-QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr & query_node,
+QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
+    const QueryTreeNodePtr & query_node,
+    const QueryTreeNodes & table_nodes,
     const ContextPtr & context,
-    //PlannerContext & planner_context,
     ResultReplacementMap * result_replacement_map)
 {
-    auto & query_node_typed = query_node->as<QueryNode &>();
-    auto table_expressions = extractTableExpressions(query_node_typed.getJoinTree());
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
-    size_t subquery_index = 0;
 
-    for (auto & table_expression : table_expressions)
+    for (const auto & table_expression : table_nodes)
     {
         auto * table_node = table_expression->as<TableNode>();
         auto * table_function_node = table_expression->as<TableFunctionNode>();
-        auto * subquery_node = table_expression->as<QueryNode>();
-        auto * union_node = table_expression->as<UnionNode>();
-
-        StoragePtr storage_dummy;
 
         if (table_node || table_function_node)
         {
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
 
-            storage_dummy
-                = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), ColumnsDescription(storage_snapshot->getColumns(get_column_options)));
+            StoragePtr storage_dummy = std::make_shared<StorageDummy>(
+                storage_snapshot->storage.getStorageID(),
+                ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
+                storage_snapshot);
+
+            auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
+
+            if (result_replacement_map)
+                result_replacement_map->emplace(table_expression, dummy_table_node);
+
+            dummy_table_node->setAlias(table_expression->getAlias());
+            replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
         }
-        else if (subquery_node || union_node)
-        {
-            const auto & subquery_projection_columns
-                = subquery_node ? subquery_node->getProjectionColumns() : union_node->computeProjectionColumns();
-
-            NameSet unique_column_names;
-            NamesAndTypes storage_dummy_columns;
-            storage_dummy_columns.reserve(subquery_projection_columns.size());
-
-            for (const auto & projection_column : subquery_projection_columns)
-            {
-                auto [_, inserted] = unique_column_names.insert(projection_column.name);
-                if (inserted)
-                    storage_dummy_columns.emplace_back(projection_column);
-            }
-
-            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription::fromNamesAndTypes(storage_dummy_columns));
-            ++subquery_index;
-        }
-
-        auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
-
-        if (result_replacement_map)
-            result_replacement_map->emplace(table_expression, dummy_table_node);
-
-        dummy_table_node->setAlias(table_expression->getAlias());
-
-        // auto & src_table_expression_data = planner_context.getOrCreateTableExpressionData(table_expression);
-        // auto & dst_table_expression_data = planner_context.getOrCreateTableExpressionData(dummy_table_node);
-
-        // dst_table_expression_data = src_table_expression_data;
-
-        replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
     }
 
     return query_node->cloneAndReplace(replacement_map);
@@ -467,12 +469,19 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         NameSet table_expression_required_names_without_filter)
 {
     const auto & query_context = planner_context->getQueryContext();
-
     auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
     QueryAnalysisPass query_analysis_pass(table_expression);
     query_analysis_pass.run(filter_query_tree, query_context);
 
+    return buildFilterInfo(std::move(filter_query_tree), table_expression, planner_context, std::move(table_expression_required_names_without_filter));
+}
+
+FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
+        const QueryTreeNodePtr & table_expression,
+        PlannerContextPtr & planner_context,
+        NameSet table_expression_required_names_without_filter)
+{
     if (table_expression_required_names_without_filter.empty())
     {
         auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
@@ -480,7 +489,7 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         table_expression_required_names_without_filter.insert(table_expression_names.begin(), table_expression_names.end());
     }
 
-    collectSourceColumns(filter_query_tree, planner_context);
+    collectSourceColumns(filter_query_tree, planner_context, false /*keep_alias_columns*/);
     collectSets(filter_query_tree, *planner_context);
 
     auto filter_actions_dag = std::make_shared<ActionsDAG>();
@@ -514,7 +523,7 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings)
     ParserExpression parser;
     auto additional_result_filter_ast = parseQuery(
                 parser, additional_result_filter.data(), additional_result_filter.data() + additional_result_filter.size(),
-                "additional result filter", settings.max_query_size, settings.max_parser_depth);
+                "additional result filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
     return additional_result_filter_ast;
 }
 

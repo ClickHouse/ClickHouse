@@ -77,7 +77,7 @@ void fillJemallocBins(MutableColumns & res_columns)
 
 void fillJemallocBins(MutableColumns &)
 {
-    LOG_INFO(&Poco::Logger::get("StorageSystemJemallocBins"), "jemalloc is not enabled");
+    LOG_INFO(getLogger("StorageSystemJemallocBins"), "jemalloc is not enabled");
 }
 
 #endif // USE_JEMALLOC
@@ -115,7 +115,7 @@ Pipe StorageSystemJemallocBins::read(
 {
     storage_snapshot->check(column_names);
 
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
     MutableColumns res_columns = header.cloneEmptyColumns();
 
     fillJemallocBins(res_columns);

@@ -33,6 +33,8 @@ struct FileCacheSettings
 
     size_t load_metadata_threads = FILECACHE_DEFAULT_LOAD_METADATA_THREADS;
 
+    bool write_cache_per_user_id_directory = false;
+
     std::string cache_policy = "LRU";
     double slru_size_ratio = 0.5;
 

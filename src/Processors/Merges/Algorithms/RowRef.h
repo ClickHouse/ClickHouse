@@ -86,7 +86,7 @@ public:
     {
         if (free_chunks.size() != chunks.size())
         {
-            LOG_ERROR(&Poco::Logger::get("SharedChunkAllocator"), "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: {}", StackTrace().toString());
+            LOG_ERROR(getLogger("SharedChunkAllocator"), "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: {}", StackTrace().toString());
 
             return;
         }
@@ -103,7 +103,7 @@ private:
             /// This may happen if allocator was removed before chunks.
             /// Log message and exit, because we don't want to throw exception in destructor.
 
-            LOG_ERROR(&Poco::Logger::get("SharedChunkAllocator"), "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: {}", StackTrace().toString());
+            LOG_ERROR(getLogger("SharedChunkAllocator"), "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: {}", StackTrace().toString());
 
             return;
         }
@@ -181,7 +181,7 @@ struct RowRefWithOwnedChunk
 
     UInt64 source_stream_index = 0;
 
-    void swap(RowRefWithOwnedChunk & other)
+    void swap(RowRefWithOwnedChunk & other) /// NOLINT(performance-noexcept-swap)
     {
         owned_chunk.swap(other.owned_chunk);
         std::swap(all_columns, other.all_columns);

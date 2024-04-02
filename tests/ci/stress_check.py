@@ -8,29 +8,14 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-from github import Github
-
 from build_download_helper import download_all_deb_packages
-from clickhouse_helper import (
-    CiLogsCredentials,
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
-from commit_status_helper import (
-    RerunHelper,
-    get_commit,
-    post_commit_status,
-    format_description,
-)
-from docker_images_helper import DockerImage, pull_image, get_docker_image
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
-from get_robot_token import get_best_robot_token
+from clickhouse_helper import CiLogsCredentials
+from docker_images_helper import DockerImage, get_docker_image, pull_image
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from pr_info import PRInfo
-from report import TestResult, TestResults, read_test_results
-from s3_helper import S3Helper
+from report import ERROR, JobReport, TestResult, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
 
 
 def get_additional_envs() -> List[str]:
@@ -103,17 +88,17 @@ def process_results(
         status = list(csv.reader(status_file, delimiter="\t"))
 
     if len(status) != 1 or len(status[0]) != 2:
-        return "error", "Invalid check_status.tsv", test_results, additional_files
+        return ERROR, "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
         results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path, True)
         if len(test_results) == 0:
-            raise Exception("Empty results")
+            raise ValueError("Empty results")
     except Exception as e:
         return (
-            "error",
+            ERROR,
             f"Cannot parse test_results.tsv ({e})",
             test_results,
             additional_files,
@@ -138,14 +123,6 @@ def run_stress_test(docker_image_name: str) -> None:
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
 
     pr_info = PRInfo()
-
-    gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
-
-    rerun_helper = RerunHelper(commit, check_name)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
 
     docker_image = pull_image(get_docker_image(docker_image_name))
 
@@ -194,7 +171,6 @@ def run_stress_test(docker_image_name: str) -> None:
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
     ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
-    s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )
@@ -202,34 +178,16 @@ def run_stress_test(docker_image_name: str) -> None:
     if timeout_expired:
         test_results.append(TestResult.create_check_timeout_expired(timeout))
         state = "failure"
-        description = format_description(test_results[-1].name)
+        description = test_results[-1].name
 
-    ch_helper = ClickHouseHelper()
-
-    report_url = upload_results(
-        s3_helper,
-        pr_info.number,
-        pr_info.sha,
-        test_results,
-        additional_logs,
-        check_name,
-    )
-    print(f"::notice ::Report url: {report_url}")
-
-    post_commit_status(
-        commit, state, report_url, description, check_name, pr_info, dump_to_file=True
-    )
-
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_results,
-        state,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        report_url,
-        check_name,
-    )
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    JobReport(
+        description=description,
+        test_results=test_results,
+        status=state,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=additional_logs,
+    ).dump()
 
     if state == "failure":
         sys.exit(1)

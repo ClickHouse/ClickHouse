@@ -39,8 +39,8 @@ If you need to update rows frequently, we recommend using the [`ReplacingMergeTr
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY],
-    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY],
+    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
+    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY] [SETTINGS (name = value, ...)],
     ...
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
@@ -56,7 +56,7 @@ ORDER BY expr
     [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
     [WHERE conditions]
     [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ]
-[SETTINGS name=value, ...]
+[SETTINGS name = value, ...]
 ```
 
 For a description of parameters, see the [CREATE query description](/docs/en/sql-reference/statements/create/table.md).
@@ -620,7 +620,7 @@ The `TTL` clause can’t be used for key columns.
 #### Creating a table with `TTL`:
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     d DateTime,
     a Int TTL d + INTERVAL 1 MONTH,
@@ -635,7 +635,7 @@ ORDER BY d;
 #### Adding TTL to a column of an existing table
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 DAY;
 ```
@@ -643,7 +643,7 @@ ALTER TABLE example_table
 #### Altering TTL of the column
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 MONTH;
 ```
@@ -681,7 +681,7 @@ If a column is not part of the `GROUP BY` expression and is not set explicitly i
 #### Creating a table with `TTL`:
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     d DateTime,
     a Int
@@ -697,7 +697,7 @@ TTL d + INTERVAL 1 MONTH DELETE,
 #### Altering `TTL` of the table:
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY TTL d + INTERVAL 1 DAY;
 ```
 
@@ -870,6 +870,11 @@ Tags:
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 - `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
 - `prefer_not_to_merge` — You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation). When this setting is enabled (don't do it), merging data on this volume is not allowed (which is bad). This allows (but you don't need it) controlling (if you want to control something, you're making a mistake) how ClickHouse works with slow disks (but ClickHouse knows better, so please don't use this setting).
+- `volume_priority` — Defines the priority (order) in which volumes are filled. Lower value means higher priority. The parameter values should be natural numbers and collectively cover the range from 1 to N (lowest priority given) without skipping any numbers.
+  * If _all_ volumes are tagged, they are prioritized in given order.
+  * If only _some_ volumes are tagged, those without the tag have the lowest priority, and they are prioritized in the order they are defined in config.
+  * If _no_ volumes are tagged, their priority is set correspondingly to their order they are declared in configuration.
+  * Two volumes cannot have the same priority value.
 
 Configuration examples:
 
@@ -919,7 +924,8 @@ In given example, the `hdd_in_order` policy implements the [round-robin](https:/
 If there are different kinds of disks available in the system, `moving_from_ssd_to_hdd` policy can be used instead. The volume `hot` consists of an SSD disk (`fast_ssd`), and the maximum size of a part that can be stored on this volume is 1GB. All the parts with the size larger than 1GB will be stored directly on the `cold` volume, which contains an HDD disk `disk1`.
 Also, once the disk `fast_ssd` gets filled by more than 80%, data will be transferred to the `disk1` by a background process.
 
-The order of volume enumeration within a storage policy is important. Once a volume is overfilled, data are moved to the next one. The order of disk enumeration is important as well because data are stored on them in turns.
+The order of volume enumeration within a storage policy is important in case at least one of the volumes listed has no explicit `volume_priority` parameter.
+Once a volume is overfilled, data are moved to the next one. The order of disk enumeration is important as well because data are stored on them in turns.
 
 When creating a table, one can apply one of the configured storage policies to it:
 
@@ -939,96 +945,6 @@ The `default` storage policy implies using only one volume, which consists of on
 You could change storage policy after table creation with [ALTER TABLE ... MODIFY SETTING] query, new policy should include all old disks and volumes with same names.
 
 The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_move_pool_size) setting.
-
-### Dynamic Storage
-
-This example query shows how to attach a table stored at a URL and configure the
-remote storage within the query. The web storage is not configured in the ClickHouse
-configuration files; all the settings are in the CREATE/ATTACH query.
-
-:::note
-The example uses `type=web`, but any disk type can be configured as dynamic, even Local disk. Local disks require a path argument to be inside the server config parameter `custom_local_disks_base_directory`, which has no default, so set that also when using local disk.
-:::
-
-#### Example dynamic web storage
-
-:::tip
-A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web storage see the tool [clickhouse-static-files-uploader](/docs/en/operations/storing-data.md/#storing-data-on-webserver)
-:::
-
-In this `ATTACH TABLE` query the `UUID` provided matches the directory name of the data, and the endpoint is the URL for the raw GitHub content.
-
-```sql
-# highlight-next-line
-ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
-(
-    price UInt32,
-    date Date,
-    postcode1 LowCardinality(String),
-    postcode2 LowCardinality(String),
-    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
-    is_new UInt8,
-    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
-    addr1 String,
-    addr2 String,
-    street LowCardinality(String),
-    locality LowCardinality(String),
-    town LowCardinality(String),
-    district LowCardinality(String),
-    county LowCardinality(String)
-)
-ENGINE = MergeTree
-ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
-  SETTINGS disk = disk(
-      type=web,
-      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
-      );
-  # highlight-end
-```
-
-### Nested Dynamic Storage
-
-This example query builds on the above dynamic disk configuration and shows how to
-use a local disk to cache data from a table stored at a URL. Neither the cache disk
-nor the web storage is configured in the ClickHouse configuration files; both are
-configured in the CREATE/ATTACH query settings.
-
-In the settings highlighted below notice that the disk of `type=web` is nested within
-the disk of `type=cache`.
-
-```sql
-ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
-(
-    price UInt32,
-    date Date,
-    postcode1 LowCardinality(String),
-    postcode2 LowCardinality(String),
-    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
-    is_new UInt8,
-    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
-    addr1 String,
-    addr2 String,
-    street LowCardinality(String),
-    locality LowCardinality(String),
-    town LowCardinality(String),
-    district LowCardinality(String),
-    county LowCardinality(String)
-)
-ENGINE = MergeTree
-ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
-  SETTINGS disk = disk(
-    type=cache,
-    max_size='1Gi',
-    path='/var/lib/clickhouse/custom_disk_cache/',
-    disk=disk(
-      type=web,
-      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
-      )
-  );
-  # highlight-end
-```
 
 ### Details {#details}
 
@@ -1058,13 +974,11 @@ During this time, they are not moved to other volumes or disks. Therefore, until
 
 User can assign new big parts to different disks of a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) volume in a balanced way using the [min_bytes_to_rebalance_partition_over_jbod](/docs/en/operations/settings/merge-tree-settings.md/#min-bytes-to-rebalance-partition-over-jbod) setting.
 
-## Using S3 for Data Storage {#table_engine-mergetree-s3}
+## Using External Storage for Data Storage {#table_engine-mergetree-s3}
 
-:::note
-Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/docs/en/integrations/gcs).
-:::
+[MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` using a disk with types `s3`, `azure_blob_storage`, `hdfs` accordingly. See [configuring external storage options](/docs/en/operations/storing-data.md/#configuring-external-storage) for more details.
 
-`MergeTree` family table engines can store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
+Example for [S3](https://aws.amazon.com/s3/) as external storage using a disk with type `s3`.
 
 Configuration markup:
 ``` xml
@@ -1106,250 +1020,11 @@ Configuration markup:
 </storage_configuration>
 ```
 
+Also see [configuring external storage options](/docs/en/operations/storing-data.md/#configuring-external-storage).
+
 :::note cache configuration
 ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) if you are using one of those versions.
 :::
-
-### Configuring the S3 disk
-
-Required parameters:
-
-- `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a bucket and root path to store data.
-- `access_key_id` — S3 access key id.
-- `secret_access_key` — S3 secret access key.
-
-Optional parameters:
-
-- `region` — S3 region name.
-- `support_batch_delete` — This controls the check to see if batch deletes are supported. Set this to `false` when using Google Cloud Storage (GCS) as GCS does not support batch deletes and preventing the checks will prevent error messages in the logs.
-- `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
-- `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Default value is `false`.
-- `expiration_window_seconds` — Grace period for checking if expiration-based credentials have expired. Optional, default value is `120`.
-- `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.
-- `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`.
-- `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`.
-- `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`.
-- `single_read_retries` — Number of retry attempts in case of connection drop during read. Default value is `4`.
-- `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
-- `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
-- `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
-- `header` —  Adds specified HTTP header to a request to given endpoint. Optional, can be specified multiple times.
-- `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
-- `server_side_encryption_kms_key_id` - If specified, required headers for accessing S3 objects with [SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) will be set. If an empty string is specified, the AWS managed S3 key will be used. Optional.
-- `server_side_encryption_kms_encryption_context` - If specified alongside `server_side_encryption_kms_key_id`, the given encryption context header for SSE-KMS will be set. Optional.
-- `server_side_encryption_kms_bucket_key_enabled` - If specified alongside `server_side_encryption_kms_key_id`, the header to enable S3 bucket keys for SSE-KMS will be set. Optional, can be `true` or `false`, defaults to nothing (matches the bucket-level setting).
-- `s3_max_put_rps` — Maximum PUT requests per second rate before throttling. Default value is `0` (unlimited).
-- `s3_max_put_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_put_rps`.
-- `s3_max_get_rps` — Maximum GET requests per second rate before throttling. Default value is `0` (unlimited).
-- `s3_max_get_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_get_rps`.
-- `read_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of read requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
-- `write_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of write requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
-- `key_template` — Define the format with which the object keys are generated. By default, Clickhouse takes `root path` from `endpoint` option and adds random generated suffix. That suffix is a dir with 3 random symbols and a file name with 29 random symbols. With that option you have a full control how to the object keys are generated. Some usage scenarios require having random symbols in the prefix or in the middle of object key. For example: `[a-z]{3}-prefix-random/constant-part/random-middle-[a-z]{3}/random-suffix-[a-z]{29}`. The value is parsed with [`re2`](https://github.com/google/re2/wiki/Syntax). Only some subset of the syntax is supported. Check if your preferred format is supported before using that option. Disk isn't initialized if clickhouse is unable to generate a key by the value of `key_template`. It requires enabled feature flag [storage_metadata_write_full_object_key](/docs/en/operations/settings/settings#storage_metadata_write_full_object_key). It forbids declaring the `root path` in `endpoint` option. It requires definition of the option `key_compatibility_prefix`.
-- `key_compatibility_prefix` — That option is required when option `key_template` is in use. In order to be able to read the objects keys which were stored in the metadata files with the metadata version lower that `VERSION_FULL_OBJECT_KEY`, the previous `root path` from the `endpoint` option should be set here.
-
-### Configuring the cache
-
-This is the cache configuration from above:
-```xml
-        <s3_cache>
-            <type>cache</type>
-            <disk>s3</disk>
-            <path>/var/lib/clickhouse/disks/s3_cache/</path>
-            <max_size>10Gi</max_size>
-        </s3_cache>
-```
-
-These parameters define the cache layer:
-- `type` — If a disk is of type `cache` it caches mark and index files in memory.
-- `disk` — The name of the disk that will be cached.
-
-Cache parameters:
-- `path` — The path where metadata for the cache is stored.
-- `max_size` — The size (amount of disk space) that the cache can grow to.
-
-:::tip
-There are several other cache parameters that you can use to tune your storage, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) for the details.
-:::
-
-S3 disk can be configured as `main` or `cold` storage:
-``` xml
-<storage_configuration>
-    ...
-    <disks>
-        <s3>
-            <type>s3</type>
-            <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-            <access_key_id>your_access_key_id</access_key_id>
-            <secret_access_key>your_secret_access_key</secret_access_key>
-        </s3>
-    </disks>
-    <policies>
-        <s3_main>
-            <volumes>
-                <main>
-                    <disk>s3</disk>
-                </main>
-            </volumes>
-        </s3_main>
-        <s3_cold>
-            <volumes>
-                <main>
-                    <disk>default</disk>
-                </main>
-                <external>
-                    <disk>s3</disk>
-                </external>
-            </volumes>
-            <move_factor>0.2</move_factor>
-        </s3_cold>
-    </policies>
-    ...
-</storage_configuration>
-```
-
-In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule.
-
-## Using Azure Blob Storage for Data Storage {#table_engine-mergetree-azure-blob-storage}
-
-`MergeTree` family table engines can store data to [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) using a disk with type `azure_blob_storage`.
-
-As of February 2022, this feature is still a fresh addition, so expect that some Azure Blob Storage functionalities might be unimplemented.
-
-Configuration markup:
-``` xml
-<storage_configuration>
-    ...
-    <disks>
-        <blob_storage_disk>
-            <type>azure_blob_storage</type>
-            <storage_account_url>http://account.blob.core.windows.net</storage_account_url>
-            <container_name>container</container_name>
-            <account_name>account</account_name>
-            <account_key>pass123</account_key>
-            <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
-            <skip_access_check>false</skip_access_check>
-        </blob_storage_disk>
-    </disks>
-    ...
-</storage_configuration>
-```
-
-Connection parameters:
-* `storage_account_url` - **Required**, Azure Blob Storage account URL, like `http://account.blob.core.windows.net` or `http://azurite1:10000/devstoreaccount1`.
-* `container_name` - Target container name, defaults to `default-container`.
-* `container_already_exists` - If set to `false`, a new container `container_name` is created in the storage account, if set to `true`, disk connects to the container directly, and if left unset, disk connects to the account, checks if the container `container_name` exists, and creates it if it doesn't exist yet.
-
-Authentication parameters (the disk will try all available methods **and** Managed Identity Credential):
-* `connection_string` - For authentication using a connection string.
-* `account_name` and `account_key` - For authentication using Shared Key.
-
-Limit parameters (mainly for internal usage):
-* `s3_max_single_part_upload_size` - Limits the size of a single block upload to Blob Storage.
-* `min_bytes_for_seek` - Limits the size of a seekable region.
-* `max_single_read_retries` - Limits the number of attempts to read a chunk of data from Blob Storage.
-* `max_single_download_retries` - Limits the number of attempts to download a readable buffer from Blob Storage.
-* `thread_pool_size` - Limits the number of threads with which `IDiskRemote` is instantiated.
-* `s3_max_inflight_parts_for_one_file` - Limits the number of put requests that can be run concurrently for one object.
-
-Other parameters:
-* `metadata_path` - Path on local FS to store metadata files for Blob Storage. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
-* `skip_access_check` - If true, disk access checks will not be performed on disk start-up. Default value is `false`.
-* `read_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of read requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
-* `write_resource` — Resource name to be used for [scheduling](/docs/en/operations/workload-scheduling.md) of write requests to this disk. Default value is empty string (IO scheduling is not enabled for this disk).
-
-Examples of working configurations can be found in integration tests directory (see e.g. [test_merge_tree_azure_blob_storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) or [test_azure_blob_storage_zero_copy_replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
-
-:::note Zero-copy replication is not ready for production
-Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-:::
-
-## HDFS storage {#hdfs-storage}
-
-In this sample configuration:
-- the disk is of type `hdfs`
-- the data is hosted at `hdfs://hdfs1:9000/clickhouse/`
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        <disks>
-            <hdfs>
-                <type>hdfs</type>
-                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
-                <skip_access_check>true</skip_access_check>
-            </hdfs>
-            <hdd>
-                <type>local</type>
-                <path>/</path>
-            </hdd>
-        </disks>
-        <policies>
-            <hdfs>
-                <volumes>
-                    <main>
-                        <disk>hdfs</disk>
-                    </main>
-                    <external>
-                        <disk>hdd</disk>
-                    </external>
-                </volumes>
-            </hdfs>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-## Web storage (read-only) {#web-storage}
-
-Web storage can be used for read-only purposes. An example use is for hosting sample
-data, or for migrating data.
-
-:::tip
-Storage can also be configured temporarily within a query, if a web dataset is not expected
-to be used routinely, see [dynamic storage](#dynamic-storage) and skip editing the
-configuration file.
-:::
-
-In this sample configuration:
-- the disk is of type `web`
-- the data is hosted at `http://nginx:80/test1/`
-- a cache on local storage is used
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        <disks>
-            <web>
-                <type>web</type>
-                <endpoint>http://nginx:80/test1/</endpoint>
-            </web>
-            <cached_web>
-                <type>cache</type>
-                <disk>web</disk>
-                <path>cached_web_cache/</path>
-                <max_size>100000000</max_size>
-            </cached_web>
-        </disks>
-        <policies>
-            <web>
-                <volumes>
-                    <main>
-                        <disk>web</disk>
-                    </main>
-                </volumes>
-            </web>
-            <cached_web>
-                <volumes>
-                    <main>
-                        <disk>cached_web</disk>
-                    </main>
-                </volumes>
-            </cached_web>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
 
 ## Virtual Columns {#virtual-columns}
 
@@ -1366,7 +1041,7 @@ In this sample configuration:
 The statistic declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistic = 1`.
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     a Int64 STATISTIC(tdigest),
     b Float64
@@ -1378,8 +1053,8 @@ ORDER BY a
 We can also manipulate statistics with `ALTER` statements.
 
 ```sql
-ALTER TABLE example_table ADD STATISTIC b TYPE tdigest;
-ALTER TABLE example_table DROP STATISTIC a TYPE tdigest;
+ALTER TABLE tab ADD STATISTIC b TYPE tdigest;
+ALTER TABLE tab DROP STATISTIC a TYPE tdigest;
 ```
 
 These lightweight statistics aggregate information about distribution of values in columns.
@@ -1390,3 +1065,42 @@ They can be used for query optimization when we enable `set allow_statistic_opti
 -   `tdigest`
 
     Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
+
+## Column-level Settings {#column-level-settings}
+
+Certain MergeTree settings can be override at column level:
+
+- `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
+- `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    id Int64,
+    document String SETTINGS (min_compress_block_size = 16777216, max_compress_block_size = 16777216)
+)
+ENGINE = MergeTree
+ORDER BY id
+```
+
+Column-level settings can be modified or removed using [ALTER MODIFY COLUMN](/docs/en/sql-reference/statements/alter/column.md), for example:
+
+- Remove `SETTINGS` from column declaration:
+
+```sql
+ALTER TABLE tab MODIFY COLUMN document REMOVE SETTINGS;
+```
+
+- Modify a setting:
+
+```sql
+ALTER TABLE tab MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 8192;
+```
+
+- Reset one or more settings, also removes the setting declaration in the column expression of the table's CREATE query.
+
+```sql
+ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
+```

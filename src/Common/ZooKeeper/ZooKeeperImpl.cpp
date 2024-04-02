@@ -342,7 +342,7 @@ ZooKeeper::ZooKeeper(
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
 {
-    log = &Poco::Logger::get("ZooKeeperClient");
+    log = getLogger("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
 
     if (!args.chroot.empty())
@@ -812,7 +812,7 @@ void ZooKeeper::receiveEvent()
 
     RequestInfo request_info;
     ZooKeeperResponsePtr response;
-    UInt64 elapsed_ms = 0;
+    UInt64 elapsed_microseconds = 0;
 
     maybeInjectRecvFault();
 
@@ -875,8 +875,8 @@ void ZooKeeper::receiveEvent()
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
-        elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
-        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_ms);
+        elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
     }
 
     try
@@ -935,7 +935,7 @@ void ZooKeeper::receiveEvent()
                                 length, actual_length);
         }
 
-        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
+        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
     }
     catch (...)
     {
@@ -954,7 +954,7 @@ void ZooKeeper::receiveEvent()
             if (request_info.callback)
                 request_info.callback(*response);
 
-            logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
+            logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_microseconds);
         }
         catch (...)
         {
@@ -1048,14 +1048,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     ? Error::ZCONNECTIONLOSS
                     : Error::ZSESSIONEXPIRED;
                 response->xid = request_info.request->xid;
-                UInt64 elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+                UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
 
                 if (request_info.callback)
                 {
                     try
                     {
                         request_info.callback(*response);
-                        logOperationIfNeeded(request_info.request, response, true, elapsed_ms);
+                        logOperationIfNeeded(request_info.request, response, true, elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1115,8 +1115,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     try
                     {
                         info.callback(*response);
-                        UInt64 elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
-                        logOperationIfNeeded(info.request, response, true, elapsed_ms);
+                        UInt64 elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
+                        logOperationIfNeeded(info.request, response, true, elapsed_microseconds);
                     }
                     catch (...)
                     {
@@ -1455,6 +1455,13 @@ void ZooKeeper::multi(
     const Requests & requests,
     MultiCallback callback)
 {
+    multi(std::span(requests), std::move(callback));
+}
+
+void ZooKeeper::multi(
+    std::span<const RequestPtr> requests,
+    MultiCallback callback)
+{
     ZooKeeperMultiRequest request(requests, default_acls);
 
     if (request.getOpNum() == OpNum::MultiRead && !isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
@@ -1491,7 +1498,7 @@ void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 }
 
 #ifdef ZOOKEEPER_LOG
-void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_ms)
+void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_microseconds)
 {
     auto maybe_zk_log = std::atomic_load(&zk_log);
     if (!maybe_zk_log)
@@ -1529,7 +1536,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
         elem.event_time = event_time;
         elem.address = socket_address;
         elem.session_id = session_id;
-        elem.duration_ms = elapsed_ms;
+        elem.duration_microseconds = elapsed_microseconds;
         if (request)
         {
             elem.thread_id = request->thread_id;

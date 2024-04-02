@@ -335,7 +335,11 @@ public:
                         && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
                         throw Exception(
                             ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                                "Arrays passed to {} must have equal size", getName());
+                            "Arrays passed to {} must have equal size. Argument {} has size {} which differs with the size of another argument, {}",
+                            getName(),
+                            i + 1,
+                            column_array->getOffsets().back(),  /// By the way, PODArray supports addressing -1th element.
+                            typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData().back());
                 }
 
                 const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column_array->getData());
@@ -351,7 +355,7 @@ public:
                     {
                         arrays.emplace_back(
                             column_tuple->getColumnPtr(j),
-                            recursiveRemoveLowCardinality(type_tuple.getElement(j)),
+                            type_tuple.getElement(j),
                             array_with_type_and_name.name + "." + tuple_names[j]);
                     }
                 }
@@ -359,7 +363,7 @@ public:
                 {
                     arrays.emplace_back(
                         column_array->getDataPtr(),
-                        recursiveRemoveLowCardinality(array_type->getNestedType()),
+                        array_type->getNestedType(),
                         array_with_type_and_name.name);
                 }
 

@@ -90,13 +90,30 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
             materialize_thread.startSynchronization();
             started_up = true;
         });
+    std::scoped_lock lock(mutex);
     return startup_mysql_database_task = makeLoadTask(async_loader, {job});
 }
 
-void DatabaseMaterializedMySQL::waitDatabaseStarted(bool no_throw) const
+void DatabaseMaterializedMySQL::waitDatabaseStarted() const
 {
-    if (startup_mysql_database_task)
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_mysql_database_task, no_throw);
+    LoadTaskPtr task;
+    {
+        std::scoped_lock lock(mutex);
+        task = startup_mysql_database_task;
+    }
+    if (task)
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task);
+}
+
+void DatabaseMaterializedMySQL::stopLoading()
+{
+    LoadTaskPtr stop_startup_mysql_database;
+    {
+        std::scoped_lock lock(mutex);
+        stop_startup_mysql_database.swap(startup_mysql_database_task);
+    }
+    stop_startup_mysql_database.reset();
+    DatabaseAtomic::stopLoading();
 }
 
 void DatabaseMaterializedMySQL::createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query)
@@ -184,7 +201,7 @@ void DatabaseMaterializedMySQL::checkIsInternalQuery(ContextPtr context_, const 
 
 void DatabaseMaterializedMySQL::stopReplication()
 {
-    waitDatabaseStarted(/* no_throw = */ true);
+    stopLoading();
     materialize_thread.stopSynchronization();
     started_up = false;
 }

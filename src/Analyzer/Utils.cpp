@@ -326,7 +326,69 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
     }
 }
 
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join)
+QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
+{
+    QueryTreeNodes result;
+
+    QueryTreeNodes nodes_to_process;
+    nodes_to_process.push_back(tree);
+
+    while (!nodes_to_process.empty())
+    {
+        auto node_to_process = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
+
+        auto node_type = node_to_process->getNodeType();
+
+        switch (node_type)
+        {
+            case QueryTreeNodeType::TABLE:
+            {
+                result.push_back(std::move(node_to_process));
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                nodes_to_process.push_back(node_to_process->as<QueryNode>()->getJoinTree());
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
+                    nodes_to_process.push_back(union_node);
+                break;
+            }
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                // Arguments of table function can't contain TableNodes.
+                break;
+            }
+            case QueryTreeNodeType::ARRAY_JOIN:
+            {
+                nodes_to_process.push_back(node_to_process->as<ArrayJoinNode>()->getTableExpression());
+                break;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                auto & join_node = node_to_process->as<JoinNode &>();
+                nodes_to_process.push_back(join_node.getRightTableExpression());
+                nodes_to_process.push_back(join_node.getLeftTableExpression());
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Unexpected node type for table expression. "
+                                "Expected table, table function, query, union, join or array join. Actual {}",
+                                node_to_process->getNodeTypeName());
+            }
+        }
+    }
+
+    return result;
+}
+
+QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join, bool recursive)
 {
     QueryTreeNodes result;
 
@@ -344,12 +406,25 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
         {
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
-            case QueryTreeNodeType::QUERY:
-                [[fallthrough]];
-            case QueryTreeNodeType::UNION:
-                [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
+                result.push_back(std::move(node_to_process));
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                if (recursive)
+                    nodes_to_process.push_back(node_to_process->as<QueryNode>()->getJoinTree());
+                result.push_back(std::move(node_to_process));
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                if (recursive)
+                {
+                    for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
+                        nodes_to_process.push_back(union_node);
+                }
                 result.push_back(std::move(node_to_process));
                 break;
             }
@@ -626,7 +701,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
     }
     else if (function_node->isAggregateFunction())
     {
-        if (name == "nothing")
+        if (name == "nothing" || name == "nothingUInt64" || name == "nothingNull")
             return;
         function_node->resolveAsAggregateFunction(resolveAggregateFunction(function_node));
     }

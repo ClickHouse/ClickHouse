@@ -41,7 +41,7 @@ AWSLogger::AWSLogger(bool enable_s3_requests_logging_)
     : enable_s3_requests_logging(enable_s3_requests_logging_)
 {
     for (auto [tag, name] : S3_LOGGER_TAG_NAMES)
-        tag_loggers[tag] = &Poco::Logger::get(name);
+        tag_loggers[tag] = getLogger(name);
 
     default_logger = tag_loggers[S3_LOGGER_TAG_NAMES[0][0]];
 }

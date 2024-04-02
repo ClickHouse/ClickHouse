@@ -63,7 +63,7 @@ void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTP
         }
         catch (...)
         {
-            LOG_ERROR((&Poco::Logger::get("KeeperReadinessHandler")), "Cannot send exception to client");
+            LOG_ERROR((getLogger("KeeperReadinessHandler")), "Cannot send exception to client");
         }
     }
 }

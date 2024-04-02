@@ -212,7 +212,7 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
     };
 }
 
-static std::string nodeToJson(avro::NodePtr root_node)
+static std::string nodeToJSON(avro::NodePtr root_node)
 {
     std::ostringstream ss;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     ss.exceptions(std::ios::failbit);
@@ -641,7 +641,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN,
         "Type {} is not compatible with Avro {}:\n{}",
-        target_type->getName(), avro::toString(root_node->type()), nodeToJson(root_node));
+        target_type->getName(), avro::toString(root_node->type()), nodeToJSON(root_node));
 }
 
 AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & root_node)
@@ -984,10 +984,13 @@ private:
             try
             {
                 Poco::URI url(base_url, base_url.getPath() + "/schemas/ids/" + std::to_string(id));
-                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Fetching schema id = {} from url {}", id, url.toString());
+                LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Fetching schema id = {} from url {}", id, url.toString());
 
                 /// One second for connect/send/receive. Just in case.
-                ConnectionTimeouts timeouts({1, 0}, {1, 0}, {1, 0});
+                auto timeouts = ConnectionTimeouts()
+                    .withConnectionTimeout(1)
+                    .withSendTimeout(1)
+                    .withReceiveTimeout(1);
 
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
                 request.setHost(url.getHost());
@@ -1013,7 +1016,7 @@ private:
                     http_basic_credentials.authenticate(request);
                 }
 
-                auto session = makePooledHTTPSession(url, timeouts, 1);
+                auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, url, timeouts);
                 session->sendRequest(request);
 
                 Poco::Net::HTTPResponse response;
@@ -1022,11 +1025,9 @@ private:
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
 
-                /// Response was fully read.
-                markSessionForReuse(session);
 
                 auto schema = json_body->getValue<std::string>("schema");
-                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
+                LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
                 return avro::compileJsonSchemaFromString(schema);
             }
             catch (const Exception &)

@@ -123,7 +123,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"table_uuid", std::make_shared<DataTypeUUID>(), "UUID of the table the data part belongs to."},
         {"part_name", std::make_shared<DataTypeString>(), "Name of the data part."},
         {"partition_id", std::make_shared<DataTypeString>(), "ID of the partition that the data part was inserted to. The column takes the `all` value if the partitioning is by `tuple()`."},
-        {"partition", std::make_shared<DataTypeString>()},
+        {"partition", std::make_shared<DataTypeString>(), "The partition name."},
         {"part_type", std::make_shared<DataTypeString>(), "The type of the part. Possible values: Wide and Compact."},
         {"disk_name", std::make_shared<DataTypeString>(), "The disk name data part lies on."},
         {"path_on_disk", std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},
@@ -271,7 +271,7 @@ bool PartLog::addNewParts(
     }
     catch (...)
     {
-        tryLogCurrentException(part_log ? part_log->log : &Poco::Logger::get("PartLog"), __PRETTY_FUNCTION__);
+        tryLogCurrentException(part_log ? part_log->log : getLogger("PartLog"), __PRETTY_FUNCTION__);
         return false;
     }
 

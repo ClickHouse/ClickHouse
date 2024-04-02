@@ -1,23 +1,23 @@
 -- datatable(FirstName:string, LastName:string, Occupation:string, Education:string, Age:int) [
---     'Theodore', 'Diaz', 'Skilled Manual', 'Bachelors', 28,
---     'Stephanie', 'Cox', 'Management abcd defg', 'Bachelors', 33,
---     'Peter', 'Nara', 'Skilled Manual', 'Graduate Degree', 26,
---     'Latoya', 'Shen', 'Professional', 'Graduate Degree', 25,
---     'Joshua', 'Lee', 'Professional', 'Partial College', 26,
---     'Edward', 'Hernandez', 'Skilled Manual', 'High School', 36,
---     'Dalton', 'Wood', 'Professional', 'Partial College', 42,
---     'Christine', 'Nara', 'Skilled Manual', 'Partial College', 33,
---     'Cameron', 'Rodriguez', 'Professional', 'Partial College', 28,
---     'Angel', 'Stewart', 'Professional', 'Partial College', 46,
---     'Apple', '', 'Skilled Manual', 'Bachelors', 28,
+--     'Theodore', 'Diaz', 'Skilled Manual', 'Bachelors', 28, 
+--     'Stephanie', 'Cox', 'Management abcd defg', 'Bachelors', 33, 
+--     'Peter', 'Nara', 'Skilled Manual', 'Graduate Degree', 26, 
+--     'Latoya', 'Shen', 'Professional', 'Graduate Degree', 25, 
+--     'Joshua', 'Lee', 'Professional', 'Partial College', 26, 
+--     'Edward', 'Hernandez', 'Skilled Manual', 'High School', 36, 
+--     'Dalton', 'Wood', 'Professional', 'Partial College', 42, 
+--     'Christine', 'Nara', 'Skilled Manual', 'Partial College', 33, 
+--     'Cameron', 'Rodriguez', 'Professional', 'Partial College', 28, 
+--     'Angel', 'Stewart', 'Professional', 'Partial College', 46, 
+--     'Apple', '', 'Skilled Manual', 'Bachelors', 28, 
 --     dynamic(null), 'why', 'Professional', 'Partial College', 38
 -- ]
 
 DROP TABLE IF EXISTS Customers;
 CREATE TABLE Customers
-(
+(    
     FirstName Nullable(String),
-    LastName String,
+    LastName String, 
     Occupation String,
     Education String,
     Age Nullable(UInt8)
@@ -89,9 +89,9 @@ print '-- Summarize following sort --';
 Customers | sort by FirstName | summarize count() by Occupation | sort by Occupation;
 
 print '-- summarize with bin --';
-EventLog | summarize count=count() by bin(Created, 1000) | sort by count asc;
-EventLog | summarize count=count() by bin(unixtime_seconds_todatetime(Created/1000), 1s) | sort by count asc;
-EventLog | summarize count=count() by time_label=bin(Created/1000, 1s) | sort by count asc;
+EventLog | summarize count=count() by bin(Created, 1000);
+EventLog | summarize count=count() by bin(unixtime_seconds_todatetime(Created/1000), 1s);
+EventLog | summarize count=count() by time_label=bin(Created/1000, 1s);
 Dates | project bin(datetime(EventTime), 1m);
 print '-- make_list_with_nulls --';
 Customers | summarize t = make_list_with_nulls(FirstName);

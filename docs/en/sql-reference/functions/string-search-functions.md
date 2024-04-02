@@ -30,7 +30,6 @@ position(haystack, needle[, start_pos])
 
 Alias:
 - `position(needle IN haystack)`
-- `locate(haystack, needle[, start_pos])`.
 
 **Arguments**
 
@@ -49,7 +48,7 @@ If substring `needle` is empty, these rules apply:
 - if `start_pos >= 1` and `start_pos <= length(haystack) + 1`: return `start_pos`
 - otherwise: return `0`
 
-The same rules also apply to functions `positionCaseInsensitive`, `positionUTF8` and `positionCaseInsensitiveUTF8`
+The same rules also apply to functions `locate`, `positionCaseInsensitive`, `positionUTF8` and `positionCaseInsensitiveUTF8`.
 
 Type: `Integer`.
 
@@ -74,6 +73,8 @@ SELECT
     position('Hello, world!', 'o', 1),
     position('Hello, world!', 'o', 7)
 ```
+
+Result:
 
 ``` text
 ┌─position('Hello, world!', 'o', 1)─┬─position('Hello, world!', 'o', 7)─┐
@@ -112,6 +113,21 @@ SELECT
 ┌─position('abc', '')─┬─position('abc', '', 0)─┬─position('abc', '', 1)─┬─position('abc', '', 2)─┬─position('abc', '', 3)─┬─position('abc', '', 4)─┬─position('abc', '', 5)─┐
 │                   1 │                      1 │                      1 │                      2 │                      3 │                      4 │                      0 │
 └─────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┘
+```
+
+## locate
+
+Like [position](#position) but with arguments `haystack` and `locate` switched.
+
+The behavior of this function depends on the ClickHouse version:
+- in versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`.
+- in versions >= 24.3,, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`. The previous behavior
+  can be restored using setting [function_locate_has_mysql_compatible_argument_order = false](../../operations/settings/settings.md#function-locate-has-mysql-compatible-argument-order);
+
+**Syntax**
+
+``` sql
+locate(needle, haystack[, start_pos])
 ```
 
 ## positionCaseInsensitive
@@ -477,7 +493,7 @@ ngramDistance(haystack, needle)
 
 ## ngramSearch
 
-Like `ngramDistance` but calculates the non-symmetric difference between a `needle` string and a `haystack` string, i.e. the number of n-grams from needle minus the common number of n-grams normalized by the number of `needle` n-grams. Returns a Float32 between 0 and 1. The bigger the result is, the more likely `needle` is in the `haystack`. This function is useful for fuzzy string search. Also see function `soundex`.
+Like `ngramDistance` but calculates the non-symmetric difference between a `needle` string and a `haystack` string, i.e. the number of n-grams from `needle` minus the common number of n-grams normalized by the number of `needle` n-grams. Returns a Float32 between 0 and 1. The bigger the result is, the more likely `needle` is in the `haystack`. This function is useful for fuzzy string search. Also see function `soundex`.
 
 Functions `ngramSearchCaseInsensitive, ngramSearchUTF8, ngramSearchCaseInsensitiveUTF8` provide case-insensitive and/or UTF-8 variants of this function.
 
@@ -590,9 +606,13 @@ Result:
 └───────────────────────────────┘
 ```
 
+## countMatchesCaseInsensitive
+
+Like `countMatches(haystack, pattern)` but matching ignores the case.
+
 ## regexpExtract
 
-Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index.
+Extracts the first string in `haystack` that matches the regexp pattern and corresponds to the regex group index.
 
 **Syntax**
 
@@ -634,7 +654,7 @@ Result:
 
 ## hasSubsequence
 
-Returns 1 if needle is a subsequence of haystack, or 0 otherwise.
+Returns 1 if `needle` is a subsequence of `haystack`, or 0 otherwise.
 A subsequence of a string is a sequence that can be derived from the given string by deleting zero or more elements without changing the order of the remaining elements.
 
 

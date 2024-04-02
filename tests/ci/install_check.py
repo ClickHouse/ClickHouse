@@ -2,7 +2,6 @@
 
 import argparse
 
-import atexit
 import logging
 import sys
 import subprocess
@@ -10,30 +9,16 @@ from pathlib import Path
 from shutil import copy2
 from typing import Dict
 
-from github import Github
 
 from build_download_helper import download_builds_filter
-from clickhouse_helper import (
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
-from commit_status_helper import (
-    RerunHelper,
-    format_description,
-    get_commit,
-    post_commit_status,
-    update_mergeable_check,
-)
+
 from compress_files import compress_fast
 from docker_images_helper import DockerImage, pull_image, get_docker_image
 from env_helper import CI, REPORT_PATH, TEMP_PATH as TEMP
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
-from report import TestResults, TestResult, FAILURE, FAIL, OK, SUCCESS
-from s3_helper import S3Helper
+from report import JobReport, TestResults, TestResult, FAILURE, FAIL, OK, SUCCESS
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
+from ci_utils import set_job_timeout
 
 
 RPM_IMAGE = "clickhouse/install-rpm-test"
@@ -271,22 +256,11 @@ def main():
 
     args = parse_args()
 
+    if CI:
+        set_job_timeout()
+
     TEMP_PATH.mkdir(parents=True, exist_ok=True)
     LOGS_PATH.mkdir(parents=True, exist_ok=True)
-
-    pr_info = PRInfo()
-
-    if CI:
-        gh = Github(get_best_robot_token(), per_page=100)
-        commit = get_commit(gh, pr_info.sha)
-        atexit.register(update_mergeable_check, commit, pr_info, args.check_name)
-
-        rerun_helper = RerunHelper(commit, args.check_name)
-        if rerun_helper.is_already_finished_by_status():
-            logging.info(
-                "Check is already finished according to github status, exiting"
-            )
-            sys.exit(0)
 
     deb_image = pull_image(get_docker_image(DEB_IMAGE))
     rpm_image = pull_image(get_docker_image(RPM_IMAGE))
@@ -331,54 +305,21 @@ def main():
         test_results.extend(test_install_tgz(rpm_image))
 
     state = SUCCESS
-    test_status = OK
     description = "Packages installed successfully"
     if FAIL in (result.status for result in test_results):
         state = FAILURE
-        test_status = FAIL
         description = "Failed to install packages: " + ", ".join(
             result.name for result in test_results
         )
 
-    s3_helper = S3Helper()
-
-    report_url = upload_results(
-        s3_helper,
-        pr_info.number,
-        pr_info.sha,
-        test_results,
-        [],
-        args.check_name,
-    )
-    print(f"::notice ::Report url: {report_url}")
-    if not CI:
-        return
-
-    ch_helper = ClickHouseHelper()
-
-    description = format_description(description)
-
-    post_commit_status(
-        commit,
-        state,
-        report_url,
-        description,
-        args.check_name,
-        pr_info,
-        dump_to_file=True,
-    )
-
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_results,
-        test_status,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        report_url,
-        args.check_name,
-    )
-
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    JobReport(
+        description=description,
+        test_results=test_results,
+        status=state,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=[],
+    ).dump()
 
     if state == FAILURE:
         sys.exit(1)

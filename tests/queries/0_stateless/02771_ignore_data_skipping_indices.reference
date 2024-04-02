@@ -1,40 +1,77 @@
 1	2	3
 1	2	3
 1	2	3
-  ReadFromMergeTree (default.data_02771)
-  Indexes:
-    PrimaryKey
-      Condition: true
-      Parts: 1/1
-      Granules: 1/1
-    Skip
-      Name: x_idx
-      Description: minmax GRANULARITY 1
-      Parts: 0/1
-      Granules: 0/1
-    Skip
-      Name: y_idx
-      Description: minmax GRANULARITY 1
-      Parts: 0/0
-      Granules: 0/0
-    Skip
-      Name: xy_idx
-      Description: minmax GRANULARITY 1
-      Parts: 0/0
-      Granules: 0/0
-  ReadFromMergeTree (default.data_02771)
-  Indexes:
-    PrimaryKey
-      Condition: true
-      Parts: 1/1
-      Granules: 1/1
-    Skip
-      Name: x_idx
-      Description: minmax GRANULARITY 1
-      Parts: 0/1
-      Granules: 0/1
-    Skip
-      Name: y_idx
-      Description: minmax GRANULARITY 1
-      Parts: 0/0
-      Granules: 0/0
+    ReadFromMergeTree (default.data_02771)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Skip
+        Name: x_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/1
+      Skip
+        Name: y_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+      Skip
+        Name: xy_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+    ReadFromMergeTree (default.data_02771)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Skip
+        Name: x_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/1
+      Skip
+        Name: y_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+    ReadFromMergeTree (default.data_02771)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Skip
+        Name: x_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/1
+      Skip
+        Name: y_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+      Skip
+        Name: xy_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0
+    ReadFromMergeTree (default.data_02771)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Skip
+        Name: x_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/1
+      Skip
+        Name: y_idx
+        Description: minmax GRANULARITY 1
+        Parts: 0/0
+        Granules: 0/0

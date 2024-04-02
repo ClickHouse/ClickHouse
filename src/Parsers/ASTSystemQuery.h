@@ -22,22 +22,20 @@ public:
         KILL,
         SUSPEND,
         DROP_DNS_CACHE,
+        DROP_CONNECTIONS_CACHE,
         DROP_MARK_CACHE,
         DROP_UNCOMPRESSED_CACHE,
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
         DROP_MMAP_CACHE,
         DROP_QUERY_CACHE,
-#if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
-#endif
         DROP_FILESYSTEM_CACHE,
         DROP_DISK_METADATA_CACHE,
+        DROP_PAGE_CACHE,
         DROP_SCHEMA_CACHE,
         DROP_FORMAT_SCHEMA_CACHE,
-#if USE_AWS_S3
         DROP_S3_CLIENT_CACHE,
-#endif
         STOP_LISTEN,
         START_LISTEN,
         RESTART_REPLICAS,
@@ -46,12 +44,10 @@ public:
         WAIT_LOADING_PARTS,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
-#if USE_JEMALLOC
         JEMALLOC_PURGE,
         JEMALLOC_ENABLE_PROFILE,
         JEMALLOC_DISABLE_PROFILE,
         JEMALLOC_FLUSH_PROFILE,
-#endif
         SYNC_REPLICA,
         SYNC_DATABASE_REPLICA,
         SYNC_TRANSACTION_LOG,
@@ -67,6 +63,7 @@ public:
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_USERS,
+        RELOAD_ASYNCHRONOUS_METRICS,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -90,6 +87,7 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
+        WAIT_FAILPOINT,
         SYNC_FILESYSTEM_CACHE,
         STOP_PULLING_REPLICATION_LOG,
         START_PULLING_REPLICATION_LOG,
@@ -112,6 +110,7 @@ public:
 
     ASTPtr database;
     ASTPtr table;
+    ASTPtr query_settings;
 
     String getDatabase() const;
     String getTable() const;
@@ -144,7 +143,7 @@ public:
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
-    std::unordered_set<String> src_replicas;
+    std::vector<String> src_replicas;
 
     ServerType server_type;
 
@@ -161,6 +160,7 @@ public:
 
         if (database) { res->database = database->clone(); res->children.push_back(res->database); }
         if (table) { res->table = table->clone(); res->children.push_back(res->table); }
+        if (query_settings) { res->query_settings = query_settings->clone(); res->children.push_back(res->query_settings); }
 
         return res;
     }

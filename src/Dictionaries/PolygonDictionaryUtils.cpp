@@ -69,7 +69,7 @@ const FinalCellWithSlabs * FinalCellWithSlabs::find(Coord, Coord) const
 
 SlabsPolygonIndex::SlabsPolygonIndex(
     const std::vector<Polygon> & polygons)
-    : log(&Poco::Logger::get("SlabsPolygonIndex")),
+    : log(getLogger("SlabsPolygonIndex")),
       sorted_x(uniqueX(polygons))
 {
     indexBuild(polygons);

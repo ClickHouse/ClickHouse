@@ -239,7 +239,7 @@ public:
 
         /// SortCursorImpl can work with permutation, but MergeJoinCursor can't.
         if (impl.permutation)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: MergeJoinCursor doesn't support permutation");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinCursor doesn't support permutation");
     }
 
     size_t position() const { return impl.getRow(); }
@@ -492,7 +492,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
-    , log(&Poco::Logger::get("MergeJoin"))
+    , log(getLogger("MergeJoin"))
 {
     switch (table_join->strictness())
     {

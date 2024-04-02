@@ -74,60 +74,26 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
-    auto query_to_replace_table_expression = query_tree;
-    QueryTreeNodePtr table_expression_to_replace;
+    auto nodes = extractAllTableReferences(query_tree);
+    IQueryTreeNode::ReplacementMap replacement_map;
 
-    while (!table_expression_to_replace)
+    for (auto & node : nodes)
     {
-        if (auto * union_node = query_to_replace_table_expression->as<UnionNode>())
-            query_to_replace_table_expression = union_node->getQueries().getNodes().at(0);
+        auto & table_node = node->as<TableNode &>();
 
-        auto & query_to_replace_table_expression_typed = query_to_replace_table_expression->as<QueryNode &>();
-        auto left_table_expression = extractLeftTableExpression(query_to_replace_table_expression_typed.getJoinTree());
-        auto left_table_expression_node_type = left_table_expression->getNodeType();
+        /// Don't replace storage if table name differs
+        if (table_node.getStorageID().getFullNameNotQuoted() != storage->getStorageID().getFullNameNotQuoted())
+            continue;
 
-        switch (left_table_expression_node_type)
-        {
-            case QueryTreeNodeType::QUERY:
-            case QueryTreeNodeType::UNION:
-            {
-                query_to_replace_table_expression = std::move(left_table_expression);
-                break;
-            }
-            case QueryTreeNodeType::TABLE:
-            case QueryTreeNodeType::TABLE_FUNCTION:
-            case QueryTreeNodeType::IDENTIFIER:
-            {
-                table_expression_to_replace = std::move(left_table_expression);
-                break;
-            }
-            default:
-            {
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Expected table, table function or identifier node to replace with storage. Actual {}",
-                    left_table_expression->formatASTForErrorMessage());
-            }
-        }
+        auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
+        replacement_table_expression->setAlias(node->getAlias());
+
+        if (auto table_expression_modifiers = table_node.getTableExpressionModifiers())
+            replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
+
+        replacement_map.emplace(node.get(), std::move(replacement_table_expression));
     }
-
-    /// Don't replace storage if table name differs
-    if (auto * table_node = table_expression_to_replace->as<TableNode>(); table_node && table_node->getStorageID().getFullNameNotQuoted() != storage->getStorageID().getFullNameNotQuoted())
-        return;
-
-    auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
-    std::optional<TableExpressionModifiers> table_expression_modifiers;
-
-    if (auto * table_node = table_expression_to_replace->as<TableNode>())
-        table_expression_modifiers = table_node->getTableExpressionModifiers();
-    else if (auto * table_function_node = table_expression_to_replace->as<TableFunctionNode>())
-        table_expression_modifiers = table_function_node->getTableExpressionModifiers();
-    else if (auto * identifier_node = table_expression_to_replace->as<IdentifierNode>())
-        table_expression_modifiers = identifier_node->getTableExpressionModifiers();
-
-    if (table_expression_modifiers)
-        replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
-
-    query_tree = query_tree->cloneAndReplace(table_expression_to_replace, std::move(replacement_table_expression));
+    query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
 QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
@@ -138,7 +104,7 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager);
+    addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.

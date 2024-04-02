@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# shellcheck source=./utils.lib
 source /utils.lib
 
 function attach_gdb_to_clickhouse()

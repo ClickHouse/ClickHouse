@@ -10,19 +10,36 @@ enum class DataSourceType
 {
     Local,
     RAM,
-    S3,
-    S3_Plain,
-    HDFS,
-    WebServer,
-    AzureBlobStorage,
-    LocalBlobStorage,
+    ObjectStorage,
 };
 
+enum class ObjectStorageType
+{
+    None,
+    S3,
+    Azure,
+    HDFS,
+    Web,
+    Local,
+};
+
+enum class MetadataStorageType
+{
+    None,
+    Local,
+    Plain,
+    StaticWeb,
+};
+
+MetadataStorageType metadataTypeFromString(const String & type);
 String toString(DataSourceType data_source_type);
 
 struct DataSourceDescription
 {
     DataSourceType type;
+    ObjectStorageType object_storage_type = ObjectStorageType::None;
+    MetadataStorageType metadata_type = MetadataStorageType::None;
+
     std::string description;
 
     bool is_encrypted = false;
@@ -30,6 +47,8 @@ struct DataSourceDescription
 
     bool operator==(const DataSourceDescription & other) const;
     bool sameKind(const DataSourceDescription & other) const;
+
+    std::string toString() const;
 };
 
 }

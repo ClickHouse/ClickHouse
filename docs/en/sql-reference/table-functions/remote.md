@@ -13,10 +13,12 @@ Both functions can be used in `SELECT` and `INSERT` queries.
 ## Syntax
 
 ``` sql
-remote('addresses_expr', [db, table, 'user'[, 'password'], sharding_key])
-remote('addresses_expr', [db.table, 'user'[, 'password'], sharding_key])
-remoteSecure('addresses_expr', [db, table, 'user'[, 'password'], sharding_key])
-remoteSecure('addresses_expr', [db.table, 'user'[, 'password'], sharding_key])
+remote(addresses_expr, [db, table, user [, password], sharding_key])
+remote(addresses_expr, [db.table, user [, password], sharding_key])
+remote(named_collection[, option=value [,..]])
+remoteSecure(addresses_expr, [db, table, user [, password], sharding_key])
+remoteSecure(addresses_expr, [db.table, user [, password], sharding_key])
+remoteSecure(named_collection[, option=value [,..]])
 ```
 
 ## Parameters
@@ -38,6 +40,8 @@ remoteSecure('addresses_expr', [db.table, 'user'[, 'password'], sharding_key])
 - `user` — User name. If not specified, `default` is used. Type: [String](../../sql-reference/data-types/string.md).
 - `password` — User password. If not specified, an empty password is used. Type: [String](../../sql-reference/data-types/string.md).
 - `sharding_key` — Sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+
+Arguments also can be passed using [named collections](/docs/en/operations/named-collections.md).
 
 ## Returned value
 
@@ -82,7 +86,16 @@ example01-01-1,example01-02-1
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
 ```
 
-### Inserting data from a remote server into a table:
+Or using [named collections](/docs/en/operations/named-collections.md):
+
+```sql
+CREATE NAMED COLLECTION creds AS
+        host = '127.0.0.1',
+        database = 'db';
+SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
+```
+
+### Inserting data into a table on a remote server:
 
 ``` sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;

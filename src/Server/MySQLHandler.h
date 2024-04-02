@@ -46,6 +46,8 @@ public:
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
+    ~MySQLHandler() override;
+
     void run() final;
 
 protected:
@@ -81,7 +83,7 @@ protected:
 
     IServer & server;
     TCPServer & tcp_server;
-    Poco::Logger * log;
+    LoggerPtr log;
     uint32_t connection_id = 0;
 
     uint32_t server_capabilities = 0;
@@ -96,6 +98,7 @@ protected:
     using QueriesReplacements = std::unordered_map<std::string, QueryReplacementFn>;
     QueriesReplacements queries_replacements;
 
+    /// MySQL setting name --> ClickHouse setting name
     using SettingsReplacements = std::unordered_map<std::string, std::string>;
     SettingsReplacements settings_replacements;
 

@@ -50,7 +50,7 @@ void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
     auto [buf, len] = adjustToPageSize(buf_, len_, page_size);
     if (::madvise(buf, len, MADV_POPULATE_WRITE) < 0)
         LOG_TRACE(
-            LogFrequencyLimiter(&Poco::Logger::get("Allocator"), 1),
+            LogFrequencyLimiter(getLogger("Allocator"), 1),
             "Attempt to populate pages failed: {} (EINVAL is expected for kernels < 5.14)",
             errnoToString(errno));
 #endif

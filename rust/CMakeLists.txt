@@ -14,6 +14,11 @@ macro(configure_rustc)
         set(RUST_CFLAGS "${RUST_CFLAGS} --sysroot ${CMAKE_SYSROOT}")
     endif()
 
+    if (CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+        set(RUST_CFLAGS "${RUST_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    endif()
+
     if (USE_MUSL)
         set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -D_LIBCPP_HAS_MUSL_LIBC=1")
     endif ()
@@ -25,13 +30,22 @@ macro(configure_rustc)
         set(RUSTCWRAPPER "")
     endif()
 
-    set(RUSTFLAGS "[]")
+    set(RUSTFLAGS)
+    if (CMAKE_OSX_DEPLOYMENT_TARGET)
+        list(APPEND RUSTFLAGS "-C" "link-arg=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    endif()
+
     set(RUST_CARGO_BUILD_STD "")
     # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
     if (SANITIZE STREQUAL "memory")
         set(RUST_CARGO_BUILD_STD "build-std = [\"std\", \"panic_abort\", \"core\", \"alloc\"]")
-        set(RUSTFLAGS "[\"-Zsanitizer=memory\", \"-Zsanitizer-memory-track-origins\"]")
+        list(APPEND RUSTFLAGS "-Zsanitizer=memory" "-Zsanitizer-memory-track-origins")
     endif()
+
+    list(TRANSFORM RUSTFLAGS PREPEND "\"")
+    list(TRANSFORM RUSTFLAGS APPEND "\"")
+    list(JOIN RUSTFLAGS "," RUSTFLAGS)
+    set(RUSTFLAGS "[${RUSTFLAGS}]")
 
     message(STATUS "RUST_CFLAGS: ${RUST_CFLAGS}")
     message(STATUS "RUST_CXXFLAGS: ${RUST_CXXFLAGS}")
@@ -85,6 +99,19 @@ function(add_rust_subdirectory src)
     message(STATUS "Copy ${src} to ${dst}")
     file(COPY "${src}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
         PATTERN target EXCLUDE)
+
+    # Check is Rust available or not.
+    #
+    # `cargo update --dry-run` will not update anything, but will check the internet connectivity.
+    execute_process(COMMAND ${Rust_CARGO_CACHED} update --dry-run
+        WORKING_DIRECTORY "${dst}"
+        RESULT_VARIABLE CARGO_UPDATE_RESULT
+        OUTPUT_VARIABLE CARGO_UPDATE_STDOUT
+        ERROR_VARIABLE CARGO_UPDATE_STDERR)
+    if (CARGO_UPDATE_RESULT)
+        message(FATAL_ERROR "Rust (${Rust_CARGO_CACHED}) support is not available (likely there is no internet connectivity):\n${CARGO_UPDATE_STDERR}\nYou can disable Rust support with -DENABLE_RUST=OFF")
+    endif()
+
     add_subdirectory("${dst}" "${dst}")
 
     # cmake -E copy* do now know how to exclude files

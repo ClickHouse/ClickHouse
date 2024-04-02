@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <memory>
+#include <stack>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
 
@@ -49,197 +50,12 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-
-/// Verifying that the function depends only on the specified columns
-bool isValidFunction(const ASTPtr & expression, const std::function<bool(const ASTPtr &)> & is_constant)
-{
-    const auto * function = expression->as<ASTFunction>();
-    if (function && functionIsInOrGlobalInOperator(function->name))
-    {
-        // Second argument of IN can be a scalar subquery
-        return isValidFunction(function->arguments->children[0], is_constant);
-    }
-    else
-        return is_constant(expression);
-}
-
-/// Extract all subfunctions of the main conjunction, but depending only on the specified columns
-bool extractFunctions(const ASTPtr & expression, const std::function<bool(const ASTPtr &)> & is_constant, ASTs & result)
-{
-    const auto * function = expression->as<ASTFunction>();
-
-    if (function)
-    {
-        if (function->name == "and" || function->name == "indexHint")
-        {
-            bool ret = true;
-            for (const auto & child : function->arguments->children)
-                ret &= extractFunctions(child, is_constant, result);
-            return ret;
-        }
-        else if (function->name == "or")
-        {
-            bool ret = false;
-            ASTs or_args;
-            for (const auto & child : function->arguments->children)
-                ret |= extractFunctions(child, is_constant, or_args);
-
-            if (!or_args.empty())
-            {
-                /// In case of there are less number of arguments for which
-                /// is_constant() == true, we need to add always-true
-                /// implicitly to avoid breaking AND invariant.
-                ///
-                /// Consider the following:
-                ///
-                ///     ((value = 10) OR (_table = 'v2')) AND ((_table = 'v1') OR (value = 20))
-                ///
-                /// Without implicit always-true:
-                ///
-                ///     (_table = 'v2') AND (_table = 'v1')
-                ///
-                /// With:
-                ///
-                ///     (_table = 'v2' OR 1) AND (_table = 'v1' OR 1) -> (_table = 'v2') OR (_table = 'v1')
-                ///
-                if (or_args.size() != function->arguments->children.size())
-                    or_args.push_back(std::make_shared<ASTLiteral>(Field(1)));
-                result.push_back(makeASTForLogicalOr(std::move(or_args)));
-            }
-            return ret;
-        }
-    }
-
-    if (isValidFunction(expression, is_constant))
-    {
-        result.push_back(expression->clone());
-        return true;
-    }
-    else
-        return false;
-}
-
-/// Construct a conjunction from given functions
-ASTPtr buildWhereExpression(ASTs && functions)
-{
-    if (functions.empty())
-        return nullptr;
-    if (functions.size() == 1)
-        return functions[0];
-    return makeASTForLogicalAnd(std::move(functions));
-}
-
-}
-
 namespace VirtualColumnUtils
 {
 
-void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value, const String & func)
+void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context)
 {
-    auto & select = ast->as<ASTSelectQuery &>();
-    if (!select.with())
-        select.setExpression(ASTSelectQuery::Expression::WITH, std::make_shared<ASTExpressionList>());
-
-    if (func.empty())
-    {
-        auto literal = std::make_shared<ASTLiteral>(value);
-        literal->alias = column_name;
-        literal->prefer_alias_to_column_name = true;
-        select.with()->children.push_back(literal);
-    }
-    else
-    {
-        auto literal = std::make_shared<ASTLiteral>(value);
-        literal->prefer_alias_to_column_name = true;
-
-        auto function = makeASTFunction(func, literal);
-        function->alias = column_name;
-        function->prefer_alias_to_column_name = true;
-        select.with()->children.push_back(function);
-    }
-}
-
-bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block block, ASTPtr & expression_ast)
-{
-    if (block.rows() == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot prepare filter with empty block");
-
-    /// Take the first row of the input block to build a constant block
-    auto columns = block.getColumns();
-    Columns const_columns(columns.size());
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        if (isColumnConst(*columns[i]))
-            const_columns[i] = columns[i]->cloneResized(1);
-        else
-            const_columns[i] = ColumnConst::create(columns[i]->cloneResized(1), 1);
-    }
-
-    block.setColumns(const_columns);
-
-    bool unmodified = true;
-    const auto & select = query->as<ASTSelectQuery &>();
-    if (!select.where() && !select.prewhere())
-        return unmodified;
-
-    // Provide input columns as constant columns to check if an expression is
-    // constant and depends on the columns from provided block (the last is
-    // required to allow skipping some conditions for handling OR).
-    std::function<bool(const ASTPtr &)> is_constant = [&block, &context](const ASTPtr & expr)
-    {
-        auto actions = std::make_shared<ActionsDAG>(block.getColumnsWithTypeAndName());
-        PreparedSetsPtr prepared_sets = std::make_shared<PreparedSets>();
-        const NamesAndTypesList source_columns;
-        const NamesAndTypesList aggregation_keys;
-        const ColumnNumbersList grouping_set_keys;
-
-        ActionsVisitor::Data visitor_data(
-            context, SizeLimits{}, 1, source_columns, std::move(actions), prepared_sets, true, true, true,
-            { aggregation_keys, grouping_set_keys, GroupByKind::NONE });
-
-        ActionsVisitor(visitor_data).visit(expr);
-        actions = visitor_data.getActions();
-        auto expr_column_name = expr->getColumnName();
-
-        const auto * expr_const_node = actions->tryFindInOutputs(expr_column_name);
-        if (!expr_const_node)
-            return false;
-        auto filter_actions = ActionsDAG::buildFilterActionsDAG({expr_const_node}, {}, context);
-        const auto & nodes = filter_actions->getNodes();
-        bool has_dependent_columns = std::any_of(nodes.begin(), nodes.end(), [&](const auto & node)
-        {
-            return block.has(node.result_name);
-        });
-        if (!has_dependent_columns)
-            return false;
-
-        auto expression_actions = std::make_shared<ExpressionActions>(actions);
-        auto block_with_constants = block;
-        expression_actions->execute(block_with_constants);
-        return block_with_constants.has(expr_column_name) && isColumnConst(*block_with_constants.getByName(expr_column_name).column);
-    };
-
-    /// Create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
-    ASTs functions;
-    if (select.where())
-        unmodified &= extractFunctions(select.where(), is_constant, functions);
-    if (select.prewhere())
-        unmodified &= extractFunctions(select.prewhere(), is_constant, functions);
-
-    expression_ast = buildWhereExpression(std::move(functions));
-    return unmodified;
-}
-
-static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & context)
-{
-    for (const auto & node : actions->getNodes())
+    for (const auto & node : dag->getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
         {
@@ -262,10 +78,10 @@ static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & co
 
 void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
 {
+    buildSetsForDAG(dag, context);
     auto actions = std::make_shared<ExpressionActions>(dag);
-    makeSets(actions, context);
     Block block_with_filter = block;
-    actions->execute(block_with_filter);
+    actions->execute(block_with_filter, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
     /// Filter the block.
     String filter_column_name = dag->getOutputs().at(0)->result_name;
@@ -293,72 +109,28 @@ void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
     }
 }
 
-void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast)
+NameSet getVirtualNamesForFileLikeStorage()
 {
-    if (block.rows() == 0)
-        return;
-
-    if (!expression_ast)
-        prepareFilterBlockWithQuery(query, context, block, expression_ast);
-
-    if (!expression_ast)
-        return;
-
-    /// Let's analyze and calculate the prepared expression.
-    auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
-    ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
-    ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
-
-    makeSets(actions, context);
-
-    Block block_with_filter = block;
-    actions->execute(block_with_filter);
-
-    /// Filter the block.
-    String filter_column_name = expression_ast->getColumnName();
-    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullIfNeeded();
-    if (filter_column->getDataType() != TypeIndex::UInt8)
-        return;
-
-    ConstantFilterDescription constant_filter(*filter_column);
-
-    if (constant_filter.always_true)
-    {
-        return;
-    }
-
-    if (constant_filter.always_false)
-    {
-        block = block.cloneEmpty();
-        return;
-    }
-
-    FilterDescription filter(*filter_column);
-
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        ColumnPtr & column = block.safeGetByPosition(i).column;
-        column = column->filter(*filter.data, -1);
-    }
+    return {"_path", "_file", "_size"};
 }
 
-NamesAndTypesList getPathFileAndSizeVirtualsForStorage(NamesAndTypesList storage_columns)
+VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns)
 {
-    auto default_virtuals = NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_size", makeNullable(std::make_shared<DataTypeUInt64>())}};
+    VirtualColumnsDescription desc;
 
-    default_virtuals.sort();
-    storage_columns.sort();
+    auto add_virtual = [&](const auto & name, const auto & type)
+    {
+        if (storage_columns.has(name))
+            return;
 
-    NamesAndTypesList result_virtuals;
-    std::set_difference(
-        default_virtuals.begin(), default_virtuals.end(), storage_columns.begin(), storage_columns.end(),
-        std::back_inserter(result_virtuals),
-        [](const NameAndTypePair & lhs, const NameAndTypePair & rhs){ return lhs.name < rhs.name; });
+        desc.addEphemeral(name, type, "");
+    };
 
-    return result_virtuals;
+    add_virtual("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+    add_virtual("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+    add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
+
+    return desc;
 }
 
 static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx)
@@ -466,6 +238,23 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block & allo
     return true;
 }
 
+bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+    {
+        if (!isDeterministicInScopeOfQuery(child))
+            return false;
+    }
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+
+    if (!node->function_base->isDeterministicInScopeOfQuery())
+        return false;
+
+    return true;
+}
+
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     const ActionsDAG::Node * node,
     const Block * allowed_inputs,
@@ -540,6 +329,10 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     }
                 }
             }
+        }
+        else if (!isDeterministicInScopeOfQuery(node))
+        {
+            return nullptr;
         }
     }
 

@@ -18,12 +18,12 @@ class MergeTreePrefetchedReadPool : public MergeTreeReadPoolBase, private WithCo
 public:
     MergeTreePrefetchedReadPool(
         RangesInDataParts && parts_,
+        VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
-        const Names & virtual_column_names_,
         const PoolSettings & settings_,
         const ContextPtr & context_);
 
@@ -67,7 +67,7 @@ private:
 
     struct ThreadTask
     {
-        using InfoPtr = MergeTreeReadTask::InfoPtr;
+        using InfoPtr = MergeTreeReadTaskInfoPtr;
 
         ThreadTask(InfoPtr read_info_, MarkRanges ranges_, Priority priority_)
             : read_info(std::move(read_info_)), ranges(std::move(ranges_)), priority(priority_)
@@ -122,7 +122,7 @@ private:
     TasksPerThread per_thread_tasks;
     std::priority_queue<TaskHolder> prefetch_queue; /// the smallest on top
     bool started_prefetches = false;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// A struct which allows to track max number of tasks which were in the
     /// threadpool simultaneously (similar to CurrentMetrics, but the result

@@ -265,7 +265,7 @@ private:
     ThreadFromGlobalPool thread;
     bool quit = false;
 
-    Poco::Logger * log = &Poco::Logger::get("NamedSessionsStorage");
+    LoggerPtr log = getLogger("NamedSessionsStorage");
 };
 
 
@@ -282,7 +282,7 @@ void Session::shutdownNamedSessions()
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure, const std::string & certificate)
     : auth_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
-      log(&Poco::Logger::get(String{magic_enum::enum_name(interface_)} + "-Session"))
+      log(getLogger(String{magic_enum::enum_name(interface_)} + "-Session"))
 {
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
@@ -349,10 +349,9 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host());
+        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedFor());
         user_id = auth_result.user_id;
         settings_from_auth_server = auth_result.settings;
-
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
     }
@@ -430,18 +429,12 @@ void Session::setClientConnectionId(uint32_t connection_id)
         prepared_client_info->connection_id = connection_id;
 }
 
-void Session::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Session::setHTTPClientInfo(const Poco::Net::HTTPRequest & request)
 {
     if (session_context)
-    {
-        session_context->setHttpClientInfo(http_method, http_user_agent, http_referer);
-    }
+        session_context->setHTTPClientInfo(request);
     else
-    {
-        prepared_client_info->http_method = http_method;
-        prepared_client_info->http_user_agent = http_user_agent;
-        prepared_client_info->http_referer = http_referer;
-    }
+        prepared_client_info->setFromHTTPRequest(request);
 }
 
 void Session::setForwardedFor(const String & forwarded_for)

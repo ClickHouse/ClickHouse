@@ -152,7 +152,7 @@ private:
     bool is_initialized = false;
     ThreadFromGlobalPool main_thread;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

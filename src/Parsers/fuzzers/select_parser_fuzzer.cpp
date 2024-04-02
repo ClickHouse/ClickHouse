@@ -15,7 +15,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         DB::ParserQueryWithOutput parser(input.data() + input.size());
 
         const UInt64 max_parser_depth = 1000;
-        DB::ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, max_parser_depth);
+        const UInt64 max_parser_backtracks = 1000000;
+        DB::ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, max_parser_depth, max_parser_backtracks);
 
         const UInt64 max_ast_depth = 1000;
         ast->checkDepth(max_ast_depth);

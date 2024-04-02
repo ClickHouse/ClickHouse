@@ -44,11 +44,77 @@ struct ContextSharedPart : boost::noncopyable
         : macros(std::make_unique<Macros>())
     {}
 
+    ~ContextSharedPart()
+    {
+        if (keeper_dispatcher)
+        {
+            try
+            {
+                keeper_dispatcher->shutdown();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        /// Wait for thread pool for background reads and writes,
+        /// since it may use per-user MemoryTracker which will be destroyed here.
+        if (asynchronous_remote_fs_reader)
+        {
+            try
+            {
+                asynchronous_remote_fs_reader->wait();
+                asynchronous_remote_fs_reader.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (asynchronous_local_fs_reader)
+        {
+            try
+            {
+                asynchronous_local_fs_reader->wait();
+                asynchronous_local_fs_reader.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (synchronous_local_fs_reader)
+        {
+            try
+            {
+                synchronous_local_fs_reader->wait();
+                synchronous_local_fs_reader.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (threadpool_writer)
+        {
+            try
+            {
+                threadpool_writer->wait();
+                threadpool_writer.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+
     /// For access of most of shared objects.
     mutable SharedMutex mutex;
-
-    mutable std::mutex keeper_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
 
     ServerSettings server_settings;
 
@@ -77,6 +143,10 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable ThrottlerPtr local_read_throttler;              /// A server-wide throttler for local IO reads
     mutable ThrottlerPtr local_write_throttler;             /// A server-wide throttler for local IO writes
+
+    mutable std::mutex keeper_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
+
 };
 
 ContextData::ContextData() = default;
@@ -374,12 +444,17 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
     if (!shared->keeper_dispatcher)
         return;
 
-    shared->keeper_dispatcher->updateConfiguration(getConfigRef(), getMacros());
+    shared->keeper_dispatcher->updateConfiguration(config_, getMacros());
 }
 
 std::shared_ptr<zkutil::ZooKeeper> Context::getZooKeeper() const
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot connect to ZooKeeper from Keeper");
+}
+
+const ServerSettings & Context::getServerSettings() const
+{
+    return shared->server_settings;
 }
 
 }

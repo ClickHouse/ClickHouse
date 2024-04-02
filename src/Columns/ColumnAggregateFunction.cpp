@@ -1,10 +1,7 @@
 #include <Columns/ColumnAggregateFunction.h>
+
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromArena.h>
-#include <IO/WriteBufferFromString.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorToString.h>
@@ -14,6 +11,10 @@
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromArena.h>
+#include <IO/WriteBufferFromString.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 
 namespace DB
@@ -303,7 +304,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
     auto & res_data = res->data;
 
     if (result_size_hint)
-        res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
+        res_data.reserve_exact(result_size_hint > 0 ? result_size_hint : size);
 
     for (size_t i = 0; i < size; ++i)
         if (filter[i])
@@ -337,7 +338,7 @@ ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexe
     assert(limit <= indexes.size());
     auto res = createView();
 
-    res->data.resize(limit);
+    res->data.resize_exact(limit);
     for (size_t i = 0; i < limit; ++i)
         res->data[i] = data[indexes[i]];
 
@@ -518,6 +519,23 @@ void ColumnAggregateFunction::insert(const Field & x)
     func->deserialize(data.back(), read_buffer, version, &arena);
 }
 
+bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
+{
+    if (x.getType() != Field::Types::AggregateFunctionState)
+        return false;
+
+    const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
+    if (type_string != field_name)
+        return false;
+
+    ensureOwnership();
+    Arena & arena = createOrGetArena();
+    pushBackAndCreateState(data, arena, func.get());
+    ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
+    func->deserialize(data.back(), read_buffer, version, &arena);
+    return true;
+}
+
 void ColumnAggregateFunction::insertDefault()
 {
     ensureOwnership();
@@ -525,7 +543,7 @@ void ColumnAggregateFunction::insertDefault()
     pushBackAndCreateState(data, arena, func.get());
 }
 
-StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin, const UInt8 *) const
+StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
 {
     WriteBufferFromArena out(arena, begin);
     func->serialize(data[n], out, version);
@@ -584,7 +602,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
 
     auto res = createView();
     auto & res_data = res->data;
-    res_data.reserve(offsets.back());
+    res_data.reserve_exact(offsets.back());
 
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
@@ -626,17 +644,12 @@ void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*directio
                                             size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const
 {
     size_t s = data.size();
-    res.resize(s);
+    res.resize_exact(s);
     iota(res.data(), s, IColumn::Permutation::value_type(0));
 }
 
 void ColumnAggregateFunction::updatePermutation(PermutationSortDirection, PermutationSortStability,
                                             size_t, int, Permutation &, EqualRanges&) const {}
-
-void ColumnAggregateFunction::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
-}
 
 void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
 {
@@ -673,7 +686,7 @@ ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
-    : COWHelper<IColumn, ColumnAggregateFunction>(src_),
+    : COWHelper<IColumnHelper<ColumnAggregateFunction>, ColumnAggregateFunction>(src_),
     foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
     func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
 {

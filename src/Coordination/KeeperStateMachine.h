@@ -25,7 +25,6 @@ public:
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
-        const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
         CommitCallback commit_callback_ = {},
@@ -70,7 +69,7 @@ public:
         const KeeperStorage::RequestForSession & request_for_session,
         bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
-    uint64_t last_commit_index() override { return last_committed_idx; }
+    uint64_t last_commit_index() override { return keeper_context->lastCommittedIndex(); }
 
     /// Apply preliminarily saved (save_logical_snp_obj) snapshot to our state.
     bool apply_snapshot(nuraft::snapshot & s) override;
@@ -139,8 +138,6 @@ private:
     SnapshotFileInfo latest_snapshot_info;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
-    CoordinationSettingsPtr coordination_settings;
-
     /// Main state machine logic
     KeeperStoragePtr storage TSA_PT_GUARDED_BY(storage_and_responses_lock);
 
@@ -170,10 +167,7 @@ private:
     /// can be processed only in 1 thread at any point
     std::mutex request_cache_mutex;
 
-    /// Last committed Raft log number.
-    std::atomic<uint64_t> last_committed_idx;
-
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Cluster config for our quorum.
     /// It's a copy of config stored in StateManager, but here

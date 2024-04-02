@@ -38,7 +38,7 @@ ninja
 
 ## Running
 
-Once built, the binary can be run with, eg.:
+Once built, the binary can be run with, e.g.:
 
 ```bash
 qemu-s390x-static -L /usr/s390x-linux-gnu ./clickhouse

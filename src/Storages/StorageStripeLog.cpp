@@ -267,7 +267,7 @@ StorageStripeLog::StorageStripeLog(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    bool attach,
+    LoadingStrictnessLevel mode,
     ContextMutablePtr context_)
     : IStorage(table_id_)
     , WithMutableContext(context_)
@@ -277,7 +277,7 @@ StorageStripeLog::StorageStripeLog(
     , index_file_path(table_path + "index.mrk")
     , file_checker(disk, table_path + "sizes.json")
     , max_compress_block_size(context_->getSettings().max_compress_block_size)
-    , log(&Poco::Logger::get("StorageStripeLog"))
+    , log(getLogger("StorageStripeLog"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -295,7 +295,7 @@ StorageStripeLog::StorageStripeLog(
         file_checker.setEmpty(index_file_path);
     }
 
-    if (!attach)
+    if (mode < LoadingStrictnessLevel::ATTACH)
     {
         /// create directories if they do not exist
         disk->createDirectories(table_path);
@@ -698,7 +698,7 @@ void registerStorageStripeLog(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.comment,
-            args.attach,
+            args.mode,
             args.getContext());
     }, features);
 }

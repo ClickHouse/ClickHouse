@@ -60,6 +60,6 @@ bool analyzeProjectionCandidate(
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
-    const ActionDAGNodes & added_filter_nodes);
+    const ActionsDAGPtr & dag);
 
 }

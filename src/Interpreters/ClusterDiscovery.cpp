@@ -116,7 +116,7 @@ ClusterDiscovery::ClusterDiscovery(
     const String & config_prefix)
     : context(Context::createCopy(context_))
     , current_node_name(toString(ServerUUID::get()))
-    , log(&Poco::Logger::get("ClusterDiscovery"))
+    , log(getLogger("ClusterDiscovery"))
 {
     LOG_DEBUG(log, "Cluster discovery is enabled");
 
@@ -319,7 +319,7 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
 
     if (cluster_info.current_cluster_is_invisible)
     {
-        LOG_DEBUG(log, "cluster '{}' is invisible!", cluster_info.name);
+        LOG_DEBUG(log, "Cluster '{}' is invisible.", cluster_info.name);
         return true;
     }
 
@@ -553,7 +553,7 @@ bool ClusterDiscovery::NodeInfo::parse(const String & data, NodeInfo & result)
         else
         {
             LOG_ERROR(
-                &Poco::Logger::get("ClusterDiscovery"),
+                getLogger("ClusterDiscovery"),
                 "Unsupported version '{}' of data in zk node '{}'",
                 ver, data.size() < 1024 ? data : "[data too long]");
         }
@@ -561,7 +561,7 @@ bool ClusterDiscovery::NodeInfo::parse(const String & data, NodeInfo & result)
     catch (Poco::Exception & e)
     {
         LOG_WARNING(
-            &Poco::Logger::get("ClusterDiscovery"),
+            getLogger("ClusterDiscovery"),
             "Can't parse '{}' from node: {}",
             data.size() < 1024 ? data : "[data too long]", e.displayText());
         return false;

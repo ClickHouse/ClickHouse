@@ -253,6 +253,7 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
+/// NOLINTBEGIN(bugprone-macro-parentheses)
         using MappedType = Mapped;
         std::unique_ptr<FixedHashMap<UInt8, Mapped>>                  key8;
         std::unique_ptr<FixedHashMap<UInt16, Mapped>>                 key16;
@@ -341,6 +342,7 @@ public:
 
             UNREACHABLE();
         }
+/// NOLINTEND(bugprone-macro-parentheses)
     };
 
     using MapsOne = MapsTemplate<RowRef>;
@@ -446,7 +448,7 @@ private:
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
     String instance_log_id;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
     /// If set HashJoin instance is not available for modification (addBlockToJoin)
