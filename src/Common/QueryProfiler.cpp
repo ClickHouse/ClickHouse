@@ -198,7 +198,6 @@ void Timer::cleanup()
 {
     if (timer_id)
     {
-        LOG_INFO(log, "CLEANUP TIMER");
         int err = timer_delete(*timer_id);
         if (err)
             LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString());
