@@ -66,7 +66,7 @@ RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
 
 ## RELOAD ASYNCHRONOUS METRICS
 
-Re-calculates all [asynchronous metrics](../../operations/system-tables/asynchronous_metrics.md). Since asynchronous metrics are periodically updated based on setting [asynchronous_metrics_update_period_s](../../operations/server-configuration-parameters/settings.md), updating them manually using this statment is not necessary.
+Re-calculates all [asynchronous metrics](../../operations/system-tables/asynchronous_metrics.md). Since asynchronous metrics are periodically updated based on setting [asynchronous_metrics_update_period_s](../../operations/server-configuration-parameters/settings.md), updating them manually using this statement is typically not necessary.
 
 ```sql
 RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
