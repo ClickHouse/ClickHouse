@@ -8,7 +8,7 @@ sidebar_label: Embedded Dictionaries
 
 In order for the functions below to work, the server config must specify the paths and addresses for getting all the embedded dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can’t be loaded, an exception is thrown.
 
-For information about creating reference lists, see the section “Dictionaries”.
+For information about creating reference lists, see the section [“Dictionaries”](../../sql-reference/dictionaries/index.md).
 
 ## Multiple Geobases
 
