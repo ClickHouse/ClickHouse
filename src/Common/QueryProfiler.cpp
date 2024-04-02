@@ -260,6 +260,13 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
 #endif
 }
 
+
+template <typename ProfilerImpl>
+void QueryProfilerBase<ProfilerImpl>::setPeriod(UInt32 period_)
+{
+    timer.set(period_);
+}
+
 template <typename ProfilerImpl>
 QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 {
