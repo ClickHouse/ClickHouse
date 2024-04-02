@@ -9,6 +9,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <base/UUID.h>
 
+#include <filesystem>
 #include <optional>
 
 namespace DB
@@ -192,7 +193,12 @@ public:
         friend class QueryCache; /// for createReader()
     };
 
-    QueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+    QueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, const std::optional<std::filesystem::path> & path_);
+
+    void shutdown();
+
+    void readCacheEntriesFromPersistence();
+    void writeCacheEntriesToPersistence();
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
@@ -212,6 +218,9 @@ public:
 
 private:
     Cache cache; /// has its own locking --> not protected by mutex
+
+    const std::optional<std::filesystem::path> path; /// directory containing persisted query cache entries which are loaded/stored on
+                                                     /// database startup/shutdown (only set if query cache persistence is configured)
 
     mutable std::mutex mutex;
 

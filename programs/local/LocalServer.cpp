@@ -678,7 +678,7 @@ void LocalServer::processConfig()
     global_context->setMMappedFileCache(mmap_cache_size);
 
     /// Initialize a dummy query cache.
-    global_context->setQueryCache(0, 0, 0, 0);
+    global_context->setQueryCache(0, 0, 0, 0, {});
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);

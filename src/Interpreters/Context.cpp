@@ -2955,14 +2955,18 @@ void Context::clearMMappedFileCache() const
         shared->mmap_cache->clear();
 }
 
-void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
+void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, bool persist_cache)
 {
     std::lock_guard lock(shared->mutex);
 
     if (shared->query_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
 
-    shared->query_cache = std::make_shared<QueryCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+    std::optional<fs::path> query_cache_path;
+    if (persist_cache)
+        query_cache_path = fs::path(shared->path) / "query_cache";
+
+    shared->query_cache = std::make_shared<QueryCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows, query_cache_path);
 }
 
 void Context::updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config)

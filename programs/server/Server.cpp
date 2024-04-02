@@ -1314,12 +1314,13 @@ try
     size_t query_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
     size_t query_cache_query_cache_max_entry_size_in_bytes = config().getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
     size_t query_cache_max_entry_size_in_rows = config().getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    bool query_cache_persist_cache = config().getBool("query_cache.persist_cache", true);
     if (query_cache_max_size_in_bytes > max_cache_size)
     {
         query_cache_max_size_in_bytes = max_cache_size;
         LOG_INFO(log, "Lowered query cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
+    global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows, query_cache_persist_cache);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
@@ -2160,6 +2161,11 @@ try
             /// Killing remaining queries.
             if (!server_settings.shutdown_wait_unfinished_queries)
                 global_context->getProcessList().killAllQueries();
+
+            /// Persist query cache entries
+            const auto & query_cache = global_context->getQueryCache();
+            if (query_cache)
+                query_cache->shutdown();
 
             if (current_connections)
                 current_connections = waitServersToFinish(servers, servers_lock, server_settings.shutdown_wait_unfinished);
