@@ -902,6 +902,7 @@ void HTTPHandler::processQuery(
             {
                 bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
                 ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+                formatExceptionForClient(status.code, request, response, used_output);
                 current_output_format.setException(status.message);
                 current_output_format.finalize();
                 used_output.exception_is_written = true;
