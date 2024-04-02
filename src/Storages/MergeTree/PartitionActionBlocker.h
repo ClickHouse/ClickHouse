@@ -56,7 +56,6 @@ private:
     void compactPartitionBlockersLocked();
     bool isCancelledForPartitionOnlyLocked(const std::string & partition_id) const;
 
-private:
     ActionBlocker global_blocker;
 
     mutable std::shared_mutex mutex;
