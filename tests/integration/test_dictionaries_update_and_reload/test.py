@@ -37,6 +37,16 @@ def get_status(dictionary_name):
     ).rstrip("\n")
 
 
+def get_status_retry(dictionary_name, expect, retry_count=10, sleep_time=0.5):
+    for _ in range(retry_count):
+        res = get_status(dictionary_name)
+        if res == expect:
+            return res
+        time.sleep(sleep_time)
+
+    raise Exception(f'Expected result "{expect}" did not occur')
+
+
 def get_last_exception(dictionary_name):
     return (
         instance.query(
@@ -250,6 +260,15 @@ def test_reload_after_fail_by_timer(started_cluster):
     assert expected_error in instance.query_and_get_error(
         "SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))"
     )
+
+    # on sanitizers builds it can return 'FAILED_AND_RELOADING' which is not quite right
+    # add retry for these builds
+    if (
+        instance.is_built_with_sanitizer()
+        and get_status("no_file_2") == "FAILED_AND_RELOADING"
+    ):
+        get_status_retry("no_file_2", expect="FAILED")
+
     assert get_status("no_file_2") == "FAILED"
 
     # Creating the file source makes the dictionary able to load.

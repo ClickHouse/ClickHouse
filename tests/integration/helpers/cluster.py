@@ -814,12 +814,12 @@ class ClickHouseCluster:
 
     def get_docker_handle(self, docker_id):
         exception = None
-        for i in range(5):
+        for i in range(20):
             try:
                 return self.docker_client.containers.get(docker_id)
             except Exception as ex:
                 print("Got exception getting docker handle", str(ex))
-                time.sleep(i * 2)
+                time.sleep(0.5)
                 exception = ex
         raise exception
 
