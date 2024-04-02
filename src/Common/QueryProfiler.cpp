@@ -198,6 +198,7 @@ void Timer::cleanup()
 {
     if (timer_id)
     {
+        LOG_INFO(log, "CLEANUP TIMER");
         int err = timer_delete(*timer_id);
         if (err)
             LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString());
@@ -258,6 +259,13 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
         throw;
     }
 #endif
+}
+
+
+template <typename ProfilerImpl>
+void QueryProfilerBase<ProfilerImpl>::setPeriod(UInt32 period_)
+{
+    timer.set(period_);
 }
 
 template <typename ProfilerImpl>
