@@ -30,6 +30,10 @@ EvictionCandidates::~EvictionCandidates()
         iterator->invalidate();
     }
 
+    /// We cannot reset evicting flag if we already removed queue entries.
+    if (removed_queue_entries)
+        return;
+
     /// Here `candidates` contain only those file segments
     /// which failed to be removed during evict()
     /// because there was some exception before evict()
@@ -62,9 +66,15 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & loc
     for (const auto & [key, key_candidates] : candidates)
     {
         for (const auto & candidate : key_candidates.candidates)
+        {
+            const auto & file_segment = candidate->file_segment;
+            auto file_segment_lock = file_segment->lock();
+
             candidate->getQueueIterator()->remove(lock);
+            file_segment->setQueueIteratorUnlocked(nullptr, file_segment_lock);
+        }
     }
-    invalidated_queue_entries = true;
+    removed_queue_entries = true;
 }
 
 void EvictionCandidates::evict()
@@ -74,7 +84,7 @@ void EvictionCandidates::evict()
 
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::FilesystemCacheEvictMicroseconds);
 
-    if (!invalidated_queue_entries)
+    if (!removed_queue_entries)
         queue_entries_to_invalidate.reserve(candidates_size);
 
     for (auto & [key, key_candidates] : candidates)
@@ -123,7 +133,7 @@ void EvictionCandidates::evict()
             ///   it was freed in favour of some reserver, so we can make it visibly
             ///   free only for that particular reserver.
 
-            if (!invalidated_queue_entries)
+            if (!removed_queue_entries)
                 queue_entries_to_invalidate.push_back(iterator);
 
             key_candidates.candidates.pop_back();

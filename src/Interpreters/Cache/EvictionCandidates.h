@@ -4,7 +4,7 @@
 namespace DB
 {
 
-class EvictionCandidates
+class EvictionCandidates : private boost::noncopyable
 {
 public:
     using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
@@ -60,7 +60,7 @@ private:
     std::vector<FinalizeEvictionFunc> on_finalize;
 
     std::vector<IFileCachePriority::IteratorPtr> queue_entries_to_invalidate;
-    bool invalidated_queue_entries = false;
+    bool removed_queue_entries = false;
 
     IFileCachePriority::HoldSpacePtr hold_space;
 };

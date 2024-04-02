@@ -146,7 +146,7 @@ public:
     LRUIterator & operator =(const LRUIterator & other);
     bool operator ==(const LRUIterator & other) const;
 
-    EntryPtr getEntry() const override { return *iterator; }
+    EntryPtr getEntry() const override;
 
     size_t increasePriority(const CachePriorityGuard::Lock &) override;
 

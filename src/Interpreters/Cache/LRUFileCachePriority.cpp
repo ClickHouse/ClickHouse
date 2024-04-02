@@ -431,6 +431,12 @@ bool LRUFileCachePriority::modifySizeLimits(
     return true;
 }
 
+IFileCachePriority::EntryPtr LRUFileCachePriority::LRUIterator::getEntry() const
+{
+    assertValid();
+    return *iterator;
+}
+
 void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::Lock & lock)
 {
     assertValid();

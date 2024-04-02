@@ -165,6 +165,11 @@ FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
 void FileSegment::setQueueIterator(Priority::IteratorPtr iterator)
 {
     auto lock = lockFileSegment();
+    setQueueIteratorUnlocked(iterator, lock);
+}
+
+void FileSegment::setQueueIteratorUnlocked(Priority::IteratorPtr iterator, const FileSegmentGuard::Lock &)
+{
     if (queue_iterator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Queue iterator cannot be set twice");
     queue_iterator = iterator;

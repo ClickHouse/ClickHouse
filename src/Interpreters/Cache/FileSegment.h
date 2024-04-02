@@ -176,6 +176,7 @@ public:
     Priority::IteratorPtr getQueueIterator() const;
 
     void setQueueIterator(Priority::IteratorPtr iterator);
+    void setQueueIteratorUnlocked(Priority::IteratorPtr iterator, const FileSegmentGuard::Lock &);
 
     KeyMetadataPtr tryGetKeyMetadata() const;
 
