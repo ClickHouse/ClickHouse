@@ -938,7 +938,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)
         {
-            ApplyWithGlobalVisitor().visit(ast);
+            ApplyWithGlobalVisitor(context).visit(ast);
         }
 
         {

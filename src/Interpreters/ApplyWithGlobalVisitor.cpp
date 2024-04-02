@@ -1,16 +1,18 @@
 #include <Interpreters/ApplyWithGlobalVisitor.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Common/checkStackSize.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTExpressionList.h>
 
 
 namespace DB
 {
 
-void ApplyWithGlobalVisitor::visit(ASTSelectQuery & select, const std::map<String, ASTPtr> & exprs, const ASTPtr &  /*with_expression_list*/)
+void ApplyWithGlobalVisitor::visit(ASTSelectQuery & select, const std::map<String, ASTPtr> & exprs, const ASTPtr & /*with_expression_list*/)
 {
     if (!select.with())
         select.setExpression(ASTSelectQuery::Expression::WITH, std::make_shared<ASTExpressionList>());
@@ -18,8 +20,10 @@ void ApplyWithGlobalVisitor::visit(ASTSelectQuery & select, const std::map<Strin
     std::set<String> current_names;
     for (const auto & child : with->children)
     {
-        if (const auto * ast_with_alias = dynamic_cast<const ASTWithAlias *>(child.get()))
+        if (const auto * ast_with_alias = child->as<ASTWithAlias>())
             current_names.insert(ast_with_alias->alias);
+        if (auto * cte = child->as<ASTWithElement>(); cte && (!cte->has_materialized_keyword || !getContext()->getSettingsRef().enable_materialized_cte))
+            current_names.insert(cte->name);
     }
     for (const auto & with_alias : exprs)
     {
@@ -83,8 +87,11 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
                 std::map<String, ASTPtr> exprs;
                 for (auto & child : with_expression_list->children)
                 {
-                    if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
+                    if (auto * ast_with_alias = child->as<ASTWithAlias>())
                         exprs[ast_with_alias->alias] = child;
+                    /// We don't need to propagate materialized CTEs because they will be materialized and globally visible anyway.
+                    if (auto * cte = child->as<ASTWithElement>(); cte && (!cte->has_materialized_keyword || !getContext()->getSettingsRef().enable_materialized_cte))
+                        exprs[cte->name] = child;
                 }
                 for (auto * it = node_union->list_of_selects->children.begin() + 1; it != node_union->list_of_selects->children.end(); ++it)
                 {
