@@ -4,6 +4,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ConstantValue.h>
+#include "Common/FieldVisitorToString.h"
 
 namespace DB
 {
@@ -59,7 +60,10 @@ public:
     }
 
     /// Get constant value string representation
-    String getValueStringRepresentation() const;
+    String getValueStringRepresentation() const
+    {
+        return applyVisitor(FieldVisitorToString(), getValue());
+    }
 
     /// Returns true if constant node has source expression, false otherwise
     bool hasSourceExpression() const
