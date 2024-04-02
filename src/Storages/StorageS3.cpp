@@ -252,6 +252,7 @@ private:
             return true;
         }
 
+        request = S3::ListObjectsV2Request{};
         request.SetBucket(globbed_uri.bucket);
         request.SetPrefix(key_prefix);
         request.SetMaxKeys(static_cast<int>(request_settings.list_object_keys_size));
