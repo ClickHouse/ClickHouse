@@ -1680,6 +1680,7 @@ hasSubsequenceCaseInsensitiveUTF
 hasSubsequenceUTF
 hasSubstr
 hasToken
+hasThreadFuzzer
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
