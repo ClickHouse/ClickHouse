@@ -1,4 +1,3 @@
--- https://github.com/ClickHouse/ClickHouse/issues/9954
 SELECT
     1 AS value,
     *
