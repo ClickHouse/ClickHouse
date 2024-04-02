@@ -30,3 +30,4 @@ explain query tree select * from test where x in (NULL);
 select '-------------------';
 --- fuzzed
 SELECT number FROM numbers(2) WHERE arrayExists(_ -> (_ IN toNullable(4294967290)), [number]);
+select 1 from test where (x in concat('/clickhouse/', toLowCardinality(12), currentDatabase(), toNullable('/01700_system_zookeeper_path_in/'), 32))   AND (x LIKE 'block%') settings allow_experimental_analyzer=1;

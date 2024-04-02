@@ -21,6 +21,8 @@ public:
             {"in", "equals"},
             {"notIn", "notEquals"}
         };
+        if (!getSettings().optimize_in_single_value)
+            return;
         auto * func_node = node->as<FunctionNode>();
         if (!func_node
             || !MAPPING.contains(func_node->getFunctionName())
@@ -39,11 +41,11 @@ public:
         if (constant_node->getValue().isNull())
             return ;
         auto result_func_name = MAPPING.at(func_node->getFunctionName());
-        auto equal = std::make_shared<FunctionNode>(result_func_name);
-        auto new_const = std::make_shared<ConstantNode>(constant_node->getValue(), removeNullable(constant_node->getResultType()));
+        auto replace_node = std::make_shared<FunctionNode>(result_func_name);
+        auto new_const = std::make_shared<ConstantNode>(constant_node->getValue(), removeNullableOrLowCardinalityNullable(constant_node->getResultType()));
         new_const->getSourceExpression() = constant_node->getSourceExpression();
         QueryTreeNodes arguments{column_node->clone(), new_const};
-        equal->getArguments().getNodes() = std::move(arguments);
+        replace_node->getArguments().getNodes() = std::move(arguments);
         FunctionOverloadResolverPtr resolver;
         bool decimal_check_overflow = getContext()->getSettingsRef().decimal_check_overflow;
         if (result_func_name == "equals")
@@ -56,14 +58,16 @@ public:
         }
         try
         {
-            equal->resolveAsFunction(resolver);
+            replace_node->resolveAsFunction(resolver);
         }
         catch (...)
         {
             // When function resolver fails, we should not replace the function node
             return;
         }
-        node = equal;
+        // check if the result type of the new function is the same as the old one
+        if (replace_node->getResultType()->equals(*func_node->getResultType()))
+            node = replace_node;
     }
 };
 
