@@ -125,6 +125,9 @@ void LRUFileCachePriority::updateSize(int64_t size)
     chassert(size != 0);
     chassert(size > 0 || state->current_size >= size_t(-size));
 
+    LOG_TEST(log, "Updating size with {}, current is {}",
+             size, state->current_size);
+
     state->current_size += size;
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
 }
