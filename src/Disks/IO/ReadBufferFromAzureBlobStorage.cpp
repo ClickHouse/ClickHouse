@@ -93,6 +93,9 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         data_capacity = internal_buffer.size();
     }
 
+    if (offset == getFileSize())
+        return false;
+
     bytes_read = readBytes();
 
     if (bytes_read == 0)
