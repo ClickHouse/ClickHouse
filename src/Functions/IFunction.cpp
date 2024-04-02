@@ -210,9 +210,25 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         {
             if (arg.type->isNullable())
             {
-                const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
-                mask_info = extractInvertedMask(mask, null_map);
+                if (isColumnConst(*arg.column))
+                {
+                    const auto & const_col = assert_cast<const ColumnConst &>(*arg.column);
+                    if (const_col.isNullAt(0))
+                    {
+                        mask_info.has_ones = false;
+                        mask_info.has_zeros = true;
+                    }
+                }
+                else
+                {
+                    const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                    mask_info = extractInvertedMask(mask, null_map);
+                }
             }
+
+            /// Exit loop early if each row contains null value
+            if (!mask_info.has_ones)
+                break;
         }
 
         if (!mask_info.has_ones)
