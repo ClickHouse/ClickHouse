@@ -38,9 +38,8 @@ URI::URI(const std::string & uri_)
     static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3express[\-a-z0-9]+|s3|cos|obs|oss|eos)([.\-][a-z0-9\-.:]+))");
 
     /// Case when AWS Private Link Interface is being used
-    /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com)
+    /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/userguide/privatelink-interface-endpoints.html
-//    static const RE2 aws_private_link_style_pattern("bucket\\.vpce\\-([a-z0-9\\-.:]+)\\.vpce.amazonaws.com/([^/]*)/(.*)");
     static const RE2 aws_private_link_style_pattern("bucket\\.vpce\\-([a-z0-9\\-.:]+)\\.vpce.amazonaws.com");
 
     /// Case when bucket name and key represented in path of S3 URL.
@@ -113,10 +112,10 @@ URI::URI(const std::string & uri_)
     {
         if (!re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
-                            quoteString("ada"));
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not parse bucket and key from uri {}", uri.toString());
         }
+
+        // Default to virtual hosted style
         is_virtual_hosted_style = true;
         endpoint = uri.getScheme() + "://" + uri.getAuthority();
         validateBucket(bucket, uri);
