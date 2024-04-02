@@ -785,7 +785,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
         properties.columns = as_storage_metadata->getColumns();
 
-        if (!create.comment)
+        if (!create.comment && !as_storage_metadata->comment.empty())
             create.comment = std::make_shared<ASTLiteral>(Field(as_storage_metadata->comment));
 
         /// Secondary indices and projections make sense only for MergeTree family of storage engines.
