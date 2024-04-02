@@ -123,7 +123,7 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, const ContextPtr & context)
+        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, uint32_t parse_backtracks, const ContextPtr & context)
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
@@ -161,7 +161,7 @@ public:
             /// Tokenize the query
             Tokens tokens(query.data(), query.data() + query.size());
             /// Max depth 0 indicates that depth is not limited
-            IParser::Pos token_iterator(tokens, parse_depth);
+            IParser::Pos token_iterator(tokens, parse_depth, parse_backtracks);
 
             /// Parse query and create AST tree
             Expected expected;
@@ -232,16 +232,17 @@ public:
         /// 3. Parser(Tokens, ASTPtr) -> complete AST
         /// 4. Execute functions: call getNextItem on generator and handle each item
         unsigned parse_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
+        unsigned parse_backtracks = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_backtracks);
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
             return FunctionSQLJSONHelpers::Executor<
                 Name,
                 Impl<SimdJSONParser, JSONStringSerializer<SimdJSONParser::Element, SimdJSONElementFormatter>>,
-                SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
+                SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, parse_backtracks, getContext());
 #endif
         return FunctionSQLJSONHelpers::
             Executor<Name, Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>, DummyJSONParser>::run(
-                arguments, result_type, input_rows_count, parse_depth, getContext());
+                arguments, result_type, input_rows_count, parse_depth, parse_backtracks, getContext());
     }
 };
 

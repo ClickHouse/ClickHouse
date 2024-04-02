@@ -6,10 +6,10 @@
 
 #include <Storages/StorageS3.h>
 
-class ReadBuffer;
-
 namespace DB
 {
+
+class ReadBuffer;
 
 struct S3DataLakeMetadataReadHelper
 {

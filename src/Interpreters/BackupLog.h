@@ -23,7 +23,7 @@ struct BackupLogElement
 
     std::chrono::system_clock::time_point event_time{};
     Decimal64 event_time_usec{};
-    BackupOperationInfo info{};
+    BackupOperationInfo info{}; /// NOLINT(bugprone-throw-keyword-missing)
 
     static std::string name() { return "BackupLog"; }
     static ColumnsDescription getColumnsDescription();
