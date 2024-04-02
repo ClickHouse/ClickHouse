@@ -45,7 +45,6 @@ HiveTextFormatReader::HiveTextFormatReader(PeekableReadBuffer & buf_, const Form
 
 std::vector<String> HiveTextFormatReader::readNames()
 {
-    PeekableReadBufferCheckpoint checkpoint{*buf, true};
     return input_field_names;
 }
 
