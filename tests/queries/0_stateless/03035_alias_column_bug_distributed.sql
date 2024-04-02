@@ -11,7 +11,7 @@ ORDER BY src;
 
 CREATE TABLE alias_bug_dist
 AS alias_bug
-ENGINE = Distributed('default', currentDatabase(), 'alias_bug', rand());
+ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'alias_bug', rand());
 
 INSERT INTO alias_bug VALUES ('SOURCE1');
 

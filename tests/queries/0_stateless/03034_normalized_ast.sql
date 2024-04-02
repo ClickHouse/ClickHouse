@@ -2,7 +2,7 @@
 SELECT
     concat(database, table) AS name,
     count()
-FROM clusterAllReplicas(default, system.tables)
+FROM clusterAllReplicas(test_shard_localhost, system.tables)
 WHERE database=currentDatabase()
 GROUP BY name
 FORMAT Null;
