@@ -5,8 +5,6 @@
 #include "GeodataProviders/IHierarchiesProvider.h"
 #include "RegionsHierarchy.h"
 
-namespace DB
-{
 
 /** Contains several hierarchies of regions.
   * Used to support several different perspectives on the ownership of regions by countries.
@@ -39,5 +37,3 @@ public:
         return it->second;
     }
 };
-
-}

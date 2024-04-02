@@ -95,13 +95,12 @@ namespace
 }
 
 ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunctionsLoader(ContextPtr global_context_)
-    : ExternalLoader("external user defined function", getLogger("ExternalUserDefinedExecutableFunctionsLoader"))
+    : ExternalLoader("external user defined function", &Poco::Logger::get("ExternalUserDefinedExecutableFunctionsLoader"))
     , WithContext(global_context_)
 {
     setConfigSettings({"function", "name", "database", "uuid"});
     enableAsyncLoading(false);
-    if (getContext()->getApplicationType() == Context::ApplicationType::SERVER)
-        enablePeriodicUpdates(true);
+    enablePeriodicUpdates(true);
     enableAlwaysLoadEverything(true);
 }
 
@@ -120,7 +119,7 @@ void ExternalUserDefinedExecutableFunctionsLoader::reloadFunction(const std::str
     loadOrReload(user_defined_function_name);
 }
 
-ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader::createObject(const std::string & name,
+ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create(const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & key_in_config,
     const std::string &) const

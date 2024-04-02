@@ -16,17 +16,13 @@ struct PostgreSQLTableStructure
     {
         Int32 atttypid;
         Int32 atttypmod;
-        bool atthasdef;
-        char attgenerated;
-        std::string attr_def;
     };
-    using Attributes = std::unordered_map<std::string, PGAttribute>;
+    using Attributes = std::vector<PGAttribute>;
 
     struct ColumnsInfo
     {
         NamesAndTypesList columns;
         Attributes attributes;
-        std::vector<std::string> names;
         ColumnsInfo(NamesAndTypesList && columns_, Attributes && attributes_) : columns(columns_), attributes(attributes_) {}
     };
     using ColumnsInfoPtr = std::shared_ptr<ColumnsInfo>;

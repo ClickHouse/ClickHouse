@@ -154,7 +154,7 @@ arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::GetSize()
 
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_t position, int64_t nbytes, void* out)
 {
-    return in.readBigAt(reinterpret_cast<char*>(out), nbytes, position, nullptr);
+    return in.readBigAt(reinterpret_cast<char*>(out), nbytes, position);
 }
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_t position, int64_t nbytes)

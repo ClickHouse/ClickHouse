@@ -10,10 +10,10 @@ class Context;
 
 /** System table "licenses" with list of licenses of 3rd party libraries
   */
-class StorageSystemLicenses final : public IStorageSystemOneBlock
+class StorageSystemLicenses final : public IStorageSystemOneBlock<StorageSystemLicenses>
 {
 protected:
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
@@ -23,6 +23,6 @@ public:
         return "SystemLicenses";
     }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 };
 }

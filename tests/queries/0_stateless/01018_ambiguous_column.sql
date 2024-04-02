@@ -1,4 +1,3 @@
-SET output_format_pretty_color=1;
 SET allow_experimental_analyzer = 1;
 
 select * from system.one cross join system.one;

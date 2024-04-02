@@ -19,7 +19,6 @@ namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
-    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB
@@ -73,7 +72,7 @@ int main(int argc, char ** argv)
 
     test(n, "Create and destroy ThreadPool each iteration", []
     {
-        ThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
+        ThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, 1);
         tp.scheduleOrThrowOnError(f);
         tp.wait();
     });
@@ -82,9 +81,9 @@ int main(int argc, char ** argv)
     {
         pthread_t thread;
         if (pthread_create(&thread, nullptr, g, nullptr))
-            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot create thread");
+            DB::throwFromErrno("Cannot create thread.", DB::ErrorCodes::PTHREAD_ERROR);
         if (pthread_join(thread, nullptr))
-            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot join thread");
+            DB::throwFromErrno("Cannot join thread.", DB::ErrorCodes::PTHREAD_ERROR);
     });
 
     test(n, "Create and destroy std::thread each iteration", []
@@ -94,7 +93,7 @@ int main(int argc, char ** argv)
     });
 
     {
-        ThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
+        ThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, 1);
 
         test(n, "Schedule job for Threadpool each iteration", [&tp]
         {
@@ -104,7 +103,7 @@ int main(int argc, char ** argv)
     }
 
     {
-        ThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 128);
+        ThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, 128);
 
         test(n, "Schedule job for Threadpool with 128 threads each iteration", [&tp]
         {

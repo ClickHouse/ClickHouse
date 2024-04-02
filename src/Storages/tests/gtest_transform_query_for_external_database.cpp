@@ -118,7 +118,7 @@ static void checkOld(
     const std::string & expected)
 {
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
+    ASTPtr ast = parseQuery(parser, query, 1000, 1000);
     SelectQueryInfo query_info;
     SelectQueryOptions select_options;
     query_info.syntax_analyzer_result
@@ -161,7 +161,7 @@ static void checkNewAnalyzer(
     const std::string & expected)
 {
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
+    ASTPtr ast = parseQuery(parser, query, 1000, 1000);
 
     SelectQueryOptions select_query_options;
     auto query_tree = buildQueryTree(ast, state.context);
@@ -306,8 +306,7 @@ TEST(TransformQueryForExternalDatabase, Aliases)
 
     check(state, 1, {"field"},
           "SELECT field AS value, field AS display FROM table WHERE field NOT IN ('') AND display LIKE '%test%'",
-          R"(SELECT "field" FROM "test"."table" WHERE ("field" NOT IN ('')) AND ("field" LIKE '%test%'))",
-          R"(SELECT "field" FROM "test"."table" WHERE ("field" != '') AND ("field" LIKE '%test%'))");
+          R"(SELECT "field" FROM "test"."table" WHERE ("field" NOT IN ('')) AND ("field" LIKE '%test%'))");
 }
 
 TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
@@ -319,18 +318,6 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
           "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
           "WHERE column > 2 AND apply_id = 1 AND table2.num = 1 AND table2.attr != ''",
           R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
-}
-
-TEST(TransformQueryForExternalDatabase, TupleSurroundPredicates)
-{
-    const State & state = State::instance();
-
-    check(
-        state,
-        1,
-        {"column", "field", "a"},
-        "SELECT column, field, a FROM table WHERE ((column > 10) AND (length(field) > 0)) AND a > 0",
-        R"(SELECT "column", "field", "a" FROM "test"."table" WHERE ("a" > 0) AND ("column" > 10))");
 }
 
 TEST(TransformQueryForExternalDatabase, NoStrict)
@@ -409,6 +396,5 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
 
     check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo"},
         "SELECT * FROM table WHERE (column) IN (1)",
-        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" IN (1))",
-        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" = 1)");
+        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" IN (1))");
 }

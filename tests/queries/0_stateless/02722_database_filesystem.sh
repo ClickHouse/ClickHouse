@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # see 01658_read_file_to_stringcolumn.sh
-CLICKHOUSE_USER_FILES_PATH=$($CLICKHOUSE_CLIENT_BINARY --query "select _path, _file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+CLICKHOUSE_USER_FILES_PATH=$(clickhouse-client --query "select _path, _file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
 # Prepare data
 unique_name=${CLICKHOUSE_TEST_UNIQUE_NAME}
@@ -81,6 +81,8 @@ CREATE DATABASE test2 ENGINE = Filesystem('relative_unknown_dir');
 # FILE_DOESNT_EXIST: unknown file
 ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`tmp2.csv\`;" 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "FILE_DOESNT_EXIST" > /dev/null && echo "OK" || echo 'FAIL' ||:
 
+# BAD_ARGUMENTS: Cannot determine the file format by it's extension
+${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`${unique_name}/tmp.myext\`;" 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "BAD_ARGUMENTS" > /dev/null && echo "OK" || echo 'FAIL' ||:
 # Clean
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE test1;"
 rm -rd $tmp_dir

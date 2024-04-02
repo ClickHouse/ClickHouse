@@ -58,10 +58,12 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
+void interruptSignalHandler(int signum);
+
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
-class ClientBase : public Poco::Util::Application, public IHints<2>
+class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
 {
 
 public:
@@ -77,9 +79,6 @@ public:
 protected:
     void runInteractive();
     void runNonInteractive();
-
-    char * argv0 = nullptr;
-    void runLibFuzzer();
 
     virtual bool processWithFuzzing(const String &)
     {
@@ -97,7 +96,7 @@ protected:
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
-    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
+    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth);
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
     static void setupSignalHandler();
 
@@ -185,14 +184,7 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    static bool isRegularFile(int fd);
-
-    /// Adjust some settings after command line options and config had been processed.
-    void adjustSettings();
-
-    void setDefaultFormatsFromConfiguration();
-
-    void initTTYBuffer(ProgressOption progress);
+    void initTtyBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -210,7 +202,6 @@ protected:
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
 
-    std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
     std::vector<String> cmd_options;
@@ -220,15 +211,12 @@ protected:
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
 
-    String pager;
-
-    String default_output_format; /// Query results output format.
-    String default_input_format; /// Tables' format for clickhouse-local.
-
+    String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
     size_t format_max_block_size = 0; /// Max block size for console output.
+    String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
@@ -330,8 +318,7 @@ protected:
 
     bool cancelled = false;
 
-    /// Does log_comment has specified by user?
-    bool has_log_comment = false;
+    bool logging_initialized = false;
 };
 
 }
