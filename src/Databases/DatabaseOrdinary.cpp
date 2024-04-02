@@ -128,7 +128,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     /// Get table's storage policy
     MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
     auto policy = getContext()->getStoragePolicy(default_settings.storage_policy);
-    if (auto * query_settings = create_query->storage->settings->as<ASTSetQuery>())
+    if (auto * query_settings = create_query->storage->settings)
         if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
             policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
 
