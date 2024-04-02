@@ -182,7 +182,7 @@ size_t ReadBufferFromAzureBlobStorage::readBytes()
     if (to_read_bytes)
         length = {static_cast<int64_t>(to_read_bytes)};
     download_options.Range = {static_cast<int64_t>(offset), length};
-    LOG_INFO(log, "Read bytes range is offset = {} and to_read_bytes = {}", offset, to_read_bytes);
+    LOG_INFO(log, "Read bytes range is offset = {}, read_until_position = {}, to_read_bytes = {}, data_capacity = {}, file_size = {}", offset, read_until_position, to_read_bytes, data_capacity, getFileSize());
 
 
     if (!blob_client)
