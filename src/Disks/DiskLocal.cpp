@@ -153,6 +153,7 @@ public:
             return dir_path / entry->path().filename();
     }
 
+
     String name() const override { return entry->path().filename(); }
 
 private:

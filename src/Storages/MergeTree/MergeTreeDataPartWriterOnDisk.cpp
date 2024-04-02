@@ -242,7 +242,9 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 
         if (compress_primary_key)
         {
-            CompressionCodecPtr primary_key_compression_codec = CompressionCodecFactory::instance().get(settings.primary_key_compression_codec);
+            ParserCodec codec_parser;
+            auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.primary_key_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            CompressionCodecPtr primary_key_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
             index_compressor_stream = std::make_unique<CompressedWriteBuffer>(*index_file_hashing_stream, primary_key_compression_codec, settings.primary_key_compress_block_size);
             index_source_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_compressor_stream);
         }
@@ -266,7 +268,7 @@ void MergeTreeDataPartWriterOnDisk::initStatistics()
 void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 {
     ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
     for (const auto & skip_index : skip_indices)

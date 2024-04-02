@@ -24,7 +24,7 @@ ExternalLoaderXMLConfigRepository::ExternalLoaderXMLConfigRepository(
 {
 }
 
-std::optional<Poco::Timestamp> ExternalLoaderXMLConfigRepository::getUpdateTime(const std::string & definition_entity_name)
+Poco::Timestamp ExternalLoaderXMLConfigRepository::getUpdateTime(const std::string & definition_entity_name)
 {
     return FS::getModificationTimestamp(definition_entity_name);
 }

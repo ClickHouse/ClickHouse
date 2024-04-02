@@ -1,6 +1,6 @@
 # docker build -t clickhouse/binary-builder .
 ARG FROM_TAG=latest
-FROM clickhouse/fasttest:$FROM_TAG
+FROM clickhouse/test-util:$FROM_TAG
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
@@ -61,7 +61,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && rm /tmp/nfpm.deb
 
 ARG GO_VERSION=1.19.10
-# We needed go for clickhouse-diagnostics (it is not used anymore)
+# We need go for clickhouse-diagnostics
 RUN arch=${TARGETARCH:-amd64} \
     && curl -Lo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
     && tar -xzf /tmp/go.tgz -C /usr/local/ \

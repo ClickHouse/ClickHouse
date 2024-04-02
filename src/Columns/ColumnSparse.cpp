@@ -1,14 +1,13 @@
-#include <Columns/ColumnSparse.h>
-
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnTuple.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/iota.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <algorithm>
 #include <bit>
@@ -153,14 +152,9 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
-}
-
-char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
-{
-    return values->serializeValueIntoMemory(getValueIndex(n), memory);
 }
 
 const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)
@@ -734,6 +728,16 @@ double ColumnSparse::getRatioOfDefaultRows(double) const
 UInt64 ColumnSparse::getNumberOfDefaultRows() const
 {
     return _size - offsets->size();
+}
+
+MutableColumns ColumnSparse::scatter(ColumnIndex num_columns, const Selector & selector) const
+{
+    return scatterImpl<ColumnSparse>(num_columns, selector);
+}
+
+void ColumnSparse::gather(ColumnGathererStream & gatherer_stream)
+{
+    gatherer_stream.gather(*this);
 }
 
 ColumnPtr ColumnSparse::compress() const

@@ -1776,7 +1776,7 @@ Default value: 0 (no restriction).
 ## insert_quorum {#insert_quorum}
 
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
 :::
 
 Enables the quorum writes.
@@ -1819,7 +1819,7 @@ See also:
 ## insert_quorum_parallel {#insert_quorum_parallel}
 
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information. 
 :::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
@@ -1840,7 +1840,7 @@ See also:
 ## select_sequential_consistency {#select_sequential_consistency}
 
 :::note
-This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
+This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree. 
 :::
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
@@ -2816,17 +2816,6 @@ Possible values:
 - 2 — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 
 Default value: 0.
-
-## distributed_insert_skip_read_only_replicas {#distributed_insert_skip_read_only_replicas}
-
-Enables skipping read-only replicas for INSERT queries into Distributed.
-
-Possible values:
-
-- 0 — INSERT was as usual, if it will go to read-only replica it will fail
-- 1 — Initiator will skip read-only replicas before sending data to shards.
-
-Default value: `0`
 
 ## distributed_foreground_insert {#distributed_foreground_insert}
 
@@ -3965,7 +3954,6 @@ Possible values:
 - `none` — Is similar to throw, but distributed DDL query returns no result set.
 - `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
 - `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
-- `none_only_active` - similar to `none`, but doesn't wait for inactive replicas of the `Replicated` database. Note: with this mode it's impossible to figure out that the query was not executed on some replica and will be executed in background.
 - `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
 - `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
@@ -4347,18 +4335,6 @@ Possible values:
 - 1 — Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
 
 Default value: `0`.
-
-
-## function_locate_has_mysql_compatible_argument_order {#function-locate-has-mysql-compatible-argument-order}
-
-Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md#locate).
-
-Possible values:
-
-- 0 — Function `locate` accepts arguments `(haystack, needle[, start_pos])`.
-- 1 — Function `locate` accepts arguments `(needle, haystack, [, start_pos])` (MySQL-compatible behavior)
-
-Default value: `1`.
 
 ## date_time_overflow_behavior {#date_time_overflow_behavior}
 
@@ -5453,7 +5429,3 @@ Enabling this setting can lead to incorrect result as in case of evolved schema 
 :::
 
 Default value: 'false'.
-
-## allow_suspicious_primary_key {#allow_suspicious_primary_key}
-
-Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).

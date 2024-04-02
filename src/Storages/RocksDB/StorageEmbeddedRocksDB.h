@@ -39,8 +39,6 @@ public:
         String rocksdb_dir_ = "",
         bool read_only_ = false);
 
-    ~StorageEmbeddedRocksDB() override;
-
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
     void read(

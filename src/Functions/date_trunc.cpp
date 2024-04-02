@@ -1,10 +1,9 @@
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <Formats/FormatSettings.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 
@@ -55,10 +54,6 @@ public:
 
             if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
-
-            if (datepart_kind == IntervalKind::Kind::Nanosecond || datepart_kind == IntervalKind::Kind::Microsecond
-                || datepart_kind == IntervalKind::Kind::Millisecond)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't support {}", getName(), datepart_param);
 
             result_type_is_date = (datepart_kind == IntervalKind::Kind::Year)
                 || (datepart_kind == IntervalKind::Kind::Quarter) || (datepart_kind == IntervalKind::Kind::Month)

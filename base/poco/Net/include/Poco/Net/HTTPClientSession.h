@@ -210,7 +210,7 @@ namespace Net
         void setKeepAliveTimeout(const Poco::Timespan & timeout);
         /// Sets the connection timeout for HTTP connections.
 
-        Poco::Timespan getKeepAliveTimeout() const;
+        const Poco::Timespan & getKeepAliveTimeout() const;
         /// Returns the connection timeout for HTTP connections.
 
         virtual std::ostream & sendRequest(HTTPRequest & request);
@@ -275,7 +275,7 @@ namespace Net
         /// This method should only be called if the request contains
         /// a "Expect: 100-continue" header.
 
-        virtual void flushRequest();
+        void flushRequest();
         /// Flushes the request stream.
         ///
         /// Normally this method does not need to be called.
@@ -283,7 +283,7 @@ namespace Net
         /// fully sent if receiveResponse() is not called, e.g.,
         /// because the underlying socket will be detached.
 
-        virtual void reset();
+        void reset();
         /// Resets the session and closes the socket.
         ///
         /// The next request will initiate a new connection,
@@ -302,9 +302,6 @@ namespace Net
         bool bypassProxy() const;
         /// Returns true if the proxy should be bypassed
         /// for the current host.
-
-        const Poco::Timestamp & getLastRequest() const;
-        /// Returns time when connection has been used last time
 
     protected:
         enum
@@ -340,10 +337,6 @@ namespace Net
         void proxyTunnel();
         /// Calls proxyConnect() and attaches the resulting StreamSocket
         /// to the HTTPClientSession.
-
-        void setLastRequest(Poco::Timestamp time);
-
-        void assign(HTTPClientSession & session);
 
         HTTPSessionFactory _proxySessionFactory;
         /// Factory to create HTTPClientSession to proxy.
@@ -440,20 +433,11 @@ namespace Net
     }
 
 
-    inline Poco::Timespan HTTPClientSession::getKeepAliveTimeout() const
+    inline const Poco::Timespan & HTTPClientSession::getKeepAliveTimeout() const
     {
         return _keepAliveTimeout;
     }
 
-    inline const Poco::Timestamp & HTTPClientSession::getLastRequest() const
-    {
-        return _lastRequest;
-    }
-
-    inline void HTTPClientSession::setLastRequest(Poco::Timestamp time)
-    {
-        _lastRequest = time;
-    }
 
 }
 } // namespace Poco::Net

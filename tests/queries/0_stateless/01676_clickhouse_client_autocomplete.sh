@@ -21,10 +21,6 @@ function test_completion_word()
     # - here and below you should escape variables of the expect.
     # - you should not use "expect <<..." since in this case timeout/eof will
     #   not work (I guess due to attached stdin)
-
-    # TODO: get build sanitizer and debug/release info to dynamically change test
-    # like here timeout 120 seconds is too big for release build
-    # but ok for sanitizer builds
     cat > "$SCRIPT_PATH" << EOF
 # NOTE: log will be appended
 exp_internal -f $CLICKHOUSE_TMP/$(basename "${BASH_SOURCE[0]}").debuglog 0
@@ -34,7 +30,7 @@ exp_internal -f $CLICKHOUSE_TMP/$(basename "${BASH_SOURCE[0]}").debuglog 0
 set stdout_channel [open "/dev/stdout" w]
 
 log_user 0
-set timeout 120
+set timeout 60
 match_max 100000
 expect_after {
     # Do not ignore eof from expect

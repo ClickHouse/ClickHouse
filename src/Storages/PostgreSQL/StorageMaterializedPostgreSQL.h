@@ -89,6 +89,8 @@ public:
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
+    NamesAndTypesList getVirtuals() const override;
+
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
     void read(
@@ -135,8 +137,6 @@ public:
 private:
     static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
             String name, String type, UInt64 default_value);
-
-    static VirtualColumnsDescription createVirtuals();
 
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 

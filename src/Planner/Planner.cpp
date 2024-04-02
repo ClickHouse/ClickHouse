@@ -1029,12 +1029,9 @@ void addExtremesStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & p
 
 void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_analysis_result)
 {
-    /// If there is not a LIMIT but an offset
-    if (!query_analysis_result.limit_length && query_analysis_result.limit_offset)
-    {
-        auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), query_analysis_result.limit_offset);
-        query_plan.addStep(std::move(offsets_step));
-    }
+    UInt64 limit_offset = query_analysis_result.limit_offset;
+    auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset);
+    query_plan.addStep(std::move(offsets_step));
 }
 
 void collectSetsFromActionsDAG(const ActionsDAGPtr & dag, std::unordered_set<const FutureSet *> & useful_sets)
@@ -1085,11 +1082,6 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     {
         auto query_tree = subquery->detachQueryTree();
         auto subquery_options = select_query_options.subquery();
-        /// I don't know if this is a good decision,
-        /// But for now it is done in the same way as in old analyzer.
-        /// This would not ignore limits for subqueries (affects mutations only).
-        /// See test_build_sets_from_multiple_threads-analyzer.
-        subquery_options.ignore_limits = false;
         Planner subquery_planner(
             query_tree,
             subquery_options,
@@ -1189,7 +1181,7 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
     if (select_query_options.is_subquery)
         updateContextForSubqueryExecution(mutable_context);
 
-    return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context), select_query_options);
+    return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context));
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
@@ -1381,7 +1373,7 @@ void Planner::buildPlanForQueryNode()
     const auto & settings = query_context->getSettingsRef();
     if (query_context->canUseTaskBasedParallelReplicas())
     {
-        if (!settings.parallel_replicas_allow_in_with_subquery && planner_context->getPreparedSets().hasSubqueries())
+        if (planner_context->getPreparedSets().hasSubqueries())
         {
             if (settings.allow_experimental_parallel_reading_from_replicas >= 2)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");

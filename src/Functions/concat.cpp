@@ -1,8 +1,8 @@
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnStringHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsConversion.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>

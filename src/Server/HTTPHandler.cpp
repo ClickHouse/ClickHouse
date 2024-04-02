@@ -490,7 +490,14 @@ bool HTTPHandler::authenticateUser(
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
 
-    session->setHTTPClientInfo(request);
+    ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
+    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
+        http_method = ClientInfo::HTTPMethod::GET;
+    else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
+        http_method = ClientInfo::HTTPMethod::POST;
+
+    session->setHTTPClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
+    session->setForwardedFor(request.get("X-Forwarded-For", ""));
     session->setQuotaClientKey(quota_key);
 
     /// Extract the last entry from comma separated list of forwarded_for addresses.

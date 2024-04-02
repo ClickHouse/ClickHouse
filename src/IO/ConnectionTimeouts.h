@@ -4,7 +4,6 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 
-#include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Timespan.h>
 
 namespace DB
@@ -71,7 +70,6 @@ APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DECLARE_BUILDER_FOR_MEMBER)
     ConnectionTimeouts & withConnectionTimeout(Poco::Timespan span);
 };
 
-/// NOLINTBEGIN(bugprone-macro-parentheses)
 #define DEFINE_BUILDER_FOR_MEMBER(member, setter_func) \
     inline ConnectionTimeouts & ConnectionTimeouts::setter_func(size_t seconds) \
     { \
@@ -84,7 +82,6 @@ APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DECLARE_BUILDER_FOR_MEMBER)
     } \
 
     APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DEFINE_BUILDER_FOR_MEMBER)
-/// NOLINTEND(bugprone-macro-parentheses)
 
 #undef DEFINE_BUILDER_FOR_MEMBER
 
@@ -113,8 +110,5 @@ inline ConnectionTimeouts & ConnectionTimeouts::withConnectionTimeout(Poco::Time
     secure_connection_timeout = span;
     return *this;
 }
-
-void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts);
-ConnectionTimeouts getTimeouts(const Poco::Net::HTTPClientSession & session);
 
 }

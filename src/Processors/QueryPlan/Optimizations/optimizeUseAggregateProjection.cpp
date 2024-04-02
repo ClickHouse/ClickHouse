@@ -18,7 +18,6 @@
 
 #include <Common/logger_useful.h>
 #include <Storages/StorageDummy.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -432,7 +431,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
-    Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter();
+    Block key_virtual_columns = reading.getMergeTreeData().getSampleBlockWithVirtualColumns();
 
     AggregateProjectionCandidates candidates;
 
@@ -465,9 +464,6 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     // LOG_TRACE(getLogger("optimizeUseProjections"), "Query DAG: {}", dag.dag->dumpDAG());
 
     candidates.has_filter = dag.filter_node;
-    /// We can't use minmax projection if filter has non-deterministic functions.
-    if (dag.filter_node && !VirtualColumnUtils::isDeterministicInScopeOfQuery(dag.filter_node))
-        can_use_minmax_projection = false;
 
     if (can_use_minmax_projection)
     {

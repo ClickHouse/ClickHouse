@@ -16,7 +16,6 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.network import PartitionManager
 from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import exec_query_with_retry
-from helpers.test_tools import assert_logs_contain_with_retry
 
 
 @pytest.fixture(scope="module")
@@ -1321,25 +1320,3 @@ def test_format_detection(cluster):
     )
 
     assert result == expected_result
-
-
-def test_parallel_read(cluster):
-    node = cluster.instances["node"]
-    connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
-    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
-    account_name = "devstoreaccount1"
-    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
-
-    azure_query(
-        node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_parallel_read.parquet', '{account_name}', '{account_key}') "
-        f"select * from numbers(10000) settings azure_truncate_on_insert=1",
-    )
-    time.sleep(1)
-
-    res = azure_query(
-        node,
-        f"select count() from azureBlobStorage('{connection_string}', 'cont', 'test_parallel_read.parquet')",
-    )
-    assert int(res) == 10000
-    assert_logs_contain_with_retry(node, "AzureBlobStorage readBigAt read bytes")

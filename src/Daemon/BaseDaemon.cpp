@@ -275,10 +275,7 @@ public:
                 }
 
                 readPODBinary(stack_trace, in);
-
-                if (sig != SanitizerTrap)
-                    readVectorBinary(thread_frame_pointers, in);
-
+                readVectorBinary(thread_frame_pointers, in);
                 readBinary(thread_num, in);
                 readPODBinary(thread_ptr, in);
 
@@ -545,16 +542,6 @@ private:
 
 
 #if defined(SANITIZER)
-
-template <typename T>
-struct ValueHolder
-{
-    ValueHolder(T value_) : value(value_)
-    {}
-
-    T value;
-};
-
 extern "C" void __sanitizer_set_death_callback(void (*)());
 
 /// Sanitizers may not expect some function calls from death callback.
@@ -572,13 +559,10 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 
     const StackTrace stack_trace;
 
-    writeBinary(SignalListener::SanitizerTrap, out);
+    int sig = SignalListener::SanitizerTrap;
+    writeBinary(sig, out);
     writePODBinary(stack_trace, out);
-    /// We create a dummy struct with a constructor so DISABLE_SANITIZER_INSTRUMENTATION is not applied to it
-    /// otherwise, Memory sanitizer can't know that values initiialized inside this function are actually initialized
-    /// because instrumentations are disabled leading to false positives later on
-    ValueHolder<UInt32> thread_id{static_cast<UInt32>(getThreadId())};
-    writeBinary(thread_id.value, out);
+    writeBinary(UInt32(getThreadId()), out);
     writePODBinary(current_thread, out);
 
     out.next();
