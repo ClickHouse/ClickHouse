@@ -1,6 +1,5 @@
 #include <Core/SettingsEnums.h>
 #include <magic_enum.hpp>
-#include <Access/Common/SQLSecurityDefs.h>
 
 
 namespace DB
@@ -16,16 +15,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
     extern const int UNKNOWN_UNION;
-}
-
-template <typename Type>
-constexpr auto getEnumValues()
-{
-    std::array<std::pair<std::string_view, Type>, magic_enum::enum_count<Type>()> enum_values{};
-    size_t index = 0;
-    for (auto value : magic_enum::enum_values<Type>())
-        enum_values[index++] = std::pair{magic_enum::enum_name(value), value};
-    return enum_values;
 }
 
 IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
@@ -128,7 +117,6 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
      {"null_status_on_timeout", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT},
      {"throw_only_active", DistributedDDLOutputMode::THROW_ONLY_ACTIVE},
      {"null_status_on_timeout_only_active", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE},
-     {"none_only_active", DistributedDDLOutputMode::NONE_ONLY_ACTIVE},
      {"never_throw", DistributedDDLOutputMode::NEVER_THROW}})
 
 IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
@@ -218,9 +206,4 @@ IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
      {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
      {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
-
-IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
-    {{"DEFINER", SQLSecurityType::DEFINER},
-     {"INVOKER", SQLSecurityType::INVOKER},
-     {"NONE", SQLSecurityType::NONE}})
 }

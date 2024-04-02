@@ -17,7 +17,6 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 
-#include <filesystem>
 
 namespace fs = std::filesystem;
 
@@ -303,7 +302,7 @@ private:
         readStringUntilEOF(query, in);
 
         ParserCreateNamedCollectionQuery parser;
-        auto ast = parseQuery(parser, query, "in file " + path, 0, settings.max_parser_depth, settings.max_parser_backtracks);
+        auto ast = parseQuery(parser, query, "in file " + path, 0, settings.max_parser_depth);
         const auto & create_query = ast->as<const ASTCreateNamedCollectionQuery &>();
         return create_query;
     }

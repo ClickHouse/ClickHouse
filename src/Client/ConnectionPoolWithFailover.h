@@ -49,6 +49,8 @@ public:
               const Settings & settings,
               bool force_connected) override; /// From IConnectionPool
 
+    Priority getPriority() const override; /// From IConnectionPool
+
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
       */
@@ -77,25 +79,19 @@ public:
         AsyncCallback async_callback = {},
         std::optional<bool> skip_unavailable_endpoints = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
-    /// The same as getManyChecked(), but respects distributed_insert_skip_read_only_replicas setting.
-    std::vector<TryResult> getManyCheckedForInsert(
-        const ConnectionTimeouts & timeouts,
-        const Settings & settings,
-        PoolMode pool_mode,
-        const QualifiedTableName & table_to_check);
 
     struct NestedPoolStatus
     {
         const Base::NestedPoolPtr pool;
-        size_t error_count = 0;
-        size_t slowdown_count = 0;
+        size_t error_count;
+        size_t slowdown_count;
         std::chrono::seconds estimated_recovery_time;
     };
 
     using Status = std::vector<NestedPoolStatus>;
     Status getStatus() const;
 
-    std::vector<Base::ShuffledPool> getShuffledPools(const Settings & settings, GetPriorityFunc priority_func = {}, bool use_slowdown_count = false);
+    std::vector<Base::ShuffledPool> getShuffledPools(const Settings & settings, GetPriorityFunc priority_func = {});
 
     size_t getMaxErrorCup() const { return Base::max_error_cap; }
 
@@ -113,14 +109,13 @@ private:
         PoolMode pool_mode,
         const TryGetEntryFunc & try_get_entry,
         std::optional<bool> skip_unavailable_endpoints = std::nullopt,
-        GetPriorityForLoadBalancing::Func priority_func = {},
-        bool skip_read_only_replicas = false);
+        GetPriorityForLoadBalancing::Func priority_func = {});
 
     /// Try to get a connection from the pool and check that it is good.
     /// If table_to_check is not null and the check is enabled in settings, check that replication delay
     /// for this table is not too large.
     TryResult tryGetEntry(
-            const ConnectionPoolPtr & pool,
+            IConnectionPool & pool,
             const ConnectionTimeouts & timeouts,
             std::string & fail_message,
             const Settings & settings,

@@ -96,7 +96,7 @@ static ASTPtr parseAdditionalPostFilter(const Context & context)
     ParserExpression parser;
     return parseQuery(
                 parser, filter.data(), filter.data() + filter.size(),
-                "additional filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+                "additional filter", settings.max_query_size, settings.max_parser_depth);
 }
 
 static ActionsDAGPtr makeAdditionalPostFilter(ASTPtr & ast, ContextPtr context, const Block & header)

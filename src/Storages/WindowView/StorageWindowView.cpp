@@ -1,7 +1,9 @@
 #include <numeric>
 
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTimeWindow.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -13,6 +15,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
@@ -27,6 +30,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTWatchQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
@@ -47,13 +51,16 @@
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
+#include <base/sleep.h>
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/replace.hpp>
 
 #include <Storages/LiveView/StorageBlocks.h>
+
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WindowViewSource.h>
 
+#include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 
@@ -71,7 +78,6 @@ namespace ErrorCodes
     extern const int QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_WAS_NOT_DROPPED;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -279,13 +285,13 @@ namespace
     {
         switch (kind)
         {
-            case IntervalKind::Kind::Nanosecond:
-            case IntervalKind::Kind::Microsecond:
-            case IntervalKind::Kind::Millisecond:
+            case IntervalKind::Nanosecond:
+            case IntervalKind::Microsecond:
+            case IntervalKind::Millisecond:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by windows yet");
 #define CASE_WINDOW_KIND(KIND) \
-    case IntervalKind::Kind::KIND: { \
-        return AddTime<IntervalKind::Kind::KIND>::execute(time_sec, num_units, time_zone); \
+    case IntervalKind::KIND: { \
+        return AddTime<IntervalKind::KIND>::execute(time_sec, num_units, time_zone); \
     }
             CASE_WINDOW_KIND(Second)
             CASE_WINDOW_KIND(Minute)
@@ -339,13 +345,6 @@ namespace
         table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(inner_table_id);
         table_expr->children.push_back(table_expr->database_and_table_name);
         return fetch_query;
-    }
-
-    void checkTargetTableHasQueryOutputColumns(const ColumnsDescription & target_table_columns, const ColumnsDescription & select_query_output_columns)
-    {
-        for (const auto & column : select_query_output_columns)
-            if (!target_table_columns.has(column.name))
-                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the window view's inner table", column.name);
     }
 }
 
@@ -489,18 +488,6 @@ void StorageWindowView::alter(
     fire_task->deactivate();
 
     new_metadata.setSelectQuery(new_select);
-
-    /// Check the window view's inner target table structure.
-    if (has_inner_target_table)
-    {
-        /// If this window view has an inner target table it should always have the same columns as this window view.
-        /// Try to find mistakes in the select query (it shouldn't have columns which are not in the inner target table).
-        auto target_table_metadata = getTargetTable()->getInMemoryMetadataPtr();
-        const auto & select_query_output_columns = new_metadata.columns; /// AlterCommands::alter() analyzed the query and assigned `new_metadata.columns` before.
-        checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
-        /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. in data types).
-        new_metadata.columns = target_table_metadata->columns;
-    }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
@@ -888,20 +875,20 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
 {
     switch (slide_kind)
     {
-        case IntervalKind::Kind::Nanosecond:
-        case IntervalKind::Kind::Microsecond:
-        case IntervalKind::Kind::Millisecond:
+        case IntervalKind::Nanosecond:
+        case IntervalKind::Microsecond:
+        case IntervalKind::Millisecond:
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by windows yet");
 #define CASE_WINDOW_KIND(KIND) \
-    case IntervalKind::Kind::KIND: \
+    case IntervalKind::KIND: \
     { \
         if (is_tumble) \
-            return ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, window_num_units, *time_zone); \
+            return ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, window_num_units, *time_zone); \
         else \
         {\
-            UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
-            UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(w_start, hop_num_units, *time_zone);\
-            return AddTime<IntervalKind::Kind::KIND>::execute(w_end, -window_num_units, *time_zone);\
+            UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
+            UInt32 w_end = AddTime<IntervalKind::KIND>::execute(w_start, hop_num_units, *time_zone);\
+            return AddTime<IntervalKind::KIND>::execute(w_end, -window_num_units, *time_zone);\
         }\
     }
         CASE_WINDOW_KIND(Second)
@@ -921,16 +908,16 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
 {
     switch (slide_kind)
     {
-        case IntervalKind::Kind::Nanosecond:
-        case IntervalKind::Kind::Microsecond:
-        case IntervalKind::Kind::Millisecond:
+        case IntervalKind::Nanosecond:
+        case IntervalKind::Microsecond:
+        case IntervalKind::Millisecond:
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by window view yet");
 
 #define CASE_WINDOW_KIND(KIND) \
-    case IntervalKind::Kind::KIND: \
+    case IntervalKind::KIND: \
     { \
-        UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, slide_num_units, *time_zone); \
-        return AddTime<IntervalKind::Kind::KIND>::execute(w_start, slide_num_units, *time_zone); \
+        UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, slide_num_units, *time_zone); \
+        return AddTime<IntervalKind::KIND>::execute(w_start, slide_num_units, *time_zone); \
     }
         CASE_WINDOW_KIND(Second)
         CASE_WINDOW_KIND(Minute)
@@ -1054,7 +1041,7 @@ void StorageWindowView::threadFuncFireProc()
         max_fired_watermark = next_fire_signal;
         auto slide_interval = addTime(0, slide_kind, slide_num_units, *time_zone);
         /// Convert DayNum into seconds when the slide interval is larger than Day
-        if (slide_kind > IntervalKind::Kind::Day)
+        if (slide_kind > IntervalKind::Day)
             slide_interval *= 86400;
         next_fire_signal += slide_interval;
     }
@@ -1170,7 +1157,7 @@ StorageWindowView::StorageWindowView(
     ContextPtr context_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
-    LoadingStrictnessLevel mode)
+    bool attach_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
@@ -1216,7 +1203,7 @@ StorageWindowView::StorageWindowView(
         next_fire_signal = getWindowUpperBound(now());
 
     std::exchange(has_inner_table, true);
-    if (mode < LoadingStrictnessLevel::ATTACH)
+    if (!attach_)
     {
         auto inner_create_query = getInnerTableCreateQuery(inner_query, inner_table_id);
         auto create_context = Context::createCopy(context_);
@@ -1373,7 +1360,7 @@ void StorageWindowView::eventTimeParser(const ASTCreateQuery & query)
         if (query.is_watermark_ascending)
         {
             is_watermark_bounded = true;
-            watermark_kind = IntervalKind::Kind::Second;
+            watermark_kind = IntervalKind::Second;
             watermark_num_units = 1;
         }
         else if (query.is_watermark_bounded)
@@ -1685,12 +1672,12 @@ void registerStorageWindowView(StorageFactory & factory)
 {
     factory.registerStorage("WindowView", [](const StorageFactory::Arguments & args)
     {
-        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef().allow_experimental_window_view)
+        if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_window_view)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Experimental WINDOW VIEW feature "
                             "is not enabled (the setting 'allow_experimental_window_view')");
 
-        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.mode);
+        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.attach);
     });
 }
 

@@ -43,7 +43,8 @@ StoragePtr TableFunctionFileCluster::getStorage(
             compression_method,
             StorageID(getDatabaseName(), table_name),
             columns,
-            ConstraintsDescription{});
+            ConstraintsDescription{},
+            structure != "auto");
     }
 
     return storage;

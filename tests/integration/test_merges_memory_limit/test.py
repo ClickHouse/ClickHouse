@@ -38,11 +38,7 @@ def test_memory_limit_success():
     )
 
     _, error = node.query_and_get_answer_with_error(
-        """
-        SET optimize_throw_if_noop=1;
-        SYSTEM START MERGES test_merge_oom;
-        OPTIMIZE TABLE test_merge_oom FINAL;
-        """
+        "SYSTEM START MERGES test_merge_oom;SET optimize_throw_if_noop=1;OPTIMIZE TABLE test_merge_oom FINAL"
     )
 
     assert not error

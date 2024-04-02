@@ -3,7 +3,7 @@
 #include <memory>
 #include <IO/AsynchronousReader.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 
 
 namespace DB

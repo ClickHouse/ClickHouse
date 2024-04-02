@@ -3,6 +3,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -10,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -71,21 +73,21 @@ public:
 
             switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
             {
-                case IntervalKind::Kind::Nanosecond:
-                case IntervalKind::Kind::Microsecond:
-                case IntervalKind::Kind::Millisecond:
+                case IntervalKind::Nanosecond:
+                case IntervalKind::Microsecond:
+                case IntervalKind::Millisecond:
                     result_type = ResultType::DateTime64;
                     break;
-                case IntervalKind::Kind::Second:
-                case IntervalKind::Kind::Minute:
-                case IntervalKind::Kind::Hour:
-                case IntervalKind::Kind::Day: /// weird why Day leads to DateTime but too afraid to change it
+                case IntervalKind::Second:
+                case IntervalKind::Minute:
+                case IntervalKind::Hour:
+                case IntervalKind::Day: /// weird why Day leads to DateTime but too afraid to change it
                     result_type = ResultType::DateTime;
                     break;
-                case IntervalKind::Kind::Week:
-                case IntervalKind::Kind::Month:
-                case IntervalKind::Kind::Quarter:
-                case IntervalKind::Kind::Year:
+                case IntervalKind::Week:
+                case IntervalKind::Month:
+                case IntervalKind::Quarter:
+                case IntervalKind::Year:
                     result_type = ResultType::Date;
                     break;
             }
@@ -131,11 +133,11 @@ public:
             case ResultType::DateTime64:
             {
                 UInt32 scale = 0;
-                if (interval_type->getKind() == IntervalKind::Kind::Nanosecond)
+                if (interval_type->getKind() == IntervalKind::Nanosecond)
                     scale = 9;
-                else if (interval_type->getKind() == IntervalKind::Kind::Microsecond)
+                else if (interval_type->getKind() == IntervalKind::Microsecond)
                     scale = 6;
-                else if (interval_type->getKind() == IntervalKind::Kind::Millisecond)
+                else if (interval_type->getKind() == IntervalKind::Millisecond)
                     scale = 3;
 
                 return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
@@ -204,28 +206,28 @@ private:
 
         switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
         {
-            case IntervalKind::Kind::Nanosecond:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Kind::Nanosecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
-            case IntervalKind::Kind::Microsecond:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Kind::Microsecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
-            case IntervalKind::Kind::Millisecond:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Kind::Millisecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
-            case IntervalKind::Kind::Second:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Kind::Second>(time_data_type, time_column, num_units, result_type, time_zone, scale);
-            case IntervalKind::Kind::Minute:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Kind::Minute>(time_data_type, time_column, num_units, result_type, time_zone, scale);
-            case IntervalKind::Kind::Hour:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Kind::Hour>(time_data_type, time_column, num_units, result_type, time_zone, scale);
-            case IntervalKind::Kind::Day:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Kind::Day>(time_data_type, time_column, num_units, result_type, time_zone, scale);
-            case IntervalKind::Kind::Week:
-                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Kind::Week>(time_data_type, time_column, num_units, result_type, time_zone, scale);
-            case IntervalKind::Kind::Month:
-                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Kind::Month>(time_data_type, time_column, num_units, result_type, time_zone, scale);
-            case IntervalKind::Kind::Quarter:
-                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Kind::Quarter>(time_data_type, time_column, num_units, result_type, time_zone, scale);
-            case IntervalKind::Kind::Year:
-                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Kind::Year>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+            case IntervalKind::Nanosecond:
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Nanosecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+            case IntervalKind::Microsecond:
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Microsecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+            case IntervalKind::Millisecond:
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Millisecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+            case IntervalKind::Second:
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Second>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+            case IntervalKind::Minute:
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Minute>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+            case IntervalKind::Hour:
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Hour>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+            case IntervalKind::Day:
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Day>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+            case IntervalKind::Week:
+                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Week>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+            case IntervalKind::Month:
+                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Month>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+            case IntervalKind::Quarter:
+                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Quarter>(time_data_type, time_column, num_units, result_type, time_zone, scale);
+            case IntervalKind::Year:
+                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Year>(time_data_type, time_column, num_units, result_type, time_zone, scale);
         }
 
         std::unreachable();

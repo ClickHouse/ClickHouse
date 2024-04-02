@@ -67,6 +67,7 @@ HedgedConnections::HedgedConnections(
     }
 
     active_connection_count = connections.size();
+    offsets_with_disabled_changing_replica = 0;
     pipeline_for_new_replicas.add([throttler_](ReplicaState & replica_) { replica_.connection->setThrottler(throttler_); });
 }
 
@@ -175,10 +176,6 @@ void HedgedConnections::sendQuery(
     auto send_query = [this, timeouts, query, query_id, stage, client_info, with_pending_data](ReplicaState & replica)
     {
         Settings modified_settings = settings;
-
-        /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
-        modified_settings.dialect = Dialect::clickhouse;
-        modified_settings.dialect.changed = false;
 
         if (disable_two_level_aggregation)
         {

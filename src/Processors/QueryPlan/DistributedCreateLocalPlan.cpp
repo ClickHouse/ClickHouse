@@ -14,14 +14,12 @@ namespace DB
 namespace
 {
 
-void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missing_objects)
+void addConvertingActions(QueryPlan & plan, const Block & header)
 {
     if (blocksHaveEqualStructure(plan.getCurrentDataStream().header, header))
         return;
 
-    auto mode = has_missing_objects ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
-
-    auto get_converting_dag = [mode](const Block & block_, const Block & header_)
+    auto get_converting_dag = [](const Block & block_, const Block & header_)
     {
         /// Convert header structure to expected.
         /// Also we ignore constants from result and replace it with constants from header.
@@ -29,7 +27,7 @@ void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missi
         return ActionsDAG::makeConvertingActions(
             block_.getColumnsWithTypeAndName(),
             header_.getColumnsWithTypeAndName(),
-            mode,
+            ActionsDAG::MatchColumnsMode::Name,
             true);
     };
 
@@ -46,8 +44,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t shard_num,
-    size_t shard_count,
-    bool has_missing_objects)
+    size_t shard_count)
 {
     checkStackSize();
 
@@ -77,7 +74,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         interpreter.buildQueryPlan(*query_plan);
     }
 
-    addConvertingActions(*query_plan, header, has_missing_objects);
+    addConvertingActions(*query_plan, header);
     return query_plan;
 }
 

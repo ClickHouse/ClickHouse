@@ -252,6 +252,7 @@ void dumpFlameGraph(
     fillColumn(chars, offsets, out.str());
 }
 
+// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
 struct AggregateFunctionFlameGraphData
 {
     struct Entry
@@ -468,6 +469,7 @@ struct AggregateFunctionFlameGraphData
         DB::dumpFlameGraph(tree.dump(max_depth, min_bytes), chars, offsets);
     }
 };
+// NOLINTEND(clang-analyzer-optin.performance.Padding)
 
 /// Aggregate function which builds a flamegraph using the list of stacktraces.
 /// The output is an array of strings which can be used by flamegraph.pl util.
