@@ -32,14 +32,12 @@ public:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
-        LoadingStrictnessLevel mode,
+        bool attach,
         ContextPtr context_,
         const String & primary_key_,
         Int32 ttl_ = 0,
         String rocksdb_dir_ = "",
         bool read_only_ = false);
-
-    ~StorageEmbeddedRocksDB() override;
 
     std::string getName() const override { return "EmbeddedRocksDB"; }
 

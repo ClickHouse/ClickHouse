@@ -78,9 +78,6 @@ protected:
     void runInteractive();
     void runNonInteractive();
 
-    char * argv0 = nullptr;
-    void runLibFuzzer();
-
     virtual bool processWithFuzzing(const String &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
@@ -97,7 +94,7 @@ protected:
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
-    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
+    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth);
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
     static void setupSignalHandler();
 
@@ -185,12 +182,8 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    static bool isRegularFile(int fd);
-
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();
-
-    void setDefaultFormatsFromConfiguration();
 
     void initTTYBuffer(ProgressOption progress);
 
@@ -222,13 +215,12 @@ protected:
 
     String pager;
 
-    String default_output_format; /// Query results output format.
-    String default_input_format; /// Tables' format for clickhouse-local.
-
+    String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
     size_t format_max_block_size = 0; /// Max block size for console output.
+    String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 

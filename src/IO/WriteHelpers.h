@@ -19,6 +19,7 @@
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
 #include <base/DecomposedFloat.h>
+#include <base/EnumReflection.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -38,11 +39,15 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-parameter"
 #pragma clang diagnostic ignored "-Wsign-compare"
+#endif
 #include <dragonbox/dragonbox_to_chars.h>
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif
 
 #include <Formats/FormatSettings.h>
 

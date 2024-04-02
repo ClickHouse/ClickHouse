@@ -2,7 +2,6 @@
 #include "Commands.h"
 #include <queue>
 #include "KeeperClient.h"
-#include "Parsers/CommonParsers.h"
 
 
 namespace DB
@@ -107,16 +106,16 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
 
     int mode = zkutil::CreateMode::Persistent;
 
-    if (ParserKeyword(Keyword::PERSISTENT).ignore(pos, expected))
+    if (ParserKeyword{"PERSISTENT"}.ignore(pos, expected))
         mode = zkutil::CreateMode::Persistent;
-    else if (ParserKeyword(Keyword::EPHEMERAL).ignore(pos, expected))
+    else if (ParserKeyword{"EPHEMERAL"}.ignore(pos, expected))
         mode = zkutil::CreateMode::Ephemeral;
-    else if (ParserKeyword(Keyword::EPHEMERAL_SEQUENTIAL).ignore(pos, expected))
+    else if (ParserKeyword{"EPHEMERAL SEQUENTIAL"}.ignore(pos, expected))
         mode = zkutil::CreateMode::EphemeralSequential;
-    else if (ParserKeyword(Keyword::PERSISTENT_SEQUENTIAL).ignore(pos, expected))
+    else if (ParserKeyword{"PERSISTENT SEQUENTIAL"}.ignore(pos, expected))
         mode = zkutil::CreateMode::PersistentSequential;
 
-    node->args.push_back(std::move(mode));
+    node->args.push_back(mode);
 
     return true;
 }
@@ -383,16 +382,12 @@ void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
 
 bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
 {
-    ParserKeyword s_add(Keyword::ADD);
-    ParserKeyword s_remove(Keyword::REMOVE);
-    ParserKeyword s_set(Keyword::SET);
-
     ReconfigCommand::Operation operation;
-    if (s_add.ignore(pos, expected))
+    if (ParserKeyword{"ADD"}.ignore(pos, expected))
         operation = ReconfigCommand::Operation::ADD;
-    else if (s_remove.ignore(pos, expected))
+    else if (ParserKeyword{"REMOVE"}.ignore(pos, expected))
         operation = ReconfigCommand::Operation::REMOVE;
-    else if (s_set.ignore(pos, expected))
+    else if (ParserKeyword{"SET"}.ignore(pos, expected))
         operation = ReconfigCommand::Operation::SET;
     else
         return false;

@@ -1267,11 +1267,6 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemoveNoThrow(const
 
 std::future<Coordination::MultiResponse> ZooKeeper::asyncTryMultiNoThrow(const Coordination::Requests & ops)
 {
-    return asyncTryMultiNoThrow(std::span(ops));
-}
-
-std::future<Coordination::MultiResponse> ZooKeeper::asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops)
-{
     auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
     auto future = promise->get_future();
 

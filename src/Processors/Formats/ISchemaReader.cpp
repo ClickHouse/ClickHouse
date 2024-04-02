@@ -81,7 +81,7 @@ IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & fo
 {
 }
 
-void IIRowSchemaReader::setContext(const ContextPtr & context)
+void IIRowSchemaReader::setContext(ContextPtr & context)
 {
     ColumnsDescription columns;
     if (tryParseColumnsListFromString(hints_str, columns, context, hints_parsing_error))

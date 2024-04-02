@@ -30,6 +30,7 @@ position(haystack, needle[, start_pos])
 
 Alias:
 - `position(needle IN haystack)`
+- `locate(haystack, needle[, start_pos])`.
 
 **Arguments**
 
@@ -48,7 +49,7 @@ If substring `needle` is empty, these rules apply:
 - if `start_pos >= 1` and `start_pos <= length(haystack) + 1`: return `start_pos`
 - otherwise: return `0`
 
-The same rules also apply to functions `locate`, `positionCaseInsensitive`, `positionUTF8` and `positionCaseInsensitiveUTF8`.
+The same rules also apply to functions `positionCaseInsensitive`, `positionUTF8` and `positionCaseInsensitiveUTF8`
 
 Type: `Integer`.
 
@@ -73,8 +74,6 @@ SELECT
     position('Hello, world!', 'o', 1),
     position('Hello, world!', 'o', 7)
 ```
-
-Result:
 
 ``` text
 ┌─position('Hello, world!', 'o', 1)─┬─position('Hello, world!', 'o', 7)─┐
@@ -113,21 +112,6 @@ SELECT
 ┌─position('abc', '')─┬─position('abc', '', 0)─┬─position('abc', '', 1)─┬─position('abc', '', 2)─┬─position('abc', '', 3)─┬─position('abc', '', 4)─┬─position('abc', '', 5)─┐
 │                   1 │                      1 │                      1 │                      2 │                      3 │                      4 │                      0 │
 └─────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┘
-```
-
-## locate
-
-Like [position](#position) but with arguments `haystack` and `locate` switched.
-
-The behavior of this function depends on the ClickHouse version:
-- in versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`.
-- in versions >= 24.3,, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`. The previous behavior
-  can be restored using setting [function_locate_has_mysql_compatible_argument_order = false](../../operations/settings/settings.md#function-locate-has-mysql-compatible-argument-order);
-
-**Syntax**
-
-``` sql
-locate(needle, haystack[, start_pos])
 ```
 
 ## positionCaseInsensitive
@@ -481,9 +465,9 @@ Alias: `haystack NOT ILIKE pattern` (operator)
 
 ## ngramDistance
 
-Calculates the 4-gram distance between a `haystack` string and a `needle` string. For this, it counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns a [Float32](../../sql-reference/data-types/float.md/#float32-float64) between 0 and 1. The smaller the result is, the more similar the strings are to each other.
+Calculates the 4-gram distance between a `haystack` string and a `needle` string. For that, it counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns a Float32 between 0 and 1. The smaller the result is, the more strings are similar to each other. Throws an exception if constant `needle` or `haystack` arguments are more than 32Kb in size. If any of non-constant `haystack` or `needle` arguments is more than 32Kb in size, the distance is always 1.
 
-Functions [`ngramDistanceCaseInsensitive`](#ngramdistancecaseinsensitive), [`ngramDistanceUTF8`](#ngramdistanceutf8), [`ngramDistanceCaseInsensitiveUTF8`](#ngramdistancecaseinsensitiveutf8) provide case-insensitive and/or UTF-8 variants of this function.
+Functions `ngramDistanceCaseInsensitive, ngramDistanceUTF8, ngramDistanceCaseInsensitiveUTF8` provide case-insensitive and/or UTF-8 variants of this function.
 
 **Syntax**
 
@@ -491,309 +475,20 @@ Functions [`ngramDistanceCaseInsensitive`](#ngramdistancecaseinsensitive), [`ngr
 ngramDistance(haystack, needle)
 ```
 
-**Parameters**
-
-- `haystack`: First comparison string. [String literal](../syntax#string)
-- `needle`: Second comparison string. [String literal](../syntax#string)
-
-**Returned value**
-
-- Value between 0 and 1 representing the similarity between the two strings. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
-
-**Implementation details**
-
-This function will throw an exception if constant `needle` or `haystack` arguments are more than 32Kb in size. If any non-constant `haystack` or `needle` arguments are more than 32Kb in size, then the distance is always 1.
-
-**Examples**
-
-The more similar two strings are to each other, the closer the result will be to 0 (identical).
-
-Query:
-
-```sql
-SELECT ngramDistance('ClickHouse','ClickHouse!');
-```
-
-Result:
-
-```response
-0.06666667
-```
-
-The less similar two strings are to each, the larger the result will be.
-
-
-Query:
-
-```sql
-SELECT ngramDistance('ClickHouse','House');
-```
-
-Result:
-
-```response
-0.5555556
-```
-
-## ngramDistanceCaseInsensitive
-
-Provides a case-insensitive variant of [ngramDistance](#ngramdistance).
-
-**Syntax**
-
-```sql
-ngramDistanceCaseInsensitive(haystack, needle)
-```
-
-**Parameters**
-
-- `haystack`: First comparison string. [String literal](../syntax#string)
-- `needle`: Second comparison string. [String literal](../syntax#string)
-
-**Returned value**
-
-- Value between 0 and 1 representing the similarity between the two strings. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
-
-**Examples**
-
-With [ngramDistance](#ngramdistance) differences in case will affect the similarity value:
-
-Query:
-
-```sql
-SELECT ngramDistance('ClickHouse','clickhouse');
-```
-
-Result:
-
-```response
-0.71428573
-```
-
-With [ngramDistanceCaseInsensitive](#ngramdistancecaseinsensitive) case is ignored so two identical strings differing only in case will now return a low similarity value:
-
-Query:
-
-```sql
-SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse');
-```
-
-Result:
-
-```response
-0
-```
-
-## ngramDistanceUTF8
-
-Provides a UTF-8 variant of [ngramDistance](#ngramdistance). Assumes that `needle` and `haystack` strings are UTF-8 encoded strings.
-
-**Syntax**
-
-```sql
-ngramDistanceUTF8(haystack, needle)
-```
-
-**Parameters**
-
-- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#string)
-- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#string)
-
-**Returned value**
-
-- Value between 0 and 1 representing the similarity between the two strings. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
-
-**Example**
-
-Query:
-
-```sql
-SELECT ngramDistanceUTF8('abcde','cde');
-```
-
-Result:
-
-```response
-0.5
-```
-
-## ngramDistanceCaseInsensitiveUTF8
-
-Provides a case-insensitive variant of [ngramDistanceUTF8](#ngramdistanceutf8).
-
-**Syntax**
-
-```sql
-ngramDistanceCaseInsensitiveUTF8(haystack, needle)
-```
-
-**Parameters**
-
-- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#string)
-- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#string)
-
-**Returned value**
-
-- Value between 0 and 1 representing the similarity between the two strings. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
-
-**Example**
-
-Query:
-
-```sql
-SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE');
-```
-
-Result:
-
-```response
-0.5
-```
-
 ## ngramSearch
 
-Like `ngramDistance` but calculates the non-symmetric difference between a `needle` string and a `haystack` string, i.e. the number of n-grams from the needle minus the common number of n-grams normalized by the number of `needle` n-grams. Returns a [Float32](../../sql-reference/data-types/float.md/#float32-float64) between 0 and 1. The bigger the result is, the more likely `needle` is in the `haystack`. This function is useful for fuzzy string search. Also see function [`soundex`](../../sql-reference/functions/string-functions#soundex).
+Like `ngramDistance` but calculates the non-symmetric difference between a `needle` string and a `haystack` string, i.e. the number of n-grams from needle minus the common number of n-grams normalized by the number of `needle` n-grams. Returns a Float32 between 0 and 1. The bigger the result is, the more likely `needle` is in the `haystack`. This function is useful for fuzzy string search. Also see function `soundex`.
 
-Functions [`ngramSearchCaseInsensitive`](#ngramsearchcaseinsensitive), [`ngramSearchUTF8`](#ngramsearchutf8), [`ngramSearchCaseInsensitiveUTF8`](#ngramsearchcaseinsensitiveutf8) provide case-insensitive and/or UTF-8 variants of this function.
-
-**Syntax**
-
-```sql
-ngramSearch(haystack, needle)
-```
-
-**Parameters**
-
-- `haystack`: First comparison string. [String literal](../syntax#string)
-- `needle`: Second comparison string. [String literal](../syntax#string)
-
-**Returned value**
-
-- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
-
-**Implementation details**
+Functions `ngramSearchCaseInsensitive, ngramSearchUTF8, ngramSearchCaseInsensitiveUTF8` provide case-insensitive and/or UTF-8 variants of this function.
 
 :::note
 The UTF-8 variants use the 3-gram distance. These are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables – collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function – we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one – this works for Latin and mostly for all Cyrillic letters.
 :::
 
-**Example**
-
-Query:
-
-```sql
-SELECT ngramSearch('Hello World','World Hello');
-```
-
-Result:
-
-```response
-0.5
-```
-
-## ngramSearchCaseInsensitive
-
-Provides a case-insensitive variant of [ngramSearch](#ngramSearch).
-
 **Syntax**
 
 ```sql
-ngramSearchCaseInsensitive(haystack, needle)
-```
-
-**Parameters**
-
-- `haystack`: First comparison string. [String literal](../syntax#string)
-- `needle`: Second comparison string. [String literal](../syntax#string)
-
-**Returned value**
-
-- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
-
-The bigger the result is, the more likely `needle` is in the `haystack`.
-
-**Example**
-
-Query:
-
-```sql
-SELECT ngramSearchCaseInsensitive('Hello World','hello');
-```
-
-Result:
-
-```response
-1
-```
-
-## ngramSearchUTF8
-
-Provides a UTF-8 variant of [ngramSearch](#ngramsearch) in which `needle` and `haystack` are assumed to be UTF-8 encoded strings.
-
-**Syntax**
-
-```sql
-ngramSearchUTF8(haystack, needle)
-```
-
-**Parameters**
-
-- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#string)
-- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#string)
-
-**Returned value**
-
-- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
-
-The bigger the result is, the more likely `needle` is in the `haystack`.
-
-**Example**
-
-Query:
-
-```sql
-SELECT ngramSearchUTF8('абвгдеёжз', 'гдеёзд');
-```
-
-Result:
-
-```response
-0.5
-```
-
-## ngramSearchCaseInsensitiveUTF8
-
-Provides a case-insensitive variant of [ngramSearchUTF8](#ngramsearchutf8) in which `needle` and `haystack`.
-
-**Syntax**
-
-```sql
-ngramSearchCaseInsensitiveUTF8(haystack, needle)
-```
-
-**Parameters**
-
-- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#string)
-- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#string)
-
-**Returned value**
-
-- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../../sql-reference/data-types/float.md/#float32-float64)
-
-The bigger the result is, the more likely `needle` is in the `haystack`.
-
-**Example**
-
-Query:
-
-```sql
-SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз');
-```
-
-Result:
-
-```response
-0.57142854
+ngramSearch(haystack, needle)
 ```
 
 ## countSubstrings
@@ -895,13 +590,9 @@ Result:
 └───────────────────────────────┘
 ```
 
-## countMatchesCaseInsensitive
-
-Like `countMatches(haystack, pattern)` but matching ignores the case.
-
 ## regexpExtract
 
-Extracts the first string in `haystack` that matches the regexp pattern and corresponds to the regex group index.
+Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index.
 
 **Syntax**
 
@@ -943,7 +634,7 @@ Result:
 
 ## hasSubsequence
 
-Returns 1 if `needle` is a subsequence of `haystack`, or 0 otherwise.
+Returns 1 if needle is a subsequence of haystack, or 0 otherwise.
 A subsequence of a string is a sequence that can be derived from the given string by deleting zero or more elements without changing the order of the remaining elements.
 
 
@@ -967,10 +658,8 @@ Type: `UInt8`.
 
 **Examples**
 
-Query:
-
 ``` sql
-SELECT hasSubsequence('garbage', 'arg');
+SELECT hasSubsequence('garbage', 'arg') ;
 ```
 
 Result:
@@ -985,263 +674,10 @@ Result:
 
 Like [hasSubsequence](#hasSubsequence) but searches case-insensitively.
 
-**Syntax**
-
-``` sql
-hasSubsequenceCaseInsensitive(haystack, needle)
-```
-
-**Arguments**
-
-- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — Subsequence to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
-
-**Returned values**
-
-- 1, if needle is a subsequence of haystack.
-- 0, otherwise.
-
-Type: `UInt8`.
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT hasSubsequenceCaseInsensitive('garbage', 'ARG');
-```
-
-Result:
-
-``` text
-┌─hasSubsequenceCaseInsensitive('garbage', 'ARG')─┐
-│                                               1 │
-└─────────────────────────────────────────────────┘
-```
-
 ## hasSubsequenceUTF8
 
 Like [hasSubsequence](#hasSubsequence) but assumes `haystack` and `needle` are UTF-8 encoded strings.
 
-**Syntax**
-
-``` sql
-hasSubsequenceUTF8(haystack, needle)
-```
-
-**Arguments**
-
-- `haystack` — String in which the search is performed. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — Subsequence to be searched. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
-
-**Returned values**
-
-- 1, if needle is a subsequence of haystack.
-- 0, otherwise.
-
-Type: `UInt8`.
-
-Query:
-
-**Examples**
-
-``` sql
-select hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
-```
-
-Result:
-
-``` text
-┌─hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система')─┐
-│                                                                                         1 │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
 ## hasSubsequenceCaseInsensitiveUTF8
 
 Like [hasSubsequenceUTF8](#hasSubsequenceUTF8) but searches case-insensitively.
-
-**Syntax**
-
-``` sql
-hasSubsequenceCaseInsensitiveUTF8(haystack, needle)
-```
-
-**Arguments**
-
-- `haystack` — String in which the search is performed. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `needle` — Subsequence to be searched. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
-
-**Returned values**
-
-- 1, if needle is a subsequence of haystack.
-- 0, otherwise.
-
-Type: `UInt8`.
-
-**Examples**
-
-Query:
-
-``` sql
-select hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
-```
-
-Result:
-
-``` text
-┌─hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА')─┐
-│                                                                                                        1 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-## hasToken
-
-Returns 1 if a given token is present in a haystack, or 0 otherwise.
-
-**Syntax**
-
-```sql
-hasToken(haystack, token)
-```
-
-**Parameters**
-
-- `haystack`: String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `token`: Maximal length substring between two non alphanumeric ASCII characters (or boundaries of haystack).
-
-**Returned value**
-
-- 1, if the token is present in the haystack.
-- 0, if the token is not present.
-
-**Implementation details**
-
-Token must be a constant string. Supported by tokenbf_v1 index specialization.
-
-**Example**
-
-Query:
-
-```sql
-SELECT hasToken('Hello World','Hello');
-```
-
-```response
-1
-```
-
-## hasTokenOrNull
-
-Returns 1 if a given token is present, 0 if not present, and null if the token is ill-formed.
-
-**Syntax**
-
-```sql
-hasTokenOrNull(haystack, token)
-```
-
-**Parameters**
-
-- `haystack`: String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `token`: Maximal length substring between two non alphanumeric ASCII characters (or boundaries of haystack).
-
-**Returned value**
-
-- 1, if the token is present in the haystack.
-- 0, if the token is not present in the haystack.
-- null, if the token is ill-formed.
-
-**Implementation details**
-
-Token must be a constant string. Supported by tokenbf_v1 index specialization.
-
-**Example**
-
-Where `hasToken` would throw an error for an ill-formed token, `hasTokenOrNull` returns `null` for an ill-formed token.
-
-Query:
-
-```sql
-SELECT hasTokenOrNull('Hello World','Hello,World');
-```
-
-```response
-null
-```
-
-## hasTokenCaseInsensitive
-
-Returns 1 if a given token is present in a haystack, 0 otherwise. Ignores case.
-
-**Syntax**
-
-```sql
-hasTokenCaseInsensitive(haystack, token)
-```
-
-**Parameters**
-
-- `haystack`: String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `token`: Maximal length substring between two non alphanumeric ASCII characters (or boundaries of haystack).
-
-**Returned value**
-
-- 1, if the token is present in the haystack.
-- 0, otherwise.
-
-**Implementation details**
-
-Token must be a constant string. Supported by tokenbf_v1 index specialization.
-
-**Example**
-
-Query:
-
-```sql
-SELECT hasTokenCaseInsensitive('Hello World','hello');
-```
-
-```response
-1
-```
-
-## hasTokenCaseInsensitiveOrNull
-
-Returns 1 if a given token is present in a haystack, 0 otherwise. Ignores case and returns null if the token is ill-formed.
-
-**Syntax**
-
-```sql
-hasTokenCaseInsensitiveOrNull(haystack, token)
-```
-
-**Parameters**
-
-- `haystack`: String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
-- `token`: Maximal length substring between two non alphanumeric ASCII characters (or boundaries of haystack).
-
-**Returned value**
-
-- 1, if the token is present in the haystack.
-- 0, if token is not present.
-- null, if the token is ill-formed.
-
-**Implementation details**
-
-Token must be a constant string. Supported by tokenbf_v1 index specialization.
-
-**Example**
-
-
-Where `hasTokenCaseInsensitive` would throw an error for an ill-formed token, `hasTokenCaseInsensitiveOrNull` returns `null` for an ill-formed token.
-
-Query:
-
-```sql
-SELECT hasTokenCaseInsensitiveOrNull('Hello World','hello,world');
-```
-
-```response
-null
-```

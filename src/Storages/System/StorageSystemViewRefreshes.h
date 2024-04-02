@@ -10,7 +10,7 @@ namespace DB
 {
 
 
-class StorageSystemViewRefreshes final : public IStorageSystemOneBlock
+class StorageSystemViewRefreshes final : public IStorageSystemOneBlock<StorageSystemViewRefreshes>
 {
 public:
     std::string getName() const override { return "SystemViewRefreshes"; }
@@ -20,7 +20,7 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 
 }

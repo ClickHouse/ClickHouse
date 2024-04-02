@@ -38,6 +38,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/VarInt.h>
 
 #include <pcg_random.hpp>
@@ -50,7 +51,6 @@ namespace DB
 
 template <typename Allocator>
 struct Memory;
-class PeekableReadBuffer;
 
 namespace ErrorCodes
 {
@@ -154,12 +154,9 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     size_t size = 0;
     readVarUInt(size, buf);
 
-    if (size != sizeof(IPv6::UnderlyingType))
-        throw Exception(
-            ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH,
-            "Size of the string {} doesn't match size of binary IPv6 {}",
-            size,
-            sizeof(IPv6::UnderlyingType));
+    if (size != IPV6_BINARY_LENGTH)
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH,
+                        "Size of the string {} doesn't match size of binary IPv6 {}", size, IPV6_BINARY_LENGTH);
 
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
@@ -596,7 +593,7 @@ void readDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 bool tryReadDoubleQuotedString(String & s, ReadBuffer & buf);
 bool tryReadDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
-void readJSONString(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+void readJSONString(String & s, ReadBuffer & buf);
 
 void readBackQuotedString(String & s, ReadBuffer & buf);
 void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
@@ -663,12 +660,12 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
 /// ReturnType is either bool or void. If bool, the function will return false instead of throwing an exception.
 template <typename Vector, typename ReturnType = void>
-ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
-bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::JSON & settings)
+bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 {
-    return readJSONStringInto<Vector, bool>(s, buf, settings);
+    return readJSONStringInto<Vector, bool>(s, buf);
 }
 
 template <bool enable_sql_style_quoting, typename Vector>
@@ -1673,8 +1670,8 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings);
-bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings);
+void skipJSONField(ReadBuffer & buf, StringRef name_of_field);
+bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field);
 
 
 /** Read serialized exception.
@@ -1895,8 +1892,8 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf);
 void readQuotedField(String & s, ReadBuffer & buf);
 bool tryReadQuotedField(String & s, ReadBuffer & buf);
 
-void readJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
-bool tryReadJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+void readJSONField(String & s, ReadBuffer & buf);
+bool tryReadJSONField(String & s, ReadBuffer & buf);
 
 void readTSVField(String & s, ReadBuffer & buf);
 

@@ -186,10 +186,10 @@ void SerializationAggregateFunction::serializeTextJSON(const IColumn & column, s
 }
 
 
-void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     String s;
-    readJSONString(s, istr, settings.json);
+    readJSONString(s, istr);
     deserializeFromString(function, column, s, version);
 }
 

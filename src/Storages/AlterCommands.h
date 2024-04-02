@@ -50,7 +50,6 @@ struct AlterCommand
         MODIFY_DATABASE_SETTING,
         COMMENT_TABLE,
         REMOVE_SAMPLE_BY,
-        MODIFY_SQL_SECURITY,
     };
 
     /// Which property user wants to remove from column
@@ -147,9 +146,6 @@ struct AlterCommand
 
     /// For MODIFY_QUERY
     ASTPtr select = nullptr;
-
-    /// For MODIFY_SQL_SECURITY
-    ASTPtr sql_security = nullptr;
 
     /// For MODIFY_REFRESH
     ASTPtr refresh = nullptr;

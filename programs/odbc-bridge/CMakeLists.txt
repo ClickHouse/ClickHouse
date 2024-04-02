@@ -4,8 +4,8 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     ColumnInfoHandler.cpp
     IdentifierQuoteHandler.cpp
     MainHandler.cpp
-    ODBCSource.cpp
-    ODBCSink.cpp
+    ODBCBlockInputStream.cpp
+    ODBCBlockOutputStream.cpp
     ODBCBridge.cpp
     ODBCHandlerFactory.cpp
     PingHandler.cpp
@@ -13,7 +13,6 @@ set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
     getIdentifierQuote.cpp
     odbc-bridge.cpp
     validateODBCConnectionString.cpp
-    createFunctionBaseCast.cpp
 )
 
 clickhouse_add_executable(clickhouse-odbc-bridge ${CLICKHOUSE_ODBC_BRIDGE_SOURCES})

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 

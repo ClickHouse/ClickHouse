@@ -69,7 +69,7 @@ public:
 class JSONAsObjectExternalSchemaReader : public IExternalSchemaReader
 {
 public:
-    explicit JSONAsObjectExternalSchemaReader(const FormatSettings & settings);
+    JSONAsObjectExternalSchemaReader(const FormatSettings & settings);
 
     NamesAndTypesList readSchema() override
     {

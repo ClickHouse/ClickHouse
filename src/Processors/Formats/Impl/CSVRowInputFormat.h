@@ -7,7 +7,6 @@
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <IO/PeekableReadBuffer.h>
 
 
 namespace DB

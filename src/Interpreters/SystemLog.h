@@ -1,9 +1,8 @@
 #pragma once
 
-#include <Interpreters/StorageID.h>
 #include <Common/SystemLogBase.h>
 
-#include <boost/noncopyable.hpp>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {

@@ -47,13 +47,10 @@ public:
         const String & table);
 
 private:
-    friend class SQLiteSink; /// for write_context
-
     String remote_table_name;
     String database_path;
     SQLitePtr sqlite_db;
     LoggerPtr log;
-    ContextPtr write_context;
 };
 
 }

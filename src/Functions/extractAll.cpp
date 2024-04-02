@@ -50,13 +50,11 @@ public:
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 2; }
 
-    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1}; }
-
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-            {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
+            {"haystack", &isString<IDataType>, nullptr, "String"},
+            {"pattern", &isString<IDataType>, isColumnConst, "const String"}
         };
 
         validateFunctionArgumentTypes(func, arguments, mandatory_args);

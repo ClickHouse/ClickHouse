@@ -1,5 +1,4 @@
 SET output_format_pretty_color=1;
-SET output_format_pretty_row_numbers=0;
 SELECT * FROM numbers(10) FORMAT Pretty;
 SELECT * FROM numbers(10) FORMAT PrettyCompact;
 SELECT * FROM numbers(10) FORMAT PrettyCompactMonoBlock;

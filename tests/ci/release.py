@@ -18,7 +18,6 @@ from contextlib import contextmanager
 from typing import Any, Final, Iterator, List, Optional, Tuple
 
 from git_helper import Git, commit, release_branch
-from report import SUCCESS
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
@@ -54,7 +53,7 @@ class Repo:
         elif protocol == "origin":
             self._url = protocol
         else:
-            raise ValueError(f"protocol must be in {self.VALID}")
+            raise Exception(f"protocol must be in {self.VALID}")
 
     def __str__(self):
         return self._repo
@@ -143,8 +142,8 @@ class Release:
 
             for status in statuses:
                 if status["context"] == RELEASE_READY_STATUS:
-                    if not status["state"] == SUCCESS:
-                        raise ValueError(
+                    if not status["state"] == "success":
+                        raise Exception(
                             f"the status {RELEASE_READY_STATUS} is {status['state']}"
                             ", not success"
                         )
@@ -153,7 +152,7 @@ class Release:
 
             page += 1
 
-        raise KeyError(
+        raise Exception(
             f"the status {RELEASE_READY_STATUS} "
             f"is not found for commit {self.release_commit}"
         )
@@ -188,7 +187,7 @@ class Release:
                 raise
 
         if check_run_from_master and self._git.branch != "master":
-            raise RuntimeError("the script must be launched only from master")
+            raise Exception("the script must be launched only from master")
 
         self.set_release_info()
 
@@ -229,7 +228,7 @@ class Release:
     def check_no_tags_after(self):
         tags_after_commit = self.run(f"git tag --contains={self.release_commit}")
         if tags_after_commit:
-            raise RuntimeError(
+            raise Exception(
                 f"Commit {self.release_commit} belongs to following tags:\n"
                 f"{tags_after_commit}\nChoose another commit"
             )
@@ -253,7 +252,7 @@ class Release:
             )
         output = self.run(f"git branch --contains={self.release_commit} {branch}")
         if branch not in output:
-            raise RuntimeError(
+            raise Exception(
                 f"commit {self.release_commit} must belong to {branch} "
                 f"for {self.release_type} release"
             )
@@ -464,9 +463,9 @@ class Release:
             logging.warning("Rolling back checked out %s for %s", ref, orig_ref)
             self.run(f"git reset --hard; git checkout -f {orig_ref}")
             raise
-        # Normal flow when we need to checkout back
-        if with_checkout_back and need_rollback:
-            self.run(rollback_cmd)
+        else:
+            if with_checkout_back and need_rollback:
+                self.run(rollback_cmd)
 
     @contextmanager
     def _create_branch(self, name: str, start_point: str = "") -> Iterator[None]:

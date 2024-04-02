@@ -6,17 +6,12 @@ from helpers.cluster import (
     ClickHouseCluster,
     ClickHouseInstance,
     get_docker_compose_path,
-    is_arm,
 )
 import logging
 
 from . import materialized_with_ddl
 
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
-
-# skip all test on arm due to no arm support in mysql57
-if is_arm():
-    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 mysql_node = None
@@ -26,7 +21,7 @@ node_db = cluster.add_instance(
     "node1",
     main_configs=["configs/timezone_config.xml"],
     user_configs=["configs/users.xml"],
-    with_mysql57=True,
+    with_mysql=True,
     with_mysql8=True,
     stay_alive=True,
 )
@@ -34,16 +29,14 @@ node_disable_bytes_settings = cluster.add_instance(
     "node2",
     main_configs=["configs/timezone_config.xml"],
     user_configs=["configs/users_disable_bytes_settings.xml"],
-    with_mysql57=False,
-    with_mysql8=False,
+    with_mysql=False,
     stay_alive=True,
 )
 node_disable_rows_settings = cluster.add_instance(
     "node3",
     main_configs=["configs/timezone_config.xml"],
     user_configs=["configs/users_disable_rows_settings.xml"],
-    with_mysql57=False,
-    with_mysql8=False,
+    with_mysql=False,
     stay_alive=True,
 )
 
@@ -132,7 +125,7 @@ class MySQLConnection:
 @pytest.fixture(scope="module")
 def started_mysql_5_7():
     mysql_node = MySQLConnection(
-        cluster.mysql57_port, "root", "clickhouse", cluster.mysql57_ip
+        cluster.mysql_port, "root", "clickhouse", cluster.mysql_ip
     )
     yield mysql_node
 

@@ -2,8 +2,6 @@
 
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
-#include <base/hex.h>
-#include <base/sort.h>
 
 #include <algorithm>
 #include <optional>
@@ -12,6 +10,8 @@
 #include <link.h>
 
 #include <filesystem>
+
+#include <base/sort.h>
 
 /**
 

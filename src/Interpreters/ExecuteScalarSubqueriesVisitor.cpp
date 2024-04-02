@@ -281,7 +281,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         if (data.only_analyze)
         {
             ast->as<ASTFunction>()->alias.clear();
-            auto func = makeASTFunction("__scalarSubqueryResult", std::move(ast));
+            auto func = makeASTFunction("identity", std::move(ast));
             func->alias = subquery_alias;
             func->prefer_alias_to_column_name = prefer_alias_to_column_name;
             ast = std::move(func);

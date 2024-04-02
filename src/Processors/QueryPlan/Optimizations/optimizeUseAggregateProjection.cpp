@@ -18,7 +18,6 @@
 
 #include <Common/logger_useful.h>
 #include <Storages/StorageDummy.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -432,7 +431,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
-    Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter();
+    Block key_virtual_columns = reading.getMergeTreeData().getSampleBlockWithVirtualColumns();
 
     AggregateProjectionCandidates candidates;
 
@@ -465,9 +464,6 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     // LOG_TRACE(getLogger("optimizeUseProjections"), "Query DAG: {}", dag.dag->dumpDAG());
 
     candidates.has_filter = dag.filter_node;
-    /// We can't use minmax projection if filter has non-deterministic functions.
-    if (dag.filter_node && !VirtualColumnUtils::isDeterministicInScopeOfQuery(dag.filter_node))
-        can_use_minmax_projection = false;
 
     if (can_use_minmax_projection)
     {
@@ -609,6 +605,9 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         for (auto & candidate : candidates.real)
         {
             auto required_column_names = candidate.dag->getRequiredColumnsNames();
+            ActionDAGNodes added_filter_nodes;
+            if (candidates.has_filter)
+                added_filter_nodes.nodes.push_back(candidate.dag->getOutputs().front());
 
             bool analyzed = analyzeProjectionCandidate(
                 candidate,
@@ -619,7 +618,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
                 query_info,
                 context,
                 max_added_blocks,
-                candidate.dag);
+                added_filter_nodes);
 
             if (!analyzed)
                 continue;
@@ -670,16 +669,15 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->metadata);
         proj_snapshot->addProjection(best_candidate->projection);
 
-        auto projection_query_info = query_info;
-        projection_query_info.prewhere_info = nullptr;
-        projection_query_info.filter_actions_dag = nullptr;
+        auto query_info_copy = query_info;
+        query_info_copy.prewhere_info = nullptr;
 
         projection_reading = reader.readFromParts(
             /* parts = */ {},
             /* alter_conversions = */ {},
             best_candidate->dag->getRequiredColumnsNames(),
             proj_snapshot,
-            projection_query_info,
+            query_info_copy,
             context,
             reading->getMaxBlockSize(),
             reading->getNumStreams(),
