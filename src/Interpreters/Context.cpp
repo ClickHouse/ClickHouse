@@ -221,10 +221,6 @@ struct ContextSharedPart : boost::noncopyable
 
     ConfigurationPtr sensitive_data_masker_config;
 
-#if USE_NURAFT
-    mutable std::mutex keeper_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
-#endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers TSA_GUARDED_BY(auxiliary_zookeepers_mutex);    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config TSA_GUARDED_BY(auxiliary_zookeepers_mutex);           /// Stores auxiliary zookeepers configs
@@ -417,6 +413,11 @@ struct ContextSharedPart : boost::noncopyable
 
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
 
+#if USE_NURAFT
+    mutable std::mutex keeper_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
+#endif
+
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
         , global_overcommit_tracker(&process_list)
@@ -432,9 +433,22 @@ struct ContextSharedPart : boost::noncopyable
         }
     }
 
-
     ~ContextSharedPart()
     {
+#if USE_NURAFT
+        if (keeper_dispatcher)
+        {
+            try
+            {
+                keeper_dispatcher->shutdown();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+#endif
+
         /// Wait for thread pool for background reads and writes,
         /// since it may use per-user MemoryTracker which will be destroyed here.
         if (asynchronous_remote_fs_reader)
@@ -1222,7 +1236,7 @@ void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_nam
     /// We don't use getFlagsPath method, because it takes a shared lock.
     auto convert_databases_flag = fs::path(shared->flags_path) / "convert_ordinary_to_atomic";
     auto message = fmt::format("Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
-            "To convert this database to a new Atomic engine, please create a forcing flag {} and make sure that ClickHouse has write permission for it. "
+            "To convert this database to the new Atomic engine, create a flag {} and make sure that ClickHouse has write permission for it. "
             "Example: sudo touch '{}' && sudo chmod 666 '{}'",
             database_name,
             convert_databases_flag.string(), convert_databases_flag.string(), convert_databases_flag.string());
@@ -2493,7 +2507,8 @@ AsyncLoader & Context::getAsyncLoader() const
                 }
             },
             /* log_failures = */ true,
-            /* log_progress = */ true);
+            /* log_progress = */ true,
+            /* log_events = */ true);
     });
 
     return *shared->async_loader;
@@ -4643,11 +4658,9 @@ void Context::setClientConnectionId(uint32_t connection_id_)
     client_info.connection_id = connection_id_;
 }
 
-void Context::setHTTPClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Context::setHTTPClientInfo(const Poco::Net::HTTPRequest & request)
 {
-    client_info.http_method = http_method;
-    client_info.http_user_agent = http_user_agent;
-    client_info.http_referer = http_referer;
+    client_info.setFromHTTPRequest(request);
     need_recalculate_access = true;
 }
 

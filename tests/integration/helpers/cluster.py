@@ -862,12 +862,12 @@ class ClickHouseCluster:
 
     def get_docker_handle(self, docker_id):
         exception = None
-        for i in range(5):
+        for i in range(20):
             try:
                 return self.docker_client.containers.get(docker_id)
             except Exception as ex:
                 print("Got exception getting docker handle", str(ex))
-                time.sleep(i * 2)
+                time.sleep(0.5)
                 exception = ex
         raise exception
 
@@ -1047,6 +1047,8 @@ class ClickHouseCluster:
         env_variables["MYSQL_ROOT_HOST"] = "%"
         env_variables["MYSQL_LOGS"] = self.mysql57_logs_dir
         env_variables["MYSQL_LOGS_FS"] = "bind"
+        env_variables["MYSQL_DOCKER_USER"] = str(os.getuid())
+
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql.yml")]
         )
@@ -1069,6 +1071,8 @@ class ClickHouseCluster:
         env_variables["MYSQL8_ROOT_HOST"] = "%"
         env_variables["MYSQL8_LOGS"] = self.mysql8_logs_dir
         env_variables["MYSQL8_LOGS_FS"] = "bind"
+        env_variables["MYSQL8_DOCKER_USER"] = str(os.getuid())
+
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql_8_0.yml")]
         )
@@ -1090,6 +1094,7 @@ class ClickHouseCluster:
         env_variables["MYSQL_CLUSTER_ROOT_HOST"] = "%"
         env_variables["MYSQL_CLUSTER_LOGS"] = self.mysql_cluster_logs_dir
         env_variables["MYSQL_CLUSTER_LOGS_FS"] = "bind"
+        env_variables["MYSQL_CLUSTER_DOCKER_USER"] = str(os.getuid())
 
         self.base_cmd.extend(
             [
@@ -1596,7 +1601,7 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
-        allow_analyzer=True,
+        use_old_analyzer=False,
         hostname=None,
         env_variables=None,
         instance_env_variables=False,
@@ -1695,7 +1700,7 @@ class ClickHouseCluster:
             with_coredns=with_coredns,
             with_cassandra=with_cassandra,
             with_ldap=with_ldap,
-            allow_analyzer=allow_analyzer,
+            use_old_analyzer=use_old_analyzer,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
@@ -3257,7 +3262,7 @@ class ClickHouseInstance:
         with_coredns,
         with_cassandra,
         with_ldap,
-        allow_analyzer,
+        use_old_analyzer,
         server_bin_path,
         odbc_bridge_bin_path,
         library_bridge_bin_path,
@@ -3351,7 +3356,7 @@ class ClickHouseInstance:
         self.with_hive = with_hive
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
-        self.allow_analyzer = allow_analyzer
+        self.use_old_analyzer = use_old_analyzer
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
@@ -3471,6 +3476,7 @@ class ClickHouseInstance:
     ):
         # logging.debug(f"Executing query {sql} on {self.name}")
         result = None
+        exception_msg = ""
         for i in range(retry_count):
             try:
                 result = self.query(
@@ -3488,17 +3494,19 @@ class ClickHouseInstance:
                     return result
                 time.sleep(sleep_time)
             except QueryRuntimeException as ex:
+                exception_msg = f"{type(ex).__name__}: {str(ex)}"
                 # Container is down, this is likely due to server crash.
                 if "No route to host" in str(ex):
                     raise
                 time.sleep(sleep_time)
             except Exception as ex:
                 # logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                exception_msg = f"{type(ex).__name__}: {str(ex)}"
                 time.sleep(sleep_time)
 
         if result is not None:
             return result
-        raise Exception("Can't execute query {}".format(sql))
+        raise Exception(f"Can't execute query {sql}\n{exception_msg}")
 
     # As query() but doesn't wait response and returns response handler
     def get_query_request(self, sql, *args, **kwargs):
@@ -4397,10 +4405,7 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
-        if (
-            os.environ.get("CLICKHOUSE_USE_NEW_ANALYZER") is not None
-            and self.allow_analyzer
-        ):
+        if self.use_old_analyzer:
             write_embedded_config("0_common_enable_analyzer.xml", users_d_dir)
 
         if len(self.custom_dictionaries_paths):

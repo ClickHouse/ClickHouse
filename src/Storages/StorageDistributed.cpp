@@ -334,6 +334,7 @@ StorageDistributed::StorageDistributed(
     , remote_database(remote_database_)
     , remote_table(remote_table_)
     , remote_table_function_ptr(remote_table_function_ptr_)
+    , remote_storage(remote_table_function_ptr ? StorageID::createEmpty() : StorageID{remote_database, remote_table})
     , log(getLogger("StorageDistributed (" + id_.table_name + ")"))
     , owned_cluster(std::move(owned_cluster_))
     , cluster_name(getContext()->getMacros()->expand(cluster_name_))
@@ -896,10 +897,6 @@ void StorageDistributed::read(
         return;
     }
 
-    StorageID main_table = StorageID::createEmpty();
-    if (!remote_table_function_ptr)
-        main_table = StorageID{remote_database, remote_table};
-
     const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
     ClusterProxy::SelectStreamFactory select_stream_factory =
         ClusterProxy::SelectStreamFactory(
@@ -932,7 +929,7 @@ void StorageDistributed::read(
         query_plan,
         header,
         processed_stage,
-        main_table,
+        remote_storage,
         remote_table_function_ptr,
         select_stream_factory,
         log,
@@ -978,10 +975,8 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     else
         columns_to_send = metadata_snapshot->getSampleBlockNonMaterialized().getNames();
 
-    /// DistributedSink will not own cluster
-    return std::make_shared<DistributedSink>(
-        local_context, *this, metadata_snapshot, cluster, insert_sync, timeout,
-        StorageID{remote_database, remote_table}, columns_to_send);
+    /// DistributedSink will not own cluster, but will own ConnectionPools of the cluster
+    return std::make_shared<DistributedSink>(local_context, *this, metadata_snapshot, cluster, insert_sync, timeout, columns_to_send);
 }
 
 
@@ -1731,7 +1726,7 @@ void StorageDistributed::flushAndPrepareForShutdown()
 {
     try
     {
-        flushClusterNodesAllData(getContext());
+        flushClusterNodesAllDataImpl(getContext(), /* settings_changes= */ {}, getDistributedSettingsRef().flush_on_detach);
     }
     catch (...)
     {
@@ -1739,7 +1734,12 @@ void StorageDistributed::flushAndPrepareForShutdown()
     }
 }
 
-void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
+void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context, const SettingsChanges & settings_changes)
+{
+    flushClusterNodesAllDataImpl(local_context, settings_changes, /* flush= */ true);
+}
+
+void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, const SettingsChanges & settings_changes, bool flush)
 {
     /// Sync SYSTEM FLUSH DISTRIBUTED with TRUNCATE
     auto table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
@@ -1754,7 +1754,7 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
             directory_queues.push_back(node.second.directory_queue);
     }
 
-    if (getDistributedSettingsRef().flush_on_detach)
+    if (flush)
     {
         LOG_INFO(log, "Flushing pending INSERT blocks");
 
@@ -1764,9 +1764,9 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
 
         for (const auto & node : directory_queues)
         {
-            auto future = scheduleFromThreadPool<void>([node_to_flush = node]
+            auto future = scheduleFromThreadPool<void>([node_to_flush = node, &settings_changes]
             {
-                node_to_flush->flushAllData();
+                node_to_flush->flushAllData(settings_changes);
             }, pool, "DistFlush");
             futures.push_back(std::move(future));
         }

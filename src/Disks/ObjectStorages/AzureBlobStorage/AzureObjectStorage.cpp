@@ -206,11 +206,11 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
 
     auto read_buffer_creator =
         [this, settings_ptr, disk_read_settings]
-        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
+        (bool restricted_seek, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromAzureBlobStorage>(
             client.get(),
-            path,
+            object_.remote_path,
             disk_read_settings,
             settings_ptr->max_single_read_retries,
             settings_ptr->max_single_download_retries,
@@ -265,10 +265,9 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
-        settings.get()->max_single_part_upload_size,
-        settings.get()->max_unexpected_write_error_retries,
         buf_size,
-        patchSettings(write_settings));
+        patchSettings(write_settings),
+        settings.get());
 }
 
 /// Remove file. Throws exception if file doesn't exists or it's a directory.

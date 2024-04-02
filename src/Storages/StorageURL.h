@@ -181,6 +181,8 @@ public:
         bool glob_url = false,
         bool need_only_count_ = false);
 
+    ~StorageURLSource() override;
+
     String getName() const override { return name; }
 
     void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override
