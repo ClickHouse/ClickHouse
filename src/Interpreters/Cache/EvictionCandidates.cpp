@@ -67,11 +67,11 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & loc
     {
         for (const auto & candidate : key_candidates.candidates)
         {
-            const auto & file_segment = candidate->file_segment;
-            auto file_segment_lock = file_segment->lock();
+            auto queue_iterator = candidate->getQueueIterator();
+            queue_iterator->invalidate();
 
-            candidate->getQueueIterator()->remove(lock);
-            file_segment->setQueueIteratorUnlocked(nullptr, file_segment_lock);
+            candidate->file_segment->resetQueueIterator();
+            queue_iterator->remove(lock);
         }
     }
     removed_queue_entries = true;
@@ -101,10 +101,14 @@ void EvictionCandidates::evict()
         {
             auto & candidate = key_candidates.candidates.back();
             chassert(candidate->releasable());
-
             const auto segment = candidate->file_segment;
-            auto iterator = segment->getQueueIterator();
-            chassert(iterator);
+
+            IFileCachePriority::IteratorPtr iterator;
+            if (!removed_queue_entries)
+            {
+                iterator = segment->getQueueIterator();
+                chassert(iterator);
+            }
 
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
@@ -133,7 +137,7 @@ void EvictionCandidates::evict()
             ///   it was freed in favour of some reserver, so we can make it visibly
             ///   free only for that particular reserver.
 
-            if (!removed_queue_entries)
+            if (iterator)
                 queue_entries_to_invalidate.push_back(iterator);
 
             key_candidates.candidates.pop_back();
