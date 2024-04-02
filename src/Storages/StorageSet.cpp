@@ -96,7 +96,7 @@ void SetOrJoinSink::consume(Chunk chunk)
 
 void SetOrJoinSink::onFinish()
 {
-    table.finishInsert();
+    table.finishInsert(getContext());
     if (backup_stream)
     {
         backup_stream->flush();
@@ -175,7 +175,7 @@ void StorageSet::insertBlock(const Block & block, ContextPtr)
     current_set->insertFromBlock(block.getColumnsWithTypeAndName());
 }
 
-void StorageSet::finishInsert()
+void StorageSet::finishInsert(const ContextPtr &)
 {
     SetPtr current_set;
     {
@@ -292,7 +292,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
         insertBlock(block, ctx);
     }
 
-    finishInsert();
+    finishInsert(ctx);
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
     LOG_INFO(getLogger("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",

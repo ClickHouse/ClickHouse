@@ -60,7 +60,7 @@ private:
     /// Insert the block into the state.
     virtual void insertBlock(const Block & block, ContextPtr context) = 0;
     /// Call after all blocks were inserted.
-    virtual void finishInsert() = 0;
+    virtual void finishInsert(const ContextPtr &) = 0;
     virtual size_t getSize(ContextPtr context) const = 0;
 };
 
@@ -98,7 +98,7 @@ private:
     SetPtr set TSA_GUARDED_BY(mutex);
 
     void insertBlock(const Block & block, ContextPtr) override;
-    void finishInsert() override;
+    void finishInsert(const ContextPtr &) override;
     size_t getSize(ContextPtr) const override;
 };
 

@@ -124,8 +124,16 @@ private:
 
     mutable std::mutex mutate_mutex;
 
+    /// All HashJoin instance created by this storage via `getJoinLocked`.
+    /// Normally, `getJoinLocked` will create a clone join that refers to `join` and also lock it
+    /// to prevent concurrent insertions to StorageJoin. However, if this storage is created by
+    /// materialized CTE, at the time of calling `getJoinLocked` the `join` is not yet filled.
+    /// In this case, we don't initiate cloned join data and lock during `getJoinLocked` call but
+    /// keep it in `cloning_joins`. They will be initialized once `finishInsert` is called.
+    mutable std::vector<std::weak_ptr<HashJoin>> cloning_joins;
+
     void insertBlock(const Block & block, ContextPtr context) override;
-    void finishInsert() override {}
+    void finishInsert(const ContextPtr &) override;
     size_t getSize(ContextPtr context) const override;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
     /// Same as tryLockTimedWithContext, but returns `nullptr` if lock is already acquired by current query.

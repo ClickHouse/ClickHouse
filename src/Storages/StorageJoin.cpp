@@ -258,10 +258,16 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     for (const auto & name : required_columns_names)
         right_sample_block.insert(getRightSampleBlock().getByName(name));
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+    join_clone->from_storage_join = true;
 
-    RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
-    join_clone->setLock(holder);
-    join_clone->reuseJoinedData(*join);
+    if (!delay_read)
+    {
+        RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+        join_clone->setLock(holder);
+        join_clone->reuseJoinedData(*join);
+    }
+    else
+        cloning_joins.push_back(join_clone);
 
     return join_clone;
 }
@@ -278,6 +284,22 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
 
     join->addBlockToJoin(block_to_insert, true);
 }
+
+void StorageJoin::finishInsert(const ContextPtr & context)
+{
+    const auto & current_context = context ? context : Context::getGlobalContextInstance();
+    RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, current_context);
+    for (auto & join_weak : cloning_joins)
+    {
+        /// TODO: should throw here if join is expired instead?
+        if (auto join_clone = join_weak.lock())
+        {
+            join_clone->setLock(holder);
+            join_clone->reuseJoinedData(*join);
+        }
+    }
+}
+
 
 size_t StorageJoin::getSize(ContextPtr context) const
 {
@@ -505,6 +527,7 @@ public:
     {
         delay_read_initializer = [this]()
         {
+            LOG_DEBUG(getLogger("JoinSource"), "Initiating Join source");
             lock_holder = storage.tryLockTimedWithContext(storage.rwlock, RWLockImpl::Type::Read, context);
             join = storage.join;
             if (!join->getTableJoin().oneDisjunct())
@@ -539,6 +562,8 @@ public:
             delay_read_initializer();
             delay_read_initializer = {};
         }
+        else
+            LOG_DEBUG(getLogger("JoinSource"), "Delayed initialization of JoinSource");
     }
 
     String getName() const override { return "Join"; }

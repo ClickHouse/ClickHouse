@@ -98,9 +98,9 @@ QueryPipelineBuilderPtr MaterializingCTEsStep::updatePipeline(QueryPipelineBuild
     {
         QueryPipelineBuilder delayed_pipeline;
         if (delayed_pipelines.size() == 1)
-            delayed_pipeline = QueryPipelineBuilder::unitePipelines(std::move(delayed_pipelines), context->getSettingsRef().max_threads, &processors);
-        else
             delayed_pipeline = std::move(*delayed_pipelines.front());
+        else
+            delayed_pipeline = QueryPipelineBuilder::unitePipelines(std::move(delayed_pipelines), context->getSettingsRef().max_threads, &processors);
 
         QueryPipelineProcessorsCollector main_collector(*main_pipeline, this);
         main_pipeline->addPipelineBefore(std::move(delayed_pipeline));
