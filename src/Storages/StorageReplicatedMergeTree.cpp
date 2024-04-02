@@ -7998,22 +7998,27 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             replace = false;
         }
 
-        scope_guard intent_guard;
         if (!replace)
         {
             /// It's ATTACH PARTITION FROM, not REPLACE PARTITION. We have to reset drop range
             drop_range = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(partition_id);
+        }
+
+        assert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
+
+        scope_guard intent_guard;
+        if (replace)
+        {
             queue.addDropReplaceIntent(drop_range);
             intent_guard = scope_guard{[this, my_drop_range = drop_range]() { queue.removeDropReplaceIntent(my_drop_range); }};
 
             getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.partition_id, drop_range.max_block);
+            queue.waitForCurrentlyExecutingOpsInRange(drop_range);
             {
                 auto pause_checking_parts = part_check_thread.pausePartsCheck();
                 part_check_thread.cancelRemovedPartsCheck(drop_range);
             }
         }
-
-        assert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
 
         String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
 
@@ -8249,6 +8254,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         scope_guard intent_guard{[this, my_drop_range = drop_range]() { queue.removeDropReplaceIntent(my_drop_range); }};
 
         getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.partition_id, drop_range.max_block);
+
+        queue.waitForCurrentlyExecutingOpsInRange(drop_range);
         {
             auto pause_checking_parts = part_check_thread.pausePartsCheck();
             part_check_thread.cancelRemovedPartsCheck(drop_range);

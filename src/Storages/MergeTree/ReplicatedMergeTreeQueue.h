@@ -355,6 +355,9 @@ public:
                                        const MergeTreePartInfo & part_info,
                                        const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry);
 
+    /// Wait for the execution of currently executing actions with virtual parts intersecting with part_info
+    void waitForCurrentlyExecutingOpsInRange(const MergeTreePartInfo & part_info) const;
+
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
       * (in order to download a already merged part from another replica).
