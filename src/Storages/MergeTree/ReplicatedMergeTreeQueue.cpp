@@ -236,7 +236,6 @@ void ReplicatedMergeTreeQueue::removeDropReplaceIntent(const MergeTreePartInfo &
 bool ReplicatedMergeTreeQueue::isIntersectingWithDropReplaceIntent(
     const LogEntry & entry, const String & part_name, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex lock*/) const
 {
-    // TODO(antaljanosbenjamin): fill out out_reason
     const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
     for (const auto & intent : drop_replace_range_intents)
     {
@@ -252,6 +251,7 @@ bool ReplicatedMergeTreeQueue::isIntersectingWithDropReplaceIntent(
                 entry.new_part_name,
                 part_name,
                 intent.getPartNameForLogs());
+            return true;
         }
     }
     return false;
