@@ -34,7 +34,7 @@ ORDER BY src;
 
 CREATE TABLE alias_bug_dist
 AS alias_bug
-ENGINE = Distributed('default', currentDatabase(), 'alias_bug', rand());
+ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'alias_bug', rand());
 
 -- Unknown identifier
 SELECT CAST(123, 'String') AS src,theAlias FROM alias_bug_dist LIMIT 1 FORMAT Null;
