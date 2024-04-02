@@ -60,6 +60,26 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
     return true;
 }
 
+static UInt64 getExistingRowsCount(const Block & block)
+{
+    auto column = block.getByName(RowExistsColumn::name).column;
+    const ColumnUInt8 * row_exists_col = typeid_cast<const ColumnUInt8 *>(column.get());
+
+    if (!row_exists_col)
+    {
+        LOG_WARNING(&Poco::Logger::get("MutationHelpers::getExistingRowsCount"), "_row_exists column type is not UInt8");
+        return block.rows();
+    }
+
+    UInt64 existing_count = 0;
+
+    for (UInt8 row_exists : row_exists_col->getData())
+        if (row_exists)
+            existing_count++;
+
+    return existing_count;
+}
+
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
@@ -322,21 +342,23 @@ getColumnsForNewDataPart(
         }
     }
 
-    if (!storage_columns_set.contains(RowExistsColumn::name))
-    {
-        if (deleted_mask_updated || (part_columns.has(RowExistsColumn::name) && !has_delete_command))
-        {
-            storage_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
-            storage_columns_set.insert(RowExistsColumn::name);
-        }
-    }
+    auto persistent_virtuals = source_part->storage.getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
 
-    if (!storage_columns_set.contains(BlockNumberColumn::name))
+    for (const auto & [name, type] : persistent_virtuals)
     {
-        if (source_part->tryGetSerialization(BlockNumberColumn::name) != nullptr)
+        if (storage_columns_set.contains(name))
+            continue;
+
+        bool need_column = false;
+        if (name == RowExistsColumn::name)
+            need_column = deleted_mask_updated || (part_columns.has(name) && !has_delete_command);
+        else
+            need_column = part_columns.has(name);
+
+        if (need_column)
         {
-            storage_columns.push_back({BlockNumberColumn::name, BlockNumberColumn::type});
-            storage_columns_set.insert(BlockNumberColumn::name);
+            storage_columns.emplace_back(name, type);
+            storage_columns_set.insert(name);
         }
     }
 
@@ -572,7 +594,9 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     {
         bool need_recalculate =
             materialized_projections.contains(projection.name)
-            || (!is_full_part_storage && source_part->hasProjection(projection.name));
+            || (!is_full_part_storage
+                && source_part->hasProjection(projection.name)
+                && !source_part->hasBrokenProjection(projection.name));
 
         if (need_recalculate)
             projections_to_recalc.insert(&projection);
@@ -916,7 +940,8 @@ void finalizeMutatedPart(
     new_data_part->modification_time = time(nullptr);
 
     /// Load rest projections which are hardlinked
-    new_data_part->loadProjections(false, false, true /* if_not_loaded */);
+    bool noop;
+    new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
 
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
@@ -997,6 +1022,9 @@ struct MutationContext
     bool need_prefix = true;
 
     scope_guard temporary_directory_lock;
+
+    /// Whether we need to count lightweight delete rows in this mutation
+    bool count_lightweight_deleted_rows;
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
@@ -1191,6 +1219,7 @@ public:
             }
             case State::SUCCESS:
             {
+                finalize();
                 return false;
             }
         }
@@ -1226,6 +1255,11 @@ private:
     const ProjectionsDescription & projections;
 
     ExecutableTaskPtr merge_projection_parts_task_ptr;
+
+    /// Existing rows count calculated during part writing.
+    /// It is initialized in prepare(), calculated in mutateOriginalPartAndPrepareProjections()
+    /// and set to new_data_part in finalize()
+    size_t existing_rows_count;
 };
 
 
@@ -1238,6 +1272,8 @@ void PartMergerWriter::prepare()
         // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
         projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
     }
+
+    existing_rows_count = 0;
 }
 
 
@@ -1250,6 +1286,10 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             ctx->minmax_idx->update(cur_block, ctx->data->getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
 
         ctx->out->write(cur_block);
+
+        /// TODO: move this calculation to DELETE FROM mutation
+        if (ctx->count_lightweight_deleted_rows)
+            existing_rows_count += MutationHelpers::getExistingRowsCount(cur_block);
 
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
@@ -1338,6 +1378,12 @@ bool PartMergerWriter::iterateThroughAllProjections()
     constructTaskForProjectionPartsMerge();
 
     return true;
+}
+
+void PartMergerWriter::finalize()
+{
+    if (ctx->count_lightweight_deleted_rows)
+        ctx->new_data_part->existing_rows_count = existing_rows_count;
 }
 
 class MutateAllPartColumnsTask : public IExecutableTask
@@ -1493,7 +1539,9 @@ private:
 
             bool need_recalculate =
                 ctx->materialized_projections.contains(projection.name)
-                || (!is_full_part_storage && ctx->source_part->hasProjection(projection.name));
+                || (!is_full_part_storage
+                    && ctx->source_part->hasProjection(projection.name)
+                    && !ctx->source_part->hasBrokenProjection(projection.name));
 
             if (need_recalculate)
             {
@@ -1630,8 +1678,9 @@ private:
 
     void finalize()
     {
+        bool noop;
         ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
-        ctx->new_data_part->loadProjections(false, false, true /* if_not_loaded */);
+        ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
@@ -2097,7 +2146,7 @@ bool MutateTask::prepare()
         scope_guard lock;
 
         {
-            std::tie(part, lock) = ctx->data->cloneAndLoadDataPartOnSameDisk(
+            std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
                 ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings());
             part->getDataPartStorage().beginTransaction();
             ctx->temporary_directory_lock = std::move(lock);
@@ -2184,6 +2233,20 @@ bool MutateTask::prepare()
 
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
+
+    if (ctx->data->getSettings()->exclude_deleted_rows_for_part_size_in_merge && ctx->updated_header.has(RowExistsColumn::name))
+    {
+        /// This mutation contains lightweight delete and we need to count the deleted rows,
+        /// Reset existing_rows_count of new data part to 0 and it will be updated while writing _row_exists column
+        ctx->count_lightweight_deleted_rows = true;
+    }
+    else
+    {
+        ctx->count_lightweight_deleted_rows = false;
+
+        /// No need to count deleted rows, copy existing_rows_count from source part
+        ctx->new_data_part->existing_rows_count = ctx->source_part->existing_rows_count.value_or(ctx->source_part->rows_count);
+    }
 
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data

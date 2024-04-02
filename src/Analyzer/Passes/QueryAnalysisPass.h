@@ -77,7 +77,7 @@ public:
       * Available expression columns are extracted from table expression.
       * Table expression node must have query, union, table, table function type.
       */
-    QueryAnalysisPass(QueryTreeNodePtr table_expression_, bool only_analyze_ = false);
+    explicit QueryAnalysisPass(QueryTreeNodePtr table_expression_, bool only_analyze_ = false);
 
     String getName() override
     {

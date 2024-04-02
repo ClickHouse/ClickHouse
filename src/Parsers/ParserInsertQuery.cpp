@@ -26,19 +26,19 @@ namespace ErrorCodes
 bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// Create parsers
-    ParserKeyword s_insert_into("INSERT INTO");
-    ParserKeyword s_from_infile("FROM INFILE");
-    ParserKeyword s_compression("COMPRESSION");
-    ParserKeyword s_table("TABLE");
-    ParserKeyword s_function("FUNCTION");
+    ParserKeyword s_insert_into(Keyword::INSERT_INTO);
+    ParserKeyword s_from_infile(Keyword::FROM_INFILE);
+    ParserKeyword s_compression(Keyword::COMPRESSION);
+    ParserKeyword s_table(Keyword::TABLE);
+    ParserKeyword s_function(Keyword::FUNCTION);
     ParserToken s_dot(TokenType::Dot);
-    ParserKeyword s_values("VALUES");
-    ParserKeyword s_format("FORMAT");
-    ParserKeyword s_settings("SETTINGS");
-    ParserKeyword s_select("SELECT");
-    ParserKeyword s_watch("WATCH");
-    ParserKeyword s_partition_by("PARTITION BY");
-    ParserKeyword s_with("WITH");
+    ParserKeyword s_values(Keyword::VALUES);
+    ParserKeyword s_format(Keyword::FORMAT);
+    ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_select(Keyword::SELECT);
+    ParserKeyword s_watch(Keyword::WATCH);
+    ParserKeyword s_partition_by(Keyword::PARTITION_BY);
+    ParserKeyword s_with(Keyword::WITH);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserToken s_semicolon(TokenType::Semicolon);
