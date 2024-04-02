@@ -5,8 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "drop table if exists t3"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE t3(x UInt32, y UInt32, "\
-    "INDEX mm_x_y (x, y) TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 3;"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t3(x UInt32, y UInt32, INDEX mm_x_y (x, y) TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 3;"
 $CLICKHOUSE_CLIENT -q "Insert into t3 values(4, 4), (6 ,6), (8, 8), (12, 12), (14, 14), (16, 16);"
 
 $CLICKHOUSE_CLIENT -q "Truncate table system.query_log sync;"
