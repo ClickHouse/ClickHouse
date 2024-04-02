@@ -1,14 +1,10 @@
 #pragma once
 
+#include <re2/re2.h>
+
 #include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
-
-
-namespace re2
-{
-    class RE2;
-}
 
 namespace DB
 {
@@ -107,6 +103,8 @@ enum class ApplyColumnTransformerType
 /// Get apply column transformer type name
 const char * toString(ApplyColumnTransformerType type);
 
+class ApplyColumnTransformerNode;
+using ApplyColumnTransformerNodePtr = std::shared_ptr<ApplyColumnTransformerNode>;
 
 /// Apply column transformer
 class ApplyColumnTransformerNode final : public IColumnTransformerNode
@@ -161,6 +159,8 @@ enum class ExceptColumnTransformerType
 
 const char * toString(ExceptColumnTransformerType type);
 
+class ExceptColumnTransformerNode;
+using ExceptColumnTransformerNodePtr = std::shared_ptr<ExceptColumnTransformerNode>;
 
 /** Except column transformer.
   * Strict EXCEPT column transformer must use all column names during matched nodes transformation.
@@ -231,6 +231,8 @@ private:
     static constexpr size_t children_size = 0;
 };
 
+class ReplaceColumnTransformerNode;
+using ReplaceColumnTransformerNodePtr = std::shared_ptr<ReplaceColumnTransformerNode>;
 
 /** Replace column transformer.
   * Strict replace column transformer must use all replacements during matched nodes transformation.

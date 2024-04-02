@@ -56,7 +56,7 @@ On Linux, macOS and FreeBSD:
   ./clickhouse client
   ClickHouse client version 23.2.1.1501 (official build).
   Connecting to localhost:9000 as user default.
-  Connected to ClickHouse server version 23.2.1.
+  Connected to ClickHouse server version 23.2.1 revision 54461.
 
   local-host :)
   ```
@@ -78,8 +78,11 @@ It is recommended to use official pre-compiled `deb` packages for Debian or Ubun
 
 #### Setup the Debian repository
 ``` bash
-sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
-curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
+sudo apt-get install -y apt-transport-https ca-certificates dirmngr
+GNUPGHOME=$(mktemp -d)
+sudo GNUPGHOME="$GNUPGHOME" gpg --no-default-keyring --keyring /usr/share/keyrings/clickhouse-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 8919F6BD2B48D754
+sudo rm -rf "$GNUPGHOME"
+sudo chmod +r /usr/share/keyrings/clickhouse-keyring.gpg
 
 echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main" | sudo tee \
     /etc/apt/sources.list.d/clickhouse.list
@@ -262,7 +265,7 @@ The required version can be downloaded with `curl` or `wget` from repository htt
 After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest stable version:
 
 ``` bash
-LATEST_VERSION=$(curl -s https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv | \
+LATEST_VERSION=$(curl -s https://packages.clickhouse.com/tgz/stable/ | \
     grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
 export LATEST_VERSION
 
@@ -377,7 +380,7 @@ build.
 
 ### macOS-only: Install with Homebrew
 
-To install ClickHouse using [homebrew](https://brew.sh/), see [here](https://formulae.brew.sh/cask/clickhouse).
+To install ClickHouse using the popular `brew` package manager, follow the instructions listed in the [ClickHouse Homebrew tap](https://github.com/ClickHouse/homebrew-clickhouse).
 
 ## Launch {#launch}
 

@@ -32,7 +32,6 @@ struct URI
 
     URI() = default;
     explicit URI(const std::string & uri_);
-    void addRegionToURI(const std::string & region);
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
 };

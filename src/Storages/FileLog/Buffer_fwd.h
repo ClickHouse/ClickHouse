@@ -4,7 +4,7 @@
 
 namespace DB
 {
-class FileLogConsumer;
+class ReadBufferFromFileLog;
 
-using ReadBufferFromFileLogPtr = std::shared_ptr<FileLogConsumer>;
+using ReadBufferFromFileLogPtr = std::shared_ptr<ReadBufferFromFileLog>;
 }
