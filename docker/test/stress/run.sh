@@ -87,6 +87,25 @@ if [ "$cache_policy" = "SLRU" ]; then
     mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
 fi
 
+# Disable experimental WINDOW VIEW tests for stress tests, since they may be
+# created with old analyzer and then, after server restart it will refuse to
+# start.
+# FIXME: remove once the support for WINDOW VIEW will be implemented in analyzer.
+sudo cat /etc/clickhouse-server/users.d/stress_tests_overrides.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_window_view>false</allow_experimental_window_view>
+            <constraints>
+               <allow_experimental_window_view>
+                   <readonly/>
+               </allow_experimental_window_view>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
+
 start_server
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
