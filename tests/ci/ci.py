@@ -798,7 +798,7 @@ class CiOptions:
             if match.startswith("job_"):
                 if not res.ci_jobs:
                     res.ci_jobs = []
-                res.ci_jobs.append(match.removeprefix("job_"))
+                res.ci_jobs.append(match)
             elif match.startswith("ci_set_") and match in Labels:
                 if not res.ci_sets:
                     res.ci_sets = []
@@ -906,10 +906,10 @@ class CiOptions:
         # FIXME: to be removed in favor of include/exclude
         # 2. Handle "job_" tags if any
         if self.ci_jobs:
-            for job in self.ci_jobs:
+            for tag in self.ci_jobs:
                 job_with_parents = CI_CONFIG.get_job_with_parents(job)
                 print(
-                    f"NOTE: CI Job's tag: [#job_{job}], add jobs: [{job_with_parents}]"
+                    f"NOTE: CI Job's tag: [#job_{tag}], add jobs: [{job_with_parents}]"
                 )
                 # always add requested job itself, even if it could be skipped
                 jobs_to_do_requested.append(job_with_parents[0])

@@ -520,13 +520,13 @@ Example of configuration for versions later or equal to 22.8:
             </cache>
         </disks>
         <policies>
-            <s3_cache>
+            <s3-cache>
                 <volumes>
                     <main>
                         <disk>cache</disk>
                     </main>
                 </volumes>
-            </s3_cache>
+            </s3-cache>
         <policies>
     </storage_configuration>
 ```
@@ -546,13 +546,13 @@ Example of configuration for versions earlier than 22.8:
             </s3>
         </disks>
         <policies>
-            <s3_cache>
+            <s3-cache>
                 <volumes>
                     <main>
                         <disk>s3</disk>
                     </main>
                 </volumes>
-            </s3_cache>
+            </s3-cache>
         <policies>
     </storage_configuration>
 ```

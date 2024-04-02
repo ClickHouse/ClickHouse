@@ -8,8 +8,6 @@
 namespace ProfileEvents
 {
     extern const Event ReadBufferSeekCancelConnection;
-    extern const Event ReadWriteBufferFromHTTPRequestsSent;
-    extern const Event ReadWriteBufferFromHTTPBytes;
 }
 
 
@@ -247,8 +245,6 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
 
     auto session = makeHTTPSession(connection_group, uri_, timeouts, proxy_config);
 
-    ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
-
     auto & stream_out = session->sendRequest(request);
     if (out_stream_callback)
         out_stream_callback(stream_out);
@@ -484,8 +480,6 @@ bool ReadWriteBufferFromHTTP::nextImpl()
             BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
 
             offset_from_begin_pos += working_buffer.size();
-
-            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, working_buffer.size());
         },
         /*on_retry=*/ [&] ()
         {
@@ -534,8 +528,6 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
 
             copyFromIStreamWithProgressCallback(*result.response_stream, to, n, progress_callback, &bytes_copied, &is_canceled);
 
-            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
-
             offset += bytes_copied;
             total_bytes_copied += bytes_copied;
             to += bytes_copied;
@@ -544,8 +536,6 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
         },
         /*on_retry=*/ [&] ()
         {
-            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
-
             offset += bytes_copied;
             total_bytes_copied += bytes_copied;
             to += bytes_copied;
@@ -584,7 +574,7 @@ off_t ReadWriteBufferFromHTTP::seek(off_t offset_, int whence)
     if (impl)
     {
         auto position = getPosition();
-        if (offset_ >= position)
+        if (offset_ > position)
         {
             size_t diff = offset_ - position;
             if (diff < read_settings.remote_read_min_bytes_for_seek)
