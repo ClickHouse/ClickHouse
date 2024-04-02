@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -nm -q "
     drop table if exists data;
-    create table data (key Int) engine=MergeTree order by tuple();
+    create table data (key Int) engine=MergeTree order by tuple() settings min_bytes_for_wide_part = '1G', compress_marks = 1;
     insert into data values (1);
 "
 

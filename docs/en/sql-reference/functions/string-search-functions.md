@@ -74,6 +74,8 @@ SELECT
     position('Hello, world!', 'o', 7)
 ```
 
+Result:
+
 ``` text
 ┌─position('Hello, world!', 'o', 1)─┬─position('Hello, world!', 'o', 7)─┐
 │                                 5 │                                 9 │
@@ -491,7 +493,7 @@ ngramDistance(haystack, needle)
 
 ## ngramSearch
 
-Like `ngramDistance` but calculates the non-symmetric difference between a `needle` string and a `haystack` string, i.e. the number of n-grams from needle minus the common number of n-grams normalized by the number of `needle` n-grams. Returns a Float32 between 0 and 1. The bigger the result is, the more likely `needle` is in the `haystack`. This function is useful for fuzzy string search. Also see function `soundex`.
+Like `ngramDistance` but calculates the non-symmetric difference between a `needle` string and a `haystack` string, i.e. the number of n-grams from `needle` minus the common number of n-grams normalized by the number of `needle` n-grams. Returns a Float32 between 0 and 1. The bigger the result is, the more likely `needle` is in the `haystack`. This function is useful for fuzzy string search. Also see function `soundex`.
 
 Functions `ngramSearchCaseInsensitive, ngramSearchUTF8, ngramSearchCaseInsensitiveUTF8` provide case-insensitive and/or UTF-8 variants of this function.
 
@@ -610,7 +612,7 @@ Like `countMatches(haystack, pattern)` but matching ignores the case.
 
 ## regexpExtract
 
-Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index.
+Extracts the first string in `haystack` that matches the regexp pattern and corresponds to the regex group index.
 
 **Syntax**
 
@@ -652,7 +654,7 @@ Result:
 
 ## hasSubsequence
 
-Returns 1 if needle is a subsequence of haystack, or 0 otherwise.
+Returns 1 if `needle` is a subsequence of `haystack`, or 0 otherwise.
 A subsequence of a string is a sequence that can be derived from the given string by deleting zero or more elements without changing the order of the remaining elements.
 
 
