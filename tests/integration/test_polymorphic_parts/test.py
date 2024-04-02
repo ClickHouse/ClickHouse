@@ -332,13 +332,7 @@ def test_different_part_types_on_replicas(start_cluster, table, part_type):
     for _ in range(3):
         insert_random_data(table, leader, 100)
 
-    exec_query_with_retry(
-        leader,
-        "OPTIMIZE TABLE {} FINAL".format(table),
-        settings={"optimize_throw_if_noop": 1},
-        silent=True,
-    )
-
+    leader.query("OPTIMIZE TABLE {} FINAL".format(table))
     follower.query("SYSTEM SYNC REPLICA {}".format(table), timeout=20)
 
     expected = "{}\t1\n".format(part_type)
@@ -369,6 +363,7 @@ node7 = cluster.add_instance(
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 node8 = cluster.add_instance(
     "node8",

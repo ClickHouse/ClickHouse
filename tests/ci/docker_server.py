@@ -216,14 +216,11 @@ def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
     return tags
 
 
-def buildx_args(
-    urls: Dict[str, str], arch: str, direct_urls: List[str], version: str
-) -> List[str]:
+def buildx_args(urls: Dict[str, str], arch: str, direct_urls: List[str]) -> List[str]:
     args = [
         f"--platform=linux/{arch}",
         f"--label=build-url={GITHUB_RUN_URL}",
         f"--label=com.clickhouse.build.githash={git.sha}",
-        f"--label=com.clickhouse.build.version={version}",
     ]
     if direct_urls:
         args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
@@ -270,9 +267,7 @@ def build_and_push_image(
                 urls = [url for url in direct_urls[arch] if ".deb" in url]
             else:
                 urls = [url for url in direct_urls[arch] if ".tgz" in url]
-        cmd_args.extend(
-            buildx_args(repo_urls, arch, direct_urls=urls, version=version.describe)
-        )
+        cmd_args.extend(buildx_args(repo_urls, arch, direct_urls=urls))
         if not push:
             cmd_args.append(f"--tag={image.repo}:{arch_tag}")
         cmd_args.extend(
@@ -368,8 +363,8 @@ def main():
     image = DockerImageData(image_path, image_repo, False)
     args.release_type = auto_release_type(args.version, args.release_type)
     tags = gen_tags(args.version, args.release_type)
-    repo_urls = {}
-    direct_urls: Dict[str, List[str]] = {}
+    repo_urls = dict()
+    direct_urls: Dict[str, List[str]] = dict()
     release_or_pr, _ = get_release_or_pr(pr_info, args.version)
 
     for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):

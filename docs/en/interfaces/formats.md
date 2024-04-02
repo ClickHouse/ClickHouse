@@ -7,7 +7,6 @@ title: Formats for Input and Output Data
 
 ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read a dictionary. A format supported for output can be used to arrange the
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
-All format names are case insensitive.
 
 The supported formats are:
 
@@ -2356,7 +2355,7 @@ You can select data from a ClickHouse table and save them into some file in the 
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
 ```
 
-### Arrow format settings {#arrow-format-settings}
+### Arrow format settings {#parquet-format-settings}
 
 - [output_format_arrow_low_cardinality_as_dictionary](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_low_cardinality_as_dictionary) - enable output ClickHouse LowCardinality type as Dictionary Arrow type. Default value - `false`.
 - [output_format_arrow_use_64_bit_indexes_for_dictionary](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_use_64_bit_indexes_for_dictionary) - use 64-bit integer type for Dictionary indexes. Default value - `false`.

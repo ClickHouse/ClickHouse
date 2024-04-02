@@ -16,7 +16,6 @@
 #include <Common/Exception.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/JoinUtils.h>
-#include <Formats/NativeWriter.h>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/ISource.h>
@@ -25,7 +24,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h>
 #include <filesystem>
-
 
 namespace fs = std::filesystem;
 

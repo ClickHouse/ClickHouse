@@ -18,7 +18,6 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
@@ -327,7 +326,7 @@ public:
                 metric_active_threads = CurrentMetrics::RestoreThreadsActive;
                 metric_active_threads = CurrentMetrics::RestoreThreadsScheduled;
                 max_threads = num_restore_threads;
-                use_queue = true;
+                use_queue = (thread_pool_id != ThreadPoolId::RESTORE);
                 break;
             }
         }
@@ -487,7 +486,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
             /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
             auto process_list_element = context_in_use->getProcessListElement();
 
-            thread_pool.scheduleOrThrowOnError(
+            scheduleFromThreadPool<void>(
                 [this,
                  backup_query,
                  backup_id,
@@ -503,8 +502,6 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
                     BackupMutablePtr backup_async;
                     try
                     {
-                        setThreadName("BackupWorker");
-                        CurrentThread::QueryScope query_scope(context_in_use);
                         doBackup(
                             backup_async,
                             backup_query,
@@ -520,7 +517,8 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
                     {
                         on_exception(backup_async, backup_id, backup_name_for_logging, backup_settings, backup_coordination);
                     }
-                });
+                },
+                thread_pool, "BackupWorker");
         }
         else
         {
@@ -597,7 +595,6 @@ void BackupsWorker::doBackup(
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
     backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;
-    backup_create_params.azure_attempt_to_create_container = backup_settings.azure_attempt_to_create_container;
     backup_create_params.read_settings = getReadSettingsForBackup(context, backup_settings);
     backup_create_params.write_settings = getWriteSettingsForBackup(context);
     backup = BackupFactory::instance().createBackup(backup_create_params);
@@ -867,7 +864,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
             /// process_list_element_holder is used to make an element in ProcessList live while RESTORE is working asynchronously.
             auto process_list_element = context_in_use->getProcessListElement();
 
-            thread_pool.scheduleOrThrowOnError(
+            scheduleFromThreadPool<void>(
                 [this,
                  restore_query,
                  restore_id,
@@ -881,8 +878,6 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
                 {
                     try
                     {
-                        setThreadName("RestorerWorker");
-                        CurrentThread::QueryScope query_scope(context_in_use);
                         doRestore(
                             restore_query,
                             restore_id,
@@ -896,7 +891,9 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
                     {
                         on_exception(restore_id, backup_name_for_logging, restore_settings, restore_coordination);
                     }
-                });
+                },
+                thread_pool,
+                "RestoreWorker");
         }
         else
         {

@@ -108,10 +108,8 @@ struct FunctionArgumentDescriptor
 {
     const char * argument_name;
 
-    using TypeValidator = bool (*)(const IDataType &);
-    TypeValidator type_validator_func;
-    using ColumnValidator = bool (*)(const IColumn &);
-    ColumnValidator column_validator_func;
+    std::function<bool (const IDataType &)> type_validator_func;
+    std::function<bool (const IColumn &)> column_validator_func;
 
     const char * expected_type_description;
 

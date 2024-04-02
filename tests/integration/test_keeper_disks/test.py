@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 import pytest
-from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.cluster import ClickHouseCluster
 import helpers.keeper_utils as keeper_utils
 from minio.deleteobjects import DeleteObject
 
 import os
-
-if is_arm():
-    pytestmark = pytest.mark.skip
-
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 cluster = ClickHouseCluster(__file__)

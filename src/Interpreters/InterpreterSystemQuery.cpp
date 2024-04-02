@@ -10,8 +10,6 @@
 #include <Common/ShellCommand.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
-#include <Common/PageCache.h>
-#include <Common/HostResolvePool.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -59,8 +57,6 @@
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/ThreadFuzzer.h>
 #include <base/coverage.h>
 #include <csignal>
@@ -335,15 +331,8 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
-            HostResolversPool::instance().dropCache();
             /// Reinitialize clusters to update their resolved_addresses
             system_context->reloadClusterConfig();
-            break;
-        }
-        case Type::DROP_CONNECTIONS_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
-            HTTPConnectionPools::instance().dropCache();
             break;
         }
         case Type::DROP_MARK_CACHE:
@@ -470,13 +459,6 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_DISK_METADATA_CACHE:
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
-        }
-        case Type::DROP_PAGE_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_PAGE_CACHE);
-
-            getContext()->dropPageCache();
-            break;
         }
         case Type::DROP_SCHEMA_CACHE:
         {
@@ -720,7 +702,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
-            auto * queue = getContext()->tryGetAsynchronousInsertQueue();
+            auto * queue = getContext()->getAsynchronousInsertQueue();
             if (!queue)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
@@ -854,7 +836,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, true, false);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
     auto data_path = database->getTableDataPath(create);
 
@@ -1166,16 +1148,12 @@ void InterpreterSystemQuery::syncTransactionLog()
 }
 
 
-void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
+void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
-    SettingsChanges settings_changes;
-    if (query.query_settings)
-        settings_changes = query.query_settings->as<ASTSetQuery>()->changes;
-
     if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, getContext()).get()))
-        storage_distributed->flushClusterNodesAllData(getContext(), settings_changes);
+        storage_distributed->flushClusterNodesAllData(getContext());
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
@@ -1214,7 +1192,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::DROP_DNS_CACHE:
-        case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
@@ -1224,7 +1201,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
-        case Type::DROP_PAGE_CACHE:
         case Type::DROP_SCHEMA_CACHE:
         case Type::DROP_FORMAT_SCHEMA_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:

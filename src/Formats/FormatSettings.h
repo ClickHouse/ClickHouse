@@ -202,7 +202,6 @@ struct FormatSettings
         bool quote_decimals = false;
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
-        bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
         bool write_named_tuples_as_objects = false;
         bool skip_null_value_in_named_tuples = false;
         bool defaults_for_missing_elements_in_named_tuple = false;
@@ -275,8 +274,6 @@ struct FormatSettings
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
         UInt64 max_value_width = 10000;
-        UInt64 max_value_width_apply_for_single_value = false;
-        bool highlight_digit_groups = true;
         SettingFieldUInt64Auto color{"auto"};
 
         bool output_format_pretty_row_numbers = false;

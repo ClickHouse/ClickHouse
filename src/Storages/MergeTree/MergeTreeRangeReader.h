@@ -101,7 +101,8 @@ public:
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
         const PrewhereExprStep * prewhere_info_,
-        bool last_reader_in_chain_);
+        bool last_reader_in_chain_,
+        const Names & non_const_virtual_column_names);
 
     MergeTreeRangeReader() = default;
 
@@ -308,7 +309,7 @@ private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result) const;
-    ColumnPtr createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+    void fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -322,6 +323,7 @@ private:
 
     bool last_reader_in_chain = false;
     bool is_initialized = false;
+    Names non_const_virtual_column_names;
 
     LoggerPtr log = getLogger("MergeTreeRangeReader");
 };

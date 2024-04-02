@@ -36,7 +36,6 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
@@ -47,7 +46,6 @@
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
 #include <Common/CPUID.h>
-#include <Common/HTTPConnectionPool.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/ServerUUID.h>
@@ -186,7 +184,7 @@ static bool jemallocOptionEnabled(const char *name)
     return value;
 }
 #else
-static bool jemallocOptionEnabled(const char *) { return false; }
+static bool jemallocOptionEnabled(const char *) { return 0; }
 #endif
 
 int mainEntryClickHouseServer(int argc, char ** argv)
@@ -734,6 +732,8 @@ try
     LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
 #endif
 
+    sanityChecks(*this);
+
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
@@ -903,16 +903,12 @@ try
         config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
-        global_context->setConfig(loaded_config.configuration);
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
-
-    /// NOTE: Do sanity checks after we loaded all possible substitutions (for the configuration) from ZK
-    sanityChecks(*this);
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -1232,13 +1228,6 @@ try
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
-    size_t page_cache_size = server_settings.page_cache_size;
-    if (page_cache_size != 0)
-        global_context->setPageCache(
-            server_settings.page_cache_chunk_size, server_settings.page_cache_mmap_size,
-            page_cache_size, server_settings.page_cache_use_madv_free,
-            server_settings.page_cache_use_transparent_huge_pages);
-
     String index_uncompressed_cache_policy = server_settings.index_uncompressed_cache_policy;
     size_t index_uncompressed_cache_size = server_settings.index_uncompressed_cache_size;
     double index_uncompressed_cache_size_ratio = server_settings.index_uncompressed_cache_size_ratio;
@@ -1297,7 +1286,7 @@ try
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
     try
     {
-        auto wait_time = server_settings.cgroups_memory_usage_observer_wait_time;
+        UInt64 wait_time = server_settings.cgroups_memory_usage_observer_wait_time;
         if (wait_time != 0)
             cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
     }
@@ -1363,7 +1352,7 @@ try
             {
                 double hard_limit_ratio = new_server_settings.cgroup_memory_watcher_hard_limit_ratio;
                 double soft_limit_ratio = new_server_settings.cgroup_memory_watcher_soft_limit_ratio;
-                cgroups_memory_usage_observer->setMemoryUsageLimits(
+                cgroups_memory_usage_observer->setLimits(
                     static_cast<uint64_t>(max_server_memory_usage * hard_limit_ratio),
                     static_cast<uint64_t>(max_server_memory_usage * soft_limit_ratio));
             }
@@ -1440,7 +1429,6 @@ try
             global_context->getProcessList().setMaxSize(new_server_settings.max_concurrent_queries);
             global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings.max_concurrent_insert_queries);
             global_context->getProcessList().setMaxSelectQueriesAmount(new_server_settings.max_concurrent_select_queries);
-            global_context->getProcessList().setMaxWaitingQueriesAmount(new_server_settings.max_waiting_queries);
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
@@ -1551,23 +1539,6 @@ try
             NamedCollectionUtils::reloadFromConfig(*config);
 
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
-
-            HTTPConnectionPools::instance().setLimits(
-                HTTPConnectionPools::Limits{
-                    new_server_settings.disk_connections_soft_limit,
-                    new_server_settings.disk_connections_warn_limit,
-                    new_server_settings.disk_connections_store_limit,
-                },
-                HTTPConnectionPools::Limits{
-                    new_server_settings.storage_connections_soft_limit,
-                    new_server_settings.storage_connections_warn_limit,
-                    new_server_settings.storage_connections_store_limit,
-                },
-                HTTPConnectionPools::Limits{
-                    new_server_settings.http_connections_soft_limit,
-                    new_server_settings.http_connections_warn_limit,
-                    new_server_settings.http_connections_store_limit,
-                });
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
@@ -1722,12 +1693,6 @@ try
         throw;
     }
 
-    if (cgroups_memory_usage_observer)
-    {
-        cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]() { main_config_reloader->reload(); });
-        cgroups_memory_usage_observer->startThread();
-    }
-
     /// Reload config in SYSTEM RELOAD CONFIG query.
     global_context->setConfigReloadCallback([&]()
     {
@@ -1809,7 +1774,7 @@ try
     }
     else
     {
-        DNSResolver::instance().setCacheMaxEntries(server_settings.dns_cache_max_entries);
+        DNSResolver::instance().setCacheMaxSize(server_settings.dns_cache_max_size);
 
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(
@@ -1909,6 +1874,7 @@ try
         {
             total_memory_tracker.setSampleMaxAllocationSize(server_settings.total_memory_profiler_sample_max_allocation_size);
         }
+
     }
 #endif
 
@@ -1921,6 +1887,10 @@ try
 #if defined(SANITIZER)
     LOG_INFO(log, "Query Profiler disabled because they cannot work under sanitizers"
         " when two different stack unwinding methods will interfere with each other.");
+#endif
+
+#if !defined(__x86_64__)
+    LOG_INFO(log, "Query Profiler and TraceCollector is only tested on x86_64. It also known to not work under qemu-user.");
 #endif
 
     if (!hasPHDRCache())

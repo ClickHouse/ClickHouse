@@ -1,24 +1,24 @@
-#include <filesystem>
-#include <memory>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Coordination/CoordinationSettings.h>
-#include <Coordination/KeeperCommon.h>
-#include <Coordination/KeeperConstants.h>
-#include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
-#include <Core/Field.h>
-#include <Disks/DiskLocal.h>
+#include <Coordination/CoordinationSettings.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <filesystem>
+#include <memory>
 #include <Common/logger_useful.h>
+#include <Coordination/KeeperContext.h>
+#include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperConstants.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Core/Field.h>
+#include <Disks/DiskLocal.h>
 
 namespace DB
 {
@@ -860,32 +860,6 @@ SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStor
     }
 
     return {snapshot_file_name, disk};
-}
-
-size_t KeeperSnapshotManager::getLatestSnapshotIndex() const
-{
-    if (!existing_snapshots.empty())
-        return existing_snapshots.rbegin()->first;
-    return 0;
-}
-
-SnapshotFileInfo KeeperSnapshotManager::getLatestSnapshotInfo() const
-{
-    if (!existing_snapshots.empty())
-    {
-        const auto & [path, disk] = existing_snapshots.at(getLatestSnapshotIndex());
-
-        try
-        {
-            if (disk->exists(path))
-                return {path, disk};
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-    }
-    return {"", nullptr};
 }
 
 }

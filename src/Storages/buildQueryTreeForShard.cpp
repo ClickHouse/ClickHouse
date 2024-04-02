@@ -1,27 +1,25 @@
 
 #include <Storages/buildQueryTreeForShard.h>
 
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/createUniqueTableAliases.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/JoinNode.h>
-#include <Analyzer/QueryNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/Utils.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Planner/Utils.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Planner/Utils.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -384,12 +382,6 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     removeGroupingFunctionSpecializations(query_tree_to_modify);
 
     createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
-
-    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
-    // settings won't break any remote parser. It's also more reasonable since the query settings
-    // are written into the query context and will be sent by the query pipeline.
-    if (auto * query_node = query_tree_to_modify->as<QueryNode>())
-        query_node->clearSettingsChanges();
 
     return query_tree_to_modify;
 }

@@ -299,18 +299,6 @@ sin(x)
 
 Type: [Float*](../../sql-reference/data-types/float.md).
 
-**Example**
-
-Query:
-
-```sql
-SELECT sin(1.23);
-```
-
-```response
-0.9424888019316975
-```
-
 ## cos
 
 Returns the cosine of the argument.

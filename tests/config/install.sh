@@ -66,7 +66,6 @@ ln -sf $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/block_number.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 
 # Not supported with fasttest.
 if [ "${DEST_SERVER_PATH}" = "/etc/clickhouse-server" ]
@@ -92,7 +91,7 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 
-if [[ -n "$USE_OLD_ANALYZER" ]] && [[ "$USE_OLD_ANALYZER" -eq 1 ]]; then
+if [[ -n "$USE_NEW_ANALYZER" ]] && [[ "$USE_NEW_ANALYZER" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
 fi
 

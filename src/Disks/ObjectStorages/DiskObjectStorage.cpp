@@ -9,7 +9,6 @@
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Scheduler/IResourceManager.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
@@ -91,15 +90,9 @@ StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) co
     return metadata_storage->getStorageObjects(local_path);
 }
 
-void DiskObjectStorage::getRemotePathsRecursive(
-    const String & local_path,
-    std::vector<LocalPathWithObjectStoragePaths> & paths_map,
-    const std::function<bool(const String &)> & skip_predicate)
+void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map)
 {
     if (!metadata_storage->exists(local_path))
-        return;
-
-    if (skip_predicate && skip_predicate(local_path))
         return;
 
     /// Protect against concurrent delition of files (for example because of a merge).
@@ -149,7 +142,7 @@ void DiskObjectStorage::getRemotePathsRecursive(
         }
 
         for (; it->isValid(); it->next())
-            DiskObjectStorage::getRemotePathsRecursive(fs::path(local_path) / it->name(), paths_map, skip_predicate);
+            DiskObjectStorage::getRemotePathsRecursive(fs::path(local_path) / it->name(), paths_map);
     }
 }
 
@@ -211,7 +204,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
             /// It may use s3-server-side copy
             auto & to_disk_object_storage = dynamic_cast<DiskObjectStorage &>(to_disk);
             auto transaction = createObjectStorageTransactionToAnotherDisk(to_disk_object_storage);
-            transaction->copyFile(from_file_path, to_file_path, /*read_settings*/ {}, /*write_settings*/ {});
+            transaction->copyFile(from_file_path, to_file_path);
             transaction->commit();
     }
     else
@@ -534,9 +527,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    const auto storage_objects = metadata_storage->getStorageObjects(path);
+    auto storage_objects = metadata_storage->getStorageObjects(path);
 
     const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
+
     if (storage_objects.empty() && file_can_be_empty)
         return std::make_unique<ReadBufferFromEmptyFile>();
 

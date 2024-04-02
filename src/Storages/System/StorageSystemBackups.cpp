@@ -39,7 +39,7 @@ ColumnsDescription StorageSystemBackups::getColumnsDescription()
 }
 
 
-void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     size_t column_index = 0;
     auto & column_id = assert_cast<ColumnString &>(*res_columns[column_index++]);

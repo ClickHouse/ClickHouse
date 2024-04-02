@@ -89,11 +89,6 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter = {});
 
-FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
-        const QueryTreeNodePtr & table_expression,
-        PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter = {});
-
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
 
 }

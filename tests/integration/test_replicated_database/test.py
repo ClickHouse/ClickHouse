@@ -508,9 +508,12 @@ def test_alters_from_different_replicas(started_cluster):
     dummy_node.stop_clickhouse(kill=True)
 
     settings = {"distributed_ddl_task_timeout": 5}
-    assert "is not finished on 1 of 3 hosts" in competing_node.query_and_get_error(
-        "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added0 UInt32;",
-        settings=settings,
+    assert (
+        "There are 1 unfinished hosts (0 of them are currently executing the task"
+        in competing_node.query_and_get_error(
+            "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added0 UInt32;",
+            settings=settings,
+        )
     )
     settings = {
         "distributed_ddl_task_timeout": 5,
@@ -1137,10 +1140,6 @@ def test_sync_replica(started_cluster):
     dummy_node.query_with_retry("SELECT * FROM system.zookeeper WHERE path='/'")
 
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA test_sync_database")
-
-    assert "2\n" == main_node.query(
-        "SELECT sum(is_active) FROM system.clusters WHERE cluster='test_sync_database'"
-    )
 
     assert dummy_node.query(
         "SELECT count() FROM system.tables where database='test_sync_database'"

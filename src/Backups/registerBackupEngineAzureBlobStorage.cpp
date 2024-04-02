@@ -86,7 +86,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
             if (args.size() == 3)
             {
                 configuration.connection_url = args[0].safeGet<String>();
-                configuration.is_connection_string = !configuration.connection_url.starts_with("http");
+                configuration.is_connection_string = true;
 
                 configuration.container =  args[1].safeGet<String>();
                 configuration.blob_path = args[2].safeGet<String>();
@@ -147,8 +147,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
             auto writer = std::make_shared<BackupWriterAzureBlobStorage>(configuration,
                                                            params.read_settings,
                                                            params.write_settings,
-                                                           params.context,
-                                                           params.azure_attempt_to_create_container);
+                                                           params.context);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,

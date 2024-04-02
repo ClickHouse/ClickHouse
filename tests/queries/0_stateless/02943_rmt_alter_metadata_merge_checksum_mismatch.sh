@@ -95,4 +95,4 @@ trap '' EXIT
 
 $CLICKHOUSE_CLIENT -q "system flush logs"
 # check for error "Different number of files: 5 compressed (expected 3) and 2 uncompressed ones (expected 2). (CHECKSUM_DOESNT_MATCH)"
-$CLICKHOUSE_CLIENT -q "select part_name, merge_reason, event_type, errorCodeToName(error) from system.part_log where database = '$CLICKHOUSE_DATABASE' and error != 0 and errorCodeToName(error) != 'NO_REPLICA_HAS_PART' order by event_time_microseconds"
+$CLICKHOUSE_CLIENT -q "select part_name, merge_reason, event_type, errorCodeToName(error) from system.part_log where database = '$CLICKHOUSE_DATABASE' and error != 0 order by event_time_microseconds"

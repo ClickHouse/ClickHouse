@@ -1,8 +1,8 @@
 #include "MainHandler.h"
 
 #include "validateODBCConnectionString.h"
-#include "ODBCSource.h"
-#include "ODBCSink.h"
+#include "ODBCBlockInputStream.h"
+#include "ODBCBlockOutputStream.h"
 #include "getIdentifierQuote.h"
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
