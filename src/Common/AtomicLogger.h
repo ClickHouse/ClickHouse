@@ -2,9 +2,10 @@
 
 #include <memory>
 
+#include <base/types.h>
 #include <Common/Logger.h>
-#include <Common/SharedMutex.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/SharedMutex.h>
 
 namespace DB
 {
