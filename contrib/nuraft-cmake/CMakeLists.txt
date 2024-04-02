@@ -32,6 +32,7 @@ set(SRCS
     "${LIBRARY_DIR}/src/handle_custom_notification.cxx"
     "${LIBRARY_DIR}/src/handle_vote.cxx"
     "${LIBRARY_DIR}/src/launcher.cxx"
+    "${LIBRARY_DIR}/src/log_entry.cxx"
     "${LIBRARY_DIR}/src/srv_config.cxx"
     "${LIBRARY_DIR}/src/snapshot_sync_req.cxx"
     "${LIBRARY_DIR}/src/snapshot_sync_ctx.cxx"
