@@ -6,7 +6,9 @@ sidebar_label: Embedded Dictionaries
 
 # Functions for Working with Embedded Dictionaries
 
+:::note
 In order for the functions below to work, the server config must specify the paths and addresses for getting all the embedded dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can’t be loaded, an exception is thrown.
+:::
 
 For information about creating reference lists, see the section [“Dictionaries”](../../sql-reference/dictionaries/index.md).
 
@@ -32,9 +34,39 @@ regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_
 regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
 ```
 
-### regionToCity(id\[, geobase\])
+### regionToCity
 
 Accepts a UInt32 number – the region ID from the geobase. If this region is a city or part of a city, it returns the region ID for the appropriate city. Otherwise, returns 0.
+
+**Syntax**
+
+```sql
+regionToCity(id [, geobase])
+```
+
+**Parameters**
+
+- `id`: the region ID from the geobase. [UInt32](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256)
+- `geobase` (optional): geobase (dictionary key). [Dictionary Key](../../sql-reference/dictionaries/index.md/#dictionary-key-and-fields-dictionary-key-and-fields)
+
+**Returned value**
+
+- region ID for the appropriate city, if it exists.
+- 0, otherwise. 
+
+**Example**
+
+Query:
+
+```sql
+
+```
+
+Result:
+
+```response
+
+```
 
 ### regionToArea(id\[, geobase\])
 
