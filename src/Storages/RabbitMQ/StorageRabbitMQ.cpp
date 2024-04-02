@@ -64,6 +64,7 @@ namespace ExchangeType
     static const String HEADERS = "headers";
 }
 
+static const auto deadletter_exchange_setting = "x-dead-letter-exchange";
 
 StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
@@ -93,6 +94,11 @@ StorageRabbitMQ::StorageRabbitMQ(
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
         , milliseconds_to_wait(rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms)
 {
+    reject_unhandled_messages = rabbitmq_settings->reject_unhandled_messages
+        || queue_settings_list.end() !=
+        std::find_if(queue_settings_list.begin(), queue_settings_list.end(),
+                     [](const String & name) { return name.starts_with(deadletter_exchange_setting); });
+
     const auto & config = getContext()->getConfigRef();
 
     std::pair<String, UInt16> parsed_address;
@@ -1166,7 +1172,7 @@ bool StorageRabbitMQ::tryStreamToViews()
              *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
              *    will ever happen.
              */
-            if (write_failed ? source->sendNack() : source->sendAck())
+            if (write_failed && reject_unhandled_messages ? source->sendNack() : source->sendAck())
             {
                 /// Iterate loop to activate error callbacks if they happened
                 connection->getHandler().iterateLoop();

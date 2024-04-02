@@ -91,6 +91,7 @@ private:
     String queue_base;
     Names queue_settings_list;
     size_t max_rows_per_message;
+    bool reject_unhandled_messages = false;
 
     /// For insert query. Mark messages as durable.
     const bool persistent;
