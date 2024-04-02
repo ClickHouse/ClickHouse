@@ -4119,10 +4119,11 @@ private:
             };
         }
 
-        if (isStringOrFixedString(removeNullable(removeLowCardinality(from_type))))
+        auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(*removeNullableOrLowCardinalityNullable(from_type));
+        /// Cast String to Variant through parsing if it's not Variant(String).
+        if (isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
             return createStringToVariantWrapper();
 
-        auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(*removeNullableOrLowCardinalityNullable(from_type));
         if (!variant_discr_opt)
             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert type {} to {}. Conversion to Variant allowed only for types from this Variant", from_type->getName(), to_variant.getName());
 
