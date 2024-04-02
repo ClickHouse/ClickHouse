@@ -1,4 +1,7 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/55803
+DROP TABLE IF EXISTS broken_table;
+DROP TABLE IF EXISTS broken_view;
+
 CREATE TABLE broken_table
 (
     start DateTime64(6),
@@ -22,3 +25,6 @@ SELECT
 SELECT v.start, v.total_sec
 FROM broken_view v FINAL
 WHERE v.start IS NOT NULL;
+
+DROP TABLE IF EXISTS broken_table;
+DROP TABLE IF EXISTS broken_view;
