@@ -964,7 +964,7 @@ def test_predefined_connection_configuration(started_cluster):
         result = clickhouse_node.query("show create table test_database.test_table")
         assert (
             result.strip()
-            == "CREATE TABLE test_database.test_table\\n(\\n    `id` Int32\\n)\\nENGINE = MySQL(mysql1, table = \\'test_table\\')"
+            == "CREATE TABLE test_database.test_table\\n(\\n    `id` Int32\\n)\\nENGINE = MySQL(mysql1, `table` = \\'test_table\\')"
         )
 
         clickhouse_node.query("DROP DATABASE test_database")
@@ -1021,7 +1021,9 @@ def test_restart_server(started_cluster):
                 clickhouse_node, mysql_node, action="REJECT --reject-with tcp-reset"
             )
             clickhouse_node.restart_clickhouse()
-            clickhouse_node.query_and_get_error("SHOW TABLES FROM test_restart")
+            clickhouse_node.query_and_get_error_with_retry(
+                "SHOW TABLES FROM test_restart"
+            )
         assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_restart")
 
 

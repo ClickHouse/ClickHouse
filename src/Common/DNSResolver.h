@@ -34,6 +34,9 @@ public:
     Poco::Net::IPAddress resolveHost(const std::string & host);
 
     /// Accepts host names like 'example.com' or '127.0.0.1' or '::1' and resolves all its IPs
+    /// resolveHostAllInOriginOrder returns addresses with the same order as system call returns it
+    IPAddresses resolveHostAllInOriginOrder(const std::string & host);
+    /// resolveHostAll returns addresses in random order
     IPAddresses resolveHostAll(const std::string & host);
 
     /// Accepts host names like 'example.com:port' or '127.0.0.1:port' or '[::1]:port' and resolves its IP and port
@@ -52,8 +55,8 @@ public:
     /// Disables caching
     void setDisableCacheFlag(bool is_disabled = true);
 
-    /// Set a limit of cache size in bytes
-    void setCacheMaxSize(const UInt64 cache_max_size);
+    /// Set a limit of entries in cache
+    void setCacheMaxEntries(UInt64 cache_max_entries);
 
     /// Drops all caches
     void dropCache();

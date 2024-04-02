@@ -213,7 +213,6 @@ public:
         const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
-        bool sample_factor_column_queried,
         LoggerPtr log);
 
     /// Check query limits: max_partitions_to_read, max_concurrent_queries.

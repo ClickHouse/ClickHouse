@@ -8,7 +8,6 @@
 #include <Common/Throttler.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
-#include <boost/algorithm/string/predicate.hpp>
 
 
 namespace DB
@@ -303,7 +302,7 @@ S3Settings StorageS3Settings::getSettings(const String & endpoint, const String 
     {
         std::advance(possible_prefix_setting, -1);
         const auto & [endpoint_prefix, settings] = *possible_prefix_setting;
-        if (boost::algorithm::starts_with(endpoint, endpoint_prefix) && settings.auth_settings.canBeUsedByUser(user))
+        if (endpoint.starts_with(endpoint_prefix) && settings.auth_settings.canBeUsedByUser(user))
             return possible_prefix_setting->second;
     }
 

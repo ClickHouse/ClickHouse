@@ -167,7 +167,7 @@ bool wait(int timeout_ms)
                 continue;   /// Drain delayed notifications.
         }
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: read wrong number of bytes from pipe");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Read wrong number of bytes from pipe");
     }
 }
 
@@ -507,11 +507,11 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription({
-        { "thread_name", std::make_shared<DataTypeString>() },
-        { "thread_id", std::make_shared<DataTypeUInt64>() },
-        { "query_id", std::make_shared<DataTypeString>() },
-        { "trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
-    }, { /* aliases */ }));
+        {"thread_name", std::make_shared<DataTypeString>(), "The name of the thread."},
+        {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
+        {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
+    }));
     setInMemoryMetadata(storage_metadata);
 
     notification_pipe.open();

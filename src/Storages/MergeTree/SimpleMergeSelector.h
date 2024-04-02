@@ -26,7 +26,7 @@ Then we need some balance between optimization of these two metrics.
 But some optimizations may improve both metrics.
 
 For example, we can look at the "merge tree" - the tree of data parts that were merged.
-If the tree is perfectly balanced then its depth is proportonal to the log(data size),
+If the tree is perfectly balanced then its depth is proportional to the log(data size),
 the total amount of work is proportional to data_size * log(data_size)
 and the write amplification is proportional to log(data_size).
 If it's not balanced (e.g. every new data part is always merged with existing data parts),

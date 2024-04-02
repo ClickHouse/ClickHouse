@@ -12,10 +12,9 @@ from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import CiLogsCredentials
-
-from docker_images_helper import DockerImage, pull_image, get_docker_image
+from docker_images_helper import DockerImage, get_docker_image, pull_image
 from download_release_packages import download_last_release
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from pr_info import PRInfo
 from report import ERROR, SUCCESS, JobReport, StatusType, TestResults, read_test_results
 from stopwatch import Stopwatch
@@ -54,8 +53,7 @@ def get_image_name(check_name: str) -> str:
         return "clickhouse/stateless-test"
     if "stateful" in check_name.lower():
         return "clickhouse/stateful-test"
-    else:
-        raise Exception(f"Cannot deduce image name based on check name {check_name}")
+    raise ValueError(f"Cannot deduce image name based on check name {check_name}")
 
 
 def get_run_command(
@@ -107,6 +105,7 @@ def get_run_command(
         f"{volume_with_broken_test}"
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
+        "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
     )
 
@@ -231,10 +230,10 @@ def main():
     run_changed_tests = flaky_check or validate_bugfix_check
     pr_info = PRInfo(need_changed_files=run_changed_tests)
     tests_to_run = []
+    assert (
+        not validate_bugfix_check or args.report_to_file
+    ), "JobReport file path must be provided with --validate-bugfix"
     if run_changed_tests:
-        assert (
-            args.report_to_file
-        ), "JobReport file path must be provided with --validate-bugfix"
         tests_to_run = _get_statless_tests_to_run(pr_info)
 
     if "RUN_BY_HASH_NUM" in os.environ:

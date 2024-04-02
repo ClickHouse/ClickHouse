@@ -118,7 +118,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         /// NOTE: optimizePrewhere can modify the stack.
         /// Prewhere optimization relies on PK optimization (getConditionEstimatorByPredicate)
-        optimizePrewhere(stack, nodes);
+        if (optimization_settings.optimize_prewhere)
+            optimizePrewhere(stack, nodes);
 
         auto & frame = stack.back();
 
