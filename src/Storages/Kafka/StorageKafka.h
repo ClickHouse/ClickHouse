@@ -19,8 +19,9 @@
 namespace DB
 {
 
-class StorageSystemKafkaConsumers;
 class ReadFromStorageKafka;
+class StorageSystemKafkaConsumers;
+class ThreadStatus;
 
 struct StorageKafkaInterceptors;
 
