@@ -40,7 +40,7 @@ URI::URI(const std::string & uri_)
     /// Case when AWS Private Link Interface is being used
     /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/userguide/privatelink-interface-endpoints.html
-    static const RE2 aws_private_link_style_pattern("bucket\\.vpce\\-([a-z0-9\\-.:]+)\\.vpce.amazonaws.com");
+    static const RE2 aws_private_link_style_pattern(R"(bucket\.vpce\-([a-z0-9\-.:]+)\.vpce.amazonaws.com)");
 
     /// Case when bucket name and key represented in path of S3 URL.
     /// E.g. (https://s3.region.amazonaws.com/bucket-name/key)
