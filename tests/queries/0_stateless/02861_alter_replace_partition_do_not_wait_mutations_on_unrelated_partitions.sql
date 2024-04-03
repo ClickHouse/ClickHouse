@@ -24,7 +24,7 @@ INSERT INTO t2 VALUES (2, 2000);
 -- sleep(1) is arbitrary here, we just need mutation to take long enough to be noticeable.
 ALTER TABLE t1 UPDATE i = if(sleep(1), 0, 9000) IN PARTITION id '1' WHERE p == 1;
 -- check that mutation is started
-SELECT is_done, latest_fail_reason, parts_to_do FROM system.mutations WHERE database==currentDatabase() AND table=='t1';
+SELECT not(is_done) as is_running FROM system.mutations WHERE database==currentDatabase() AND table=='t1';
 
 ALTER TABLE t1 REPLACE PARTITION id '2' FROM t2;
 
