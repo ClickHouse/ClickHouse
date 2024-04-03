@@ -1689,6 +1689,18 @@ Possible values:
 
 Default value: `throw`.
 
+## query_cache_system_table_handling {#query-cache-system-table-handling}
+
+Controls how the [query cache](../query-cache.md) handles `SELECT` queries against system tables, i.e. tables in databases `system.*` and `information_schema.*`.
+
+Possible values:
+
+- `'throw'` - Throw an exception and don't cache the query result.
+- `'save'` - Cache the query result.
+- `'ignore'` - Don't cache the query result and don't throw an exception.
+
+Default value: `throw`.
+
 ## query_cache_min_query_runs {#query-cache-min-query-runs}
 
 Minimum number of times a `SELECT` query must run before its result is stored in the [query cache](../query-cache.md).

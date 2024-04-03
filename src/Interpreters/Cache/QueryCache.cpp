@@ -2,8 +2,10 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/formatAST.h>
@@ -52,7 +54,40 @@ struct HasNonDeterministicFunctionsMatcher
     }
 };
 
+struct HasSystemTablesMatcher
+{
+    struct Data
+    {
+        const ContextPtr context;
+        bool has_system_tables = false;
+    };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (data.has_system_tables)
+            return;
+
+        if (const auto * identifier = node->as<ASTTableIdentifier>())
+        {
+            StorageID storage_id = identifier->getTableId();
+            if (!storage_id.hasDatabase())
+                /// The common case that a database name was not explicitly specified in the SQL. However, isPredefinedTable() is AST-based
+                /// and assumes that a database name was specified. This bites us in this edge situation:
+                ///     USE SYSTEM;
+                ///     SELECT * FROM PROCESSES; -- instead of SYSTEM.PROCESSES
+                /// In this case, don't call isPredefinedTable() (to avoid exceptions) and accept that the behavior is not 100% kosher.
+                return;
+            bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(storage_id);
+            if (is_predefined_table)
+                data.has_system_tables = true;
+        }
+    }
+};
+
 using HasNonDeterministicFunctionsVisitor = InDepthNodeVisitor<HasNonDeterministicFunctionsMatcher, true>;
+using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 }
 
@@ -61,6 +96,13 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
     return finder_data.has_non_deterministic_functions;
+}
+
+bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
+{
+    HasSystemTablesMatcher::Data finder_data{context};
+    HasSystemTablesVisitor(finder_data).visit(ast);
+    return finder_data.has_system_tables;
 }
 
 namespace

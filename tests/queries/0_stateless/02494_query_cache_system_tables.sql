@@ -1,0 +1,48 @@
+-- Tags: no-parallel
+-- Tag no-parallel: Messes with internal cache
+
+SYSTEM DROP QUERY CACHE;
+
+SELECT 'The Default for query_cache_system_table_handling is = throw';
+-- Test that the query cache rejects queries that involve system tables.
+SELECT * FROM system.one SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
+SELECT count(*) FROM system.query_cache;
+
+SYSTEM DROP QUERY CACHE;
+
+SELECT 'Check behavior of query_cache_system_table_handling = throw';
+-- Test that the query cache rejects queries that involve system tables.
+SELECT * FROM system.one SETTINGS use_query_cache = 1, query_cache_system_table_handling = 'throw'; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
+SELECT count(*) FROM system.query_cache;
+
+SYSTEM DROP QUERY CACHE;
+
+SELECT 'Check behavior of query_cache_system_table_handling = save';
+-- Test that the query cache saves the result of queries that involve system tables.
+SELECT * FROM system.one SETTINGS use_query_cache = 1, query_cache_system_table_handling = 'save';
+SELECT count(*) FROM system.query_cache;
+
+SYSTEM DROP QUERY CACHE;
+
+SELECT 'Check behavior of query_cache_system_table_handling = ignore';
+-- Test that the query cache ignores the result of queries that involve system tables.
+SELECT * FROM system.one SETTINGS use_query_cache = 1, query_cache_system_table_handling = 'ignore';
+SELECT count(*) FROM system.query_cache;
+
+SYSTEM DROP QUERY CACHE;
+
+SELECT 'Other tests';
+
+-- Edge case which doesn't work well due to conceptual reasons (QueryCache is AST-based), test it anyways to have it documented.
+USE system;
+SELECT * FROM one SETTINGS use_query_cache = 1; -- doesn't throw but should
+
+-- This query uses system.zero internally. Since the query cache works at AST level it does not "see' system.zero and must not complain.
+SELECT * SETTINGS use_query_cache = 1;
+
+-- information_schema is also treated as a system table
+SELECT * FROM information_schema.tables SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
+SELECT * FROM INFORMATION_SCHEMA.TABLES SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
+
+-- Cleanup
+SYSTEM DROP QUERY CACHE;
