@@ -225,7 +225,8 @@ bool applyTrivialCountIfPossible(
         return false;
 
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-    if (!storage->supportsTrivialCountOptimization())
+    if (!storage->supportsTrivialCountOptimization(
+            table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
     auto storage_id = storage->getStorageID();
@@ -260,9 +261,6 @@ bool applyTrivialCountIfPossible(
     // TODO: It's possible to optimize count() given only partition predicates
     auto & main_query_node = query_tree->as<QueryNode &>();
     if (main_query_node.hasGroupBy() || main_query_node.hasPrewhere() || main_query_node.hasWhere())
-        return false;
-
-    if (storage->hasLightweightDeletedMask())
         return false;
 
     if (settings.allow_experimental_query_deduplication
