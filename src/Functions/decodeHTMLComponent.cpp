@@ -108,7 +108,7 @@ namespace
                     // null terminate the sequence
                     seq.push_back('\0');
                     // lookup the html sequence in the perfect hashmap.
-                    const auto * res = hash.Lookup(seq.data(), strlen(seq.data()));
+                    const auto * res = HTMLCharacterHash::Lookup(seq.data(), strlen(seq.data()));
                     // reset so that it's reused in the next iteration
                     seq.clear();
                     if (res)

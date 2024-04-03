@@ -63,7 +63,7 @@ void MergeTreeSink::consume(Chunk chunk)
     if (!storage_snapshot->object_columns.empty())
         convertDynamicColumnsToTuples(block, storage_snapshot);
 
-    auto part_blocks = storage.writer.splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
+    auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<MergeTreeSink::DelayedChunk::Partition>;
     DelayedPartitions partitions;

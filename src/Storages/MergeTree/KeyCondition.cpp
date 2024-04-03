@@ -1964,8 +1964,8 @@ KeyCondition::Description KeyCondition::getDescription() const
         /// This means that logical NOT is applied to leaf.
         bool negate = false;
 
-        std::unique_ptr<Node> left;
-        std::unique_ptr<Node> right;
+        std::unique_ptr<Node> left = nullptr;
+        std::unique_ptr<Node> right = nullptr;
     };
 
     /// The algorithm is the same as in KeyCondition::checkInHyperrectangle
