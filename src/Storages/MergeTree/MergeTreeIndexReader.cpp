@@ -31,6 +31,8 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
         load_marks_threadpool,
         /*num_columns_in_mark=*/ 1);
 
+    marks_loader->startAsyncLoad();
+
     return std::make_unique<MergeTreeReaderStreamSingleColumn>(
         part->getDataPartStoragePtr(),
         index->getFileName(), extension, marks_count,
@@ -65,6 +67,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
         mark_cache,
         uncompressed_cache,
         std::move(settings));
+
     version = index_format.version;
 
     stream->adjustRightMark(getLastMark(all_mark_ranges_));

@@ -69,6 +69,8 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
+TEST_MAX_RUN_TIME_IN_SECONDS = 120
+
 
 class SharedEngineReplacer:
     ENGINES_NON_REPLICATED_REGEXP = r"[ =]((Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|)MergeTree\(?\)?)"
@@ -681,7 +683,9 @@ class FailureReason(enum.Enum):
     STDERR = "having stderror: "
     EXCEPTION = "having exception in stdout: "
     RESULT_DIFF = "result differs with reference: "
-    TOO_LONG = "Test runs too long (> 60s). Make it faster."
+    TOO_LONG = (
+        f"Test runs too long (> {TEST_MAX_RUN_TIME_IN_SECONDS}s). Make it faster."
+    )
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
 
     # SKIPPED reasons
@@ -1420,7 +1424,7 @@ class TestCase:
 
         if (
             self.testcase_args.test_runs > 1
-            and total_time > 120
+            and total_time > TEST_MAX_RUN_TIME_IN_SECONDS
             and "long" not in self.tags
         ):
             if debug_log:
