@@ -217,7 +217,7 @@ public:
         bool no_globs_in_key = fillBufferForKey(*expanded_keys_iter);
         expanded_keys_iter++;
         if (expanded_keys_iter == expanded_keys.end() && no_globs_in_key)
-            is_finished = true;
+            is_finished_for_key = true;
     }
 
     KeyWithInfoPtr next(size_t)
@@ -241,6 +241,7 @@ private:
 
     bool fillBufferForKey(const std::string & uri_key)
     {
+        is_finished_for_key = false;
         const String key_prefix = uri_key.substr(0, uri_key.find_first_of("*?{"));
 
         /// We don't have to list bucket, because there is no asterisks.
@@ -249,10 +250,12 @@ private:
             buffer.clear();
             buffer.emplace_back(std::make_shared<KeyWithInfo>(uri_key, std::nullopt));
             buffer_iter = buffer.begin();
+            if (read_keys)
+                read_keys->insert(read_keys->end(), buffer.begin(), buffer.end());
             return true;
         }
 
-        request = S3::ListObjectsV2Request{};
+        request = {};
         request.SetBucket(globbed_uri.bucket);
         request.SetPrefix(key_prefix);
         request.SetMaxKeys(static_cast<int>(request_settings.list_object_keys_size));
@@ -308,11 +311,11 @@ private:
                 bool no_globs_in_key = fillBufferForKey(*expanded_keys_iter);
                 expanded_keys_iter++;
                 if (expanded_keys_iter == expanded_keys.end() && no_globs_in_key)
-                    is_finished = true;
+                    is_finished_for_key = true;
                 continue;
             }
 
-            if (is_finished)
+            if (is_finished_for_key)
                 return {};
 
             try
@@ -327,7 +330,7 @@ private:
                 /// it may take some time for threads to stop processors and they
                 /// may still use this iterator after exception is thrown.
                 /// To avoid this UB, reset the buffer and return defaults for further calls.
-                is_finished = true;
+                is_finished_for_key = true;
                 buffer.clear();
                 buffer_iter = buffer.begin();
                 throw;
@@ -351,9 +354,9 @@ private:
         const auto & result_batch = outcome.GetResult().GetContents();
 
         /// It returns false when all objects were returned
-        is_finished = !outcome.GetResult().GetIsTruncated();
+        is_finished_for_key = !outcome.GetResult().GetIsTruncated();
 
-        if (!is_finished)
+        if (!is_finished_for_key)
         {
             /// Even if task is finished the thread may be not freed in pool.
             /// So wait until it will be freed before scheduling a new task.
@@ -444,7 +447,7 @@ private:
     ActionsDAGPtr filter_dag;
     std::unique_ptr<re2::RE2> matcher;
     bool recursive{false};
-    bool is_finished{false};
+    bool is_finished_for_key{false};
     KeysWithInfo * read_keys;
 
     S3::ListObjectsV2Request request;
