@@ -17,6 +17,7 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
@@ -1641,6 +1642,13 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             }
             out.point_in_polygon_column_description = column_desc;
 
+//            auto col = func.getArgumentAt(1).getConstantColumn();
+//            const auto & second_argument = typeid_cast<const ColumnConst &>(*col.column);
+//            const auto const_col = second_argument.getDataColumnPtr();
+//            auto points = ColumnToPointsConverter<RPNElement::Point>::convert(const_col);
+//            for (auto & p : points)
+//                out.polygon.outer().push_back(p);
+
             /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
             chassert(WhichDataType(const_type).isArray());
             for (const auto & ele : const_value.get<Array>())
@@ -1650,9 +1658,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                 chassert(ele_tuple.size() == 2);
                 auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[0]);
                 auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), ele_tuple[1]);
-                out.points_in_polygon.push_back({x, y});
+                out.polygon.outer().push_back({x, y});
             }
-
+            boost::geometry::correct(out.polygon);
             return atom_it->second(out, const_value);
         };
 
@@ -2868,31 +2876,28 @@ BoolMask KeyCondition::checkInHyperrectangle(
             Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_poss[1]].left);
             Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[key_column_poss[1]].right);
 
-            using Point = boost::geometry::model::d2::point_xy<Float64>;
-            using Polygon = boost::geometry::model::polygon<Point, false>;
-            using MultiPolygon = boost::geometry::model::multi_polygon<Polygon>;
+            if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
 
-            std::vector<Point> points_by_minmax_index;
+            std::vector<RPNElement::Point> points_by_minmax_index;
             points_by_minmax_index.push_back({x_min, y_min});
             points_by_minmax_index.push_back({x_min, y_max});
             points_by_minmax_index.push_back({x_max, y_max});
             points_by_minmax_index.push_back({x_max, y_min});
 
-            Polygon polygon_by_minmax_index;
+            RPNElement::Polygon polygon_by_minmax_index;
             for (const auto & point : points_by_minmax_index)
                 polygon_by_minmax_index.outer().push_back(point);
 
-            /// Ignore holes
-            Polygon polygon_by_user;
-            for (const auto & point : element.points_in_polygon)
-                polygon_by_user.outer().push_back(point);
-
             /// Close ring
             boost::geometry::correct(polygon_by_minmax_index);
-            boost::geometry::correct(polygon_by_user);
 
+            using MultiPolygon = boost::geometry::model::multi_polygon<RPNElement::Polygon>;
             MultiPolygon intersection{};
-            boost::geometry::intersection(polygon_by_minmax_index, polygon_by_user, intersection);
+            boost::geometry::intersection(polygon_by_minmax_index, element.polygon, intersection);
             has_intersection = !intersection.empty();
 
             if (has_intersection)
@@ -3070,6 +3075,7 @@ String KeyCondition::RPNElement::toString(std::string_view column_name, bool pri
         }
         case FUNCTION_POINT_IN_POLYGON:
         {
+            auto points_in_polygon = polygon.outer();
             buf << "(";
             print_wrapped_column(buf);
             buf << " in ";

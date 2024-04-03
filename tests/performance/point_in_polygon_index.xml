@@ -10,8 +10,8 @@
     <create_query>CREATE TABLE polygons(`x` Float64, `y` Float64, INDEX mm_x_y (x, y) TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY x</create_query>
     <create_query>
         INSERT INTO polygons
-        SELECT 1 / (number % 123), 2 / (number % 1000) from system.numbers LIMIT 10000000
-        SETTINGS max_insert_threads = 2, max_memory_usage = 30000000000
+        SELECT toFloat64(1000000) / ((number % 100000) + 1), toFloat64(1000000) / ((number % 100000) + 1) from system.numbers LIMIT 10000000
+        SETTINGS max_insert_threads = 2, max_memory_usage = 30000000000;
     </create_query>
 
     <query>SELECT count(*) FROM polygons

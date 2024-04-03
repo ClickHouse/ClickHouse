@@ -6,7 +6,8 @@
 #include <Core/Range.h>
 #include <Core/PlainRanges.h>
 
-#include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
 
 #include <Parsers/ASTExpressionList.h>
 
@@ -221,7 +222,9 @@ public:
         };
         std::optional<MultiColumnsFunctionDescription> point_in_polygon_column_description;
 
-        std::vector<boost::geometry::model::d2::point_xy<Float64>> points_in_polygon;
+        using Point = boost::geometry::model::d2::point_xy<Float64>;
+        using Polygon = boost::geometry::model::polygon<Point>;
+        Polygon polygon;
 
         MonotonicFunctionsChain monotonic_functions_chain;
     };
