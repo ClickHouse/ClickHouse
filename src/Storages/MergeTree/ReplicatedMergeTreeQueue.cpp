@@ -1222,8 +1222,10 @@ void ReplicatedMergeTreeQueue::waitForCurrentlyExecutingOpsInRange(const MergeTr
                 continue;
 
         const auto virtual_part_names = entry->getVirtualPartNames(format_version);
-        for(const auto& virtual_part_name: virtual_part_names) {
-            if (!part_info.isDisjoint(MergeTreePartInfo::fromPartName(virtual_part_name, format_version))){
+        for (const auto & virtual_part_name : virtual_part_names)
+        {
+            if (!part_info.isDisjoint(MergeTreePartInfo::fromPartName(virtual_part_name, format_version)))
+            {
                 to_wait.push_back(entry);
                 break;
             }
