@@ -1545,8 +1545,8 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         {
             if (auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
             {
-                if (func->arguments->children.size() != 2)
-                    throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda requires two arguments");
+                if (!isASTLambdaFunction(*func))
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Lambda function definition expects two arguments, first argument must be a tuple of arguments");
 
                 const auto * lambda_args_tuple = func->arguments->children.at(0)->as<ASTFunction>();
                 if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")

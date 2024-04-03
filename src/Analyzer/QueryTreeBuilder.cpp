@@ -558,7 +558,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * function = expression->as<ASTFunction>())
     {
-        if (function->is_lambda_function)
+        if (function->is_lambda_function || isASTLambdaFunction(*function))
         {
             const auto & lambda_arguments_and_expression = function->arguments->as<ASTExpressionList &>().children;
             auto & lambda_arguments_tuple = lambda_arguments_and_expression.at(0)->as<ASTFunction &>();
