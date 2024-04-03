@@ -204,6 +204,35 @@ namespace
             res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
         }
 
+        /// There is overlap between AccessType sources and table engines, so the following code avoids user granting twice.
+        std::vector<std::tuple<AccessFlags, std::string>> source_and_table_engines = {
+            {AccessType::FILE, "File"},
+            {AccessType::URL, "URL"},
+            {AccessType::REMOTE, "Distributed"},
+            {AccessType::MONGO, "MongoDB"},
+            {AccessType::REDIS, "Redis"},
+            {AccessType::MYSQL, "MySQL"},
+            {AccessType::POSTGRES, "PostgreSQL"},
+            {AccessType::SQLITE, "SQLite"},
+            {AccessType::ODBC, "ODBC"},
+            {AccessType::JDBC, "JDBC"},
+            {AccessType::HDFS, "HDFS"},
+            {AccessType::S3, "S3"},
+            {AccessType::HIVE, "Hive"},
+            {AccessType::AZURE, "AzureBlobStorage"}
+        };
+
+        for (const auto & source_and_table_engine : source_and_table_engines)
+        {
+            const auto & source = std::get<0>(source_and_table_engine);
+            const auto & table_engine = std::get<1>(source_and_table_engine);
+            if (res.isGranted(source) || res.isGranted(AccessType::TABLE_ENGINE, table_engine))
+            {
+                res.grant(source);
+                res.grant(AccessType::TABLE_ENGINE, table_engine);
+            }
+        }
+
         return res;
     }
 
