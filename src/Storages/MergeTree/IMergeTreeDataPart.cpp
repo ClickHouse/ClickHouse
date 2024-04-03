@@ -805,8 +805,8 @@ void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool ch
                         throw;
 
                     auto message = getCurrentExceptionMessage(true);
-                    LOG_ERROR(&Poco::Logger::get("IMergeTreeDataPart"),
-                              "Cannot load projection {}, will consider it broken. Reason: {}", projection.name, message);
+                    LOG_WARNING(storage.log, "Cannot load projection {}, "
+                                "will consider it broken. Reason: {}", projection.name, message);
 
                     has_broken_projection = true;
                     part->setBrokenReason(message, getCurrentExceptionCode());
