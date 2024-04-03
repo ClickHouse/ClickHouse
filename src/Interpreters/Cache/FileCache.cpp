@@ -1379,7 +1379,6 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         }
     }
 
-
     if (new_settings.max_size != actual_settings.max_size
         || new_settings.max_elements != actual_settings.max_elements)
     {
