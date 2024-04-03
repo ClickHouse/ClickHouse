@@ -206,6 +206,12 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
                       << (settings.hilite ? hilite_none : "");
         statistic_decl->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::MODIFY_STATISTIC)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY STATISTIC "
+                      << (settings.hilite ? hilite_none : "");
+        statistic_decl->formatImpl(settings, state, frame);
+    }
     else if (type == ASTAlterCommand::DROP_STATISTIC)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistic ? "CLEAR " : "DROP ") << "STATISTIC "

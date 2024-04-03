@@ -48,9 +48,12 @@ std::vector<String> ASTStatisticsDeclaration::getTypeNames() const
 void ASTStatisticsDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     columns->formatImpl(s, state, frame);
-    s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
+    s.ostr << (s.hilite ? hilite_keyword : "");
     if (types)
+    {
+        s.ostr << " TYPE " << (s.hilite ? hilite_none : "");
         types->formatImpl(s, state, frame);
+    }
 }
 
 }
