@@ -1,6 +1,7 @@
 
 SET max_threads = 1;
 SET join_use_nulls = 1;
+SET allow_experimental_analyzer = 0;
 
 SELECT '-- Simple tests';
 EXPLAIN PIPELINE
