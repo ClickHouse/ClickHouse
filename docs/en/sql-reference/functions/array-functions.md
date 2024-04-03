@@ -774,6 +774,57 @@ Returns the number of elements for which `func(arr1[i], …, arrN[i])` returns s
 
 Note that the `arrayCount` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
+## arrayDotProduct
+
+**Syntax**
+
+```sql
+arrayDotProduct(vector1, vector2)
+```
+
+Alias: `scalarProduct`
+
+**Parameters**
+
+- `vector1`: First vector. [Array](../data-types/array.md) or [Tuple](../data-types/tuple.md) of numeric values.
+- `vector2`: Second vector. [Array](../data-types/array.md) or [Tuple](../data-types/tuple.md) of numeric values.
+
+Note:::
+The sizes of the two vectors must be equal. Arrays and Tuples may also contain mixed element types.
+:::
+
+**Returned value**
+
+- The dot product of the two vectors.
+
+Type: numeric - determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);
+```
+
+Result:
+
+```response
+32	UInt16
+```
+
+Query:
+
+```sql
+SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UInt8)) AS res, toTypeName(res);
+```
+
+Result:
+
+```response
+32	Float64
+```
+
 ## countEqual(arr, x)
 
 Returns the number of elements in the array equal to x. Equivalent to arrayCount (elem -\> elem = x, arr).
@@ -1652,7 +1703,7 @@ flatten(array_of_arrays)
 
 Alias: `flatten`.
 
-**Arguments**
+**Parameters**
 
 - `array_of_arrays` — [Array](../../sql-reference/data-types/array.md) of arrays. For example, `[[1,2,3], [4,5]]`.
 
