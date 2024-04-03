@@ -85,8 +85,8 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
+    {"24.4", {{"input_format_tsv_crlf_end_of_line", false, false, "Enables reading of CRLF line endings with TSV formats"}}},
     {"24.3", {{"s3_connect_timeout_ms", 1000, 1000, "Introduce new dedicated setting for s3 connection timeout"},
-              {"input_format_tsv_crlf_end_of_line", false, false, "Enables reading of CRLF line endings with TSV formats"},
               {"allow_experimental_shared_merge_tree", false, true, "The setting is obsolete"},
               {"use_page_cache_for_disks_without_file_cache", false, false, "Added userspace page cache"},
               {"read_from_page_cache_if_exists_otherwise_bypass_cache", false, false, "Added userspace page cache"},
