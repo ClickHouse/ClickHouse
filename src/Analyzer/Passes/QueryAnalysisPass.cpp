@@ -6155,7 +6155,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
         return resolved_expression_it->second;
     }
 
-    bool is_nullable_group_by_key = scope.nullable_group_by_keys.contains(node) && !scope.expressions_in_resolve_process_stack.hasAggregateFunction();
+    bool is_nullable_group_by_key = scope.nullable_group_by_keys.contains(node);
     if (is_nullable_group_by_key)
         ++scope.found_nullable_group_by_key_in_scope;
 
@@ -6452,7 +6452,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
 
     validateTreeSize(node, scope.context->getSettingsRef().max_expanded_ast_elements, node_to_tree_size);
 
-    if (is_nullable_group_by_key && scope.found_nullable_group_by_key_in_scope == 1)
+    if (is_nullable_group_by_key && scope.found_nullable_group_by_key_in_scope == 1 && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
     {
         node = node->clone();
         node->convertToNullable();
