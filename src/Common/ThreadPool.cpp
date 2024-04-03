@@ -202,6 +202,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// Check if there are enough threads to process job.
         if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
         {
+            if (CannotAllocateThreadFaultInjector::injectFault())
+                return on_error("fault injected");
+
             try
             {
                 threads.emplace_front();
@@ -540,4 +543,31 @@ void GlobalThreadPool::shutdown()
     {
         the_instance->finalize();
     }
+}
+
+CannotAllocateThreadFaultInjector & CannotAllocateThreadFaultInjector::instance()
+{
+    static CannotAllocateThreadFaultInjector ins;
+    return ins;
+}
+
+void CannotAllocateThreadFaultInjector::setFaultProbability(double probability)
+{
+    auto & ins = instance();
+    std::lock_guard lock(ins.mutex);
+    ins.enabled = 0 < probability && probability <= 1;
+    if (ins.enabled)
+        ins.random.emplace(probability);
+    else
+        ins.random.reset();
+}
+
+bool CannotAllocateThreadFaultInjector::injectFault()
+{
+    auto & ins = instance();
+    if (!ins.enabled.load(std::memory_order_relaxed))
+        return false;
+
+    std::lock_guard lock(ins.mutex);
+    return ins.random && (*ins.random)(ins.rndgen);
 }
