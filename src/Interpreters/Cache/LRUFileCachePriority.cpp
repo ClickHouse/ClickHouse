@@ -307,25 +307,29 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
     if (can_fit())
     {
-        /// As eviction is done without a cache priority lock,
-        /// then if some space was partially available and some needed
-        /// to be freed via eviction, we need to make sure that this
-        /// partially available space is still available
-        /// after we finish with eviction for non-available space.
-        /// So we create a space holder for the currently available part
-        /// of the required space for the duration of eviction of the other
-        /// currently non-available part of the space.
+        /// `res` contains eviction candidates. Do we have any?
+        if (res.size() > 0)
+        {
+            /// As eviction is done without a cache priority lock,
+            /// then if some space was partially available and some needed
+            /// to be freed via eviction, we need to make sure that this
+            /// partially available space is still available
+            /// after we finish with eviction for non-available space.
+            /// So we create a space holder for the currently available part
+            /// of the required space for the duration of eviction of the other
+            /// currently non-available part of the space.
 
-        const size_t hold_size = size > stat.total_stat.releasable_size
-            ? size - stat.total_stat.releasable_size
-            : 0;
+            const size_t hold_size = size > stat.total_stat.releasable_size
+                ? size - stat.total_stat.releasable_size
+                : 0;
 
-        const size_t hold_elements = elements > stat.total_stat.releasable_count
-            ? elements - stat.total_stat.releasable_count
-            : 0;
+            const size_t hold_elements = elements > stat.total_stat.releasable_count
+                ? elements - stat.total_stat.releasable_count
+                : 0;
 
-        if (hold_size || hold_elements)
-            res.setSpaceHolder(hold_size, hold_elements, *this, lock);
+            if (hold_size || hold_elements)
+                res.setSpaceHolder(hold_size, hold_elements, *this, lock);
+        }
 
         // LOG_TEST(log, "Collected {} candidates for eviction (total size: {}). "
         //          "Took hold of size {} and elements {}",
