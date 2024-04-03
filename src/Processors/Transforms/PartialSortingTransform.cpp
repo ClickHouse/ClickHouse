@@ -1,7 +1,8 @@
-#include <Processors/Transforms/PartialSortingTransform.h>
-#include <Interpreters/sortBlock.h>
 #include <Core/SortCursor.h>
+#include <Interpreters/sortBlock.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
 #include <Common/PODArray.h>
+#include <Common/iota.h>
 
 namespace DB
 {
@@ -36,9 +37,7 @@ size_t getFilterMask(const ColumnRawPtrs & raw_block_columns, const Columns & th
     else
     {
         rows_to_compare.resize(num_rows);
-
-        for (size_t i = 0; i < num_rows; ++i)
-            rows_to_compare[i] = i;
+        iota(rows_to_compare.data(), num_rows, UInt64(0));
 
         size_t size = description.size();
         for (size_t i = 0; i < size; ++i)
@@ -159,7 +158,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
             {
                 MutableColumnPtr sort_description_threshold_column_updated = raw_block_columns[i]->cloneEmpty();
                 sort_description_threshold_column_updated->insertFrom(*raw_block_columns[i], min_row_to_compare);
-                sort_description_threshold_columns_updated[i] = std::move(sort_description_threshold_column_updated);
+                sort_description_threshold_columns_updated[i] = sort_description_threshold_column_updated->convertToFullColumnIfSparse();
             }
 
             sort_description_threshold_columns = std::move(sort_description_threshold_columns_updated);

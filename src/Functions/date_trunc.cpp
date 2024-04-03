@@ -1,9 +1,10 @@
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 
@@ -47,7 +48,7 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be constant string: "
                     "name of datepart", getName());
 
-            datepart_param = datepart_column->getValue<String>();
+            datepart_param = Poco::toLower(datepart_column->getValue<String>());
             if (datepart_param.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument (name of datepart) for function {} cannot be empty",
                     getName());
@@ -55,9 +56,13 @@ public:
             if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 
-            result_type_is_date = (datepart_kind == IntervalKind::Year)
-                || (datepart_kind == IntervalKind::Quarter) || (datepart_kind == IntervalKind::Month)
-                || (datepart_kind == IntervalKind::Week);
+            if (datepart_kind == IntervalKind::Kind::Nanosecond || datepart_kind == IntervalKind::Kind::Microsecond
+                || datepart_kind == IntervalKind::Kind::Millisecond)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't support {}", getName(), datepart_param);
+
+            result_type_is_date = (datepart_kind == IntervalKind::Kind::Year)
+                || (datepart_kind == IntervalKind::Kind::Quarter) || (datepart_kind == IntervalKind::Kind::Month)
+                || (datepart_kind == IntervalKind::Kind::Week);
         };
 
         bool second_argument_is_date = false;
@@ -68,8 +73,8 @@ public:
 
             second_argument_is_date = isDate(arguments[1].type);
 
-            if (second_argument_is_date && ((datepart_kind == IntervalKind::Hour)
-                || (datepart_kind == IntervalKind::Minute) || (datepart_kind == IntervalKind::Second)))
+            if (second_argument_is_date && ((datepart_kind == IntervalKind::Kind::Hour)
+                || (datepart_kind == IntervalKind::Kind::Minute) || (datepart_kind == IntervalKind::Kind::Second)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type Date of argument for function {}", getName());
         };
 
@@ -107,7 +112,7 @@ public:
         if (result_type_is_date)
             return std::make_shared<DataTypeDate>();
         else
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

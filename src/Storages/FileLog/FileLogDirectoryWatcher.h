@@ -2,7 +2,6 @@
 
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 
-#include <Common/logger_useful.h>
 
 #include <memory>
 #include <mutex>
@@ -66,7 +65,7 @@ private:
     /// accessed in thread created by dw.
     Events events;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::mutex mutex;
 

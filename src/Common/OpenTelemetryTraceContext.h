@@ -9,6 +9,7 @@ struct Settings;
 class OpenTelemetrySpanLog;
 class WriteBuffer;
 class ReadBuffer;
+struct ExecutionStatus;
 
 namespace OpenTelemetry
 {
@@ -57,6 +58,7 @@ struct Span
     bool addAttribute(std::string_view name, std::function<String()> value_supplier) noexcept;
     bool addAttribute(const Exception & e) noexcept;
     bool addAttribute(std::exception_ptr e) noexcept;
+    bool addAttribute(const ExecutionStatus & e) noexcept;
 
     bool isTraceEnabled() const
     {
@@ -179,7 +181,7 @@ using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 /// Once it's created or destructed, it automatically maitains the tracing context on the thread that it lives.
 struct SpanHolder : public Span
 {
-    SpanHolder(std::string_view, SpanKind _kind = INTERNAL);
+    explicit SpanHolder(std::string_view, SpanKind _kind = INTERNAL);
     ~SpanHolder();
 
     /// Finish a span explicitly if needed.

@@ -8,7 +8,6 @@ slug: /ru/operations/system-tables/asynchronous_metric_log
 Столбцы:
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата события.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время события.
--   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время события в микросекундах.
 -   `name` ([String](../../sql-reference/data-types/string.md)) — название метрики.
 -   `value` ([Float64](../../sql-reference/data-types/float.md)) — значение метрики.
 

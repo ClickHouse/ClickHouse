@@ -294,9 +294,9 @@ void AddBlobOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
     if (metadata_storage.exists(path))
         metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
     else
-        metadata = std::make_unique<DiskObjectStorageMetadata>(disk.getPath(), root_path, path);
+        metadata = std::make_unique<DiskObjectStorageMetadata>(disk.getPath(), path);
 
-    metadata->addObject(blob_name, size_in_bytes);
+    metadata->addObject(object_key, size_in_bytes);
 
     write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
 
@@ -319,6 +319,8 @@ void UnlinkMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metada
         write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
         write_operation->execute(metadata_lock);
     }
+    outcome->num_hardlinks = ref_count;
+
     unlink_operation = std::make_unique<UnlinkFileOperation>(path, disk);
     unlink_operation->execute(metadata_lock);
 }
@@ -334,6 +336,9 @@ void UnlinkMetadataFileOperation::undo()
 
     if (write_operation)
         write_operation->undo();
+
+    /// Update outcome to reflect the fact that we have restored the file.
+    outcome->num_hardlinks++;
 }
 
 void SetReadonlyFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)

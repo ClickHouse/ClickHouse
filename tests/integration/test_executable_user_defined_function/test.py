@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import uuid
 
 import pytest
 
@@ -285,3 +286,51 @@ def test_executable_function_parameter_python(started_cluster):
         node.query("SELECT test_function_parameter_python(2)(toUInt64(1))")
         == "Parameter 2 key 1\n"
     )
+
+
+def test_executable_function_always_error_python(started_cluster):
+    skip_test_msan(node)
+    try:
+        node.query("SELECT test_function_always_error_throw_python(1)")
+        assert False, "Exception have to be thrown"
+    except Exception as ex:
+        assert "DB::Exception: Executable generates stderr: Fake error" in str(ex)
+
+    query_id = uuid.uuid4().hex
+    assert (
+        node.query("SELECT test_function_always_error_log_python(1)", query_id=query_id)
+        == "Key 1\n"
+    )
+    assert node.contains_in_log(
+        f"{{{query_id}}} <Warning> TimeoutReadBufferFromFileDescriptor: Executable generates stderr: Fake error"
+    )
+
+    query_id = uuid.uuid4().hex
+    assert (
+        node.query(
+            "SELECT test_function_always_error_log_first_python(1)", query_id=query_id
+        )
+        == "Key 1\n"
+    )
+    assert node.contains_in_log(
+        f"{{{query_id}}} <Warning> TimeoutReadBufferFromFileDescriptor: Executable generates stderr at the beginning:  {'a' * (3 * 1024)}{'b' * 1024}\n"
+    )
+
+    query_id = uuid.uuid4().hex
+    assert (
+        node.query(
+            "SELECT test_function_always_error_log_last_python(1)", query_id=query_id
+        )
+        == "Key 1\n"
+    )
+    assert node.contains_in_log(
+        f"{{{query_id}}} <Warning> TimeoutReadBufferFromFileDescriptor: Executable generates stderr at the end:  {'b' * 1024}{'c' * (3 * 1024)}\n"
+    )
+
+    assert node.query("SELECT test_function_exit_error_ignore_python(1)") == "Key 1\n"
+
+    try:
+        node.query("SELECT test_function_exit_error_fail_python(1)")
+        assert False, "Exception have to be thrown"
+    except Exception as ex:
+        assert "DB::Exception: Child process was exited with return code 1" in str(ex)

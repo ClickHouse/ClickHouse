@@ -7,12 +7,11 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/AlignedBuffer.h>
+#include <Common/Arena.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -187,10 +186,10 @@ void SerializationAggregateFunction::serializeTextJSON(const IColumn & column, s
 }
 
 
-void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
-    readJSONString(s, istr);
+    readJSONString(s, istr, settings.json);
     deserializeFromString(function, column, s, version);
 }
 

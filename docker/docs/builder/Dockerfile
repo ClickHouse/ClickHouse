@@ -1,12 +1,11 @@
-# rebuild in #36968
 # docker build -t clickhouse/docs-builder .
 # nodejs 17 prefers ipv6 and is broken in our environment
 FROM node:16-alpine
 
 RUN apk add --no-cache git openssh bash
 
-# At this point we want to really update /opt/clickhouse-docs
-# despite the cached images
+# At this point we want to really update /opt/clickhouse-docs directory
+# So we reset the cache
 ARG CACHE_INVALIDATOR=0
 
 RUN git clone https://github.com/ClickHouse/clickhouse-docs.git \

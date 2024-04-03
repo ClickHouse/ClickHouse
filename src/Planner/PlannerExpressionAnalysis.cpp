@@ -1,7 +1,11 @@
 #include <Planner/PlannerExpressionAnalysis.h>
 
+#include <Columns/ColumnNullable.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+
+#include <Interpreters/Context.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -93,7 +97,11 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
 
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
-                    group_by_with_constant_keys |= (grouping_set_key_node->as<ConstantNode>() != nullptr);
+                    auto is_constant_key = grouping_set_key_node->as<ConstantNode>() != nullptr;
+                    group_by_with_constant_keys |= is_constant_key;
+
+                    if (is_constant_key && !aggregates_descriptions.empty())
+                        continue;
 
                     auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, grouping_set_key_node);
                     aggregation_keys.reserve(expression_dag_nodes.size());
@@ -105,7 +113,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                             continue;
 
                         auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                        available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
+                        auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                        available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                         aggregation_keys.push_back(expression_dag_node->result_name);
                         before_aggregation_actions->getOutputs().push_back(expression_dag_node);
                         before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
@@ -139,21 +148,28 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
         else
         {
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
-                group_by_with_constant_keys |= (group_by_key_node->as<ConstantNode>() != nullptr);
-
-            auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, query_node.getGroupByNode());
-            aggregation_keys.reserve(expression_dag_nodes.size());
-
-            for (auto & expression_dag_node : expression_dag_nodes)
             {
-                if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
+                auto is_constant_key = group_by_key_node->as<ConstantNode>() != nullptr;
+                group_by_with_constant_keys |= is_constant_key;
+
+                if (is_constant_key && !aggregates_descriptions.empty())
                     continue;
 
-                auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                available_columns_after_aggregation.emplace_back(nullptr, expression_type_after_aggregation, expression_dag_node->result_name);
-                aggregation_keys.push_back(expression_dag_node->result_name);
-                before_aggregation_actions->getOutputs().push_back(expression_dag_node);
-                before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
+                auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, group_by_key_node);
+                aggregation_keys.reserve(expression_dag_nodes.size());
+
+                for (auto & expression_dag_node : expression_dag_nodes)
+                {
+                    if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
+                        continue;
+
+                    auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
+                    auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                    available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
+                    aggregation_keys.push_back(expression_dag_node->result_name);
+                    before_aggregation_actions->getOutputs().push_back(expression_dag_node);
+                    before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
+                }
             }
         }
     }
@@ -536,6 +552,20 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     auto project_names_input = chain_available_output_columns ? *chain_available_output_columns : current_output_columns;
+
+    /** For distributed query `isToAggregationState`, we do not project names on shards/replicas.
+      * However, constant columns from project_names_actions still can be required on the initiator.
+      * For example, for query:
+      *   SELECT hostName(), number from clusterAllReplicas(default, numbers_mt(3)) ORDER BY number;
+      * executed to stage `WithMergeableStateAfterAggregationAndLimit` on replicas
+      * we must send hostName() column to initiator.
+      */
+    if (planner_query_processing_info.isToAggregationState())
+    {
+        for (auto & column : project_names_input)
+            column.column = nullptr;
+    }
+
     bool has_with_fill = sort_analysis_result_optional.has_value() && sort_analysis_result_optional->has_with_fill;
 
     /** If there is WITH FILL we must use non constant projection columns.

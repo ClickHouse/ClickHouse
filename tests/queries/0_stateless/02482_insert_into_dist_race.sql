@@ -8,12 +8,12 @@ SET prefer_localhost_replica=0;
 CREATE TABLE tmp_02482 (i UInt64, n LowCardinality(String)) ENGINE = Memory;
 CREATE TABLE dist_02482(i UInt64, n LowCardinality(Nullable(String))) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), tmp_02482, i);
 
-SET insert_distributed_sync=1;
+SET distributed_foreground_insert=1;
 
 INSERT INTO dist_02482 VALUES (1, '1'), (2, '2');
 INSERT INTO dist_02482 SELECT number, number FROM numbers(1000);
 
-SET insert_distributed_sync=0;
+SET distributed_foreground_insert=0;
 
 SYSTEM STOP DISTRIBUTED SENDS dist_02482;
 

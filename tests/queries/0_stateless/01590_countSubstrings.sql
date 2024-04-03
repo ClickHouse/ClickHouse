@@ -12,6 +12,11 @@ select 'empty';
 select countSubstrings('', '.');
 select countSubstrings('', '');
 select countSubstrings('.', '');
+select countSubstrings(toString(number), '') from numbers(1);
+select countSubstrings('', toString(number)) from numbers(1);
+select countSubstrings('aaa', materialize(''));
+select countSubstrings(materialize('aaa'), '');
+select countSubstrings(materialize('aaa'), materialize(''));
 
 select 'char';
 select countSubstrings('foobar.com', '.');

@@ -1,6 +1,7 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
 from time import sleep
+from retry import retry
 
 from kazoo.client import KazooClient
 
@@ -88,15 +89,19 @@ def test_s3_upload(started_cluster):
             for obj in list(cluster.minio_client.list_objects("snapshots"))
         ]
 
-    saved_snapshots = get_saved_snapshots()
-    assert set(saved_snapshots) == set(
-        [
-            "snapshot_50.bin.zstd",
-            "snapshot_100.bin.zstd",
-            "snapshot_150.bin.zstd",
-            "snapshot_200.bin.zstd",
-        ]
-    )
+    # Keeper sends snapshots asynchornously, hence we need to retry.
+    @retry(AssertionError, tries=10, delay=2)
+    def _check_snapshots():
+        assert set(get_saved_snapshots()) == set(
+            [
+                "snapshot_50.bin.zstd",
+                "snapshot_100.bin.zstd",
+                "snapshot_150.bin.zstd",
+                "snapshot_200.bin.zstd",
+            ]
+        )
+
+    _check_snapshots()
 
     destroy_zk_client(node1_zk)
     node1.stop_clickhouse(kill=True)
@@ -108,9 +113,11 @@ def test_s3_upload(started_cluster):
     for _ in range(200):
         node2_zk.create("/test", sequence=True)
 
-    saved_snapshots = get_saved_snapshots()
+    @retry(AssertionError, tries=10, delay=2)
+    def _check_snapshots_without_quorum():
+        assert len(get_saved_snapshots()) > 4
 
-    assert len(saved_snapshots) > 4
+    _check_snapshots_without_quorum()
 
     success_upload_message = "Successfully uploaded"
     assert node2.contains_in_log(success_upload_message) or node3.contains_in_log(

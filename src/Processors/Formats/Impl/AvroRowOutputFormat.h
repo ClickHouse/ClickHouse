@@ -23,7 +23,7 @@ class AvroSerializerTraits;
 class AvroSerializer
 {
 public:
-    AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits>);
+    AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits>, const FormatSettings & settings_);
     const avro::ValidSchema & getSchema() const { return valid_schema; }
     void serializeRow(const Columns & columns, size_t row_num, avro::Encoder & encoder);
 
@@ -41,22 +41,23 @@ private:
     std::vector<SerializeFn> serialize_fns;
     avro::ValidSchema valid_schema;
     std::unique_ptr<AvroSerializerTraits> traits;
+    const FormatSettings & settings;
 };
 
 class AvroRowOutputFormat final : public IRowOutputFormat
 {
 public:
     AvroRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
-    virtual ~AvroRowOutputFormat() override;
+    ~AvroRowOutputFormat() override;
 
     String getName() const override { return "AvroRowOutputFormat"; }
 
 private:
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
-    virtual void writePrefix() override;
-    virtual void finalizeImpl() override;
-    virtual void resetFormatterImpl() override;
+    void writePrefix() override;
+    void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     void createFileWriter();
 

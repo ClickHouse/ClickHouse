@@ -2,6 +2,9 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
+#include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
@@ -61,17 +64,19 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
-ThreadGroupStatus::ThreadGroupStatus()
+ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
 {}
 
-ThreadStatus::ThreadStatus()
-    : thread_id{getThreadId()}
+ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
+    : thread_id{getThreadId()}, check_current_thread_on_destruction(check_current_thread_on_destruction_)
 {
+    chassert(!current_thread);
+
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("(for thread)");
-    log = &Poco::Logger::get("ThreadStatus");
+    log = getLogger("ThreadStatus");
 
     current_thread = this;
 
@@ -119,8 +124,9 @@ ThreadStatus::ThreadStatus()
 #endif
 }
 
-ThreadGroupStatusPtr ThreadStatus::getThreadGroup() const
+ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
+    chassert(current_thread == this);
     return thread_group;
 }
 
@@ -139,7 +145,7 @@ ContextPtr ThreadStatus::getGlobalContext() const
     return global_context.lock();
 }
 
-void ThreadGroupStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
+void ThreadGroup::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
 {
     std::lock_guard lock(mutex);
     shared_data.logs_queue_ptr = logs_queue;
@@ -185,6 +191,16 @@ void ThreadStatus::flushUntrackedMemory()
     untracked_memory = 0;
 }
 
+bool ThreadStatus::isQueryCanceled() const
+{
+    if (!thread_group)
+        return false;
+
+    if (local_data.query_is_canceled_predicate)
+        return local_data.query_is_canceled_predicate();
+    return false;
+}
+
 ThreadStatus::~ThreadStatus()
 {
     flushUntrackedMemory();
@@ -197,10 +213,14 @@ ThreadStatus::~ThreadStatus()
     if (deleter)
         deleter();
 
+    chassert(!check_current_thread_on_destruction || current_thread == this);
+
     /// Only change current_thread if it's currently being used by this ThreadStatus
     /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread
     if (current_thread == this)
         current_thread = nullptr;
+    else if (check_current_thread_on_destruction)
+        LOG_ERROR(log, "current_thread contains invalid address");
 }
 
 void ThreadStatus::updatePerformanceCounters()
@@ -214,6 +234,20 @@ void ThreadStatus::updatePerformanceCounters()
     catch (...)
     {
         tryLogCurrentException(log);
+    }
+}
+
+void ThreadStatus::updatePerformanceCountersIfNeeded()
+{
+    if (last_rusage->thread_id == 0)
+        return; // Performance counters are not initialized, so there is no need to update them
+
+    constexpr UInt64 performance_counters_update_period_microseconds = 10 * 1000; // 10 milliseconds
+    UInt64 total_elapsed_microseconds = stopwatch.elapsedMicroseconds();
+    if (last_performance_counters_update_time + performance_counters_update_period_microseconds < total_elapsed_microseconds)
+    {
+        updatePerformanceCounters();
+        last_performance_counters_update_time = total_elapsed_microseconds;
     }
 }
 

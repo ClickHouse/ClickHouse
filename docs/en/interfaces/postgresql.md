@@ -54,7 +54,7 @@ default=>
 
 And that's it! You now have a PostgreSQL client connected to ClickHouse, and all commands and queries are executed on ClickHouse.
 
-:::caution
+:::note
 The PostgreSQL protocol currently only supports plain-text passwords.
 :::
 
@@ -69,5 +69,3 @@ psql "port=9005 host=127.0.0.1 user=alice dbname=default sslcert=/path/to/certif
 ```
 
 View the [PostgreSQL docs](https://jdbc.postgresql.org/documentation/head/ssl-client.html) for more details on their SSL settings.
-
-[Original article](https://clickhouse.com/docs/en/interfaces/postgresql)

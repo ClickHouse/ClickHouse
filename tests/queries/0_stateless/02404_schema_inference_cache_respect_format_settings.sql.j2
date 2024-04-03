@@ -1,7 +1,7 @@
 -- Tags: no-parallel, no-fasttest
 
 system drop schema cache for file;
-
+set input_format_json_try_infer_numbers_from_strings=1;
 {% for format in ['TSV', 'TSVWithNames', 'CSV', 'CSVWithNames', 'TSKV', 'CustomSeparated', 'JSONEachRow', 'JSONCompactEachRow', 'Values'] -%}
 
 select '{{ format }}';

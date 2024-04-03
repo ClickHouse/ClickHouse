@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
+
 #include <Poco/JSON/Object.h>
 
 
@@ -28,6 +30,8 @@ constexpr auto SERIALIZATION_INFO_VERSION = 0;
 class SerializationInfo
 {
 public:
+    using Settings = SerializationInfoSettings;
+
     struct Data
     {
         size_t num_rows = 0;
@@ -38,16 +42,8 @@ public:
         void addDefaults(size_t length);
     };
 
-    struct Settings
-    {
-        const double ratio_of_defaults_for_sparse = 1.0;
-        const bool choose_kind = false;
-
-        bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
-    };
-
-    SerializationInfo(ISerialization::Kind kind_, const Settings & settings_);
-    SerializationInfo(ISerialization::Kind kind_, const Settings & settings_, const Data & data_);
+    SerializationInfo(ISerialization::Kind kind_, const SerializationInfoSettings & settings_);
+    SerializationInfo(ISerialization::Kind kind_, const SerializationInfoSettings & settings_, const Data & data_);
 
     virtual ~SerializationInfo() = default;
 
@@ -64,7 +60,7 @@ public:
     virtual std::shared_ptr<SerializationInfo> createWithType(
         const IDataType & old_type,
         const IDataType & new_type,
-        const Settings & new_settings) const;
+        const SerializationInfoSettings & new_settings) const;
 
     virtual void serialializeKindBinary(WriteBuffer & out) const;
     virtual void deserializeFromKindsBinary(ReadBuffer & in);
@@ -73,14 +69,14 @@ public:
     virtual void fromJSON(const Poco::JSON::Object & object);
 
     void setKind(ISerialization::Kind kind_) { kind = kind_; }
-    const Settings & getSettings() const { return settings; }
+    const SerializationInfoSettings & getSettings() const { return settings; }
     const Data & getData() const { return data; }
     ISerialization::Kind getKind() const { return kind; }
 
-    static ISerialization::Kind chooseKind(const Data & data, const Settings & settings);
+    static ISerialization::Kind chooseKind(const Data & data, const SerializationInfoSettings & settings);
 
 protected:
-    const Settings settings;
+    const SerializationInfoSettings settings;
 
     ISerialization::Kind kind;
     Data data;
@@ -96,8 +92,10 @@ using MutableSerializationInfos = std::vector<MutableSerializationInfoPtr>;
 class SerializationInfoByName : public std::map<String, MutableSerializationInfoPtr>
 {
 public:
+    using Settings = SerializationInfoSettings;
+
     SerializationInfoByName() = default;
-    SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings);
+    SerializationInfoByName(const NamesAndTypesList & columns, const Settings & settings);
 
     void add(const Block & block);
     void add(const SerializationInfoByName & other);
@@ -108,7 +106,9 @@ public:
     void replaceData(const SerializationInfoByName & other);
 
     void writeJSON(WriteBuffer & out) const;
-    void readJSON(ReadBuffer & in);
+
+    static SerializationInfoByName readJSON(
+        const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in);
 };
 
 }

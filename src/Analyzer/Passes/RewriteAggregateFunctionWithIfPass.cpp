@@ -26,7 +26,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<RewriteAggregateFunctionWithIfVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_rewrite_aggregate_function_with_if)
             return;
@@ -97,6 +97,7 @@ private:
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(
             function_node.getFunctionName() + suffix,
+            function_node.getNullsAction(),
             argument_types,
             function_node.getAggregateFunction()->getParameters(),
             properties);
@@ -108,7 +109,7 @@ private:
 }
 
 
-void RewriteAggregateFunctionWithIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void RewriteAggregateFunctionWithIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     RewriteAggregateFunctionWithIfVisitor visitor(context);
     visitor.visit(query_tree_node);

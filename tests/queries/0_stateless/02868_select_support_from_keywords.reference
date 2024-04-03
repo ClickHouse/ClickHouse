@@ -1,0 +1,1 @@
+CREATE VIEW default.test_view\n(\n    `date` Date,\n    `__sign` Int8,\n    `from` Float64,\n    `to` Float64\n)\nAS WITH cte AS\n    (\n        SELECT\n            date,\n            __sign,\n            from,\n            to\n        FROM default.test_table\n        FINAL\n    )\nSELECT\n    date,\n    __sign,\n    from,\n    to\nFROM cte

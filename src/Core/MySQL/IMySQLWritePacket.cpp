@@ -16,7 +16,7 @@ void IMySQLWritePacket::writePayload(WriteBuffer & buffer, uint8_t & sequence_id
 {
     MySQLPacketPayloadWriteBuffer buf(buffer, getPayloadSize(), sequence_id);
     writePayloadImpl(buf);
-    buf.next();
+    buf.finalize();
     if (buf.remainingPayloadSize())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incomplete payload. Written {} bytes, expected {} bytes.",

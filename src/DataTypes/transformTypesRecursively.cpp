@@ -91,11 +91,15 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
             std::vector<DataTypes> nested_types;
             const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(types[0].get());
             size_t tuple_size = type_tuple->getElements().size();
+            bool have_explicit_names = type_tuple->haveExplicitNames();
             nested_types.resize(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
                 nested_types[elem_idx].reserve(types.size());
 
+            /// Apply transform to elements only if all tuples are the same.
             bool sizes_are_equal = true;
+            Names element_names = type_tuple->getElementNames();
+            bool all_element_names_are_equal = true;
             for (const auto & type : types)
             {
                 type_tuple = typeid_cast<const DataTypeTuple *>(type.get());
@@ -105,11 +109,17 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
                     break;
                 }
 
+                if (type_tuple->getElementNames() != element_names)
+                {
+                    all_element_names_are_equal = false;
+                    break;
+                }
+
                 for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
                     nested_types[elem_idx].emplace_back(type_tuple->getElements()[elem_idx]);
             }
 
-            if (sizes_are_equal)
+            if (sizes_are_equal && all_element_names_are_equal)
             {
                 std::vector<DataTypes> transposed_nested_types(types.size());
                 for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
@@ -120,7 +130,12 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
                 }
 
                 for (size_t i = 0; i != types.size(); ++i)
-                    types[i] = std::make_shared<DataTypeTuple>(transposed_nested_types[i]);
+                {
+                    if (have_explicit_names)
+                        types[i] = std::make_shared<DataTypeTuple>(transposed_nested_types[i], element_names);
+                    else
+                        types[i] = std::make_shared<DataTypeTuple>(transposed_nested_types[i]);
+                }
             }
         }
 

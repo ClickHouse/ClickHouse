@@ -41,7 +41,9 @@ FROM system.query_log WHERE current_database = currentDatabase() AND type = 'Que
 ORDER BY query_start_time DESC LIMIT 1 FORMAT TabSeparatedWithNames;
 SELECT '';
 
-SELECT arraySort(used_functions)
+-- 1. analyzer includes arrayJoin into functions list
+-- 2. for crc32 (CaseInsensitive function) we use lower case now
+SELECT arraySort(arrayMap(x -> x == 'crc32' ? 'CRC32' : x, arrayFilter(x-> x != 'arrayJoin', used_functions))) as `arraySort(used_functions)`
 FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND (query LIKE '%toDate(\'2000-12-05\')%')
 ORDER BY query_start_time DESC LIMIT 1 FORMAT TabSeparatedWithNames;
 SELECT '';

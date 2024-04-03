@@ -44,4 +44,15 @@ String backQuoteIfNeed(StringRef x)
     return res;
 }
 
+
+String backQuoteMySQL(StringRef x)
+{
+    String res(x.size, '\0');
+    {
+        WriteBufferFromString wb(res);
+        writeBackQuotedStringMySQL(x, wb);
+    }
+    return res;
+}
+
 }

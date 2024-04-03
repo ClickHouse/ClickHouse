@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings
+# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-debug
 # shellcheck disable=SC2009
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -46,9 +46,11 @@ $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 function thread_insert
 {
     # supress "Killed" messages from bash
+    i=0
     while true; do
-        export ID="$TEST_MARK$RANDOM-$RANDOM-$RANDOM"
+        export ID="$TEST_MARK$RANDOM-$RANDOM-$i"
         bash -c insert_data 2>&1| grep -Fav "Killed"
+        i=$((i + 1))
     done
 }
 

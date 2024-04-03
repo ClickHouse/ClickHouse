@@ -20,10 +20,7 @@
 #include <Common/formatReadable.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
-#include <base/hex.h>
-#include <Common/getResource.h>
 #include <base/sleep.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -34,6 +31,14 @@
 #include <readpassphrase.h>
 
 #include <Poco/Util/XMLConfiguration.h>
+
+#include <incbin.h>
+
+#include "config.h"
+
+/// Embedded configuration files used inside the install program
+INCBIN(resource_config_xml, SOURCE_DIR "/programs/server/config.xml");
+INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
 
 
 /** This tool can be used to install ClickHouse without a deb/rpm/tgz package, having only "clickhouse" binary.
@@ -73,10 +78,6 @@ namespace ErrorCodes
 }
 
 }
-
-/// ANSI escape sequence for intense color in terminal.
-#define HILITE "\033[1m"
-#define END_HILITE "\033[0m"
 
 #if defined(OS_DARWIN)
 /// Until createUser() and createGroup() are implemented, only sudo-less installations are supported/default for macOS.
@@ -211,6 +212,16 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 {
     try
     {
+        const char * start_hilite = "";
+        const char * end_hilite = "";
+
+        if (isatty(STDOUT_FILENO))
+        {
+            /// ANSI escape sequence for intense color in terminal.
+            start_hilite = "\033[1m";
+            end_hilite = "\033[0m";
+        }
+
         po::options_description desc;
         desc.add_options()
             ("help,h", "produce help message")
@@ -222,6 +233,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user to create")
             ("group", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_GROUP), "clickhouse group to create")
+            ("noninteractive,y", "run non-interactively")
+            ("link", "create symlink to the binary instead of copying to binary-path")
         ;
 
         po::variables_map options;
@@ -229,9 +242,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (options.count("help"))
         {
+            std::cout << "Install ClickHouse without .deb/.rpm/.tgz packages (having the binary only)\n\n";
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " install [options]", getuid() != 0) << '\n';
             std::cout << desc << '\n';
-            return 1;
+            return 0;
         }
 
         /// We need to copy binary to the binary directory.
@@ -267,8 +281,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// Copy binary to the destination directory.
 
-        /// TODO An option to link instead of copy - useful for developers.
-
         fs::path prefix = options["prefix"].as<std::string>();
         fs::path bin_dir = prefix / options["binary-path"].as<std::string>();
 
@@ -281,87 +293,146 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         bool old_binary_exists = fs::exists(main_bin_path);
         bool already_installed = false;
 
-        /// Check if the binary is the same file (already installed).
-        if (old_binary_exists && binary_self_canonical_path == fs::canonical(main_bin_path))
+        if (options.count("link"))
         {
-            already_installed = true;
-            fmt::print("ClickHouse binary is already located at {}\n", main_bin_path.string());
-        }
-        /// Check if binary has the same content.
-        else if (old_binary_exists && binary_size == fs::file_size(main_bin_path))
-        {
-            fmt::print("Found already existing ClickHouse binary at {} having the same size. Will check its contents.\n",
-                main_bin_path.string());
-
-            if (filesEqual(binary_self_path.string(), main_bin_path.string()))
+            if (old_binary_exists)
             {
-                already_installed = true;
-                fmt::print("ClickHouse binary is already located at {} and it has the same content as {}\n",
-                    main_bin_path.string(), binary_self_canonical_path.string());
-            }
-        }
+                bool is_symlink = FS::isSymlink(main_bin_path);
+                fs::path points_to;
+                if (is_symlink)
+                    points_to = fs::weakly_canonical(FS::readSymlink(main_bin_path));
 
-        if (already_installed)
-        {
-            if (0 != chmod(main_bin_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                throwFromErrno(fmt::format("Cannot chmod {}", main_bin_path.string()), ErrorCodes::SYSTEM_ERROR);
+                if (is_symlink && points_to == binary_self_canonical_path)
+                {
+                    already_installed = true;
+                }
+                else
+                {
+                    if (!is_symlink)
+                    {
+                        fmt::print("File {} already exists but it's not a symlink. Will rename to {}.\n",
+                                   main_bin_path.string(), main_bin_old_path.string());
+                        fs::rename(main_bin_path, main_bin_old_path);
+                    }
+                    else if (points_to != main_bin_path)
+                    {
+                        fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
+                                   main_bin_path.string(), points_to.string(), binary_self_canonical_path.string());
+                        fs::remove(main_bin_path);
+                    }
+                }
+            }
+
+            if (!already_installed)
+            {
+                if (!fs::exists(bin_dir))
+                {
+                    fmt::print("Creating binary directory {}.\n", bin_dir.string());
+                    fs::create_directories(bin_dir);
+                }
+
+                fmt::print("Creating symlink {} to {}.\n", main_bin_path.string(), binary_self_canonical_path.string());
+                fs::create_symlink(binary_self_canonical_path, main_bin_path);
+
+                if (0 != chmod(binary_self_canonical_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot chmod {}", binary_self_canonical_path.string());
+            }
         }
         else
         {
-            if (!fs::exists(bin_dir))
+            bool is_symlink = FS::isSymlink(main_bin_path);
+
+            if (!is_symlink)
             {
-                fmt::print("Creating binary directory {}.\n", bin_dir.string());
-                fs::create_directories(bin_dir);
+                /// Check if the binary is the same file (already installed).
+                if (old_binary_exists && binary_self_canonical_path == fs::canonical(main_bin_path))
+                {
+                    already_installed = true;
+                    fmt::print("ClickHouse binary is already located at {}\n", main_bin_path.string());
+                }
+                /// Check if binary has the same content.
+                else if (old_binary_exists && binary_size == fs::file_size(main_bin_path))
+                {
+                    fmt::print("Found already existing ClickHouse binary at {} having the same size. Will check its contents.\n",
+                        main_bin_path.string());
+
+                    if (filesEqual(binary_self_path.string(), main_bin_path.string()))
+                    {
+                        already_installed = true;
+                        fmt::print("ClickHouse binary is already located at {} and it has the same content as {}\n",
+                            main_bin_path.string(), binary_self_canonical_path.string());
+                    }
+                }
             }
 
-            size_t available_space = fs::space(bin_dir).available;
-            if (available_space < binary_size)
-                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for clickhouse binary in {}, required {}, available {}.",
-                    bin_dir.string(), ReadableSize(binary_size), ReadableSize(available_space));
-
-            fmt::print("Copying ClickHouse binary to {}\n", main_bin_tmp_path.string());
-
-            try
+            if (already_installed)
             {
-                ReadBufferFromFile in(binary_self_path.string());
-                WriteBufferFromFile out(main_bin_tmp_path.string());
-                copyData(in, out);
-                out.sync();
-
-                if (0 != fchmod(out.getFD(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
-                    throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
-
-                out.finalize();
+                if (0 != chmod(main_bin_path.string().c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot chmod {}", main_bin_path.string());
             }
-            catch (const Exception & e)
+            else
             {
-                if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
-                    std::cerr << "Install must be run as root: " << formatWithSudo("./clickhouse install") << '\n';
-                throw;
+                if (!fs::exists(bin_dir))
+                {
+                    fmt::print("Creating binary directory {}.\n", bin_dir.string());
+                    fs::create_directories(bin_dir);
+                }
+
+                size_t available_space = fs::space(bin_dir).available;
+                if (available_space < binary_size)
+                    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for clickhouse binary in {}, required {}, available {}.",
+                        bin_dir.string(), ReadableSize(binary_size), ReadableSize(available_space));
+
+                fmt::print("Copying ClickHouse binary to {}\n", main_bin_tmp_path.string());
+
+                try
+                {
+                    String source = binary_self_path.string();
+                    String destination = main_bin_tmp_path.string();
+
+                    /// Try to make a hard link first, as an optimization.
+                    /// It is possible if the source and the destination are on the same filesystems.
+                    if (0 != link(source.c_str(), destination.c_str()))
+                    {
+                        ReadBufferFromFile in(binary_self_path.string());
+                        WriteBufferFromFile out(main_bin_tmp_path.string());
+                        copyData(in, out);
+                        out.sync();
+                        out.finalize();
+                    }
+
+                    if (0 != chmod(destination.c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot chmod {}", main_bin_tmp_path.string());
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
+                        std::cerr << "Install must be run as root: " << formatWithSudo("./clickhouse install") << '\n';
+                    throw;
+                }
+
+                if (old_binary_exists)
+                {
+                    fmt::print("{} already exists, will rename existing binary to {} and put the new binary in place\n",
+                            main_bin_path.string(), main_bin_old_path.string());
+
+                    /// There is file exchange operation in Linux but it's not portable.
+                    fs::rename(main_bin_path, main_bin_old_path);
+                }
+
+                fmt::print("Renaming {} to {}.\n", main_bin_tmp_path.string(), main_bin_path.string());
+                fs::rename(main_bin_tmp_path, main_bin_path);
             }
-
-            if (old_binary_exists)
-            {
-                fmt::print("{} already exists, will rename existing binary to {} and put the new binary in place\n",
-                        main_bin_path.string(), main_bin_old_path.string());
-
-                /// There is file exchange operation in Linux but it's not portable.
-                fs::rename(main_bin_path, main_bin_old_path);
-            }
-
-            fmt::print("Renaming {} to {}.\n", main_bin_tmp_path.string(), main_bin_path.string());
-            fs::rename(main_bin_tmp_path, main_bin_path);
         }
 
         /// Create symlinks.
 
-        std::initializer_list<const char *> tools
+        std::initializer_list<std::string_view> tools
         {
             "clickhouse-server",
             "clickhouse-client",
             "clickhouse-local",
             "clickhouse-benchmark",
-            "clickhouse-copier",
             "clickhouse-obfuscator",
             "clickhouse-git-import",
             "clickhouse-compressor",
@@ -370,6 +441,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-keeper",
             "clickhouse-keeper-converter",
             "clickhouse-disks",
+            "ch",
+            "chl",
+            "chc",
         };
 
         for (const auto & tool : tools)
@@ -379,29 +453,39 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             if (fs::exists(symlink_path))
             {
-                bool is_symlink = FS::isSymlink(symlink_path);
-                fs::path points_to;
-                if (is_symlink)
-                    points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
-
-                if (is_symlink && points_to == main_bin_path)
+                /// Do not replace short named symlinks if they are already present in the system
+                /// to avoid collision with other tools.
+                if (!tool.starts_with("clickhouse"))
                 {
+                    fmt::print("Symlink {} already exists. Will keep it.\n", symlink_path.string());
                     need_to_create = false;
                 }
                 else
                 {
-                    if (!is_symlink)
+                    bool is_symlink = FS::isSymlink(symlink_path);
+                    fs::path points_to;
+                    if (is_symlink)
+                        points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
+
+                    if (is_symlink && (points_to == main_bin_path || (options.count("link") && points_to == binary_self_canonical_path)))
                     {
-                        fs::path rename_path = symlink_path.replace_extension(".old");
-                        fmt::print("File {} already exists but it's not a symlink. Will rename to {}.\n",
-                                   symlink_path.string(), rename_path.string());
-                        fs::rename(symlink_path, rename_path);
+                        need_to_create = false;
                     }
-                    else if (points_to != main_bin_path)
+                    else
                     {
-                        fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
-                                   symlink_path.string(), points_to.string(), main_bin_path.string());
-                        fs::remove(symlink_path);
+                        if (!is_symlink)
+                        {
+                            fs::path rename_path = symlink_path.replace_extension(".old");
+                            fmt::print("File {} already exists but it's not a symlink. Will rename to {}.\n",
+                                       symlink_path.string(), rename_path.string());
+                            fs::rename(symlink_path, rename_path);
+                        }
+                        else if (points_to != main_bin_path)
+                        {
+                            fmt::print("Symlink {} already exists but it points to {}. Will replace the old symlink to {}.\n",
+                                       symlink_path.string(), points_to.string(), main_bin_path.string());
+                            fs::remove(symlink_path);
+                        }
                     }
                 }
             }
@@ -500,7 +584,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(main_config_file))
         {
-            std::string_view main_config_content = getResource("config.xml");
+            std::string_view main_config_content(reinterpret_cast<const char *>(gresource_config_xmlData), gresource_config_xmlSize);
             if (main_config_content.empty())
             {
                 fmt::print("There is no default config.xml, you have to download it and place to {}.\n", main_config_file.string());
@@ -612,7 +696,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(users_config_file))
         {
-            std::string_view users_config_content = getResource("users.xml");
+            std::string_view users_config_content(reinterpret_cast<const char *>(gresource_users_xmlData), gresource_users_xmlSize);
             if (users_config_content.empty())
             {
                 fmt::print("There is no default users.xml, you have to download it and place to {}.\n", users_config_file.string());
@@ -629,7 +713,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         {
             fmt::print("Users config file {} already exists, will keep it and extract users info from it.\n", users_config_file.string());
 
-            /// Check if password for default user already specified.
+            /// Check if password for the default user already specified.
             ConfigProcessor processor(users_config_file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
             ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(processor.processConfig()));
 
@@ -709,7 +793,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// dpkg or apt installers can ask for non-interactive work explicitly.
 
         const char * debian_frontend_var = getenv("DEBIAN_FRONTEND"); // NOLINT(concurrency-mt-unsafe)
-        bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
+        bool noninteractive = (debian_frontend_var && debian_frontend_var == std::string_view("noninteractive"))
+                              || options.count("noninteractive");
+
 
         bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
 
@@ -719,13 +805,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// Set up password for default user.
         if (has_password_for_default_user)
         {
-            fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE "\n",
-                       users_config_file.string(), users_d.string());
+            fmt::print("{}Password for the default user is already specified. To remind or reset, see {} and {}.{}\n",
+                start_hilite, users_config_file.string(), users_d.string(), end_hilite);
         }
         else if (!can_ask_password)
         {
-            fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
-                       users_config_file.string(), users_d.string());
+            fmt::print("{}Password for the default user is an empty string. See {} and {} to change it.{}\n",
+                start_hilite, users_config_file.string(), users_d.string(), end_hilite);
         }
         else
         {
@@ -734,7 +820,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             char buf[1000] = {};
             std::string password;
-            if (auto * result = readpassphrase("Enter password for default user: ", buf, sizeof(buf), 0))
+            if (auto * result = readpassphrase("Enter password for the default user: ", buf, sizeof(buf), 0))
                 password = result;
 
             if (!password.empty())
@@ -759,7 +845,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                 out.sync();
                 out.finalize();
-                fmt::print(HILITE "Password for default user is saved in file {}." END_HILITE "\n", password_file);
+                fmt::print("{}Password for the default user is saved in file {}.{}\n", start_hilite, password_file, end_hilite);
 #else
                 out << "<clickhouse>\n"
                     "    <users>\n"
@@ -770,13 +856,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                 out.sync();
                 out.finalize();
-                fmt::print(HILITE "Password for default user is saved in plaintext in file {}." END_HILITE "\n", password_file);
+                fmt::print("{}Password for the default user is saved in plaintext in file {}.{}\n", start_hilite, password_file, end_hilite);
 #endif
                 has_password_for_default_user = true;
             }
             else
-                fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
-                           users_config_file.string(), users_d.string());
+                fmt::print("{}Password for the default user is an empty string. See {} and {} to change it.{}\n",
+                    start_hilite, users_config_file.string(), users_d.string(), end_hilite);
         }
 
         /** Set capabilities for the binary.
@@ -930,7 +1016,9 @@ namespace
         {
             /// sudo respects limits in /etc/security/limits.conf e.g. open files,
             /// that's why we are using it instead of the 'clickhouse su' tool.
-            command = fmt::format("sudo -u '{}' {}", user, command);
+            /// by default, sudo resets all the ENV variables, but we should preserve
+            /// the values /etc/default/clickhouse in /etc/init.d/clickhouse file
+            command = fmt::format("sudo --preserve-env -u '{}' {}", user, command);
         }
 
         fmt::print("Will run {}\n", command);
@@ -1040,7 +1128,7 @@ namespace
                 return 0;
             }
             else
-                throwFromErrno(fmt::format("Cannot obtain the status of pid {} with `kill`", pid), ErrorCodes::CANNOT_KILL);
+                throw ErrnoException(ErrorCodes::CANNOT_KILL, "Cannot obtain the status of pid {} with `kill`", pid);
         }
 
         if (!pid)
@@ -1061,7 +1149,7 @@ namespace
         if (0 == kill(pid, signal))
             fmt::print("Sent {} signal to process with pid {}.\n", signal_name, pid);
         else
-            throwFromErrno(fmt::format("Cannot send {} signal", signal_name), ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot send {} signal", signal_name);
 
         size_t try_num = 0;
         for (; try_num < max_tries; ++try_num)

@@ -2,6 +2,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/queryToString.h>
 #include <Common/checkStackSize.h>
 #include <IO/Operators.h>
 
@@ -239,7 +240,8 @@ CNFQuery TreeCNFConverter::toCNF(
     if (!cnf)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
             "Cannot convert expression '{}' to CNF, because it produces to many clauses."
-            "Size of boolean formula in CNF can be exponential of size of source formula.");
+            "Size of boolean formula in CNF can be exponential of size of source formula.",
+            queryToString(query));
 
     return *cnf;
 }
@@ -360,80 +362,14 @@ CNFQuery & CNFQuery::pushNotInFunctions()
     return *this;
 }
 
-namespace
-{
-    CNFQuery::AndGroup reduceOnce(const CNFQuery::AndGroup & groups)
-    {
-        CNFQuery::AndGroup result;
-        for (const CNFQuery::OrGroup & group : groups)
-        {
-            CNFQuery::OrGroup copy(group);
-            bool inserted = false;
-            for (const CNFQuery::AtomicFormula & atom : group)
-            {
-                copy.erase(atom);
-                CNFQuery::AtomicFormula negative_atom(atom);
-                negative_atom.negative = !atom.negative;
-                copy.insert(negative_atom);
-
-                if (groups.contains(copy))
-                {
-                    copy.erase(negative_atom);
-                    result.insert(copy);
-                    inserted = true;
-                    break;
-                }
-
-                copy.erase(negative_atom);
-                copy.insert(atom);
-            }
-            if (!inserted)
-                result.insert(group);
-        }
-        return result;
-    }
-
-    bool isSubset(const CNFQuery::OrGroup & left, const CNFQuery::OrGroup & right)
-    {
-        if (left.size() > right.size())
-            return false;
-        for (const auto & elem : left)
-            if (!right.contains(elem))
-                return false;
-        return true;
-    }
-
-    CNFQuery::AndGroup filterSubsets(const CNFQuery::AndGroup & groups)
-    {
-        CNFQuery::AndGroup result;
-        for (const CNFQuery::OrGroup & group : groups)
-        {
-            bool insert = true;
-
-            for (const CNFQuery::OrGroup & other_group : groups)
-            {
-                if (isSubset(other_group, group) && group != other_group)
-                {
-                    insert = false;
-                    break;
-                }
-            }
-
-            if (insert)
-                result.insert(group);
-        }
-        return result;
-    }
-}
-
 CNFQuery & CNFQuery::reduce()
 {
     while (true)
     {
-        AndGroup new_statements = reduceOnce(statements);
+        AndGroup new_statements = reduceOnceCNFStatements(statements);
         if (statements == new_statements)
         {
-            statements = filterSubsets(statements);
+            statements = filterCNFSubsets(statements);
             return *this;
         }
         else

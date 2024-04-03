@@ -4,7 +4,10 @@
 #include <bit>
 #include <cstdint>
 
+#include <base/simd.h>
+
 #include <Core/Defines.h>
+#include <Common/MemorySanitizer.h>
 
 
 namespace detail
@@ -24,9 +27,8 @@ inline int cmp(T a, T b)
 
 
 /// We can process uninitialized memory in the functions below.
-/// Results don't depend on the values inside uninitialized memory but Memory Sanitizer cannot see it.
-/// Disable optimized functions if compile with Memory Sanitizer.
-#if defined(__AVX512BW__) && defined(__AVX512VL__) && !defined(MEMORY_SANITIZER)
+/// Results don't depend on the values inside uninitialized memory
+#if defined(__AVX512BW__) && defined(__AVX512VL__)
 #    include <immintrin.h>
 
 
@@ -40,6 +42,9 @@ inline int cmp(T a, T b)
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
 {
+    __msan_unpoison_overflow_15(a, a_size);
+    __msan_unpoison_overflow_15(b, b_size);
+
     size_t min_size = std::min(a_size, b_size);
 
     for (size_t offset = 0; offset < min_size; offset += 16)
@@ -72,6 +77,9 @@ inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char 
 template <typename Char>
 inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
 {
+    __msan_unpoison_overflow_15(a, a_size);
+    __msan_unpoison_overflow_15(b, b_size);
+
     size_t min_size = std::min(a_size, b_size);
 
     for (size_t offset = 0; offset < min_size; offset += 16)
@@ -142,6 +150,9 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, const Char * b, size_t size)
 {
+    __msan_unpoison_overflow_15(a, size);
+    __msan_unpoison_overflow_15(b, size);
+
     for (size_t offset = 0; offset < size; offset += 16)
     {
         uint16_t mask = _mm_cmp_epi8_mask(
@@ -171,6 +182,9 @@ inline bool memequalSmallAllowOverflow15(const Char * a, size_t a_size, const Ch
 {
     if (a_size != b_size)
         return false;
+
+    __msan_unpoison_overflow_15(a, a_size);
+    __msan_unpoison_overflow_15(b, b_size);
 
     for (size_t offset = 0; offset < a_size; offset += 16)
     {
@@ -244,6 +258,7 @@ inline bool memequal16(const void * a, const void * b)
 /** Compare memory region to zero */
 inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 {
+    __msan_unpoison_overflow_15(reinterpret_cast<const char *>(data), size);
     const __m128i zero16 = _mm_setzero_si128();
 
     for (size_t offset = 0; offset < size; offset += 16)
@@ -261,7 +276,7 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
     return true;
 }
 
-#elif defined(__SSE2__) && !defined(MEMORY_SANITIZER)
+#elif defined(__SSE2__)
 #    include <emmintrin.h>
 
 
@@ -275,6 +290,9 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
 {
+    __msan_unpoison_overflow_15(a, a_size);
+    __msan_unpoison_overflow_15(b, b_size);
+
     size_t min_size = std::min(a_size, b_size);
 
     for (size_t offset = 0; offset < min_size; offset += 16)
@@ -307,6 +325,9 @@ inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char 
 template <typename Char>
 inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
 {
+    __msan_unpoison_overflow_15(a, a_size);
+    __msan_unpoison_overflow_15(b, b_size);
+
     size_t min_size = std::min(a_size, b_size);
 
     for (size_t offset = 0; offset < min_size; offset += 16)
@@ -378,6 +399,9 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, const Char * b, size_t size)
 {
+    __msan_unpoison_overflow_15(a, size);
+    __msan_unpoison_overflow_15(b, size);
+
     for (size_t offset = 0; offset < size; offset += 16)
     {
         uint16_t mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
@@ -407,6 +431,9 @@ inline bool memequalSmallAllowOverflow15(const Char * a, size_t a_size, const Ch
 {
     if (a_size != b_size)
         return false;
+
+    __msan_unpoison_overflow_15(a, a_size);
+    __msan_unpoison_overflow_15(b, b_size);
 
     for (size_t offset = 0; offset < a_size; offset += 16)
     {
@@ -481,6 +508,8 @@ inline bool memequal16(const void * a, const void * b)
 /** Compare memory region to zero */
 inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 {
+    __msan_unpoison_overflow_15(reinterpret_cast<const char *>(data), size);
+
     const __m128i zero16 = _mm_setzero_si128();
 
     for (size_t offset = 0; offset < size; offset += 16)
@@ -504,14 +533,12 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 #    include <arm_neon.h>
 #      pragma clang diagnostic ignored "-Wreserved-identifier"
 
-inline uint64_t getNibbleMask(uint8x16_t res)
-{
-    return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(res), 4)), 0);
-}
-
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
 {
+    __msan_unpoison_overflow_15(a, a_size);
+    __msan_unpoison_overflow_15(b, b_size);
+
     size_t min_size = std::min(a_size, b_size);
 
     for (size_t offset = 0; offset < min_size; offset += 16)
@@ -537,6 +564,9 @@ inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char 
 template <typename Char>
 inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
 {
+    __msan_unpoison_overflow_15(a, a_size);
+    __msan_unpoison_overflow_15(b, b_size);
+
     size_t min_size = std::min(a_size, b_size);
 
     for (size_t offset = 0; offset < min_size; offset += 16)
@@ -602,6 +632,9 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, const Char * b, size_t size)
 {
+    __msan_unpoison_overflow_15(a, size);
+    __msan_unpoison_overflow_15(b, size);
+
     for (size_t offset = 0; offset < size; offset += 16)
     {
         uint64_t mask = getNibbleMask(vceqq_u8(
@@ -627,6 +660,9 @@ inline bool memequalSmallAllowOverflow15(const Char * a, size_t a_size, const Ch
 {
     if (a_size != b_size)
         return false;
+
+    __msan_unpoison_overflow_15(a, a_size);
+    __msan_unpoison_overflow_15(b, b_size);
 
     for (size_t offset = 0; offset < a_size; offset += 16)
     {
@@ -686,6 +722,7 @@ inline bool memequal16(const void * a, const void * b)
 
 inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 {
+    __msan_unpoison_overflow_15(reinterpret_cast<const char *>(data), size);
     for (size_t offset = 0; offset < size; offset += 16)
     {
         uint64_t mask = getNibbleMask(vceqzq_u8(vld1q_u8(reinterpret_cast<const unsigned char *>(data) + offset)));

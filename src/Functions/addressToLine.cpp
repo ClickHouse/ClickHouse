@@ -17,7 +17,7 @@ namespace DB
 namespace
 {
 
-class FunctionAddressToLine: public FunctionAddressToLineBase<StringRef, Dwarf::LocationInfoMode::FAST>
+class FunctionAddressToLine : public FunctionAddressToLineBase<StringRef, Dwarf::LocationInfoMode::FAST>
 {
 public:
     static constexpr auto name = "addressToLine";
@@ -52,6 +52,7 @@ protected:
         writeChar(':', out);
         writeIntText(location.line, out);
 
+        out.finalize();
         result = out.complete();
     }
 };

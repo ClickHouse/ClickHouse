@@ -3,6 +3,8 @@
 #include <Core/Field.h>
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/ConstantValue.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -74,6 +76,22 @@ public:
         return constant_value->getType();
     }
 
+    /// Check if conversion to AST requires wrapping with _CAST function.
+    bool requiresCastCall() const;
+
+    /// Check if constant is a result of _CAST function constant folding.
+    bool receivedFromInitiatorServer() const;
+
+    void setMaskId(size_t id)
+    {
+        mask_id = id;
+    }
+
+    void convertToNullable() override
+    {
+        constant_value = std::make_shared<ConstantValue>(constant_value->getValue(), makeNullableSafe(constant_value->getType()));
+    }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -83,12 +101,13 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     ConstantValuePtr constant_value;
     String value_string;
     QueryTreeNodePtr source_expression;
+    size_t mask_id = 0;
 
     static constexpr size_t children_size = 0;
 };

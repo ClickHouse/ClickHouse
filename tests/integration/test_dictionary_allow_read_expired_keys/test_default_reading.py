@@ -38,7 +38,6 @@ def started_cluster():
         cluster.shutdown()
 
 
-# @pytest.mark.skip(reason="debugging")
 def test_default_reading(started_cluster):
     assert None != dictionary_node.get_process_pid(
         "clickhouse"

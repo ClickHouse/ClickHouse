@@ -7,6 +7,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -131,14 +132,6 @@ public:
     void setThrottler(const ThrottlerPtr &) override {}
 
 private:
-    void initBlockInput();
-
-    void processOrdinaryQuery();
-
-    void processOrdinaryQueryWithProcessors();
-
-    void updateState();
-
     bool pullBlock(Block & block);
 
     void finishQuery();

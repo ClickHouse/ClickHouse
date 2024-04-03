@@ -24,6 +24,9 @@ public:
     static void check(Coordination::Error code, const Coordination::Requests & requests, const Coordination::Responses & responses);
 
     KeeperMultiException(Coordination::Error code, const Coordination::Requests & requests, const Coordination::Responses & responses);
+
+private:
+    KeeperMultiException(Coordination::Error code, size_t failed_op_index_, const Coordination::Requests & requests_, const Coordination::Responses & responses_);
 };
 
 size_t getFailedOpIndex(Coordination::Error code, const Coordination::Responses & responses);

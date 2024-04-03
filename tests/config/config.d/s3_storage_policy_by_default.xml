@@ -6,14 +6,18 @@
                 <endpoint>http://localhost:11111/test/test/</endpoint>
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
-                <data_cache_enabled>1</data_cache_enabled>
-                <data_cache_max_size>22548578304</data_cache_max_size>
             </s3>
+            <cached_s3>
+                <type>cache</type>
+                <max_size>1Gi</max_size>
+                <path>cached_s3/</path>
+                <disk>s3</disk>
+            </cached_s3>
         </disks>
         <policies>
             <s3>
                 <volumes>
-                    <main><disk>s3</disk></main>
+                    <main><disk>cached_s3</disk></main>
                 </volumes>
             </s3>
         </policies>
@@ -21,4 +25,5 @@
     <merge_tree>
         <storage_policy>s3</storage_policy>
     </merge_tree>
+    <temporary_data_in_cache>cached_s3</temporary_data_in_cache>
 </clickhouse>

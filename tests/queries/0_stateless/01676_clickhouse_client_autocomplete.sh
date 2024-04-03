@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-ubsan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,6 +21,10 @@ function test_completion_word()
     # - here and below you should escape variables of the expect.
     # - you should not use "expect <<..." since in this case timeout/eof will
     #   not work (I guess due to attached stdin)
+
+    # TODO: get build sanitizer and debug/release info to dynamically change test
+    # like here timeout 120 seconds is too big for release build
+    # but ok for sanitizer builds
     cat > "$SCRIPT_PATH" << EOF
 # NOTE: log will be appended
 exp_internal -f $CLICKHOUSE_TMP/$(basename "${BASH_SOURCE[0]}").debuglog 0
@@ -30,7 +34,7 @@ exp_internal -f $CLICKHOUSE_TMP/$(basename "${BASH_SOURCE[0]}").debuglog 0
 set stdout_channel [open "/dev/stdout" w]
 
 log_user 0
-set timeout 60
+set timeout 120
 match_max 100000
 expect_after {
     # Do not ignore eof from expect
@@ -89,8 +93,6 @@ client_compwords_positive=(
     clusterAllReplicas
     # system.data_type_families
     SimpleAggregateFunction
-    # system.merge_tree_settings
-    write_ahead_log_interval_ms_to_fsync
     # system.settings
     max_concurrent_queries_for_all_users
     # system.clusters

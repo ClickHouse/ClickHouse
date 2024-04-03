@@ -1,4 +1,4 @@
-set (SOURCE_DIR "${CMAKE_SOURCE_DIR}/contrib/snappy")
+set (SOURCE_DIR "${PROJECT_SOURCE_DIR}/contrib/snappy")
 
 if (ARCH_S390X)
     set (SNAPPY_IS_BIG_ENDIAN 1)
@@ -22,6 +22,12 @@ if (ARCH_AMD64 AND ENABLE_SSSE3)
     set (SNAPPY_HAVE_SSSE3 1)
 else ()
     set (SNAPPY_HAVE_SSSE3 0)
+endif ()
+
+if (ARCH_AMD64 AND ENABLE_SSE42)
+    set (SNAPPY_HAVE_X86_CRC32 1)
+else ()
+    set (SNAPPY_HAVE_X86_CRC32 0)
 endif ()
 
 configure_file(

@@ -48,7 +48,7 @@ private:
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_);
+    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
     using DeserializeFn = std::function<bool(IColumn & column, avro::Decoder & decoder)>;
@@ -145,6 +145,8 @@ private:
     std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
 
     bool null_as_default = false;
+
+    const FormatSettings & settings;
 };
 
 class AvroRowInputFormat final : public IRowInputFormat
@@ -157,6 +159,9 @@ public:
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
+
+    bool supportsCountRows() const override { return true; }
+    size_t countRows(size_t max_block_size) override;
 
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
     std::unique_ptr<AvroDeserializer> deserializer_ptr;
@@ -178,7 +183,7 @@ public:
     class SchemaRegistry;
 
 private:
-    virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
 
     bool allowSyncAfterError() const override { return true; }

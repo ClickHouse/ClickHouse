@@ -68,7 +68,7 @@ namespace Net
         struct ProxyConfig
         /// HTTP proxy server configuration.
         {
-            ProxyConfig() : port(HTTP_PORT), protocol("http"), tunnel(true) { }
+            ProxyConfig() : port(HTTP_PORT), protocol("http"), tunnel(true), originalRequestProtocol("http") { }
 
             std::string host;
             /// Proxy server host name or IP address.
@@ -87,6 +87,9 @@ namespace Net
             /// A regular expression defining hosts for which the proxy should be bypassed,
             /// e.g. "localhost|127\.0\.0\.1|192\.168\.0\.\d+". Can also be an empty
             /// string to disable proxy bypassing.
+            std::string originalRequestProtocol;
+            /// Original request protocol (http or https).
+            /// Required in the case of: HTTPS request over HTTP proxy with tunneling (CONNECT) off.
         };
 
         HTTPClientSession();
@@ -126,6 +129,9 @@ namespace Net
         /// open connection to the server.
 
         void setResolvedHost(std::string resolved_host) { _resolved_host.swap(resolved_host); }
+
+        std::string getResolvedHost() const { return _resolved_host; }
+        /// Returns the resolved IP address of the target HTTP server.
 
         Poco::UInt16 getPort() const;
         /// Returns the port number of the target HTTP server.
@@ -204,7 +210,7 @@ namespace Net
         void setKeepAliveTimeout(const Poco::Timespan & timeout);
         /// Sets the connection timeout for HTTP connections.
 
-        const Poco::Timespan & getKeepAliveTimeout() const;
+        Poco::Timespan getKeepAliveTimeout() const;
         /// Returns the connection timeout for HTTP connections.
 
         virtual std::ostream & sendRequest(HTTPRequest & request);
@@ -269,7 +275,7 @@ namespace Net
         /// This method should only be called if the request contains
         /// a "Expect: 100-continue" header.
 
-        void flushRequest();
+        virtual void flushRequest();
         /// Flushes the request stream.
         ///
         /// Normally this method does not need to be called.
@@ -277,7 +283,7 @@ namespace Net
         /// fully sent if receiveResponse() is not called, e.g.,
         /// because the underlying socket will be detached.
 
-        void reset();
+        virtual void reset();
         /// Resets the session and closes the socket.
         ///
         /// The next request will initiate a new connection,
@@ -297,13 +303,16 @@ namespace Net
         /// Returns true if the proxy should be bypassed
         /// for the current host.
 
+        const Poco::Timestamp & getLastRequest() const;
+        /// Returns time when connection has been used last time
+
     protected:
         enum
         {
             DEFAULT_KEEP_ALIVE_TIMEOUT = 8
         };
 
-        void reconnect();
+        virtual void reconnect();
         /// Connects the underlying socket to the HTTP server.
 
         int write(const char * buffer, std::streamsize length);
@@ -331,6 +340,10 @@ namespace Net
         void proxyTunnel();
         /// Calls proxyConnect() and attaches the resulting StreamSocket
         /// to the HTTPClientSession.
+
+        void setLastRequest(Poco::Timestamp time);
+
+        void assign(HTTPClientSession & session);
 
         HTTPSessionFactory _proxySessionFactory;
         /// Factory to create HTTPClientSession to proxy.
@@ -427,11 +440,20 @@ namespace Net
     }
 
 
-    inline const Poco::Timespan & HTTPClientSession::getKeepAliveTimeout() const
+    inline Poco::Timespan HTTPClientSession::getKeepAliveTimeout() const
     {
         return _keepAliveTimeout;
     }
 
+    inline const Poco::Timestamp & HTTPClientSession::getLastRequest() const
+    {
+        return _lastRequest;
+    }
+
+    inline void HTTPClientSession::setLastRequest(Poco::Timestamp time)
+    {
+        _lastRequest = time;
+    }
 
 }
 } // namespace Poco::Net

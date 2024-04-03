@@ -108,6 +108,11 @@ public:
       */
     QueryTreeNodePtr getColumnSourceOrNull() const;
 
+    void setColumnSource(const QueryTreeNodePtr & source)
+    {
+        getSourceWeakPointer() = source;
+    }
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::COLUMN;
@@ -132,7 +137,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     const QueryTreeNodeWeakPtr & getSourceWeakPointer() const

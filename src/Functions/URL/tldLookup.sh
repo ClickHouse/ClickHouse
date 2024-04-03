@@ -3,8 +3,8 @@
 [ ! -f public_suffix_list.dat ] && wget -nv -O public_suffix_list.dat https://publicsuffix.org/list/public_suffix_list.dat
 
 echo '%language=C++
-%define lookup-function-name is_valid
-%define class-name tldLookupHash
+%define lookup-function-name isValid
+%define class-name TopLevelDomainLookupHash
 %readonly-tables
 %includes
 %compare-strncmp

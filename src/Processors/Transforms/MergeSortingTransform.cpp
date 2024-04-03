@@ -3,6 +3,7 @@
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -29,7 +30,7 @@ namespace DB
 class BufferingToFileTransform : public IAccumulatingTransform
 {
 public:
-    BufferingToFileTransform(const Block & header, TemporaryFileStream & tmp_stream_, Poco::Logger * log_)
+    BufferingToFileTransform(const Block & header, TemporaryFileStream & tmp_stream_, LoggerPtr log_)
         : IAccumulatingTransform(header, header)
         , tmp_stream(tmp_stream_)
         , log(log_)
@@ -72,7 +73,7 @@ public:
 private:
     TemporaryFileStream & tmp_stream;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 MergeSortingTransform::MergeSortingTransform(
@@ -185,8 +186,10 @@ void MergeSortingTransform::consume(Chunk chunk)
                     0,
                     description,
                     max_merged_block_size,
+                    /*max_merged_block_size_bytes*/0,
                     SortingQueueStrategy::Batch,
                     limit,
+                    /*always_read_till_end_=*/ false,
                     nullptr,
                     quiet,
                     use_average_block_sizes,

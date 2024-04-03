@@ -1,2 +1,1 @@
-ALTER TABLE replicated_constraints1
-    ADD CONSTRAINT IF NOT EXISTS b_constraint CHECK b > 10
+ALTER TABLE replicated_constraints1 ADD CONSTRAINT IF NOT EXISTS b_constraint CHECK b > 10

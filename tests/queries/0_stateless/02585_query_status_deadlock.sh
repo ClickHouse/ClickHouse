@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -14,7 +15,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 
 while true
 do
-    res=$($CLICKHOUSE_CLIENT -q "select query, event_time from system.query_log where query_id = '$QUERY_ID' and query like 'select%' limit 1")
+    res=$($CLICKHOUSE_CLIENT -q "select query, event_time from system.query_log where query_id = '$QUERY_ID' and current_database = '$CLICKHOUSE_DATABASE' and query like 'select%' limit 1")
     if [ -n "$res" ]; then
         break
     fi

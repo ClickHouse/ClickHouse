@@ -53,12 +53,19 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
         ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(
             header,
             "Arrow",
-            format_settings.arrow.low_cardinality_as_dictionary,
-            format_settings.arrow.output_string_as_string,
-            format_settings.arrow.output_fixed_string_as_fixed_byte_array);
+            CHColumnToArrowColumn::Settings
+            {
+                format_settings.arrow.output_string_as_string,
+                format_settings.arrow.output_fixed_string_as_fixed_byte_array,
+                format_settings.arrow.low_cardinality_as_dictionary,
+                format_settings.arrow.use_signed_indexes_for_dictionary,
+                format_settings.arrow.use_64_bit_indexes_for_dictionary
+            });
     }
 
-    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
+    auto chunks = std::vector<Chunk>();
+    chunks.push_back(std::move(chunk));
+    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num);
 
     if (!writer)
         prepareWriter(arrow_table->schema());
@@ -75,7 +82,7 @@ void ArrowBlockOutputFormat::finalizeImpl()
 {
     if (!writer)
     {
-        const Block & header = getPort(PortKind::Main).getHeader();
+        Block header = materializeBlock(getPort(PortKind::Main).getHeader());
 
         consume(Chunk(header.getColumns(), 0));
     }
@@ -98,6 +105,7 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
     arrow::Result<std::shared_ptr<arrow::ipc::RecordBatchWriter>> writer_status;
     arrow::ipc::IpcWriteOptions options = arrow::ipc::IpcWriteOptions::Defaults();
     options.codec = *arrow::util::Codec::Create(getArrowCompression(format_settings.arrow.output_compression_method));
+    options.emit_dictionary_deltas = true;
 
     // TODO: should we use arrow::ipc::IpcOptions::alignment?
     if (stream)
@@ -133,6 +141,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);
         });
     factory.markFormatHasNoAppendSupport("ArrowStream");
+    factory.markOutputFormatPrefersLargeBlocks("ArrowStream");
 }
 
 }

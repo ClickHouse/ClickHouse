@@ -1,0 +1,22 @@
+<clickhouse>
+    <remote_servers>
+        <cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>clickhouse1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>clickhouse2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>clickhouse3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <allow_distributed_ddl_queries>true</allow_distributed_ddl_queries>
+        </cluster>
+    </remote_servers>
+</clickhouse>

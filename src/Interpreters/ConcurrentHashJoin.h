@@ -3,7 +3,6 @@
 #include <condition_variable>
 #include <memory>
 #include <optional>
-#include <Functions/FunctionsLogical.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin.h>
@@ -16,13 +15,13 @@ namespace DB
 {
 
 /**
- * Can run addJoinedBlock() parallelly to speedup the join process. On test, it almose linear speedup by
+ * Can run addBlockToJoin() parallelly to speedup the join process. On test, it almose linear speedup by
  * the degree of parallelism.
  *
  * The default HashJoin is not thread safe for inserting right table's rows and run it in a single thread. When
  * the right table is large, the join process is too slow.
  *
- * We create multiple HashJoin instances here. In addJoinedBlock(), one input block is split into multiple blocks
+ * We create multiple HashJoin instances here. In addBlockToJoin(), one input block is split into multiple blocks
  * corresponding to the HashJoin instances by hashing every row on the join keys. And make a guarantee that every HashJoin
  * instance is written by only one thread.
  *
@@ -33,11 +32,18 @@ class ConcurrentHashJoin : public IJoin
 {
 
 public:
-    explicit ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_ = false);
+    explicit ConcurrentHashJoin(
+        ContextPtr context_,
+        std::shared_ptr<TableJoin> table_join_,
+        size_t slots_,
+        const Block & right_sample_block,
+        bool any_take_last_row_ = false);
+
     ~ConcurrentHashJoin() override = default;
 
+    std::string getName() const override { return "ConcurrentHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool addJoinedBlock(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
     void setTotals(const Block & block) override;
@@ -46,6 +52,7 @@ public:
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
+
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
@@ -66,7 +73,6 @@ private:
 
     IColumn::Selector selectDispatchBlock(const Strings & key_columns_names, const Block & from_block);
     Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
-
 };
 
 }

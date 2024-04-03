@@ -31,7 +31,7 @@ private:
 
     void visitQueryParameter(const ASTQueryParameter & query_parameter)
     {
-        query_parameters[query_parameter.name]= query_parameter.type;
+        query_parameters[query_parameter.name] = query_parameter.type;
     }
 };
 
@@ -43,7 +43,7 @@ NameSet analyzeReceiveQueryParams(const std::string & query)
     const char * query_end = query.data() + query.size();
 
     ParserQuery parser(query_end);
-    ASTPtr extract_query_ast = parseQuery(parser, query_begin, query_end, "analyzeReceiveQueryParams", 0, 0);
+    ASTPtr extract_query_ast = parseQuery(parser, query_begin, query_end, "analyzeReceiveQueryParams", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     QueryParameterVisitor(query_params).visit(extract_query_ast);
 
     NameSet query_param_names;

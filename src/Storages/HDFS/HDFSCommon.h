@@ -57,7 +57,23 @@ public:
     ~HDFSBuilderWrapper() { hdfsFreeBuilder(hdfs_builder); }
 
     HDFSBuilderWrapper(const HDFSBuilderWrapper &) = delete;
-    HDFSBuilderWrapper(HDFSBuilderWrapper &&) = default;
+    HDFSBuilderWrapper & operator=(const HDFSBuilderWrapper &) = delete;
+
+    HDFSBuilderWrapper(HDFSBuilderWrapper && other) noexcept
+    {
+        *this = std::move(other);
+    }
+
+    HDFSBuilderWrapper & operator=(HDFSBuilderWrapper && other) noexcept
+    {
+        std::swap(hdfs_builder, other.hdfs_builder);
+        config_stor = std::move(other.config_stor);
+        hadoop_kerberos_keytab = std::move(other.hadoop_kerberos_keytab);
+        hadoop_kerberos_principal = std::move(other.hadoop_kerberos_principal);
+        hadoop_security_kerberos_ticket_cache_path = std::move(other.hadoop_security_kerberos_ticket_cache_path);
+        need_kinit = std::move(other.need_kinit);
+        return *this;
+    }
 
     hdfsBuilder * get() { return hdfs_builder; }
 

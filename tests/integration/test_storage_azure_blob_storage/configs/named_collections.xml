@@ -1,0 +1,14 @@
+<clickhouse>
+    <named_collections>
+        <azure_conf1>
+            <container>cont</container>
+            <blob_path>test_simple_write_named.csv</blob_path>
+            <structure>key UInt64, data String</structure>
+            <format>CSV</format>
+        </azure_conf1>
+        <azure_conf2>
+            <account_name>devstoreaccount1</account_name>
+            <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+        </azure_conf2>
+    </named_collections>
+</clickhouse>

@@ -23,7 +23,6 @@ struct PullingAsyncPipelineExecutor::Data
     std::atomic_bool is_finished = false;
     std::atomic_bool has_exception = false;
     ThreadFromGlobalPool thread;
-    Poco::Event finish_event;
 
     ~Data()
     {
@@ -67,7 +66,8 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
     return lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader();
 }
 
-static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
+static void threadFunction(
+    PullingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
@@ -80,7 +80,7 @@ static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGrou
         if (thread_group)
             CurrentThread::attachToGroup(thread_group);
 
-        data.executor->execute(num_threads);
+        data.executor->execute(num_threads, concurrency_control);
     }
     catch (...)
     {
@@ -88,12 +88,10 @@ static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGrou
         data.has_exception = true;
 
         /// Finish lazy format in case of exception. Otherwise thread.join() may hung.
-        if (data.lazy_format)
-            data.lazy_format->finalize();
+        data.lazy_format->finalize();
     }
 
     data.is_finished = true;
-    data.finish_event.set();
 }
 
 
@@ -108,7 +106,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 
         auto func = [&, thread_group = CurrentThread::getGroup()]()
         {
-            threadFunction(*data, thread_group, pipeline.getNumThreads());
+            threadFunction(*data, thread_group, pipeline.getNumThreads(), pipeline.getConcurrencyControl());
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));
@@ -128,20 +126,8 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
         return false;
     }
 
-    if (lazy_format)
-    {
-        chunk = lazy_format->getChunk(milliseconds);
-        data->rethrowExceptionIfHas();
-        return true;
-    }
-
-    chunk.clear();
-
-    if (milliseconds)
-        data->finish_event.tryWait(milliseconds);
-    else
-        data->finish_event.wait();
-
+    chunk = lazy_format->getChunk(milliseconds);
+    data->rethrowExceptionIfHas();
     return true;
 }
 
@@ -179,21 +165,11 @@ void PullingAsyncPipelineExecutor::cancel()
         return;
 
     /// Cancel execution if it wasn't finished.
-    try
+    cancelWithExceptionHandling([&]()
     {
         if (!data->is_finished && data->executor)
             data->executor->cancel();
-    }
-    catch (...)
-    {
-        /// Store exception only of during query execution there was no
-        /// exception, since only one exception can be re-thrown.
-        if (!data->has_exception)
-        {
-            data->exception = std::current_exception();
-            data->has_exception = true;
-        }
-    }
+    });
 
     /// The following code is needed to rethrow exception from PipelineExecutor.
     /// It could have been thrown from pull(), but we will not likely call it again.
@@ -206,16 +182,45 @@ void PullingAsyncPipelineExecutor::cancel()
     data->rethrowExceptionIfHas();
 }
 
+void PullingAsyncPipelineExecutor::cancelReading()
+{
+    if (!data)
+        return;
+
+    /// Stop reading from source if pipeline wasn't finished.
+    cancelWithExceptionHandling([&]()
+    {
+        if (!data->is_finished && data->executor)
+            data->executor->cancelReading();
+    });
+}
+
+void PullingAsyncPipelineExecutor::cancelWithExceptionHandling(CancelFunc && cancel_func)
+{
+    try
+    {
+        cancel_func();
+    }
+    catch (...)
+    {
+        /// Store exception only of during query execution there was no
+        /// exception, since only one exception can be re-thrown.
+        if (!data->has_exception)
+        {
+            data->exception = std::current_exception();
+            data->has_exception = true;
+        }
+    }
+}
+
 Chunk PullingAsyncPipelineExecutor::getTotals()
 {
-    return lazy_format ? lazy_format->getTotals()
-                       : Chunk();
+    return lazy_format->getTotals();
 }
 
 Chunk PullingAsyncPipelineExecutor::getExtremes()
 {
-    return lazy_format ? lazy_format->getExtremes()
-                       : Chunk();
+    return lazy_format->getExtremes();
 }
 
 Block PullingAsyncPipelineExecutor::getTotalsBlock()
@@ -242,15 +247,7 @@ Block PullingAsyncPipelineExecutor::getExtremesBlock()
 
 ProfileInfo & PullingAsyncPipelineExecutor::getProfileInfo()
 {
-    if (lazy_format)
-        return lazy_format->getProfileInfo();
-
-    static ProfileInfo profile_info;
-    static std::once_flag flag;
-    /// Calculate rows before limit here to avoid race.
-    std::call_once(flag, []() { profile_info.getRowsBeforeLimit(); });
-
-    return profile_info;
+    return lazy_format->getProfileInfo();
 }
 
 }

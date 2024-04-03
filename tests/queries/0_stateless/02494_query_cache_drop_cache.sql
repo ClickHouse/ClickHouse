@@ -1,7 +1,8 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SET allow_experimental_query_cache = true;
+-- (it's silly to use what will be tested below but we have to assume other tests cluttered the query cache)
+SYSTEM DROP QUERY CACHE;
 
 -- Cache query result in query cache
 SELECT 1 SETTINGS use_query_cache = true;

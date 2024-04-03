@@ -8,3 +8,21 @@ FROM
 WHERE (a > 0) AND (b > 0)
 HAVING c > 0
 2
+SELECT min(n) + 1 AS c
+FROM
+(
+    SELECT number AS n
+    FROM numbers(10)
+    WHERE (n + 1) > 0
+)
+WHERE ((n + 1) AS a) > 0
+HAVING c > 0
+1
+SELECT min(n) + 1 AS c
+FROM
+(
+    SELECT number AS n
+    FROM numbers(10)
+)
+HAVING c > 0
+1

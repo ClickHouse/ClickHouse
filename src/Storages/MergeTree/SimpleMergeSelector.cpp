@@ -28,7 +28,7 @@ struct Estimator
         {
             double difference = std::abs(log2(static_cast<double>(sum_size) / size_prev_at_left));
             if (difference < settings.heuristic_to_align_parts_max_absolute_difference_in_powers_of_two)
-                current_score *= std::lerp(settings.heuristic_to_align_parts_max_score_adjustment, 1,
+                current_score *= interpolateLinear(settings.heuristic_to_align_parts_max_score_adjustment, 1,
                     difference / settings.heuristic_to_align_parts_max_absolute_difference_in_powers_of_two);
         }
 
@@ -115,8 +115,8 @@ bool allow(
 //    std::cerr << "size_normalized: " << size_normalized << "\n";
 
     /// Calculate boundaries for age
-    double min_age_to_lower_base = std::lerp(settings.min_age_to_lower_base_at_min_size, settings.min_age_to_lower_base_at_max_size, size_normalized);
-    double max_age_to_lower_base = std::lerp(settings.max_age_to_lower_base_at_min_size, settings.max_age_to_lower_base_at_max_size, size_normalized);
+    double min_age_to_lower_base = interpolateLinear(settings.min_age_to_lower_base_at_min_size, settings.min_age_to_lower_base_at_max_size, size_normalized);
+    double max_age_to_lower_base = interpolateLinear(settings.max_age_to_lower_base_at_min_size, settings.max_age_to_lower_base_at_max_size, size_normalized);
 
 //    std::cerr << "min_age_to_lower_base: " << min_age_to_lower_base << "\n";
 //    std::cerr << "max_age_to_lower_base: " << max_age_to_lower_base << "\n";
@@ -137,7 +137,7 @@ bool allow(
 
 //    std::cerr << "combined_ratio: " << combined_ratio << "\n";
 
-    double lowered_base = std::lerp(settings.base, 2.0, combined_ratio);
+    double lowered_base = interpolateLinear(settings.base, 2.0, combined_ratio);
 
 //    std::cerr << "------- lowered_base: " << lowered_base << "\n";
 
@@ -157,12 +157,21 @@ void selectWithinPartition(
     if (parts_count <= 1)
         return;
 
-    for (size_t begin = 0; begin < parts_count; ++begin)
-    {
-        /// If too many parts, select only from first, to avoid complexity.
-        if (begin > 1000)
-            break;
+    /// If the parts in the parts vector are sorted by block number,
+    /// it may not be ideal to only select parts for merging from the first N ones.
+    /// This is because if there are more than N parts in the partition,
+    /// we will not be able to assign a merge for newly created parts.
+    /// As a result, the total number of parts within the partition could
+    /// grow uncontrollably, similar to a snowball effect.
+    /// To address this we will try to assign a merge taking into consideration
+    /// only last N parts.
+    static constexpr size_t parts_threshold = 1000;
+    size_t begin = 0;
+    if (parts_count >= parts_threshold)
+        begin = parts_count - parts_threshold;
 
+    for (; begin < parts_count; ++begin)
+    {
         if (!parts[begin].shall_participate_in_merges)
             continue;
 

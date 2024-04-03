@@ -1,5 +1,4 @@
 ---
-slug: /en/getting-started/example-datasets/wikistat
 sidebar_label: WikiStat
 ---
 
@@ -41,7 +40,8 @@ CREATE TABLE wikistat
     project LowCardinality(String),
     subproject LowCardinality(String),
     path String CODEC(ZSTD(3)),
-    hits UInt64 CODEC(ZSTD(3))
+    hits UInt64 CODEC(ZSTD(3)),
+    size UInt64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (path, time);

@@ -10,6 +10,8 @@
 
 #include <Parsers/ASTWithAlias.h>
 
+#include <boost/functional/hash.hpp>
+
 namespace DB
 {
 
@@ -162,7 +164,7 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
     return true;
 }
 
-IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
+IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options) const
 {
     /** Compute tree hash with this node as root.
       *
@@ -199,7 +201,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
         }
 
         hash_state.update(static_cast<size_t>(node_to_process->getNodeType()));
-        if (!node_to_process->alias.empty())
+        if (compare_options.compare_aliases && !node_to_process->alias.empty())
         {
             hash_state.update(node_to_process->alias.size());
             hash_state.update(node_to_process->alias);
@@ -229,10 +231,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
         }
     }
 
-    Hash result;
-    hash_state.get128(result);
-
-    return result;
+    return getSipHash128AsPair(hash_state);
 }
 
 QueryTreeNodePtr IQueryTreeNode::clone() const
@@ -279,6 +278,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         if (it != replacement_map.end())
             continue;
 
+        node_clone->original_ast = node_to_clone->original_ast;
         node_clone->setAlias(node_to_clone->alias);
         node_clone->children = node_to_clone->children;
         node_clone->weak_pointers = node_to_clone->weak_pointers;
@@ -319,6 +319,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
 
         *weak_pointer_ptr = it->second;
     }
+    result_cloned_node_place->original_ast = original_ast;
 
     return result_cloned_node_place;
 }
@@ -331,9 +332,9 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const QueryTreeNodePtr & node_t
     return cloneAndReplace(replacement_map);
 }
 
-ASTPtr IQueryTreeNode::toAST() const
+ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 {
-    auto converted_node = toASTImpl();
+    auto converted_node = toASTImpl(options);
 
     if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(converted_node.get()))
         converted_node->setAlias(alias);

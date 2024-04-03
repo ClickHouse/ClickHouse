@@ -10,7 +10,7 @@ sidebar_position: 31
 
 -   [SELECT](../../sql-reference/statements/select/index.md)
 -   [INSERT INTO](../../sql-reference/statements/insert-into.md)
--   [CREATE](../../sql-reference/statements/create/index.md)
+-   [CREATE](../../sql-reference/statements/create.md)
 -   [ALTER](../../sql-reference/statements/alter/index.md)
 -   [SYSTEM](../../sql-reference/statements/system.md)
 -   [SHOW](../../sql-reference/statements/show.md)

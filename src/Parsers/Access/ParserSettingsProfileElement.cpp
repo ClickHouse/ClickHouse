@@ -15,12 +15,12 @@ namespace
 {
     bool parseProfileKeyword(IParserBase::Pos & pos, Expected & expected, bool use_inherit_keyword)
     {
-        if (ParserKeyword{"PROFILE"}.ignore(pos, expected))
+        if (ParserKeyword{Keyword::PROFILE}.ignore(pos, expected))
             return true;
 
-        if (use_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected))
+        if (use_inherit_keyword && ParserKeyword{Keyword::INHERIT}.ignore(pos, expected))
         {
-            ParserKeyword{"PROFILE"}.ignore(pos, expected);
+            ParserKeyword{Keyword::PROFILE}.ignore(pos, expected);
             return true;
         }
 
@@ -36,7 +36,7 @@ namespace
             if (!id_mode)
                 return parseIdentifierOrStringLiteral(pos, expected, res);
 
-            if (!ParserKeyword{"ID"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::ID}.ignore(pos, expected))
                 return false;
             if (!ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
                 return false;
@@ -52,7 +52,7 @@ namespace
     }
 
 
-    bool parseValue(IParserBase::Pos & pos, Expected & expected, Field & res)
+    bool parseValue(IParserBase::Pos & pos, Expected & expected, std::optional<Field> & res)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -69,12 +69,12 @@ namespace
     }
 
 
-    bool parseMinMaxValue(IParserBase::Pos & pos, Expected & expected, Field & min_value, Field & max_value)
+    bool parseMinMaxValue(IParserBase::Pos & pos, Expected & expected, std::optional<Field> & min_value, std::optional<Field> & max_value)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            bool is_min_value = ParserKeyword{"MIN"}.ignore(pos, expected);
-            bool is_max_value = !is_min_value && ParserKeyword{"MAX"}.ignore(pos, expected);
+            bool is_min_value = ParserKeyword{Keyword::MIN}.ignore(pos, expected);
+            bool is_max_value = !is_min_value && ParserKeyword{Keyword::MAX}.ignore(pos, expected);
             if (!is_min_value && !is_max_value)
                 return false;
 
@@ -99,17 +99,17 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword{"READONLY"}.ignore(pos, expected) || ParserKeyword{"CONST"}.ignore(pos, expected))
+            if (ParserKeyword{Keyword::READONLY}.ignore(pos, expected) || ParserKeyword{Keyword::CONST}.ignore(pos, expected))
             {
                 writability = SettingConstraintWritability::CONST;
                 return true;
             }
-            else if (ParserKeyword{"WRITABLE"}.ignore(pos, expected))
+            else if (ParserKeyword{Keyword::WRITABLE}.ignore(pos, expected))
             {
                 writability = SettingConstraintWritability::WRITABLE;
                 return true;
             }
-            else if (ParserKeyword{"CHANGEABLE_IN_READONLY"}.ignore(pos, expected))
+            else if (ParserKeyword{Keyword::CHANGEABLE_IN_READONLY}.ignore(pos, expected))
             {
                 writability = SettingConstraintWritability::CHANGEABLE_IN_READONLY;
                 return true;
@@ -124,9 +124,9 @@ namespace
         IParserBase::Pos & pos,
         Expected & expected,
         String & setting_name,
-        Field & value,
-        Field & min_value,
-        Field & max_value,
+        std::optional<Field> & value,
+        std::optional<Field> & min_value,
+        std::optional<Field> & max_value,
         std::optional<SettingConstraintWritability> & writability)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -136,9 +136,9 @@ namespace
                 return false;
 
             String res_setting_name = getIdentifierName(name_ast);
-            Field res_value;
-            Field res_min_value;
-            Field res_max_value;
+            std::optional<Field> res_value;
+            std::optional<Field> res_min_value;
+            std::optional<Field> res_max_value;
             std::optional<SettingConstraintWritability> res_writability;
 
             bool has_value_or_constraint = false;
@@ -151,7 +151,7 @@ namespace
             if (!has_value_or_constraint)
                 return false;
 
-            if (boost::iequals(res_setting_name, "PROFILE") && res_value.isNull() && res_min_value.isNull() && res_max_value.isNull()
+            if (boost::iequals(res_setting_name, toStringView(Keyword::PROFILE)) && !res_value && !res_min_value && !res_max_value
                 && res_writability == SettingConstraintWritability::CONST)
             {
                 /// Ambiguity: "profile readonly" can be treated either as a profile named "readonly" or
@@ -181,9 +181,9 @@ namespace
         {
             String parent_profile;
             String setting_name;
-            Field value;
-            Field min_value;
-            Field max_value;
+            std::optional<Field> value;
+            std::optional<Field> min_value;
+            std::optional<Field> max_value;
             std::optional<SettingConstraintWritability> writability;
 
             bool ok = parseSettingNameWithValueOrConstraints(pos, expected, setting_name, value, min_value, max_value, writability);
@@ -224,7 +224,7 @@ bool ParserSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Expected
 {
     std::vector<std::shared_ptr<ASTSettingsProfileElement>> elements;
 
-    if (ParserKeyword{"NONE"}.ignore(pos, expected))
+    if (ParserKeyword{Keyword::NONE}.ignore(pos, expected))
     {
     }
     else

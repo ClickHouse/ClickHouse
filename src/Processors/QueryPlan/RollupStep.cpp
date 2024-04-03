@@ -49,7 +49,9 @@ void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 void RollupStep::updateOutputStream()
 {
     output_stream = createOutputStream(
-        input_streams.front(), appendGroupingSetColumn(params.getHeader(input_streams.front().header, final)), getDataStreamTraits());
+        input_streams.front(),
+        generateOutputHeader(params.getHeader(input_streams.front().header, final), params.keys, use_nulls),
+        getDataStreamTraits());
 }
 
 

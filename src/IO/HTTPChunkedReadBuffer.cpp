@@ -13,7 +13,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int UNEXPECTED_END_OF_FILE;
-    extern const int CORRUPTED_DATA;
+    extern const int BAD_REQUEST_PARAMETER;
 }
 
 size_t HTTPChunkedReadBuffer::readChunkHeader()
@@ -22,7 +22,7 @@ size_t HTTPChunkedReadBuffer::readChunkHeader()
         throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of file while reading chunk header of HTTP chunked data");
 
     if (!isHexDigit(*in->position()))
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected data instead of HTTP chunk header");
+        throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Unexpected data instead of HTTP chunk header");
 
     size_t res = 0;
     do
@@ -33,7 +33,7 @@ size_t HTTPChunkedReadBuffer::readChunkHeader()
     } while (!in->eof() && isHexDigit(*in->position()));
 
     if (res > max_chunk_size)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Chunk size exceeded the limit");
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Chunk size exceeded the limit (max size: {})", max_chunk_size);
 
     /// NOTE: If we want to read any chunk extensions, it should be done here.
 

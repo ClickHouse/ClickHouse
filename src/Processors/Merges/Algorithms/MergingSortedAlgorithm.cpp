@@ -11,13 +11,14 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     Block header_,
     size_t num_inputs,
     const SortDescription & description_,
-    size_t max_block_size,
+    size_t max_block_size_,
+    size_t max_block_size_bytes_,
     SortingQueueStrategy sorting_queue_strategy_,
     UInt64 limit_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
     : header(std::move(header_))
-    , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
+    , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size_, max_block_size_bytes_)
     , description(description_)
     , limit(limit_)
     , out_row_sources_buf(out_row_sources_buf_)

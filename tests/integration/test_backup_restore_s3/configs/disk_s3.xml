@@ -21,6 +21,13 @@
                 <secret_access_key>minio123</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
             </disk_s3_plain>
+            <disk_s3_cache>
+                <type>cache</type>
+                <disk>disk_s3</disk>
+                <path>/tmp/s3_cache/</path>
+                <max_size>1000000000</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+            </disk_s3_cache>
         </disks>
         <policies>
             <policy_s3>
@@ -37,11 +44,20 @@
                     </main>
                 </volumes>
             </policy_s3_other_bucket>
+            <policy_s3_cache>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_cache</disk>
+                    </main>
+                </volumes>
+            </policy_s3_cache>
         </policies>
     </storage_configuration>
     <backups>
         <allowed_disk>default</allowed_disk>
         <allowed_disk>disk_s3</allowed_disk>
         <allowed_disk>disk_s3_plain</allowed_disk>
+        <allowed_disk>disk_s3_cache</allowed_disk>
+        <allowed_disk>disk_s3_other_bucket</allowed_disk>
     </backups>
 </clickhouse>

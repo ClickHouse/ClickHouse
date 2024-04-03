@@ -1,6 +1,5 @@
-#include "FunctionsStringSearch.h"
-#include "FunctionFactory.h"
 #include "like.h"
+#include "FunctionFactory.h"
 
 
 namespace DB

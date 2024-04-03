@@ -1,9 +1,11 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowAccessQuery.h>
 
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Columns/ColumnString.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
@@ -33,7 +35,7 @@ QueryPipeline InterpreterShowAccessQuery::executeImpl() const
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
     for (const auto & query : queries)
-        column->insert(query->formatWithSecretsHidden());
+        column->insert(format({getContext(), *query}));
 
     String desc = "ACCESS";
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));
@@ -77,6 +79,15 @@ ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
     ASTs result = std::move(create_queries);
     insertAtEnd(result, std::move(grant_queries));
     return result;
+}
+
+void registerInterpreterShowAccessQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowAccessQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowAccessQuery", create_fn);
 }
 
 }

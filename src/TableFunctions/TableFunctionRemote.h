@@ -22,13 +22,13 @@ public:
 
     std::string getName() const override { return name; }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
     bool needStructureConversion() const override { return false; }
 
 private:
 
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
     const char * getStorageTypeName() const override { return "Distributed"; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;

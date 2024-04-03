@@ -24,6 +24,10 @@ INSERT INTO moving_sum_num
 
 SELECT * FROM moving_sum_num ORDER BY k,dt FORMAT TabSeparatedWithNames;
 
+-- Result of function 'groupArrayMovingSum' depends on the order of merging
+-- aggregate states which is implementation defined in external aggregation.
+SET max_bytes_before_external_group_by = 0;
+
 SELECT k, groupArrayMovingSum(v) FROM (SELECT * FROM moving_sum_num ORDER BY k, dt) GROUP BY k ORDER BY k FORMAT TabSeparatedWithNamesAndTypes;
 SELECT k, groupArrayMovingSum(3)(v) FROM (SELECT * FROM moving_sum_num ORDER BY k, dt) GROUP BY k ORDER BY k FORMAT TabSeparatedWithNamesAndTypes;
 

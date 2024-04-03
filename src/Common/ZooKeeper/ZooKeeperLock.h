@@ -3,7 +3,8 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <memory>
 #include <string>
-#include <Common/logger_useful.h>
+
+namespace Poco { class Logger; }
 
 namespace zkutil
 {
@@ -45,7 +46,7 @@ private:
 
     std::string lock_path;
     std::string lock_message;
-    Poco::Logger * log;
+    LoggerPtr log;
     bool locked = false;
 
 };

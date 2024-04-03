@@ -3,6 +3,8 @@
 #include <Common/SharedMutex.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 
+#include <numeric>
+
 namespace DB
 {
 class MetadataStorageFromDisk;
@@ -214,14 +216,12 @@ struct AddBlobOperation final : public IMetadataOperation
 {
     AddBlobOperation(
         const std::string & path_,
-        const std::string & blob_name_,
-        const std::string & root_path_,
+        ObjectStorageKey object_key_,
         uint64_t size_in_bytes_,
         IDisk & disk_,
         const MetadataStorageFromDisk & metadata_storage_)
         : path(path_)
-        , blob_name(blob_name_)
-        , root_path(root_path_)
+        , object_key(std::move(object_key_))
         , size_in_bytes(size_in_bytes_)
         , disk(disk_)
         , metadata_storage(metadata_storage_)
@@ -233,8 +233,7 @@ struct AddBlobOperation final : public IMetadataOperation
 
 private:
     std::string path;
-    std::string blob_name;
-    std::string root_path;
+    ObjectStorageKey object_key;
     uint64_t size_in_bytes;
     IDisk & disk;
     const MetadataStorageFromDisk & metadata_storage;
@@ -242,9 +241,10 @@ private:
     std::unique_ptr<WriteFileOperation> write_operation;
 };
 
-
 struct UnlinkMetadataFileOperation final : public IMetadataOperation
 {
+    const UnlinkMetadataFileOperationOutcomePtr outcome = std::make_shared<UnlinkMetadataFileOperationOutcome>();
+
     UnlinkMetadataFileOperation(
         const std::string & path_,
         IDisk & disk_,
