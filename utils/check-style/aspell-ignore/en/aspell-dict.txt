@@ -161,7 +161,9 @@ ClickHouseNIO
 ClickHouseVapor
 ClickVisual
 ClickableSquare
+CloudAvailableBadge
 CloudDetails
+CloudNotSupportedBadge
 CloudStorage
 CodeBlock
 CodeLLDB
@@ -1584,6 +1586,7 @@ gccMurmurHash
 gcem
 generateRandom
 generateRandomStructure
+generateSeries
 generateULID
 generateUUIDv
 geoDistance
@@ -1598,6 +1601,7 @@ geohashEncode
 geohashesInBox
 geoip
 geospatial
+getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -1676,6 +1680,7 @@ hasSubsequenceCaseInsensitiveUTF
 hasSubsequenceUTF
 hasSubstr
 hasToken
+hasThreadFuzzer
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
@@ -1980,6 +1985,9 @@ nestjs
 netloc
 ngram
 ngramDistance
+ngramDistanceCaseInsensitive
+ngramDistanceCaseInsensitiveUTF
+ngramDistanceUTF
 ngramMinHash
 ngramMinHashArg
 ngramMinHashArgCaseInsensitive
@@ -1989,6 +1997,9 @@ ngramMinHashCaseInsensitive
 ngramMinHashCaseInsensitiveUTF
 ngramMinHashUTF
 ngramSearch
+ngramSearchCaseInsensitive
+ngramSearchCaseInsensitiveUTF
+ngramSearchUTF
 ngramSimHash
 ngramSimHashCaseInsensitive
 ngramSimHashCaseInsensitiveUTF

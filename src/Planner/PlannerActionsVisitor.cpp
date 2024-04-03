@@ -157,6 +157,12 @@ public:
             case QueryTreeNodeType::FUNCTION:
             {
                 const auto & function_node = node->as<FunctionNode &>();
+                if (function_node.getFunctionName() == "__actionName")
+                {
+                    result = toString(function_node.getArguments().getNodes().at(1)->as<ConstantNode>()->getValue());
+                    break;
+                }
+
                 String in_function_second_argument_node_name;
 
                 if (isNameOfInFunction(function_node.getFunctionName()))

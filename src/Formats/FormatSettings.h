@@ -193,7 +193,7 @@ struct FormatSettings
         bool allow_variable_number_of_columns = false;
     } custom{};
 
-    struct
+    struct JSON
     {
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
@@ -221,7 +221,7 @@ struct FormatSettings
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
         bool infer_incomplete_types_as_strings = true;
-
+        bool throw_on_bad_escape_sequence = true;
     } json{};
 
     struct
@@ -275,6 +275,8 @@ struct FormatSettings
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
         UInt64 max_value_width = 10000;
+        UInt64 max_value_width_apply_for_single_value = false;
+        bool highlight_digit_groups = true;
         SettingFieldUInt64Auto color{"auto"};
 
         bool output_format_pretty_row_numbers = false;
