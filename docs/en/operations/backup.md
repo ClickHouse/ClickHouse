@@ -87,6 +87,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
     - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
     - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
     - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
+    - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
 
 ### Usage examples
 

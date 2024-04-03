@@ -1,7 +1,9 @@
 #include "PrometheusMetricsWriter.h"
 
 #include <IO/WriteHelpers.h>
+#include <Common/ErrorCodes.h>
 #include <Common/re2.h>
+
 #include <algorithm>
 
 #include "config.h"

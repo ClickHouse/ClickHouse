@@ -20,11 +20,11 @@ namespace DB
 
 bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_watch("WATCH");
+    ParserKeyword s_watch(Keyword::WATCH);
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
-    ParserKeyword s_events("EVENTS");
-    ParserKeyword s_limit("LIMIT");
+    ParserKeyword s_events(Keyword::EVENTS);
+    ParserKeyword s_limit(Keyword::LIMIT);
 
     ASTPtr database;
     ASTPtr table;

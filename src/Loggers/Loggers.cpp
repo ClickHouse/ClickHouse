@@ -304,6 +304,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         log_settings.turn_off_logger = DB::TextLog::shouldTurnOffLogger();
 
+        log_settings.database = config.getString("text_log.database", "system");
+        log_settings.table = config.getString("text_log.table", "text_log");
+
         split->addTextLog(DB::TextLog::getLogQueue(log_settings), text_log_level);
     }
 #endif

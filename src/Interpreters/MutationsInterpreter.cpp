@@ -341,6 +341,11 @@ bool MutationsInterpreter::Source::hasProjection(const String & name) const
     return part && part->hasProjection(name);
 }
 
+bool MutationsInterpreter::Source::hasBrokenProjection(const String & name) const
+{
+    return part && part->hasBrokenProjection(name);
+}
+
 bool MutationsInterpreter::Source::isCompactPart() const
 {
     return part && part->getType() == MergeTreeDataPartType::Compact;
@@ -402,10 +407,18 @@ MutationsInterpreter::MutationsInterpreter(
     , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
     , available_columns(std::move(available_columns_))
-    , context(Context::createCopy(context_))
     , settings(std::move(settings_))
     , select_limits(SelectQueryOptions().analyze(!settings.can_execute).ignoreLimits())
+    , logger(getLogger("MutationsInterpreter(" + source.getStorage()->getStorageID().getFullTableName() + ")"))
 {
+    auto new_context = Context::createCopy(context_);
+    if (new_context->getSettingsRef().allow_experimental_analyzer)
+    {
+        new_context->setSetting("allow_experimental_analyzer", false);
+        LOG_DEBUG(logger, "Will use old analyzer to prepare mutation");
+    }
+    context = std::move(new_context);
+
     prepare(!settings.can_execute);
 }
 
@@ -795,7 +808,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             const auto & projection = projections_desc.get(command.projection_name);
-            if (!source.hasProjection(projection.name))
+            if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
             {
                 for (const auto & column : projection.required_columns)
                     dependencies.emplace(column, ColumnDependency::PROJECTION);
@@ -981,6 +994,14 @@ void MutationsInterpreter::prepare(bool dry_run)
     {
         if (!source.hasProjection(projection.name))
             continue;
+
+        /// Always rebuild broken projections.
+        if (source.hasBrokenProjection(projection.name))
+        {
+            LOG_DEBUG(logger, "Will rebuild broken projection {}", projection.name);
+            materialized_projections.insert(projection.name);
+            continue;
+        }
 
         if (need_rebuild_projections)
         {
