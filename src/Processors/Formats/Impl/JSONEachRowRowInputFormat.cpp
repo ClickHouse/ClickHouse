@@ -132,6 +132,7 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
         throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing JSONEachRow format: {}", columnName(index));
 
     seen_columns[index] = true;
+    seen_columns_count++;
     const auto & type = getPort().getHeader().getByPosition(index).type;
     const auto & serialization = serializations[index];
     read_columns[index] = JSONUtils::readField(*in, *columns[index], type, serialization, columnName(index), format_settings, yield_strings);
@@ -186,6 +187,11 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             JSONUtils::skipColon(*in);
             readField(column_index, columns);
         }
+        if (seen_columns_count >= total_columns)
+        {
+            skipToUnescapedNextLineOrEOF(*in);
+            break;
+        }
     }
 }
 
@@ -210,6 +216,8 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         return false;
 
     size_t num_columns = columns.size();
+    total_columns = num_columns;
+    seen_columns_count = 0;
 
     read_columns.assign(num_columns, false);
     seen_columns.assign(num_columns, false);
