@@ -36,7 +36,7 @@ regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/g
 
 ### regionToCity
 
-Accepts a UInt32 number – the region ID from the geobase. If this region is a city or part of a city, it returns the region ID for the appropriate city. Otherwise, returns 0.
+Accepts a region ID from the geobase. If this region is a city or part of a city, it returns the region ID for the appropriate city. Otherwise, returns 0.
 
 **Syntax**
 
@@ -51,7 +51,7 @@ regionToCity(id [, geobase])
 
 **Returned value**
 
-- region ID for the appropriate city, if it exists.
+- Region ID for the appropriate city, if it exists.
 - 0, otherwise. 
 
 **Example**
@@ -59,18 +59,36 @@ regionToCity(id [, geobase])
 Query:
 
 ```sql
-
+SELECT regionToCity(toUInt32(5));
 ```
 
 Result:
 
 ```response
-
+   ┌─regionToCity(toUInt32(5))─┐
+1. │                         5 │
+   └───────────────────────────┘
 ```
 
-### regionToArea(id\[, geobase\])
+### regionToArea
 
-Converts a region to an area (type 5 in the geobase). In every other way, this function is the same as ‘regionToCity’.
+Converts a region to an area (type 5 in the geobase). In every other way, this function is the same as [‘regionToCity’](#regiontocity).
+
+**Syntax**
+
+```sql
+regionToArea(id [, geobase])
+```
+
+**Parameters**
+
+- `id`: the region ID from the geobase. [UInt32](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256)
+- `geobase` (optional): geobase (dictionary key). [Dictionary Key](../../sql-reference/dictionaries/index.md/#dictionary-key-and-fields-dictionary-key-and-fields)
+
+**Returned value**
+
+- Area
+- 0, otherwise. 
 
 ``` sql
 SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'))
@@ -98,15 +116,37 @@ LIMIT 15
 └──────────────────────────────────────────────────────┘
 ```
 
-### regionToDistrict(id\[, geobase\])
+### regionToDistrict
 
 Converts a region to a federal district (type 4 in the geobase). In every other way, this function is the same as ‘regionToCity’.
+
+**Syntax**
+
+```sql
+regionToDistrict(id [, geobase])
+```
+
+**Parameters**
+
+- `id`: the region ID from the geobase. [UInt32](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256)
+- `geobase` (optional): geobase (dictionary key). [Dictionary Key](../../sql-reference/dictionaries/index.md/#dictionary-key-and-fields-dictionary-key-and-fields)
+
+**Returned value**
+
+- Region ID for the appropriate city, if it exists.
+- 0, otherwise. 
+
+**Example**
+
+Query:
 
 ``` sql
 SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
 ```
+
+Result:
 
 ``` text
 ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'))─┐
@@ -128,19 +168,35 @@ LIMIT 15
 └──────────────────────────────────────────────────────────┘
 ```
 
-### regionToCountry(id\[, geobase\])
+### regionToCountry
 
 Converts a region to a country. In every other way, this function is the same as ‘regionToCity’.
 Example: `regionToCountry(toUInt32(213)) = 225` converts Moscow (213) to Russia (225).
 
-### regionToContinent(id\[, geobase\])
+**Syntax**
+
+```sql
+regionToCountry(id [, geobase])
+```
+
+### regionToContinent
 
 Converts a region to a continent. In every other way, this function is the same as ‘regionToCity’.
 Example: `regionToContinent(toUInt32(213)) = 10001` converts Moscow (213) to Eurasia (10001).
 
-### regionToTopContinent(id\[, geobase\])
+**Syntax**
+
+```sql
+regionToContinent(id [, geobase])
+```
+
+### regionToTopContinent
 
 Finds the highest continent in the hierarchy for the region.
+
+```sql
+regionToTopContinent(id [, geobase])
+```
 
 **Syntax**
 
@@ -148,7 +204,7 @@ Finds the highest continent in the hierarchy for the region.
 regionToTopContinent(id[, geobase])
 ```
 
-**Arguments**
+**Parameters**
 
 - `id` — Region ID from the geobase. [UInt32](../../sql-reference/data-types/int-uint.md).
 - `geobase` — Dictionary key. See [Multiple Geobases](#multiple-geobases). [String](../../sql-reference/data-types/string.md). Optional.
@@ -160,25 +216,49 @@ regionToTopContinent(id[, geobase])
 
 Type: `UInt32`.
 
-### regionToPopulation(id\[, geobase\])
+### regionToPopulation
 
 Gets the population for a region.
 The population can be recorded in files with the geobase. See the section “Dictionaries”.
 If the population is not recorded for the region, it returns 0.
 In the geobase, the population might be recorded for child regions, but not for parent regions.
 
-### regionIn(lhs, rhs\[, geobase\])
+**Syntax**
+
+``` sql
+regionToPopulation(id[, geobase])
+```
+
+### regionIn
 
 Checks whether a ‘lhs’ region belongs to a ‘rhs’ region. Returns a UInt8 number equal to 1 if it belongs, or 0 if it does not belong.
 The relationship is reflexive – any region also belongs to itself.
 
-### regionHierarchy(id\[, geobase\])
+**Syntax**
+
+``` sql
+regionIn(lhs, rhs\[, geobase\])
+```
+
+### regionHierarchy
 
 Accepts a UInt32 number – the region ID from the geobase. Returns an array of region IDs consisting of the passed region and all parents along the chain.
 Example: `regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]`.
 
-### regionToName(id\[, lang\])
+**Syntax**
+
+``` sql
+regionHierarchy(id\[, geobase\])
+```
+
+### regionToName
 
 Accepts a UInt32 number – the region ID from the geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID does not exist, an empty string is returned.
 
 `ua` and `uk` both mean Ukrainian.
+
+**Syntax**
+
+``` sql
+regionToName(id\[, lang\])
+```
