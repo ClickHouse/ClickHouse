@@ -27,6 +27,7 @@ DataTypePtr FunctionArrayLogical::getReturnTypeImpl(const DataTypes & arguments)
     nested_types.reserve(arguments.size());
 
     bool has_nothing = false;
+    bool has_nullable = false; // Add a flag to check if any input type is nullable
 
     if (arguments.empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
@@ -48,6 +49,9 @@ DataTypePtr FunctionArrayLogical::getReturnTypeImpl(const DataTypes & arguments)
             has_nothing = true;
         else
             nested_types.push_back(nested_type);
+
+        if (nested_type->isNullable()) // Check if the nested type is nullable
+            has_nullable = true; // Set the flag to true if the nested type is nullable
     }
 
     DataTypePtr result_type;
@@ -58,8 +62,13 @@ DataTypePtr FunctionArrayLogical::getReturnTypeImpl(const DataTypes & arguments)
     if (has_nothing)
         result_type = std::make_shared<DataTypeNothing>();
 
+    // If the function is arraySymmetricDifference and at least one input type is nullable, make the result type nullable
+    if (!intersect && has_nullable)
+        result_type = makeNullable(result_type);
+
     return std::make_shared<DataTypeArray>(result_type);
 }
+
 
 ColumnPtr FunctionArrayLogical::castRemoveNullable(const ColumnPtr & column, const DataTypePtr & data_type) const
 {
@@ -523,7 +532,7 @@ ColumnPtr FunctionArrayLogical::execute(const UnpackedArrays & arrays, MutableCo
             if (intersect)
                 break;
         }
-
+        result_offset = result_data.size();
         result_offsets.getElement(row) = result_offset;
     }
 
