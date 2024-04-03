@@ -1,5 +1,7 @@
 USE test;
 
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+
 DROP TABLE IF EXISTS join;
 CREATE TABLE join (UserID UInt64, loyalty Int8) ENGINE = Join(SEMI, LEFT, UserID);
 

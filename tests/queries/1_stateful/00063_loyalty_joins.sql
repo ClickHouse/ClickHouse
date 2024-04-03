@@ -1,6 +1,8 @@
 SET any_join_distinct_right_table_keys = 1;
 SET joined_subquery_requires_alias = 0;
 
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+
 SELECT
     loyalty,
     count()
