@@ -32,6 +32,8 @@ Type: always [Float64](../../../sql-reference/data-types/float.md).
 
 The following two columns being compared below have no association with each other, so the result of `cramersV` is 0:
 
+Query:
+
 ``` sql
 SELECT
     cramersV(a, b)

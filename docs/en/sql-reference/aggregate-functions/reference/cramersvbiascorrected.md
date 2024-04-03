@@ -28,6 +28,8 @@ Type: always [Float64](../../../sql-reference/data-types/float.md).
 
 The following two columns being compared below have a small association with each other. Notice the result of `cramersVBiasCorrected` is smaller than the result of `cramersV`:
 
+Query:
+
 ``` sql
 SELECT
     cramersV(a, b),
