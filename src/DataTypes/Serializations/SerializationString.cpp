@@ -391,7 +391,7 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
     else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
         String field;
-        readJSONField(field, istr);
+        readJSONField(field, istr, settings.json);
         Float64 tmp;
         ReadBufferFromString buf(field);
         if (tryReadFloatText(tmp, buf) && buf.eof())
@@ -400,7 +400,7 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);
     }
     else
-        read<void>(column, [&](ColumnString::Chars & data) { readJSONStringInto(data, istr); });
+        read<void>(column, [&](ColumnString::Chars & data) { readJSONStringInto(data, istr, settings.json); });
 }
 
 bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -434,7 +434,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
     if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
         String field;
-        if (!tryReadJSONField(field, istr))
+        if (!tryReadJSONField(field, istr, settings.json))
             return false;
 
         Float64 tmp;
@@ -448,7 +448,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
         return false;
     }
 
-    return read<bool>(column, [&](ColumnString::Chars & data) { return tryReadJSONStringInto(data, istr); });
+    return read<bool>(column, [&](ColumnString::Chars & data) { return tryReadJSONStringInto(data, istr, settings.json); });
 }
 
 
