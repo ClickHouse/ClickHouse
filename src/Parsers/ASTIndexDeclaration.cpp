@@ -31,8 +31,14 @@ ASTIndexDeclaration::ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const S
 
 ASTPtr ASTIndexDeclaration::clone() const
 {
-    auto expr = getExpression();
-    auto type = getType();
+    ASTPtr expr = getExpression();
+    if (expr)
+        expr = expr->clone();
+
+    ASTPtr type = getType();
+    if (type)
+        type = type->clone();
+
     auto res = std::make_shared<ASTIndexDeclaration>(expr, type, name);
     res->granularity = granularity;
 

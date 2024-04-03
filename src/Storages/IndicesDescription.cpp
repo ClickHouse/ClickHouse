@@ -95,7 +95,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     IndexDescription result;
     result.definition_ast = index_definition->clone();
     result.name = index_definition->name;
-    result.type = Poco::toLower(index_definition->getType()->name);
+    result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;
 
     ASTPtr expr_list;
