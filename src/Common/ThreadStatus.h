@@ -308,11 +308,7 @@ public:
 
     void flushUntrackedMemory();
 
-#ifdef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-    void initGlobalProfiler(UInt64, UInt64) {}
-#else
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
-#endif
 
 private:
     void applyGlobalSettings();

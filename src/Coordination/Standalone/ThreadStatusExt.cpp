@@ -11,4 +11,8 @@ void CurrentThread::attachToGroup(const ThreadGroupPtr &)
 {
 }
 
+void ThreadStatus::initGlobalProfiler(UInt64, UInt64)
+{
+}
+
 }
