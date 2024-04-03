@@ -1,6 +1,5 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Functions/FunctionHelpers.h>
@@ -18,6 +17,16 @@ class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
 using ConstArenas = std::vector<ConstArenaPtr>;
+
+using AggregateDataPtr = char *;
+using AggregateDataPtrs = std::vector<AggregateDataPtr>;
+using ConstAggregateDataPtr = const char *;
+
+class IAggregateFunction;
+using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
+
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
 
 
 /** Column of states of aggregate functions.
@@ -114,7 +123,7 @@ public:
     /// This method is made static and receive MutableColumnPtr object to explicitly destroy it.
     static MutableColumnPtr convertToValues(MutableColumnPtr column);
 
-    std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
+    std::string getName() const override;
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 

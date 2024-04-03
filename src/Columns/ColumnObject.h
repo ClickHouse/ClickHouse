@@ -3,7 +3,6 @@
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Core/Names.h>
-#include <DataTypes/Serializations/JSONDataParser.h>
 #include <DataTypes/Serializations/SubcolumnsTree.h>
 #include <Common/PODArray.h>
 

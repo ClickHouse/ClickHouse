@@ -1,5 +1,6 @@
 #include <Columns/ColumnAggregateFunction.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <IO/Operators.h>
@@ -108,6 +109,11 @@ ConstArenas concatArenas(const ConstArenas & array, ConstArenaPtr arena)
     return result;
 }
 
+}
+
+std::string ColumnAggregateFunction::getName() const
+{
+    return "AggregateFunction(" + func->getName() + ")";
 }
 
 MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr column)
