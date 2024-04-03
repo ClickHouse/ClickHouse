@@ -560,6 +560,11 @@ public:
 
     size_t wipeExpiredImpl(std::vector<ConnectionPtr> & expired_connections) TSA_REQUIRES(mutex)
     {
+        SCOPE_EXIT({
+            CurrentMetrics::sub(getMetrics().stored_count, expired_connections.size());
+            ProfileEvents::increment(getMetrics().expired, expired_connections.size());
+        });
+
         auto isSoftLimitReached = group->isSoftLimitReached();
         while (!stored_connections.empty())
         {
@@ -572,9 +577,6 @@ public:
             connection->markAsExpired();
             expired_connections.push_back(connection);
         }
-
-        CurrentMetrics::sub(getMetrics().stored_count, expired_connections.size());
-        ProfileEvents::increment(getMetrics().expired, expired_connections.size());
 
         return stored_connections.size();
     }
