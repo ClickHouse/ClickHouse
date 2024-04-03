@@ -18,6 +18,7 @@
 #include <Access/ContextAccess.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>

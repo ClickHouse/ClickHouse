@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
-#include <Functions/FunctionHelpers.h>
 #include <Common/PODArray.h>
 
 namespace DB
@@ -27,6 +26,9 @@ using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
+
+struct ColumnWithTypeAndName;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 
 /** Column of states of aggregate functions.
