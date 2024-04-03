@@ -845,7 +845,6 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         chassert(downloaded_size == range().size());
         chassert(downloaded_size > 0);
         chassert(std::filesystem::file_size(getPath()) > 0);
-        chassert(queue_iterator);
         check_iterator(queue_iterator);
     }
     else
