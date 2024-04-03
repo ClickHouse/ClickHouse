@@ -79,21 +79,21 @@ const TestCase TestCases[] = {
      "root",
      "nested/file.txt",
      "",
-     true},
+     false},
     // Test with a file with no extension
     {S3::URI("https://bucket.vpce-03b2c987f1bd55c5f-j3b4vg7w.s3.ap-southeast-2.vpce.amazonaws.com/some_bucket/document"),
      "https://bucket.vpce-03b2c987f1bd55c5f-j3b4vg7w.s3.ap-southeast-2.vpce.amazonaws.com",
      "some_bucket",
      "document",
      "",
-     true},
+     false},
     // Test with a deeply nested file path
     {S3::URI("https://bucket.vpce-0242cd56f1bd55c5f-l5b7vg8x.s3.sa-east-1.vpce.amazonaws.com/some_bucket/b/c/d/e/f/g/h/i/j/data.json"),
      "https://bucket.vpce-0242cd56f1bd55c5f-l5b7vg8x.s3.sa-east-1.vpce.amazonaws.com",
      "some_bucket",
      "b/c/d/e/f/g/h/i/j/data.json",
      "",
-     true},
+     false},
 };
 
 class S3UriTest : public testing::TestWithParam<std::string>

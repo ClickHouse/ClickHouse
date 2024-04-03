@@ -108,19 +108,10 @@ URI::URI(const std::string & uri_)
     String name;
     String endpoint_authority_from_uri;
 
-    if (re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern))
-    {
-        if (!re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not parse bucket and key from uri {}", uri.toString());
-        }
+    bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
 
-        // Default to virtual hosted style
-        is_virtual_hosted_style = true;
-        endpoint = uri.getScheme() + "://" + uri.getAuthority();
-        validateBucket(bucket, uri);
-    }
-    else if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
+    if (!is_using_aws_private_link_interface
+        && re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
     {
         is_virtual_hosted_style = true;
         endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
