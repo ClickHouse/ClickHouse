@@ -17,6 +17,7 @@ namespace DB::S3
  * The following patterns are allowed:
  * s3://bucket/key
  * http(s)://endpoint/bucket/key
+ * TODO specify aws private link
  */
 struct URI
 {
