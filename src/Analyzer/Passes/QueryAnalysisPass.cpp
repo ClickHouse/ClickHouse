@@ -1940,8 +1940,7 @@ std::vector<String> QueryAnalyzer::collectIdentifierTypoHints(const Identifier &
     for (const auto & valid_identifier : valid_identifiers)
         prompting_strings.push_back(valid_identifier.getFullName());
 
-    NamePrompter<1> prompter;
-    return prompter.getHints(unresolved_identifier.getFullName(), prompting_strings);
+    return NamePrompter<1>::getHints(unresolved_identifier.getFullName(), prompting_strings);
 }
 
 /** Wrap expression node in tuple element function calls for nested paths.

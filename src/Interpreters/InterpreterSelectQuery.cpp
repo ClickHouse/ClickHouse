@@ -412,8 +412,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (!options.is_subquery)
     {
         if (context->getSettingsRef().enable_global_with_statement)
-            ApplyWithAliasVisitor().visit(query_ptr);
-        ApplyWithSubqueryVisitor().visit(query_ptr);
+            ApplyWithAliasVisitor::visit(query_ptr);
+        ApplyWithSubqueryVisitor::visit(query_ptr);
     }
 
     query_info.query = query_ptr->clone();
@@ -609,7 +609,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (view)
         {
             query_info.is_parameterized_view = view->isParameterizedView();
-            view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
+            StorageView::replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
         }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
@@ -629,7 +629,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (view)
         {
             /// Restore original view name. Save rewritten subquery for future usage in StorageView.
-            query_info.view_query = view->restoreViewName(getSelectQuery(), view_table);
+            query_info.view_query = StorageView::restoreViewName(getSelectQuery(), view_table);
             view = nullptr;
         }
 
@@ -2434,7 +2434,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         agg_count.create(place);
         SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
 
-        agg_count.set(place, *num_rows);
+        AggregateFunctionCount::set(place, *num_rows);
 
         auto column = ColumnAggregateFunction::create(func);
         column->insertFrom(place);

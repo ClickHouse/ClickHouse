@@ -33,7 +33,7 @@ static String formattedASTNormalized(const ASTPtr & ast)
     if (!ast)
         return "";
     auto ast_normalized = ast->clone();
-    FunctionNameNormalizer().visit(ast_normalized.get());
+    FunctionNameNormalizer::visit(ast_normalized.get());
     WriteBufferFromOwnString buf;
     formatAST(*ast_normalized, buf, false, true);
     return buf.str();
