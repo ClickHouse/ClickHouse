@@ -1138,6 +1138,7 @@ arrayFirstIndex
 arrayFlatten
 arrayFold
 arrayIntersect
+arraySymmetricDifference
 arrayJaccardIndex
 arrayJoin
 arrayLast

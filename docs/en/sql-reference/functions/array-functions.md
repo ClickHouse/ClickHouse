@@ -1736,6 +1736,24 @@ SELECT
 └──────────────┴───────────┘
 ```
 
+## arraySymmetricDifference(arr)
+
+Takes multiple arrays, returns an array with elements that are presented not in all source arrays.
+
+Example:
+
+``` sql
+SELECT
+    arrayIntersect([1, 2], [1, 2], [1, 2]) AS no_symmetric_difference
+    arrayIntersect([1, 2], [1, 2], [1, 3]) AS symmetric_difference,
+```
+
+``` text
+┌─no_symmetric_difference─┬─symmetric_difference─┐
+│ []                      │ [1, 2, 3]            │
+└─────────────────────────┴──────────────────────┘
+```
+
 ## arrayJaccardIndex
 
 Returns the [Jaccard index](https://en.wikipedia.org/wiki/Jaccard_index) of two arrays.
