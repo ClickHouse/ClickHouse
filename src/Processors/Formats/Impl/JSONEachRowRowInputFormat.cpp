@@ -47,9 +47,9 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     name_map = header.getNamesToIndexesMap();
     if (format_settings_.json.ignore_key_case)
     {
-        for (auto it = name_map.begin(); it != name_map.end(); ++it)
+        for (auto & it : name_map)
         {
-            StringRef key = it->first;
+            StringRef key = it.first;
             String lower_case_key = transformFieldNameToLowerCase(key);
             lower_case_name_map[lower_case_key] = key;
         }
