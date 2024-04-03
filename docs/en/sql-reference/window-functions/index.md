@@ -24,7 +24,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | Calculating aggregate functions over a frame (`sum(value) over (order by time)`)   | ✅ (All aggregate functions are supported)                                                                                                                                                       |
 | `rank()`, `dense_rank()`, `row_number()`                                           | ✅                                                                                                                                                                                   |
 | `lag/lead(value, offset)`                                                          | ❌ <br/> You can use one of the following workarounds:<br/> 1) `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead` <br/> 2) `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following`                                                                 |
-| ntile(buckets) | ✅ <br> Specify window like, (partition by x order by y rows between unbounded preceding and unrounded following). |
+| ntile(buckets) | ✅ <br/> Specify window like, (partition by x order by y rows between unbounded preceding and unrounded following). |
 
 ## ClickHouse-specific Window Functions
 
