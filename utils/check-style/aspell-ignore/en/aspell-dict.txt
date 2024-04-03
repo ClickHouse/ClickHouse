@@ -971,8 +971,8 @@ UMTS
 UNDROP
 UPDATEs
 URIs
+URL
 URL's
-URL-encoded
 URLHash
 URLHierarchy
 URLPathHierarchy
