@@ -53,31 +53,6 @@ namespace ErrorCodes
 }
 
 template <typename T>
-StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
-{
-    constexpr size_t null_bit_size = sizeof(UInt8);
-    StringRef res;
-    char * pos;
-    if (null_bit)
-    {
-        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-        memcpy(pos, null_bit, null_bit_size);
-        if (*null_bit) return res;
-        pos += null_bit_size;
-    }
-    else
-    {
-        res.size = sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-    }
-    unalignedStore<T>(pos, data[n]);
-    return res;
-}
-
-template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.emplace_back(unalignedLoad<T>(pos));
@@ -486,6 +461,28 @@ Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
 }
 
 template <typename T>
+bool ColumnVector<T>::tryInsert(const DB::Field & x)
+{
+    NearestFieldType<T> value;
+    if (!x.tryGet<NearestFieldType<T>>(value))
+    {
+        if constexpr (std::is_same_v<T, UInt8>)
+        {
+            /// It's also possible to insert boolean values into UInt8 column.
+            bool boolean_value;
+            if (x.tryGet<bool>(boolean_value))
+            {
+                data.push_back(static_cast<T>(boolean_value));
+                return true;
+            }
+        }
+        return false;
+    }
+    data.push_back(static_cast<T>(value));
+    return true;
+}
+
+template <typename T>
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
@@ -881,12 +878,6 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     }
 
     return res;
-}
-
-template <typename T>
-void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
 }
 
 template <typename T>

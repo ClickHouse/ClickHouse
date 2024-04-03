@@ -8,7 +8,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -205,7 +204,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
 }
 
 
-StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     size_t array_size = sizeAt(n);
     size_t offset = offsetAt(n);
@@ -223,6 +222,19 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
     }
 
     return res;
+}
+
+
+char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory) const
+{
+    size_t array_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+
+    memcpy(memory, &array_size, sizeof(array_size));
+    memory += sizeof(array_size);
+    for (size_t i = 0; i < array_size; ++i)
+        memory = getData().serializeValueIntoMemory(offset + i, memory);
+    return memory;
 }
 
 
@@ -388,19 +400,6 @@ int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_dir
 int ColumnArray::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator & collator) const
 {
     return compareAtImpl(n, m, rhs_, nan_direction_hint, &collator);
-}
-
-void ColumnArray::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnArray>(assert_cast<const ColumnArray &>(rhs), rhs_row_num, row_indexes,
-                                        compare_results, direction, nan_direction_hint);
-}
-
-bool ColumnArray::hasEqualValues() const
-{
-    return hasEqualValuesImpl<ColumnArray>();
 }
 
 struct ColumnArray::ComparatorBase
@@ -988,22 +987,6 @@ ColumnPtr ColumnArray::compress() const
         });
 }
 
-double ColumnArray::getRatioOfDefaultRows(double sample_ratio) const
-{
-    return getRatioOfDefaultRowsImpl<ColumnArray>(sample_ratio);
-}
-
-UInt64 ColumnArray::getNumberOfDefaultRows() const
-{
-    return getNumberOfDefaultRowsImpl<ColumnArray>();
-}
-
-void ColumnArray::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
-{
-    return getIndicesOfNonDefaultRowsImpl<ColumnArray>(indices, from, limit);
-}
-
-
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
     if (replicate_offsets.empty())
@@ -1296,11 +1279,6 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
     return ColumnArray::create(
         ColumnTuple::create(tuple_columns),
         assert_cast<const ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
-}
-
-void ColumnArray::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
 }
 
 size_t ColumnArray::getNumberOfDimensions() const

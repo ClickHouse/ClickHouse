@@ -26,11 +26,6 @@ bool ExternalLoaderDictionaryStorageConfigRepository::exists(const std::string &
     return getName() == loadable_definition_name;
 }
 
-Poco::Timestamp ExternalLoaderDictionaryStorageConfigRepository::getUpdateTime(const std::string &)
-{
-    return dictionary_storage.getUpdateTime();
-}
-
 LoadablesConfigurationPtr ExternalLoaderDictionaryStorageConfigRepository::load(const std::string &)
 {
     return dictionary_storage.getConfiguration();

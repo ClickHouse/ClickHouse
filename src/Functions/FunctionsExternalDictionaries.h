@@ -324,12 +324,15 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
-    bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
     {
         if constexpr (dictionary_get_function_type != DictionaryGetFunctionType::getOrDefault)
             return false;
 
-        settings.arguments_with_disabled_lazy_execution.insert({0, 1, 2});
+        /// We execute lazily only last argument with default expression.
+        for (size_t i = 0; i != number_of_arguments - 1; ++i)
+            settings.arguments_with_disabled_lazy_execution.insert(i);
+
         settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
         settings.force_enable_lazy_execution = false;
         return true;
@@ -390,8 +393,8 @@ public:
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Function {} does not support nullable keys", getName());
 
             // Wrap all the attribute types in Array()
-            for (auto it = attribute_types.begin(); it != attribute_types.end(); ++it)
-                *it = std::make_shared<DataTypeArray>(*it);
+            for (auto & attr_type : attribute_types)
+                attr_type = std::make_shared<DataTypeArray>(attr_type);
         }
         if (attribute_types.size() > 1)
         {
