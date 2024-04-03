@@ -1909,6 +1909,8 @@ try
     auto runner = threadPoolCallbackRunner<void>(getOutdatedPartsLoadingThreadPool().get(), "OutdatedParts");
     std::vector<std::future<void>> parts_futures;
 
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
+
     while (true)
     {
         ThreadFuzzer::maybeInjectSleep();

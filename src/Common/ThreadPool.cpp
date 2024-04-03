@@ -568,6 +568,21 @@ bool CannotAllocateThreadFaultInjector::injectFault()
     if (!ins.enabled.load(std::memory_order_relaxed))
         return false;
 
+    if (ins.block_fault_injections)
+        return false;
+
     std::lock_guard lock(ins.mutex);
     return ins.random && (*ins.random)(ins.rndgen);
+}
+
+thread_local bool CannotAllocateThreadFaultInjector::block_fault_injections = false;
+
+scope_guard CannotAllocateThreadFaultInjector::blockFaultInjections()
+{
+    auto & ins = instance();
+    if (!ins.enabled.load(std::memory_order_relaxed))
+        return {};
+
+    ins.block_fault_injections = true;
+    return [&ins](){ ins.block_fault_injections = false; };
 }

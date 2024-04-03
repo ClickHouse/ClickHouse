@@ -334,8 +334,13 @@ class CannotAllocateThreadFaultInjector
     std::mutex mutex;
     pcg64_fast rndgen;
     std::optional<std::bernoulli_distribution> random;
+
+    static thread_local bool block_fault_injections;
+
     static CannotAllocateThreadFaultInjector & instance();
 public:
     static void setFaultProbability(double probability);
     static bool injectFault();
+
+    static scope_guard blockFaultInjections();
 };
