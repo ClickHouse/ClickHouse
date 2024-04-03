@@ -37,7 +37,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 class FunctionArrayLogical : public IFunction
 {
 public:
-    FunctionArrayLogical(bool intersect_, const char * name_): intersect(intersect_), name(name_) {}
+    FunctionArrayLogical(bool intersect_, const char * name_) : intersect(intersect_), name(name_) { }
 
     String getName() const override { return name; }
 
@@ -47,7 +47,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -70,7 +71,6 @@ private:
             const NullMap * overflow_mask = nullptr;
             const ColumnArray::ColumnOffsets::Container * offsets = nullptr;
             const IColumn * nested_column = nullptr;
-
         };
 
         std::vector<UnpackedArray> args;
@@ -89,8 +89,8 @@ private:
         ColumnsWithTypeAndName casted;
     };
 
-    static CastArgumentsResult castColumns(const ColumnsWithTypeAndName & arguments,
-                                           const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
+    static CastArgumentsResult
+    castColumns(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
     UnpackedArrays prepareArrays(const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const;
 
     template <typename ValueType, typename ColumnType, bool is_numeric_column>
@@ -105,7 +105,9 @@ private:
         ColumnPtr & result;
 
         NumberExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, bool intersect_, ColumnPtr & result_)
-            : arrays(arrays_), data_type(data_type_), intersect(intersect_), result(result_) {}
+            : arrays(arrays_), data_type(data_type_), intersect(intersect_), result(result_)
+        {
+        }
 
         template <class T>
         void operator()(TypeList<T>);
@@ -120,7 +122,9 @@ private:
         ColumnPtr & result;
 
         DecimalExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, bool intersect_, ColumnPtr & result_)
-            : arrays(arrays_), data_type(data_type_), intersect(intersect_), result(result_) {}
+            : arrays(arrays_), data_type(data_type_), intersect(intersect_), result(result_)
+        {
+        }
 
         template <class T>
         void operator()(TypeList<T>);
