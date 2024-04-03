@@ -135,7 +135,7 @@
     <http_port>8123</http_port>
 
     <!-- Port for interaction by native protocol with:
-         - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark, clickhouse-copier);
+         - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark);
          - clickhouse-server with other clickhouse-servers for distributed query processing;
          - ClickHouse drivers and applications supporting native protocol
          (this protocol is also informally called as "the TCP protocol");
@@ -752,7 +752,7 @@
     <!-- Comma-separated list of prefixes for user-defined settings.
          The server will allow to set these settings, and retrieve them with the getSetting function.
          They are also logged in the query_log, similarly to other settings, but have no special effect.
-         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set be Tableau.
+         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set by Tableau.
     -->
     <custom_settings_prefixes>SQL_</custom_settings_prefixes>
 
@@ -935,6 +935,11 @@
         <shard>01</shard>
         <replica>example01-01-1</replica>
     </macros>
+    -->
+
+    <!--
+    <default_replica_path>/clickhouse/tables/{database}/{table}</default_replica_path>
+    <default_replica_name>{replica}</default_replica_name>
     -->
 
     <!-- Replica group name for database Replicated.
@@ -1387,11 +1392,25 @@
         <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
 
-    <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
+    <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--
     <merge_tree>
         <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
     </merge_tree>
+    -->
+
+    <!-- Settings to fine-tune ReplicatedMergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
+    <!--
+    <replicated_merge_tree>
+        <max_replicated_fetches_network_bandwidth>1000000000</max_replicated_fetches_network_bandwidth>
+    </replicated_merge_tree>
+    -->
+
+    <!-- Settings to fine-tune Distributed tables. See documentation in source code, in DistributedSettings.h -->
+    <!--
+    <distributed>
+        <flush_on_detach>false</flush_on_detach>
+    </distributed>
     -->
 
     <!-- Protection from accidental DROP.
@@ -1458,17 +1477,23 @@
     </query_masking_rules> -->
 
     <!-- Uncomment to use custom http handlers.
+
         rules are checked from top to bottom, first match runs the handler
             url - to match request URL, you can use 'regex:' prefix to use regex match(optional)
+            empty_query_string - check that there is no query string in the URL
             methods - to match request method, you can use commas to separate multiple method matches(optional)
             headers - to match request headers, match each child element(child element name is header name), you can use 'regex:' prefix to use regex match(optional)
+
         handler is request handler
-            type - supported types: static, dynamic_query_handler, predefined_query_handler
+            type - supported types: static, dynamic_query_handler, predefined_query_handler, redirect
             query - use with predefined_query_handler type, executes query when the handler is called
             query_param_name - use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params
             status - use with static type, response status code
             content_type - use with static type, response content-type
             response_content - use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client.
+            url - a location for redirect
+
+        Along with a list of rules, you can specify <defaults/> which means - enable all the default handlers.
 
     <http_handlers>
         <rule>
@@ -1561,6 +1586,15 @@
         <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
         <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
     </query_cache>
+
+    <backups>
+        <allowed_path>backups</allowed_path>
+
+        <!-- If the BACKUP command fails and this setting is true then the files
+             copied before the failure will be removed automatically.
+        -->
+        <remove_backup_files_after_failure>true</remove_backup_files_after_failure>
+    </backups>
 
     <!-- This allows to disable exposing addresses in stack traces for security reasons.
          Please be aware that it does not improve security much, but makes debugging much harder.

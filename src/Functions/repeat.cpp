@@ -44,7 +44,7 @@ struct RepeatImpl
         ColumnString::Offsets & res_offsets,
         T repeat_time)
     {
-        repeat_time = repeat_time < 0 ? 0 : repeat_time;
+        repeat_time = repeat_time < 0 ? static_cast<T>(0) : repeat_time;
         checkRepeatTime(repeat_time);
 
         UInt64 data_size = 0;
@@ -76,7 +76,7 @@ struct RepeatImpl
         res_offsets.assign(offsets);
         for (UInt64 i = 0; i < col_num.size(); ++i)
         {
-            T repeat_time = col_num[i] < 0 ? 0 : col_num[i];
+            T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
             size_t repeated_size = (offsets[i] - offsets[i - 1] - 1) * repeat_time + 1;
             checkStringSize(repeated_size);
             data_size += repeated_size;
@@ -86,7 +86,7 @@ struct RepeatImpl
 
         for (UInt64 i = 0; i < col_num.size(); ++i)
         {
-            T repeat_time = col_num[i] < 0 ? 0 : col_num[i];
+            T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
             checkRepeatTime(repeat_time);
             process(data.data() + offsets[i - 1], res_data.data() + res_offsets[i - 1], offsets[i] - offsets[i - 1], repeat_time);
         }
@@ -105,7 +105,7 @@ struct RepeatImpl
         UInt64 col_size = col_num.size();
         for (UInt64 i = 0; i < col_size; ++i)
         {
-            T repeat_time = col_num[i] < 0 ? 0 : col_num[i];
+            T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
             size_t repeated_size = str_size * repeat_time + 1;
             checkStringSize(repeated_size);
             data_size += repeated_size;
@@ -114,7 +114,7 @@ struct RepeatImpl
         res_data.resize(data_size);
         for (UInt64 i = 0; i < col_size; ++i)
         {
-            T repeat_time = col_num[i] < 0 ? 0 : col_num[i];
+            T repeat_time = col_num[i] < 0 ? static_cast<T>(0) : col_num[i];
             checkRepeatTime(repeat_time);
             process(
                 reinterpret_cast<UInt8 *>(const_cast<char *>(copy_str.data())),
@@ -169,8 +169,19 @@ class FunctionRepeat : public IFunction
     template <typename F>
     static bool castType(const IDataType * type, F && f)
     {
-        return castTypeToEither<DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64,
-            DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64>(type, std::forward<F>(f));
+        return castTypeToEither<
+            DataTypeInt8,
+            DataTypeInt16,
+            DataTypeInt32,
+            DataTypeInt64,
+            DataTypeInt128,
+            DataTypeInt256,
+            DataTypeUInt8,
+            DataTypeUInt16,
+            DataTypeUInt32,
+            DataTypeUInt64,
+            DataTypeUInt128,
+            DataTypeUInt256>(type, std::forward<F>(f));
     }
 
 public:
@@ -186,8 +197,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"s", &isString<IDataType>, nullptr, "String"},
-            {"n", &isInteger<IDataType>, nullptr, "Integer"},
+            {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"n", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"},
         };
 
         validateFunctionArgumentTypes(*this, arguments, args);
@@ -208,7 +219,7 @@ public:
             if (const ColumnConst * col_num_const = checkAndGetColumn<ColumnConst>(col_num.get()))
             {
                 auto col_res = ColumnString::create();
-                castType(arguments[1].type.get(), [&](const auto & type)
+                auto success = castType(arguments[1].type.get(), [&](const auto & type)
                 {
                     using DataType = std::decay_t<decltype(type)>;
                     using T = typename DataType::FieldType;
@@ -216,6 +227,11 @@ public:
                     RepeatImpl::vectorStrConstRepeat(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), times);
                     return true;
                 });
+
+                if (!success)
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type {} of 'n' of function {}",
+                        arguments[1].column->getName(), getName());
+
                 return col_res;
             }
             else if (castType(arguments[1].type.get(), [&](const auto & type)

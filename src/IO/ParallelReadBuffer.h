@@ -3,7 +3,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/ArenaWithFreeLists.h>
 
 namespace DB

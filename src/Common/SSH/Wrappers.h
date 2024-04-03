@@ -1,7 +1,7 @@
 #pragma once
 #include <Common/Exception.h>
 #include "config.h"
-#if USE_SSL
+#if USE_SSH
 #    include <string_view>
 #    include <base/types.h>
 

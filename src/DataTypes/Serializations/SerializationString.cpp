@@ -208,7 +208,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
         data[offset - 1] = 0;
     }
 
-    data.resize(offset);
+    data.resize_exact(offset);
 }
 
 
@@ -272,50 +272,85 @@ void SerializationString::serializeTextEscaped(const IColumn & column, size_t ro
 }
 
 
-template <typename Reader>
-static inline void read(IColumn & column, Reader && reader)
+template <typename ReturnType, typename Reader>
+static inline ReturnType read(IColumn & column, Reader && reader)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     ColumnString & column_string = assert_cast<ColumnString &>(column);
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
     size_t old_chars_size = data.size();
     size_t old_offsets_size = offsets.size();
-    try
-    {
-        reader(data);
-        data.push_back(0);
-        offsets.push_back(data.size());
-    }
-    catch (...)
+    auto restore_column = [&]()
     {
         offsets.resize_assume_reserved(old_offsets_size);
         data.resize_assume_reserved(old_chars_size);
-        throw;
+    };
+
+    try
+    {
+        if constexpr (throw_exception)
+        {
+            reader(data);
+        }
+        else if (!reader(data))
+        {
+            restore_column();
+            return false;
+        }
+
+        data.push_back(0);
+        offsets.push_back(data.size());
+        return ReturnType(true);
+    }
+    catch (...)
+    {
+        restore_column();
+        if constexpr (throw_exception)
+            throw;
+        else
+            return false;
     }
 }
 
 
 void SerializationString::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read(column, [&](ColumnString::Chars & data) { readStringUntilEOFInto(data, istr); });
+    read<void>(column, [&](ColumnString::Chars & data) { readStringUntilEOFInto(data, istr); });
 }
 
+bool SerializationString::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    return read<bool>(column, [&](ColumnString::Chars & data) { readStringUntilEOFInto(data, istr); return true; });
+}
 
 void SerializationString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read(column, [&](ColumnString::Chars & data) { readEscapedStringInto(data, istr); });
+    read<void>(column, [&](ColumnString::Chars & data) { readEscapedStringInto(data, istr); });
 }
 
-
-void SerializationString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+bool SerializationString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    writeQuotedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    return read<bool>(column, [&](ColumnString::Chars & data) { readEscapedStringInto(data, istr); return true; });
+}
+
+void SerializationString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (settings.values.escape_quote_with_quote)
+        writeQuotedStringPostgreSQL(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
+    else
+        writeQuotedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
 void SerializationString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read(column, [&](ColumnString::Chars & data) { readQuotedStringInto<true>(data, istr); });
+    read<void>(column, [&](ColumnString::Chars & data) { readQuotedStringInto<true>(data, istr); });
+}
+
+bool SerializationString::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    return read<bool>(column, [&](ColumnString::Chars & data) { return tryReadQuotedStringInto<true>(data, istr); });
 }
 
 
@@ -329,11 +364,11 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
 {
     if (settings.json.read_objects_as_strings && !istr.eof() && *istr.position() == '{')
     {
-        read(column, [&](ColumnString::Chars & data) { readJSONObjectPossiblyInvalid(data, istr); });
+        read<void>(column, [&](ColumnString::Chars & data) { readJSONObjectPossiblyInvalid(data, istr); });
     }
     else if (settings.json.read_arrays_as_strings && !istr.eof() && *istr.position() == '[')
     {
-        read(column, [&](ColumnString::Chars & data) { readJSONArrayInto(data, istr); });
+        read<void>(column, [&](ColumnString::Chars & data) { readJSONArrayInto(data, istr); });
     }
     else if (settings.json.read_bools_as_strings && !istr.eof() && (*istr.position() == 't' || *istr.position() == 'f'))
     {
@@ -349,21 +384,69 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
             str_value = "false";
         }
 
-        read(column, [&](ColumnString::Chars & data) { data.insert(str_value.begin(), str_value.end()); });
+        read<void>(column, [&](ColumnString::Chars & data) { data.insert(str_value.begin(), str_value.end()); });
     }
     else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
         String field;
-        readJSONField(field, istr);
+        readJSONField(field, istr, settings.json);
         Float64 tmp;
         ReadBufferFromString buf(field);
         if (tryReadFloatText(tmp, buf) && buf.eof())
-            read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
+            read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);
     }
     else
-        read(column, [&](ColumnString::Chars & data) { readJSONStringInto(data, istr); });
+        read<void>(column, [&](ColumnString::Chars & data) { readJSONStringInto(data, istr, settings.json); });
+}
+
+bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    if (settings.json.read_objects_as_strings && !istr.eof() && *istr.position() == '{')
+        return read<bool>(column, [&](ColumnString::Chars & data) { return readJSONObjectPossiblyInvalid<ColumnString::Chars, bool>(data, istr); });
+
+    if (settings.json.read_arrays_as_strings && !istr.eof() && *istr.position() == '[')
+        return read<bool>(column, [&](ColumnString::Chars & data) { return readJSONArrayInto<ColumnString::Chars, bool>(data, istr); });
+
+    if (settings.json.read_bools_as_strings && !istr.eof() && (*istr.position() == 't' || *istr.position() == 'f'))
+    {
+        String str_value;
+        if (*istr.position() == 't')
+        {
+            if (!checkString("true", istr))
+                return false;
+            str_value = "true";
+        }
+        else if (*istr.position() == 'f')
+        {
+            if (!checkString("false", istr))
+                return false;
+            str_value = "false";
+        }
+
+        read<void>(column, [&](ColumnString::Chars & data) { data.insert(str_value.begin(), str_value.end()); });
+        return true;
+    }
+
+    if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
+    {
+        String field;
+        if (!tryReadJSONField(field, istr, settings.json))
+            return false;
+
+        Float64 tmp;
+        ReadBufferFromString buf(field);
+        if (tryReadFloatText(tmp, buf) && buf.eof())
+        {
+            read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
+            return true;
+        }
+
+        return false;
+    }
+
+    return read<bool>(column, [&](ColumnString::Chars & data) { return tryReadJSONStringInto(data, istr, settings.json); });
 }
 
 
@@ -381,7 +464,12 @@ void SerializationString::serializeTextCSV(const IColumn & column, size_t row_nu
 
 void SerializationString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(column, [&](ColumnString::Chars & data) { readCSVStringInto(data, istr, settings.csv); });
+    read<void>(column, [&](ColumnString::Chars & data) { readCSVStringInto(data, istr, settings.csv); });
+}
+
+bool SerializationString::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    return read<bool>(column, [&](ColumnString::Chars & data) { readCSVStringInto<ColumnString::Chars, false, false>(data, istr, settings.csv); return true; });
 }
 
 void SerializationString::serializeTextMarkdown(

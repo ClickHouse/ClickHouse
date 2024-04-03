@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 template <typename> class QuantileTiming;
 template <typename> class QuantileGK;
-template <typename> class QuantileDDSketch;
+template <typename> class QuantileDD;
 
 /** Generic aggregate function for calculation of quantiles.
   * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
@@ -64,7 +64,7 @@ private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
-    static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDDSketch<Value>>;
+    static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -90,6 +90,21 @@ public:
     {
         if (!returns_many && levels.size() > 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one level parameter or less", getName());
+
+        if constexpr (has_second_arg)
+        {
+            assertBinary(Name::name, argument_types_);
+            if (!isUInt(argument_types_[1]))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
+                    Name::name,
+                    argument_types_[1]->getName());
+        }
+        else
+        {
+            assertUnary(Name::name, argument_types_);
+        }
 
         if constexpr (is_quantile_ddsketch)
         {
@@ -272,22 +287,6 @@ public:
                 static_cast<ColVecType &>(to).getData().push_back(data.get(level));
         }
     }
-
-    static void assertSecondArg(const DataTypes & types)
-    {
-        if constexpr (has_second_arg)
-        {
-            assertBinary(Name::name, types);
-            if (!isUInt(types[1]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
-                    Name::name,
-                    types[1]->getName());
-        }
-        else
-            assertUnary(Name::name, types);
-    }
 };
 
 struct NameQuantile { static constexpr auto name = "quantile"; };
@@ -334,7 +333,7 @@ struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBF
 struct NameQuantileGK { static constexpr auto name = "quantileGK"; };
 struct NameQuantilesGK { static constexpr auto name = "quantilesGK"; };
 
-struct NameQuantileDDSketch { static constexpr auto name = "quantileDDSketch"; };
-struct NameQuantilesDDSketch { static constexpr auto name = "quantilesDDSketch"; };
+struct NameQuantileDD { static constexpr auto name = "quantileDD"; };
+struct NameQuantilesDD { static constexpr auto name = "quantilesDD"; };
 
 }

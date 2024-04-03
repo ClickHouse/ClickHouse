@@ -147,11 +147,33 @@ private: /// it's not correct for Decimal
 public:
     static constexpr bool allow_decimal = IsOperation<Operation>::allow_decimal;
 
+    using DecimalResultDataType = Switch<
+        Case<!allow_decimal, InvalidType>,
+        Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
+        Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>, RightDataType>,
+        Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
+        Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
+
+        /// e.g Decimal +-*/ Float, least(Decimal, Float), greatest(Decimal, Float) = Float64
+        Case<IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>,
+        Case<IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>, DataTypeFloat64>,
+
+        Case<IsOperation<Operation>::bit_hamming_distance && IsIntegral<LeftDataType> && IsIntegral<RightDataType>, DataTypeUInt8>,
+        Case<IsOperation<Operation>::bit_hamming_distance && IsFixedString<LeftDataType> && IsFixedString<RightDataType>, DataTypeUInt16>,
+        Case<IsOperation<Operation>::bit_hamming_distance && IsString<LeftDataType> && IsString<RightDataType>, DataTypeUInt64>,
+
+          /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
+        Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
+        Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>>;
+
     /// Appropriate result type for binary operator on numeric types. "Date" can also mean
     /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
     using ResultDataType = Switch<
+        /// Result must be Integer
+        Case<IsOperation<Operation>::int_div || IsOperation<Operation>::int_div_or_zero,
+            std::conditional_t<IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>, DataTypeFromFieldType<typename Op::ResultType>, InvalidType>>,
         /// Decimal cases
-        Case<!allow_decimal && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>), InvalidType>,
+        Case<IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>, DecimalResultDataType>,
         Case<
             IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>,
             LeftDataType>,
@@ -622,7 +644,11 @@ private:
             if constexpr (op_case == OpCase::RightConstant)
             {
                 if ((*right_nullmap)[0])
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        c[i] = ResultType();
                     return;
+                }
 
                 for (size_t i = 0; i < size; ++i)
                     c[i] = apply_func(undec(a[i]), undec(b));
@@ -647,8 +673,8 @@ private:
                                             IsOperation<Operation>::minus;
     static constexpr bool is_multiply =     IsOperation<Operation>::multiply;
     static constexpr bool is_float_division = IsOperation<Operation>::div_floating;
-    static constexpr bool is_int_division = IsOperation<Operation>::div_int ||
-                                            IsOperation<Operation>::div_int_or_zero;
+    static constexpr bool is_int_division = IsOperation<Operation>::int_div ||
+                                            IsOperation<Operation>::int_div_or_zero;
     static constexpr bool is_division = is_float_division || is_int_division;
     static constexpr bool is_compare =      IsOperation<Operation>::least ||
                                             IsOperation<Operation>::greatest;
@@ -756,8 +782,8 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_division = IsOperation<Op>::division;
     static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
-    static constexpr bool is_div_int = IsOperation<Op>::div_int;
-    static constexpr bool is_div_int_or_zero = IsOperation<Op>::div_int_or_zero;
+    static constexpr bool is_int_div = IsOperation<Op>::int_div;
+    static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
 
     ContextPtr context;
     bool check_decimal_overflow = true;
@@ -982,11 +1008,11 @@ class FunctionBinaryArithmetic : public IFunction
             {
                 function_name = "tupleModuloByNumber";
             }
-            else if constexpr (is_div_int)
+            else if constexpr (is_int_div)
             {
                 function_name = "tupleIntDivByNumber";
             }
-            else if constexpr (is_div_int_or_zero)
+            else if constexpr (is_int_div_or_zero)
             {
                 function_name = "tupleIntDivOrZeroByNumber";
             }
@@ -1441,7 +1467,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
-        return ((IsOperation<Op>::div_int || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
+        return ((IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
             || (IsOperation<Op>::div_floating
                 && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
     }
@@ -1665,7 +1691,9 @@ public:
 
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
                 {
-                    if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                    if constexpr (is_int_div || is_int_div_or_zero)
+                        type_res = std::make_shared<ResultDataType>();
+                    else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
                         if constexpr (is_division)
                         {
@@ -1685,13 +1713,19 @@ public:
                         ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
                         type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
-                    else if constexpr ((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
-                        (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>))
+                    else if constexpr (((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
+                        (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>)))
+                    {
                         type_res = std::make_shared<DataTypeFloat64>();
+                    }
                     else if constexpr (IsDataTypeDecimal<LeftDataType>)
+                    {
                         type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
+                    }
                     else if constexpr (IsDataTypeDecimal<RightDataType>)
+                    {
                         type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
+                    }
                     else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
                     {
                         // Special case for DateTime: binary OPS should reuse timezone
@@ -2000,6 +2034,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
         using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+        using DecimalResultType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::DecimalResultDataType;
 
         if constexpr (std::is_same_v<ResultDataType, InvalidType>)
             return nullptr;
@@ -2050,6 +2085,35 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     col_left, col_right,
                     col_left_size,
                     right_nullmap);
+            }
+            /// Here we check if we have `intDiv` or `intDivOrZero` and at least one of the arguments is decimal, because in this case originally we had result as decimal, so we need to convert result into integer after calculations
+            else if constexpr (!decimal_with_float && (is_int_div || is_int_div_or_zero) && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>))
+            {
+
+                if constexpr (!std::is_same_v<DecimalResultType, InvalidType>)
+                {
+                    DataTypePtr type_res;
+                    if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                    {
+                        DecimalResultType result_type = decimalResultType<is_multiply, is_division>(left, right);
+                        type_res = std::make_shared<DecimalResultType>(result_type.getPrecision(), result_type.getScale());
+                    }
+                    else if constexpr (IsDataTypeDecimal<LeftDataType>)
+                        type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
+                    else
+                        type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
+
+                    auto res = executeNumericWithDecimal<LeftDataType, RightDataType, DecimalResultType>(
+                            left, right,
+                            col_left_const, col_right_const,
+                            col_left, col_right,
+                            col_left_size,
+                            right_nullmap);
+
+                    auto col = ColumnWithTypeAndName(res, type_res, name);
+                    return castColumn(col, std::make_shared<ResultDataType>());
+                }
+                return nullptr;
             }
             else // can't avoid else and another indentation level, otherwise the compiler would try to instantiate
                  // ColVecResult for Decimals which would lead to a compile error.
@@ -2561,7 +2625,7 @@ public:
         /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
         /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
         bool division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
-            && (IsOperation<Op>::div_int || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
+            && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
                 || (IsOperation<Op>::div_floating
                     && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
 

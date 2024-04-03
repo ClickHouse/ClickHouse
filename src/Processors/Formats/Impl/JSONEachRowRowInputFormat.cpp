@@ -114,7 +114,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
     }
 
     current_column_name.resize(nested_prefix_length);
-    readJSONStringInto(current_column_name, buf);
+    readJSONStringInto(current_column_name, buf, format_settings.json);
     return current_column_name;
 }
 
@@ -123,7 +123,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
     if (!format_settings.skip_unknown_fields)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
 
-    skipJSONField(*in, name_ref);
+    skipJSONField(*in, name_ref, format_settings.json);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -179,7 +179,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             else if (column_index == NESTED_FIELD)
                 readNestedData(name_ref.toString(), columns);
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: illegal value of column_index");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal value of column_index");
         }
         else
         {
