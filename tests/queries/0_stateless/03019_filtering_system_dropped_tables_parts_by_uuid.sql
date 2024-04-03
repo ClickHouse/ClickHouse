@@ -1,6 +1,8 @@
 -- Tags: no-ordinary-database
 -- DatabaseOrdinary doesn't use delayed deletion, so `system.dropped_tables_parts` would be empty
 
+SET database_atomic_wait_for_drop_and_detach_synchronously = 0;
+
 CREATE TABLE mt (x Int64) ENGINE = MergeTree ORDER BY x;
 
 INSERT INTO mt SELECT number AS x FROM numbers(5);
