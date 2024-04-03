@@ -1527,7 +1527,7 @@ struct ToMillisecondImpl
 
     static UInt16 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
     {
-        return time_zone.toMillisecond<DateTime64>(datetime64, scale_multiplier);
+        return time_zone.toMillisecond(datetime64, scale_multiplier);
     }
 
     static UInt16 execute(UInt32, const DateLUTImpl &)

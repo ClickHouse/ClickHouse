@@ -134,7 +134,7 @@ public:
         const ContextPtr & context,
         size_t & total_bytes_to_read);
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 protected:
     friend class StorageFileSource;

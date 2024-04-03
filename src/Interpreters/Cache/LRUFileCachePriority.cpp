@@ -1,10 +1,11 @@
-#include <Interpreters/Cache/LRUFileCachePriority.h>
-#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/EvictionCandidates.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/randomSeed.h>
-#include <Common/logger_useful.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <pcg-random/pcg_random.hpp>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
 
 namespace CurrentMetrics
 {
