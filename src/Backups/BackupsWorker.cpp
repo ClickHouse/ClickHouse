@@ -27,6 +27,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 
 namespace CurrentMetrics
 {
