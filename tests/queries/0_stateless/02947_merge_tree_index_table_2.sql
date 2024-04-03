@@ -1,5 +1,8 @@
+-- Tags: no-random-settings
+
 DROP TABLE IF EXISTS t_merge_tree_index;
 
+SET output_format_pretty_row_numbers = 0;
 SET print_pretty_type_names = 0;
 
 CREATE TABLE t_merge_tree_index

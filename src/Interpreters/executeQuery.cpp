@@ -746,18 +746,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
-            ParserPRQLQuery parser(max_query_size, settings.max_parser_depth);
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ParserPRQLQuery parser(max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
         }
         else
         {
             ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 
 #ifndef NDEBUG
             /// Verify that AST formatting is consistent:
@@ -774,7 +774,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 ast2 = parseQuery(parser,
                     formatted1.data(),
                     formatted1.data() + formatted1.size(),
-                    "", new_max_query_size, settings.max_parser_depth);
+                    "", new_max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
             }
             catch (const Exception & e)
             {
@@ -996,7 +996,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         std::unique_ptr<IInterpreter> interpreter;
 
         bool async_insert = false;
-        auto * queue = context->getAsynchronousInsertQueue();
+        auto * queue = context->tryGetAsynchronousInsertQueue();
         auto logger = getLogger("executeQuery");
 
         if (insert_query && async_insert_enabled)
@@ -1453,6 +1453,7 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
     OutputFormatPtr output_format;
+    String format_name;
 
     auto update_format_on_exception_if_needed = [&]()
     {
@@ -1460,7 +1461,7 @@ void executeQuery(
         {
             try
             {
-                String format_name = context->getDefaultFormat();
+                format_name = context->getDefaultFormat();
                 output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
                 if (output_format && output_format->supportsWritingException())
                 {
@@ -1501,7 +1502,7 @@ void executeQuery(
         {
             update_format_on_exception_if_needed();
             if (output_format)
-                handle_exception_in_output_format(*output_format);
+                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
         }
         throw;
     }
@@ -1543,7 +1544,7 @@ void executeQuery(
                 );
             }
 
-            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+            format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
                                     ? getIdentifierName(ast_query_with_output->format)
                                     : context->getDefaultFormat();
 
@@ -1609,7 +1610,7 @@ void executeQuery(
         {
             update_format_on_exception_if_needed();
             if (output_format)
-                handle_exception_in_output_format(*output_format);
+                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
         }
         throw;
     }

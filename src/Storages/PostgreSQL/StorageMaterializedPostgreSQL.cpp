@@ -479,7 +479,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                     ASTPtr result;
 
                     Tokens tokens(attr.attr_def.data(), attr.attr_def.data() + attr.attr_def.size());
-                    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
                     if (!expr_parser.parse(pos, result, expected))
                     {
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse default expression: {}", attr.attr_def);

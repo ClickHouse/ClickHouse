@@ -7,8 +7,6 @@
 #include <Common/COW.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
-
 
 namespace DB
 {
@@ -37,6 +35,11 @@ struct DataTypeWithConstInfo
 };
 
 using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
+
+class SerializationInfo;
+using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
+using MutableSerializationInfoPtr = std::shared_ptr<SerializationInfo>;
+struct SerializationInfoSettings;
 
 /** Properties of data type.
   *
@@ -117,7 +120,7 @@ public:
 
     Names getSubcolumnNames() const;
 
-    virtual MutableSerializationInfoPtr createSerializationInfo(const SerializationInfo::Settings & settings) const;
+    virtual MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const;
     virtual SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
 
     /// TODO: support more types.
@@ -533,6 +536,8 @@ class DataTypeDateTime;
 class DataTypeDateTime64;
 
 template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
+
+/// TODO: this is garbage, remove it.
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;

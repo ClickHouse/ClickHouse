@@ -393,8 +393,8 @@ public:
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Function {} does not support nullable keys", getName());
 
             // Wrap all the attribute types in Array()
-            for (auto it = attribute_types.begin(); it != attribute_types.end(); ++it)
-                *it = std::make_shared<DataTypeArray>(*it);
+            for (auto & attr_type : attribute_types)
+                attr_type = std::make_shared<DataTypeArray>(attr_type);
         }
         if (attribute_types.size() > 1)
         {
