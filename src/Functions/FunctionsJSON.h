@@ -257,7 +257,7 @@ private:
                 }
                 case MoveType::Key:
                 {
-                    key = (*arguments[j + 1].column).getDataAt(row).toView();
+                    key = arguments[j + 1].column->getDataAt(row).toView();
                     if (!moveToElementByKey<JSONParser>(res_element, key))
                         return false;
                     break;
@@ -334,6 +334,26 @@ private:
 
 };
 
+template <typename T>
+class JSONExtractImpl;
+
+template <typename T>
+class JSONExtractKeysAndValuesImpl;
+
+/**
+* Functions JSONExtract and JSONExtractKeysAndValues force the return type - it is specified in the last argument.
+* For example - `SELECT JSONExtract(materialize('{"a": 131231, "b": 1234}'), 'b', 'LowCardinality(FixedString(4))')`
+* But by default ClickHouse decides on its own whether the return type will be LowCardinality based on the types of
+* input arguments.
+* And for these specific functions we cannot rely on this mechanism, so these functions have their own implementation -
+* just convert all of the LowCardinality input columns to full ones, execute and wrap the resulting column in LowCardinality
+* if needed.
+*/
+template <template<typename> typename Impl>
+constexpr bool functionForcesTheReturnType()
+{
+    return std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>;
+}
 
 template <typename Name, template<typename> typename Impl>
 class ExecutableFunctionJSON : public IExecutableFunction
@@ -348,18 +368,50 @@ public:
     String getName() const override { return Name::name; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        return !functionForcesTheReturnType<Impl>();
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (null_presence.has_null_constant)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
-        ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
-        if (null_presence.has_nullable)
-            return wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
-        return temporary_result;
+        if constexpr (functionForcesTheReturnType<Impl>())
+        {
+            ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
+
+            for (auto & column : columns_without_low_cardinality)
+            {
+                column.column = recursiveRemoveLowCardinality(column.column);
+                column.type = recursiveRemoveLowCardinality(column.type);
+            }
+
+            ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(columns_without_low_cardinality) : columns_without_low_cardinality;
+            ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
+
+            if (null_presence.has_nullable)
+                temporary_result = wrapInNullable(temporary_result, columns_without_low_cardinality, result_type, input_rows_count);
+
+            if (result_type->lowCardinality())
+                temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
+
+            return temporary_result;
+        }
+        else
+        {
+            ColumnsWithTypeAndName temporary_columns = null_presence.has_nullable ? createBlockWithNestedColumns(arguments) : arguments;
+            ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
+
+            if (null_presence.has_nullable)
+                temporary_result = wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
+
+            if (result_type->lowCardinality())
+                temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
+
+            return temporary_result;
+        }
     }
 
 private:
@@ -430,7 +482,6 @@ private:
     DataTypePtr json_return_type;
 };
 
-
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
 template <typename Name, template<typename> typename Impl>
@@ -451,6 +502,10 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        return !functionForcesTheReturnType<Impl>();
+    }
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -470,6 +525,9 @@ public:
         else
             return_type = json_return_type;
 
+        /// Top-level LowCardinality columns are processed outside JSON parser.
+        json_return_type = removeLowCardinality(json_return_type);
+
         DataTypes argument_types;
         argument_types.reserve(arguments.size());
         for (const auto & argument : arguments)
@@ -478,7 +536,6 @@ public:
                 null_presence, getContext()->getSettingsRef().allow_simdjson, argument_types, return_type, json_return_type);
     }
 };
-
 
 struct NameJSONHas { static constexpr auto name{"JSONHas"}; };
 struct NameIsValidJSON { static constexpr auto name{"isValidJSON"}; };
@@ -865,9 +922,11 @@ struct JSONExtractTree
         explicit LowCardinalityFixedStringNode(const size_t fixed_length_) : fixed_length(fixed_length_) { }
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            // For types other than string, delegate the insertion to JSONExtractRawImpl.
-            if (!element.isString())
+            // If element is an object we delegate the insertion to JSONExtractRawImpl
+            if (element.isObject())
                 return JSONExtractRawImpl<JSONParser>::insertResultToLowCardinalityFixedStringColumn(dest, element, fixed_length);
+            else if (!element.isString())
+                return false;
 
             auto str = element.getString();
             if (str.size() > fixed_length)
@@ -1482,6 +1541,9 @@ public:
     // We use insertResultToLowCardinalityFixedStringColumn in case we are inserting raw data in a Low Cardinality FixedString column
     static bool insertResultToLowCardinalityFixedStringColumn(IColumn & dest, const Element & element, size_t fixed_length)
     {
+        if (element.getObject().size() > fixed_length)
+            return false;
+
         ColumnFixedString::Chars chars;
         WriteBufferFromVector<ColumnFixedString::Chars> buf(chars, AppendModeTag());
         traverse(element, buf);

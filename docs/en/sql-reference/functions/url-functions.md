@@ -128,9 +128,9 @@ Returns the part of the domain that includes top-level subdomains up to the “f
 
 For example:
 
-- `cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
-- `cutToFirstSignificantSubdomain('www.tr') = 'www.tr'`.
-- `cutToFirstSignificantSubdomain('tr') = ''`.
+- `cutToFirstSignificantSubdomainWithWWW('https://news.clickhouse.com.tr/') = 'clickhouse.com.tr'`.
+- `cutToFirstSignificantSubdomainWithWWW('www.tr') = 'www.tr'`.
+- `cutToFirstSignificantSubdomainWithWWW('tr') = ''`.
 
 ### cutToFirstSignificantSubdomainCustom
 

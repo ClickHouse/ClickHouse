@@ -351,7 +351,7 @@ public:
 
     bool canUseZeroCopyReplication() const;
 
-    bool isTableReadOnly () { return is_readonly; }
+    bool isTableReadOnly () { return is_readonly || isStaticStorage(); }
 
     std::optional<bool> hasMetadataInZooKeeper () { return has_metadata_in_zookeeper; }
 
