@@ -361,13 +361,16 @@ private:
 
         std::istream & receiveResponse(Poco::Net::HTTPResponse & response) override
         {
+            int originKA = Session::getKeepAliveTimeout().totalSeconds();
+
             std::istream & result = Session::receiveResponse(response);
             result.exceptions(std::ios::badbit);
 
             // that line is for temporary debug, will be removed
             if (response.has(Poco::Net::HTTPMessage::CONNECTION_KEEP_ALIVE))
-                LOG_WARNING(log, "received keep alive header: {}",
-                    response.get(Poco::Net::HTTPMessage::CONNECTION_KEEP_ALIVE, Poco::Net::HTTPMessage::EMPTY));
+                LOG_INFO(log, "received keep alive header: {}, original was {}",
+                         response.get(Poco::Net::HTTPMessage::CONNECTION_KEEP_ALIVE, Poco::Net::HTTPMessage::EMPTY),
+                         originKA);
 
             response_stream = &result;
             response_stream_completed = false;
