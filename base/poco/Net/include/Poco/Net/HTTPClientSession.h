@@ -213,6 +213,13 @@ namespace Net
         Poco::Timespan getKeepAliveTimeout() const;
         /// Returns the connection timeout for HTTP connections.
 
+        bool isKeepAliveExpired(double reliability = 1.0) const;
+        /// Returns if the connection is expired with some margin as fraction of timeout as reliability
+
+        double getKeepAliveReliability() const;
+        /// Returns the current fraction of keep alive timeout when connection is considered safe to use
+        /// It helps to avoid situation when a client uses nearly expired connection and receives NoMessageException
+
         virtual std::ostream & sendRequest(HTTPRequest & request);
         /// Sends the header for the given HTTP request to
         /// the server.
@@ -361,6 +368,7 @@ namespace Net
         Poco::SharedPtr<std::ostream> _pRequestStream;
         Poco::SharedPtr<std::istream> _pResponseStream;
 
+        static const double _defaultKeepAliveReliabilityLevel;
         static ProxyConfig _globalProxyConfig;
 
         HTTPClientSession(const HTTPClientSession &);
@@ -453,6 +461,11 @@ namespace Net
     inline void HTTPClientSession::setLastRequest(Poco::Timestamp time)
     {
         _lastRequest = time;
+    }
+
+    inline double HTTPClientSession::getKeepAliveReliability() const
+    {
+        return _defaultKeepAliveReliabilityLevel;
     }
 
 }

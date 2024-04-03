@@ -17,6 +17,7 @@
 #include "Poco/NumberFormatter.h"
 #include "Poco/NumberParser.h"
 #include "Poco/String.h"
+#include <format>
 
 
 using Poco::NumberFormatter;
@@ -178,5 +179,45 @@ bool HTTPMessage::getKeepAlive() const
 		return getVersion() == HTTP_1_1;
 }
 
+
+void HTTPMessage::setKeepAliveTimeout(int timeout)
+{
+    add(HTTPMessage::CONNECTION_KEEP_ALIVE, std::format("timeout={}", timeout));
+}
+
+
+int parseTimeoutFromHeaderValue(const std::string_view header_value)
+{
+    static const std::string_view timeout_param = "timeout=";
+
+    auto timeout_pos = header_value.find(timeout_param);
+    if (timeout_pos == std::string::npos)
+        timeout_pos = header_value.size();
+    if (timeout_pos != header_value.size())
+        timeout_pos += timeout_param.size();
+
+    auto timeout_end = header_value.find(',', timeout_pos);
+    if (timeout_end == std::string::npos)
+        timeout_end = header_value.size();
+
+    auto timeout_value_substr = header_value.substr(timeout_pos, timeout_end - timeout_pos);
+    if (timeout_value_substr.empty())
+        return -1;
+
+    int value = 0;
+    auto [ptr, ec] = std::from_chars(timeout_value_substr.begin(), timeout_value_substr.end(), value);
+
+    if (ec == std::errc())
+        return value;
+
+    return -1;
+}
+
+
+int HTTPMessage::getKeepAliveTimeout() const
+{
+    const std::string& ka_header = get(HTTPMessage::CONNECTION_KEEP_ALIVE, HTTPMessage::EMPTY);
+    return parseTimeoutFromHeaderValue(ka_header);
+}
 
 } } // namespace Poco::Net
