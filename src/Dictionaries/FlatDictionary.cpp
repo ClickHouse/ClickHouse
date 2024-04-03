@@ -412,7 +412,8 @@ void FlatDictionary::blockToAttributes(const Block & block)
 {
     const auto keys_column = block.safeGetByPosition(0).column;
 
-    DictionaryKeysExtractor<DictionaryKeyType::Simple> keys_extractor({ keys_column }, DictionaryKeysArenaHolder<DictionaryKeyType::Simple>::getComplexKeyArena());
+    DictionaryKeysArenaHolder<DictionaryKeyType::Simple> arena_holder;
+    DictionaryKeysExtractor<DictionaryKeyType::Simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena()); /// NOLINT(readability-static-accessed-through-instance)
     size_t keys_size = keys_extractor.getKeysSize();
 
     static constexpr size_t key_offset = 1;

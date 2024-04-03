@@ -70,8 +70,7 @@ namespace
             const char * src_pos = src;
             const char * src_end = src + src_size;
             char * dst_pos = dst;
-            // perfect hashmap to lookup html character references
-            HTMLCharacterHash hash;
+
             // to hold char seq for lookup, reuse it
             std::vector<char> seq;
             while (true)
