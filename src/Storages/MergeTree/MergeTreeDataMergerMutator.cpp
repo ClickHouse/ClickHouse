@@ -748,7 +748,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                                              "but transactions were enabled for this table");
 
     /// Rename new part, add to the set and remove original parts.
-    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction);
+    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction, /*rename_in_transaction=*/ true);
 
     /// Explicitly rename part while still holding the lock for tmp folder to avoid cleanup
     out_transaction.renameParts();
