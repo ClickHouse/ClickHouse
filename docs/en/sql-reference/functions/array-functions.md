@@ -952,7 +952,7 @@ arrayEnumerateUniqRanked(clear_depth, arr, max_array_depth)
 **Parameters**
 
 - `clear_depth`: Enumerate elements at the specified level separately. Positive [Integer](../data-types/int-uint.md) less than or equal to `max_arr_depth`.
-- `arr`: N-dimensional array to enumerate. [Array](../data-types/array.md)
+- `arr`: N-dimensional array to enumerate. [Array](../data-types/array.md).
 - `max_array_depth`: The maximum effective depth. Positive [Integer](../data-types/int-uint.md) less than or equal to the depth of `arr`.
 
 **Example**
@@ -971,7 +971,7 @@ Result:
 [1,1,2]
 ```
 
-In this example, `arrayEnumerateUniqRanked` is used to obtain an array indicating, for each element of the multidimensional array, what its position is among elements of the same value. For the first row of the passed array,`[1,2,3]`, the corresponding result is `[1,1,1]`, indicating that this is the first time `1`,`2` and `3` are encountered. For the second row of the provided array,`[2,2,1]`, the corresponding result is `[2,3,3]`, indicating that the number `2` is encountered for a second and third time, and `1` is encountered for the second time. Likewise, for the third row of the provided array `[3]` the corresponding result is `[2]` indicating that the number `3` is encountered for the second time. 
+In this example, `arrayEnumerateUniqRanked` is used to obtain an array indicating, for each element of the multidimensional array, what its position is among elements of the same value. For the first row of the passed array,`[1,2,3]`, the corresponding result is `[1,1,1]`, indicating that this is the first time `1`,`2` and `3` are encountered. For the second row of the provided array,`[2,2,1]`, the corresponding result is `[2,3,3]`, indicating that `2` is encountered for a second and third time, and `1` is encountered for the second time. Likewise, for the third row of the provided array `[3]` the corresponding result is `[2]` indicating that `3` is encountered for the second time. 
 
 Query:
 
@@ -1417,7 +1417,7 @@ Same as `arrayReverseSort` with additional `limit` argument allowing partial sor
 ## arrayShuffle
 
 Returns an array of the same size as the original array containing the elements in shuffled order.
-Elements are being reordered in such a way that each possible permutation of those elements has equal probability of appearance.
+Elements are reordered in such a way that each possible permutation of those elements has equal probability of appearance.
 
 **Syntax**
 
@@ -1427,8 +1427,10 @@ arrayShuffle(arr, seed)
 
 **Parameters**
 
-- `arr`: The array to partially shuffle. [Array](../data-types/array.md)
-- `seed` (optional): seed to be used with random number generation. If not provided a random one is used. [UInt or Int](../data-types/int-uint.md)
+- `arr`: The array to partially shuffle. [Array](../data-types/array.md).
+- `seed` (optional): seed to be used with random number generation. If not provided a random one is used. [UInt or Int](../data-types/int-uint.md).
+
+**Returned value**
 
 - Array with elements shuffled.
 
@@ -1440,7 +1442,7 @@ This function will not materialize constants.
 
 **Examples**
 
-In this example, `arrayShuffle` is used with providing a `seed` and will use its own randomly generated one. 
+In this example, `arrayShuffle` is used without providing a `seed` and will therefore generate one randomly itself. 
 
 Query:
 
@@ -1472,7 +1474,7 @@ Result:
 
 ## arrayPartialShuffle
 
-Returns an array of the same size as the original array where elements in range [1..limit] are a random subset of the original array. Remaining (limit..n] shall contain the elements not in [1..limit] range in undefined order. Value of limit shall be in range [1..n]. Values outside of that range are equivalent to performing full [arrayShuffle](#arrayShuffle).
+Returns an array of the same size as the original array where elements in range `[1..limit]` are a random subset of the original array. Remaining `(limit..N]` shall contain the elements not in `[1..limit]` range in an undefined order.
 
 **Syntax**
 
@@ -1482,8 +1484,8 @@ arrayPartialShuffle(arr, limit, seed)
 
 **Parameters**
 
-- `arr`: The array to partially shuffle. [Array](../data-types/array.md)
-- `limit` (optional): Specifies how many times to limit element swaps to. [UInt or Int](../data-types/int-uint.md)
+- `arr`: The array size `N` to partially shuffle. [Array](../data-types/array.md)
+- `limit` (optional): Number to limit element swaps to, in the range `[1..N]`. [UInt or Int](../data-types/int-uint.md).
 - `seed` (optional): seed to be used with random number generation. If not provided a random one is used. [UInt or Int](../data-types/int-uint.md)
 
 **Returned value**
@@ -1494,6 +1496,8 @@ arrayPartialShuffle(arr, limit, seed)
 
 :::note 
 This function will not materialize constants.
+
+The value of `limit` shouuld be in the range `[1..N]`. Values outside of that range are equivalent to performing full [arrayShuffle](#arrayShuffle).
 :::
 
 **Examples**
@@ -1663,12 +1667,12 @@ arrayEnumerateDenseRanked(clear_depth, arr, max_array_depth)
 **Parameters**
 
 - `clear_depth`: Enumerate elements at the specified level separately. Positive [Integer](../data-types/int-uint.md) less than or equal to `max_arr_depth`.
-- `arr`: N-dimensional array to enumerate. [Array](../data-types/array.md)
+- `arr`: N-dimensional array to enumerate. [Array](../data-types/array.md).
 - `max_array_depth`: The maximum effective depth. Positive [Integer](../data-types/int-uint.md) less than or equal to the depth of `arr`.
 
 **Example**
 
-With `clear_depth`=1 and `max_array_depth`=1, the result is identical to what [arrayEnumerateDense](#arrayenumeratedense) would give.
+With `clear_depth=1` and `max_array_depth=1`, the result is identical to what [arrayEnumerateDense](#arrayenumeratedense) would give.
 
 Query:
 
@@ -1682,7 +1686,7 @@ Result:
 [1,2,1,3]
 ```
 
-In this example, `arrayEnumerateDenseRanked` is used to obtain an array indicating, for each element of the multidimensional array, what its position is among elements of the same value. For the first row of the passed array,`[10,10,30,20]`, the corresponding first row of the result is `[1,1,2,3]`, indicating that `10` is the first element encountered in position 1 and 2, `30` the second element encountered in position 3 and `20` is the third element encountered in position 4. For the second row, `[40, 50, 10, 30]`, the corresponding second row of the result is `[4,5,1,2]`, indicating that `40` and `50` are the fourth and fifth numbers encountered in position 1 and 2 of that row, that another `10` (the first encountered number) is in position 3 and `30` (the second number encountered) is in the last position. 
+In this example, `arrayEnumerateDenseRanked` is used to obtain an array indicating, for each element of the multidimensional array, what its position is among elements of the same value. For the first row of the passed array,`[10,10,30,20]`, the corresponding first row of the result is `[1,1,2,3]`, indicating that `10` is the first number encountered in position 1 and 2, `30` the second number encountered in position 3 and `20` is the third number encountered in position 4. For the second row, `[40, 50, 10, 30]`, the corresponding second row of the result is `[4,5,1,2]`, indicating that `40` and `50` are the fourth and fifth numbers encountered in position 1 and 2 of that row, that another `10` (the first encountered number) is in position 3 and `30` (the second number encountered) is in the last position. 
 
 
 Query:
@@ -2236,7 +2240,7 @@ arrayFirstOrNull(func, arr1, …)
 **Parameters**
 
 - `func`: lambda function.
-- `arr1`: array to operate on. [Array](../)
+- `arr1`: array to operate on. [Array](../data-types/array.md).
 
 **Returned value**
 
@@ -2292,7 +2296,7 @@ arrayLastOrNull(func, arr1, …)
 **Parameters**
 
 - `func`: lambda function.
-- `arr1`: array to operate on. [Array](../)
+- `arr1`: array to operate on. [Array](../data-types/array.md).
 
 **Returned value**
 
