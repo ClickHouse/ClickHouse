@@ -195,6 +195,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
         out->setAsyncCallback(async_callback);
         connected = true;
+        setDescription();
 
         sendHello();
         receiveHello(timeouts.handshake_timeout);
@@ -1224,6 +1225,12 @@ void Connection::setDescription()
         auto ip_address = resolved_address->host().toString();
         if (host != ip_address)
             description += ", " + ip_address;
+    }
+
+    if (const auto * socket_ = getSocket())
+    {
+        description += ", local address: ";
+        description += socket_->address().toString();
     }
 }
 
