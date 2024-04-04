@@ -81,16 +81,52 @@ void changeTransformArguments(
     transform_node.resolveAsFunction(transform_resolver->build(transform_node.getArgumentColumns()));
 }
 
+/// Find functions that are used inside the other functions
+struct FindUsedFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<FindUsedFunctionsVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<FindUsedFunctionsVisitor>;
+    using Base::Base;
+
+    std::unordered_set<QueryTreeNodePtrWithHash> used_functions;
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return;
+
+        std::string_view function_name = function_node->getFunctionName();
+
+        if ((function_name == "if" || function_name == "transform")
+            && function_scope_count > 0)
+        {
+            used_functions.insert(node);
+        }
+
+        ++function_scope_count;
+    }
+
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
+            --function_scope_count;
+    }
+
+private:
+    size_t function_scope_count = 0;
+};
+
 class ConvertStringsToEnumVisitor : public InDepthQueryTreeVisitorWithContext<ConvertStringsToEnumVisitor>
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<ConvertStringsToEnumVisitor>;
     using Base::Base;
 
-    static bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr &)
-    {
-        return parent_node->getNodeType() != QueryTreeNodeType::FUNCTION;
-    }
+    ConvertStringsToEnumVisitor(std::unordered_set<QueryTreeNodePtrWithHash> used_functions_, ContextPtr context)
+        : Base(std::move(context))
+        , used_functions(std::move(used_functions_))
+    {}
 
     void enterImpl(QueryTreeNodePtr & node)
     {
@@ -109,7 +145,7 @@ public:
         std::string_view function_name = function_node->getFunctionName();
         if (function_name == "if")
         {
-            if (function_node->getArguments().getNodes().size() != 3)
+            if (used_functions.contains(node) || function_node->getArguments().getNodes().size() != 3)
                 return;
 
             auto & argument_nodes = function_node->getArguments().getNodes();
@@ -133,7 +169,7 @@ public:
 
         if (function_name == "transform")
         {
-            if (function_node->getArguments().getNodes().size() != 4)
+            if (used_functions.contains(node) || function_node->getArguments().getNodes().size() != 4)
                 return;
 
             auto & argument_nodes = function_node->getArguments().getNodes();
@@ -173,6 +209,8 @@ public:
             return;
         }
     }
+private:
+    std::unordered_set<QueryTreeNodePtrWithHash> used_functions;
 };
 
 }
@@ -182,7 +220,12 @@ void IfTransformStringsToEnumPass::run(QueryTreeNodePtr & query, ContextPtr cont
     if (!context->getSettingsRef().optimize_if_transform_strings_to_enum)
         return;
 
-    ConvertStringsToEnumVisitor visitor(std::move(context));
+    /// first we need to find all if/transform functions used in other functions
+    /// we cannot modify them because they need to keep same type
+    FindUsedFunctionsVisitor used_functions_visitor(context);
+    used_functions_visitor.visit(query);
+
+    ConvertStringsToEnumVisitor visitor(std::move(used_functions_visitor.used_functions), std::move(context));
     visitor.visit(query);
 }
 
