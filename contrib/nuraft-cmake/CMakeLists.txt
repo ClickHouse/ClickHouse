@@ -52,6 +52,8 @@ else()
 endif()
 
 target_link_libraries (_nuraft PRIVATE clickhouse_common_io)
+# We must have it PUBLIC here because some headers which depend on it directly
+# included in clickhouse
 target_compile_definitions(_nuraft PUBLIC USE_CLICKHOUSE_THREADS=1)
 MESSAGE(STATUS "Will use clickhouse threads for NuRaft")
 
