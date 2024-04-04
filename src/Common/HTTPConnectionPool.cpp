@@ -213,7 +213,7 @@ public:
 
         if (total_connections_in_group >= limits.warning_limit && total_connections_in_group >= mute_warning_until)
         {
-            mute_warning_until = roundUp(total_connections_in_group, limits.warning_step);
+            mute_warning_until = roundUp(total_connections_in_group, HTTPConnectionPools::Limits::warning_step);
             LOG_WARNING(log, "Too many active sessions in group {}, count {}, warning limit {}, next warning at {}",
                         type, total_connections_in_group, limits.warning_limit, mute_warning_until);
         }
