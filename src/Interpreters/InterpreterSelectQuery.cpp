@@ -799,7 +799,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             != parallel_replicas_before_analysis)
         {
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            context->setSetting("max_parallel_replicas", UInt64{0});
+            context->setSetting("max_parallel_replicas", UInt64{1});
             need_analyze_again = true;
         }
 
@@ -946,7 +946,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     if (number_of_replicas_to_use <= 1)
     {
         context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        context->setSetting("max_parallel_replicas", UInt64{0});
+        context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_DEBUG(log, "Disabling parallel replicas because there aren't enough rows to read");
         return true;
     }
@@ -2283,7 +2283,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
         && !settings.allow_experimental_query_deduplication
         && !settings.empty_result_for_aggregation_by_empty_set
         && storage
-        && storage->supportsTrivialCountOptimization()
+        && storage->supportsTrivialCountOptimization(storage_snapshot, getContext())
         && query_info.filter_asts.empty()
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)

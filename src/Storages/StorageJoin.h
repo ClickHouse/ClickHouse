@@ -91,7 +91,7 @@ public:
 
     const Names & getKeyNames() const { return key_names; }
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
     static std::shared_ptr<StorageJoin> create(
         String disk_name,

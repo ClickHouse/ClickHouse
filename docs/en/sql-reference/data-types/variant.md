@@ -395,3 +395,37 @@ SELECT v, variantType(v) FROM test ORDER by v;
 │ 100 │ UInt32         │
 └─────┴────────────────┘
 ```
+
+## JSONExtract functions with Variant
+
+All `JSONExtract*` functions support `Variant` type:
+
+```sql
+SELECT JSONExtract('{"a" : [1, 2, 3]}', 'a', 'Variant(UInt32, String, Array(UInt32))') AS variant, variantType(variant) AS variant_type;
+```
+
+```text
+┌─variant─┬─variant_type──┐
+│ [1,2,3] │ Array(UInt32) │
+└─────────┴───────────────┘
+```
+
+```sql
+SELECT JSONExtract('{"obj" : {"a" : 42, "b" : "Hello", "c" : [1,2,3]}}', 'obj', 'Map(String, Variant(UInt32, String, Array(UInt32)))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types
+```
+
+```text
+┌─map_of_variants──────────────────┬─map_of_variant_types────────────────────────────┐
+│ {'a':42,'b':'Hello','c':[1,2,3]} │ {'a':'UInt32','b':'String','c':'Array(UInt32)'} │
+└──────────────────────────────────┴─────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Variant(UInt32, String, Array(UInt32))') AS variants, arrayMap(x -> (x.1, variantType(x.2)), variants) AS variant_types
+```
+
+```text
+┌─variants───────────────────────────────┬─variant_types─────────────────────────────────────────┐
+│ [('a',42),('b','Hello'),('c',[1,2,3])] │ [('a','UInt32'),('b','String'),('c','Array(UInt32)')] │
+└────────────────────────────────────────┴───────────────────────────────────────────────────────┘
+```
