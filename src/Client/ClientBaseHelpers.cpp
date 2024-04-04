@@ -125,6 +125,8 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
     catch (...)
     {
+        /// Skip highlighting in the case of exceptions during parsing.
+        /// It is ok to ignore unknown exceptions here.
         return;
     }
 
@@ -157,6 +159,11 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
         colors[pos] = Replxx::Color::BRIGHTRED;
     }
+
+    if (last_token.type == TokenType::Semicolon || last_token.type == TokenType::VerticalDelimiter)
+        ReplxxLineReader::setLastIsDelimiter(true);
+    else if (last_token.type != TokenType::Whitespace)
+        ReplxxLineReader::setLastIsDelimiter(false);
 }
 #endif
 
