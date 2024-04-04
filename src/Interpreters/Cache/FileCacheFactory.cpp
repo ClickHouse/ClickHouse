@@ -162,7 +162,10 @@ void FileCacheFactory::updateSettingsFromConfig(const Poco::Util::AbstractConfig
             continue;
         }
 
-        LOG_TRACE(log, "Will apply settings changes for cache: {}", cache_name);
+        LOG_TRACE(log, "Will apply settings changes for cache {}. "
+                  "Settings changes: {} (new settings: {}, old_settings: {})",
+                  cache_name, fmt::join(new_settings.getSettingsDiff(old_settings), ", "),
+                  new_settings.toString(), old_settings.toString());
 
         try
         {
