@@ -1414,6 +1414,64 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 
 Same as `arrayReverseSort` with additional `limit` argument allowing partial sorting. Returns an array of the same size as the original array where elements in range `[1..limit]` are sorted in descending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
 
+## arrayPartialShuffle
+
+Returns an array of the same size as the original array where elements in range [1..limit] are a random subset of the original array. Remaining (limit..n] shall contain the elements not in [1..limit] range in undefined order. Value of limit shall be in range [1..n]. Values outside of that range are equivalent to performing full arrayShuffle.
+
+**Syntax**
+
+```sql
+arrayPartialShuffle(arr, limit, seed)
+```
+
+**Parameters**
+
+- `arr`: The array to partially shuffle. [Array](../data-types/array.md)
+- `limit` (optional): Specifies how many times to limit element swaps to. []()
+- `seed` (optional): seed to be used with random number generation. If not provided a random one is used. []()
+
+**Returned value**
+
+- Array with elements shuffled.
+
+**Implementation details**
+
+:::note 
+This function will not materialize constants.
+:::
+
+**Examples**
+
+In this example, `arrayPartialShuffle` is used without the `limit` and `seed` parameters. 
+
+Query:
+
+```sql
+SELECT arrayPartialShuffle([1, 2, 3, 4], 0);
+SELECT arrayPartialShuffle([1, 2, 3, 4]);
+```
+
+Note: When using [ClickHouse Fiddle](https://fiddle.clickhouse.com/), the exact response may differ due to random nature of the function.
+
+Result: 
+```response
+[3,1,2,4]
+[4,1,3,2]
+```
+
+In this example, the `arrayPartialShuffle` function is provided a `limit` and a `seed`. 
+
+Query:
+
+```sql
+SELECT arrayPartialShuffle([1,2,3,4,5,6,7,8,9,10], 5, 0xbad_cafe);
+```
+
+Result: 
+```response
+[10,9,4,2,5,6,7,8,3,1]
+```
+
 ## arrayUniq(arr, …)
 
 If one argument is passed, it counts the number of different elements in the array.
