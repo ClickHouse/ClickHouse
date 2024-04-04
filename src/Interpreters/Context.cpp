@@ -48,7 +48,7 @@
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
-#include <Core/Settings.h>
+//#include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -1550,14 +1550,14 @@ ClassifierPtr Context::getWorkloadClassifier() const
 }
 
 
-const Scalars & Context::getScalars() const
+Scalars Context::getScalars() const
 {
     std::lock_guard lock(mutex);
     return scalars;
 }
 
 
-const Block & Context::getScalar(const String & name) const
+Block Context::getScalar(const String & name) const
 {
     std::lock_guard lock(mutex);
 
@@ -1571,13 +1571,13 @@ const Block & Context::getScalar(const String & name) const
     return it->second;
 }
 
-const Block * Context::tryGetSpecialScalar(const String & name) const
+std::optional<Block> Context::tryGetSpecialScalar(const String & name) const
 {
     std::lock_guard lock(mutex);
     auto it = special_scalars.find(name);
     if (special_scalars.end() == it)
-        return nullptr;
-    return &it->second;
+        return std::nullopt;
+    return it->second;
 }
 
 Tables Context::getExternalTables() const
