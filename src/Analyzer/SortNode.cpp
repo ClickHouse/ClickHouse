@@ -120,17 +120,18 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
 
     result->nulls_direction_was_explicitly_specified = nulls_sort_direction.has_value();
 
-    result->with_fill = with_fill;
-    result->fill_from = hasFillFrom() ? getFillFrom()->toAST(options) : nullptr;
-    result->fill_to = hasFillTo() ? getFillTo()->toAST(options) : nullptr;
-    result->fill_step = hasFillStep() ? getFillStep()->toAST(options) : nullptr;
     result->children.push_back(getExpression()->toAST(options));
 
     if (collator)
-    {
-        result->children.push_back(std::make_shared<ASTLiteral>(Field(collator->getLocale())));
-        result->collation = result->children.back();
-    }
+        result->setCollation(std::make_shared<ASTLiteral>(Field(collator->getLocale())));
+
+    result->with_fill = with_fill;
+    if (hasFillFrom())
+        result->setFillFrom(getFillFrom()->toAST(options));
+    if (hasFillTo())
+        result->setFillTo(getFillTo()->toAST(options));
+    if (hasFillStep())
+        result->setFillStep(getFillStep()->toAST(options));
 
     return result;
 }
