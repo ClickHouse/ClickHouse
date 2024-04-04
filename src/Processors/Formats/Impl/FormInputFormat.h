@@ -21,15 +21,8 @@ private:
     void readPrefix() override;
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readFormData(MutableColumns & columns);
-    void readNestedFormData(const String & name, MutableColumns & columns);
     void readField(size_t index, MutableColumns & columns);
-    void skipUnknownFormField(StringRef name_ref);
     const String & columnName(size_t i) const;
-
-    String name_buf;
-
-    /// holds common prefix of nested column names
-    String current_column_name;
 
     /// Hash table matches field name to position in the block
     using NameMap = HashMap<StringRef, size_t, StringRefHash>;

@@ -29,33 +29,6 @@ const String & FormInputFormat::columnName(size_t i) const
     return getPort().getHeader().getByPosition(i).name;
 }
 
-StringRef readName(ReadBuffer & buf, StringRef & ref, String & tmp)
-{
-    tmp.clear();
-
-    while (!buf.eof())
-    {
-        const char * next_pos = find_first_symbols<'=','&'>(buf.position(), buf.buffer().end());
-
-        if (next_pos == buf.buffer().end())
-        {
-            tmp.append(buf.position(), next_pos - buf.position());
-            buf.position() = buf.buffer().end();
-            buf.next();
-            continue;
-        }
-
-        if (*next_pos == '=')
-        {
-            ref = StringRef(buf.position(), next_pos - buf.position());
-            buf.position() += next_pos + 1 - buf.position();
-        }
-
-        return ref;
-    }
-    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while reading key name from Form format");
-}
-
 void FormInputFormat::readField(size_t index, MutableColumns & columns)
 {
     if (seen_columns[index])
@@ -81,20 +54,6 @@ String readFieldName(ReadBuffer & buf)
     readStringUntilEquals(field, buf);
     assertChar('=', buf);
     return field;
-}
-
-void FormInputFormat::skipUnknownFormField(StringRef name_ref)
-{
-    if (!format_settings.skip_unknown_fields)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing Form format: {}", name_ref.toString());
-
-    /// read name and value but do nothing with them
-    if (!in->eof())
-    {
-        readFieldName(*in);
-        String value;
-        readStringUntilAmpersand(value,*in);
-    }
 }
 
 void FormInputFormat::readFormData(MutableColumns & columns)
