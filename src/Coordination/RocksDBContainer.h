@@ -33,6 +33,7 @@ struct RocksDBContainer
     using Node = Node_;
 
 private:
+    /// this is only for debug.
     std::string toHex(std::string origin)
     {
         auto toHexChar = [](char v)
@@ -43,7 +44,8 @@ private:
         };
         std::string result;
         result.reserve(2 * origin.size());
-        for (size_t i = 0; i < origin.size(); ++i) {
+        for (size_t i = 0; i < origin.size(); ++i)
+        {
             unsigned char c = origin[i];
             result.push_back(toHexChar(c >> 4));
             result.push_back(toHexChar(c & 0xf));
