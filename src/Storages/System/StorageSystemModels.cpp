@@ -11,11 +11,9 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemModels::getColumnsDescription()
+NamesAndTypesList StorageSystemModels::getNamesAndTypes()
 {
-    /// TODO: Fill in all the comments.
-    return ColumnsDescription
-    {
+    return {
         { "model_path", std::make_shared<DataTypeString>() },
         { "type", std::make_shared<DataTypeString>() },
         { "loading_start_time", std::make_shared<DataTypeDateTime>() },
@@ -23,7 +21,7 @@ ColumnsDescription StorageSystemModels::getColumnsDescription()
     };
 }
 
-void StorageSystemModels::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemModels::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(context);
     ExternalModelInfos infos = bridge_helper->listModels();

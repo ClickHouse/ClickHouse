@@ -98,7 +98,7 @@ bool ValuesBlockInputFormat::skipToNextRow(ReadBuffer * buf, size_t min_chunk_by
     return true;
 }
 
-Chunk ValuesBlockInputFormat::read()
+Chunk ValuesBlockInputFormat::generate()
 {
     if (total_rows == 0)
         readPrefix();
@@ -293,7 +293,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
             const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
+                read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
         }
@@ -492,7 +492,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 &found_in_cache,
                 delimiter);
 
-            LOG_TEST(getLogger("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
+            LOG_TEST(&Poco::Logger::get("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
                      column_idx, structure->dumpTemplate());
 
             templates[column_idx].emplace(structure);
@@ -617,12 +617,10 @@ void ValuesBlockInputFormat::readSuffix()
         skipWhitespaceIfAny(*buf);
         if (buf->hasUnreadData())
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon");
-        if (!format_settings.values.allow_data_after_semicolon && !buf->eof())
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon (and input_format_values_allow_data_after_semicolon=0)");
         return;
     }
 
-    if (buf->hasUnreadData() || !buf->eof())
+    if (buf->hasUnreadData())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.");
 }
 
@@ -705,11 +703,6 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
     }
 
     return data_types;
-}
-
-void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatValues(FormatFactory & factory)

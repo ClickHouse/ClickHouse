@@ -36,7 +36,7 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
     , name(name_)
     , path(storage.getRelativeDataPath() + name_)
     , pool(storage.getContext()->getSchedulePool())
-    , log(getLogger(storage.getLogName() + " (WriteAheadLog)"))
+    , log(&Poco::Logger::get(storage.getLogName() + " (WriteAheadLog)"))
 {
     init();
     sync_task = pool.createTask("MergeTreeWriteAheadLog::sync", [this]
@@ -198,7 +198,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
                 part,
                 metadata_snapshot,
                 block.getNamesAndTypesList(),
-                {}, {},
+                {},
                 CompressionCodecFactory::instance().get("NONE", {}),
                 NO_TRANSACTION_PTR);
 

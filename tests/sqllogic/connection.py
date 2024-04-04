@@ -248,7 +248,7 @@ class ExecResult:
 
     def as_ok(self, rows=None, description=None):
         if rows is None:
-            self._result = []
+            self._result = True
             return self
         self._result = rows
         self._description = description

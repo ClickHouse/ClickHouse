@@ -6,7 +6,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -16,7 +16,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -137,6 +136,43 @@ NameSet injectRequiredColumns(
     return injected_columns;
 }
 
+
+MergeTreeReadTask::MergeTreeReadTask(
+    const DataPartPtr & data_part_,
+    const AlterConversionsPtr & alter_conversions_,
+    const MarkRanges & mark_ranges_,
+    size_t part_index_in_query_,
+    const NameSet & column_name_set_,
+    const MergeTreeReadTaskColumns & task_columns_,
+    MergeTreeBlockSizePredictorPtr size_predictor_,
+    Priority priority_,
+    std::future<MergeTreeReaderPtr> reader_,
+    std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_)
+    : data_part{data_part_}
+    , alter_conversions{alter_conversions_}
+    , mark_ranges{mark_ranges_}
+    , part_index_in_query{part_index_in_query_}
+    , column_name_set{column_name_set_}
+    , task_columns{task_columns_}
+    , size_predictor{size_predictor_}
+    , reader(std::move(reader_))
+    , pre_reader_for_step(std::move(pre_reader_for_step_))
+    , priority(priority_)
+{
+}
+
+MergeTreeReadTask::~MergeTreeReadTask()
+{
+    if (reader.valid())
+        reader.wait();
+
+    for (const auto & pre_reader : pre_reader_for_step)
+    {
+        if (pre_reader.valid())
+            pre_reader.wait();
+    }
+}
+
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     const DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
     : data_part(data_part_)
@@ -159,8 +195,9 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
         const auto & column_with_type_and_name = sample_block.getByPosition(pos);
-        const auto & column_name = column_with_type_and_name.name;
-        const auto & column_data = from_update ? columns[pos] : column_with_type_and_name.column;
+        const String & column_name = column_with_type_and_name.name;
+        const ColumnPtr & column_data = from_update ? columns[pos]
+                                                    : column_with_type_and_name.column;
 
         if (!from_update && !names_set.contains(column_name))
             continue;
@@ -208,6 +245,7 @@ void MergeTreeBlockSizePredictor::startBlock()
     for (auto & info : dynamic_columns_infos)
         info.size_bytes = 0;
 }
+
 
 /// TODO: add last_read_row_in_part parameter to take into account gaps between adjacent ranges
 void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay)
@@ -258,7 +296,7 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 }
 
 
-MergeTreeReadTask::Columns getReadTaskColumns(
+MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
@@ -279,7 +317,7 @@ MergeTreeReadTask::Columns getReadTaskColumns(
     injectRequiredColumns(
         data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
-    MergeTreeReadTask::Columns result;
+    MergeTreeReadTaskColumns result;
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withExtendedObjects()
         .withSystemColumns();
@@ -327,7 +365,7 @@ MergeTreeReadTask::Columns getReadTaskColumns(
 
     if (prewhere_info)
     {
-        auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
+        auto prewhere_actions = IMergeTreeSelectAlgorithm::getPrewhereActions(
             prewhere_info,
             actions_settings,
             reader_settings.enable_multiple_prewhere_read_steps);
@@ -347,6 +385,18 @@ MergeTreeReadTask::Columns getReadTaskColumns(
     /// Rest of the requested columns
     result.columns = storage_snapshot->getColumnsByNames(options, column_to_read_after_prewhere);
     return result;
+}
+
+
+std::string MergeTreeReadTaskColumns::dump() const
+{
+    WriteBufferFromOwnString s;
+    for (size_t i = 0; i < pre_columns.size(); ++i)
+    {
+        s << "STEP " << i << ": " << pre_columns[i].toString() << "\n";
+    }
+    s << "COLUMNS: " << columns.toString() << "\n";
+    return s.str();
 }
 
 }

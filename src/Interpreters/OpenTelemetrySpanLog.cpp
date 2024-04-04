@@ -1,6 +1,5 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
-#include <base/getFQDNOrHostName.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -15,7 +14,7 @@
 namespace DB
 {
 
-ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
+NamesAndTypesList OpenTelemetrySpanLogElement::getNamesAndTypes()
 {
     auto span_kind_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -30,9 +29,7 @@ ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
 
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
-    return ColumnsDescription
-    {
-        {"hostname", low_cardinality_string},
+    return {
         {"trace_id", std::make_shared<DataTypeUUID>()},
         {"span_id", std::make_shared<DataTypeUInt64>()},
         {"parent_span_id", std::make_shared<DataTypeUInt64>()},
@@ -70,7 +67,6 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(trace_id);
     columns[i++]->insert(span_id);
     columns[i++]->insert(parent_span_id);

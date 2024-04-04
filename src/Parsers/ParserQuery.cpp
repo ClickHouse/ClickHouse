@@ -1,5 +1,6 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
+#include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/ParserDropFunctionQuery.h>
@@ -60,6 +61,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserExternalDDLQuery external_ddl_p;
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
+    ParserBackupQuery backup_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -84,7 +86,8 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || grant_p.parse(pos, node, expected)
         || external_ddl_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
-        || delete_p.parse(pos, node, expected);
+        || delete_p.parse(pos, node, expected)
+        || backup_p.parse(pos, node, expected);
 
     return res;
 }

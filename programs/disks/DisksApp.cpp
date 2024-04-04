@@ -65,9 +65,6 @@ void DisksApp::addOptions(
     positional_options_description.add("command_name", 1);
 
     supported_commands = {"list-disks", "list", "move", "remove", "link", "copy", "write", "read", "mkdir"};
-#ifdef CLICKHOUSE_CLOUD
-    supported_commands.insert("packed-io");
-#endif
 
     command_descriptions.emplace("list-disks", makeCommandListDisks());
     command_descriptions.emplace("list", makeCommandList());
@@ -78,9 +75,6 @@ void DisksApp::addOptions(
     command_descriptions.emplace("write", makeCommandWrite());
     command_descriptions.emplace("read", makeCommandRead());
     command_descriptions.emplace("mkdir", makeCommandMkDir());
-#ifdef CLICKHOUSE_CLOUD
-    command_descriptions.emplace("packed-io", makeCommandPackedIO());
-#endif
 }
 
 void DisksApp::processOptions()
@@ -93,11 +87,6 @@ void DisksApp::processOptions()
         config().setBool("save-logs", true);
     if (options.count("log-level"))
         config().setString("log-level", options["log-level"].as<String>());
-}
-
-DisksApp::~DisksApp()
-{
-    global_context->shutdown();
 }
 
 void DisksApp::init(std::vector<String> & common_arguments)
@@ -145,7 +134,6 @@ void DisksApp::parseAndCheckOptions(
         .options(options_description_)
         .positional(positional_options_description)
         .allow_unregistered();
-
     po::parsed_options parsed = parser.run();
     po::store(parsed, options);
 
@@ -172,7 +160,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No config-file specified");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No config-file specifiged");
     }
 
     if (config().has("save-logs"))
@@ -211,8 +199,8 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         po::parsed_options parsed = parser.run();
         po::store(parsed, options);
         po::notify(options);
-
         args = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+
         command->processOptions(config(), options);
     }
     else
@@ -221,35 +209,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         po::parsed_options parsed = parser.run();
         args = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
     }
-
-    std::unordered_set<std::string> disks
-    {
-        config().getString("disk", "default"),
-        config().getString("disk-from", config().getString("disk", "default")),
-        config().getString("disk-to", config().getString("disk", "default")),
-    };
-
-    auto validator = [&disks](
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & disk_config_prefix,
-        const std::string & disk_name)
-    {
-        if (!disks.contains(disk_name))
-            return false;
-
-        const auto disk_type = config.getString(disk_config_prefix + ".type", "local");
-
-        if (disk_type == "cache")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type 'cache' of disk {} is not supported by clickhouse-disks", disk_name);
-
-        return true;
-    };
-
-    constexpr auto config_prefix = "storage_configuration.disks";
-    auto disk_selector = std::make_shared<DiskSelector>();
-    disk_selector->initialize(config(), config_prefix, global_context, validator);
-
-    command->execute(args, disk_selector, config());
+    command->execute(args, global_context, config());
 
     return Application::EXIT_OK;
 }

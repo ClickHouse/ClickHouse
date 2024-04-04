@@ -34,7 +34,6 @@ class Context;
 namespace DB::S3
 {
 class ClientFactory;
-class PocoHTTPClient;
 
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
@@ -42,7 +41,6 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     String force_region;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
-    unsigned int s3_retry_attempts;
     bool enable_s3_requests_logging;
     bool for_disk_s3;
     ThrottlerPtr get_request_throttler;
@@ -55,11 +53,10 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     size_t http_connection_pool_size = 0;
     /// See PoolBase::BehaviourOnLimit
     bool wait_on_pool_size_limit = true;
-    bool s3_use_adaptive_timeouts = true;
-
-    std::function<void(const DB::ProxyConfiguration &)> error_report;
 
     void updateSchemeAndRegion();
+
+    std::function<void(const DB::ProxyConfiguration &)> error_report;
 
 private:
     PocoHTTPClientConfiguration(
@@ -67,10 +64,8 @@ private:
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
-        unsigned int s3_retry_attempts,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
-        bool s3_use_adaptive_timeouts_,
         const ThrottlerPtr & get_request_throttler_,
         const ThrottlerPtr & put_request_throttler_,
         std::function<void(const DB::ProxyConfiguration &)> error_report_
@@ -166,12 +161,10 @@ private:
     template <bool pooled>
     void makeRequestInternalImpl(
         Aws::Http::HttpRequest & request,
-        const DB::ProxyConfiguration & proxy_configuration,
+        const DB::ProxyConfiguration & per_request_configuration,
         std::shared_ptr<PocoHTTPResponse> & response,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
-
-    ConnectionTimeouts getTimeouts(const String & method, bool first_attempt, bool first_byte) const;
 
 protected:
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
@@ -182,7 +175,6 @@ protected:
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
-    bool s3_use_adaptive_timeouts = true;
     bool enable_s3_requests_logging;
     bool for_disk_s3;
 

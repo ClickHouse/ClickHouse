@@ -9,9 +9,6 @@
 namespace DB
 {
 
-namespace
-{
-
 class FunctionWkt : public IFunction
 {
 public:
@@ -55,7 +52,6 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-                str.exceptions(std::ios::failbit);
                 str << boost::geometry::wkt(figures[i]);
                 std::string serialized = str.str();
                 res_column->insertData(serialized.c_str(), serialized.size());
@@ -71,8 +67,6 @@ public:
         return true;
     }
 };
-
-}
 
 REGISTER_FUNCTION(Wkt)
 {

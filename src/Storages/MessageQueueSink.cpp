@@ -20,7 +20,7 @@ MessageQueueSink::MessageQueueSink(
 void MessageQueueSink::onStart()
 {
     LOG_TEST(
-        getLogger("MessageQueueSink"),
+        &Poco::Logger::get("MessageQueueSink"),
         "Executing startup for MessageQueueSink");
 
     initialize();

@@ -28,6 +28,9 @@ public:
     void setTable(const String & name);
 
     void cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const;
+
+protected:
+    void formatHelper(const FormatSettings & settings, const char * name) const;
 };
 
 
@@ -49,19 +52,9 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Show; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-            << (temporary ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
-            << " " << (settings.hilite ? hilite_none : "");
-
-        if (database)
-        {
-            database->formatImpl(settings, state, frame);
-            settings.ostr << '.';
-        }
-
-        table->formatImpl(settings, state, frame);
+        formatHelper(settings, temporary ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query);
     }
 };
 

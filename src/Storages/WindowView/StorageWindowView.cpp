@@ -1,7 +1,10 @@
 #include <numeric>
+#include <regex>
 
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTimeWindow.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -13,6 +16,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
@@ -27,6 +31,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTWatchQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
@@ -47,15 +52,16 @@
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
+#include <base/sleep.h>
 #include <Common/logger_useful.h>
-#include <boost/algorithm/string/replace.hpp>
 
 #include <Storages/LiveView/StorageBlocks.h>
+
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WindowViewSource.h>
 
+#include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-
 
 namespace DB
 {
@@ -278,13 +284,13 @@ namespace
     {
         switch (kind)
         {
-            case IntervalKind::Kind::Nanosecond:
-            case IntervalKind::Kind::Microsecond:
-            case IntervalKind::Kind::Millisecond:
+            case IntervalKind::Nanosecond:
+            case IntervalKind::Microsecond:
+            case IntervalKind::Millisecond:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by windows yet");
 #define CASE_WINDOW_KIND(KIND) \
-    case IntervalKind::Kind::KIND: { \
-        return AddTime<IntervalKind::Kind::KIND>::execute(time_sec, num_units, time_zone); \
+    case IntervalKind::KIND: { \
+        return AddTime<IntervalKind::KIND>::execute(time_sec, num_units, time_zone); \
     }
             CASE_WINDOW_KIND(Second)
             CASE_WINDOW_KIND(Minute)
@@ -411,7 +417,8 @@ ASTPtr StorageWindowView::getCleanupQuery()
 
     auto alter_command = std::make_shared<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
-    alter_command->predicate = alter_command->children.emplace_back(function_less).get();
+    alter_command->predicate = function_less;
+    alter_command->children.push_back(alter_command->predicate);
     alter_query->command_list->children.push_back(alter_command);
     return alter_query;
 }
@@ -454,7 +461,7 @@ void StorageWindowView::alter(
         modifying_query = false;
     });
 
-    shutdown(false);
+    shutdown();
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
 
@@ -868,20 +875,20 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
 {
     switch (slide_kind)
     {
-        case IntervalKind::Kind::Nanosecond:
-        case IntervalKind::Kind::Microsecond:
-        case IntervalKind::Kind::Millisecond:
+        case IntervalKind::Nanosecond:
+        case IntervalKind::Microsecond:
+        case IntervalKind::Millisecond:
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by windows yet");
 #define CASE_WINDOW_KIND(KIND) \
-    case IntervalKind::Kind::KIND: \
+    case IntervalKind::KIND: \
     { \
         if (is_tumble) \
-            return ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, window_num_units, *time_zone); \
+            return ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, window_num_units, *time_zone); \
         else \
         {\
-            UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
-            UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(w_start, hop_num_units, *time_zone);\
-            return AddTime<IntervalKind::Kind::KIND>::execute(w_end, -window_num_units, *time_zone);\
+            UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
+            UInt32 w_end = AddTime<IntervalKind::KIND>::execute(w_start, hop_num_units, *time_zone);\
+            return AddTime<IntervalKind::KIND>::execute(w_end, -window_num_units, *time_zone);\
         }\
     }
         CASE_WINDOW_KIND(Second)
@@ -901,16 +908,16 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
 {
     switch (slide_kind)
     {
-        case IntervalKind::Kind::Nanosecond:
-        case IntervalKind::Kind::Microsecond:
-        case IntervalKind::Kind::Millisecond:
+        case IntervalKind::Nanosecond:
+        case IntervalKind::Microsecond:
+        case IntervalKind::Millisecond:
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by window view yet");
 
 #define CASE_WINDOW_KIND(KIND) \
-    case IntervalKind::Kind::KIND: \
+    case IntervalKind::KIND: \
     { \
-        UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, slide_num_units, *time_zone); \
-        return AddTime<IntervalKind::Kind::KIND>::execute(w_start, slide_num_units, *time_zone); \
+        UInt32 w_start = ToStartOfTransform<IntervalKind::KIND>::execute(time_sec, slide_num_units, *time_zone); \
+        return AddTime<IntervalKind::KIND>::execute(w_start, slide_num_units, *time_zone); \
     }
         CASE_WINDOW_KIND(Second)
         CASE_WINDOW_KIND(Minute)
@@ -1034,7 +1041,7 @@ void StorageWindowView::threadFuncFireProc()
         max_fired_watermark = next_fire_signal;
         auto slide_interval = addTime(0, slide_kind, slide_num_units, *time_zone);
         /// Convert DayNum into seconds when the slide interval is larger than Day
-        if (slide_kind > IntervalKind::Kind::Day)
+        if (slide_kind > IntervalKind::Day)
             slide_interval *= 86400;
         next_fire_signal += slide_interval;
     }
@@ -1150,10 +1157,10 @@ StorageWindowView::StorageWindowView(
     ContextPtr context_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
-    LoadingStrictnessLevel mode)
+    bool attach_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , log(getLogger(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
+    , log(&Poco::Logger::get(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
     , fire_signal_timeout_s(context_->getSettingsRef().wait_for_window_view_fire_signal_timeout.totalSeconds())
     , clean_interval_usec(context_->getSettingsRef().window_view_clean_interval.totalMicroseconds())
 {
@@ -1196,7 +1203,7 @@ StorageWindowView::StorageWindowView(
         next_fire_signal = getWindowUpperBound(now());
 
     std::exchange(has_inner_table, true);
-    if (mode < LoadingStrictnessLevel::ATTACH)
+    if (!attach_)
     {
         auto inner_create_query = getInnerTableCreateQuery(inner_query, inner_table_id);
         auto create_context = Context::createCopy(context_);
@@ -1261,7 +1268,7 @@ ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr contex
     if (is_time_column_func_now)
         window_id_name = func_now_data.window_id_name;
 
-    window_column_name = boost::replace_all_copy(window_id_name, "windowID", is_tumble ? "tumble" : "hop");
+    window_column_name = std::regex_replace(window_id_name, std::regex("windowID"), is_tumble ? "tumble" : "hop");
 
     /// Parse final query (same as mergeable query but has tumble/hop instead of windowID)
     final_query = mergeable_query->clone();
@@ -1353,7 +1360,7 @@ void StorageWindowView::eventTimeParser(const ASTCreateQuery & query)
         if (query.is_watermark_ascending)
         {
             is_watermark_bounded = true;
-            watermark_kind = IntervalKind::Kind::Second;
+            watermark_kind = IntervalKind::Second;
             watermark_num_units = 1;
         }
         else if (query.is_watermark_bounded)
@@ -1579,7 +1586,7 @@ void StorageWindowView::startup()
         fire_task->schedule();
 }
 
-void StorageWindowView::shutdown(bool)
+void StorageWindowView::shutdown()
 {
     shutdown_called = true;
 
@@ -1665,12 +1672,12 @@ void registerStorageWindowView(StorageFactory & factory)
 {
     factory.registerStorage("WindowView", [](const StorageFactory::Arguments & args)
     {
-        if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef().allow_experimental_window_view)
+        if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_window_view)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Experimental WINDOW VIEW feature "
                             "is not enabled (the setting 'allow_experimental_window_view')");
 
-        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.mode);
+        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.attach);
     });
 }
 

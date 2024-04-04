@@ -155,7 +155,6 @@ namespace
                 "formats",
                 "privileges",
                 "data_type_families",
-                "database_engines",
                 "table_engines",
                 "table_functions",
                 "aggregate_function_combinators",
@@ -263,16 +262,9 @@ void ContextAccess::initialize()
             UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
             std::lock_guard lock2{ptr->mutex};
             ptr->setUser(changed_user);
-            if (!ptr->user && !ptr->user_was_dropped)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041, a)");
         });
 
     setUser(access_control->read<User>(*params.user_id));
-
-    if (!user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041, b)");
-
-    initialized = true;
 }
 
 
@@ -298,7 +290,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
     }
 
     user_name = user->getName();
-    trace_log = getLogger("ContextAccess (" + user_name + ")");
+    trace_log = &Poco::Logger::get("ContextAccess (" + user_name + ")");
 
     std::vector<UUID> current_roles, current_roles_with_admin_option;
     if (params.use_default_roles)
@@ -386,16 +378,12 @@ UserPtr ContextAccess::tryGetUser() const
 String ContextAccess::getUserName() const
 {
     std::lock_guard lock{mutex};
-    if (initialized && !user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
     return user_name;
 }
 
 std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
 {
     std::lock_guard lock{mutex};
-    if (initialized && !user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
     if (roles_info)
         return roles_info;
     static const auto no_roles = std::make_shared<EnabledRolesInfo>();
@@ -405,9 +393,6 @@ std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
 RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     std::lock_guard lock{mutex};
-
-    if (initialized && !user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
 
     RowPolicyFilterPtr filter;
     if (enabled_row_policies)
@@ -428,9 +413,6 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
 std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 {
     std::lock_guard lock{mutex};
-
-    if (initialized && !user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
 
     if (!enabled_quota)
     {
@@ -463,8 +445,6 @@ std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 SettingsChanges ContextAccess::getDefaultSettings() const
 {
     std::lock_guard lock{mutex};
-    if (initialized && !user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
     if (enabled_settings)
     {
         if (auto info = enabled_settings->getInfo())
@@ -477,8 +457,6 @@ SettingsChanges ContextAccess::getDefaultSettings() const
 std::shared_ptr<const SettingsProfilesInfo> ContextAccess::getDefaultProfileInfo() const
 {
     std::lock_guard lock{mutex};
-    if (initialized && !user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
     if (enabled_settings)
         return enabled_settings->getInfo();
     static const auto everything_by_default = std::make_shared<SettingsProfilesInfo>(*access_control);
@@ -489,8 +467,6 @@ std::shared_ptr<const SettingsProfilesInfo> ContextAccess::getDefaultProfileInfo
 std::shared_ptr<const AccessRights> ContextAccess::getAccessRights() const
 {
     std::lock_guard lock{mutex};
-    if (initialized && !user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
     if (access)
         return access;
     static const auto nothing_granted = std::make_shared<AccessRights>();
@@ -501,8 +477,6 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRights() const
 std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit() const
 {
     std::lock_guard lock{mutex};
-    if (initialized && !user && !user_was_dropped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
     if (access_with_implicit)
         return access_with_implicit;
     static const auto nothing_granted = std::make_shared<AccessRights>();

@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
@@ -63,7 +62,7 @@ const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() 
     return avg_value_size_hints;
 }
 
-void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows, size_t block_number) const
+void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const
 {
     try
     {
@@ -72,7 +71,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
             res_columns, num_rows,
             Nested::convertToSubcolumns(requested_columns),
             Nested::convertToSubcolumns(available_columns),
-            partially_read_columns, storage_snapshot->metadata, block_number);
+            partially_read_columns, storage_snapshot->metadata);
 
         should_evaluate_missing_defaults = std::any_of(
             res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
@@ -141,29 +140,16 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     }
 }
 
-bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const
-{
-    /// We cannot read separate subcolumn with offsets from compact parts.
-    if (!data_part_info_for_read->isWidePart() || subcolumn_name != "size0")
-        return false;
-
-    return Nested::isSubcolumnOfNested(name_in_storage, part_columns);
-}
-
 String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
 {
     auto name_in_storage = required_column.getNameInStorage();
-    auto subcolumn_name = required_column.getSubcolumnName();
-
     if (alter_conversions->isColumnRenamed(name_in_storage))
+    {
         name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
+        return Nested::concatenateName(name_in_storage, required_column.getSubcolumnName());
+    }
 
-    /// A special case when we read subcolumn of shared offsets of Nested.
-    /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
-    if (isSubcolumnOffsetsOfNested(name_in_storage, subcolumn_name))
-        name_in_storage = Nested::splitName(name_in_storage).first;
-
-    return Nested::concatenateName(name_in_storage, subcolumn_name);
+    return required_column.name;
 }
 
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const

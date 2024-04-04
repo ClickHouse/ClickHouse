@@ -28,7 +28,7 @@ ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & hea
 {
 }
 
-Chunk ArrowBlockInputFormat::read()
+Chunk ArrowBlockInputFormat::generate()
 {
     Chunk res;
     block_missing_values.clear();
@@ -64,7 +64,7 @@ Chunk ArrowBlockInputFormat::read()
         {
             auto rows = file_reader->RecordBatchCountRows(record_batch_current++);
             if (!rows.ok())
-                throw Exception(
+                throw ParsingException(
                     ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
             return getChunkForCount(*rows);
         }
@@ -73,12 +73,12 @@ Chunk ArrowBlockInputFormat::read()
     }
 
     if (!batch_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
 
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", table_result.status().ToString());
 
     ++record_batch_current;
@@ -157,9 +157,7 @@ void ArrowBlockInputFormat::prepareReader()
         "Arrow",
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,
-        format_settings.date_time_overflow_behavior,
-        format_settings.arrow.case_insensitive_column_matching,
-        stream);
+        format_settings.arrow.case_insensitive_column_matching);
 
     if (stream)
         record_batch_total = -1;
@@ -213,7 +211,7 @@ std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
 
     auto rows = file_reader->CountRows();
     if (!rows.ok())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of Arrow data: {}", rows.status().ToString());
 
     return *rows;
 }

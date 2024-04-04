@@ -33,7 +33,7 @@ static String generateActiveNodeIdentifier()
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeRestartingThread)")
-    , log(getLogger(log_name))
+    , log(&Poco::Logger::get(log_name))
     , active_node_identifier(generateActiveNodeIdentifier())
 {
     const auto storage_settings = storage.getSettings();
@@ -290,7 +290,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
     String is_active_path = fs::path(storage.replica_path) / "is_active";
-    zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
+    zookeeper->handleEphemeralNodeExistence(is_active_path, active_node_identifier);
 
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;

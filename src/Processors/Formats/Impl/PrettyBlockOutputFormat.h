@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
 
+
 namespace DB
 {
 
@@ -18,8 +19,10 @@ class PrettyBlockOutputFormat : public IOutputFormat
 {
 public:
     /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
-    PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, bool color_);
+    PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_);
+
     String getName() const override { return "PrettyBlockOutputFormat"; }
+
 protected:
     void consume(Chunk) override;
     void consumeTotals(Chunk) override;
@@ -38,7 +41,6 @@ protected:
     virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
     void writeMonoChunkIfNeeded();
     void writeSuffix() override;
-    void writeReadableNumberTip(const Chunk & chunk);
 
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
@@ -55,10 +57,7 @@ protected:
         total_rows = 0;
     }
 
-    bool color;
-
 private:
-    bool readable_number_tip = false;
     bool mono_block;
     /// For mono_block == true only
     Chunk mono_chunk;
@@ -74,8 +73,13 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
             const Block & sample,
             const FormatSettings & format_settings)
         {
-            bool color = !no_escapes && format_settings.pretty.color.valueOr(format_settings.is_writing_to_terminal);
-            return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block, color);
+            if (no_escapes)
+            {
+                FormatSettings changed_settings = format_settings;
+                changed_settings.pretty.color = false;
+                return std::make_shared<OutputFormat>(buf, sample, changed_settings, mono_block);
+            }
+            return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block);
         });
         if (!mono_block)
             factory.markOutputFormatSupportsParallelFormatting(name);

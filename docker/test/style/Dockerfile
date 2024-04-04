@@ -16,31 +16,18 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     moreutils \
     python3-fuzzywuzzy \
     python3-pip \
+    shellcheck \
     yamllint \
     locales \
     && pip3 install black==23.1.0 boto3 codespell==2.2.1 mypy==1.3.0 PyGithub unidiff pylint==2.6.2 \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/* \
-    && rm -rf /root/.cache/pip
+    && rm -rf /root/.cache/pip 
 
 RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
-
-ARG SHELLCHECK_VERSION=0.9.0
-RUN arch=${TARGETARCH:-amd64} \
-  && case $arch in \
-      amd64) sarch=x86_64 ;; \
-      arm64) sarch=aarch64 ;; \
-    esac \
-  && curl -L \
-    "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.${sarch}.tar.xz" \
-    | tar xJ --strip=1 -C /tmp \
-  && mv /tmp/shellcheck /usr/bin \
-  && rm -rf /tmp/*
-
 
 # Get act and actionlint from releases
 RUN arch=${TARGETARCH:-amd64} \

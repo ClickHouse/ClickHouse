@@ -2,6 +2,7 @@
 
 import argparse
 
+import atexit
 import logging
 import sys
 import subprocess
@@ -9,15 +10,30 @@ from pathlib import Path
 from shutil import copy2
 from typing import Dict
 
+from github import Github
 
 from build_download_helper import download_builds_filter
-
+from clickhouse_helper import (
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+)
+from commit_status_helper import (
+    RerunHelper,
+    format_description,
+    get_commit,
+    post_commit_status,
+    update_mergeable_check,
+)
 from compress_files import compress_fast
-from docker_images_helper import DockerImage, pull_image, get_docker_image
-from env_helper import REPORT_PATH, TEMP_PATH as TEMP
-from report import JobReport, TestResults, TestResult, FAILURE, FAIL, OK, SUCCESS
+from docker_pull_helper import get_image_with_version, DockerImage
+from env_helper import CI, TEMP_PATH as TEMP, REPORTS_PATH
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
+from report import TestResults, TestResult, FAILURE, FAIL, OK, SUCCESS
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from upload_result_helper import upload_results
 
 
 RPM_IMAGE = "clickhouse/install-rpm-test"
@@ -135,7 +151,7 @@ def test_install_tgz(image: DockerImage) -> TestResults:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
     tests = {
-        f"Install server tgz in {image}": r"""#!/bin/bash -ex
+        f"Install server tgz in {image.name}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
 for pkg in /packages/clickhouse-{common,client,server}*tgz; do
     package=${pkg%-*}
@@ -145,7 +161,7 @@ for pkg in /packages/clickhouse-{common,client,server}*tgz; do
 done
 [ -f /etc/yum.conf ] && echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
 bash -ex /packages/server_test.sh""",
-        f"Install keeper tgz in {image}": r"""#!/bin/bash -ex
+        f"Install keeper tgz in {image.name}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
 for pkg in /packages/clickhouse-keeper*tgz; do
     package=${pkg%-*}
@@ -208,6 +224,7 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="The script to check if the packages are able to install",
     )
+
     parser.add_argument(
         "check_name",
         help="check name, used to download the packages",
@@ -258,9 +275,24 @@ def main():
     TEMP_PATH.mkdir(parents=True, exist_ok=True)
     LOGS_PATH.mkdir(parents=True, exist_ok=True)
 
-    deb_image = pull_image(get_docker_image(DEB_IMAGE))
-    rpm_image = pull_image(get_docker_image(RPM_IMAGE))
+    pr_info = PRInfo()
 
+    if CI:
+        gh = Github(get_best_robot_token(), per_page=100)
+        commit = get_commit(gh, pr_info.sha)
+        atexit.register(update_mergeable_check, gh, pr_info, args.check_name)
+
+        rerun_helper = RerunHelper(commit, args.check_name)
+        if rerun_helper.is_already_finished_by_status():
+            logging.info(
+                "Check is already finished according to github status, exiting"
+            )
+            sys.exit(0)
+
+    docker_images = {
+        name: get_image_with_version(REPORTS_PATH, name, args.download)
+        for name in (RPM_IMAGE, DEB_IMAGE)
+    }
     prepare_test_scripts()
 
     if args.download:
@@ -280,7 +312,7 @@ def main():
             return is_match
 
         download_builds_filter(
-            args.check_name, REPORT_PATH, TEMP_PATH, filter_artifacts
+            args.check_name, REPORTS_PATH, TEMP_PATH, filter_artifacts
         )
 
     test_results = []  # type: TestResults
@@ -293,29 +325,54 @@ def main():
         subprocess.check_output(f"{ch_copy.absolute()} local -q 'SELECT 1'", shell=True)
 
     if args.deb:
-        test_results.extend(test_install_deb(deb_image))
+        test_results.extend(test_install_deb(docker_images[DEB_IMAGE]))
     if args.rpm:
-        test_results.extend(test_install_rpm(rpm_image))
+        test_results.extend(test_install_rpm(docker_images[RPM_IMAGE]))
     if args.tgz:
-        test_results.extend(test_install_tgz(deb_image))
-        test_results.extend(test_install_tgz(rpm_image))
+        test_results.extend(test_install_tgz(docker_images[DEB_IMAGE]))
+        test_results.extend(test_install_tgz(docker_images[RPM_IMAGE]))
 
     state = SUCCESS
+    test_status = OK
     description = "Packages installed successfully"
     if FAIL in (result.status for result in test_results):
         state = FAILURE
+        test_status = FAIL
         description = "Failed to install packages: " + ", ".join(
             result.name for result in test_results
         )
 
-    JobReport(
-        description=description,
-        test_results=test_results,
-        status=state,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=[],
-    ).dump()
+    s3_helper = S3Helper()
+
+    report_url = upload_results(
+        s3_helper,
+        pr_info.number,
+        pr_info.sha,
+        test_results,
+        [],
+        args.check_name,
+    )
+    print(f"::notice ::Report url: {report_url}")
+    if not CI:
+        return
+
+    ch_helper = ClickHouseHelper()
+
+    description = format_description(description)
+
+    post_commit_status(commit, state, report_url, description, args.check_name, pr_info)
+
+    prepared_events = prepare_tests_results_for_clickhouse(
+        pr_info,
+        test_results,
+        test_status,
+        stopwatch.duration_seconds,
+        stopwatch.start_time_str,
+        report_url,
+        args.check_name,
+    )
+
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state == FAILURE:
         sys.exit(1)
