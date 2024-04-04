@@ -2239,8 +2239,8 @@ arrayFirstOrNull(func, arr1, …)
 
 **Parameters**
 
-- `func`: lambda function.
-- `arr1`: array to operate on. [Array](../data-types/array.md).
+- `func`: Lambda function. [Lambda function](../functions/#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `arr1`: Array to operate on. [Array](../data-types/array.md).
 
 **Returned value**
 
@@ -2295,8 +2295,8 @@ arrayLastOrNull(func, arr1, …)
 
 **Parameters**
 
-- `func`: lambda function.
-- `arr1`: array to operate on. [Array](../data-types/array.md).
+- `func`: Lambda function. [Lambda function](../functions/#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `arr1`: Array to operate on. [Array](../data-types/array.md).
 
 **Returned value**
 
