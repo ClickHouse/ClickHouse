@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 /// High-order function to run callbacks (functions with 'void()' signature) somewhere asynchronously.
 template <typename Result, typename Callback = std::function<Result()>>
 using ThreadPoolCallbackRunnerUnsafe = std::function<std::future<Result>(Callback &&, Priority)>;
@@ -172,7 +177,8 @@ public:
             /// It can be cancelled only when waiting in dtor
             if (state == CANCELLED)
                 continue;
-            task->future.wait();
+            if (task->future.valid())
+                task->future.wait();
         }
     }
 
