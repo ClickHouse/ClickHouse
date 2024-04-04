@@ -67,6 +67,8 @@ public:
     String getSignature() const override { return signature; }
 
 protected:
+    using Base = TableFunctionObjectStorage<Definition, StorageSettings, Configuration>;
+
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,
@@ -75,6 +77,12 @@ protected:
         bool is_insert_query) const override;
 
     const char * getStorageTypeName() const override { return Definition::storage_type_name; }
+
+    bool hasStaticStructure() const override { return Base::getConfiguration()->structure != "auto"; }
+
+    bool needStructureHint() const override { return Base::getConfiguration()->structure == "auto"; }
+
+    void setStructureHint(const ColumnsDescription & structure_hint_) override { Base::structure_hint = structure_hint_; }
 };
 
 #if USE_AWS_S3

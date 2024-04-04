@@ -17,9 +17,8 @@ namespace DB
 template <typename Definition, typename StorageSettings, typename Configuration>
 StoragePtr TableFunctionObjectStorageCluster<Definition, StorageSettings, Configuration>::executeImpl(
     const ASTPtr & /*function*/, ContextPtr context,
-    const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+    const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
-    using Base = TableFunctionObjectStorage<Definition, StorageSettings, Configuration>;
     auto configuration = Base::getConfiguration();
 
     ColumnsDescription columns;
@@ -27,6 +26,8 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, StorageSettings, Config
         columns = parseColumnsListFromString(configuration->structure, context);
     else if (!Base::structure_hint.empty())
         columns = Base::structure_hint;
+    else if (!cached_columns.empty())
+        columns = cached_columns;
 
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
