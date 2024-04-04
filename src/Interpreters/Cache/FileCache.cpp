@@ -1383,6 +1383,7 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         || new_settings.max_elements != actual_settings.max_elements)
     {
         std::optional<EvictionCandidates> eviction_candidates;
+        bool modified_size_limits = false;
         {
             cache_is_being_resized.store(true, std::memory_order_relaxed);
             SCOPE_EXIT({
@@ -1397,8 +1398,21 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
             eviction_candidates->removeQueueEntries(cache_lock);
 
-            main_priority->modifySizeLimits(
-                new_settings.max_size, new_settings.max_elements, new_settings.slru_size_ratio, cache_lock);
+            modified_size_limits = main_priority->getSize(cache_lock) <= new_settings.max_size
+                && main_priority->getElementsCount(cache_lock) <= new_settings.max_elements;
+
+            if (modified_size_limits)
+            {
+                main_priority->modifySizeLimits(
+                    new_settings.max_size, new_settings.max_elements, new_settings.slru_size_ratio, cache_lock);
+            }
+            else
+            {
+                LOG_WARNING(log, "Unable to modify size limit from {} to {}, "
+                            "elements limit from {} to {}",
+                            actual_settings.max_size, new_settings.max_size,
+                            actual_settings.max_elements, new_settings.max_elements);
+            }
         }
 
         try
@@ -1412,12 +1426,15 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
             throw;
         }
 
-        LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
-                actual_settings.max_size, new_settings.max_size,
-                actual_settings.max_elements, new_settings.max_elements);
+        if (modified_size_limits)
+        {
+            LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
+                    actual_settings.max_size, new_settings.max_size,
+                    actual_settings.max_elements, new_settings.max_elements);
 
-        actual_settings.max_size = new_settings.max_size;
-        actual_settings.max_elements = new_settings.max_elements;
+            actual_settings.max_size = new_settings.max_size;
+            actual_settings.max_elements = new_settings.max_elements;
+        }
     }
 
     if (new_settings.max_file_segment_size != actual_settings.max_file_segment_size)

@@ -63,6 +63,8 @@ void EvictionCandidates::add(
 
 void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & lock)
 {
+    auto log = getLogger("EvictionCandidates");
+    LOG_TEST(log, "Will remove {} eviction candidates", size());
     for (const auto & [key, key_candidates] : candidates)
     {
         for (const auto & candidate : key_candidates.candidates)

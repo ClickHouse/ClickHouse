@@ -262,6 +262,9 @@ EvictionCandidates SLRUFileCachePriority::collectCandidatesForEviction(
     auto res = probationary_queue.collectCandidatesForEviction(
         desired_probationary_size, desired_probationary_elements_num, max_candidates_to_evict, stat, lock);
 
+    LOG_TEST(log, "Collected {} eviction candidates from probationary queue (size: {})",
+             res.size(), stat.total_stat.releasable_size);
+
     chassert(!max_candidates_to_evict || res.size() <= max_candidates_to_evict);
     chassert(res.size() == stat.total_stat.releasable_count);
 
@@ -271,10 +274,15 @@ EvictionCandidates SLRUFileCachePriority::collectCandidatesForEviction(
     const auto desired_protected_size = getRatio(max_size, size_ratio);
     const auto desired_protected_elements_num = getRatio(max_elements, size_ratio);
 
+    FileCacheReserveStat protected_stat;
     auto res_add = protected_queue.collectCandidatesForEviction(
         desired_protected_size, desired_protected_elements_num,
-        max_candidates_to_evict ? max_candidates_to_evict - res.size() : 0, stat, lock);
+        max_candidates_to_evict ? max_candidates_to_evict - res.size() : 0, protected_stat, lock);
 
+    LOG_TEST(log, "Collected {} eviction candidates from protected queue (size: {})",
+             res_add.size(), protected_stat.total_stat.releasable_size);
+
+    stat += protected_stat;
     res.insert(std::move(res_add), lock);
     return res;
 }
