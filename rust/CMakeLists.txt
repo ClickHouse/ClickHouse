@@ -52,6 +52,7 @@ macro(configure_rustc)
     message(STATUS "RUSTFLAGS: ${RUSTFLAGS}")
     message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
+    set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../contrib/rust_vendor")
     # NOTE: requires RW access for the source dir
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/.cargo/config.toml.in" "${CMAKE_CURRENT_SOURCE_DIR}/.cargo/config.toml" @ONLY)
 endmacro()
@@ -80,9 +81,7 @@ function(clickhouse_import_crate)
         endif()
     endif()
 
-    # Note, here --offline is not used, since on CI vendor archive is used, and
-    # passing --offline here will be inconvenient for local development.
-    corrosion_import_crate(NO_STD ${ARGN} PROFILE ${profile})
+    corrosion_import_crate(NO_STD ${ARGN} PROFILE ${profile} FLAGS --offline)
 endfunction()
 
 # Add crate from the build directory.
@@ -99,18 +98,6 @@ function(add_rust_subdirectory src)
     message(STATUS "Copy ${src} to ${dst}")
     file(COPY "${src}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
         PATTERN target EXCLUDE)
-
-    # Check is Rust available or not.
-    #
-    # `cargo update --dry-run` will not update anything, but will check the internet connectivity.
-    execute_process(COMMAND ${Rust_CARGO_CACHED} update --dry-run
-        WORKING_DIRECTORY "${dst}"
-        RESULT_VARIABLE CARGO_UPDATE_RESULT
-        OUTPUT_VARIABLE CARGO_UPDATE_STDOUT
-        ERROR_VARIABLE CARGO_UPDATE_STDERR)
-    if (CARGO_UPDATE_RESULT)
-        message(FATAL_ERROR "Rust (${Rust_CARGO_CACHED}) support is not available (likely there is no internet connectivity):\n${CARGO_UPDATE_STDERR}\nYou can disable Rust support with -DENABLE_RUST=OFF")
-    endif()
 
     add_subdirectory("${dst}" "${dst}")
 
