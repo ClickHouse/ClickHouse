@@ -13,7 +13,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/FunctionParameterValuesVisitor.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -73,7 +72,6 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
@@ -85,7 +83,6 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -96,6 +93,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Common/NaNUtils.h>
 
 
 namespace ProfileEvents
@@ -800,7 +798,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             != parallel_replicas_before_analysis)
         {
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            context->setSetting("max_parallel_replicas", UInt64{0});
+            context->setSetting("max_parallel_replicas", UInt64{1});
             need_analyze_again = true;
         }
 
@@ -947,7 +945,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     if (number_of_replicas_to_use <= 1)
     {
         context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-        context->setSetting("max_parallel_replicas", UInt64{0});
+        context->setSetting("max_parallel_replicas", UInt64{1});
         LOG_DEBUG(log, "Disabling parallel replicas because there aren't enough rows to read");
         return true;
     }
@@ -1167,13 +1165,13 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
 {
     FillColumnDescription descr;
 
-    if (order_by_elem.fill_from)
-        std::tie(descr.fill_from, descr.fill_from_type) = getWithFillFieldValue(order_by_elem.fill_from, context);
-    if (order_by_elem.fill_to)
-        std::tie(descr.fill_to, descr.fill_to_type) = getWithFillFieldValue(order_by_elem.fill_to, context);
+    if (order_by_elem.getFillFrom())
+        std::tie(descr.fill_from, descr.fill_from_type) = getWithFillFieldValue(order_by_elem.getFillFrom(), context);
+    if (order_by_elem.getFillTo())
+        std::tie(descr.fill_to, descr.fill_to_type) = getWithFillFieldValue(order_by_elem.getFillTo(), context);
 
-    if (order_by_elem.fill_step)
-        std::tie(descr.fill_step, descr.step_kind) = getWithFillStep(order_by_elem.fill_step, context);
+    if (order_by_elem.getFillStep())
+        std::tie(descr.fill_step, descr.step_kind) = getWithFillStep(order_by_elem.getFillStep(), context);
     else
         descr.fill_step = order_by_elem.direction;
 
@@ -1219,8 +1217,8 @@ SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery 
         const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
         std::shared_ptr<Collator> collator;
-        if (order_by_elem.collation)
-            collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
+        if (order_by_elem.getCollation())
+            collator = std::make_shared<Collator>(order_by_elem.getCollation()->as<ASTLiteral &>().value.get<String>());
 
         if (order_by_elem.with_fill)
         {
@@ -2300,7 +2298,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
         && !settings.allow_experimental_query_deduplication
         && !settings.empty_result_for_aggregation_by_empty_set
         && storage
-        && storage->supportsTrivialCountOptimization()
+        && storage->supportsTrivialCountOptimization(storage_snapshot, getContext())
         && query_info.filter_asts.empty()
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
@@ -2553,10 +2551,13 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_sync_remote)
         {
-            if (auto streams_with_ratio = max_streams * settings.max_streams_to_max_threads_ratio; streams_with_ratio < SIZE_MAX)
+            if (auto streams_with_ratio = max_streams * settings.max_streams_to_max_threads_ratio; canConvertTo<size_t>(streams_with_ratio))
                 max_streams = static_cast<size_t>(streams_with_ratio);
             else
-                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Exceeded limit for `max_streams` with `max_streams_to_max_threads_ratio`. Make sure that `max_streams * max_streams_to_max_threads_ratio` not exceeds {}, current value: {}", SIZE_MAX, streams_with_ratio);
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                    "Exceeded limit for `max_streams` with `max_streams_to_max_threads_ratio`. "
+                    "Make sure that `max_streams * max_streams_to_max_threads_ratio` is in some reasonable boundaries, current value: {}",
+                    streams_with_ratio);
         }
 
         auto & prewhere_info = analysis_result.prewhere_info;

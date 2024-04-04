@@ -102,7 +102,7 @@ bool CountOf::convertImpl(String & out, IParser::Pos & pos)
 
 bool Extract::convertImpl(String & out, IParser::Pos & pos)
 {
-    ParserKeyword s_kql("typeof");
+    ParserKeyword s_kql(Keyword::TYPEOF);
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
     Expected expected;
@@ -243,7 +243,7 @@ bool ExtractAll::convertImpl(String & out, IParser::Pos & pos)
 bool ExtractJSON::convertImpl(String & out, IParser::Pos & pos)
 {
     String datatype = "String";
-    ParserKeyword s_kql("typeof");
+    ParserKeyword s_kql(Keyword::TYPEOF);
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
     Expected expected;

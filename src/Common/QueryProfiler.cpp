@@ -1,15 +1,16 @@
 #include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
-#include <Common/TraceSender.h>
+#include <base/defines.h>
+#include <base/errnoToString.h>
+#include <base/phdr_cache.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/StackTrace.h>
-#include <Common/thread_local_rng.h>
+#include <Common/TraceSender.h>
 #include <Common/logger_useful.h>
-#include <base/defines.h>
-#include <base/phdr_cache.h>
-#include <base/errnoToString.h>
+#include <Common/thread_local_rng.h>
 
 #include <random>
 

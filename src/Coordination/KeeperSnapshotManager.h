@@ -113,7 +113,7 @@ using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnaps
 #else
 using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>>;
 #endif
-using CreateSnapshotCallback = std::function<SnapshotFileInfo(KeeperStorageSnapshotPtr &&)>;
+using CreateSnapshotCallback = std::function<SnapshotFileInfo(KeeperStorageSnapshotPtr &&, bool)>;
 
 /// Class responsible for snapshots serialization and deserialization. Each snapshot
 /// has it's path on disk and log index.

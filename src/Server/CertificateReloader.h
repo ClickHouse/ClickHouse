@@ -70,7 +70,7 @@ private:
 
     struct Data
     {
-        Poco::Crypto::X509Certificate cert;
+        Poco::Crypto::X509Certificate::List certs_chain;
         Poco::Crypto::EVPPKey key;
 
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);

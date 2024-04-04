@@ -373,7 +373,7 @@ static void testLogAndStateMachine(
             bool pop_result = snapshots_queue.pop(snapshot_task);
             EXPECT_TRUE(pop_result);
 
-            snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
+            snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), false);
         }
 
         if (snapshot_created && changelog.size() > settings->reserved_log_items)
