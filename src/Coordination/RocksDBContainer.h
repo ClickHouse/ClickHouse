@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ROCKSDB_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace fs = std::filesystem;
@@ -32,9 +33,27 @@ struct RocksDBContainer
     using Node = Node_;
 
 private:
-    UInt8 getKeyDepth(const std::string & key)
+    std::string toHex(std::string origin)
     {
-        UInt8 depth = 0;
+        auto toHexChar = [](char v)
+        {
+            if (v <= 9)
+                return v + '0';
+            return 'A' + v - 10;
+        };
+        std::string result;
+        result.reserve(2 * origin.size());
+        for (size_t i = 0; i < origin.size(); ++i) {
+            unsigned char c = origin[i];
+            result.push_back(toHexChar(c >> 4));
+            result.push_back(toHexChar(c & 0xf));
+        }
+        return result;
+    }
+
+    UInt16 getKeyDepth(const std::string & key)
+    {
+        UInt16 depth = 0;
         for (size_t i = 0; i < key.size(); i++)
         {
             if (key[i] == '/' && i + 1 != key.size())
@@ -46,10 +65,15 @@ private:
     std::string getEncodedKey(const std::string & key, bool child_prefix = false)
     {
         WriteBufferFromOwnString key_buffer;
-        UInt16 depth = getKeyDepth(key) + child_prefix;
+        UInt16 depth = getKeyDepth(key) + (child_prefix ? 1 : 0);
         writeIntBinary(depth, key_buffer);
-        writeStringBinary(key, key_buffer);
+        writeString(key, key_buffer);
         return key_buffer.str();
+    }
+
+    static std::string_view getDecodedKey(const std::string_view & key)
+    {
+        return std::string_view(key.begin() + 2, key.end());
     }
 
 
@@ -59,7 +83,6 @@ private:
         Node value;
     };
 
-    /// using KVPointer = std::shared_ptr<KVPair>;
     using ValueUpdater = std::function<void(Node & node)>;
 
 public:
@@ -77,7 +100,7 @@ public:
 
         explicit const_iterator(rocksdb::Iterator * iter_) : iter(iter_)
         {
-            iter->SeekToFirst();
+            updatePairFromIter();
         }
 
         const KVPair & operator * () const
@@ -92,11 +115,15 @@ public:
 
         bool operator != (const const_iterator & other) const
         {
-            return pair->key.toView() != other->key.toView();
+            return !(*this == other);
         }
 
         bool operator == (const const_iterator & other) const
         {
+            if (pair == nullptr && other == nullptr)
+                return true;
+            if (pair == nullptr || other == nullptr)
+                return false;
             return pair->key.toView() == other->key.toView() && iter == other.iter;
         }
 
@@ -118,17 +145,26 @@ public:
         const_iterator & operator ++()
         {
             iter->Next();
+            updatePairFromIter();
+            return *this;
+        }
+
+    private:
+        void updatePairFromIter()
+        {
             if (iter && iter->Valid())
             {
                 auto new_pair = std::make_shared<KVPair>();
-                new_pair->key = iter->key().ToString();
-                new_pair->value.reset();
+                new_pair->key = StringRef(getDecodedKey(iter->key().ToStringView()));
                 ReadBufferFromOwnString buffer(iter->value().ToStringView());
                 typename Node::Meta & meta = new_pair->value;
                 readPODBinary(meta, buffer);
                 readVarUInt(new_pair->value.data_size, buffer);
                 if (new_pair->value.data_size)
+                {
+                    new_pair->value.data = std::unique_ptr<char[]>(new char[new_pair->value.data_size]);
                     buffer.readStrict(new_pair->value.data.get(), new_pair->value.data_size);
+                }
                 pair = new_pair;
             }
             else
@@ -136,23 +172,25 @@ public:
                 pair = nullptr;
                 iter = nullptr;
             }
-            return *this;
         }
     };
+
+    bool initialized = false;
 
     const const_iterator end_ptr;
 
     void initialize(const KeeperContextPtr & context)
     {
-
         DiskPtr disk = context->getTemporaryRocksDBDisk();
         if (disk == nullptr)
         {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get rocksdb disk");
             return;
         }
         auto options = context->getRocksDBOptions();
         if (options == nullptr)
         {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get rocksdb options");
             return;
         }
         rocksdb_dir = disk->getPath();
@@ -165,24 +203,33 @@ public:
         }
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
         /// storage_ptr = storage_;
+        initialized = true;
     }
 
     ~RocksDBContainer()
     {
-        rocksdb_ptr->Close();
-        rocksdb_ptr = nullptr;
+        if (initialized)
+        {
+            rocksdb_ptr->Close();
+            rocksdb_ptr = nullptr;
 
-        fs::remove_all(rocksdb_dir);
+            fs::remove_all(rocksdb_dir);
+        }
     }
 
-    std::vector<KVPair> getChildren(const std::string & key)
+    std::vector<std::pair<std::string, Node>> getChildren(const std::string & key)
     {
         rocksdb::ReadOptions read_options;
         read_options.total_order_seek = true;
 
+        size_t len = key.size() + 2;
+        if (!key.ends_with('/'))
+            len ++;
+
         auto iter = std::unique_ptr<rocksdb::Iterator>(rocksdb_ptr->NewIterator(read_options));
-        rocksdb::Slice prefix = getEncodedKey(key, true);
-        std::vector<KVPair> result;
+        std::string encoded_string = getEncodedKey(key, true);
+        rocksdb::Slice prefix(encoded_string);
+        std::vector<std::pair<std::string, Node>> result;
         for (iter->Seek(prefix); iter->Valid() && iter->key().starts_with(prefix); iter->Next())
         {
             Node node;
@@ -190,8 +237,11 @@ public:
             typename Node::Meta & meta = node;
             /// We do not read data here
             readPODBinary(meta, buffer);
-            result.emplace_back(iter->key().ToString(), std::move(node));
+            std::string real_key(iter->key().data() + len, iter->key().size() - len);
+            // std::cout << "real key: " << real_key << std::endl;
+            result.emplace_back(std::move(real_key), std::move(node));
         }
+
         return result;
     }
 
@@ -203,7 +253,7 @@ public:
         if (status.IsNotFound())
             return false;
         if (!status.ok())
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during find. The error message is {}.", status.ToString());
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during executing contains. The error message is {}.", status.ToString());
         return true;
     }
 
@@ -216,7 +266,7 @@ public:
         if (status.IsNotFound())
             return end();
         if (!status.ok())
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during find. The error message is {}.", status.ToString());
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during executing find. The error message is {}.", status.ToString());
         ReadBufferFromOwnString buffer(buffer_str);
         auto kv = std::make_shared<KVPair>();
         kv->key = key_;
@@ -225,7 +275,10 @@ public:
         /// TODO: Sometimes we don't need to load data.
         readVarUInt(kv->value.data_size, buffer);
         if (kv->value.data_size)
+        {
+            kv->value.data = std::unique_ptr<char[]>(new char[kv->value.data_size]);
             buffer.readStrict(kv->value.data.get(), kv->value.data_size);
+        }
         return const_iterator(kv);
     }
 
@@ -306,7 +359,8 @@ public:
     bool erase(const std::string & key)
     {
         /// storage->removeDigest(value, key);
-        auto status = rocksdb_ptr->Delete(rocksdb::WriteOptions(), key);
+        const std::string & encoded_key = getEncodedKey(key);
+        auto status = rocksdb_ptr->Delete(rocksdb::WriteOptions(), encoded_key);
         if (status.IsNotFound())
             return false;
         if (status.ok())
@@ -331,6 +385,7 @@ public:
         chassert(!snapshot_mode);
         snapshot_mode = true;
         snapshot_up_to_version = version;
+        snapshot_size = counter;
         ++current_version;
 
         snapshot = rocksdb_ptr->GetSnapshot();
@@ -347,7 +402,10 @@ public:
 
     std::pair<size_t, size_t> snapshotSizeWithVersion() const
     {
-        return std::make_pair(counter, current_version);
+        if (!snapshot_mode)
+            return std::make_pair(counter, current_version);
+        else
+            return std::make_pair(snapshot_size, current_version);
     }
 
     const_iterator begin() const
@@ -356,7 +414,9 @@ public:
         read_options.total_order_seek = true;
         if (snapshot_mode)
             read_options.snapshot = snapshot;
-        return const_iterator(rocksdb_ptr->NewIterator(read_options));
+        auto * iter = rocksdb_ptr->NewIterator(read_options);
+        iter->SeekToFirst();
+        return const_iterator(iter);
     }
 
     const_iterator end() const
@@ -391,6 +451,7 @@ private:
     bool snapshot_mode{false};
     size_t current_version{0};
     size_t snapshot_up_to_version{0};
+    size_t snapshot_size{0};
     size_t counter{0};
 
 };

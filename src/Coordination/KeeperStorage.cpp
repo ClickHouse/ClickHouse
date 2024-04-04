@@ -261,7 +261,10 @@ void KeeperRocksNode::decodeFromString(const String &buffer_str)
     readPODBinary(node_info, buffer);
     readVarUInt(data_size, buffer);
     if (data_size)
+    {
+        data = std::unique_ptr<char[]>(new char[data_size]);
         buffer.readStrict(data.get(), data_size);
+    }
 }
 
 KeeperMemNode & KeeperMemNode::operator=(const KeeperMemNode & other)
@@ -445,6 +448,8 @@ KeeperStorage<Container>::KeeperStorage(
     int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, const bool initialize_system_nodes)
     : session_expiry_queue(tick_time_ms), keeper_context(keeper_context_), superdigest(superdigest_)
 {
+    if constexpr (use_rocksdb)
+        container.initialize(keeper_context);
     Node root_node;
     container.insert("/", root_node);
     if constexpr (!use_rocksdb)
@@ -1757,14 +1762,14 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
                     if (list_request_type == ALL)
                         return true;
 
-                    const auto is_ephemeral = child.value.isEphemeral();
+                    const auto is_ephemeral = child.second.isEphemeral();
                     return (is_ephemeral && list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
                 };
 
                 for (const auto & child : children)
                 {
                     if (add_child(child))
-                        response.names.push_back(child.key.toString());
+                        response.names.push_back(child.first);
                 }
             }
             else

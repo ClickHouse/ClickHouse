@@ -258,7 +258,6 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
         /// slightly bigger than required.
         if (node.mzxid > snapshot.zxid)
             break;
-
         writeBinary(path, out);
         writeNode(node, snapshot.version, out);
 

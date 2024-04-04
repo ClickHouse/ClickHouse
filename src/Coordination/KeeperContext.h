@@ -67,7 +67,10 @@ public:
 
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
 
+    void setRocksDBDisk(DiskPtr disk);
     DiskPtr getTemporaryRocksDBDisk() const;
+
+    void setRocksDBOptions(std::shared_ptr<rocksdb::Options> rocksdb_options_);
     std::shared_ptr<rocksdb::Options> getRocksDBOptions() const { return rocksdb_options; }
 
     UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }

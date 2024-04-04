@@ -9,6 +9,7 @@
 #include <IO/S3/Credentials.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/JSONConfiguration.h>
 #include <Coordination/KeeperConstants.h>
 #include <Server/CloudPlacementInfo.h>
 #include <Coordination/KeeperFeatureFlags.h>
@@ -367,6 +368,12 @@ void KeeperContext::dumpConfiguration(WriteBufferFromOwnString & buf) const
     }
 }
 
+
+void KeeperContext::setRocksDBDisk(DiskPtr disk)
+{
+    rocksdb_storage = std::move(disk);
+}
+
 DiskPtr KeeperContext::getTemporaryRocksDBDisk() const
 {
     DiskPtr rocksdb_disk = getDisk(rocksdb_storage);
@@ -378,6 +385,18 @@ DiskPtr KeeperContext::getTemporaryRocksDBDisk() const
     String path_to_create = "rocks_" + std::string(uuid_str.data(), uuid_str.size());
     rocksdb_disk->createDirectory(path_to_create);
     return std::make_shared<DiskLocal>("LocalTmpRocksDBDisk", fullPath(rocksdb_disk, path_to_create));
+}
+
+void KeeperContext::setRocksDBOptions(std::shared_ptr<rocksdb::Options> rocksdb_options_)
+{
+    if (rocksdb_options_ != nullptr)
+        rocksdb_options = rocksdb_options_;
+    else
+    {
+        #if USE_ROCKSDB
+        rocksdb_options = std::make_shared<rocksdb::Options>(getRocksDBOptionsFromConfig(Poco::Util::JSONConfiguration()));
+        #endif
+    }
 }
 
 KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const
