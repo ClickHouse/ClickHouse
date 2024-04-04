@@ -35,6 +35,7 @@
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
+#include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
@@ -283,6 +284,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
 
     manager.addPass(std::make_unique<FuseFunctionsPass>());
+
+    manager.addPass(std::make_unique<IfTransformStringsToEnumPass>());
 
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 

@@ -20,7 +20,6 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnNullable.h>
@@ -242,127 +241,6 @@ const char * toStringLowercase(IdentifierLookupContext identifier_lookup_context
         case IdentifierLookupContext::FUNCTION: return "function";
         case IdentifierLookupContext::TABLE_EXPRESSION: return "table expression";
     }
-}
-
-/// We place strings in ascending order here under the assumption it could speed up String to Enum conversion.
-template <typename EnumType>
-auto getDataEnumType(std::set<std::string> string_values)
-{
-    using EnumValues = typename EnumType::Values;
-    EnumValues enum_values;
-    enum_values.reserve(string_values.size());
-
-    size_t number = 1;
-    for (const auto & value : string_values)
-        enum_values.emplace_back(std::move(value), number++);
-
-    return std::make_shared<EnumType>(std::move(enum_values));
-}
-
-DataTypePtr getEnumType(std::set<std::string> string_values)
-{
-    if (string_values.size() >= 255)
-        return getDataEnumType<DataTypeEnum16>(std::move(string_values));
-    else
-        return getDataEnumType<DataTypeEnum8>(std::move(string_values));
-}
-
-/**
- * if(arg1, arg2, arg3) will be transformed to if(arg1, _CAST(arg2, Enum...), _CAST(arg3, Enum...))
- * where Enum is generated based on the possible values stored in string_values
- * E.g.
- * -------------------------------
- * SELECT if(number > 5, 'a', 'b')
- * FROM system.numbers;
- *
- * will be transformed into
- *
- * SELECT if(number > 5, _CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)'), _CAST('b', 'Enum8(\'a\' = 1, \'b\' = 2)'))
- * FROM system.numbers;
- * -------------------------------
- */
-void optimizeIfStringArgsToEnum(
-    FunctionNode & if_node, const ContextPtr & context)
-{
-    auto & arguments = if_node.getArguments().getNodes();
-    if (arguments.size() != 3)
-        return;
-
-    const auto * first_literal = arguments[1]->as<ConstantNode>();
-    const auto * second_literal = arguments[2]->as<ConstantNode>();
-    if (!first_literal || !second_literal)
-       return;
-
-    if (!isString(first_literal->getResultType()) || !isString(second_literal->getResultType()))
-        return;
-
-    std::set<std::string> string_values;
-    string_values.insert(first_literal->getValue().get<std::string>());
-    string_values.insert(second_literal->getValue().get<std::string>());
-
-    auto result_type = getEnumType(std::move(string_values));
-
-    auto & argument_nodes = if_node.getArguments().getNodes();
-
-    chassert(argument_nodes.size() == 3);
-
-    argument_nodes[1] = buildCastFunction(argument_nodes[1], result_type, context);
-    argument_nodes[2] = buildCastFunction(argument_nodes[2], result_type, context);
-}
-
-/**
- * transform(value, array_from, array_to, default_value) will be transformed to transform(value, array_from, _CAST(array_to, Array(Enum...)), _CAST(default_value, Enum...))
- * where Enum is generated based on the possible values stored in string_values
- * -------------------------------
- * SELECT transform(number, [2, 4], ['a', 'b'], 'c') FROM system.numbers;
- *
- * will be transformed into
- *
- * SELECT transform(number, [2, 4], _CAST(['a', 'b'], 'Array(Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3)'), _CAST('c', 'Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3)'))
- * FROM system.numbers;
- * -------------------------------
- */
-void optimizeTransformStringArgsToEnum(
-    FunctionNode & transform_node,
-    const ContextPtr & context)
-{
-    auto & arguments = transform_node.getArguments().getNodes();
-
-    if (arguments.size() != 4)
-        return;
-
-    const auto * literal_to = arguments[2]->as<ConstantNode>();
-    const auto * literal_default = arguments[3]->as<ConstantNode>();
-
-    if (!literal_to || !literal_default)
-        return;
-
-    if (!isArray(literal_to->getResultType()) || !isString(literal_default->getResultType()))
-        return;
-
-    /// collect possible string values
-    std::set<std::string> string_values;
-
-    const auto & array_to_values = literal_to->getValue().get<Array>();
-
-    if (array_to_values.empty())
-        return;
-
-    if (!std::all_of(
-            array_to_values.begin(),
-            array_to_values.end(),
-            [](const auto & field) { return field.getType() == Field::Types::Which::String; }))
-        return;
-
-    for (const auto & value : array_to_values)
-        string_values.insert(value.get<std::string>());
-
-    string_values.insert(literal_default->getValue().get<std::string>());
-
-    auto result_type = getEnumType(std::move(string_values));
-
-    arguments[2] = buildCastFunction(arguments[2], std::make_shared<DataTypeArray>(result_type), context);
-    arguments[3] = buildCastFunction(arguments[3], result_type, context);
 }
 
 /** Structure that represent identifier lookup during query analysis.
@@ -5416,7 +5294,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     bool is_special_function_join_get = false;
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
-    bool is_special_function_transform = false;
 
     if (!lambda_expression_untyped)
     {
@@ -5425,7 +5302,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
-        is_special_function_transform = function_name == "transform";
 
         auto function_name_lowercase = Poco::toLower(function_name);
 
@@ -5578,13 +5454,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 return result_projection_names;
             }
         }
-
-        if (scope.context->getSettingsRef().optimize_if_transform_strings_to_enum)
-            optimizeIfStringArgsToEnum(*function_node_ptr, scope.context);
     }
-
-    if (is_special_function_transform && scope.context->getSettingsRef().optimize_if_transform_strings_to_enum)
-        optimizeTransformStringArgsToEnum(*function_node_ptr, scope.context);
 
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in;
