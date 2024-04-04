@@ -583,7 +583,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             database_name,
             table_name,
             RowPolicyFilterType::SELECT_FILTER);
-        if (row_policy_filter_ptr)
+        if (row_policy_filter_ptr && !row_policy_filter_ptr->empty())
         {
             row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
             row_policy_data_opt->extendNames(real_column_names);
@@ -1675,9 +1675,9 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
     return {false, ast};
 }
 
-bool StorageMerge::supportsTrivialCountOptimization() const
+bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr ctx) const
 {
-    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(); }) == nullptr;
+    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(storage_snapshot, ctx); }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const

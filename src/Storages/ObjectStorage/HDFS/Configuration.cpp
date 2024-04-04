@@ -8,6 +8,9 @@
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/logger_useful.h>
 
 
@@ -64,7 +67,7 @@ void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool wit
     url_str = checkAndGetLiteralArgument<String>(args[0], "url");
 
     const size_t max_args_num = with_structure ? 4 : 3;
-    if (args.size() > max_args_num)
+    if (!args.size() || args.size() > max_args_num)
     {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Expected not more than {} arguments", max_args_num);
@@ -134,6 +137,48 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
     paths = {path};
 
     LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using url: {}, path: {}", url, path);
+}
+
+void StorageHDFSConfiguration::addStructureToArgs(ASTs & args, const String & structure_, ContextPtr context)
+{
+    if (tryGetNamedCollectionWithOverrides(args, context))
+    {
+        /// In case of named collection, just add key-value pair "structure='...'"
+        /// at the end of arguments to override existed structure.
+        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
+        args.push_back(equal_func);
+    }
+    else
+    {
+        size_t count = args.size();
+        if (count == 0 || count > 3)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Expected 1 to 3 arguments in table function, got {}", count);
+
+        auto structure_literal = std::make_shared<ASTLiteral>(structure_);
+
+        /// hdfs(url)
+        if (count == 1)
+        {
+            /// Add format=auto before structure argument.
+            args.push_back(std::make_shared<ASTLiteral>("auto"));
+            args.push_back(structure_literal);
+        }
+        /// hdfs(url, format)
+        else if (count == 2)
+        {
+            args.push_back(structure_literal);
+        }
+        /// hdfs(url, format, compression_method)
+        else if (count == 3)
+        {
+            auto compression_method = args.back();
+            args.pop_back();
+            args.push_back(structure_literal);
+            args.push_back(compression_method);
+        }
+    }
 }
 
 }

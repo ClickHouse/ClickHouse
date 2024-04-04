@@ -231,11 +231,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         ? tryGetNumRowsFromCache(object_info)
         : std::nullopt;
 
-    LOG_TRACE(&Poco::Logger::get("kssenii"), "HAS NUM ROWS FROM CACHE: {}", num_rows_from_cache.has_value());
     if (num_rows_from_cache)
     {
-        LOG_TRACE(&Poco::Logger::get("kssenii"), "NUM ROWS FROM CACHE: {}", num_rows_from_cache.value());
-
         /// We should not return single chunk with all number of rows,
         /// because there is a chance that this chunk will be materialized later
         /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
@@ -379,17 +376,15 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs));
-        if (matcher->ok())
-        {
-            recursive = key_with_globs == "/**";
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
-        }
-        else
+        if (!matcher->ok())
         {
             throw Exception(
                 ErrorCodes::CANNOT_COMPILE_REGEXP,
                 "Cannot compile regex from glob ({}): {}", key_with_globs, matcher->error());
         }
+
+        recursive = key_with_globs == "/**";
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
     }
     else
     {
@@ -456,6 +451,7 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImplUnlocked(size_t 
 
         index = 0;
 
+        LOG_TEST(logger, "Filter: {}", filter_dag != nullptr);
         if (filter_dag)
         {
             std::vector<String> paths;
@@ -467,6 +463,7 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextImplUnlocked(size_t 
             }
 
             VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_dag, virtual_columns, getContext());
+            LOG_TEST(logger, "Filtered files: {} -> {}", paths.size(), new_batch.size());
         }
 
         if (read_keys)

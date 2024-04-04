@@ -76,7 +76,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
@@ -109,7 +109,6 @@ protected:
         const ContextPtr & context);
 
     const std::string engine_name;
-    const NamesAndTypesList virtual_columns;
     std::optional<FormatSettings> format_settings;
     const ASTPtr partition_by;
     const bool distributed_processing;

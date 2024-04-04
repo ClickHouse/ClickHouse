@@ -97,7 +97,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     bool nextImpl() override
     {
-        auto log = &Poco::Logger::get("kssenii");
         size_t num_bytes_to_read;
         if (read_until_position)
         {
@@ -151,7 +150,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
 
-            LOG_TEST(log, "KSSENII SIZE: {}", bytes_read);
             return true;
         }
 

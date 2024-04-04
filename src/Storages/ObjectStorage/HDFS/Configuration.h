@@ -29,7 +29,7 @@ public:
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
     StorageObjectStorageConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
 
-    static void addStructureToArgs(ASTs &, const String &, ContextPtr) {}
+    static void addStructureToArgs(ASTs &, const String &, ContextPtr);
 
     std::string getPathWithoutGlob() const override;
 

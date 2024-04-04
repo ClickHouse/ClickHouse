@@ -17,12 +17,13 @@
 
 #include <Access/AccessControl.h>
 
-#include <Common/config_version.h>
-#include <Common/Exception.h>
-#include <Common/formatReadable.h>
-#include <Common/TerminalSize.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/TerminalSize.h>
+#include <Common/config_version.h>
+#include <Common/formatReadable.h>
 
 #include <Columns/ColumnString.h>
 #include <Poco/Util/Application.h>

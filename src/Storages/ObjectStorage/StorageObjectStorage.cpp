@@ -162,7 +162,7 @@ void StorageObjectStorage<StorageSettings>::read(
         object_storage,
         configuration,
         getName(),
-        virtual_columns,
+        getVirtualsList(),
         query_info,
         storage_snapshot,
         format_settings,
