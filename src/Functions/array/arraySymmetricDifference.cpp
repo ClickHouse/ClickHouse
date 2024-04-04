@@ -14,13 +14,13 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArraySymmetricDifference>(); }
 
-    FunctionArraySymmetricDifference() : FunctionArrayLogical(false, name) {}
+    FunctionArraySymmetricDifference() : FunctionArrayLogical(false, name) { }
 };
 
 
 REGISTER_FUNCTION(ArraySymmetricDifference)
 {
-        factory.registerFunction<FunctionArraySymmetricDifference>();
+    factory.registerFunction<FunctionArraySymmetricDifference>();
 }
 
 }

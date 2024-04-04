@@ -22,7 +22,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-DataTypePtr FunctionArrayLogical::getReturnTypeImpl(const DataTypes &arguments) const
+DataTypePtr FunctionArrayLogical::getReturnTypeImpl(const DataTypes & arguments) const
 {
     DataTypes nested_types;
     nested_types.reserve(arguments.size());
@@ -31,20 +31,20 @@ DataTypePtr FunctionArrayLogical::getReturnTypeImpl(const DataTypes &arguments) 
     bool has_nullable = false; // Add a flag to check if any input type is nullable
 
     if (arguments.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.",
-                        getName());
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
 
-    for (auto i: collections::range(0, arguments.size())) {
-        const auto *array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
+    for (auto i : collections::range(0, arguments.size()))
+    {
+        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
         if (!array_type)
             throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} for function {} must be an array but it has type {}.",
-                    i,
-                    getName(),
-                    arguments[i]->getName());
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument {} for function {} must be an array but it has type {}.",
+                i,
+                getName(),
+                arguments[i]->getName());
 
-        const auto &nested_type = array_type->getNestedType();
+        const auto & nested_type = array_type->getNestedType();
 
         if (typeid_cast<const DataTypeNothing *>(nested_type.get()))
             has_nothing = true;
@@ -71,41 +71,46 @@ DataTypePtr FunctionArrayLogical::getReturnTypeImpl(const DataTypes &arguments) 
 }
 
 
-ColumnPtr FunctionArrayLogical::castRemoveNullable(const ColumnPtr &column, const DataTypePtr &data_type) const
+ColumnPtr FunctionArrayLogical::castRemoveNullable(const ColumnPtr & column, const DataTypePtr & data_type) const
 {
-    if (const auto *column_nullable = checkAndGetColumn<ColumnNullable>(column.get())) {
-        const auto *nullable_type = checkAndGetDataType<DataTypeNullable>(data_type.get());
-        const auto &nested = column_nullable->getNestedColumnPtr();
-        if (nullable_type) {
+    if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+    {
+        const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(data_type.get());
+        const auto & nested = column_nullable->getNestedColumnPtr();
+        if (nullable_type)
+        {
             auto casted_column = castRemoveNullable(nested, nullable_type->getNestedType());
             return ColumnNullable::create(casted_column, column_nullable->getNullMapColumnPtr());
         }
         return castRemoveNullable(nested, data_type);
-    } else if (const auto *column_array = checkAndGetColumn<ColumnArray>(column.get())) {
-        const auto *array_type = checkAndGetDataType<DataTypeArray>(data_type.get());
+    }
+    else if (const auto * column_array = checkAndGetColumn<ColumnArray>(column.get()))
+    {
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(data_type.get());
         if (!array_type)
             throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Cannot cast array column to column with type {} in function {}",
-                    data_type->getName(),
-                    getName());
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot cast array column to column with type {} in function {}",
+                data_type->getName(),
+                getName());
 
         auto casted_column = castRemoveNullable(column_array->getDataPtr(), array_type->getNestedType());
         return ColumnArray::create(casted_column, column_array->getOffsetsPtr());
-    } else if (const auto *column_tuple = checkAndGetColumn<ColumnTuple>(column.get())) {
-        const auto *tuple_type = checkAndGetDataType<DataTypeTuple>(data_type.get());
+    }
+    else if (const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
+    {
+        const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(data_type.get());
 
         if (!tuple_type)
             throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Cannot cast tuple column to type {} in function {}",
-                    data_type->getName(), getName());
+                ErrorCodes::LOGICAL_ERROR, "Cannot cast tuple column to type {} in function {}", data_type->getName(), getName());
 
         auto columns_number = column_tuple->tupleSize();
         Columns columns(columns_number);
 
-        const auto &types = tuple_type->getElements();
+        const auto & types = tuple_type->getElements();
 
-        for (auto i: collections::range(0, columns_number))
+        for (auto i : collections::range(0, columns_number))
             columns[i] = castRemoveNullable(column_tuple->getColumnPtr(i), types[i]);
         return ColumnTuple::create(columns);
     }
@@ -114,57 +119,69 @@ ColumnPtr FunctionArrayLogical::castRemoveNullable(const ColumnPtr &column, cons
 }
 
 FunctionArrayLogical::CastArgumentsResult FunctionArrayLogical::castColumns(
-        const ColumnsWithTypeAndName &arguments, const DataTypePtr &return_type,
-        const DataTypePtr &return_type_with_nulls)
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls)
 {
     size_t num_args = arguments.size();
     ColumnsWithTypeAndName initial_columns(num_args);
     ColumnsWithTypeAndName casted_columns(num_args);
 
-    const auto *type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
-    const auto &type_nested = type_array->getNestedType();
+    const auto * type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
+    const auto & type_nested = type_array->getNestedType();
     auto type_not_nullable_nested = removeNullable(type_nested);
 
     const bool is_numeric_or_string = isNumber(type_not_nullable_nested) || isDate(type_not_nullable_nested)
-                                      || isDateTime(type_not_nullable_nested) || isDateTime64(type_not_nullable_nested)
-                                      || isStringOrFixedString(type_not_nullable_nested);
+        || isDateTime(type_not_nullable_nested) || isDateTime64(type_not_nullable_nested)
+        || isStringOrFixedString(type_not_nullable_nested);
 
     DataTypePtr nullable_return_type;
 
-    if (is_numeric_or_string) {
+    if (is_numeric_or_string)
+    {
         auto type_nullable_nested = makeNullable(type_nested);
         nullable_return_type = std::make_shared<DataTypeArray>(type_nullable_nested);
     }
 
     const bool nested_is_nullable = type_nested->isNullable();
 
-    for (size_t i = 0; i < num_args; ++i) {
-        const ColumnWithTypeAndName &arg = arguments[i];
+    for (size_t i = 0; i < num_args; ++i)
+    {
+        const ColumnWithTypeAndName & arg = arguments[i];
         initial_columns[i] = arg;
         casted_columns[i] = arg;
-        auto &column = casted_columns[i];
+        auto & column = casted_columns[i];
 
-        if (is_numeric_or_string) {
+        if (is_numeric_or_string)
+        {
             /// Cast to Array(T) or Array(Nullable(T)).
-            if (nested_is_nullable) {
-                if (!arg.type->equals(*return_type)) {
-                    column.column = castColumn(arg, return_type);
-                    column.type = return_type;
-                }
-            } else if (!arg.type->equals(*return_type) && !arg.type->equals(*nullable_return_type)) {
-                /// If result has array type Array(T) still cast Array(Nullable(U)) to Array(Nullable(T))
-                ///  because cannot cast Nullable(T) to T.
-                if (static_cast<const DataTypeArray &>(*arg.type).getNestedType()->isNullable()) {
-                    column.column = castColumn(arg, nullable_return_type);
-                    column.type = nullable_return_type;
-                } else {
+            if (nested_is_nullable)
+            {
+                if (!arg.type->equals(*return_type))
+                {
                     column.column = castColumn(arg, return_type);
                     column.type = return_type;
                 }
             }
-        } else {
+            else if (!arg.type->equals(*return_type) && !arg.type->equals(*nullable_return_type))
+            {
+                /// If result has array type Array(T) still cast Array(Nullable(U)) to Array(Nullable(T))
+                ///  because cannot cast Nullable(T) to T.
+                if (static_cast<const DataTypeArray &>(*arg.type).getNestedType()->isNullable())
+                {
+                    column.column = castColumn(arg, nullable_return_type);
+                    column.type = nullable_return_type;
+                }
+                else
+                {
+                    column.column = castColumn(arg, return_type);
+                    column.type = return_type;
+                }
+            }
+        }
+        else
+        {
             /// return_type_with_nulls is the most common subtype with possible nullable parts.
-            if (!arg.type->equals(*return_type_with_nulls)) {
+            if (!arg.type->equals(*return_type_with_nulls))
+            {
                 // todo
                 column.column = castColumn(arg, return_type_with_nulls);
                 column.type = return_type_with_nulls;
@@ -183,8 +200,7 @@ static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTy
 }
 
 FunctionArrayLogical::UnpackedArrays
-FunctionArrayLogical::prepareArrays(const ColumnsWithTypeAndName &columns,
-                                    ColumnsWithTypeAndName &initial_columns) const
+FunctionArrayLogical::prepareArrays(const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const
 {
     UnpackedArrays arrays;
 
@@ -193,18 +209,21 @@ FunctionArrayLogical::prepareArrays(const ColumnsWithTypeAndName &columns,
 
     bool all_const = true;
 
-    for (size_t i = 0; i < columns_number; ++i) {
-        auto &arg = arrays.args[i];
-        const auto *argument_column = columns[i].column.get();
-        const auto *initial_column = initial_columns[i].column.get();
+    for (size_t i = 0; i < columns_number; ++i)
+    {
+        auto & arg = arrays.args[i];
+        const auto * argument_column = columns[i].column.get();
+        const auto * initial_column = initial_columns[i].column.get();
 
-        if (const auto *argument_column_const = typeid_cast<const ColumnConst *>(argument_column)) {
+        if (const auto * argument_column_const = typeid_cast<const ColumnConst *>(argument_column))
+        {
             arg.is_const = true;
             argument_column = argument_column_const->getDataColumnPtr().get();
             initial_column = typeid_cast<const ColumnConst &>(*initial_column).getDataColumnPtr().get();
         }
 
-        if (const auto *argument_column_array = typeid_cast<const ColumnArray *>(argument_column)) {
+        if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(argument_column))
+        {
             if (!arg.is_const)
                 all_const = false;
 
@@ -213,7 +232,8 @@ FunctionArrayLogical::prepareArrays(const ColumnsWithTypeAndName &columns,
 
             initial_column = &typeid_cast<const ColumnArray &>(*initial_column).getData();
 
-            if (const auto *column_nullable = typeid_cast<const ColumnNullable *>(arg.nested_column)) {
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(arg.nested_column))
+            {
                 arg.null_map = &column_nullable->getNullMapData();
                 arg.nested_column = &column_nullable->getNestedColumn();
 
@@ -222,31 +242,36 @@ FunctionArrayLogical::prepareArrays(const ColumnsWithTypeAndName &columns,
             }
 
             /// In case the column was casted, we need to create an overflow mask for integer types.
-            if (arg.nested_column != initial_column) {
-                const auto &nested_init_type
-                        = typeid_cast<const DataTypeArray &>(*removeNullable(initial_columns[i].type)).getNestedType();
-                const auto &nested_cast_type = typeid_cast<const DataTypeArray &>(
-                        *removeNullable(columns[i].type)).getNestedType();
+            if (arg.nested_column != initial_column)
+            {
+                const auto & nested_init_type
+                    = typeid_cast<const DataTypeArray &>(*removeNullable(initial_columns[i].type)).getNestedType();
+                const auto & nested_cast_type = typeid_cast<const DataTypeArray &>(*removeNullable(columns[i].type)).getNestedType();
 
                 if (isInteger(nested_init_type) || isDate(nested_init_type) || isDateTime(nested_init_type)
-                    || isDateTime64(nested_init_type)) {
+                    || isDateTime64(nested_init_type))
+                {
                     /// Compare original and casted columns. It seem to be the easiest way.
                     auto overflow_mask = callFunctionNotEquals(
-                            {arg.nested_column->getPtr(), nested_init_type, ""},
-                            {initial_column->getPtr(), nested_cast_type, ""}, context);
+                        {arg.nested_column->getPtr(), nested_init_type, ""}, {initial_column->getPtr(), nested_cast_type, ""}, context);
 
                     arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*overflow_mask).getData();
                     arrays.column_holders.emplace_back(std::move(overflow_mask));
                 }
             }
-        } else
+        }
+        else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments for function {} must be arrays.", getName());
     }
 
-    if (all_const) {
+    if (all_const)
+    {
         arrays.base_rows = arrays.args.front().offsets->size();
-    } else {
-        for (size_t i = 0; i < columns_number; ++i) {
+    }
+    else
+    {
+        for (size_t i = 0; i < columns_number; ++i)
+        {
             if (arrays.args[i].is_const)
                 continue;
 
@@ -255,8 +280,7 @@ FunctionArrayLogical::prepareArrays(const ColumnsWithTypeAndName &columns,
                 arrays.base_rows = rows;
             else if (arrays.base_rows != rows)
                 throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Non-const array columns in function {} should have the same number of rows", getName());
+                    ErrorCodes::LOGICAL_ERROR, "Non-const array columns in function {} should have the same number of rows", getName());
         }
     }
 
@@ -264,15 +288,14 @@ FunctionArrayLogical::prepareArrays(const ColumnsWithTypeAndName &columns,
 }
 
 ColumnPtr
-FunctionArrayLogical::executeImpl(const ColumnsWithTypeAndName &arguments, const DataTypePtr &result_type,
-                                  size_t input_rows_count) const
+FunctionArrayLogical::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    const auto *return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
+    const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
 
     if (!return_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be array.", getName());
 
-    const auto &nested_return_type = return_type_array->getNestedType();
+    const auto & nested_return_type = return_type_array->getNestedType();
 
     if (typeid_cast<const DataTypeNothing *>(nested_return_type.get()))
         return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -290,63 +313,55 @@ FunctionArrayLogical::executeImpl(const ColumnsWithTypeAndName &arguments, const
 
     ColumnPtr result_column;
     auto not_nullable_nested_return_type = removeNullable(nested_return_type);
-    TypeListUtils::forEach(TypeListIntAndFloat{},
-                           NumberExecutor(arrays, not_nullable_nested_return_type, intersect, result_column));
-    TypeListUtils::forEach(TypeListDecimal{},
-                           DecimalExecutor(arrays, not_nullable_nested_return_type, intersect, result_column));
+    TypeListUtils::forEach(TypeListIntAndFloat{}, NumberExecutor(arrays, not_nullable_nested_return_type, intersect, result_column));
+    TypeListUtils::forEach(TypeListDecimal{}, DecimalExecutor(arrays, not_nullable_nested_return_type, intersect, result_column));
 
 
-    if (!result_column) {
+    if (!result_column)
+    {
         auto column = not_nullable_nested_return_type->createColumn();
         WhichDataType which(not_nullable_nested_return_type);
 
         if (which.isDate())
             result_column
-                    = execute < DataTypeDate::FieldType, ColumnVector < DataTypeDate::FieldType >, true >
-                                                                                                   (arrays, std::move(
-                                                                                                           column), intersect);
+                = execute<DataTypeDate::FieldType, ColumnVector<DataTypeDate::FieldType>, true>(arrays, std::move(column), intersect);
         else if (which.isDate32())
             result_column
-                    = execute < DataTypeDate32::FieldType, ColumnVector < DataTypeDate32::FieldType >, true >
-                                                                                                       (arrays, std::move(
-                                                                                                               column), intersect);
+                = execute<DataTypeDate32::FieldType, ColumnVector<DataTypeDate32::FieldType>, true>(arrays, std::move(column), intersect);
         else if (which.isDateTime())
             result_column
-                    = execute < DataTypeDate32::FieldType, ColumnVector < DataTypeDateTime::FieldType >, true >
-                                                                                                         (arrays, std::move(
-                                                                                                                 column), intersect);
+                = execute<DataTypeDate32::FieldType, ColumnVector<DataTypeDateTime::FieldType>, true>(arrays, std::move(column), intersect);
         else if (which.isString())
             result_column = execute<StringRef, ColumnString, false>(arrays, std::move(column), intersect);
         else if (which.isFixedString())
             result_column = execute<StringRef, ColumnFixedString, false>(arrays, std::move(column), intersect);
-        else {
+        else
+        {
             column = assert_cast<const DataTypeArray &>(*return_type_with_nulls).getNestedType()->createColumn();
-            result_column = castRemoveNullable(execute<StringRef, IColumn, false>(arrays, std::move(column), intersect),
-                                               result_type);
+            result_column = castRemoveNullable(execute<StringRef, IColumn, false>(arrays, std::move(column), intersect), result_type);
         }
     }
 
     return result_column;
 }
 
-template<class T>
-void FunctionArrayLogical::NumberExecutor::operator()(TypeList <T>)
+template <class T>
+void FunctionArrayLogical::NumberExecutor::operator()(TypeList<T>)
 {
-    if (!result && typeid_cast<const DataTypeNumber <T> *>(data_type.get()))
-        result = execute < T, ColumnVector < T >, true > (arrays, ColumnVector<T>::create(), intersect);
+    if (!result && typeid_cast<const DataTypeNumber<T> *>(data_type.get()))
+        result = execute<T, ColumnVector<T>, true>(arrays, ColumnVector<T>::create(), intersect);
 }
 
-template<class T>
-void FunctionArrayLogical::DecimalExecutor::operator()(TypeList <T>)
+template <class T>
+void FunctionArrayLogical::DecimalExecutor::operator()(TypeList<T>)
 {
     if (!result)
-        if (auto *decimal = typeid_cast<const DataTypeDecimal <T> *>(data_type.get()))
-            result = execute < T, ColumnDecimal < T >, true > (arrays, ColumnDecimal<T>::create(0,
-                                                                                                decimal->getScale()), intersect);
+        if (auto * decimal = typeid_cast<const DataTypeDecimal<T> *>(data_type.get()))
+            result = execute<T, ColumnDecimal<T>, true>(arrays, ColumnDecimal<T>::create(0, decimal->getScale()), intersect);
 }
 
-template<typename ValueType, typename ColumnType, bool is_numeric_column>
-ColumnPtr FunctionArrayLogical::execute(const UnpackedArrays &arrays, MutableColumnPtr result_data_ptr, bool intersect)
+template <typename ValueType, typename ColumnType, bool is_numeric_column>
+ColumnPtr FunctionArrayLogical::execute(const UnpackedArrays & arrays, MutableColumnPtr result_data_ptr, bool intersect)
 {
     auto args = arrays.args.size();
     auto rows = arrays.base_rows;
@@ -355,11 +370,12 @@ ColumnPtr FunctionArrayLogical::execute(const UnpackedArrays &arrays, MutableCol
 
     std::vector<const ColumnType *> columns;
     columns.reserve(args);
-    for (const auto &arg: arrays.args) {
-        if constexpr(std::is_same_v < ColumnType, IColumn > )
-        columns.push_back(arg.nested_column);
+    for (const auto & arg : arrays.args)
+    {
+        if constexpr (std::is_same_v<ColumnType, IColumn>)
+            columns.push_back(arg.nested_column);
         else
-        columns.push_back(checkAndGetColumn<ColumnType>(arg.nested_column));
+            columns.push_back(checkAndGetColumn<ColumnType>(arg.nested_column));
 
         if (!columns.back())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected array type");
@@ -368,29 +384,31 @@ ColumnPtr FunctionArrayLogical::execute(const UnpackedArrays &arrays, MutableCol
             ++nullable_amount;
     }
 
-    auto &result_data = static_cast<ColumnType &>(*result_data_ptr);
+    auto & result_data = static_cast<ColumnType &>(*result_data_ptr);
     auto result_offsets_ptr = ColumnArray::ColumnOffsets::create(rows);
-    auto &result_offsets = assert_cast<ColumnArray::ColumnOffsets &>(*result_offsets_ptr);
+    auto & result_offsets = assert_cast<ColumnArray::ColumnOffsets &>(*result_offsets_ptr);
     auto null_map_column = ColumnUInt8::create();
-    NullMap &null_map = assert_cast<ColumnUInt8 &>(*null_map_column).getData();
+    NullMap & null_map = assert_cast<ColumnUInt8 &>(*null_map_column).getData();
 
-    using TypeMap = ClearableHashMapWithStackMemory <ValueType, size_t, DefaultHash<ValueType>, INITIAL_SIZE_DEGREE>;
-    using TypeSet = ClearableHashSetWithStackMemory <ValueType, DefaultHash<ValueType>, INITIAL_SIZE_DEGREE>;
+    using TypeMap = ClearableHashMapWithStackMemory<ValueType, size_t, DefaultHash<ValueType>, INITIAL_SIZE_DEGREE>;
+    using TypeSet = ClearableHashSetWithStackMemory<ValueType, DefaultHash<ValueType>, INITIAL_SIZE_DEGREE>;
 
     Arena arena;
     TypeMap map;
     TypeSet set;
-    std::vector <size_t> prev_off(args, 0);
+    std::vector<size_t> prev_off(args, 0);
     size_t result_offset = 0;
     size_t needed_amount = intersect ? args : 1;
 
-    for (size_t row = 0; row < rows; ++row) {
+    for (size_t row = 0; row < rows; ++row)
+    {
         map.clear();
         bool current_has_null;
         size_t null_amount = 0;
-        for (size_t arg_num = 0; arg_num < args; ++arg_num) {
+        for (size_t arg_num = 0; arg_num < args; ++arg_num)
+        {
             set.clear();
-            const auto &arg = arrays.args[arg_num];
+            const auto & arg = arrays.args[arg_num];
             current_has_null = false;
 
             size_t off;
@@ -400,35 +418,38 @@ ColumnPtr FunctionArrayLogical::execute(const UnpackedArrays &arrays, MutableCol
             else
                 off = (*arg.offsets)[row];
 
-            for (auto i: collections::range(prev_off[arg_num], off)) {
-                if (arg.null_map && (*arg.null_map)[i]) {
+            for (auto i : collections::range(prev_off[arg_num], off))
+            {
+                if (arg.null_map && (*arg.null_map)[i])
+                {
                     if (!current_has_null)
                         ++null_amount;
                     current_has_null = true;
                 }
 
-                if (!arg.overflow_mask || (*arg.overflow_mask)[i] == 0) {
-                    typename TypeMap::mapped_type *value = nullptr;
+                if (!arg.overflow_mask || (*arg.overflow_mask)[i] == 0)
+                {
+                    typename TypeMap::mapped_type * value = nullptr;
                     typename TypeMap::key_type elem;
 
 
-                    if constexpr(is_numeric_column)
+                    if constexpr (is_numeric_column)
                     {
                         elem = columns[arg_num]->getElement(i);
                     }
-                    else if constexpr(std::is_same_v < ColumnType, ColumnString > || std::is_same_v < ColumnType,
-                                      ColumnFixedString > )
+                    else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                     {
                         elem = columns[arg_num]->getDataAt(i);
                     }
                     else
                     {
-                        const char *data = nullptr;
+                        const char * data = nullptr;
                         elem = columns[arg_num]->serializeValueIntoArena(i, arena, data);
                     }
 
                     value = &map[elem];
-                    if (!set.find(elem)) {
+                    if (!set.find(elem))
+                    {
                         ++(*value);
                         set.insert(elem);
                     }
@@ -443,8 +464,9 @@ ColumnPtr FunctionArrayLogical::execute(const UnpackedArrays &arrays, MutableCol
         set.clear();
         prev_off.assign(args, 0);
         bool null_added = false;
-        for (size_t arg_num = 0; arg_num < args; ++arg_num) {
-            const auto &arg = arrays.args[arg_num];
+        for (size_t arg_num = 0; arg_num < args; ++arg_num)
+        {
+            const auto & arg = arrays.args[arg_num];
 
             size_t off;
             if (arg.is_const)
@@ -453,30 +475,36 @@ ColumnPtr FunctionArrayLogical::execute(const UnpackedArrays &arrays, MutableCol
                 off = (*arg.offsets)[row];
             typename TypeMap::key_type elem;
 
-            for (auto i: collections::range(prev_off[arg_num], off)) {
-                if (arg.null_map && (*arg.null_map)[i]) {
-                    if (!null_added && null_amount == needed_amount) {
+            for (auto i : collections::range(prev_off[arg_num], off))
+            {
+                if (arg.null_map && (*arg.null_map)[i])
+                {
+                    if (!null_added && null_amount == needed_amount)
+                    {
                         ++result_offset;
                         result_data.insertDefault();
                         null_map.push_back(1);
                         null_added = true;
-                    } else
+                    }
+                    else
                         continue;
-                } else if constexpr(is_numeric_column)
+                }
+                else if constexpr (is_numeric_column)
                 {
                     elem = columns[arg_num]->getElement(i);
-                    if (map[elem] == needed_amount && !set.find(elem)) {
+                    if (map[elem] == needed_amount && !set.find(elem))
+                    {
                         result_data.insertValue(elem);
                         ++result_offset;
                         set.insert(elem);
                         null_map.push_back(0);
                     }
                 }
-                else if constexpr(std::is_same_v < ColumnType, ColumnString > || std::is_same_v < ColumnType,
-                                  ColumnFixedString > )
+                else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                 {
                     elem = columns[arg_num]->getDataAt(i);
-                    if (map[elem] == needed_amount && !set.find(elem)) {
+                    if (map[elem] == needed_amount && !set.find(elem))
+                    {
                         result_data.insertData(elem.data, elem.size);
                         ++result_offset;
                         set.insert(elem);
@@ -485,9 +513,10 @@ ColumnPtr FunctionArrayLogical::execute(const UnpackedArrays &arrays, MutableCol
                 }
                 else
                 {
-                    const char *data = nullptr;
+                    const char * data = nullptr;
                     elem = columns[arg_num]->serializeValueIntoArena(i, arena, data);
-                    if (map[elem] == needed_amount && !set.find(elem)) {
+                    if (map[elem] == needed_amount && !set.find(elem))
+                    {
                         std::ignore = result_data.deserializeAndInsertFromArena(elem.data);
                         set.insert(elem);
                         ++result_offset;
