@@ -11,14 +11,16 @@ class FunctionArrayIntersect : public FunctionArrayLogical
 {
 public:
     static constexpr auto name = "arrayIntersect";
+
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayIntersect>(); }
-    FunctionArrayIntersect() : FunctionArrayLogical(true, name) { }
+
+    FunctionArrayIntersect() : FunctionArrayLogical(true, name) {}
 };
 
 
 REGISTER_FUNCTION(ArrayIntersect)
 {
-    factory.registerFunction<FunctionArrayIntersect>();
+        factory.registerFunction<FunctionArrayIntersect>();
 }
 
 }
