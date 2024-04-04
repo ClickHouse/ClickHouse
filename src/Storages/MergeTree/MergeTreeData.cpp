@@ -3668,7 +3668,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     }
 }
 
-void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename)
+void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename, bool rename_in_transaction)
 {
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
@@ -3680,9 +3680,15 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
                return !may_be_cleaned_up || temporary_parts.contains(dir_name);
            }());
 
+    if (need_rename && !rename_in_transaction)
+        part->renameTo(part->name, true);
+
     LOG_TEST(log, "preparePartForCommit: inserting {} into data_parts_indexes", part->getNameWithState());
     data_parts_indexes.insert(part);
-    out_transaction.addPart(part, need_rename);
+    if (rename_in_transaction)
+        out_transaction.addPart(part, need_rename);
+    else
+        out_transaction.addPart(part, /* need_rename= */ false);
 }
 
 bool MergeTreeData::addTempPart(
@@ -3731,7 +3737,8 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
     DataPartsLock & lock,
-    DataPartsVector * out_covered_parts)
+    DataPartsVector * out_covered_parts,
+    bool rename_in_transaction)
 {
     LOG_TRACE(log, "Renaming temporary part {} to {} with tid {}.", part->getDataPartStorage().getPartDirectory(), part->name, out_transaction.getTID());
 
@@ -3770,7 +3777,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
-    preparePartForCommit(part, out_transaction, /* need_rename */ true);
+    preparePartForCommit(part, out_transaction, /* need_rename= */ true, rename_in_transaction);
 
     if (out_covered_parts)
     {
@@ -3785,29 +3792,31 @@ bool MergeTreeData::renameTempPartAndReplaceUnlocked(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
     DataPartsLock & lock,
-    DataPartsVector * out_covered_parts)
+    bool rename_in_transaction)
 {
-    return renameTempPartAndReplaceImpl(part, out_transaction, lock, out_covered_parts);
+    return renameTempPartAndReplaceImpl(part, out_transaction, lock, /*out_covered_parts=*/ nullptr, rename_in_transaction);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part,
-    Transaction & out_transaction)
+    Transaction & out_transaction,
+    bool rename_in_transaction)
 {
     auto part_lock = lockParts();
     DataPartsVector covered_parts;
-    renameTempPartAndReplaceImpl(part, out_transaction, part_lock, &covered_parts);
+    renameTempPartAndReplaceImpl(part, out_transaction, part_lock, &covered_parts, rename_in_transaction);
     return covered_parts;
 }
 
 bool MergeTreeData::renameTempPartAndAdd(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
-    DataPartsLock & lock)
+    DataPartsLock & lock,
+    bool rename_in_transaction)
 {
     DataPartsVector covered_parts;
 
-    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts))
+    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction))
         return false;
 
     if (!covered_parts.empty())
@@ -4016,7 +4025,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         auto [new_data_part, tmp_dir_holder] = createEmptyPart(empty_info, partition, empty_part_name, NO_TRANSACTION_PTR);
 
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
-        renameTempPartAndAdd(new_data_part, transaction, lock);     /// All covered parts must be already removed
+        renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ true);     /// All covered parts must be already removed
 
         transaction.renameParts();
         /// It will add the empty part to the set of Outdated parts without making it Active (exactly what we need)
@@ -6529,6 +6538,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
 
     if (!isEmpty())
     {
+        if (!precommitted_parts_need_rename.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts not renamed");
+
         auto settings = data.getSettings();
         auto parts_lock = acquired_parts_lock ? DataPartsLock() : data.lockParts();
         auto * owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;

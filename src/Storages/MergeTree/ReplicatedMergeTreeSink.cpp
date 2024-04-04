@@ -888,7 +888,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         try
         {
             auto lock = storage.lockParts();
-            storage.renameTempPartAndAdd(part, transaction, lock);
+            storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
         }
         catch (const Exception & e)
         {
