@@ -172,6 +172,11 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
     <debug>cgrp</debug>
     <statistics_interval_ms>3000</statistics_interval_ms>
 
+    <kafka_topic>
+        <name>logs</name>
+        <statistics_interval_ms>4000</statistics_interval_ms>
+    </kafka_topic>
+
     <!-- Settings for consumer -->
     <consumer>
         <auto_offset_reset>smallest</auto_offset_reset>
