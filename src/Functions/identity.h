@@ -53,7 +53,7 @@ public:
     using FunctionIdentityBase::FunctionIdentityBase;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionActionName>(); }
     size_t getNumberOfArguments() const override { return 2; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 };
 
 }
