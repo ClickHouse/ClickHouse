@@ -4,7 +4,9 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ConstantValue.h>
-#include "Common/FieldVisitorToString.h"
+#include <Common/FieldVisitorToString.h>
+#include "Columns/ColumnNullable.h"
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -102,6 +104,12 @@ public:
     void setMaskId(size_t id)
     {
         mask_id = id;
+    }
+
+    void convertToNullable() override
+    {
+        constant_column = makeNullableSafe(constant_column);
+        constant_type = makeNullableSafe(constant_type);
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;

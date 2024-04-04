@@ -776,7 +776,13 @@ struct IdentifierResolveScope
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
-    QueryTreeNodePtrWithHashSet nullable_group_by_keys;
+    QueryTreeNodePtrWithHashWithoutAliasSet nullable_group_by_keys;
+    /// Here we count the number of nullable GROUP BY keys we met resolving expression.
+    /// E.g. for a query `SELECT tuple(tuple(number)) FROM numbers(10) GROUP BY (number, tuple(number)) with cube`
+    /// both `number` and `tuple(number)` would be in nullable_group_by_keys.
+    /// But when we resolve `tuple(tuple(number))` we should figure out that `tuple(number)` is already a key,
+    /// and we should not convert `number` to nullable.
+    size_t found_nullable_group_by_key_in_scope = 0;
 
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
       * (For example, after join_use_nulls or USING column casted to supertype)
@@ -1934,8 +1940,7 @@ std::vector<String> QueryAnalyzer::collectIdentifierTypoHints(const Identifier &
     for (const auto & valid_identifier : valid_identifiers)
         prompting_strings.push_back(valid_identifier.getFullName());
 
-    NamePrompter<1> prompter;
-    return prompter.getHints(unresolved_identifier.getFullName(), prompting_strings);
+    return NamePrompter<1>::getHints(unresolved_identifier.getFullName(), prompting_strings);
 }
 
 /** Wrap expression node in tuple element function calls for nested paths.
@@ -2059,82 +2064,100 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         subquery_context->setSetting("use_structure_from_insertion_table_in_table_functions", false);
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
+        options.only_analyze = only_analyze;
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, subquery_context->getViewSource(), options);
 
-        auto io = interpreter->execute();
-        PullingAsyncPipelineExecutor executor(io.pipeline);
-        io.pipeline.setProgressCallback(context->getProgressCallback());
-        io.pipeline.setProcessListElement(context->getProcessListElement());
-
-        Block block;
-
-        while (block.rows() == 0 && executor.pull(block))
+        if (only_analyze)
         {
-        }
-
-        if (block.rows() == 0)
-        {
-            auto types = interpreter->getSampleBlock().getDataTypes();
-            if (types.size() != 1)
-                types = {std::make_shared<DataTypeTuple>(types)};
-
-            auto & type = types[0];
-            if (!type->isNullable())
+            /// If query is only analyzed, then constants are not correct.
+            scalar_block = interpreter->getSampleBlock();
+            for (auto & column : scalar_block)
             {
-                if (!type->canBeInsideNullable())
-                    throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
-                        "Scalar subquery returned empty result of type {} which cannot be Nullable",
-                        type->getName());
-
-                type = makeNullable(type);
+                if (column.column->empty())
+                {
+                    auto mut_col = column.column->cloneEmpty();
+                    mut_col->insertDefault();
+                    column.column = std::move(mut_col);
+                }
             }
-
-            auto scalar_column = type->createColumn();
-            scalar_column->insert(Null());
-            scalar_block.insert({std::move(scalar_column), type, "null"});
         }
         else
         {
-            if (block.rows() != 1)
-                throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+            auto io = interpreter->execute();
+            PullingAsyncPipelineExecutor executor(io.pipeline);
+            io.pipeline.setProgressCallback(context->getProgressCallback());
+            io.pipeline.setProcessListElement(context->getProcessListElement());
 
-            Block tmp_block;
-            while (tmp_block.rows() == 0 && executor.pull(tmp_block))
+            Block block;
+
+            while (block.rows() == 0 && executor.pull(block))
             {
             }
 
-            if (tmp_block.rows() != 0)
-                throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
-
-            block = materializeBlock(block);
-            size_t columns = block.columns();
-
-            if (columns == 1)
+            if (block.rows() == 0)
             {
-                auto & column = block.getByPosition(0);
-                /// Here we wrap type to nullable if we can.
-                /// It is needed cause if subquery return no rows, it's result will be Null.
-                /// In case of many columns, do not check it cause tuple can't be nullable.
-                if (!column.type->isNullable() && column.type->canBeInsideNullable())
+                auto types = interpreter->getSampleBlock().getDataTypes();
+                if (types.size() != 1)
+                    types = {std::make_shared<DataTypeTuple>(types)};
+
+                auto & type = types[0];
+                if (!type->isNullable())
                 {
-                    column.type = makeNullable(column.type);
-                    column.column = makeNullable(column.column);
+                    if (!type->canBeInsideNullable())
+                        throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
+                            "Scalar subquery returned empty result of type {} which cannot be Nullable",
+                            type->getName());
+
+                    type = makeNullable(type);
                 }
 
-                scalar_block = block;
+                auto scalar_column = type->createColumn();
+                scalar_column->insert(Null());
+                scalar_block.insert({std::move(scalar_column), type, "null"});
             }
             else
             {
-                /** Make unique column names for tuple.
-                *
-                * Example: SELECT (SELECT 2 AS x, x)
-                */
-                makeUniqueColumnNamesInBlock(block);
+                if (block.rows() != 1)
+                    throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
-                scalar_block.insert({
-                    ColumnTuple::create(block.getColumns()),
-                    std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
-                    "tuple"});
+                Block tmp_block;
+                while (tmp_block.rows() == 0 && executor.pull(tmp_block))
+                {
+                }
+
+                if (tmp_block.rows() != 0)
+                    throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+
+                block = materializeBlock(block);
+                size_t columns = block.columns();
+
+                if (columns == 1)
+                {
+                    auto & column = block.getByPosition(0);
+                    /// Here we wrap type to nullable if we can.
+                    /// It is needed cause if subquery return no rows, it's result will be Null.
+                    /// In case of many columns, do not check it cause tuple can't be nullable.
+                    if (!column.type->isNullable() && column.type->canBeInsideNullable())
+                    {
+                        column.type = makeNullable(column.type);
+                        column.column = makeNullable(column.column);
+                    }
+
+                    scalar_block = block;
+                }
+                else
+                {
+                    /** Make unique column names for tuple.
+                    *
+                    * Example: SELECT (SELECT 2 AS x, x)
+                    */
+                    makeUniqueColumnNamesInBlock(block);
+
+                    scalar_block.insert({
+                        ColumnTuple::create(block.getColumns()),
+                        std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
+                        "tuple"});
+                }
             }
         }
 
@@ -2172,7 +2195,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
     auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
 
-    auto scalar_query_hash_string = DB::toString(node_with_hash.hash);
+    auto scalar_query_hash_string = DB::toString(node_with_hash.hash) + (only_analyze ? "_analyze" : "");
 
     if (mutable_context->hasQueryContext())
         mutable_context->getQueryContext()->addScalar(scalar_query_hash_string, scalar_block);
@@ -6122,6 +6145,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
         return resolved_expression_it->second;
     }
 
+    bool is_nullable_group_by_key = scope.nullable_group_by_keys.contains(node) && !scope.expressions_in_resolve_process_stack.hasAggregateFunction();
+    if (is_nullable_group_by_key)
+        ++scope.found_nullable_group_by_key_in_scope;
+
+    SCOPE_EXIT(scope.found_nullable_group_by_key_in_scope -= is_nullable_group_by_key);
+
     String node_alias = node->getAlias();
     ProjectionNames result_projection_names;
 
@@ -6413,7 +6442,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
 
     validateTreeSize(node, scope.context->getSettingsRef().max_expanded_ast_elements, node_to_tree_size);
 
-    if (scope.nullable_group_by_keys.contains(node) && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    if (is_nullable_group_by_key && scope.found_nullable_group_by_key_in_scope == 1)
     {
         node = node->clone();
         node->convertToNullable();
@@ -6640,45 +6669,48 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
 
     if (query_node_typed.isGroupByWithGroupingSets())
     {
+        QueryTreeNodes nullable_group_by_keys;
         for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
         {
             if (settings.enable_positional_arguments)
                 replaceNodesWithPositionalArguments(grouping_sets_keys_list_node, query_node_typed.getProjection().getNodes(), scope);
 
-            resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
             // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
             // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
             auto & group_by_list = grouping_sets_keys_list_node->as<ListNode &>().getNodes();
             expandTuplesInList(group_by_list);
+
+            if (scope.group_by_use_nulls)
+                for (const auto & group_by_elem : group_by_list)
+                    nullable_group_by_keys.push_back(group_by_elem->clone());
+
+            resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         }
 
-        if (scope.group_by_use_nulls)
-        {
-            for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
-            {
-                for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
-                    scope.nullable_group_by_keys.insert(group_by_elem);
-            }
-        }
+        for (auto & nullable_group_by_key : nullable_group_by_keys)
+            scope.nullable_group_by_keys.insert(std::move(nullable_group_by_key));
     }
     else
     {
         if (settings.enable_positional_arguments)
             replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
 
-        resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
         // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
         // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
         auto & group_by_list = query_node_typed.getGroupBy().getNodes();
         expandTuplesInList(group_by_list);
 
+        QueryTreeNodes nullable_group_by_keys;
         if (scope.group_by_use_nulls)
         {
             for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
-                scope.nullable_group_by_keys.insert(group_by_elem);
+                nullable_group_by_keys.push_back(group_by_elem->clone());
         }
+
+        resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        for (auto & nullable_group_by_key : nullable_group_by_keys)
+            scope.nullable_group_by_keys.insert(std::move(nullable_group_by_key));
     }
 }
 

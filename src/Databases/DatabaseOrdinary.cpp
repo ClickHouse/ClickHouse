@@ -171,7 +171,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
             auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
-                FunctionNameNormalizer().visit(ast.get());
+                FunctionNameNormalizer::visit(ast.get());
                 auto * create_query = ast->as<ASTCreateQuery>();
                 /// NOTE No concurrent writes are possible during database loading
                 create_query->setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(database_name));

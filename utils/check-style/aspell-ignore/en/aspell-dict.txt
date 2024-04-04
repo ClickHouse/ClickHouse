@@ -1680,6 +1680,7 @@ hasSubsequenceCaseInsensitiveUTF
 hasSubsequenceUTF
 hasSubstr
 hasToken
+hasThreadFuzzer
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
@@ -1984,6 +1985,9 @@ nestjs
 netloc
 ngram
 ngramDistance
+ngramDistanceCaseInsensitive
+ngramDistanceCaseInsensitiveUTF
+ngramDistanceUTF
 ngramMinHash
 ngramMinHashArg
 ngramMinHashArgCaseInsensitive
@@ -1993,6 +1997,9 @@ ngramMinHashCaseInsensitive
 ngramMinHashCaseInsensitiveUTF
 ngramMinHashUTF
 ngramSearch
+ngramSearchCaseInsensitive
+ngramSearchCaseInsensitiveUTF
+ngramSearchUTF
 ngramSimHash
 ngramSimHashCaseInsensitive
 ngramSimHashCaseInsensitiveUTF
