@@ -789,7 +789,7 @@ Alias: `scalarProduct`
 - `vector1`: First vector. [Array](../data-types/array.md) or [Tuple](../data-types/tuple.md) of numeric values.
 - `vector2`: Second vector. [Array](../data-types/array.md) or [Tuple](../data-types/tuple.md) of numeric values.
 
-Note:::
+:::note
 The sizes of the two vectors must be equal. Arrays and Tuples may also contain mixed element types.
 :::
 
