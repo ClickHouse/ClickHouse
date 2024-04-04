@@ -264,7 +264,16 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::setPeriod(UInt32 period_)
 {
+#if defined(SANITIZER)
+    UNUSED(period);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
+#elif defined(__APPLE__)
+    UNUSED(period);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
+#else
     timer.set(period_);
+#endif
+
 }
 
 template <typename ProfilerImpl>

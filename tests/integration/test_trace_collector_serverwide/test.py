@@ -22,6 +22,9 @@ def start_cluster():
 
 
 def test_global_thread_profiler(start_cluster):
+    if node1.is_built_with_sanitizer():
+        return
+
     node1.query(
         "CREATE TABLE t (key UInt32, value String) Engine = MergeTree() ORDER BY key"
     )
