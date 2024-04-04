@@ -1,19 +1,20 @@
 #include "ExternalLoader.h"
 
 #include <mutex>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/Config/AbstractConfigurationComparison.h>
-#include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/ThreadPool.h>
-#include <Common/randomSeed.h>
-#include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/logger_useful.h>
+#include <unordered_set>
 #include <base/chrono_io.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
-#include <unordered_set>
+#include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/ThreadPool.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB
@@ -995,14 +996,6 @@ private:
             auto [new_object, new_exception] = loadSingleObject(name, *info->config, previous_version_as_base_for_loading);
             if (!new_object && !new_exception)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No object created and no exception raised for {}", type_name);
-
-            if (!info->object && new_object)
-            {
-                /// If we loaded the object for the first time then we should set `invalidate_query_response` to the current value.
-                /// Otherwise we will immediately try to reload the object again despite the fact that it was just loaded.
-                bool is_modified = new_object->isModified();
-                LOG_TRACE(log, "Object '{}' was{} modified", name, (is_modified ? "" : " not"));
-            }
 
             /// Saving the result of the loading.
             {
