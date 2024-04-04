@@ -124,7 +124,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
 #endif
 }
 
-void ThreadStatus::initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period)
+void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
 {
 #if !defined(SANITIZER) && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD) && !defined(__APPLE__)
     try

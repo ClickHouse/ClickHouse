@@ -210,23 +210,13 @@ void Timer::cleanup()
 #endif
 
 template <typename ProfilerImpl>
-QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_)
+QueryProfilerBase<ProfilerImpl>::QueryProfilerBase([[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt32 period, [[maybe_unused]] int pause_signal_)
     : log(getLogger("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
 #if defined(SANITIZER)
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
 #elif defined(__APPLE__)
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
 #else
     /// Sanity check.
@@ -262,13 +252,11 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
 
 
 template <typename ProfilerImpl>
-void QueryProfilerBase<ProfilerImpl>::setPeriod(UInt32 period_)
+void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt32 period_)
 {
 #if defined(SANITIZER)
-    UNUSED(period);
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
 #elif defined(__APPLE__)
-    UNUSED(period);
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work on OSX");
 #else
     timer.set(period_);
