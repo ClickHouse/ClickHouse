@@ -1,0 +1,12 @@
+Row 1:
+──────
+max(time):                                                                     2021-01-01 00:00:59.000
+max(toNullable(time)):                                                         2021-01-01 00:00:59.000
+min(time):                                                                     2021-01-01 00:00:00.000
+min(toNullable(time)):                                                         2021-01-01 00:00:00.000
+argMax(value, time):                                                           -1
+argMax(value, toNullable(time)):                                               -1
+argMin(value, time):                                                           0
+argMin(value, toNullable(time)):                                               0
+argMinIf(value, toNullable(time), notEquals(time, '2021-01-01 00:00:00.000')): 1
+argMaxIf(value, toNullable(time), notEquals(time, '2021-01-01 00:00:59.000')): -2
