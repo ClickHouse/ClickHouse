@@ -79,7 +79,7 @@ The supported formats are:
 | [RowBinary](#rowbinary)                                                                   | ✔    | ✔     |
 | [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔     |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔     |
-| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔    | ✔     |
+| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔    | ✗     |
 | [Native](#native)                                                                         | ✔    | ✔     |
 | [Null](#null)                                                                             | ✗    | ✔     |
 | [XML](#xml)                                                                               | ✗    | ✔     |
