@@ -96,7 +96,7 @@ def test_replicated_database_async():
 
     node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' SYNC")
 
-    [id, status] = node1.query(
+    id, status = node1.query(
         f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} ASYNC"
     ).split("\t")
 
