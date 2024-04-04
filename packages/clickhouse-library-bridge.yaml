@@ -26,10 +26,10 @@ contents:
   dst: /usr/bin/clickhouse-library-bridge
 # docs
 - src: ../AUTHORS
-  dst: /usr/share/doc/clickhouse-common-static/AUTHORS
+  dst: /usr/share/doc/clickhouse-library-bridge/AUTHORS
 - src: ../CHANGELOG.md
-  dst: /usr/share/doc/clickhouse-common-static/CHANGELOG.md
+  dst: /usr/share/doc/clickhouse-library-bridge/CHANGELOG.md
 - src: ../LICENSE
-  dst: /usr/share/doc/clickhouse-common-static/LICENSE
+  dst: /usr/share/doc/clickhouse-library-bridge/LICENSE
 - src: ../README.md
-  dst: /usr/share/doc/clickhouse-common-static/README.md
+  dst: /usr/share/doc/clickhouse-library-bridge/README.md
