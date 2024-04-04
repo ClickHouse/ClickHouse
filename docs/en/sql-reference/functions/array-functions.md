@@ -1451,20 +1451,75 @@ Result:
 └────────────────────────────────┘
 ```
 
-## arrayEnumerateDense(arr)
+## arrayEnumerateDense
 
 Returns an array of the same size as the source array, indicating where each element first appears in the source array.
 
-Example:
+**Syntax**
+
+```sql
+arrayEnumerateDense(arr)
+```
+
+**Example**
+
+Query:
 
 ``` sql
 SELECT arrayEnumerateDense([10, 20, 10, 30])
 ```
 
+Result:
+
 ``` text
 ┌─arrayEnumerateDense([10, 20, 10, 30])─┐
 │ [1,2,1,3]                             │
 └───────────────────────────────────────┘
+```
+## arrayEnumerateDenseRanked
+
+Enumerates distinct values of the passed multidimensional array, looking inside at the specified depths. 
+
+**Syntax**
+
+```sql
+arrayEnumerateDenseRanked(clear_depth, arr, max_array_depth)
+```
+
+**Parameters**
+
+- `clear_depth`: Enumerate elements at the specified level separately. (The enumeration counter is reset for each new element). Positive [Integer](../data-types/int-uint.md) less than or equal to `max_arr_depth`.
+- `arr`: N-dimensional array to enumerate. [Array](../data-types/array.md)
+- `max_array_depth`: The maximum effective depth. Positive [Integer](../data-types/int-uint.md) less than or equal to the depth of `arr`.
+
+**Example**
+
+With `clear_depth`=1 and `max_array_depth`=1, the result is identical to what [arrayEnumerateDense](#arrayenumeratedense) would give.
+
+Query:
+
+``` sql
+SELECT arrayEnumerateDenseRanked(1,[10, 20, 10, 30],1);
+```
+
+Result:
+
+``` text
+[1,2,1,3]
+```
+
+`arrayEnumerateDenseRanked` can be used to enumerate multidimensional arrays.
+
+Query:
+
+``` sql
+SELECT arrayEnumerateDenseRanked(2,[[10, 20, 10, 30],[40, 50, 60, 70]],2);
+```
+
+Result:
+
+``` text
+[[1,2,1,3],[4,5,6,7]]
 ```
 
 ## arrayIntersect(arr)
