@@ -15,12 +15,16 @@ bool IParserBase::parse(Pos & pos, ASTPtr & node, Expected & expected)
         if (res)
         {
             Highlight type = highlight();
-            if (type != Highlight::none)
+            if (pos->begin > begin && type != Highlight::none)
             {
+                Pos prev_token = pos;
+                --prev_token;
+
                 HighlightedRange range;
                 range.begin = begin;
-                range.end = pos->begin;
+                range.end = prev_token->end;
                 range.highlight = type;
+
                 expected.highlight(range);
             }
         }

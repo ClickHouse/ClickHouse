@@ -146,7 +146,9 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         }
     }
 
-    if (!parse_res)
+    Token last_token = token_iterator.max();
+
+    if (!parse_res || last_token.isError() || (!token_iterator->isEnd() && token_iterator->type != TokenType::Semicolon))
     {
         pos += UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(prev), expected.max_parsed_pos - prev);
 
