@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cerrno>
-#include <exception>
 #include <vector>
 #include <memory>
 
@@ -9,11 +8,10 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
-#include <base/int8_to_string.h>
 #include <base/scope_guard.h>
-#include <Common/AtomicLogger.h>
-#include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
+#include <Common/Logger.h>
+#include <Common/AtomicLogger.h>
 #include <Common/StackTrace.h>
 
 #include <fmt/format.h>
@@ -203,7 +201,7 @@ public:
     {
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
         e.message_format_string = fmt.message_format_string;
-        throw e; /// NOLINT
+        throw e;
     }
 
     template <typename... Args>
@@ -212,7 +210,7 @@ public:
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, errno);
         e.message_format_string = fmt.message_format_string;
         e.path = path;
-        throw e; /// NOLINT
+        throw e;
     }
 
     template <typename... Args>
@@ -222,7 +220,7 @@ public:
         auto e = ErrnoException(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code, with_errno);
         e.message_format_string = fmt.message_format_string;
         e.path = path;
-        throw e; /// NOLINT
+        throw e;
     }
 
     ErrnoException * clone() const override { return new ErrnoException(*this); }

@@ -53,6 +53,7 @@ namespace ProfileEvents
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
     extern const Event OverflowAny;
+    extern const Event AggregationOptimizedEqualRangesOfKeys;
 }
 
 namespace CurrentMetrics
@@ -624,7 +625,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         {
             size_t alignment_of_next_state = params.aggregates[i + 1].function->alignOfData();
             if ((alignment_of_next_state & (alignment_of_next_state - 1)) != 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "`alignOfData` is not 2^N");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: alignOfData is not 2^N");
 
             /// Extend total_size to next alignment requirement
             /// Add padding by rounding up 'total_size_of_aggregate_states' to be a multiplier of alignment_of_next_state.
@@ -774,17 +775,6 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         }
     }
 
-    bool all_keys_are_numbers_or_strings = true;
-    for (size_t j = 0; j < params.keys_size; ++j)
-    {
-        if (!types_removed_nullable[j]->isValueRepresentedByNumber() && !isString(types_removed_nullable[j])
-            && !isFixedString(types_removed_nullable[j]))
-        {
-            all_keys_are_numbers_or_strings = false;
-            break;
-        }
-    }
-
     if (has_nullable_key)
     {
         /// Optimization for one key
@@ -843,11 +833,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
         }
 
-        if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
-            return AggregatedDataVariants::Type::nullable_prealloc_serialized;
-
         /// Fallback case.
-        return AggregatedDataVariants::Type::nullable_serialized;
+        return AggregatedDataVariants::Type::serialized;
     }
 
     /// No key has been found to be nullable.
@@ -871,7 +858,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::low_cardinality_keys128;
             if (size_of_field == 32)
                 return AggregatedDataVariants::Type::low_cardinality_keys256;
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: low cardinality numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
         }
 
         if (size_of_field == 1)
@@ -886,7 +873,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             return AggregatedDataVariants::Type::keys128;
         if (size_of_field == 32)
             return AggregatedDataVariants::Type::keys256;
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
     }
 
     if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
@@ -928,9 +915,6 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         else
             return AggregatedDataVariants::Type::key_string;
     }
-
-    if (params.keys_size > 1 && all_keys_are_numbers_or_strings)
-        return AggregatedDataVariants::Type::prealloc_serialized;
 
     return AggregatedDataVariants::Type::serialized;
 }
@@ -1342,6 +1326,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     if constexpr (use_compiled_functions)
     {
         std::vector<ColumnData> columns_data;
+        bool can_optimize_equal_keys_ranges = true;
 
         for (size_t i = 0; i < aggregate_functions.size(); ++i)
         {
@@ -1350,13 +1335,15 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             AggregateFunctionInstruction * inst = aggregate_instructions + i;
             size_t arguments_size = inst->that->getArgumentTypes().size(); // NOLINT
+            can_optimize_equal_keys_ranges &= inst->can_optimize_equal_keys_ranges;
 
             for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
                 columns_data.emplace_back(getColumnData(inst->batch_arguments[argument_index]));
         }
 
-        if (all_keys_are_const || (!no_more_keys && state.hasOnlyOneValueSinceLastReset()))
+        if (all_keys_are_const || (can_optimize_equal_keys_ranges && state.hasOnlyOneValueSinceLastReset()))
         {
+            ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
             add_into_aggregate_states_function_single_place(row_begin, row_end, columns_data.data(), places[key_start]);
         }
@@ -1379,10 +1366,15 @@ void NO_INLINE Aggregator::executeImplBatch(
 
         AggregateFunctionInstruction * inst = aggregate_instructions + i;
 
-        if (all_keys_are_const || (!no_more_keys && state.hasOnlyOneValueSinceLastReset()))
+        if (all_keys_are_const || (inst->can_optimize_equal_keys_ranges && state.hasOnlyOneValueSinceLastReset()))
+        {
+            ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             addBatchSinglePlace(row_begin, row_end, inst, places[key_start] + inst->state_offset, aggregates_pool);
+        }
         else
+        {
             addBatch(row_begin, row_end, inst, places.get(), aggregates_pool);
+        }
     }
 }
 
@@ -1588,6 +1580,7 @@ void Aggregator::prepareAggregateInstructions(
         }
 
         aggregate_functions_instructions[i].has_sparse_arguments = has_sparse_arguments;
+        aggregate_functions_instructions[i].can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();
         aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
         aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
 
@@ -3325,15 +3318,12 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     auto merge_method = method_chosen;
 
 #define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
-        M(key64)                          \
-        M(key_string)                     \
-        M(key_fixed_string)               \
-        M(keys128)                        \
-        M(keys256)                        \
-        M(serialized)                     \
-        M(nullable_serialized)            \
-        M(prealloc_serialized)            \
-        M(nullable_prealloc_serialized)   \
+        M(key64)            \
+        M(key_string)       \
+        M(key_fixed_string) \
+        M(keys128)          \
+        M(keys256)          \
+        M(serialized)       \
 
 #define M(NAME) \
     if (merge_method == AggregatedDataVariants::Type::NAME) \

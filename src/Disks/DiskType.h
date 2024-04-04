@@ -33,6 +33,8 @@ enum class MetadataStorageType
     Memory,
 };
 
+String toString(DataSourceType data_source_type);
+
 struct DataSourceDescription
 {
     DataSourceType type;

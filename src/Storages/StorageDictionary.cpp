@@ -316,7 +316,7 @@ void registerStorageDictionary(StorageFactory & factory)
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
             bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
-            if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
+            if (!args.attach && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,
                 /// and throw an exception if the loading is failed.
@@ -335,7 +335,7 @@ void registerStorageDictionary(StorageFactory & factory)
             args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
             String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");
 
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            if (!args.attach)
             {
                 const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
                 const DictionaryStructure & dictionary_structure = dictionary->getStructure();

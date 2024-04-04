@@ -51,13 +51,13 @@ using ConstArenas = std::vector<ConstArenaPtr>;
   *  specifying which individual values should be destroyed and which ones should not.
   * Clearly, this method would have a substantially non-zero price.
   */
-class ColumnAggregateFunction final : public COWHelper<IColumnHelper<ColumnAggregateFunction>, ColumnAggregateFunction>
+class ColumnAggregateFunction final : public COWHelper<IColumn, ColumnAggregateFunction>
 {
 public:
     using Container = PaddedPODArray<AggregateDataPtr>;
 
 private:
-    friend class COWHelper<IColumnHelper<ColumnAggregateFunction>, ColumnAggregateFunction>;
+    friend class COWHelper<IColumn, ColumnAggregateFunction>;
 
     /// Arenas used by function states that are created elsewhere. We own these
     /// arenas in the sense of extending their lifetime, but do not modify them.
@@ -160,11 +160,9 @@ public:
 
     void insert(const Field & x) override;
 
-    bool tryInsert(const Field & x) override;
-
     void insertDefault() override;
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
 
     const char * deserializeAndInsertFromArena(const char * src_arena) override;
 
@@ -202,6 +200,8 @@ public:
     ColumnPtr replicate(const Offsets & offsets) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+
+    void gather(ColumnGathererStream & gatherer_stream) override;
 
     int compareAt(size_t, size_t, const IColumn &, int) const override
     {

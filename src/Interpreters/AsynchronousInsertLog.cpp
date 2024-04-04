@@ -32,7 +32,8 @@ ColumnsDescription AsynchronousInsertLogElement::getColumnsDescription()
             {"Preprocessed", static_cast<Int8>(DataKind::Preprocessed)},
         });
 
-    return ColumnsDescription{
+    return ColumnsDescription
+    {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
@@ -52,7 +53,6 @@ ColumnsDescription AsynchronousInsertLogElement::getColumnsDescription()
         {"flush_time", std::make_shared<DataTypeDateTime>()},
         {"flush_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
         {"flush_query_id", std::make_shared<DataTypeString>()},
-        {"timeout_milliseconds", std::make_shared<DataTypeUInt64>()},
     };
 }
 
@@ -80,7 +80,6 @@ void AsynchronousInsertLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(flush_time);
     columns[i++]->insert(flush_time_microseconds);
     columns[i++]->insert(flush_query_id);
-    columns[i++]->insert(timeout_milliseconds);
 }
 
 }

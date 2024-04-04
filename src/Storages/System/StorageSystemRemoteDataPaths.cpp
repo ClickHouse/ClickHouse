@@ -6,7 +6,6 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
 #include <Disks/IDisk.h>
 

@@ -16,7 +16,6 @@ class TTLTransform : public IAccumulatingTransform
 {
 public:
     TTLTransform(
-        const ContextPtr & context,
         const Block & header_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
@@ -29,8 +28,6 @@ public:
 
     Status prepare() override;
 
-    PreparedSets::Subqueries getSubqueries() { return std::move(subqueries_for_sets); }
-
 protected:
     void consume(Chunk chunk) override;
     Chunk generate() override;
@@ -42,8 +39,6 @@ private:
     std::vector<TTLAlgorithmPtr> algorithms;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
-
-    PreparedSets::Subqueries subqueries_for_sets;
 
     /// ttl_infos and empty_columns are updating while reading
     const MergeTreeData::MutableDataPartPtr & data_part;

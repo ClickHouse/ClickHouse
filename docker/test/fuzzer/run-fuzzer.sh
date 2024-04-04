@@ -86,7 +86,7 @@ function download
 
     chmod +x clickhouse
     # clickhouse may be compressed - run once to decompress
-    ./clickhouse --query "SELECT 1" ||:
+    ./clickhouse ||:
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
     ln -s ./clickhouse ./clickhouse-local
@@ -247,12 +247,6 @@ quit
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
 
-    # The fuzzer_pid belongs to the timeout process.
-    actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
-
-    echo "Attaching gdb to the fuzzer itself"
-    gdb -batch -command script.gdb -p $actual_fuzzer_pid &
-
     # Wait for the fuzzer to complete.
     # Note that the 'wait || ...' thing is required so that the script doesn't
     # exit because of 'set -e' when 'wait' returns nonzero code.
@@ -392,17 +386,11 @@ if [ -f core.zst ]; then
     CORE_LINK='<a href="core.zst">core.zst</a>'
 fi
 
-# Keep all the lines in the paragraphs containing <Fatal> that either contain <Fatal> or don't start with 20... (year)
-sed -n '/<Fatal>/,/^$/p' server.log | awk '/<Fatal>/ || !/^20/' > fatal.log ||:
-FATAL_LINK=''
-if [ -s fatal.log ]; then
-    FATAL_LINK='<a href="fatal.log">fatal.log</a>'
-fi
-
+rg --text -F '<Fatal>' server.log > fatal.log ||:
 dmesg -T > dmesg.log ||:
 
-zstd --threads=0 --rm server.log
-zstd --threads=0 --rm fuzzer.log
+zstd --threads=0 server.log
+zstd --threads=0 fuzzer.log
 
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
@@ -431,7 +419,6 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
   <a href="main.log">main.log</a>
   <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}
-  ${FATAL_LINK}
 </p>
 <table>
 <tr>

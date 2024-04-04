@@ -60,8 +60,6 @@ public:
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type);
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);
 
-    void forEachChild(const ChildCallback & callback) const override;
-
 private:
     SerializationPtr doGetDefaultSerialization() const override;
 

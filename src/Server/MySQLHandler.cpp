@@ -461,12 +461,6 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
-
-        /// --- Workaround for Bug 56173. Can be removed when the analyzer is on by default.
-        auto settings = query_context->getSettings();
-        settings.prefer_column_name_to_alias = true;
-        query_context->setSettings(settings);
-
         CurrentThread::QueryScope query_scope{query_context};
 
         std::atomic<size_t> affected_rows {0};

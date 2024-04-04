@@ -1,4 +1,5 @@
 #include "Interpreters/AsynchronousInsertQueue.h"
+#include "Interpreters/Context_fwd.h"
 #include "Interpreters/SquashingTransform.h"
 #include "Parsers/ASTInsertQuery.h"
 #include <algorithm>
@@ -34,6 +35,7 @@
 #include <Server/TCPServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
@@ -182,15 +184,7 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
 namespace DB
 {
 
-TCPHandler::TCPHandler(
-    IServer & server_,
-    TCPServer & tcp_server_,
-    const Poco::Net::StreamSocket & socket_,
-    bool parse_proxy_protocol_,
-    std::string server_display_name_,
-    std::string host_name_,
-    const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_)
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
@@ -199,20 +193,11 @@ TCPHandler::TCPHandler(
     , read_event(read_event_)
     , write_event(write_event_)
     , server_display_name(std::move(server_display_name_))
-    , host_name(std::move(host_name_))
 {
 }
 
-TCPHandler::TCPHandler(
-    IServer & server_,
-    TCPServer & tcp_server_,
-    const Poco::Net::StreamSocket & socket_,
-    TCPProtocolStackData & stack_data,
-    std::string server_display_name_,
-    std::string host_name_,
-    const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_)
-    : Poco::Net::TCPServerConnection(socket_)
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
+: Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(getLogger("TCPHandler"))
@@ -222,7 +207,6 @@ TCPHandler::TCPHandler(
     , write_event(write_event_)
     , default_database(stack_data.default_database)
     , server_display_name(std::move(server_display_name_))
-    , host_name(std::move(host_name_))
 {
     if (!forwarded_for.empty())
         LOG_TRACE(log, "Forwarded client address: {}", forwarded_for);
@@ -942,7 +926,7 @@ void TCPHandler::processInsertQuery()
                 auto wait_status = result.future.wait_for(std::chrono::milliseconds(timeout_ms));
 
                 if (wait_status == std::future_status::deferred)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: got future in deferred state");
 
                 if (wait_status == std::future_status::timeout)
                     throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout_ms);
@@ -1217,7 +1201,7 @@ void TCPHandler::sendExtremes(const Block & extremes)
 void TCPHandler::sendProfileEvents()
 {
     Block block;
-    ProfileEvents::getProfileEvents(host_name, state.profile_queue, block, last_sent_snapshots);
+    ProfileEvents::getProfileEvents(server_display_name, state.profile_queue, block, last_sent_snapshots);
     if (block.rows() != 0)
     {
         initProfileEventsBlockOutput(block);

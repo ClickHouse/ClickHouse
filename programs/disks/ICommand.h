@@ -63,4 +63,3 @@ DB::CommandPtr makeCommandRead();
 DB::CommandPtr makeCommandRemove();
 DB::CommandPtr makeCommandWrite();
 DB::CommandPtr makeCommandMkDir();
-DB::CommandPtr makeCommandPackedIO();

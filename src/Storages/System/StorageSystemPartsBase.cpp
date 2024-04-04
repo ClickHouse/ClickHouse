@@ -2,9 +2,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Common/escapeForFileName.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -82,7 +79,7 @@ StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, boo
     return data->getProjectionPartsVectorForInternalUsage({State::Active}, &state);
 }
 
-StoragesInfoStream::StoragesInfoStream(const ActionsDAG::Node * predicate, ContextPtr context)
+StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)
     : StoragesInfoStreamBase(context)
 {
     /// Will apply WHERE to subset of columns and then add more columns.
@@ -114,7 +111,7 @@ StoragesInfoStream::StoragesInfoStream(const ActionsDAG::Node * predicate, Conte
             std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block_to_filter with column 'database'.
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
         rows = block_to_filter.rows();
 
         /// Block contains new columns, update database_column.
@@ -141,7 +138,7 @@ StoragesInfoStream::StoragesInfoStream(const ActionsDAG::Node * predicate, Conte
 
                     String engine_name = storage->getName();
                     UUID storage_uuid = storage->getStorageID().uuid;
-                    if (storage_uuid == UUIDHelpers::Nil)
+                    if (database->getEngineName() == "Ordinary")
                     {
                         SipHash hash;
                         hash.update(database_name);
@@ -193,7 +190,7 @@ StoragesInfoStream::StoragesInfoStream(const ActionsDAG::Node * predicate, Conte
     if (rows)
     {
         /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
         rows = block_to_filter.rows();
     }
 
@@ -203,61 +200,8 @@ StoragesInfoStream::StoragesInfoStream(const ActionsDAG::Node * predicate, Conte
     storage_uuid_column = block_to_filter.getByName("uuid").column;
 }
 
-class ReadFromSystemPartsBase : public SourceStepWithFilter
-{
-public:
-    std::string getName() const override { return "ReadFromSystemPartsBase"; }
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    ReadFromSystemPartsBase(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
-        Block sample_block,
-        std::shared_ptr<StorageSystemPartsBase> storage_,
-        std::vector<UInt8> columns_mask_,
-        bool has_state_column_);
-
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
-
-protected:
-    std::shared_ptr<StorageSystemPartsBase> storage;
-    std::vector<UInt8> columns_mask;
-    const bool has_state_column;
-    const ActionsDAG::Node * predicate = nullptr;
-};
-
-ReadFromSystemPartsBase::ReadFromSystemPartsBase(
-    const Names & column_names_,
-    const SelectQueryInfo & query_info_,
-    const StorageSnapshotPtr & storage_snapshot_,
-    const ContextPtr & context_,
-    Block sample_block,
-    std::shared_ptr<StorageSystemPartsBase> storage_,
-    std::vector<UInt8> columns_mask_,
-    bool has_state_column_)
-    : SourceStepWithFilter(
-        DataStream{.header = std::move(sample_block)},
-        column_names_,
-        query_info_,
-        storage_snapshot_,
-        context_)
-    , storage(std::move(storage_))
-    , columns_mask(std::move(columns_mask_))
-    , has_state_column(has_state_column_)
-{
-}
-
-void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
-{
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
-    if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
-}
-
-void StorageSystemPartsBase::read(
-    QueryPlan & query_plan,
+Pipe StorageSystemPartsBase::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -268,39 +212,29 @@ void StorageSystemPartsBase::read(
 {
     bool has_state_column = hasStateColumn(column_names, storage_snapshot);
 
+    auto stream = getStoragesInfoStream(query_info, context);
+
     /// Create the result.
     Block sample = storage_snapshot->metadata->getSampleBlock();
 
     auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample, column_names);
 
-    if (has_state_column)
-        header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
-
-    auto this_ptr = std::static_pointer_cast<StorageSystemPartsBase>(shared_from_this());
-
-    auto reading = std::make_unique<ReadFromSystemPartsBase>(
-        column_names, query_info, storage_snapshot,
-        std::move(context), std::move(header), std::move(this_ptr), std::move(columns_mask), has_state_column);
-
-    query_plan.addStep(std::move(reading));
-}
-
-void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
-{
-    auto stream = storage->getStoragesInfoStream(predicate, context);
-    auto header = getOutputStream().header;
-
     MutableColumns res_columns = header.cloneEmptyColumns();
+    if (has_state_column)
+        res_columns.push_back(ColumnString::create());
 
     while (StoragesInfo info = stream->next())
     {
-        storage->processNextStorage(context, res_columns, columns_mask, info, has_state_column);
+        processNextStorage(context, res_columns, columns_mask, info, has_state_column);
     }
+
+    if (has_state_column)
+        header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
 
-    pipeline.init(Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk))));
+    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
 }
 
 

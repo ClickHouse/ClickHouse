@@ -22,7 +22,7 @@ private:
     void writeRow(
         size_t row_num,
         const Block & header,
-        const Chunk & chunk,
+        const Columns & columns,
         const WidthsPerColumn & widths,
         const Widths & max_widths);
 

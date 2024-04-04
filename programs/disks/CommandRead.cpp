@@ -61,6 +61,7 @@ public:
             auto out = disk->writeFile(relative_path_output);
             copyData(*in, *out);
             out->finalize();
+            return;
         }
         else
         {

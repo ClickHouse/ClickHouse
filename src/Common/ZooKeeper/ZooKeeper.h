@@ -152,7 +152,7 @@ private:
 
     struct ResponsesWithFutures
     {
-        ResponsesWithFutures(FutureResponses future_responses_) : future_responses(std::move(future_responses_)) /// NOLINT(google-explicit-constructor)
+        ResponsesWithFutures(FutureResponses future_responses_) : future_responses(std::move(future_responses_))
         {
             cached_responses.resize(future_responses.size());
         }
@@ -550,7 +550,6 @@ public:
     FutureMulti asyncMulti(const Coordination::Requests & ops);
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
-    FutureMulti asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops);
 
     using FutureSync = std::future<Coordination::SyncResponse>;
     FutureSync asyncSync(const std::string & path);

@@ -11,7 +11,6 @@
 #include <Storages/StorageS3.h>
 #include <Interpreters/Context.h>
 #include <IO/S3/BlobStorageLogWriter.h>
-#include <Storages/StorageFactory.h>
 
 
 namespace Aws::S3
@@ -36,8 +35,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        std::optional<FormatSettings> format_settings_,
-        ASTStorage * engine_args);
+        std::optional<FormatSettings> format_settings_);
 
     String getName() const override { return "S3Queue"; }
 
@@ -93,7 +91,6 @@ private:
     std::shared_ptr<StorageS3QueueSource> createSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageS3Queue::FileIterator> file_iterator,
-        size_t processing_id,
         size_t max_block_size,
         ContextPtr local_context);
 

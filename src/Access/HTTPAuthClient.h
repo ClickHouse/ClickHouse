@@ -24,7 +24,7 @@ class HTTPAuthClient
 public:
     using Result = TResponseParser::Result;
 
-    explicit HTTPAuthClient(const HTTPAuthClientParams & params, const TResponseParser & parser_ = TResponseParser{})
+    HTTPAuthClient(const HTTPAuthClientParams & params, const TResponseParser & parser_ = TResponseParser{})
         : timeouts{params.timeouts}
         , max_tries{params.max_tries}
         , retry_initial_backoff_ms{params.retry_initial_backoff_ms}

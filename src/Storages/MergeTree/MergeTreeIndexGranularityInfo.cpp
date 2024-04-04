@@ -54,9 +54,9 @@ MarkType::MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Valu
     : adaptive(adaptive_), compressed(compressed_), part_type(part_type_)
 {
     if (!adaptive && part_type != MergeTreeDataPartType::Wide)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-Wide data part type with non-adaptive granularity");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: non-Wide data part type with non-adaptive granularity");
     if (part_type == MergeTreeDataPartType::Unknown)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown data part type");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown data part type");
 }
 
 bool MarkType::isMarkFileExtension(std::string_view extension)
@@ -71,7 +71,7 @@ std::string MarkType::getFileExtension() const
     if (!adaptive)
     {
         if (part_type != MergeTreeDataPartType::Wide)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-Wide data part type with non-adaptive granularity");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: non-Wide data part type with non-adaptive granularity");
         return res;
     }
 
@@ -84,7 +84,7 @@ std::string MarkType::getFileExtension() const
         case MergeTreeDataPartType::InMemory:
             return "";
         case MergeTreeDataPartType::Unknown:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown data part type");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown data part type");
     }
 }
 

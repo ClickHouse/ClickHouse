@@ -337,7 +337,7 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
         WhichDataType which(type);
 
         if (which.isNullable())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MySQL's primary key must be not null, it is a bug.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: MySQL primary key must be not null, it is a bug.");
 
         if (which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64())
         {

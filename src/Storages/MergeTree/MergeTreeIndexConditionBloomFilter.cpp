@@ -59,7 +59,7 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
     const auto * non_const_column = typeid_cast<const ColumnUInt64 *>(hash_column);
 
     if (!const_column && !non_const_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash column must be Const or UInt64.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: hash column must be Const Column or UInt64 Column.");
 
     if (const_column)
     {

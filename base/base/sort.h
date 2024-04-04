@@ -64,14 +64,19 @@ using ComparatorWrapper = Comparator;
 
 #include <miniselect/floyd_rivest_select.h>
 
-template <typename RandomIt, typename Compare>
-void nth_element(RandomIt first, RandomIt nth, RandomIt last, Compare compare)
+template <typename RandomIt>
+void nth_element(RandomIt first, RandomIt nth, RandomIt last)
 {
+    using value_type = typename std::iterator_traits<RandomIt>::value_type;
+    using comparator = std::less<value_type>;
+
+    comparator compare;
+    ComparatorWrapper<comparator> compare_wrapper = compare;
+
 #ifndef NDEBUG
     ::shuffle(first, last);
 #endif
 
-    ComparatorWrapper<Compare> compare_wrapper = compare;
     ::miniselect::floyd_rivest_select(first, nth, last, compare_wrapper);
 
 #ifndef NDEBUG
@@ -80,15 +85,6 @@ void nth_element(RandomIt first, RandomIt nth, RandomIt last, Compare compare)
     if (nth != last)
         ::shuffle(nth + 1, last);
 #endif
-}
-
-template <typename RandomIt>
-void nth_element(RandomIt first, RandomIt nth, RandomIt last)
-{
-    using value_type = typename std::iterator_traits<RandomIt>::value_type;
-    using comparator = std::less<value_type>;
-
-    ::nth_element(first, nth, last, comparator());
 }
 
 template <typename RandomIt, typename Compare>

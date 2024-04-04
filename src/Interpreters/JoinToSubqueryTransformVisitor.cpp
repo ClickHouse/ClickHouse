@@ -168,7 +168,7 @@ private:
                 has_asterisks = true;
 
                 if (!qualified_asterisk->qualifier)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified asterisk must have a qualifier");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: qualified asterisk must have a qualifier");
 
                 auto & identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
 
@@ -183,7 +183,7 @@ private:
                             transformer->as<ASTColumnsReplaceTransformer>())
                             IASTColumnsTransformer::transform(transformer, columns);
                         else
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified asterisk must only have children of IASTColumnsTransformer type");
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: qualified asterisk must only have children of IASTColumnsTransformer type");
                     }
                 }
             }

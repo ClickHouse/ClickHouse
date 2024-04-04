@@ -172,7 +172,7 @@ private:
 StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata_,
-        LoadingStrictnessLevel mode,
+        bool attach,
         ContextPtr context_,
         const String & primary_key_,
         Int32 ttl_,
@@ -190,7 +190,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
     {
         rocksdb_dir = context_->getPath() + relative_data_path_;
     }
-    if (mode < LoadingStrictnessLevel::ATTACH)
+    if (!attach)
     {
         fs::create_directories(rocksdb_dir);
     }
@@ -479,26 +479,31 @@ class ReadFromEmbeddedRocksDB : public SourceStepWithFilter
 public:
     std::string getName() const override { return "ReadFromEmbeddedRocksDB"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void applyFilters() override;
 
     ReadFromEmbeddedRocksDB(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
         Block sample_block,
+        StorageSnapshotPtr storage_snapshot_,
         const StorageEmbeddedRocksDB & storage_,
+        SelectQueryInfo query_info_,
+        ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        , storage_snapshot(std::move(storage_snapshot_))
         , storage(storage_)
+        , query_info(std::move(query_info_))
+        , context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
     {
     }
 
 private:
+    StorageSnapshotPtr storage_snapshot;
     const StorageEmbeddedRocksDB & storage;
+    SelectQueryInfo query_info;
+    ContextPtr context;
 
     size_t max_block_size;
     size_t num_streams;
@@ -521,7 +526,13 @@ void StorageEmbeddedRocksDB::read(
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
     auto reading = std::make_unique<ReadFromEmbeddedRocksDB>(
-        column_names, query_info, storage_snapshot, context_, std::move(sample_block), *this, max_block_size, num_streams);
+        std::move(sample_block),
+        storage_snapshot,
+        *this,
+        query_info,
+        context_,
+        max_block_size,
+        num_streams);
 
     query_plan.addStep(std::move(reading));
 }
@@ -571,12 +582,11 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
     }
 }
 
-void ReadFromEmbeddedRocksDB::applyFilters(ActionDAGNodes added_filter_nodes)
+void ReadFromEmbeddedRocksDB::applyFilters()
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const auto & sample_block = getOutputStream().header;
     auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
-    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
+    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_nodes, context);
 }
 
 SinkToStoragePtr StorageEmbeddedRocksDB::write(
@@ -620,7 +630,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB must require one column in primary key");
     }
-    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.mode, args.getContext(), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
+    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
 }
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const

@@ -24,18 +24,12 @@ struct AzureObjectStorageSettings
         int max_single_read_retries_,
         int max_single_download_retries_,
         int list_object_keys_size_,
-        size_t max_upload_part_size_,
-        size_t max_single_part_copy_size_,
-        bool use_native_copy_,
         size_t max_unexpected_write_error_retries_)
         : max_single_part_upload_size(max_single_part_upload_size_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , max_single_read_retries(max_single_read_retries_)
         , max_single_download_retries(max_single_download_retries_)
         , list_object_keys_size(list_object_keys_size_)
-        , max_upload_part_size(max_upload_part_size_)
-        , max_single_part_copy_size(max_single_part_copy_size_)
-        , use_native_copy(use_native_copy_)
         , max_unexpected_write_error_retries (max_unexpected_write_error_retries_)
     {
     }
@@ -47,10 +41,6 @@ struct AzureObjectStorageSettings
     size_t max_single_read_retries = 3;
     size_t max_single_download_retries = 3;
     int list_object_keys_size = 1000;
-    size_t min_upload_part_size = 16 * 1024 * 1024;
-    size_t max_upload_part_size = 5ULL * 1024 * 1024 * 1024;
-    size_t max_single_part_copy_size = 256 * 1024 * 1024;
-    bool use_native_copy = false;
     size_t max_unexpected_write_error_retries = 4;
 };
 
@@ -66,8 +56,7 @@ public:
     AzureObjectStorage(
         const String & name_,
         AzureClientPtr && client_,
-        SettingsPtr && settings_,
-        const String & object_namespace_);
+        SettingsPtr && settings_);
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
 
@@ -130,7 +119,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    String getObjectsNamespace() const override { return object_namespace ; }
+    String getObjectsNamespace() const override { return ""; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
         const std::string & new_namespace,
@@ -142,19 +131,11 @@ public:
 
     bool isRemote() const override { return true; }
 
-    std::shared_ptr<const AzureObjectStorageSettings> getSettings() { return settings.get(); }
-
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() override
-    {
-        return client.get();
-    }
-
 private:
     const String name;
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
-    const String object_namespace; /// container + prefix
 
     LoggerPtr log;
 };

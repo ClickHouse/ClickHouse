@@ -65,7 +65,6 @@
 namespace ProfileEvents
 {
     extern const Event Query;
-    extern const Event InitialQuery;
     extern const Event QueriesWithSubqueries;
     extern const Event SelectQuery;
     extern const Event InsertQuery;
@@ -95,8 +94,7 @@ void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn
 InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
     ProfileEvents::increment(ProfileEvents::Query);
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-        ProfileEvents::increment(ProfileEvents::InitialQuery);
+
     /// SELECT and INSERT query will handle QueriesWithSubqueries on their own.
     if (!(query->as<ASTSelectQuery>() ||
         query->as<ASTSelectWithUnionQuery>() ||
@@ -106,8 +104,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
         ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
     }
 
-    Arguments arguments
-    {
+    Arguments arguments {
         .query = query,
         .context = context,
         .options = options

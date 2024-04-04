@@ -3,7 +3,6 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -107,7 +106,7 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
             first = false;
 
         formatSettingName(QUERY_PARAMETER_NAME_PREFIX + name, format.ostr);
-        format.ostr << " = " << quoteString(value);
+        format.ostr << " = " << value;
     }
 }
 

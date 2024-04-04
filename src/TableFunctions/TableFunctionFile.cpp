@@ -54,12 +54,12 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' mush be path or file descriptor", getName());
 }
 
-std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
+String TableFunctionFile::getFormatFromFirstArgument()
 {
     if (fd >= 0)
-        return FormatFactory::instance().tryGetFormatFromFileDescriptor(fd);
+        return FormatFactory::instance().getFormatFromFileDescriptor(fd);
     else
-        return FormatFactory::instance().tryGetFormatFromFileName(filename);
+        return FormatFactory::instance().getFormatFromFileName(filename, true);
 }
 
 StoragePtr TableFunctionFile::getStorage(const String & source,
@@ -104,10 +104,9 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
             archive_info
                 = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
 
-        if (format == "auto")
-            return StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context, archive_info).first;
         return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
     }
+
 
     return parseColumnsListFromString(structure, context);
 }

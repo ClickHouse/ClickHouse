@@ -204,7 +204,7 @@ private:
 class Adam : public IWeightsUpdater
 {
 public:
-    explicit Adam(size_t num_params)
+    Adam(size_t num_params)
     {
         beta1_powered = beta1;
         beta2_powered = beta2;

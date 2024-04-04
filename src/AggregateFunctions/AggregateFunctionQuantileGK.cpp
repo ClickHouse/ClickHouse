@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -31,12 +30,12 @@ class ApproxSampler
 public:
     struct Stats
     {
-        T value;     // The sampled value
-        Int64 g;     // The minimum rank jump from the previous value's minimum rank
-        Int64 delta; // The maximum span of the rank
+        T value;      // the sampled value
+        Int64 g;      // the minimum rank jump from the previous value's minimum rank
+        Int64 delta;  // the maximum span of the rank
 
         Stats() = default;
-        Stats(T value_, Int64 g_, Int64 delta_) : value(value_), g(g_), delta(delta_) { }
+        Stats(T value_, Int64 g_, Int64 delta_) : value(value_), g(g_), delta(delta_) {}
     };
 
     struct QueryResult
@@ -50,20 +49,20 @@ public:
 
     ApproxSampler() = default;
 
-    ApproxSampler(const ApproxSampler & other)
-        : relative_error(other.relative_error)
-        , compress_threshold(other.compress_threshold)
-        , count(other.count)
-        , compressed(other.compressed)
-        , sampled(other.sampled.begin(), other.sampled.end())
-        , backup_sampled(other.backup_sampled.begin(), other.backup_sampled.end())
-        , head_sampled(other.head_sampled.begin(), other.head_sampled.end())
+    explicit ApproxSampler(
+        double relative_error_,
+        size_t compress_threshold_ = default_compress_threshold,
+        size_t count_ = 0,
+        bool compressed_ = false)
+        : relative_error(relative_error_)
+        , compress_threshold(compress_threshold_)
+        , count(count_)
+        , compressed(compressed_)
     {
-    }
+        sampled.reserve(compress_threshold);
+        backup_sampled.reserve(compress_threshold);
 
-    explicit ApproxSampler(double relative_error_)
-        : relative_error(relative_error_), compress_threshold(default_compress_threshold), count(0), compressed(false)
-    {
+        head_sampled.reserve(default_head_size);
     }
 
     bool isCompressed() const { return compressed; }
@@ -96,9 +95,9 @@ public:
         Int64 current_max = std::numeric_limits<Int64>::min();
         for (const auto & stats : sampled)
             current_max = std::max(stats.delta + stats.g, current_max);
-        Int64 target_error = current_max / 2;
+        Int64 target_error = current_max/2;
 
-        size_t index = 0;
+        size_t index= 0;
         auto min_rank = sampled[0].g;
         for (size_t i = 0; i < size; ++i)
         {
@@ -119,6 +118,7 @@ public:
                 result[indices[i]] = res.value;
             }
         }
+
     }
 
     void compress()
@@ -256,27 +256,16 @@ public:
     void read(ReadBuffer & buf)
     {
         readBinaryLittleEndian(compress_threshold, buf);
-        if (compress_threshold != default_compress_threshold)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "The compress threshold {} isn't the expected one {}",
-                compress_threshold,
-                default_compress_threshold);
-
         readBinaryLittleEndian(relative_error, buf);
         readBinaryLittleEndian(count, buf);
 
         size_t sampled_len = 0;
         readBinaryLittleEndian(sampled_len, buf);
-        if (sampled_len > compress_threshold)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA, "The number of elements {} for quantileGK exceeds {}", sampled_len, compress_threshold);
-
         sampled.resize(sampled_len);
 
         for (size_t i = 0; i < sampled_len; ++i)
         {
-            auto & stats = sampled[i];
+            auto stats = sampled[i];
             readBinaryLittleEndian(stats.value, buf);
             readBinaryLittleEndian(stats.g, buf);
             readBinaryLittleEndian(stats.delta, buf);
@@ -302,7 +291,7 @@ private:
                 min_rank += curr_sample.g;
             }
         }
-        return {sampled.size() - 1, 0, sampled.back().value};
+        return {sampled.size()-1, 0, sampled.back().value};
     }
 
     void withHeadBufferInserted()
@@ -400,11 +389,12 @@ private:
 
     double relative_error;
     size_t compress_threshold;
-    size_t count;
+    size_t count = 0;
     bool compressed;
 
     PaddedPODArray<Stats> sampled;
     PaddedPODArray<Stats> backup_sampled;
+
     PaddedPODArray<T> head_sampled;
 
     static constexpr size_t default_compress_threshold = 10000;
@@ -416,14 +406,17 @@ class QuantileGK
 {
 private:
     using Data = ApproxSampler<Value>;
-    Data data;
+    mutable Data data;
 
 public:
     QuantileGK() = default;
 
     explicit QuantileGK(size_t accuracy) : data(1.0 / static_cast<double>(accuracy)) { }
 
-    void add(const Value & x) { data.insert(x); }
+    void add(const Value & x)
+    {
+        data.insert(x);
+    }
 
     template <typename Weight>
     void add(const Value &, const Weight &)
@@ -436,34 +429,22 @@ public:
         if (!data.isCompressed())
             data.compress();
 
-        if (rhs.data.isCompressed())
-            data.merge(rhs.data);
-        else
-        {
-            /// We can't modify rhs, so copy it and compress
-            Data rhs_data_copy(rhs.data);
-            rhs_data_copy.compress();
-            data.merge(rhs_data_copy);
-        }
+        data.merge(rhs.data);
     }
 
     void serialize(WriteBuffer & buf) const
     {
-        if (data.isCompressed())
-            data.write(buf);
-        else
-        {
-            /// We can't modify rhs, so copy it and compress
-            Data data_copy(data);
-            data_copy.compress();
-            data_copy.write(buf);
-        }
+        /// Always compress before serialization
+        if (!data.isCompressed())
+            data.compress();
+
+        data.write(buf);
     }
 
     void deserialize(ReadBuffer & buf)
     {
         data.read(buf);
-        /// Serialized data is always compressed
+
         data.setCompressed();
     }
 
@@ -499,6 +480,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getManyFloat is not implemented for GKSampler");
     }
 };
+
 
 template <typename Value, bool _> using FuncQuantileGK = AggregateFunctionQuantile<Value, QuantileGK<Value>, NameQuantileGK, false, void, false, true>;
 template <typename Value, bool _> using FuncQuantilesGK = AggregateFunctionQuantile<Value, QuantileGK<Value>, NameQuantilesGK, false, void, true, true>;

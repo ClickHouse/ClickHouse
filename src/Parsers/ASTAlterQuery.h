@@ -17,6 +17,8 @@ namespace DB
  *      MODIFY COLUMN col_name type,
  *      DROP PARTITION partition,
  *      COMMENT_COLUMN col_name 'comment',
+ *  ALTER LIVE VIEW [db.]name_type
+ *      REFRESH
  */
 
 class ASTAlterCommand : public IAST
@@ -61,7 +63,6 @@ public:
 
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
-        FORGET_PARTITION,
         ATTACH_PARTITION,
         MOVE_PARTITION,
         REPLACE_PARTITION,
@@ -77,10 +78,11 @@ public:
 
         NO_TYPE,
 
+        LIVE_VIEW_REFRESH,
+
         MODIFY_DATABASE_SETTING,
 
         MODIFY_COMMENT,
-        MODIFY_SQL_SECURITY,
     };
 
     Type type = NO_TYPE;
@@ -137,7 +139,7 @@ public:
 
     IAST * statistic_decl = nullptr;
 
-    /** Used in DROP PARTITION, ATTACH PARTITION FROM, FORGET PARTITION, UPDATE, DELETE queries.
+    /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
     IAST * partition = nullptr;
@@ -163,8 +165,8 @@ public:
     /// For MODIFY_QUERY
     IAST * select = nullptr;
 
-    /// For MODIFY_SQL_SECURITY
-    IAST * sql_security = nullptr;
+    /// In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
+    IAST * values = nullptr;
 
     /// Target column name
     IAST * rename_to = nullptr;
@@ -220,16 +222,10 @@ public:
 
     ASTPtr clone() const override;
 
-    // This function is only meant to be called during application startup
-    // For reasons see https://github.com/ClickHouse/ClickHouse/pull/59532
-    static void setFormatAlterCommandsWithParentheses(bool value) { format_alter_commands_with_parentheses = value; }
-
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override;
-
-    static inline bool format_alter_commands_with_parentheses = false;
 };
 
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
@@ -239,6 +235,7 @@ public:
     {
         TABLE,
         DATABASE,
+        LIVE_VIEW,
         UNKNOWN,
     };
 

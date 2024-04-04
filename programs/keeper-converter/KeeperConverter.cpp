@@ -1,10 +1,9 @@
 #include <iostream>
+#include <optional>
 #include <boost/program_options.hpp>
 
-#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/ZooKeeperDataReader.h>
-#include <Coordination/KeeperContext.h>
 #include <Common/TerminalSize.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/AutoPtr.h>
@@ -41,7 +40,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 
     try
     {
-        auto keeper_context = std::make_shared<KeeperContext>(true, std::make_shared<CoordinationSettings>());
+        auto keeper_context = std::make_shared<KeeperContext>(true);
         keeper_context->setDigestEnabled(true);
         keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("Keeper-snapshots", options["output-dir"].as<std::string>()));
 

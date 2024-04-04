@@ -14,7 +14,7 @@ jobs:
     # The task for having a preserved ENV and event.json for later investigation
     uses: ./.github/workflows/debug.yml
   RunConfig:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, style-checker]
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
@@ -28,7 +28,7 @@ jobs:
         id: runconfig
         run: |
             echo "::group::configure CI run"
-            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --skip-jobs --outfile ${{ runner.temp }}/ci_run_data.json
+            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --skip-jobs --rebuild-all-docker --outfile ${{ runner.temp }}/ci_run_data.json
             echo "::endgroup::"
 
             echo "::group::CI run configure results"

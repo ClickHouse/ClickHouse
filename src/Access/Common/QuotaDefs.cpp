@@ -111,11 +111,6 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
             static const auto info = make_info("WRITTEN_BYTES", 1);
             return info;
         }
-        case QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS:
-        {
-            static const auto info = make_info("FAILED_SEQUENTIAL_AUTHENTICATIONS", 1);
-            return info;
-        }
         case QuotaType::MAX: break;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quota type: {}", static_cast<int>(type));

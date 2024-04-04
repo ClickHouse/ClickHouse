@@ -169,7 +169,7 @@ static void enumCertificates(const std::string & dir, bool def, MutableColumns &
 
 #endif
 
-void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_columns, ContextPtr/* context*/, const SelectQueryInfo &) const
 {
 #if USE_SSL
     const auto & ca_paths = Poco::Net::SSLManager::instance().defaultServerContext()->getCAPaths();

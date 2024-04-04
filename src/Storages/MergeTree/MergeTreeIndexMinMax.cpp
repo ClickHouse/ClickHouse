@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -218,20 +217,7 @@ MergeTreeIndexPtr minmaxIndexCreator(
     return std::make_shared<MergeTreeIndexMinMax>(index);
 }
 
-void minmaxIndexValidator(const IndexDescription & index, bool attach)
+void minmaxIndexValidator(const IndexDescription & /* index */, bool /* attach */)
 {
-    if (attach)
-        return;
-
-    for (const auto & column : index.sample_block)
-    {
-        if (!column.type->isComparable())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Data type of argument for minmax index must be comparable, got {} type for column {} instead",
-                column.type->getName(), column.name);
-        }
-    }
 }
-
 }

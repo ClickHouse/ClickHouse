@@ -6,7 +6,9 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Cluster.h>
 #include <Disks/IDisk.h>
+#include <atomic>
 #include <mutex>
+#include <condition_variable>
 
 
 namespace CurrentMetrics { class Increment; }

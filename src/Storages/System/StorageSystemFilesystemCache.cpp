@@ -36,11 +36,11 @@ ColumnsDescription StorageSystemFilesystemCache::getColumnsDescription()
 }
 
 StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & table_id_)
-    : IStorageSystemOneBlock(table_id_, getColumnsDescription())
+    : IStorageSystemOneBlock(table_id_)
 {
 }
 
-void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     auto caches = FileCacheFactory::instance().getAll();
 

@@ -9,11 +9,6 @@ extract_into_parent_list(clickhouse_functions_sources dbms_sources
     FunctionHelpers.cpp
     extractTimeZoneFromFunctionArguments.cpp
     FunctionsLogical.cpp
-    if.cpp
-    multiIf.cpp
-    multiMatchAny.cpp
-    checkHyperscanRegexp.cpp
-    array/has.cpp
     CastOverloadResolver.cpp
 )
 extract_into_parent_list(clickhouse_functions_headers dbms_headers

@@ -19,7 +19,8 @@ public:
     IStorageCluster(
         const String & cluster_name_,
         const StorageID & table_id_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        bool structure_argument_was_provided_);
 
     void read(
         QueryPlan & query_plan,
@@ -41,11 +42,13 @@ public:
 
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}
-    virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
+
+    virtual void addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context) = 0;
 
 private:
     LoggerPtr log;
     String cluster_name;
+    bool structure_argument_was_provided;
 };
 
 

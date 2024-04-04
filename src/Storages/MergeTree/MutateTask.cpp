@@ -8,7 +8,6 @@
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/PreparedSets.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
@@ -17,7 +16,6 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MutationCommands.h>
@@ -29,11 +27,6 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
 
-
-namespace ProfileEvents
-{
-extern const Event MutateTaskProjectionsCalculationMicroseconds;
-}
 
 namespace CurrentMetrics
 {
@@ -73,7 +66,6 @@ static void splitAndModifyMutationCommands(
     LoggerPtr log)
 {
     auto part_columns = part->getColumnsDescription();
-    const auto & table_columns = metadata_snapshot->getColumns();
 
     if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
@@ -82,19 +74,9 @@ static void splitAndModifyMutationCommands(
 
         for (const auto & command : commands)
         {
-            if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
-            {
-                /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
-                /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
-                auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
-                {
-                    for_interpreter.push_back(command);
-                    mutated_columns.emplace(command.column_name);
-                }
-            }
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
+                || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
@@ -104,6 +86,9 @@ static void splitAndModifyMutationCommands(
                 for_interpreter.push_back(command);
                 for (const auto & [column_name, expr] : command.column_to_update_expression)
                     mutated_columns.emplace(column_name);
+
+                if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
+                    mutated_columns.emplace(command.column_name);
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
@@ -213,15 +198,8 @@ static void splitAndModifyMutationCommands(
     {
         for (const auto & command : commands)
         {
-            if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
-            {
-                /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
-                /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
-                auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
-                    for_interpreter.push_back(command);
-            }
-            else if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
@@ -912,7 +890,7 @@ void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->setIndex(source_part->getIndex());
+    new_data_part->index = source_part->index;
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
 
@@ -1261,13 +1239,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
             const auto & projection = *ctx->projections_to_build[i];
-
-            Block projection_block;
-            {
-                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-                projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
-            }
-
+            auto projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
             if (projection_block)
             {
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
@@ -1564,34 +1536,21 @@ private:
         if (!ctx->mutating_pipeline_builder.initialized())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot mutate part columns with uninitialized mutations stream. It's a bug");
 
-        auto builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->mutating_pipeline_builder));
+        QueryPipelineBuilder builder(std::move(ctx->mutating_pipeline_builder));
 
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
-            builder->addTransform(std::make_shared<ExpressionTransform>(
-                builder->getHeader(), ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)));
+            builder.addTransform(std::make_shared<ExpressionTransform>(
+                builder.getHeader(), ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)));
 
-            builder->addTransform(std::make_shared<MaterializingTransform>(builder->getHeader()));
+            builder.addTransform(std::make_shared<MaterializingTransform>(builder.getHeader()));
         }
-
-        PreparedSets::Subqueries subqueries;
 
         if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
-        {
-            auto transform = std::make_shared<TTLTransform>(ctx->context, builder->getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
-            subqueries = transform->getSubqueries();
-            builder->addTransform(std::move(transform));
-        }
+            builder.addTransform(std::make_shared<TTLTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
         if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
-        {
-            auto transform = std::make_shared<TTLCalcTransform>(ctx->context, builder->getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
-            subqueries = transform->getSubqueries();
-            builder->addTransform(std::move(transform));
-        }
-
-        if (!subqueries.empty())
-            builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
+            builder.addTransform(std::make_shared<TTLCalcTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
@@ -1625,7 +1584,7 @@ private:
             ctx->context->getWriteSettings(),
             computed_granularity);
 
-        ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+        ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
         /// Is calculated inside MergeProgressCallback.
         ctx->mutating_pipeline.disableProfileEventUpdate();
@@ -1820,25 +1779,13 @@ private:
 
         if (ctx->mutating_pipeline_builder.initialized())
         {
-            auto builder = std::make_unique<QueryPipelineBuilder>(std::move(ctx->mutating_pipeline_builder));
-            PreparedSets::Subqueries subqueries;
+            QueryPipelineBuilder builder(std::move(ctx->mutating_pipeline_builder));
 
             if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
-            {
-                auto transform = std::make_shared<TTLTransform>(ctx->context, builder->getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
-                subqueries = transform->getSubqueries();
-                builder->addTransform(std::move(transform));
-            }
+                builder.addTransform(std::make_shared<TTLTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
             if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
-            {
-                auto transform = std::make_shared<TTLCalcTransform>(ctx->context, builder->getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
-                subqueries = transform->getSubqueries();
-                builder->addTransform(std::move(transform));
-            }
-
-            if (!subqueries.empty())
-                builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
+                builder.addTransform(std::make_shared<TTLCalcTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
@@ -1852,7 +1799,7 @@ private:
                 &ctx->source_part->index_granularity_info
             );
 
-            ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+            ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
             ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
             /// Is calculated inside MergeProgressCallback.
             ctx->mutating_pipeline.disableProfileEventUpdate();

@@ -38,6 +38,7 @@ struct FilesystemReadPrefetchesLogElement
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class FilesystemReadPrefetchesLog : public SystemLog<FilesystemReadPrefetchesLogElement>

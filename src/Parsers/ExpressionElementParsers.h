@@ -39,7 +39,7 @@ protected:
 class ParserTableAsStringLiteralIdentifier : public IParserBase
 {
 public:
-    explicit ParserTableAsStringLiteralIdentifier() = default;
+    explicit ParserTableAsStringLiteralIdentifier() {}
 
 protected:
     const char * getName() const override { return "string literal table identifier"; }
