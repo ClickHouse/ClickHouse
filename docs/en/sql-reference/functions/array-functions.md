@@ -1484,9 +1484,9 @@ arrayPartialShuffle(arr, limit, seed)
 
 **Parameters**
 
-- `arr`: The array size `N` to partially shuffle. [Array](../data-types/array.md)
-- `limit` (optional): Number to limit element swaps to, in the range `[1..N]`. [UInt or Int](../data-types/int-uint.md).
-- `seed` (optional): seed to be used with random number generation. If not provided a random one is used. [UInt or Int](../data-types/int-uint.md)
+- `arr`: The array size `N` to partially shuffle. [Array](../data-types/array.md).
+- `limit` (optional): The number to limit element swaps to, in the range `[1..N]`. [UInt or Int](../data-types/int-uint.md).
+- `seed` (optional): The seed value to be used with random number generation. If not provided a random one is used. [UInt or Int](../data-types/int-uint.md)
 
 **Returned value**
 
@@ -1497,7 +1497,7 @@ arrayPartialShuffle(arr, limit, seed)
 :::note 
 This function will not materialize constants.
 
-The value of `limit` shouuld be in the range `[1..N]`. Values outside of that range are equivalent to performing full [arrayShuffle](#arrayShuffle).
+The value of `limit` should be in the range `[1..N]`. Values outside of that range are equivalent to performing full [arrayShuffle](#arrayshuffle).
 :::
 
 **Examples**
