@@ -2109,13 +2109,53 @@ Note that the `arrayAll` is a [higher-order function](../../sql-reference/functi
 
 Returns the first element in the `arr1` array for which `func(arr1[i], …, arrN[i])` returns something other than 0.
 
+## arrayFirstOrNull
+
+Returns the first element in the `arr1` array for which `func(arr1[i], …, arrN[i])` returns something other than 0, otherwise it returns `NULL`.
+
+**Syntax**
+
+```sql
+arrayFirstOrNull(func, arr1, …)
+```
+
+**Parameters**
+
+- `func`: lambda function.
+- `arr1`: array to operate on. [Array](../)
+
+**Returned value**
+
+- The first element in the passed array.
+- Otherwise, returns `NULL`
+
+**Implementation details**
+
 Note that the `arrayFirst` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+
+**Example**
+
+Query:
+
+```sql
+SELECT arrayFirstOrNull(x -> x >= 2, emptyArrayUInt8());
+```
+
+Result:
+
+```response
+\N
+```
 
 ## arrayLast(func, arr1, …)
 
 Returns the last element in the `arr1` array for which `func(arr1[i], …, arrN[i])` returns something other than 0.
 
 Note that the `arrayLast` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+
+## arrayLastOrNull
+
+
 
 ## arrayFirstIndex(func, arr1, …)
 
