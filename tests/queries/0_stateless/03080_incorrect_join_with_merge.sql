@@ -1,4 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/29838
+SET allow_experimental_analyzer=1;
 
 CREATE TABLE first_table_lr
 (

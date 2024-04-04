@@ -1,4 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/27115
+SET allow_experimental_analyzer=1;
 drop table if exists fill_ex;
 
 create table fill_ex (

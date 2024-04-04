@@ -1,4 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/23104
+SET allow_experimental_analyzer=1;
 DROP DATABASE IF EXISTS test_03053;
 CREATE DATABASE test_03053;
 
