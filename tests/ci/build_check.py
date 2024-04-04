@@ -9,7 +9,6 @@ import sys
 import time
 
 from ci_config import CI_CONFIG, BuildConfig
-from cache_utils import CargoCache
 
 from env_helper import (
     REPO_COPY,
@@ -19,7 +18,6 @@ from env_helper import (
 from git_helper import Git
 from pr_info import PRInfo
 from report import FAILURE, JobReport, StatusType, SUCCESS
-from s3_helper import S3Helper
 from tee_popen import TeePopen
 import docker_images_helper
 from version_helper import (
@@ -158,8 +156,6 @@ def main():
     pr_info = PRInfo()
 
     logging.info("Repo copy path %s", repo_path)
-
-    s3_helper = S3Helper()
 
     version = get_version_from_repo(git=Git(True))
     logging.info("Got version from repo %s", version.string)
