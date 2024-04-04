@@ -79,7 +79,7 @@ The supported formats are:
 | [RowBinary](#rowbinary)                                                                   | ✔    | ✔     |
 | [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔     |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔     |
-| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔    | ✔     |
+| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔    | ✗     |
 | [Native](#native)                                                                         | ✔    | ✔     |
 | [Null](#null)                                                                             | ✗    | ✔     |
 | [XML](#xml)                                                                               | ✗    | ✔     |
@@ -1487,7 +1487,7 @@ Differs from [PrettySpaceNoEscapes](#prettyspacenoescapes) in that up to 10,000 
 - [output_format_pretty_max_value_width](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_max_value_width) - Maximum width of value to display in Pretty formats. If greater - it will be cut. Default value - `10000`.
 - [output_format_pretty_color](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_color) - use ANSI escape sequences to paint colors in Pretty formats. Default value - `true`.
 - [output_format_pretty_grid_charset](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_grid_charset) - Charset for printing grid borders. Available charsets: ASCII, UTF-8. Default value - `UTF-8`.
-- [output_format_pretty_row_numbers](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_row_numbers) - Add row numbers before each row for pretty output format. Default value - `false`.
+- [output_format_pretty_row_numbers](/docs/en/operations/settings/settings-formats.md/#output_format_pretty_row_numbers) - Add row numbers before each row for pretty output format. Default value - `true`.
 
 ## RowBinary {#rowbinary}
 
@@ -2465,7 +2465,7 @@ Result:
 
 ## Npy {#data-format-npy}
 
-This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse: 
+This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse:
 | Npy type | ClickHouse type |
 |:--------:|:---------------:|
 | b1       |    UInt8        |
