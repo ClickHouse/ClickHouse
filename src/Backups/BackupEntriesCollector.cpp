@@ -567,17 +567,16 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     checkIsQueryCancelled();
 
-    auto filter_by_table_name = [my_database_info = &database_info](const String & table_name)
+    auto filter_by_table_name = [&](const String & table_name)
     {
-        /// We skip inner tables of materialized views.
-        if (table_name.starts_with(".inner_id."))
+        if (isInnerTableShouldBeSkippedForBackup(database_name, table_name))
             return false;
 
-        if (my_database_info->tables.contains(table_name))
+        if (database_info.tables.contains(table_name))
             return true;
 
-        if (my_database_info->all_tables)
-            return !my_database_info->except_table_names.contains(table_name);
+        if (database_info.all_tables)
+            return !database_info.except_table_names.contains(table_name);
 
         return false;
     };
