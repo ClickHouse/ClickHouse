@@ -322,6 +322,11 @@ private:
                                Session::getPort());
         }
 
+        Poco::Timespan idleTime() {
+            Poco::Timestamp now;
+            return now - Session::getLastRequest();
+        }
+
         void flushRequest() override
         {
             if (bool(request_stream))
@@ -364,14 +369,18 @@ private:
 
         std::ostream & sendRequest(Poco::Net::HTTPRequest & request) override
         {
+            auto idle = idleTime();
             std::ostream & result = Session::sendRequest(request);
             result.exceptions(std::ios::badbit);
 
             // that line is for temporary debug, will be removed
-            LOG_INFO(log, "Send request to {} with: usage count {}, keep-alive timeout={}, headers: {}",
+            LOG_INFO(log, "Send request to {} with: version {}, method {}, usage count {}, keep-alive timeout={}, last usage ago: {}ms, headers: {}",
+                     request.getVersion(),
+                     request.getMethod(),
                      getTarget(),
                      usage_cnt,
                      Session::getKeepAliveTimeout().totalSeconds(),
+                     idle.totalMilliseconds(),
                      printAllHeaders(request));
 
             request_stream = &result;
@@ -391,13 +400,15 @@ private:
             result.exceptions(std::ios::badbit);
 
             // that line is for temporary debug, will be removed
-            if (response.has(Poco::Net::HTTPMessage::CONNECTION_KEEP_ALIVE))
-                LOG_INFO(log, "Received response from {} with: usage count {}, keep alive header: {}, original ka {}, headers: {}",
-                         getTarget(),
-                         usage_cnt,
-                         response.get(Poco::Net::HTTPMessage::CONNECTION_KEEP_ALIVE, Poco::Net::HTTPMessage::EMPTY),
-                         originKA,
-                         printAllHeaders(response));
+            LOG_INFO(log, "Received response from {} with: version {}, code {}, usage count {}, keep alive header: {}, original ka {}, last usage ago: {}ms, headers: {}",
+                     getTarget(),
+                     response.getVersion(),
+                     int(response.getStatus()),
+                     usage_cnt,
+                     response.get(Poco::Net::HTTPMessage::CONNECTION_KEEP_ALIVE, Poco::Net::HTTPMessage::EMPTY),
+                     originKA,
+                     idleTime().totalMilliseconds(),
+                     printAllHeaders(response));
 
             response_stream = &result;
             response_stream_completed = false;
@@ -449,11 +460,11 @@ private:
             else
             {
                 Poco::Timestamp now;
-                LOG_INFO(log, "Expired connection to {} with: usage count {}, keep alive timeout: {}, last usage ago: {}",
+                LOG_INFO(log, "Expired connection to {} with: usage count {}, keep alive timeout: {}, last usage ago: {}s",
                          getTarget(),
                          usage_cnt,
                          Session::getKeepAliveTimeout().totalSeconds(),
-                         Poco::Timespan(now - Session::getLastRequest()).totalSeconds());
+                         idleTime().totalSeconds());
             }
 
             CurrentMetrics::sub(metrics.active_count);
@@ -498,6 +509,7 @@ private:
         IHTTPConnectionPoolForEndpoint::Metrics metrics;
         bool isExpired = false;
         size_t usage_cnt = 1;
+        size_t exception_level = std::uncaught_exceptions();
 
         LoggerPtr log = getLogger("PooledConnection");
 
@@ -567,7 +579,6 @@ public:
 
                 setTimeouts(*it, timeouts);
                 it->usage_cnt += 1;
-
 
                 ProfileEvents::increment(getMetrics().reused, 1);
                 CurrentMetrics::sub(getMetrics().stored_count, 1);
@@ -690,13 +701,16 @@ private:
         {
             Poco::Timestamp now;
             LOG_INFO(getLogger("PooledConnection"),
-                     "Reset connection to {} with: usage count {}, keep alive timeout: {}, last usage ago: {}, is completed {}, store limit reached {} as {}/{}",
+                     "Reset connection to {} with: usage count {}, keep alive timeout: {}, connected {}, must recon {}, last usage ago: {}, is completed {}, store limit reached {} as {}/{}, there is exception {}",
                      getTarget(),
                      connection.usage_cnt,
                      connection.getKeepAliveTimeout().totalSeconds(),
-                     Poco::Timespan(now - connection.getLastRequest()).totalSeconds(),
+                     connection.connected(),
+                     connection.mustReconnect(),
+                     connection.idleTime().totalSeconds(),
                      connection.isCompleted(),
-                     group->isStoreLimitReached(), group->getStored(), group->getStoreLimit());
+                     group->isStoreLimitReached(), group->getStored(), group->getStoreLimit(),
+                     connection.exception_level - std::uncaught_exceptions());
 
             ProfileEvents::increment(getMetrics().reset, 1);
             return;

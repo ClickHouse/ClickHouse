@@ -348,7 +348,7 @@ std::istream& HTTPClientSession::receiveResponse(HTTPResponse& response)
         /// when server sends its keep alive timeout, client has to follow that value
         auto timeout = response.getKeepAliveTimeout();
         if (timeout > 0)
-            _keepAliveTimeout = Poco::Timespan(timeout, 0);
+            _keepAliveTimeout = std::min(_keepAliveTimeout, Poco::Timespan(timeout, 0));
     }
 
 	if (!_expectResponseBody || response.getStatus() < 200 || response.getStatus() == HTTPResponse::HTTP_NO_CONTENT || response.getStatus() == HTTPResponse::HTTP_NOT_MODIFIED)
