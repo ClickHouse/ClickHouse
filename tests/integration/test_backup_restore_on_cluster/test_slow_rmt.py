@@ -82,7 +82,7 @@ def test_replicated_database_async():
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
 
     backup_name = new_backup_name()
-    [id, status] = node1.query(
+    id, status = node1.query(
         f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} ASYNC"
     ).split("\t")
 
