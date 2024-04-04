@@ -1,19 +1,20 @@
 #include "ExternalLoader.h"
 
 #include <mutex>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/Config/AbstractConfigurationComparison.h>
-#include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/ThreadPool.h>
-#include <Common/randomSeed.h>
-#include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/logger_useful.h>
+#include <unordered_set>
 #include <base/chrono_io.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
-#include <unordered_set>
+#include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/ThreadPool.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB
