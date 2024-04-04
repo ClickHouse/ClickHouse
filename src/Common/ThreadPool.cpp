@@ -183,6 +183,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     {
         std::unique_lock lock(mutex);
 
+        if (CannotAllocateThreadFaultInjector::injectFault())
+            return on_error("fault injected");
+
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
 
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is zero.
@@ -202,9 +205,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// Check if there are enough threads to process job.
         if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
         {
-            if (CannotAllocateThreadFaultInjector::injectFault())
-                return on_error("fault injected");
-
             try
             {
                 threads.emplace_front();

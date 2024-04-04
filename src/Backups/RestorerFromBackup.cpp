@@ -231,7 +231,7 @@ void RestorerFromBackup::schedule(std::function<void()> && task_, const char * t
 
     checkIsQueryCancelled();
 
-    auto future = scheduleFromThreadPool<void>(
+    auto future = scheduleFromThreadPoolUnsafe<void>(
         [this, task = std::move(task_)]() mutable
         {
             if (exception_caught)

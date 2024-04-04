@@ -1190,7 +1190,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     , file_iterator(file_iterator_)
     , need_only_count(need_only_count_)
     , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, CurrentMetrics::ObjectStorageAzureThreadsScheduled, 1)
-    , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
+    , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
     reader = createReader();
     if (reader)

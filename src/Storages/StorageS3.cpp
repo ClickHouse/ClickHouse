@@ -204,7 +204,7 @@ public:
         , read_keys(read_keys_)
         , request_settings(request_settings_)
         , list_objects_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, 1)
-        , list_objects_scheduler(threadPoolCallbackRunner<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
+        , list_objects_scheduler(threadPoolCallbackRunnerUnsafe<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
         , file_progress_callback(file_progress_callback_)
     {
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
@@ -413,7 +413,7 @@ private:
     S3Settings::RequestSettings request_settings;
 
     ThreadPool list_objects_pool;
-    ThreadPoolCallbackRunner<ListObjectsOutcome> list_objects_scheduler;
+    ThreadPoolCallbackRunnerUnsafe<ListObjectsOutcome> list_objects_scheduler;
     std::future<ListObjectsOutcome> outcome_future;
     std::function<void(FileProgress)> file_progress_callback;
 };
@@ -527,7 +527,7 @@ StorageS3Source::ReadTaskIterator::ReadTaskIterator(
     : callback(callback_)
 {
     ThreadPool pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, max_threads_count);
-    auto pool_scheduler = threadPoolCallbackRunner<String>(pool, "S3ReadTaskItr");
+    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<String>(pool, "S3ReadTaskItr");
 
     std::vector<std::future<String>> keys;
     keys.reserve(max_threads_count);
@@ -598,7 +598,7 @@ StorageS3Source::StorageS3Source(
     , max_parsing_threads(max_parsing_threads_)
     , need_only_count(need_only_count_)
     , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, 1)
-    , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
+    , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
 }
 
@@ -875,7 +875,7 @@ public:
                 configuration_.request_settings,
                 std::move(blob_log),
                 std::nullopt,
-                threadPoolCallbackRunner<void>(getIOThreadPool().get(), "S3ParallelWrite"),
+                threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "S3ParallelWrite"),
                 context->getWriteSettings()),
             compression_method,
             static_cast<int>(settings.output_format_compression_level),

@@ -247,9 +247,9 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
     auto settings_ptr = s3_settings.get();
-    ThreadPoolCallbackRunner<void> scheduler;
+    ThreadPoolCallbackRunnerUnsafe<void> scheduler;
     if (write_settings.s3_allow_parallel_part_upload)
-        scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
+        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "VFSWrite");
 
 
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
@@ -461,7 +461,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         auto current_client = dest_s3->client.get();
         auto settings_ptr = s3_settings.get();
         auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
-        auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
+        auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
         try {
             copyS3File(
                 current_client,
@@ -503,7 +503,7 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
     auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
-    auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
+    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
     copyS3File(current_client,
         uri.bucket,
         object_from.remote_path,

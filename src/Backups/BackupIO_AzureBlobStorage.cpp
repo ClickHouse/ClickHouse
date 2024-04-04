@@ -121,7 +121,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                 /* dest_path */ blob_path[0],
                 settings,
                 read_settings,
-                threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupRDAzure"),
+                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupRDAzure"),
                 /* for_disk_azure_blob_storage= */ true);
 
             return file_size;
@@ -178,7 +178,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(const String & path_in_backu
                 fs::path(configuration.blob_path) / path_in_backup,
                 settings,
                 read_settings,
-                threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
+                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
             return; /// copied!
         }
     }
@@ -201,14 +201,14 @@ void BackupWriterAzureBlobStorage::copyFile(const String & destination, const St
        /* dest_path */ destination,
        settings,
        read_settings,
-       threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"),
+       threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"),
        /* for_disk_azure_blob_storage= */ true);
 }
 
 void BackupWriterAzureBlobStorage::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
     copyDataToAzureBlobStorageFile(create_read_buffer, start_pos, length, client, configuration.container, path_in_backup, settings,
-                     threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
+                                   threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
 }
 
 BackupWriterAzureBlobStorage::~BackupWriterAzureBlobStorage() = default;
