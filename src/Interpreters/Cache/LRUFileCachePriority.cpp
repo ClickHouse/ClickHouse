@@ -126,6 +126,9 @@ void LRUFileCachePriority::updateSize(int64_t size)
     chassert(size != 0);
     chassert(size > 0 || state->current_size >= size_t(-size));
 
+    LOG_TEST(log, "Updating size with {}, current is {}",
+             size, state->current_size);
+
     state->current_size += size;
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
 }
@@ -444,12 +447,15 @@ void LRUFileCachePriority::LRUIterator::invalidate()
     assertValid();
 
     const auto & entry = *iterator;
-    LOG_TEST(cache_priority->log,
-             "Invalidating entry in LRU queue entry {}", entry->toString());
 
     chassert(entry->size != 0);
     cache_priority->updateSize(-entry->size);
     cache_priority->updateElementsCount(-1);
+
+    LOG_TEST(cache_priority->log,
+             "Invalidated entry in LRU queue {}: {}",
+             entry->toString(), cache_priority->getApproxStateInfoForLog());
+
     entry->size = 0;
 }
 
@@ -524,6 +530,12 @@ std::string LRUFileCachePriority::getStateInfoForLog(const CachePriorityGuard::L
 {
     return fmt::format("size: {}/{}, elements: {}/{} (description: {})",
                        getSize(lock), max_size, getElementsCount(lock), max_elements, description);
+}
+
+std::string LRUFileCachePriority::getApproxStateInfoForLog() const
+{
+    return fmt::format("size: {}/{}, elements: {}/{} (description: {})",
+                       getSizeApprox(), max_size, getElementsCountApprox(), max_elements, description);
 }
 
 void LRUFileCachePriority::holdImpl(
