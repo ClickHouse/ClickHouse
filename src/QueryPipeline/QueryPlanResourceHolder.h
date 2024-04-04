@@ -17,11 +17,17 @@ struct QueryIdHolder;
 struct QueryPlanResourceHolder
 {
     QueryPlanResourceHolder();
-    QueryPlanResourceHolder(QueryPlanResourceHolder &&) noexcept;
+
+    QueryPlanResourceHolder(const QueryPlanResourceHolder &) = delete;
+    QueryPlanResourceHolder & operator=(const QueryPlanResourceHolder &) = delete;
+
+    QueryPlanResourceHolder(QueryPlanResourceHolder && rhs) noexcept;
+    QueryPlanResourceHolder & operator=(QueryPlanResourceHolder && rhs);
+
     ~QueryPlanResourceHolder();
 
-    /// Custom move assignment does not destroy data from lhs. It appends data from rhs to lhs.
-    QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &&) noexcept;
+    /// Adds resources from rhs and removes them from rhs
+    void merge(QueryPlanResourceHolder && rhs) noexcept;
 
     /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
     /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,

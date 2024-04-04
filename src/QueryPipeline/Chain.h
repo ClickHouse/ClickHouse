@@ -54,9 +54,9 @@ public:
 
     void attachResources(QueryPlanResourceHolder holder_)
     {
-        /// This operator "=" actually merges holder_ into holder, doesn't replace.
-        holder = std::move(holder_);
+        holder.merge(std::move(holder_));
     }
+
     QueryPlanResourceHolder detachResources() { return std::move(holder); }
 
     void reset();
