@@ -1379,16 +1379,6 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         }
     }
 
-    {
-        auto cache_lock = lockCache();
-        LOG_TRACE(log, "new max size: {}, old max size: {}, "
-                "new elements count: {}, old_elements_count: {}, "
-                "current max size: {}, current max elements: {}",
-                new_settings.max_size, actual_settings.max_size,
-                new_settings.max_elements, actual_settings.max_elements,
-                main_priority->getSizeLimit(cache_lock), main_priority->getElementsLimit(cache_lock));
-    }
-
     if (new_settings.max_size != actual_settings.max_size
         || new_settings.max_elements != actual_settings.max_elements)
     {

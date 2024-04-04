@@ -102,21 +102,21 @@ void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
 std::string FileCacheSettings::toString() const
 {
     WriteBufferFromOwnString res;
-    res << "base_path: " << base_path << "\n";
-    res << "max_size: " << max_size << "\n";
-    res << "max_elements: " << max_elements << "\n";
-    res << "max_file_segment_size: " << max_file_segment_size << "\n";
-    res << "cache_on_write_operations: " << cache_on_write_operations << "\n";
-    res << "cache_hits_threshold: " << cache_hits_threshold << "\n";
-    res << "enable_filesystem_query_cache_limit: " << enable_filesystem_query_cache_limit << "\n";
-    res << "bypass_cache_threshold: " << bypass_cache_threshold << "\n";
-    res << "boundary_alignment: " << boundary_alignment << "\n";
-    res << "background_download_threads: " << background_download_threads << "\n";
-    res << "background_download_queue_size_limit: " << background_download_queue_size_limit << "\n";
-    res << "load_metadata_threads: " << load_metadata_threads << "\n";
-    res << "write_cache_per_user_id_directory: " << write_cache_per_user_id_directory << "\n";
-    res << "cache_policy: " << cache_policy << "\n";
-    res << "slru_size_ratio: " << slru_size_ratio << "\n";
+    res << "base_path: " << base_path << ", ";
+    res << "max_size: " << max_size << ", ";
+    res << "max_elements: " << max_elements << ", ";
+    res << "max_file_segment_size: " << max_file_segment_size << ", ";
+    res << "cache_on_write_operations: " << cache_on_write_operations << ", ";
+    res << "cache_hits_threshold: " << cache_hits_threshold << ", ";
+    res << "enable_filesystem_query_cache_limit: " << enable_filesystem_query_cache_limit << ", ";
+    res << "bypass_cache_threshold: " << bypass_cache_threshold << ", ";
+    res << "boundary_alignment: " << boundary_alignment << ", ";
+    res << "background_download_threads: " << background_download_threads << ", ";
+    res << "background_download_queue_size_limit: " << background_download_queue_size_limit << ", ";
+    res << "load_metadata_threads: " << load_metadata_threads << ", ";
+    res << "write_cache_per_user_id_directory: " << write_cache_per_user_id_directory << ", ";
+    res << "cache_policy: " << cache_policy << ", ";
+    res << "slru_size_ratio: " << slru_size_ratio << ", ";
     return res.str();
 }
 
