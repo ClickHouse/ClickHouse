@@ -43,7 +43,7 @@ String StatisticDescription::getTypeName() const
     throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type: {}. We only support statistic type `tdigest` right now.", type);
 }
 
-static ASTPtr getASTForStatisticTypes(const std::unordered_map<StatisticType, StatisticDescription> & statistic_types)
+static ASTPtr getASTForStatisticTypes(const std::map<StatisticType, StatisticDescription> & statistic_types)
 {
         auto function_node = std::make_shared<ASTFunction>();
         function_node->name = "STATISTIC";
@@ -109,7 +109,7 @@ std::vector<StatisticsDescription> StatisticsDescription::getStatisticsFromAST(c
     std::vector<StatisticsDescription> result;
     result.reserve(stat_definition->columns->children.size());
 
-    std::unordered_map<StatisticType, StatisticDescription> statistic_types;
+    std::map<StatisticType, StatisticDescription> statistic_types;
     for (const auto & stat_ast : stat_definition->types->children)
     {
         StatisticDescription stat;

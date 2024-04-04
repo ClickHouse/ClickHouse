@@ -40,7 +40,7 @@ struct ColumnDescription;
 
 struct StatisticsDescription
 {
-    std::unordered_map<StatisticType, StatisticDescription> stats;
+    std::map<StatisticType, StatisticDescription> stats;
 
     bool operator==(const StatisticsDescription & other) const
     {
