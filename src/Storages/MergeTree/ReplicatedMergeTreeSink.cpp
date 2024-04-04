@@ -799,8 +799,8 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 throw Exception(
                     ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
 
-            /// When we attach existing parts it's okay to be in read-only mode
-            /// For example during RESTORE REPLICA.
+            /// Usually parts should not be attached in read-only mode. So we retry until the table is not read-only.
+            /// However there is one case when it's necessary to attach in read-only mode - during execution of the RESTORE REPLICA command.
             if (!allow_attach_while_readonly)
             {
                 retries_ctl.setUserError(
