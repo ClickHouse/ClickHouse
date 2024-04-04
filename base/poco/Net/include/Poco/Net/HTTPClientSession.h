@@ -458,11 +458,6 @@ namespace Net
         return _lastRequest;
     }
 
-    inline void HTTPClientSession::setLastRequest(Poco::Timestamp time)
-    {
-        _lastRequest = time;
-    }
-
     inline double HTTPClientSession::getKeepAliveReliability() const
     {
         return _defaultKeepAliveReliabilityLevel;

@@ -193,6 +193,18 @@ public:
         return total_connections_in_group >= limits.store_limit;
     }
 
+    size_t getStored() const
+    {
+        std::lock_guard lock(mutex);
+        return total_connections_in_group;
+    }
+
+    size_t getStoreLimit() const
+    {
+        std::lock_guard lock(mutex);
+        return limits.store_limit;
+    }
+
     void atConnectionCreate()
     {
         std::lock_guard lock(mutex);
@@ -219,12 +231,6 @@ public:
             LOG_WARNING(log, "Sessions count is OK in the group {}, count {}", type, total_connections_in_group);
             mute_warning_until = 0;
         }
-    }
-
-    void atPoolDestroy(size_t connections)
-    {
-        std::lock_guard lock(mutex);
-        total_connections_in_group -= connections;
     }
 
     HTTPConnectionGroupType getType() const { return type; }
@@ -345,10 +351,28 @@ private:
             Session::flushRequest();
         }
 
+        String printAllHeaders(Poco::Net::HTTPMessage & message) const
+        {
+            String out;
+            out.reserve(300);
+            for (auto & [k, v] : message)
+            {
+                out.append(fmt::format("<{}: {}> ", k, v));
+            }
+            return out;
+        }
+
         std::ostream & sendRequest(Poco::Net::HTTPRequest & request) override
         {
             std::ostream & result = Session::sendRequest(request);
             result.exceptions(std::ios::badbit);
+
+            // that line is for temporary debug, will be removed
+            LOG_INFO(log, "Send request to {} with: usage count {}, keep-alive timeout={}, headers: {}",
+                     getTarget(),
+                     usage_cnt,
+                     Session::getKeepAliveTimeout().totalSeconds(),
+                     printAllHeaders(request));
 
             request_stream = &result;
             request_stream_completed = false;
@@ -368,9 +392,12 @@ private:
 
             // that line is for temporary debug, will be removed
             if (response.has(Poco::Net::HTTPMessage::CONNECTION_KEEP_ALIVE))
-                LOG_INFO(log, "received keep alive header: {}, original was {}",
+                LOG_INFO(log, "Received response from {} with: usage count {}, keep alive header: {}, original ka {}, headers: {}",
+                         getTarget(),
+                         usage_cnt,
                          response.get(Poco::Net::HTTPMessage::CONNECTION_KEEP_ALIVE, Poco::Net::HTTPMessage::EMPTY),
-                         originKA);
+                         originKA,
+                         printAllHeaders(response));
 
             response_stream = &result;
             response_stream_completed = false;
@@ -415,8 +442,19 @@ private:
             group->atConnectionDestroy();
 
             if (!isExpired)
+            {
                 if (auto lock = pool.lock())
                     lock->atConnectionDestroy(*this);
+            }
+            else
+            {
+                Poco::Timestamp now;
+                LOG_INFO(log, "Expired connection to {} with: usage count {}, keep alive timeout: {}, last usage ago: {}",
+                         getTarget(),
+                         usage_cnt,
+                         Session::getKeepAliveTimeout().totalSeconds(),
+                         Poco::Timespan(now - Session::getLastRequest()).totalSeconds());
+            }
 
             CurrentMetrics::sub(metrics.active_count);
         }
@@ -459,6 +497,7 @@ private:
         ConnectionGroup::Ptr group;
         IHTTPConnectionPoolForEndpoint::Metrics metrics;
         bool isExpired = false;
+        size_t usage_cnt = 1;
 
         LoggerPtr log = getLogger("PooledConnection");
 
@@ -527,6 +566,8 @@ public:
                 stored_connections.pop();
 
                 setTimeouts(*it, timeouts);
+                it->usage_cnt += 1;
+
 
                 ProfileEvents::increment(getMetrics().reused, 1);
                 CurrentMetrics::sub(getMetrics().stored_count, 1);
@@ -647,12 +688,23 @@ private:
         if (!connection.connected() || connection.mustReconnect() || !connection.isCompleted() || connection.buffered()
             || group->isStoreLimitReached())
         {
+            Poco::Timestamp now;
+            LOG_INFO(getLogger("PooledConnection"),
+                     "Reset connection to {} with: usage count {}, keep alive timeout: {}, last usage ago: {}, is completed {}, store limit reached {} as {}/{}",
+                     getTarget(),
+                     connection.usage_cnt,
+                     connection.getKeepAliveTimeout().totalSeconds(),
+                     Poco::Timespan(now - connection.getLastRequest()).totalSeconds(),
+                     connection.isCompleted(),
+                     group->isStoreLimitReached(), group->getStored(), group->getStoreLimit());
+
             ProfileEvents::increment(getMetrics().reset, 1);
             return;
         }
 
         auto connection_to_store = allocateNewConnection();
         connection_to_store->assign(connection);
+        connection_to_store->usage_cnt = connection.usage_cnt;
 
         {
             MemoryTrackerSwitcher switcher{&total_memory_tracker};

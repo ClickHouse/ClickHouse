@@ -223,9 +223,21 @@ void HTTPClientSession::setKeepAliveTimeout(const Poco::Timespan& timeout)
 {
     if (connected())
     {
-        throw Poco::IllegalStateException("cannot change keep alive timeout on initiated connection");
+        throw Poco::IllegalStateException("cannot change keep alive timeout on initiated connection, "
+                                          "That value is managed privately after connection is established.");
     }
     _keepAliveTimeout = timeout;
+}
+
+
+void HTTPClientSession::setLastRequest(Poco::Timestamp time)
+{
+    if (connected())
+    {
+        throw Poco::IllegalStateException("cannot change last request on initiated connection, "
+                                          "That value is managed privately after connection is established.");
+    }
+    _lastRequest = time;
 }
 
 
@@ -246,8 +258,8 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request)
 	{
 		if (!connected())
 			reconnect();
-		if (!keepAlive)
-			request.setKeepAlive(false);
+        if (!request.has(HTTPMessage::CONNECTION))
+            request.setKeepAlive(keepAlive);
         if (keepAlive && !request.has(HTTPMessage::CONNECTION_KEEP_ALIVE) && _keepAliveTimeout.totalSeconds() > 0)
             request.setKeepAliveTimeout(_keepAliveTimeout.totalSeconds());
 		if (!request.has(HTTPRequest::HOST) && !_host.empty())
@@ -528,14 +540,16 @@ void HTTPClientSession::assign(Poco::Net::HTTPClientSession & session)
     if (buffered())
         throw Poco::LogicException("assign to a session with not empty buffered data");
 
-    setLastRequest(session.getLastRequest());
+    poco_assert(!connected());
+
     setResolvedHost(session.getResolvedHost());
     setProxyConfig(session.getProxyConfig());
 
     setTimeout(session.getConnectionTimeout(), session.getSendTimeout(), session.getReceiveTimeout());
     setKeepAlive(session.getKeepAlive());
-    if (!connected())
-        setKeepAliveTimeout(session.getKeepAliveTimeout());
+
+    setLastRequest(session.getLastRequest());
+    setKeepAliveTimeout(session.getKeepAliveTimeout());
 
     attachSocket(session.detachSocket());
 

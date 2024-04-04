@@ -182,7 +182,7 @@ bool HTTPMessage::getKeepAlive() const
 
 void HTTPMessage::setKeepAliveTimeout(int timeout)
 {
-    add(HTTPMessage::CONNECTION_KEEP_ALIVE, std::format("timeout={}", timeout));
+    add(HTTPMessage::CONNECTION_KEEP_ALIVE, std::format("timeout={}, max=1000", timeout));
 }
 
 
