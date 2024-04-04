@@ -10,3 +10,4 @@ FROM
     SELECT 2 AS ver
 )
 GROUP BY ver
+ORDER BY ver;
