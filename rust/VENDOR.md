@@ -1,3 +1,3 @@
-- Update Cargo.lock
+- Update Cargo.lock (`cargo generate-lockfile`)
 - Run `cargo vendor --locked ../contrib/rust_vendor`
 - Update `rust_vendor` submodule with the new contents
