@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2724
+personal_ws-1.1 en 2758 
 AArch
 ACLs
 ALTERs
@@ -161,7 +161,10 @@ ClickHouseNIO
 ClickHouseVapor
 ClickVisual
 ClickableSquare
+CloudAvailableBadge
 CloudDetails
+CloudNotSupportedBadge
+CloudStorage
 CodeBlock
 CodeLLDB
 Codecs
@@ -460,6 +463,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 Levenshtein
+Liao
 LibFuzzer
 LightHouse
 LineAsString
@@ -688,7 +692,6 @@ PartsCommitted
 PartsCompact
 PartsDeleteOnDestroy
 PartsDeleting
-PartsInMemory
 PartsOutdated
 PartsPreActive
 PartsPreCommitted
@@ -846,7 +849,6 @@ SendScalars
 ShareAlike
 SharedMergeTree
 Shortkeys
-Shortkeys
 SimHash
 Simhash
 SimpleAggregateFunction
@@ -959,6 +961,7 @@ TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
 Transactional
+Tsai
 Tukey
 TwoColumnList
 UBSan
@@ -1584,6 +1587,7 @@ gccMurmurHash
 gcem
 generateRandom
 generateRandomStructure
+generateSeries
 generateULID
 generateUUIDv
 geoDistance
@@ -1598,6 +1602,7 @@ geohashEncode
 geohashesInBox
 geoip
 geospatial
+getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -1676,6 +1681,7 @@ hasSubsequenceCaseInsensitiveUTF
 hasSubsequenceUTF
 hasSubstr
 hasToken
+hasThreadFuzzer
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
@@ -1706,7 +1712,6 @@ hudi
 hyperscan
 hypot
 hyvor
-iTerm
 iTerm
 icosahedron
 icudata
@@ -1981,6 +1986,9 @@ nestjs
 netloc
 ngram
 ngramDistance
+ngramDistanceCaseInsensitive
+ngramDistanceCaseInsensitiveUTF
+ngramDistanceUTF
 ngramMinHash
 ngramMinHashArg
 ngramMinHashArgCaseInsensitive
@@ -1990,6 +1998,9 @@ ngramMinHashCaseInsensitive
 ngramMinHashCaseInsensitiveUTF
 ngramMinHashUTF
 ngramSearch
+ngramSearchCaseInsensitive
+ngramSearchCaseInsensitiveUTF
+ngramSearchUTF
 ngramSimHash
 ngramSimHashCaseInsensitive
 ngramSimHashCaseInsensitiveUTF
@@ -2334,6 +2345,14 @@ shortcircuit
 shortkeys
 shoutout
 simdjson
+simpleJSON
+simpleJSONExtractBool
+simpleJSONExtractFloat
+simpleJSONExtractInt
+simpleJSONExtractRaw
+simpleJSONExtractString
+simpleJSONExtractUInt
+simpleJSONHas
 simpleLinearRegression
 simpleaggregatefunction
 simplelinearregression
@@ -2689,7 +2708,9 @@ userver
 utils
 uuid
 varPop
+varPopStable
 varSamp
+varSampStable
 variadic
 variantElement
 variantType

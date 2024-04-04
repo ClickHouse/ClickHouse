@@ -1016,7 +1016,7 @@ namespace
         String field;
         bool ok = true;
         if constexpr (is_json)
-            ok = tryReadJSONStringInto(field, buf);
+            ok = tryReadJSONStringInto(field, buf, settings.json);
         else
             ok = tryReadQuotedString(field, buf);
 
@@ -1054,7 +1054,7 @@ namespace
     {
         if (depth > settings.max_parser_depth)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-                            "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", settings.max_parser_depth);
+                "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", settings.max_parser_depth);
 
         assertChar('{', buf);
         skipWhitespaceIfAny(buf);
@@ -1071,7 +1071,7 @@ namespace
                 first = false;
 
             String key;
-            if (!tryReadJSONStringInto(key, buf))
+            if (!tryReadJSONStringInto(key, buf, settings.json))
                 return false;
 
             skipWhitespaceIfAny(buf);

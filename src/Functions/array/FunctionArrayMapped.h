@@ -355,7 +355,7 @@ public:
                     {
                         arrays.emplace_back(
                             column_tuple->getColumnPtr(j),
-                            recursiveRemoveLowCardinality(type_tuple.getElement(j)),
+                            type_tuple.getElement(j),
                             array_with_type_and_name.name + "." + tuple_names[j]);
                     }
                 }
@@ -363,7 +363,7 @@ public:
                 {
                     arrays.emplace_back(
                         column_array->getDataPtr(),
-                        recursiveRemoveLowCardinality(array_type->getNestedType()),
+                        array_type->getNestedType(),
                         array_with_type_and_name.name);
                 }
 

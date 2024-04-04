@@ -8,6 +8,8 @@
 namespace ProfileEvents
 {
     extern const Event ReadBufferSeekCancelConnection;
+    extern const Event ReadWriteBufferFromHTTPRequestsSent;
+    extern const Event ReadWriteBufferFromHTTPBytes;
 }
 
 
@@ -95,7 +97,7 @@ size_t ReadWriteBufferFromHTTP::getOffset() const
 
 void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const
 {
-    request.setHost(initial_uri.getHost()); // use original, not resolved host name in header
+    request.setHost(current_uri.getHost());
 
     if (out_stream_callback)
         request.setChunkedTransferEncoding(true);
@@ -235,15 +237,17 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 }
 
 ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
-    Poco::Net::HTTPResponse & response, const Poco::URI & uri_, const std::string & method_, const std::optional<HTTPRange> & range, bool allow_redirects) const
+    Poco::Net::HTTPResponse & response, const std::string & method_, const std::optional<HTTPRange> & range, bool allow_redirects) const
 {
     if (remote_host_filter)
-        remote_host_filter->checkURL(uri_);
+        remote_host_filter->checkURL(current_uri);
 
-    Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+    Poco::Net::HTTPRequest request(method_, current_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
     prepareRequest(request, range);
 
-    auto session = makeHTTPSession(connection_group, uri_, timeouts, proxy_config);
+    auto session = makeHTTPSession(connection_group, current_uri, timeouts, proxy_config);
+
+    ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
 
     auto & stream_out = session->sendRequest(request);
     if (out_stream_callback)
@@ -259,7 +263,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
 ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
     Poco::Net::HTTPResponse & response, const String & method_, const std::optional<HTTPRange> & range)
 {
-    auto result = callImpl(response, current_uri, method_, range, true);
+    auto result = callImpl(response, method_, range, true);
 
     while (isRedirect(response.getStatus()))
     {
@@ -275,8 +279,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
                 initial_uri.toString(), max_redirects ? "increase the allowed maximum number of" : "allow");
 
         current_uri = uri_redirect;
-
-        result = callImpl(response, uri_redirect, method_, range, true);
+        result = callImpl(response, method_, range, true);
     }
 
     return result;
@@ -343,9 +346,11 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         {
             if (!mute_logging)
                 LOG_ERROR(log,
-                          "Failed to make request to '{}'. Error: '{}'. "
+                          "Failed to make request to '{}'{}. "
+                          "Error: '{}'. "
                           "Failed at try {}/{}.",
-                          initial_uri.toString(), error_message,
+                          initial_uri.toString(), current_uri == initial_uri ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                          error_message,
                           attempt, read_settings.http_max_tries);
 
             std::rethrow_exception(exception);
@@ -357,10 +362,12 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
             if (!mute_logging)
                 LOG_INFO(log,
-                         "Failed to make request to `{}`. Error: {}. "
+                         "Failed to make request to '{}'{}. "
+                         "Error: {}. "
                          "Failed at try {}/{}. "
                          "Will retry with current backoff wait is {}/{} ms.",
-                         initial_uri.toString(), error_message,
+                         initial_uri.toString(), current_uri == initial_uri ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                         error_message,
                          attempt + 1, read_settings.http_max_tries,
                          milliseconds_to_wait, read_settings.http_retry_max_backoff_ms);
 
@@ -449,6 +456,7 @@ bool ReadWriteBufferFromHTTP::nextImpl()
                     if (http_skip_not_found_url && e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
                     {
                         next_result = false;
+                        has_not_found_url = true;
                         return;
                     }
 
@@ -479,6 +487,8 @@ bool ReadWriteBufferFromHTTP::nextImpl()
             BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
 
             offset_from_begin_pos += working_buffer.size();
+
+            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, working_buffer.size());
         },
         /*on_retry=*/ [&] ()
         {
@@ -505,7 +515,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
             auto range = HTTPRange{offset, offset + n - 1};
 
             Poco::Net::HTTPResponse response;
-            auto result = callImpl(response, current_uri, method, range, false);
+            auto result = callImpl(response, method, range, false);
 
             if (response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT &&
                 (offset != 0 || offset + n < *file_info->file_size))
@@ -527,6 +537,8 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
 
             copyFromIStreamWithProgressCallback(*result.response_stream, to, n, progress_callback, &bytes_copied, &is_canceled);
 
+            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
+
             offset += bytes_copied;
             total_bytes_copied += bytes_copied;
             to += bytes_copied;
@@ -535,6 +547,8 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
         },
         /*on_retry=*/ [&] ()
         {
+            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
+
             offset += bytes_copied;
             total_bytes_copied += bytes_copied;
             to += bytes_copied;
@@ -573,7 +587,7 @@ off_t ReadWriteBufferFromHTTP::seek(off_t offset_, int whence)
     if (impl)
     {
         auto position = getPosition();
-        if (offset_ > position)
+        if (offset_ >= position)
         {
             size_t diff = offset_ - position;
             if (diff < read_settings.remote_read_min_bytes_for_seek)
@@ -740,4 +754,3 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
 }
 
 }
-

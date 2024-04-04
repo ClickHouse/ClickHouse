@@ -184,7 +184,7 @@ private:
     std::atomic<UInt64> last_rebalance_timestamp_usec = 0;
     std::atomic<UInt64> num_rebalance_assignments = 0;
     std::atomic<UInt64> num_rebalance_revocations = 0;
-    std::atomic<bool> in_use = 0;
+    std::atomic<bool> in_use = false;
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;
 
