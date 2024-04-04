@@ -1744,8 +1744,8 @@ Example:
 
 ``` sql
 SELECT
-    arrayIntersect([1, 2], [1, 2], [1, 2]) AS no_symmetric_difference
-    arrayIntersect([1, 2], [1, 2], [1, 3]) AS symmetric_difference,
+    arraySymmetricDifference([1, 2], [1, 2], [1, 2]) AS no_symmetric_difference
+    arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS symmetric_difference,
 ```
 
 ``` text
