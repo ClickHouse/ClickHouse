@@ -1,5 +1,6 @@
 #pragma once
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Common/PODArray.h>
@@ -16,13 +17,6 @@ class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
 using ConstArenas = std::vector<ConstArenaPtr>;
-
-using AggregateDataPtr = char *;
-using AggregateDataPtrs = std::vector<AggregateDataPtr>;
-using ConstAggregateDataPtr = const char *;
-
-class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;

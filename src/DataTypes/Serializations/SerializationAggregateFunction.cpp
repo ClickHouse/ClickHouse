@@ -1,3 +1,4 @@
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <Formats/FormatSettings.h>
