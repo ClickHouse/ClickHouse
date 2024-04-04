@@ -153,7 +153,7 @@ void StorageHDFSConfiguration::addStructureToArgs(ASTs & args, const String & st
     {
         size_t count = args.size();
         if (count == 0 || count > 3)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Expected 1 to 3 arguments in table function, got {}", count);
 
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);
