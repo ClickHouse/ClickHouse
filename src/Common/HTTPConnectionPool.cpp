@@ -301,6 +301,8 @@ private:
                 auto timeouts = getTimeouts(*this);
                 auto new_connection = lock->getConnection(timeouts);
                 Session::assign(*new_connection);
+                if (Session::getKeepAliveRequest() == 0)
+                    Session::setKeepAliveRequest(1);
             }
             else
             {
@@ -322,7 +324,8 @@ private:
                                Session::getPort());
         }
 
-        Poco::Timespan idleTime() {
+        Poco::Timespan idleTime()
+        {
             Poco::Timestamp now;
             return now - Session::getLastRequest();
         }
@@ -374,11 +377,11 @@ private:
             result.exceptions(std::ios::badbit);
 
             // that line is for temporary debug, will be removed
-            LOG_INFO(log, "Send request to {} with: version {}, method {}, usage count {}, keep-alive timeout={}, last usage ago: {}ms, headers: {}",
+            LOG_INFO(log, "Send request to {} with: version {}, method {}, request no {}, keep-alive timeout={}, last usage ago: {}ms, headers: {}",
                      request.getVersion(),
                      request.getMethod(),
                      getTarget(),
-                     usage_cnt,
+                     Session::getKeepAliveRequest(),
                      Session::getKeepAliveTimeout().totalSeconds(),
                      idle.totalMilliseconds(),
                      printAllHeaders(request));
@@ -400,11 +403,11 @@ private:
             result.exceptions(std::ios::badbit);
 
             // that line is for temporary debug, will be removed
-            LOG_INFO(log, "Received response from {} with: version {}, code {}, usage count {}, keep alive header: {}, original ka {}, last usage ago: {}ms, headers: {}",
+            LOG_INFO(log, "Received response from {} with: version {}, code {}, request no {}, keep alive header: {}, original ka {}, last usage ago: {}ms, headers: {}",
                      getTarget(),
                      response.getVersion(),
                      int(response.getStatus()),
-                     usage_cnt,
+                     Session::getKeepAliveRequest(),
                      response.get(Poco::Net::HTTPMessage::CONNECTION_KEEP_ALIVE, Poco::Net::HTTPMessage::EMPTY),
                      originKA,
                      idleTime().totalMilliseconds(),
@@ -460,9 +463,9 @@ private:
             else
             {
                 Poco::Timestamp now;
-                LOG_INFO(log, "Expired connection to {} with: usage count {}, keep alive timeout: {}, last usage ago: {}s",
+                LOG_INFO(log, "Expired connection to {} with: request no {}, keep alive timeout: {}, last usage ago: {}s",
                          getTarget(),
-                         usage_cnt,
+                         Session::getKeepAliveRequest(),
                          Session::getKeepAliveTimeout().totalSeconds(),
                          idleTime().totalSeconds());
             }
@@ -474,8 +477,15 @@ private:
         friend class EndpointConnectionPool;
 
         template <class... Args>
-        explicit PooledConnection(EndpointConnectionPool::WeakPtr pool_, ConnectionGroup::Ptr group_, IHTTPConnectionPoolForEndpoint::Metrics metrics_, Args &&... args)
-            : Session(args...), pool(std::move(pool_)), group(group_), metrics(std::move(metrics_))
+        explicit PooledConnection(
+                EndpointConnectionPool::WeakPtr pool_,
+                ConnectionGroup::Ptr group_,
+                IHTTPConnectionPoolForEndpoint::Metrics metrics_,
+                Args &&... args)
+            : Session(args...)
+            , pool(std::move(pool_))
+            , group(group_)
+            , metrics(std::move(metrics_))
         {
             CurrentMetrics::add(metrics.active_count);
             group->atConnectionCreate();
@@ -508,7 +518,7 @@ private:
         ConnectionGroup::Ptr group;
         IHTTPConnectionPoolForEndpoint::Metrics metrics;
         bool isExpired = false;
-        size_t usage_cnt = 1;
+
         size_t exception_level = std::uncaught_exceptions();
 
         LoggerPtr log = getLogger("PooledConnection");
@@ -578,7 +588,6 @@ public:
                 stored_connections.pop();
 
                 setTimeouts(*it, timeouts);
-                it->usage_cnt += 1;
 
                 ProfileEvents::increment(getMetrics().reused, 1);
                 CurrentMetrics::sub(getMetrics().stored_count, 1);
@@ -655,47 +664,50 @@ private:
         return connection->isKeepAliveExpired(0.8);
     }
 
-    ConnectionPtr allocateNewConnection()
+
+    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts)
     {
-        ConnectionPtr connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+        auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+
         connection->setKeepAlive(true);
+        setTimeouts(*connection, timeouts);
 
         if (!proxy_configuration.isEmpty())
         {
             connection->setProxyConfig(proxyConfigurationToPocoProxyConfig(proxy_configuration));
         }
 
-        return connection;
-    }
-
-    ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts)
-    {
         auto address = HostResolversPool::instance().getResolver(host)->resolve();
-
-        auto session = allocateNewConnection();
-
-        setTimeouts(*session, timeouts);
-        session->setResolvedHost(*address);
+        connection->setResolvedHost(*address);
 
         try
         {
             auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
-            session->doConnect();
+            connection->doConnect();
         }
         catch (...)
         {
             address.setFail();
             ProfileEvents::increment(getMetrics().errors);
-            session->reset();
+            connection->reset();
             throw;
         }
 
         ProfileEvents::increment(getMetrics().created);
-        return session;
+        return connection;
     }
 
     void atConnectionDestroy(PooledConnection & connection)
     {
+        if (connection.getKeepAliveRequest() >= connection.getKeepAliveMaxRequests())
+        {
+            LOG_INFO(getLogger("PooledConnection"), "Expired by connection number {}",
+                     connection.getKeepAliveRequest());
+
+            ProfileEvents::increment(getMetrics().expired, 1);
+            return;
+        }
+
         if (!connection.connected() || connection.mustReconnect() || !connection.isCompleted() || connection.buffered()
             || group->isStoreLimitReached())
         {
@@ -703,7 +715,7 @@ private:
             LOG_INFO(getLogger("PooledConnection"),
                      "Reset connection to {} with: usage count {}, keep alive timeout: {}, connected {}, must recon {}, last usage ago: {}, is completed {}, store limit reached {} as {}/{}, there is exception {}",
                      getTarget(),
-                     connection.usage_cnt,
+                     connection.getKeepAliveRequest(),
                      connection.getKeepAliveTimeout().totalSeconds(),
                      connection.connected(),
                      connection.mustReconnect(),
@@ -716,9 +728,8 @@ private:
             return;
         }
 
-        auto connection_to_store = allocateNewConnection();
+        auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
         connection_to_store->assign(connection);
-        connection_to_store->usage_cnt = connection.usage_cnt;
 
         {
             MemoryTrackerSwitcher switcher{&total_memory_tracker};

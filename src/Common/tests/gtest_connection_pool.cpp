@@ -47,6 +47,7 @@ struct RequestOptions
 {
     size_t slowdown_receive = 0;
     int overwrite_keep_alive_timeout = 0;
+    int overwrite_keep_alive_max_requests = 10;
 };
 
 size_t stream_copy_n(std::istream & in, std::ostream & out, std::size_t count = std::numeric_limits<size_t>::max())
@@ -89,8 +90,10 @@ public:
         int value = request.getKeepAliveTimeout();
         ASSERT_GT(value, 0);
 
-        if (options->get().overwrite_keep_alive_timeout > 0)
-            response.setKeepAliveTimeout(options->get().overwrite_keep_alive_timeout);
+        auto params = options->get();
+
+        if (params.overwrite_keep_alive_timeout > 0)
+            response.setKeepAliveTimeout(params.overwrite_keep_alive_timeout, params.overwrite_keep_alive_max_requests);
 
         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
         auto size = request.getContentLength();
@@ -99,8 +102,8 @@ public:
         else
             response.setChunkedTransferEncoding(true); // or chunk encoding
 
-        if (options->get().slowdown_receive > 0)
-            sleepForSeconds(options->get().slowdown_receive);
+        if (params.slowdown_receive > 0)
+            sleepForSeconds(params.slowdown_receive);
 
         stream_copy_n(request.stream(), response.send(), size);
     }
@@ -189,10 +192,11 @@ protected:
         options->set(std::move(opt));
     }
 
-    void setOverWriteTimeout(size_t seconds)
+    void setOverWriteKeepAlive(size_t seconds, int max_requests)
     {
         auto opt = options->get();
         opt.overwrite_keep_alive_timeout = int(seconds);
+        opt.overwrite_keep_alive_max_requests= max_requests;
         options->set(std::move(opt));
     }
 
@@ -794,7 +798,7 @@ TEST_F(ConnectionPoolTest, ServerOverwriteKeepAlive)
     }
 
     {
-        setOverWriteTimeout(1);
+        setOverWriteKeepAlive(1, 10);
         auto connection = pool->getConnection(timeouts);
         echoRequest("Hello", *connection);
         ASSERT_EQ(30, timeouts.http_keep_alive_timeout.totalSeconds());
@@ -803,7 +807,7 @@ TEST_F(ConnectionPoolTest, ServerOverwriteKeepAlive)
 
     {
         // server do not overwrite it in the following requests but client has to remember last agreed value
-        setOverWriteTimeout(0);
+        setOverWriteKeepAlive(0, 0);
         auto connection = pool->getConnection(timeouts);
         echoRequest("Hello", *connection);
         ASSERT_EQ(30, timeouts.http_keep_alive_timeout.totalSeconds());
@@ -818,4 +822,89 @@ TEST_F(ConnectionPoolTest, ServerOverwriteKeepAlive)
 
     ASSERT_EQ(1, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+}
+
+TEST_F(ConnectionPoolTest, MaxRequests)
+{
+    auto ka = Poco::Timespan(30, 0); // 30 seconds
+    timeouts.withHTTPKeepAliveTimeout(ka);
+    auto max_requests = 5;
+    timeouts.http_keep_alive_max_requests = max_requests;
+
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    for (int i = 1; i <= max_requests - 1; ++i)
+    {
+        auto connection = pool->getConnection(timeouts);
+        echoRequest("Hello", *connection);
+        ASSERT_EQ(30, connection->getKeepAliveTimeout().totalSeconds());
+        ASSERT_EQ(max_requests, connection->getKeepAliveMaxRequests());
+        ASSERT_EQ(i, connection->getKeepAliveRequest());
+    }
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(max_requests-1, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(max_requests-2, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.expired]);
+
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+
+    {
+        auto connection = pool->getConnection(timeouts);
+        echoRequest("Hello", *connection);
+        ASSERT_EQ(30, connection->getKeepAliveTimeout().totalSeconds());
+        ASSERT_EQ(max_requests, connection->getKeepAliveMaxRequests());
+        ASSERT_EQ(max_requests, connection->getKeepAliveRequest());
+    }
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(max_requests-1, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(max_requests-1, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.expired]);
+
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
+
+TEST_F(ConnectionPoolTest, ServerOverwriteMaxRequests)
+{
+    auto ka = Poco::Timespan(30, 0); // 30 seconds
+    timeouts.withHTTPKeepAliveTimeout(ka);
+
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts);
+        echoRequest("Hello", *connection);
+        ASSERT_EQ(30, connection->getKeepAliveTimeout().totalSeconds());
+        ASSERT_EQ(1000, connection->getKeepAliveMaxRequests());
+        ASSERT_EQ(1, connection->getKeepAliveRequest());
+    }
+
+    auto max_requests = 3;
+    setOverWriteKeepAlive(5, max_requests);
+
+    for (int i = 2; i <= 10*max_requests; ++i)
+    {
+        auto connection = pool->getConnection(timeouts);
+        echoRequest("Hello", *connection);
+        ASSERT_EQ(5, connection->getKeepAliveTimeout().totalSeconds());
+        ASSERT_EQ(max_requests, connection->getKeepAliveMaxRequests());
+        ASSERT_EQ(((i-1) % max_requests) + 1, connection->getKeepAliveRequest());
+    }
+
+    ASSERT_EQ(10, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(10*max_requests-10, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(10*max_requests-10, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+    ASSERT_EQ(10, DB::CurrentThread::getProfileEvents()[metrics.expired]);
+
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
 }

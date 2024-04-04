@@ -230,7 +230,25 @@ void HTTPClientSession::setKeepAliveTimeout(const Poco::Timespan& timeout)
 }
 
 
-void HTTPClientSession::setLastRequest(Poco::Timestamp time)
+void HTTPClientSession::setKeepAliveMaxRequests(int max_requests)
+{
+    if (connected())
+    {
+        throw Poco::IllegalStateException("cannot change keep alive max requests on initiated connection, "
+                                          "That value is managed privately after connection is established.");
+    }
+    _keepAliveMaxRequests = max_requests;
+}
+
+
+void HTTPClientSession::setKeepAliveRequest(int request)
+{
+    _keepAliveCurrentRequest = request;
+}
+
+
+
+    void HTTPClientSession::setLastRequest(Poco::Timestamp time)
 {
     if (connected())
     {
@@ -248,6 +266,8 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request)
 	clearException();
 	_responseReceived = false;
 
+    _keepAliveCurrentRequest += 1;
+
 	bool keepAlive = getKeepAlive();
 	if (((connected() && !keepAlive) || mustReconnect()) && !_host.empty())
 	{
@@ -261,7 +281,7 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request)
         if (!request.has(HTTPMessage::CONNECTION))
             request.setKeepAlive(keepAlive);
         if (keepAlive && !request.has(HTTPMessage::CONNECTION_KEEP_ALIVE) && _keepAliveTimeout.totalSeconds() > 0)
-            request.setKeepAliveTimeout(_keepAliveTimeout.totalSeconds());
+            request.setKeepAliveTimeout(_keepAliveTimeout.totalSeconds(), _keepAliveMaxRequests);
 		if (!request.has(HTTPRequest::HOST) && !_host.empty())
 			request.setHost(_host, _port);
 		if (!_proxyConfig.host.empty() && !bypassProxy())
@@ -349,6 +369,9 @@ std::istream& HTTPClientSession::receiveResponse(HTTPResponse& response)
         auto timeout = response.getKeepAliveTimeout();
         if (timeout > 0)
             _keepAliveTimeout = std::min(_keepAliveTimeout, Poco::Timespan(timeout, 0));
+        auto max_requests = response.getKeepAliveMaxRequests();
+        if (max_requests > 0)
+            _keepAliveMaxRequests = std::min(_keepAliveMaxRequests, max_requests);
     }
 
 	if (!_expectResponseBody || response.getStatus() < 200 || response.getStatus() == HTTPResponse::HTTP_NO_CONTENT || response.getStatus() == HTTPResponse::HTTP_NOT_MODIFIED)
@@ -460,7 +483,8 @@ std::string HTTPClientSession::proxyRequestPrefix() const
 bool HTTPClientSession::isKeepAliveExpired(double reliability) const
 {
     Poco::Timestamp now;
-    return Timespan(Timestamp::TimeDiff(reliability *_keepAliveTimeout.totalMicroseconds())) <= now - _lastRequest;
+    return Timespan(Timestamp::TimeDiff(reliability *_keepAliveTimeout.totalMicroseconds())) <= now - _lastRequest
+            || _keepAliveCurrentRequest > _keepAliveMaxRequests;
 }
 
 bool HTTPClientSession::mustReconnect() const
@@ -550,6 +574,9 @@ void HTTPClientSession::assign(Poco::Net::HTTPClientSession & session)
 
     setLastRequest(session.getLastRequest());
     setKeepAliveTimeout(session.getKeepAliveTimeout());
+
+    _keepAliveMaxRequests = session._keepAliveMaxRequests;
+    _keepAliveCurrentRequest = session._keepAliveCurrentRequest;
 
     attachSocket(session.detachSocket());
 

@@ -120,8 +120,9 @@ namespace Net
         /// The value is set to "Keep-Alive" if keepAlive is
         /// true, or to "Close" otherwise.
 
-        void setKeepAliveTimeout(int timeout);
+        void setKeepAliveTimeout(int timeout, int max_requests);
         int getKeepAliveTimeout() const;
+        int getKeepAliveMaxRequests() const;
 
         bool getKeepAlive() const;
         /// Returns true if

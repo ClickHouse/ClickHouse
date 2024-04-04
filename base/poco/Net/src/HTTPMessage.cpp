@@ -180,27 +180,25 @@ bool HTTPMessage::getKeepAlive() const
 }
 
 
-void HTTPMessage::setKeepAliveTimeout(int timeout)
+void HTTPMessage::setKeepAliveTimeout(int timeout, int max_requests)
 {
-    add(HTTPMessage::CONNECTION_KEEP_ALIVE, std::format("timeout={}, max=1000", timeout));
+    add(HTTPMessage::CONNECTION_KEEP_ALIVE, std::format("timeout={}, max={}", timeout, max_requests));
 }
 
 
-int parseTimeoutFromHeaderValue(const std::string_view header_value)
+int parseFromHeaderValues(const std::string_view header_value, const std::string_view param_name)
 {
-    static const std::string_view timeout_param = "timeout=";
+    auto param_value_pos = header_value.find(param_name);
+    if (param_value_pos == std::string::npos)
+        param_value_pos = header_value.size();
+    if (param_value_pos != header_value.size())
+        param_value_pos += param_name.size();
 
-    auto timeout_pos = header_value.find(timeout_param);
-    if (timeout_pos == std::string::npos)
-        timeout_pos = header_value.size();
-    if (timeout_pos != header_value.size())
-        timeout_pos += timeout_param.size();
+    auto param_value_end = header_value.find(',', param_value_pos);
+    if (param_value_end == std::string::npos)
+        param_value_end = header_value.size();
 
-    auto timeout_end = header_value.find(',', timeout_pos);
-    if (timeout_end == std::string::npos)
-        timeout_end = header_value.size();
-
-    auto timeout_value_substr = header_value.substr(timeout_pos, timeout_end - timeout_pos);
+    auto timeout_value_substr = header_value.substr(param_value_pos, param_value_end - param_value_pos);
     if (timeout_value_substr.empty())
         return -1;
 
@@ -217,7 +215,16 @@ int parseTimeoutFromHeaderValue(const std::string_view header_value)
 int HTTPMessage::getKeepAliveTimeout() const
 {
     const std::string& ka_header = get(HTTPMessage::CONNECTION_KEEP_ALIVE, HTTPMessage::EMPTY);
-    return parseTimeoutFromHeaderValue(ka_header);
+    static const std::string_view timeout_param = "timeout=";
+    return parseFromHeaderValues(ka_header, timeout_param);
+}
+
+
+int HTTPMessage::getKeepAliveMaxRequests() const
+{
+    const std::string& ka_header = get(HTTPMessage::CONNECTION_KEEP_ALIVE, HTTPMessage::EMPTY);
+    static const std::string_view timeout_param = "max=";
+    return parseFromHeaderValues(ka_header, timeout_param);
 }
 
 } } // namespace Poco::Net

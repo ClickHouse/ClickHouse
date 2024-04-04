@@ -148,6 +148,7 @@ void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeout
     if (!session.connected())
     {
         session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
+        session.setKeepAliveMaxRequests(int(timeouts.http_keep_alive_max_requests));
     }
 }
 

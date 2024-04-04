@@ -213,6 +213,12 @@ namespace Net
         Poco::Timespan getKeepAliveTimeout() const;
         /// Returns the connection timeout for HTTP connections.
 
+        void setKeepAliveMaxRequests(int max_requests);
+
+        int getKeepAliveMaxRequests() const;
+
+        int getKeepAliveRequest() const;
+
         bool isKeepAliveExpired(double reliability = 1.0) const;
         /// Returns if the connection is expired with some margin as fraction of timeout as reliability
 
@@ -352,6 +358,8 @@ namespace Net
 
         void assign(HTTPClientSession & session);
 
+        void setKeepAliveRequest(int request);
+
         HTTPSessionFactory _proxySessionFactory;
         /// Factory to create HTTPClientSession to proxy.
     private:
@@ -360,6 +368,8 @@ namespace Net
         Poco::UInt16 _port;
         ProxyConfig _proxyConfig;
         Poco::Timespan _keepAliveTimeout;
+        int _keepAliveCurrentRequest = 0;
+        int _keepAliveMaxRequests = 1000;
         Poco::Timestamp _lastRequest;
         bool _reconnect;
         bool _mustReconnect;
@@ -461,6 +471,16 @@ namespace Net
     inline double HTTPClientSession::getKeepAliveReliability() const
     {
         return _defaultKeepAliveReliabilityLevel;
+    }
+
+    inline int HTTPClientSession::getKeepAliveMaxRequests() const
+    {
+        return _keepAliveMaxRequests;
+    }
+
+    inline int HTTPClientSession::getKeepAliveRequest() const
+    {
+        return _keepAliveCurrentRequest;
     }
 
 }
