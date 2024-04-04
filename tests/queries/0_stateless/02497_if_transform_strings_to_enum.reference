@@ -13,7 +13,7 @@ FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    transform(number, [2, 4, 6], _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\'), _CAST(\'other\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\')) Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+    transform(number, [2, 4, 6], [\'google\', \'censor.net\', \'yahoo\'], \'other\') String
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: transform, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
@@ -21,24 +21,20 @@ QUERY id: 0
           LIST id: 3, nodes: 4
             COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
             CONSTANT id: 6, constant_value: Array_[UInt64_2, UInt64_4, UInt64_6], constant_value_type: Array(UInt8)
-            CONSTANT id: 7, constant_value: Array_[Int64_2, Int64_1, Int64_4], constant_value_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-              EXPRESSION
-                FUNCTION id: 8, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-                  ARGUMENTS
-                    LIST id: 9, nodes: 2
-                      CONSTANT id: 10, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
-                      CONSTANT id: 11, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
-            CONSTANT id: 12, constant_value: Int64_3, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-              EXPRESSION
-                FUNCTION id: 13, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-                  ARGUMENTS
-                    LIST id: 14, nodes: 2
-                      CONSTANT id: 15, constant_value: \'other\', constant_value_type: String
-                      CONSTANT id: 16, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
+            FUNCTION id: 7, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
+              ARGUMENTS
+                LIST id: 8, nodes: 2
+                  CONSTANT id: 9, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
+                  CONSTANT id: 10, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
+            FUNCTION id: 11, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+              ARGUMENTS
+                LIST id: 12, nodes: 2
+                  CONSTANT id: 13, constant_value: \'other\', constant_value_type: String
+                  CONSTANT id: 14, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
   JOIN TREE
     TABLE id: 5, alias: __table1, table_name: system.numbers
   LIMIT
-    CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt64
+    CONSTANT id: 15, constant_value: UInt64_10, constant_value_type: UInt64
 google
 google
 google
@@ -54,7 +50,7 @@ FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    if(greater(number, 5), _CAST(\'censor.net\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\'), _CAST(\'google\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\')) Enum8(\'censor.net\' = 1, \'google\' = 2)
+    if(greater(number, 5), \'censor.net\', \'google\') String
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: if, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
@@ -65,24 +61,20 @@ QUERY id: 0
                 LIST id: 5, nodes: 2
                   COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
                   CONSTANT id: 8, constant_value: UInt64_5, constant_value_type: UInt8
-            CONSTANT id: 9, constant_value: Int64_1, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-              EXPRESSION
-                FUNCTION id: 10, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                  ARGUMENTS
-                    LIST id: 11, nodes: 2
-                      CONSTANT id: 12, constant_value: \'censor.net\', constant_value_type: String
-                      CONSTANT id: 13, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
-            CONSTANT id: 14, constant_value: Int64_2, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-              EXPRESSION
-                FUNCTION id: 15, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                  ARGUMENTS
-                    LIST id: 16, nodes: 2
-                      CONSTANT id: 17, constant_value: \'google\', constant_value_type: String
-                      CONSTANT id: 18, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
+            FUNCTION id: 9, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+              ARGUMENTS
+                LIST id: 10, nodes: 2
+                  CONSTANT id: 11, constant_value: \'censor.net\', constant_value_type: String
+                  CONSTANT id: 12, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
+            FUNCTION id: 13, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+              ARGUMENTS
+                LIST id: 14, nodes: 2
+                  CONSTANT id: 15, constant_value: \'google\', constant_value_type: String
+                  CONSTANT id: 16, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: system.numbers
   LIMIT
-    CONSTANT id: 19, constant_value: UInt64_10, constant_value_type: UInt64
+    CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt64
 other1
 other1
 google1
@@ -98,36 +90,24 @@ FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    CONCAT(transform(number, [2, 4, 6], _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\'), _CAST(\'other\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\')), \'1\') String
+    CONCAT(transform(number, [2, 4, 6], [\'google\', \'censor.net\', \'yahoo\'], \'other\'), \'1\') String
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: concat, function_type: ordinary, result_type: String
         ARGUMENTS
           LIST id: 3, nodes: 2
-            FUNCTION id: 4, function_name: transform, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+            FUNCTION id: 4, function_name: transform, function_type: ordinary, result_type: String
               ARGUMENTS
                 LIST id: 5, nodes: 4
                   COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
                   CONSTANT id: 8, constant_value: Array_[UInt64_2, UInt64_4, UInt64_6], constant_value_type: Array(UInt8)
-                  CONSTANT id: 9, constant_value: Array_[Int64_2, Int64_1, Int64_4], constant_value_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-                    EXPRESSION
-                      FUNCTION id: 10, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-                        ARGUMENTS
-                          LIST id: 11, nodes: 2
-                            CONSTANT id: 12, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
-                            CONSTANT id: 13, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
-                  CONSTANT id: 14, constant_value: Int64_3, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-                    EXPRESSION
-                      FUNCTION id: 15, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-                        ARGUMENTS
-                          LIST id: 16, nodes: 2
-                            CONSTANT id: 17, constant_value: \'other\', constant_value_type: String
-                            CONSTANT id: 18, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
-            CONSTANT id: 19, constant_value: \'1\', constant_value_type: String
+                  CONSTANT id: 9, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
+                  CONSTANT id: 10, constant_value: \'other\', constant_value_type: String
+            CONSTANT id: 11, constant_value: \'1\', constant_value_type: String
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: system.numbers
   LIMIT
-    CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt64
+    CONSTANT id: 12, constant_value: UInt64_10, constant_value_type: UInt64
 google1
 google1
 google1
@@ -143,13 +123,13 @@ FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    CONCAT(if(greater(number, 5), _CAST(\'censor.net\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\'), _CAST(\'google\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\')), \'1\') String
+    CONCAT(if(greater(number, 5), \'censor.net\', \'google\'), \'1\') String
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: concat, function_type: ordinary, result_type: String
         ARGUMENTS
           LIST id: 3, nodes: 2
-            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: String
               ARGUMENTS
                 LIST id: 5, nodes: 3
                   FUNCTION id: 6, function_name: greater, function_type: ordinary, result_type: UInt8
@@ -157,25 +137,13 @@ QUERY id: 0
                       LIST id: 7, nodes: 2
                         COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
                         CONSTANT id: 10, constant_value: UInt64_5, constant_value_type: UInt8
-                  CONSTANT id: 11, constant_value: Int64_1, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                    EXPRESSION
-                      FUNCTION id: 12, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                        ARGUMENTS
-                          LIST id: 13, nodes: 2
-                            CONSTANT id: 14, constant_value: \'censor.net\', constant_value_type: String
-                            CONSTANT id: 15, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
-                  CONSTANT id: 16, constant_value: Int64_2, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                    EXPRESSION
-                      FUNCTION id: 17, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                        ARGUMENTS
-                          LIST id: 18, nodes: 2
-                            CONSTANT id: 19, constant_value: \'google\', constant_value_type: String
-                            CONSTANT id: 20, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
-            CONSTANT id: 21, constant_value: \'1\', constant_value_type: String
+                  CONSTANT id: 11, constant_value: \'censor.net\', constant_value_type: String
+                  CONSTANT id: 12, constant_value: \'google\', constant_value_type: String
+            CONSTANT id: 13, constant_value: \'1\', constant_value_type: String
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: system.numbers
   LIMIT
-    CONSTANT id: 22, constant_value: UInt64_10, constant_value_type: UInt64
+    CONSTANT id: 14, constant_value: UInt64_10, constant_value_type: UInt64
 google
 google
 google
@@ -195,14 +163,14 @@ FROM
 ) AS t1
 QUERY id: 0
   PROJECTION COLUMNS
-    value Enum8(\'censor.net\' = 1, \'google\' = 2)
+    value String
   PROJECTION
     LIST id: 1, nodes: 1
-      COLUMN id: 2, column_name: value, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2), source_id: 3
+      COLUMN id: 2, column_name: value, result_type: String, source_id: 3
   JOIN TREE
     QUERY id: 3, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
-        value Enum8(\'censor.net\' = 1, \'google\' = 2)
+        value String
       PROJECTION
         LIST id: 4, nodes: 1
           FUNCTION id: 5, function_name: if, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
@@ -213,24 +181,20 @@ QUERY id: 0
                     LIST id: 8, nodes: 2
                       COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
                       CONSTANT id: 11, constant_value: UInt64_5, constant_value_type: UInt8
-                CONSTANT id: 12, constant_value: Int64_1, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                  EXPRESSION
-                    FUNCTION id: 13, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                      ARGUMENTS
-                        LIST id: 14, nodes: 2
-                          CONSTANT id: 15, constant_value: \'censor.net\', constant_value_type: String
-                          CONSTANT id: 16, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
-                CONSTANT id: 17, constant_value: Int64_2, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                  EXPRESSION
-                    FUNCTION id: 18, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                      ARGUMENTS
-                        LIST id: 19, nodes: 2
-                          CONSTANT id: 20, constant_value: \'google\', constant_value_type: String
-                          CONSTANT id: 21, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
+                FUNCTION id: 12, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+                  ARGUMENTS
+                    LIST id: 13, nodes: 2
+                      CONSTANT id: 14, constant_value: \'censor.net\', constant_value_type: String
+                      CONSTANT id: 15, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
+                FUNCTION id: 16, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+                  ARGUMENTS
+                    LIST id: 17, nodes: 2
+                      CONSTANT id: 18, constant_value: \'google\', constant_value_type: String
+                      CONSTANT id: 19, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
       JOIN TREE
         TABLE id: 10, alias: __table2, table_name: system.numbers
       LIMIT
-        CONSTANT id: 22, constant_value: UInt64_10, constant_value_type: UInt64
+        CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt64
 other
 other
 google
@@ -250,14 +214,14 @@ FROM
 ) AS t1
 QUERY id: 0
   PROJECTION COLUMNS
-    value Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+    value String
   PROJECTION
     LIST id: 1, nodes: 1
-      COLUMN id: 2, column_name: value, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4), source_id: 3
+      COLUMN id: 2, column_name: value, result_type: String, source_id: 3
   JOIN TREE
     QUERY id: 3, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
-        value Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+        value String
       PROJECTION
         LIST id: 4, nodes: 1
           FUNCTION id: 5, function_name: transform, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
@@ -265,24 +229,20 @@ QUERY id: 0
               LIST id: 6, nodes: 4
                 COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
                 CONSTANT id: 9, constant_value: Array_[UInt64_2, UInt64_4, UInt64_6], constant_value_type: Array(UInt8)
-                CONSTANT id: 10, constant_value: Array_[Int64_2, Int64_1, Int64_4], constant_value_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-                  EXPRESSION
-                    FUNCTION id: 11, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-                      ARGUMENTS
-                        LIST id: 12, nodes: 2
-                          CONSTANT id: 13, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
-                          CONSTANT id: 14, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
-                CONSTANT id: 15, constant_value: Int64_3, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-                  EXPRESSION
-                    FUNCTION id: 16, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-                      ARGUMENTS
-                        LIST id: 17, nodes: 2
-                          CONSTANT id: 18, constant_value: \'other\', constant_value_type: String
-                          CONSTANT id: 19, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
+                FUNCTION id: 10, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
+                  ARGUMENTS
+                    LIST id: 11, nodes: 2
+                      CONSTANT id: 12, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
+                      CONSTANT id: 13, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
+                FUNCTION id: 14, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+                  ARGUMENTS
+                    LIST id: 15, nodes: 2
+                      CONSTANT id: 16, constant_value: \'other\', constant_value_type: String
+                      CONSTANT id: 17, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
       JOIN TREE
         TABLE id: 8, alias: __table2, table_name: system.numbers
       LIMIT
-        CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt64
+        CONSTANT id: 18, constant_value: UInt64_10, constant_value_type: UInt64
 google	google
 google	google
 google	google
@@ -300,8 +260,8 @@ FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    value Enum8(\'censor.net\' = 1, \'google\' = 2)
-    value Enum8(\'censor.net\' = 1, \'google\' = 2)
+    value String
+    value String
   PROJECTION
     LIST id: 1, nodes: 2
       FUNCTION id: 2, function_name: if, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
@@ -312,20 +272,16 @@ QUERY id: 0
                 LIST id: 5, nodes: 2
                   COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
                   CONSTANT id: 8, constant_value: UInt64_5, constant_value_type: UInt8
-            CONSTANT id: 9, constant_value: Int64_1, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-              EXPRESSION
-                FUNCTION id: 10, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                  ARGUMENTS
-                    LIST id: 11, nodes: 2
-                      CONSTANT id: 12, constant_value: \'censor.net\', constant_value_type: String
-                      CONSTANT id: 13, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
-            CONSTANT id: 14, constant_value: Int64_2, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-              EXPRESSION
-                FUNCTION id: 15, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                  ARGUMENTS
-                    LIST id: 16, nodes: 2
-                      CONSTANT id: 17, constant_value: \'google\', constant_value_type: String
-                      CONSTANT id: 18, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
+            FUNCTION id: 9, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+              ARGUMENTS
+                LIST id: 10, nodes: 2
+                  CONSTANT id: 11, constant_value: \'censor.net\', constant_value_type: String
+                  CONSTANT id: 12, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
+            FUNCTION id: 13, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+              ARGUMENTS
+                LIST id: 14, nodes: 2
+                  CONSTANT id: 15, constant_value: \'google\', constant_value_type: String
+                  CONSTANT id: 16, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
       FUNCTION id: 2, function_name: if, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
         ARGUMENTS
           LIST id: 3, nodes: 3
@@ -334,24 +290,20 @@ QUERY id: 0
                 LIST id: 5, nodes: 2
                   COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
                   CONSTANT id: 8, constant_value: UInt64_5, constant_value_type: UInt8
-            CONSTANT id: 9, constant_value: Int64_1, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-              EXPRESSION
-                FUNCTION id: 10, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                  ARGUMENTS
-                    LIST id: 11, nodes: 2
-                      CONSTANT id: 12, constant_value: \'censor.net\', constant_value_type: String
-                      CONSTANT id: 13, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
-            CONSTANT id: 14, constant_value: Int64_2, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-              EXPRESSION
-                FUNCTION id: 15, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
-                  ARGUMENTS
-                    LIST id: 16, nodes: 2
-                      CONSTANT id: 17, constant_value: \'google\', constant_value_type: String
-                      CONSTANT id: 18, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
+            FUNCTION id: 9, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+              ARGUMENTS
+                LIST id: 10, nodes: 2
+                  CONSTANT id: 11, constant_value: \'censor.net\', constant_value_type: String
+                  CONSTANT id: 12, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
+            FUNCTION id: 13, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+              ARGUMENTS
+                LIST id: 14, nodes: 2
+                  CONSTANT id: 15, constant_value: \'google\', constant_value_type: String
+                  CONSTANT id: 16, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\', constant_value_type: String
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: system.numbers
   LIMIT
-    CONSTANT id: 19, constant_value: UInt64_10, constant_value_type: UInt64
+    CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt64
 other	other
 other	other
 google	google
@@ -369,8 +321,8 @@ FROM system.numbers
 LIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
-    value Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-    value Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+    value String
+    value String
   PROJECTION
     LIST id: 1, nodes: 2
       FUNCTION id: 2, function_name: transform, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
@@ -378,43 +330,35 @@ QUERY id: 0
           LIST id: 3, nodes: 4
             COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
             CONSTANT id: 6, constant_value: Array_[UInt64_2, UInt64_4, UInt64_6], constant_value_type: Array(UInt8)
-            CONSTANT id: 7, constant_value: Array_[Int64_2, Int64_1, Int64_4], constant_value_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-              EXPRESSION
-                FUNCTION id: 8, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-                  ARGUMENTS
-                    LIST id: 9, nodes: 2
-                      CONSTANT id: 10, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
-                      CONSTANT id: 11, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
-            CONSTANT id: 12, constant_value: Int64_3, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-              EXPRESSION
-                FUNCTION id: 13, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-                  ARGUMENTS
-                    LIST id: 14, nodes: 2
-                      CONSTANT id: 15, constant_value: \'other\', constant_value_type: String
-                      CONSTANT id: 16, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
+            FUNCTION id: 7, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
+              ARGUMENTS
+                LIST id: 8, nodes: 2
+                  CONSTANT id: 9, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
+                  CONSTANT id: 10, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
+            FUNCTION id: 11, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+              ARGUMENTS
+                LIST id: 12, nodes: 2
+                  CONSTANT id: 13, constant_value: \'other\', constant_value_type: String
+                  CONSTANT id: 14, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
       FUNCTION id: 2, function_name: transform, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
         ARGUMENTS
           LIST id: 3, nodes: 4
             COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
             CONSTANT id: 6, constant_value: Array_[UInt64_2, UInt64_4, UInt64_6], constant_value_type: Array(UInt8)
-            CONSTANT id: 7, constant_value: Array_[Int64_2, Int64_1, Int64_4], constant_value_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-              EXPRESSION
-                FUNCTION id: 8, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-                  ARGUMENTS
-                    LIST id: 9, nodes: 2
-                      CONSTANT id: 10, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
-                      CONSTANT id: 11, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
-            CONSTANT id: 12, constant_value: Int64_3, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-              EXPRESSION
-                FUNCTION id: 13, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-                  ARGUMENTS
-                    LIST id: 14, nodes: 2
-                      CONSTANT id: 15, constant_value: \'other\', constant_value_type: String
-                      CONSTANT id: 16, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
+            FUNCTION id: 7, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
+              ARGUMENTS
+                LIST id: 8, nodes: 2
+                  CONSTANT id: 9, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
+                  CONSTANT id: 10, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
+            FUNCTION id: 11, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+              ARGUMENTS
+                LIST id: 12, nodes: 2
+                  CONSTANT id: 13, constant_value: \'other\', constant_value_type: String
+                  CONSTANT id: 14, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
   JOIN TREE
     TABLE id: 5, alias: __table1, table_name: system.numbers
   LIMIT
-    CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt64
+    CONSTANT id: 15, constant_value: UInt64_10, constant_value_type: UInt64
 other
 other
 other
@@ -434,7 +378,7 @@ FROM
 )
 QUERY id: 0
   PROJECTION COLUMNS
-    transform(number, [NULL], _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\'), _CAST(\'other\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\')) Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+    transform(number, [NULL], [\'google\', \'censor.net\', \'yahoo\'], \'other\') String
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: transform, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
@@ -442,31 +386,27 @@ QUERY id: 0
           LIST id: 3, nodes: 4
             COLUMN id: 4, column_name: number, result_type: Nullable(Nothing), source_id: 5
             CONSTANT id: 6, constant_value: Array_[NULL], constant_value_type: Array(Nullable(Nothing))
-            CONSTANT id: 7, constant_value: Array_[Int64_2, Int64_1, Int64_4], constant_value_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-              EXPRESSION
-                FUNCTION id: 8, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
-                  ARGUMENTS
-                    LIST id: 9, nodes: 2
-                      CONSTANT id: 10, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
-                      CONSTANT id: 11, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
-            CONSTANT id: 12, constant_value: Int64_3, constant_value_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-              EXPRESSION
-                FUNCTION id: 13, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
-                  ARGUMENTS
-                    LIST id: 14, nodes: 2
-                      CONSTANT id: 15, constant_value: \'other\', constant_value_type: String
-                      CONSTANT id: 16, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
+            FUNCTION id: 7, function_name: _CAST, function_type: ordinary, result_type: Array(Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4))
+              ARGUMENTS
+                LIST id: 8, nodes: 2
+                  CONSTANT id: 9, constant_value: Array_[\'google\', \'censor.net\', \'yahoo\'], constant_value_type: Array(String)
+                  CONSTANT id: 10, constant_value: \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\', constant_value_type: String
+            FUNCTION id: 11, function_name: _CAST, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+              ARGUMENTS
+                LIST id: 12, nodes: 2
+                  CONSTANT id: 13, constant_value: \'other\', constant_value_type: String
+                  CONSTANT id: 14, constant_value: \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\', constant_value_type: String
   JOIN TREE
     QUERY id: 5, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
         number Nullable(Nothing)
       PROJECTION
-        LIST id: 17, nodes: 1
-          CONSTANT id: 18, constant_value: NULL, constant_value_type: Nullable(Nothing)
+        LIST id: 15, nodes: 1
+          CONSTANT id: 16, constant_value: NULL, constant_value_type: Nullable(Nothing)
       JOIN TREE
-        TABLE id: 19, alias: __table2, table_name: system.numbers
+        TABLE id: 17, alias: __table2, table_name: system.numbers
       LIMIT
-        CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt64
+        CONSTANT id: 18, constant_value: UInt64_10, constant_value_type: UInt64
 other
 other
 google

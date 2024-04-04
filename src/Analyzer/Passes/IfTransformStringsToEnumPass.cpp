@@ -81,22 +81,16 @@ void changeTransformArguments(
     transform_node.resolveAsFunction(transform_resolver->build(transform_node.getArgumentColumns()));
 }
 
-void wrapIntoToString(FunctionNode & function_node, QueryTreeNodePtr arg, ContextPtr context)
-{
-    auto to_string_function = FunctionFactory::instance().get("toString", std::move(context));
-    QueryTreeNodes arguments{ std::move(arg) };
-    function_node.getArguments().getNodes() = std::move(arguments);
-
-    function_node.resolveAsFunction(to_string_function->build(function_node.getArgumentColumns()));
-
-    assert(isString(function_node.getResultType()));
-}
-
 class ConvertStringsToEnumVisitor : public InDepthQueryTreeVisitorWithContext<ConvertStringsToEnumVisitor>
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<ConvertStringsToEnumVisitor>;
     using Base::Base;
+
+    static bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr &)
+    {
+        return parent_node->getNodeType() != QueryTreeNodeType::FUNCTION;
+    }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
@@ -104,7 +98,6 @@ public:
             return;
 
         auto * function_node = node->as<FunctionNode>();
-
         if (!function_node)
             return;
 
@@ -119,9 +112,7 @@ public:
             if (function_node->getArguments().getNodes().size() != 3)
                 return;
 
-            auto modified_if_node = function_node->clone();
-            auto * function_if_node = modified_if_node->as<FunctionNode>();
-            auto & argument_nodes = function_if_node->getArguments().getNodes();
+            auto & argument_nodes = function_node->getArguments().getNodes();
 
             const auto * first_literal = argument_nodes[1]->as<ConstantNode>();
             const auto * second_literal = argument_nodes[2]->as<ConstantNode>();
@@ -136,8 +127,7 @@ public:
             string_values.insert(first_literal->getValue().get<std::string>());
             string_values.insert(second_literal->getValue().get<std::string>());
 
-            changeIfArguments(*function_if_node, string_values, context);
-            wrapIntoToString(*function_node, std::move(modified_if_node), context);
+            changeIfArguments(*function_node, string_values, context);
             return;
         }
 
@@ -146,9 +136,7 @@ public:
             if (function_node->getArguments().getNodes().size() != 4)
                 return;
 
-            auto modified_transform_node = function_node->clone();
-            auto * function_modified_transform_node = modified_transform_node->as<FunctionNode>();
-            auto & argument_nodes = function_modified_transform_node->getArguments().getNodes();
+            auto & argument_nodes = function_node->getArguments().getNodes();
 
             if (!isString(function_node->getResultType()))
                 return;
@@ -181,8 +169,7 @@ public:
 
             string_values.insert(literal_default->getValue().get<std::string>());
 
-            changeTransformArguments(*function_modified_transform_node, string_values, context);
-            wrapIntoToString(*function_node, std::move(modified_transform_node), context);
+            changeTransformArguments(*function_node, string_values, context);
             return;
         }
     }
@@ -192,6 +179,9 @@ public:
 
 void IfTransformStringsToEnumPass::run(QueryTreeNodePtr & query, ContextPtr context)
 {
+    if (!context->getSettingsRef().optimize_if_transform_strings_to_enum)
+        return;
+
     ConvertStringsToEnumVisitor visitor(std::move(context));
     visitor.visit(query);
 }
