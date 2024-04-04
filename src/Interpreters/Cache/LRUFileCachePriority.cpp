@@ -1,10 +1,11 @@
-#include <Interpreters/Cache/LRUFileCachePriority.h>
-#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/EvictionCandidates.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/randomSeed.h>
-#include <Common/logger_useful.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <pcg-random/pcg_random.hpp>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
 
 namespace CurrentMetrics
 {
@@ -124,6 +125,9 @@ void LRUFileCachePriority::updateSize(int64_t size)
 {
     chassert(size != 0);
     chassert(size > 0 || state->current_size >= size_t(-size));
+
+    LOG_TEST(log, "Updating size with {}, current is {}",
+             size, state->current_size);
 
     state->current_size += size;
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
@@ -282,25 +286,29 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
     if (can_fit())
     {
-        /// As eviction is done without a cache priority lock,
-        /// then if some space was partially available and some needed
-        /// to be freed via eviction, we need to make sure that this
-        /// partially available space is still available
-        /// after we finish with eviction for non-available space.
-        /// So we create a space holder for the currently available part
-        /// of the required space for the duration of eviction of the other
-        /// currently non-available part of the space.
+        /// `res` contains eviction candidates. Do we have any?
+        if (res.size() > 0)
+        {
+            /// As eviction is done without a cache priority lock,
+            /// then if some space was partially available and some needed
+            /// to be freed via eviction, we need to make sure that this
+            /// partially available space is still available
+            /// after we finish with eviction for non-available space.
+            /// So we create a space holder for the currently available part
+            /// of the required space for the duration of eviction of the other
+            /// currently non-available part of the space.
 
-        const size_t hold_size = size > stat.total_stat.releasable_size
-            ? size - stat.total_stat.releasable_size
-            : 0;
+            const size_t hold_size = size > stat.total_stat.releasable_size
+                ? size - stat.total_stat.releasable_size
+                : 0;
 
-        const size_t hold_elements = elements > stat.total_stat.releasable_count
-            ? elements - stat.total_stat.releasable_count
-            : 0;
+            const size_t hold_elements = elements > stat.total_stat.releasable_count
+                ? elements - stat.total_stat.releasable_count
+                : 0;
 
-        if (hold_size || hold_elements)
-            res.setSpaceHolder(hold_size, hold_elements, *this, lock);
+            if (hold_size || hold_elements)
+                res.setSpaceHolder(hold_size, hold_elements, *this, lock);
+        }
 
         // LOG_TEST(log, "Collected {} candidates for eviction (total size: {}). "
         //          "Took hold of size {} and elements {}",
@@ -470,12 +478,15 @@ void LRUFileCachePriority::LRUIterator::invalidate()
     assertValid();
 
     const auto & entry = *iterator;
-    LOG_TEST(cache_priority->log,
-             "Invalidating entry in LRU queue entry {}", entry->toString());
 
     chassert(entry->size != 0);
     cache_priority->updateSize(-entry->size);
     cache_priority->updateElementsCount(-1);
+
+    LOG_TEST(cache_priority->log,
+             "Invalidated entry in LRU queue {}: {}",
+             entry->toString(), cache_priority->getApproxStateInfoForLog());
+
     entry->size = 0;
 }
 
@@ -550,6 +561,12 @@ std::string LRUFileCachePriority::getStateInfoForLog(const CachePriorityGuard::L
 {
     return fmt::format("size: {}/{}, elements: {}/{} (description: {})",
                        getSize(lock), max_size, getElementsCount(lock), max_elements, description);
+}
+
+std::string LRUFileCachePriority::getApproxStateInfoForLog() const
+{
+    return fmt::format("size: {}/{}, elements: {}/{} (description: {})",
+                       getSizeApprox(), max_size, getElementsCountApprox(), max_elements, description);
 }
 
 void LRUFileCachePriority::holdImpl(

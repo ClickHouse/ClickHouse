@@ -28,17 +28,19 @@ SLRUFileCachePriority::SLRUFileCachePriority(
     size_t max_elements_,
     double size_ratio_,
     LRUFileCachePriority::StatePtr probationary_state_,
-    LRUFileCachePriority::StatePtr protected_state_)
+    LRUFileCachePriority::StatePtr protected_state_,
+    const std::string & description_)
     : IFileCachePriority(max_size_, max_elements_)
     , size_ratio(size_ratio_)
     , protected_queue(LRUFileCachePriority(getRatio(max_size_, size_ratio),
                                            getRatio(max_elements_, size_ratio),
                                            protected_state_,
-                                           "protected"))
+                                           description_ + ", protected"))
     , probationary_queue(LRUFileCachePriority(getRatio(max_size_, 1 - size_ratio),
                                               getRatio(max_elements_, 1 - size_ratio),
                                               probationary_state_,
-                                              "probationary"))
+                                              description_ + ", probationary"))
+    , log(getLogger("SLRUFileCachePriority(" + description_ + ")"))
 {
     LOG_DEBUG(
         log, "Probationary queue {} in size and {} in elements. "
