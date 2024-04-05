@@ -96,7 +96,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
         stack_t altstack_description{};
         altstack_description.ss_sp = alt_stack.getData();
         altstack_description.ss_flags = 0;
-        altstack_description.ss_size = alt_stack.getSize();
+        altstack_description.ss_size = ThreadStack::getSize();
 
         if (0 != sigaltstack(&altstack_description, nullptr))
         {

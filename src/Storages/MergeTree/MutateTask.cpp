@@ -980,13 +980,13 @@ struct MutationContext
 
     QueryPipelineBuilder mutating_pipeline_builder;
     QueryPipeline mutating_pipeline; // in
-    std::unique_ptr<PullingPipelineExecutor> mutating_executor{nullptr};
+    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
     ProgressCallback progress_callback;
     Block updated_header;
 
     std::unique_ptr<MutationsInterpreter> interpreter;
-    UInt64 watch_prev_elapsed{0};
-    std::unique_ptr<MergeStageProgress> stage_progress{nullptr};
+    UInt64 watch_prev_elapsed = 0;
+    std::unique_ptr<MergeStageProgress> stage_progress;
 
     MutationCommands commands_for_part;
     MutationCommands for_interpreter;
@@ -998,12 +998,12 @@ struct MutationContext
     NameSet materialized_statistics;
 
     MergeTreeData::MutableDataPartPtr new_data_part;
-    IMergedBlockOutputStreamPtr out{nullptr};
+    IMergedBlockOutputStreamPtr out;
 
     String mrk_extension;
 
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
-    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx{nullptr};
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<StatisticPtr> stats_to_recalc;
@@ -1283,7 +1283,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
     {
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, ctx->data->getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
+            ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
 
         ctx->out->write(cur_block);
 

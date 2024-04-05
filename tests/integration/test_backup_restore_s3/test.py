@@ -1,4 +1,4 @@
-from typing import Dict, Iterable
+from typing import Dict
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -13,11 +13,13 @@ node = cluster.add_instance(
         "configs/named_collection_s3_backups.xml",
         "configs/s3_settings.xml",
         "configs/blob_log.xml",
+        "configs/remote_servers.xml",
     ],
     user_configs=[
         "configs/zookeeper_retries.xml",
     ],
     with_minio=True,
+    with_zookeeper=True,
 )
 
 
@@ -544,9 +546,45 @@ def test_user_specific_auth(start_cluster):
         "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1.zip', 'RawBLOB')",
         user="regularuser",
     )
+
     node.query(
         "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1.zip', 'RawBLOB')",
         user="superuser1",
+    )
+
+    assert "Access Denied" in node.query_and_get_error(
+        "BACKUP TABLE specific_auth ON CLUSTER 'cluster' TO S3('http://minio1:9001/root/data/backups/limited/backup3/')",
+        user="regularuser",
+    )
+
+    node.query(
+        "BACKUP TABLE specific_auth ON CLUSTER 'cluster' TO S3('http://minio1:9001/root/data/backups/limited/backup3/')",
+        user="superuser1",
+    )
+
+    assert "Access Denied" in node.query_and_get_error(
+        "RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('http://minio1:9001/root/data/backups/limited/backup3/')",
+        user="regularuser",
+    )
+
+    node.query(
+        "RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('http://minio1:9001/root/data/backups/limited/backup3/')",
+        user="superuser1",
+    )
+
+    assert "Access Denied" in node.query_and_get_error(
+        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup3/*', 'RawBLOB')",
+        user="regularuser",
+    )
+
+    node.query(
+        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup3/*', 'RawBLOB')",
+        user="superuser1",
+    )
+
+    assert "Access Denied" in node.query_and_get_error(
+        "SELECT * FROM s3Cluster(cluster, 'http://minio1:9001/root/data/backups/limited/backup3/*', 'RawBLOB')",
+        user="regularuser",
     )
 
     node.query("DROP TABLE IF EXISTS test.specific_auth")
