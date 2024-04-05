@@ -141,6 +141,7 @@ namespace FailPoints
 {
     extern const char replicated_queue_fail_next_entry[];
     extern const char replicated_queue_unfail_entries[];
+    extern const char finish_set_quorum_failed_parts[];
 }
 
 namespace ErrorCodes
@@ -1523,8 +1524,13 @@ void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(
 
         if (!found)
         {
-            LOG_WARNING(log, "Part {} exists in ZooKeeper and covered by another part in ZooKeeper ({}), but doesn't exist on any disk. "
-                        "It may cause false-positive 'part is lost forever' messages", part_name, covering_part);
+            LOG_WARNING(
+                log,
+                "Part {} of table {} exists in ZooKeeper and covered by another part in ZooKeeper ({}), but doesn't exist on any disk. "
+                "It may cause false-positive 'part is lost forever' messages",
+                part_name,
+                getStorageID().getNameForLogs(),
+                covering_part);
             ProfileEvents::increment(ProfileEvents::ReplicatedCoveredPartsInZooKeeperOnStart);
             chassert(false);
         }
@@ -2221,6 +2227,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                         if (code == Coordination::Error::ZOK)
                         {
                             LOG_DEBUG(log, "Marked quorum for part {} as failed.", entry.new_part_name);
+                            FailPointInjection::disableFailPoint(FailPoints::finish_set_quorum_failed_parts);
                             queue.removeFailedQuorumPart(part_info);
                             return true;
                         }
@@ -2349,8 +2356,12 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::executeFetchShared
     }
 }
 
-static void paranoidCheckForCoveredPartsInZooKeeper(const ZooKeeperPtr & zookeeper, const String & replica_path,
-                                                    MergeTreeDataFormatVersion format_version, const String & covering_part_name)
+static void paranoidCheckForCoveredPartsInZooKeeper(
+    const ZooKeeperPtr & zookeeper,
+    const String & replica_path,
+    MergeTreeDataFormatVersion format_version,
+    const String & covering_part_name,
+    const StorageReplicatedMergeTree & storage)
 {
 #ifdef ABORT_ON_LOGICAL_ERROR
     constexpr bool paranoid_check_for_covered_parts_default = true;
@@ -2369,8 +2380,12 @@ static void paranoidCheckForCoveredPartsInZooKeeper(const ZooKeeperPtr & zookeep
     {
         auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
         if (drop_range_info.contains(part_info))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Part {} remains in ZooKeeper after DROP_RANGE {}", part_name, covering_part_name);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Part {} from table {} remains in ZooKeeper after DROP_RANGE {}",
+                part_name,
+                storage.getStorageID().getNameForLogs(),
+                covering_part_name);
     }
 }
 
@@ -2432,7 +2447,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 
     /// Forcibly remove parts from ZooKeeper
     removePartsFromZooKeeperWithRetries(parts_to_remove);
-    paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry.new_part_name);
+    paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry.new_part_name, *this);
 
     if (entry.detach)
         LOG_DEBUG(log, "Detached {} parts inside {}.", parts_to_remove.size(), entry.new_part_name);
@@ -2570,7 +2585,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         LOG_INFO(log, "All parts from REPLACE PARTITION command have been already attached");
         removePartsFromZooKeeperWithRetries(parts_to_remove);
         if (replace)
-            paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name);
+            paranoidCheckForCoveredPartsInZooKeeper(
+                getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name, *this);
         return true;
     }
 
@@ -2891,7 +2907,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
     removePartsFromZooKeeperWithRetries(parts_to_remove);
     if (replace)
-        paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name);
+        paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name, *this);
     res_parts.clear();
     parts_to_remove.clear();
     cleanup_thread.wakeup();
@@ -10510,7 +10526,7 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
         }
         auto backup = restorer.getBackup();
         if (!empty && backup->hasFiles(data_path_in_backup))
-            restorer.throwTableIsNotEmpty(getStorageID());
+            RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
     }
 
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);

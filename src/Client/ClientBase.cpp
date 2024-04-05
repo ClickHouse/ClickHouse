@@ -753,7 +753,7 @@ void ClientBase::setDefaultFormatsFromConfiguration()
         else
             default_output_format = "TSV";
     }
-    else if (is_interactive || stdout_is_a_tty)
+    else if (is_interactive)
     {
         default_output_format = "PrettyCompact";
     }

@@ -204,8 +204,8 @@ protected:
 
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
-    size_t max_size = 0;
-    size_t max_elements = 0;
+    std::atomic<size_t> max_size = 0;
+    std::atomic<size_t> max_elements = 0;
 };
 
 }

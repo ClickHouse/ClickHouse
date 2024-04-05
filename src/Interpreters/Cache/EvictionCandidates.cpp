@@ -1,5 +1,6 @@
 #include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Cache/Metadata.h>
+#include <Common/CurrentThread.h>
 
 
 namespace ProfileEvents

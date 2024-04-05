@@ -132,6 +132,7 @@ private:
         const CachePriorityGuard::Lock & lock) override;
 
     void releaseImpl(size_t size, size_t elements) override;
+    std::string getApproxStateInfoForLog() const;
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator
