@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
+#include <Common/randomDelay.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -119,6 +120,10 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION))});
 
     LOG_TRACE(log, "Sending part {}", part_name);
+
+    static const auto test_delay = data.getContext()->getConfigRef().getUInt64("test.data_parts_exchange.delay_before_sending_part_ms", 0);
+    if (test_delay)
+        randomDelayForMaxMilliseconds(test_delay, log, "DataPartsExchange: Before sending part");
 
     MergeTreeData::DataPartPtr part;
 

@@ -426,7 +426,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
     write_part_log({});
-    storage.incrementMergedPartsProfileEvent(part->getType());
+    StorageReplicatedMergeTree::incrementMergedPartsProfileEvent(part->getType());
 
     return true;
 }

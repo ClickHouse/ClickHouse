@@ -203,7 +203,7 @@ public:
         if (total_connections_in_group >= limits.warning_limit && total_connections_in_group >= mute_warning_until)
         {
             LOG_WARNING(log, "Too many active sessions in group {}, count {}, warning limit {}", type, total_connections_in_group, limits.warning_limit);
-            mute_warning_until = roundUp(total_connections_in_group, limits.warning_step);
+            mute_warning_until = roundUp(total_connections_in_group, HTTPConnectionPools::Limits::warning_step);
         }
     }
 
@@ -295,8 +295,13 @@ private:
         String getTarget() const
         {
             if (!Session::getProxyConfig().host.empty())
-                return fmt::format("{} over proxy {}", Session::getHost(), Session::getProxyConfig().host);
-            return Session::getHost();
+                return fmt::format("{}:{} over proxy {}",
+                                   Session::getHost(),
+                                   Session::getPort(),
+                                   Session::getProxyConfig().host);
+            return fmt::format("{}:{}",
+                               Session::getHost(),
+                               Session::getPort());
         }
 
         void flushRequest() override
@@ -472,7 +477,8 @@ public:
     String getTarget() const
     {
         if (!proxy_configuration.isEmpty())
-            return fmt::format("{} over proxy {}", host, proxy_configuration.host);
+            return fmt::format("{} over proxy {}",
+                               host, proxy_configuration.host);
         return host;
     }
 
