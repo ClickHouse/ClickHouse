@@ -494,7 +494,7 @@ ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQ
         {
             auto stats = part->loadStatistics();
             /// TODO: We only have one stats file for every part.
-            for (const auto stat : stats)
+            for (const auto & stat : stats)
                 result.merge(part->info.getPartNameV1(), part->rows_count, stat);
         }
     }
