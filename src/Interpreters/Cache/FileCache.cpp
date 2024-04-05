@@ -953,49 +953,71 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     static constexpr auto space_ratio_satisfied_reschedule_ms = 5000;
     static constexpr auto general_reschedule_ms = 5000;
 
-    while (true)
+    if (shutdown)
+        return;
+
+    Stopwatch watch;
+
+    auto lock = tryLockCache();
+
+    /// To avoid deteriorating contention on cache,
+    /// proceed only if cache is not heavily used.
+    if (!lock)
     {
+        keep_up_free_space_ratio_task->scheduleAfter(lock_failed_reschedule_ms);
+        return;
+    }
+
+    const size_t size_limit = main_priority->getSizeLimit(lock);
+    const size_t elements_limit = main_priority->getElementsLimit(lock);
+
+    const size_t desired_size = std::lround(keep_current_size_to_max_ratio * size_limit);
+    const size_t desired_elements_num = std::lround(keep_current_elements_to_max_ratio * elements_limit);
+
+    if ((size_limit == 0 || main_priority->getSize(lock) <= desired_size)
+        && (elements_limit == 0 || main_priority->getElementsCount(lock) <= desired_elements_num))
+    {
+        /// Nothing to free - all limits are satisfied.
+        keep_up_free_space_ratio_task->scheduleAfter(space_ratio_satisfied_reschedule_ms);
+        return;
+    }
+
+    FileCacheReserveStat stat;
+    EvictionCandidates eviction_candidates;
+
+    try
+    {
+        /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
+        /// (we use batches to make sure we do not block cache for too long,
+        /// by default the batch size is quite small).
+        const bool limits_satisfied = main_priority->collectCandidatesForEviction(
+            desired_size, desired_elements_num, keep_up_free_space_remove_batch, stat, eviction_candidates, lock);
+
+#ifdef ABORT_ON_LOGICAL_ERROR
+        /// Let's make sure that we correctly processed the limits.
+        if (limits_satisfied && eviction_candidates.size() < keep_up_free_space_remove_batch)
+        {
+            const auto current_size = main_priority->getSize(lock);
+            chassert(current_size >= stat.total_stat.releasable_size);
+            chassert(!size_limit
+                        || current_size <= desired_size
+                        || current_size - stat.total_stat.releasable_size <= desired_size);
+
+            const auto current_elements_count = main_priority->getElementsCount(lock);
+            chassert(current_elements_count >= stat.total_stat.releasable_count);
+            chassert(!elements_limit
+                        || current_elements_count <= desired_elements_num
+                        || current_elements_count - stat.total_stat.releasable_count <= desired_elements_num);
+        }
+#else
+        UNUSED(limits_satisfied);
+#endif
+
         if (shutdown)
             return;
 
-        auto lock = tryLockCache();
-        if (!lock)
+        if (eviction_candidates.size() > 0)
         {
-            keep_up_free_space_ratio_task->scheduleAfter(lock_failed_reschedule_ms);
-            return;
-        }
-
-        const size_t size_limit = main_priority->getSizeLimit(lock);
-        const size_t elements_limit = main_priority->getElementsLimit(lock);
-
-        const size_t desired_size = std::lround(keep_current_size_to_max_ratio * size_limit);
-        const size_t desired_elements_num = std::lround(keep_current_elements_to_max_ratio * elements_limit);
-
-        if ((size_limit == 0 || main_priority->getSize(lock) <= desired_size)
-            && (elements_limit == 0 || main_priority->getElementsCount(lock) <= desired_elements_num))
-        {
-            /// Nothing to free - all limits are satisfied.
-            keep_up_free_space_ratio_task->scheduleAfter(space_ratio_satisfied_reschedule_ms);
-            return;
-        }
-
-        try
-        {
-            FileCacheReserveStat stat;
-            auto eviction_candidates = main_priority->collectCandidatesForEviction(
-                desired_size, desired_elements_num, keep_up_free_space_remove_batch, stat, lock);
-
-            if (shutdown)
-                return;
-
-            if (eviction_candidates.size() == 0)
-            {
-                /// This case is impossible in realistic cache setup,
-                /// e.g. we should always be able to evict something.
-                keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
-                return;
-            }
-
             LOG_TRACE(log, "Current usage {}/{} in size, {}/{} in elements count "
                     "(trying to keep size ration at {} and elements ratio at {}). "
                     "Collected {} eviction candidates, "
@@ -1006,20 +1028,35 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
                     eviction_candidates.size(), stat.total_stat.non_releasable_count);
 
             lock.unlock();
+
+            /// Remove files from filesystem.
             eviction_candidates.evict();
 
+            /// Take lock again to finalize eviction,
+            /// e.g. to update the in-memory state.
             lock.lock();
             eviction_candidates.finalize(nullptr, lock);
         }
-        catch (...)
+        else
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
             keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
-
-            /// Let's catch such cases in ci, in general there should not be exceptions.
-            chassert(false);
         }
     }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        if (eviction_candidates.size() > 0)
+            eviction_candidates.finalize(nullptr, lockCache());
+
+        keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
+
+        /// Let's catch such cases in ci,
+        /// in general there should not be exceptions.
+        chassert(false);
+    }
+
+    LOG_TRACE(log, "Free space ratio keeping thread finished in {} ms", watch.elapsedMilliseconds());
 }
 
 void FileCache::iterate(IterateFunc && func, const UserID & user_id)

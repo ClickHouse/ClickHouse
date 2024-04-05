@@ -322,24 +322,24 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     }
 }
 
-EvictionCandidates LRUFileCachePriority::collectCandidatesForEviction(
+bool LRUFileCachePriority::collectCandidatesForEviction(
     size_t desired_size,
     size_t desired_elements_count,
     size_t max_candidates_to_evict,
     FileCacheReserveStat & stat,
+    EvictionCandidates & res,
     const CachePriorityGuard::Lock & lock)
 {
     if (!max_candidates_to_evict)
         return {};
 
-    EvictionCandidates res;
     auto stop_condition = [&, this]()
     {
         return (getSize(lock) <= desired_size && getElementsCount(lock) <= desired_elements_count)
             || res.size() >= max_candidates_to_evict;
     };
     iterateForEviction(res, stat, stop_condition, lock);
-    return res;
+    return stop_condition();
 }
 
 void LRUFileCachePriority::iterateForEviction(

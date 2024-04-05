@@ -10,23 +10,12 @@ public:
     using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
 
     EvictionCandidates() = default;
-    EvictionCandidates(EvictionCandidates && other) noexcept
-    {
-        candidates = std::move(other.candidates);
-        candidates_size = std::move(other.candidates_size);
-        on_finalize = std::move(other.on_finalize);
-        queue_entries_to_invalidate = std::move(other.queue_entries_to_invalidate);
-        hold_space = std::move(other.hold_space);
-    }
-
     ~EvictionCandidates();
 
     void add(
         const FileSegmentMetadataPtr & candidate,
         LockedKey & locked_key,
         const CachePriorityGuard::Lock &);
-
-    void add(const EvictionCandidates & other, const CachePriorityGuard::Lock &) { candidates.insert(other.candidates.begin(), other.candidates.end()); }
 
     void evict();
 

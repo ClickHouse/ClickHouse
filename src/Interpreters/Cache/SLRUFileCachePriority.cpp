@@ -251,11 +251,12 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     return true;
 }
 
-EvictionCandidates SLRUFileCachePriority::collectCandidatesForEviction(
+bool SLRUFileCachePriority::collectCandidatesForEviction(
     size_t desired_size,
     size_t desired_elements_count,
     size_t max_candidates_to_evict,
     FileCacheReserveStat & stat,
+    EvictionCandidates & res,
     const CachePriorityGuard::Lock & lock)
 {
     if (!max_candidates_to_evict)
@@ -264,22 +265,36 @@ EvictionCandidates SLRUFileCachePriority::collectCandidatesForEviction(
     const auto desired_probationary_size = getRatio(desired_size, 1 - size_ratio);
     const auto desired_probationary_elements_num = getRatio(desired_elements_count, 1 - size_ratio);
 
-    auto res = probationary_queue.collectCandidatesForEviction(
-        desired_probationary_size, desired_probationary_elements_num, max_candidates_to_evict, stat, lock);
+    FileCacheReserveStat probationary_stat;
+    const bool probationary_limit_satisfied = probationary_queue.collectCandidatesForEviction(
+        desired_probationary_size, desired_probationary_elements_num,
+        max_candidates_to_evict, probationary_stat, res, lock);
+
+    stat += probationary_stat;
+
+    LOG_TEST(log, "Collected {} to evict from probationary queue. Total size: {}",
+             res.size(), probationary_stat.total_stat.releasable_size);
 
     chassert(res.size() <= max_candidates_to_evict);
     chassert(res.size() == stat.total_stat.releasable_count);
 
-    if (res.size() == max_candidates_to_evict)
-        return res;
+    if (res.size() >= max_candidates_to_evict)
+        return probationary_limit_satisfied;
 
     const auto desired_protected_size = getRatio(max_size, size_ratio);
     const auto desired_protected_elements_num = getRatio(max_elements, size_ratio);
 
-    auto res_add = protected_queue.collectCandidatesForEviction(
-        desired_protected_size, desired_protected_elements_num, max_candidates_to_evict - res.size(), stat, lock);
-    res.add(res_add, lock);
-    return res;
+    FileCacheReserveStat protected_stat;
+    const bool protected_limit_satisfied = protected_queue.collectCandidatesForEviction(
+        desired_protected_size, desired_protected_elements_num,
+        max_candidates_to_evict - res.size(), protected_stat, res, lock);
+
+    stat += protected_stat;
+
+    LOG_TEST(log, "Collected {} to evict from protected queue. Total size: {}",
+             res.size(), protected_stat.total_stat.releasable_size);
+
+    return probationary_limit_satisfied && protected_limit_satisfied;
 }
 
 void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock & lock)
