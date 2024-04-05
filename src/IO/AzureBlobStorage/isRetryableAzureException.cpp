@@ -1,10 +1,12 @@
-#include <Disks/ObjectStorages/AzureBlobStorage/isRetryableAzureException.h>
+#include "config.h"
+
 #if USE_AZURE_BLOB_STORAGE
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 
 namespace DB
 {
 
-bool isRetryableAzureRequestException(const Azure::Core::RequestFailedException & e)
+bool isRetryableAzureException(const Azure::Core::RequestFailedException & e)
 {
     /// Always retry transport errors.
     if (dynamic_cast<const Azure::Core::Http::TransportException *>(&e))
@@ -14,6 +16,6 @@ bool isRetryableAzureRequestException(const Azure::Core::RequestFailedException 
     return e.StatusCode >= Azure::Core::Http::HttpStatusCode::InternalServerError;
 }
 
-#endif
-
 }
+
+#endif

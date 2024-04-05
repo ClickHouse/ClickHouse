@@ -15,7 +15,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/isRetryableAzureException.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Poco/Net/NetException.h>
 
 

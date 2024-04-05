@@ -3,7 +3,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/isRetryableAzureException.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
