@@ -193,18 +193,6 @@ public:
         return total_connections_in_group >= limits.store_limit;
     }
 
-    size_t getStored() const
-    {
-        std::lock_guard lock(mutex);
-        return total_connections_in_group;
-    }
-
-    size_t getStoreLimit() const
-    {
-        std::lock_guard lock(mutex);
-        return limits.store_limit;
-    }
-
     void atConnectionCreate()
     {
         std::lock_guard lock(mutex);
@@ -359,32 +347,11 @@ private:
             Session::flushRequest();
         }
 
-        String printAllHeaders(Poco::Net::HTTPMessage & message) const
-        {
-            String out;
-            out.reserve(300);
-            for (auto & [k, v] : message)
-            {
-                out.append(fmt::format("<{}: {}> ", k, v));
-            }
-            return out;
-        }
-
         std::ostream & sendRequest(Poco::Net::HTTPRequest & request) override
         {
             auto idle = idleTime();
             std::ostream & result = Session::sendRequest(request);
             result.exceptions(std::ios::badbit);
-
-            // that line is for temporary debug, will be removed
-            LOG_INFO(log, "Send request to {} with: version {}, method {}, request no {}, keep-alive timeout={}, last usage ago: {}ms, headers: {}",
-                     request.getVersion(),
-                     request.getMethod(),
-                     getTarget(),
-                     Session::getKeepAliveRequest(),
-                     Session::getKeepAliveTimeout().totalSeconds(),
-                     idle.totalMilliseconds(),
-                     printAllHeaders(request));
 
             request_stream = &result;
             request_stream_completed = false;
@@ -397,21 +364,8 @@ private:
 
         std::istream & receiveResponse(Poco::Net::HTTPResponse & response) override
         {
-            int originKA = Session::getKeepAliveTimeout().totalSeconds();
-
             std::istream & result = Session::receiveResponse(response);
             result.exceptions(std::ios::badbit);
-
-            // that line is for temporary debug, will be removed
-            LOG_INFO(log, "Received response from {} with: version {}, code {}, request no {}, keep alive header: {}, original ka {}, last usage ago: {}ms, headers: {}",
-                     getTarget(),
-                     response.getVersion(),
-                     int(response.getStatus()),
-                     Session::getKeepAliveRequest(),
-                     response.get(Poco::Net::HTTPMessage::CONNECTION_KEEP_ALIVE, Poco::Net::HTTPMessage::EMPTY),
-                     originKA,
-                     idleTime().totalMilliseconds(),
-                     printAllHeaders(response));
 
             response_stream = &result;
             response_stream_completed = false;
@@ -456,19 +410,8 @@ private:
             group->atConnectionDestroy();
 
             if (!isExpired)
-            {
                 if (auto lock = pool.lock())
                     lock->atConnectionDestroy(*this);
-            }
-            else
-            {
-                Poco::Timestamp now;
-                LOG_INFO(log, "Expired connection to {} with: request no {}, keep alive timeout: {}, last usage ago: {}s",
-                         getTarget(),
-                         Session::getKeepAliveRequest(),
-                         Session::getKeepAliveTimeout().totalSeconds(),
-                         idleTime().totalSeconds());
-            }
 
             CurrentMetrics::sub(metrics.active_count);
         }
@@ -518,8 +461,6 @@ private:
         ConnectionGroup::Ptr group;
         IHTTPConnectionPoolForEndpoint::Metrics metrics;
         bool isExpired = false;
-
-        size_t exception_level = std::uncaught_exceptions();
 
         LoggerPtr log = getLogger("PooledConnection");
 
@@ -701,9 +642,6 @@ private:
     {
         if (connection.getKeepAliveRequest() >= connection.getKeepAliveMaxRequests())
         {
-            LOG_INFO(getLogger("PooledConnection"), "Expired by connection number {}",
-                     connection.getKeepAliveRequest());
-
             ProfileEvents::increment(getMetrics().expired, 1);
             return;
         }
@@ -711,19 +649,6 @@ private:
         if (!connection.connected() || connection.mustReconnect() || !connection.isCompleted() || connection.buffered()
             || group->isStoreLimitReached())
         {
-            Poco::Timestamp now;
-            LOG_INFO(getLogger("PooledConnection"),
-                     "Reset connection to {} with: usage count {}, keep alive timeout: {}, connected {}, must recon {}, last usage ago: {}, is completed {}, store limit reached {} as {}/{}, there is exception {}",
-                     getTarget(),
-                     connection.getKeepAliveRequest(),
-                     connection.getKeepAliveTimeout().totalSeconds(),
-                     connection.connected(),
-                     connection.mustReconnect(),
-                     connection.idleTime().totalSeconds(),
-                     connection.isCompleted(),
-                     group->isStoreLimitReached(), group->getStored(), group->getStoreLimit(),
-                     connection.exception_level - std::uncaught_exceptions());
-
             ProfileEvents::increment(getMetrics().reset, 1);
             return;
         }
@@ -832,7 +757,6 @@ private:
     ConnectionGroup::Ptr disk_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::DISK);
     ConnectionGroup::Ptr storage_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::STORAGE);
     ConnectionGroup::Ptr http_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::HTTP);
-
 
     /// If multiple mutexes are held simultaneously,
     /// they should be locked in this order:
