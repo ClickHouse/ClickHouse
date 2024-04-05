@@ -48,7 +48,7 @@
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
-#include <Core/Settings.h>
+//#include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -1658,7 +1658,7 @@ void Context::addScalar(const String & name, const Block & block)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
     std::lock_guard lock(mutex);
-    scalars.emplace(name, block);
+    scalars[name] = block;
 }
 
 
@@ -1668,7 +1668,7 @@ void Context::addSpecialScalar(const String & name, const Block & block)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have local scalars");
 
     std::lock_guard lock(mutex);
-    special_scalars.emplace(name, block);
+    special_scalars[name] = block;
 }
 
 
