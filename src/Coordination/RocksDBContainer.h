@@ -44,9 +44,8 @@ private:
         };
         std::string result;
         result.reserve(2 * origin.size());
-        for (size_t i = 0; i < origin.size(); ++i)
+        for (unsigned char c : origin)
         {
-            unsigned char c = origin[i];
             result.push_back(toHexChar(c >> 4));
             result.push_back(toHexChar(c & 0xf));
         }

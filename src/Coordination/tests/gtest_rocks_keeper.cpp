@@ -1,4 +1,8 @@
 #include <gtest/gtest.h>
+#include "config.h"
+
+#if USE_NURAFT and USE_ROCKSDB
+
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperLogStore.h>
@@ -9,10 +13,6 @@
 #include <Common/Logger.h>
 #include <Disks/DiskLocal.h>
 #include <Poco/ConsoleChannel.h>
-
-#include "config.h"
-
-#if USE_NURAFT and USE_ROCKSDB
 
 namespace fs = std::filesystem;
 struct ChangelogDirTest
