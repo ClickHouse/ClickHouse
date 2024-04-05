@@ -1835,9 +1835,10 @@ Alias: `dateTrunc`.
 
 - `unit` — The type of interval to truncate the result. [String Literal](../syntax.md#syntax-string-literal).
     Possible values:
-    - `nanosecond`- COMPATIBLE ONLY WITH DATETIME64
-    - `microsecond`- COMPATIBLE ONLY WITH DATETIME64
-    - `milisecond`-COMPATIBLE ONLY WITH DATETIME64
+
+    - `nanosecond` - Compatible only with DateTime64
+    - `microsecond` - Compatible only with DateTime64
+    - `milisecond` - Compatible only with DateTime64
     - `second`
     - `minute`
     - `hour`
