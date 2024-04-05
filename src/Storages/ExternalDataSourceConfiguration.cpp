@@ -9,6 +9,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Common/NamedCollections/NamedCollections.h>
+
 namespace DB
 {
 
@@ -109,18 +111,23 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
         /// dictionary config settings override collection settings.
         config_settings.insert(config_settings.end(), dict_settings.begin(), dict_settings.end());
 
-        if (!config.has(collection_prefix))
+        NamedCollectionUtils::loadIfNot();
+        const auto & collections = NamedCollectionFactory::instance();
+
+        if (!collections.exists(collection_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
 
-        configuration.host = dict_config.getString(dict_config_prefix + ".host", config.getString(collection_prefix + ".host", ""));
-        configuration.port = dict_config.getInt(dict_config_prefix + ".port", config.getUInt(collection_prefix + ".port", 0));
-        configuration.username = dict_config.getString(dict_config_prefix + ".user", config.getString(collection_prefix + ".user", ""));
-        configuration.password = dict_config.getString(dict_config_prefix + ".password", config.getString(collection_prefix + ".password", ""));
-        configuration.quota_key = dict_config.getString(dict_config_prefix + ".quota_key", config.getString(collection_prefix + ".quota_key", ""));
+        const auto & collection = collections.get(collection_name);
+
+        configuration.host = dict_config.getString(dict_config_prefix + ".host", collection->getOrDefault<String>("host", ""));
+        configuration.port = dict_config.getInt(dict_config_prefix + ".port", static_cast<Int32>(collection->getOrDefault<Int64>("port", 0)));
+        configuration.username = dict_config.getString(dict_config_prefix + ".user", collection->getOrDefault<String>("user", ""));
+        configuration.password = dict_config.getString(dict_config_prefix + ".password", collection->getOrDefault<String>("password", ""));
+        configuration.quota_key = dict_config.getString(dict_config_prefix + ".quota_key", collection->getOrDefault<String>("quota_key", ""));
         configuration.database = dict_config.getString(dict_config_prefix + ".db", config.getString(dict_config_prefix + ".database",
-            config.getString(collection_prefix + ".db", config.getString(collection_prefix + ".database", ""))));
-        configuration.table = dict_config.getString(dict_config_prefix + ".table", config.getString(collection_prefix + ".table", ""));
-        configuration.schema = dict_config.getString(dict_config_prefix + ".schema", config.getString(collection_prefix + ".schema", ""));
+            collection->getOrDefault<String>("db", collection->getOrDefault<String>("database", ""))));
+        configuration.table = dict_config.getString(dict_config_prefix + ".table", collection->getOrDefault<String>("table", ""));
+        configuration.schema = dict_config.getString(dict_config_prefix + ".schema", collection->getOrDefault<String>("schema", ""));
 
         if (configuration.host.empty() || configuration.port == 0 || configuration.username.empty() || configuration.table.empty())
         {
