@@ -248,7 +248,7 @@ void HTTPClientSession::setKeepAliveRequest(int request)
 
 
 
-    void HTTPClientSession::setLastRequest(Poco::Timestamp time)
+void HTTPClientSession::setLastRequest(Poco::Timestamp time)
 {
     if (connected())
     {
