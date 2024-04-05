@@ -19,18 +19,24 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_simple_query_after_restart(start_cluster):
+def test_simple_query_after_index_reload(start_cluster):
     node.query(
         """
         create table t(a UInt32, b UInt32) engine=MergeTree order by (a, b) settings index_granularity=1;
 
+        -- for this part the first columns is useless, so we have to use both
         insert into t select 42, number from numbers_mt(100);
+
+        -- for this part the first columns is enough
         insert into t select number, number from numbers_mt(100);
         """
     )
 
+    # force reloading index
     node.restart_clickhouse()
 
+    # the bug happened when we used (a, b) index values for one part and only (a) for another in PartsSplitter. even a simple count query is enough,
+    # because some granules were assinged to wrong layers and hence not returned from the reading step (because they were filtered out by `FilterSortedStreamByRange`)
     assert (
         int(
             node.query(

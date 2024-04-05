@@ -128,6 +128,8 @@ class IndexAccess
 public:
     explicit IndexAccess(const RangesInDataParts & parts_) : parts(parts_)
     {
+        /// Some suffix of index columns might not be loaded (see `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`)
+        /// and we need to use the same set of index columns across all parts.
         for (const auto & part : parts)
             loaded_columns = std::min(loaded_columns, part.data_part->getIndex().size());
     }
