@@ -1,8 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/54317
 SET allow_experimental_analyzer=1;
 DROP DATABASE IF EXISTS 03049_database;
-DROP TABLE IF EXISTS 03049_database.l;
-DROP TABLE IF EXISTS 03049_database.r;
 
 CREATE DATABASE 03049_database;
 USE 03049_database;
@@ -14,5 +12,3 @@ select * from l left join r  on  l.y = r.y  where r.ty >= 2019;
 select * from 03049_database.l left join 03049_database.r  on  l.y = r.y  where r.ty >= 2019;
 
 DROP DATABASE IF EXISTS 03049_database;
-DROP TABLE IF EXISTS 03049_database.l;
-DROP TABLE IF EXISTS 03049_database.r;

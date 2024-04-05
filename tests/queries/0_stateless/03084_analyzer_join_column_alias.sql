@@ -1,13 +1,13 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/47432
 SET allow_experimental_analyzer=1;
-create or replace table t1
+create table t1
 engine = MergeTree()
 order by tuple()
 as
 select 1 as user_id, 2 as level;
 
 
-create or replace table t2
+create table t2
 engine = MergeTree()
 order by tuple()
 as

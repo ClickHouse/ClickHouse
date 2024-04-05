@@ -1,4 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/6571
+-- Tag: no-replicated-database
+
 SET allow_experimental_analyzer=1;
 CREATE TABLE LINEITEM_shard ON CLUSTER test_shard_localhost
 (
