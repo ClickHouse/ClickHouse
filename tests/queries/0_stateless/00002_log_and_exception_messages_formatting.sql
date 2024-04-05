@@ -68,7 +68,7 @@ select 'exceptions shorter than 30', max2(countDistinctOrDefault(message_format_
 select 'noisy messages', max2((select count() from logs group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.30);
 
 -- Same as above, but excluding Test level (actually finds top 1 Trace message)
-with ('Access granted: {}{}', '{} -> {}') as frequent_in_tests
+with ('Access granted: {}{}', '{} -> {}', 'Query {} to stage {}{}', 'Query {} from stage {} to stage {}{}') as frequent_in_tests
 select 'noisy Trace messages', max2((select count() from logs where level!='Test' and message_format_string not in frequent_in_tests
     group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.16);
 
