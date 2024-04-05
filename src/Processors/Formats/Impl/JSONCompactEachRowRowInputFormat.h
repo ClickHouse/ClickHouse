@@ -64,6 +64,7 @@ public:
     void skipRowStartDelimiter() override;
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
+    void skipRowBetweenDelimiter() override;
 
     void skipRow() override;
 

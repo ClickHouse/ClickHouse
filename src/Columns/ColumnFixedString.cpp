@@ -2,7 +2,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
@@ -39,7 +38,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
     if (size > 0)
     {
         auto & new_col = assert_cast<ColumnFixedString &>(*new_col_holder);
-        new_col.chars.resize(size * n);
+        new_col.chars.resize_exact(size * n);
 
         size_t count = std::min(this->size(), size);
         memcpy(new_col.chars.data(), chars.data(), count * n * sizeof(chars[0]));
@@ -63,6 +62,17 @@ void ColumnFixedString::insert(const Field & x)
     insertData(s.data(), s.size());
 }
 
+bool ColumnFixedString::tryInsert(const Field & x)
+{
+    if (x.getType() != Field::Types::Which::String)
+        return false;
+    const String & s = x.get<const String &>();
+    if (s.size() > n)
+        return false;
+    insertData(s.data(), s.size());
+    return true;
+}
+
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
 {
     const ColumnFixedString & src = assert_cast<const ColumnFixedString &>(src_);
@@ -75,6 +85,20 @@ void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
     memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[n * index], n);
 }
 
+void ColumnFixedString::insertManyFrom(const IColumn & src, size_t position, size_t length)
+{
+    const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
+    if (n != src_concrete.getN())
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
+
+    const size_t old_size = chars.size();
+    const size_t new_size = old_size + n * length;
+    chars.resize(new_size);
+
+    for (size_t offset = old_size; offset < new_size; offset += n)
+        memcpySmallAllowReadWriteOverflow15(&chars[offset], &src_concrete.chars[n * position], n);
+}
+
 void ColumnFixedString::insertData(const char * pos, size_t length)
 {
     if (length > n)
@@ -84,30 +108,6 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
     chars.resize(old_size + n);
     memcpy(chars.data() + old_size, pos, length);
     memset(chars.data() + old_size + length, 0, n - length);
-}
-
-StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin, const UInt8 * null_bit) const
-{
-    constexpr size_t null_bit_size = sizeof(UInt8);
-    StringRef res;
-    char * pos;
-    if (null_bit)
-    {
-        res.size = * null_bit ? null_bit_size : null_bit_size + n;
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-        memcpy(pos, null_bit, null_bit_size);
-        if (*null_bit) return res;
-        pos += null_bit_size;
-    }
-    else
-    {
-        res.size = n;
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-    }
-    memcpy(pos, &chars[n * index], n);
-    return res;
 }
 
 const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
@@ -203,6 +203,7 @@ void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection dire
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
+    chassert(this->n == src_concrete.n);
 
     if (start + length > src_concrete.size())
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
@@ -223,7 +224,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     auto res = ColumnFixedString::create(n);
 
     if (result_size_hint)
-        res->chars.reserve(result_size_hint > 0 ? result_size_hint * n : chars.size());
+        res->chars.reserve_exact(result_size_hint > 0 ? result_size_hint * n : chars.size());
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + col_size;
@@ -361,11 +362,6 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
             memcpySmallAllowReadWriteOverflow15(&res->chars[curr_offset * n], &chars[i * n], n);
 
     return res;
-}
-
-void ColumnFixedString::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
 }
 
 void ColumnFixedString::getExtremes(Field & min, Field & max) const

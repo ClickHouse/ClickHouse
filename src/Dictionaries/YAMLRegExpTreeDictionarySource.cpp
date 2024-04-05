@@ -227,7 +227,7 @@ void parseMatchNode(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
 
     if (!match.contains(key_name))
     {
-        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Yaml match rule must contain key {}", key_name);
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "YAML match rule must contain key {}", key_name);
     }
     for (const auto & [key, node_] : match)
     {
@@ -284,7 +284,7 @@ Block parseYAMLAsRegExpTree(const YAML::Node & node, const String & key_name, co
 
 YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
     const String & filepath_, const DictionaryStructure & dict_struct, ContextPtr context_, bool created_from_ddl)
-    : filepath(filepath_), structure(dict_struct), context(context_), logger(&Poco::Logger::get(kYAMLRegExpTreeDictionarySource))
+    : filepath(filepath_), structure(dict_struct), context(context_), logger(getLogger(kYAMLRegExpTreeDictionarySource))
 {
     key_name = (*structure.key)[0].name;
 

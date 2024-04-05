@@ -207,14 +207,15 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
 
                     columns.push_back(NameAndTypePair(column_name, data_type));
                     auto attgenerated = std::get<6>(row);
-                    LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: attgenerated: {}", attgenerated);
 
                     attributes.emplace(
                         column_name,
                         PostgreSQLTableStructure::PGAttribute{
                             .atttypid = parse<int>(std::get<4>(row)),
                             .atttypmod = parse<int>(std::get<5>(row)),
-                            .attgenerated = attgenerated.empty() ? char{} : char(attgenerated[0])
+                            .atthasdef = false,
+                            .attgenerated = attgenerated.empty() ? char{} : char(attgenerated[0]),
+                            .attr_def = {}
                     });
 
                     ++i;

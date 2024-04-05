@@ -81,7 +81,7 @@ IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & fo
 {
 }
 
-void IIRowSchemaReader::setContext(ContextPtr & context)
+void IIRowSchemaReader::setContext(const ContextPtr & context)
 {
     ColumnsDescription columns;
     if (tryParseColumnsListFromString(hints_str, columns, context, hints_parsing_error))
@@ -91,7 +91,7 @@ void IIRowSchemaReader::setContext(ContextPtr & context)
     }
     else
     {
-        LOG_WARNING(&Poco::Logger::get("IIRowSchemaReader"), "Couldn't parse schema inference hints: {}. This setting will be ignored", hints_parsing_error);
+        LOG_WARNING(getLogger("IIRowSchemaReader"), "Couldn't parse schema inference hints: {}. This setting will be ignored", hints_parsing_error);
     }
 }
 

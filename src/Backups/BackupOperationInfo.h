@@ -17,6 +17,12 @@ struct BackupOperationInfo
     /// Operation name, a string like "Disk('backups', 'my_backup')"
     String name;
 
+    /// Base Backup Operation name, a string like "Disk('backups', 'my_base_backup')"
+    String base_backup_name;
+
+    /// Query ID of a query that started backup
+    String query_id;
+
     /// This operation is internal and should not be shown in system.backups
     bool internal = false;
 

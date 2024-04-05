@@ -118,7 +118,7 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
         writeJSONString(level, wb, settings);
         DB::writeChar(':', wb);
         int priority = static_cast<int>(msg.getPriority());
-        writeJSONString(std::to_string(priority), wb, settings);
+        writeJSONString(getPriorityName(priority), wb, settings);
     }
 
     if (!query_id.empty())

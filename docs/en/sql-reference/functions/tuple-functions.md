@@ -542,7 +542,7 @@ Alias: `scalarProduct`.
 
 - Scalar product.
 
-Type: [Int/UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+Type: [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
 
 **Example**
 

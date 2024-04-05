@@ -4,11 +4,11 @@
 {"data":{"k0":0,"k1":0,"k2":0,"k3":100,"k4":0,"k5":0}}
 {"data":{"k0":0,"k1":0,"k2":0,"k3":0,"k4":100,"k5":0}}
 {"data":{"k0":0,"k1":0,"k2":0,"k3":0,"k4":0,"k5":100}}
-Tuple(k0 Int8, k1 Int8, k2 Int8, k3 Int8, k4 Int8, k5 Int8)
+Tuple(\n    k0 Int8,\n    k1 Int8,\n    k2 Int8,\n    k3 Int8,\n    k4 Int8,\n    k5 Int8)
 {"data":{"k0":100,"k1":0,"k2":0}}
 {"data":{"k0":0,"k1":100,"k2":0}}
 {"data":{"k0":0,"k1":0,"k2":100}}
-Tuple(k0 Int8, k1 Int8, k2 Int8)
+Tuple(\n    k0 Int8,\n    k1 Int8,\n    k2 Int8)
 {"data":{"k1":100,"k3":0}}
 {"data":{"k1":0,"k3":100}}
-Tuple(k1 Int8, k3 Int8)
+Tuple(\n    k1 Int8,\n    k3 Int8)

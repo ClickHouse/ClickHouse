@@ -1,13 +1,14 @@
 #include "LocalConnection.h"
+#include <Core/Protocol.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
-#include <Core/Protocol.h>
 
 
 namespace DB
@@ -201,7 +202,7 @@ void LocalConnection::sendQuery(
     catch (...)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
+        state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
     }
 }
 
@@ -311,7 +312,7 @@ bool LocalConnection::poll(size_t)
         catch (...)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
+            state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
         }
     }
 

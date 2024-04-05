@@ -293,7 +293,7 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Method `getCacheLayersNames()` is not implemented for disk: {}",
-            toString(getDataSourceDescription().type));
+            getDataSourceDescription().toString());
     }
 
     /// Returns a list of storage objects (contains path, size, ...).
@@ -303,7 +303,7 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Method `getStorageObjects()` not implemented for disk: {}",
-            toString(getDataSourceDescription().type));
+            getDataSourceDescription().toString());
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
@@ -320,11 +320,13 @@ public:
         {}
     };
 
-    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
+    virtual void getRemotePathsRecursive(
+        const String &, std::vector<LocalPathWithObjectStoragePaths> &, const std::function<bool(const String &)> & /* skip_predicate */)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
             "Method `getRemotePathsRecursive() not implemented for disk: {}`",
-            toString(getDataSourceDescription().type));
+            getDataSourceDescription().toString());
     }
 
     /// Batch request to remove multiple files.
@@ -412,7 +414,7 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method getMetadataStorage() is not implemented for disk type: {}",
-            toString(getDataSourceDescription().type));
+            getDataSourceDescription().toString());
     }
 
     /// Very similar case as for getMetadataDiskIfExistsOrSelf(). If disk has "metadata"
@@ -446,7 +448,7 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method getObjectStorage() is not implemented for disk type: {}",
-            toString(getDataSourceDescription().type));
+            getDataSourceDescription().toString());
     }
 
     /// Create disk object storage according to disk type.
@@ -457,7 +459,7 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method createDiskObjectStorage() is not implemented for disk type: {}",
-            toString(getDataSourceDescription().type));
+            getDataSourceDescription().toString());
     }
 
     virtual bool supportsStat() const { return false; }

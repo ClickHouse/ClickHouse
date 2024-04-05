@@ -2,7 +2,6 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
-#include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
@@ -48,7 +47,7 @@ Suggest::Suggest()
               "GRANT",        "REVOKE",        "OPTION",       "ADMIN",      "EXCEPT",   "REPLACE",     "IDENTIFIED", "HOST",
               "NAME",         "READONLY",      "WRITABLE",     "PERMISSIVE", "FOR",      "RESTRICTIVE", "RANDOMIZED", "INTERVAL",
               "LIMITS",       "ONLY",          "TRACKING",     "IP",         "REGEXP",   "ILIKE",       "CLEANUP",    "APPEND",
-              "IGNORE NULLS", "RESPECT NULLS", "OVER"});
+              "IGNORE NULLS", "RESPECT NULLS", "OVER",         "PASTE"});
 }
 
 static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)

@@ -5,6 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Storages/MaterializedView/RefreshTask_fwd.h>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ public:
         ContextPtr local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        bool attach_,
+        LoadingStrictnessLevel mode,
         const String & comment);
 
     std::string getName() const override { return "MaterializedView"; }
@@ -29,16 +30,9 @@ public:
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
-    bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /* metadata_snapshot */) const override
-    {
-        auto target_table = getTargetTable();
-        auto metadata_snapshot = target_table->getInMemoryMetadataPtr();
-        return target_table->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
-    }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -54,6 +48,7 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ContextPtr context) override;
 
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
@@ -78,11 +73,12 @@ public:
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
-
-    /// Get the virtual column of the target table;
-    NamesAndTypesList getVirtuals() const override;
+    StorageID getTargetTableId() const;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
+    void onActionLockRemove(StorageActionBlockType action_type) override;
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -105,12 +101,26 @@ public:
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
 private:
+    mutable std::mutex target_table_id_mutex;
     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();
 
+    RefreshTaskHolder refresher;
+    bool refresh_on_start = false;
+
     bool has_inner_table = false;
 
+    friend class RefreshTask;
+
     void checkStatementCanBeForwarded() const;
+
+    /// Prepare to refresh a refreshable materialized view: create query context, create temporary
+    /// table, form the insert-select query.
+    std::tuple<ContextMutablePtr, std::shared_ptr<ASTInsertQuery>> prepareRefresh() const;
+    StorageID exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context);
+
+    void setTargetTableId(StorageID id);
+    void updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name);
 };
 
 }

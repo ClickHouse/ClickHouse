@@ -112,7 +112,7 @@ class StorageS3Settings
 public:
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, const Settings & settings);
 
-    S3Settings getSettings(const String & endpoint) const;
+    S3Settings getSettings(const String & endpoint, const String & user, bool ignore_user = false) const;
 
 private:
     mutable std::mutex mutex;

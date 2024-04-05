@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <enable_zstd_qat_codec>1</enable_zstd_qat_codec>
+        </default>
+    </profiles>
+</clickhouse>

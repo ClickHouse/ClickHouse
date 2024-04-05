@@ -151,7 +151,7 @@ public:
 
     virtual bool isParallelizeMergePrepareNeeded() const { return false; }
 
-    virtual void parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/) const
+    virtual void parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
     }
@@ -162,9 +162,13 @@ public:
     /// Tells if merge() with thread pool parameter could be used.
     virtual bool isAbleToParallelizeMerge() const { return false; }
 
+    /// Return true if it is allowed to replace call of `addBatch`
+    /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
+    virtual bool canOptimizeEqualKeysRanges() const { return true; }
+
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     virtual void
-    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, Arena * /*arena*/) const
+    merge(AggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr /*rhs*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/, Arena * /*arena*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
     }
@@ -197,7 +201,7 @@ public:
     virtual void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         if (isState())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method insertMergeResultInto is not implemented");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method insertMergeResultInto is not implemented", getName());
 
         insertResultInto(place, to, arena);
     }

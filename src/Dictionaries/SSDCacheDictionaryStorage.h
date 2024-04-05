@@ -869,10 +869,11 @@ public:
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
-        const DictionaryStorageFetchRequest & fetch_request) override
+        const DictionaryStorageFetchRequest & fetch_request,
+        IColumn::Filter * const default_mask) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-            return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request);
+            return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request, default_mask);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
     }
@@ -905,10 +906,11 @@ public:
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
-        const DictionaryStorageFetchRequest & fetch_request) override
+        const DictionaryStorageFetchRequest & fetch_request,
+        IColumn::Filter * const default_mask) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
-            return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, fetch_request);
+            return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, fetch_request, default_mask);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for simple key storage");
     }
@@ -1002,7 +1004,8 @@ private:
     template <typename Result>
     Result fetchColumnsForKeysImpl(
         const PaddedPODArray<KeyType> & keys,
-        const DictionaryStorageFetchRequest & fetch_request) const
+        const DictionaryStorageFetchRequest & fetch_request,
+        IColumn::Filter * const default_mask) const
     {
         Result result;
 
@@ -1012,6 +1015,7 @@ private:
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         size_t fetched_columns_index = 0;
+        size_t fetched_columns_index_without_default = 0;
 
         using BlockIndexToKeysMap = absl::flat_hash_map<size_t, PaddedPODArray<KeyToBlockOffset>, DefaultHash<size_t>>;
         BlockIndexToKeysMap block_to_keys_map;
@@ -1061,8 +1065,11 @@ private:
             {
                 case Cell::in_memory:
                 {
-                    result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
+                    result.key_index_to_state[key_index] = {key_state,
+                        default_mask ? fetched_columns_index_without_default : fetched_columns_index};
+
                     ++fetched_columns_index;
+                    ++fetched_columns_index_without_default;
 
                     const auto & partition = memory_buffer_partitions[cell.in_memory_partition_index];
                     char * serialized_columns_place = partition.getPlace(cell.index);
@@ -1089,12 +1096,14 @@ private:
                 }
                 case Cell::default_value:
                 {
-                    result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
+                    result.key_index_to_state[key_index] = {key_state,
+                        default_mask ? fetched_columns_index_without_default : fetched_columns_index};
                     result.key_index_to_state[key_index].setDefault();
                     ++fetched_columns_index;
                     ++result.default_keys_size;
 
-                    insertDefaultValuesIntoColumns(result.fetched_columns, fetch_request, key_index);
+                    if (!default_mask)
+                        insertDefaultValuesIntoColumns(result.fetched_columns, fetch_request, key_index);
                     break;
                 }
             }
@@ -1103,7 +1112,8 @@ private:
         /// Sort blocks by offset before start async io requests
         ::sort(blocks_to_request.begin(), blocks_to_request.end());
 
-        file_buffer.fetchBlocks(configuration.read_buffer_blocks_size, blocks_to_request, [&](size_t block_index, char * block_data)
+        file_buffer.fetchBlocks(configuration.read_buffer_blocks_size, blocks_to_request,
+            [&](size_t block_index, char * block_data)
         {
             auto & keys_in_block = block_to_keys_map[block_index];
 
@@ -1112,9 +1122,11 @@ private:
                 char * key_data = block_data + key_in_block.offset_in_block;
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, key_data);
 
-                result.key_index_to_state[key_in_block.key_index].setFetchedColumnIndex(fetched_columns_index);
+                result.key_index_to_state[key_in_block.key_index].setFetchedColumnIndex(
+                    default_mask ? fetched_columns_index_without_default : fetched_columns_index);
 
                 ++fetched_columns_index;
+                ++fetched_columns_index_without_default;
             }
         });
 

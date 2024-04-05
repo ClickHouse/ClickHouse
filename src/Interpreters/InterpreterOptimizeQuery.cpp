@@ -2,6 +2,8 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
@@ -79,7 +81,7 @@ BlockIO InterpreterOptimizeQuery::execute()
     if (auto * snapshot_data = dynamic_cast<MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
         snapshot_data->parts = {};
 
-    table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, getContext());
+    table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
 
     return {};
 }
@@ -93,4 +95,12 @@ AccessRightsElements InterpreterOptimizeQuery::getRequiredAccess() const
     return required_access;
 }
 
+void registerInterpreterOptimizeQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterOptimizeQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterOptimizeQuery", create_fn);
+}
 }

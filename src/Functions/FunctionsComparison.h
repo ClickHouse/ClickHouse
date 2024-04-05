@@ -283,7 +283,7 @@ struct StringComparisonImpl
         size_t size = a_data.size();
 
         for (size_t i = 0, j = 0; i < size; i += 16, ++j)
-            c[j] = Op::apply(memcmp16(&a_data[i], &b_data[0]), 0);
+            c[j] = Op::apply(memcmp16(&a_data[i], &b_data[0]), 0); /// NOLINT(readability-container-data-pointer)
     }
 
     static void NO_INLINE fixed_string_vector_fixed_string_vector( /// NOLINT
@@ -643,13 +643,12 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(decimalCheckComparisonOverflow(context)); }
 
-    explicit FunctionComparison(ContextPtr context_)
-        : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
+    explicit FunctionComparison(bool check_decimal_overflow_)
+        : check_decimal_overflow(check_decimal_overflow_) {}
 
 private:
-    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
@@ -812,7 +811,7 @@ private:
                 c0_const_size = c0_const_fixed_string->getN();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnConst contains not String nor FixedString column");
         }
 
         if (c1_const)
@@ -831,7 +830,7 @@ private:
                 c1_const_size = c1_const_fixed_string->getN();
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnConst contains not String nor FixedString column");
         }
 
         using StringImpl = StringComparisonImpl<Op<int, int>>;
@@ -1115,7 +1114,7 @@ private:
         /// This is a paranoid check to protect from a broken query analysis.
         if (c0->isNullable() != c1->isNullable())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Logical error: columns are assumed to be of identical types, but they are different in Nullable");
+                "Columns are assumed to be of identical types, but they are different in Nullable");
 
         if (c0_const && c1_const)
         {
@@ -1190,7 +1189,7 @@ public:
 
         if (left_tuple && right_tuple)
         {
-            auto func = FunctionToOverloadResolverAdaptor(FunctionComparison<Op, Name>::create(context));
+            auto func = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionComparison<Op, Name>>(check_decimal_overflow));
 
             bool has_nullable = false;
             bool has_null = false;

@@ -13,20 +13,20 @@
 namespace DB
 {
 
-
-NamesAndTypesList StorageSystemClusterPartitions::getNamesAndTypes()
+ColumnsDescription StorageSystemClusterPartitions::getColumnsDescription()
 {
-    return {
-        { "database",        std::make_shared<DataTypeString>() },
-        { "table",           std::make_shared<DataTypeString>() },
-        { "partition",       std::make_shared<DataTypeString>() },
-        { "all_replicas",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
-        { "active_replicas", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+    return ColumnsDescription
+    {
+        { "database",        std::make_shared<DataTypeString>(), "Database name" },
+        { "table",           std::make_shared<DataTypeString>(), "Table name" },
+        { "partition",       std::make_shared<DataTypeString>(), "Partition name" },
+        { "all_replicas",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "All replicas that contains this partition" },
+        { "active_replicas", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Active replicas that contains this partition" },
     };
 }
 
 
-void StorageSystemClusterPartitions::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+void StorageSystemClusterPartitions::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -77,7 +77,7 @@ void StorageSystemClusterPartitions::fillData(MutableColumns & res_columns, Cont
             { col_table_to_filter, std::make_shared<DataTypeString>(), "table" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
 
         if (!filtered_block.rows())
             return;

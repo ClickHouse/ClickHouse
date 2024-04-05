@@ -1,10 +1,29 @@
 
 
-## To avoid merge commit in CI run (add a leading space to apply):
-#no-merge-commit
+### CI modificators (add a leading space to apply) ###
 
-## Running specified job (add a leading space to apply):
+## To avoid a merge commit in CI:
+#no_merge_commit
+
+## To discard CI cache:
+#no_ci_cache
+
+## To not test (only style check):
+#do_not_test
+
+## To run specified set of tests in CI:
+#ci_set_<SET_NAME>
+#ci_set_reduced
+#ci_set_arm
+#ci_set_integration
+#ci_set_analyzer
+
+## To run specified job in CI:
 #job_<JOB NAME>
 #job_stateless_tests_release
 #job_package_debug
 #job_integration_tests_asan
+
+## To run only specified batches for multi-batch job(s)
+#batch_2
+#batch_1_2_3

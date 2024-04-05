@@ -60,7 +60,7 @@ void ReplicatedMergeTreeClusterSink::consume(Chunk chunk)
     const Settings & settings = context->getSettingsRef();
 
     BlocksWithPartition part_blocks = storage.writer.splitBlockIntoParts(
-        input_block,
+        std::move(input_block),
         settings.max_partitions_per_insert_block,
         metadata_snapshot,
         context,

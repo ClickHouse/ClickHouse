@@ -166,6 +166,10 @@ SELECT x, y from merge(currentDatabase(), 02763_merge
 4	14
 4	14
 4	14
+USING 0
+USING 1
+zzz
+====
 SETTINGS optimize_move_to_prewhere= 1
 SELECT * FROM 02763_merge_log_1
 3	13
@@ -312,3 +316,7 @@ SELECT x, y from merge(currentDatabase(), 02763_merge
 4	14
 4	14
 4	14
+USING 0
+USING 1
+zzz
+====

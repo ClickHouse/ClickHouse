@@ -6,29 +6,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from github import Github
-
 from build_download_helper import get_build_name_for_check, read_build_urls
-from clickhouse_helper import (
-    CiLogsCredentials,
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
-from commit_status_helper import (
-    RerunHelper,
-    format_description,
-    get_commit,
-    post_commit_status,
-)
+from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
-from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResult
-from s3_helper import S3Helper
+from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
 
 IMAGE_NAME = "clickhouse/fuzzer"
 
@@ -77,27 +62,19 @@ def main():
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
-
-    rerun_helper = RerunHelper(commit, check_name)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
-
     docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
     build_name = get_build_name_for_check(check_name)
     urls = read_build_urls(build_name, reports_path)
     if not urls:
-        raise Exception("No build URLs found")
+        raise ValueError("No build URLs found")
 
     for url in urls:
         if url.endswith("/clickhouse"):
             build_url = url
             break
     else:
-        raise Exception("Cannot find the clickhouse binary among build results")
+        raise ValueError("Cannot find the clickhouse binary among build results")
 
     logging.info("Got build url %s", build_url)
 
@@ -131,39 +108,33 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
     ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
-    check_name_lower = (
-        check_name.lower().replace("(", "").replace(")", "").replace(" ", "")
-    )
-    s3_prefix = f"{pr_info.number}/{pr_info.sha}/fuzzer_{check_name_lower}/"
     paths = {
         "run.log": run_log_path,
         "main.log": main_log_path,
-        "fuzzer.log": workspace_path / "fuzzer.log",
         "report.html": workspace_path / "report.html",
         "core.zst": workspace_path / "core.zst",
         "dmesg.log": workspace_path / "dmesg.log",
+        "fatal.log": workspace_path / "fatal.log",
+        "stderr.log": workspace_path / "stderr.log",
     }
 
     compressed_server_log_path = workspace_path / "server.log.zst"
     if compressed_server_log_path.exists():
         paths["server.log.zst"] = compressed_server_log_path
+    else:
+        # The script can fail before the invocation of `zstd`, but we are still interested in its log:
+        not_compressed_server_log_path = workspace_path / "server.log"
+        if not_compressed_server_log_path.exists():
+            paths["server.log"] = not_compressed_server_log_path
 
-    # The script can fail before the invocation of `zstd`, but we are still interested in its log:
-
-    not_compressed_server_log_path = workspace_path / "server.log"
-    if not_compressed_server_log_path.exists():
-        paths["server.log"] = not_compressed_server_log_path
-
-    s3_helper = S3Helper()
-    urls = []
-    report_url = ""
-    for file, path in paths.items():
-        try:
-            url = s3_helper.upload_test_report_to_s3(path, s3_prefix + file)
-            report_url = url if file == "report.html" else report_url
-            urls.append(url)
-        except Exception as ex:
-            logging.info("Exception uploading file %s text %s", file, ex)
+    # Same idea but with the fuzzer log
+    compressed_fuzzer_log_path = workspace_path / "fuzzer.log.zst"
+    if compressed_fuzzer_log_path.exists():
+        paths["fuzzer.log.zst"] = compressed_fuzzer_log_path
+    else:
+        not_compressed_fuzzer_log_path = workspace_path / "fuzzer.log"
+        if not_compressed_fuzzer_log_path.exists():
+            paths["fuzzer.log"] = not_compressed_fuzzer_log_path
 
     # Try to get status message saved by the fuzzer
     try:
@@ -173,45 +144,26 @@ def main():
         with open(workspace_path / "description.txt", "r", encoding="utf-8") as desc_f:
             description = desc_f.readline().rstrip("\n")
     except:
-        status = "failure"
+        status = FAILURE
         description = "Task failed: $?=" + str(retcode)
 
-    description = format_description(description)
-
-    test_result = TestResult(description, "OK")
+    test_result = TestResult(description, OK)
     if "fail" in status:
-        test_result.status = "FAIL"
+        test_result.status = FAIL
 
-    if not report_url:
-        report_url = upload_results(
-            s3_helper,
-            pr_info.number,
-            pr_info.sha,
-            [test_result],
-            [],
-            check_name,
-            urls,
-        )
+    JobReport(
+        description=description,
+        test_results=[test_result],
+        status=status,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        # test generates its own report.html
+        additional_files=[v for _, v in paths.items()],
+    ).dump()
 
-    ch_helper = ClickHouseHelper()
-
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        [test_result],
-        status,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        report_url,
-        check_name,
-    )
-
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
-    print(f"::notice ::Report url: {report_url}")
-    post_commit_status(
-        commit, status, report_url, description, check_name, pr_info, dump_to_file=True
-    )
+    logging.info("Result: '%s', '%s'", status, description)
+    if status != SUCCESS:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

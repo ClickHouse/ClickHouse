@@ -50,7 +50,7 @@ QUERY id: 0
       COLUMN id: 5, column_name: b, result_type: String, source_id: 3
       COLUMN id: 6, column_name: c, result_type: String, source_id: 3
   JOIN TREE
-    TABLE_FUNCTION id: 3, table_function_name: mysql
+    TABLE_FUNCTION id: 3, alias: __table1, table_function_name: mysql
       ARGUMENTS
         LIST id: 7, nodes: 5
           CONSTANT id: 8, constant_value: \'127.0.0.1:9004\', constant_value_type: String
@@ -63,10 +63,10 @@ QUERY id: 0
       SETTINGS connection_wait_timeout=123 connect_timeout=40123002 read_write_timeout=40123001 connection_pool_size=3
 
 SELECT
-    key AS key,
-    a AS a,
-    b AS b,
-    c AS c
-FROM mysql(\'127.0.0.1:9004\', \'default\', foo, \'default\', \'\', SETTINGS connection_wait_timeout = 123, connect_timeout = 40123002, read_write_timeout = 40123001, connection_pool_size = 3)
+    __table1.key AS key,
+    __table1.a AS a,
+    __table1.b AS b,
+    __table1.c AS c
+FROM mysql(\'127.0.0.1:9004\', _CAST(\'default\', \'String\'), foo, \'default\', \'\', SETTINGS connection_wait_timeout = 123, connect_timeout = 40123002, read_write_timeout = 40123001, connection_pool_size = 3) AS __table1
 ---
 5

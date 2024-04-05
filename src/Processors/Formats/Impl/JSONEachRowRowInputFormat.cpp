@@ -114,7 +114,7 @@ StringRef JSONEachRowRowInputFormat::readColumnName(ReadBuffer & buf)
     }
 
     current_column_name.resize(nested_prefix_length);
-    readJSONStringInto(current_column_name, buf);
+    readJSONStringInto(current_column_name, buf, format_settings.json);
     return current_column_name;
 }
 
@@ -123,7 +123,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
     if (!format_settings.skip_unknown_fields)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
 
-    skipJSONField(*in, name_ref);
+    skipJSONField(*in, name_ref, format_settings.json);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -142,7 +142,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(*in);
 
     if (in->eof())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
     else if (*in->position() == '}')
     {
         ++in->position();
@@ -179,7 +179,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             else if (column_index == NESTED_FIELD)
                 readNestedData(name_ref.toString(), columns);
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: illegal value of column_index");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal value of column_index");
         }
         else
         {
@@ -205,7 +205,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         return false;
     skipWhitespaceIfAny(*in);
 
-    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 1;
+    bool is_first_row = getRowNum() == 0;
     if (checkEndOfData(is_first_row))
         return false;
 
@@ -308,7 +308,7 @@ size_t JSONEachRowRowInputFormat::countRows(size_t max_block_size)
         return 0;
 
     size_t num_rows = 0;
-    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 0;
+    bool is_first_row = getRowNum() == 0;
     skipWhitespaceIfAny(*in);
     while (num_rows < max_block_size && !checkEndOfData(is_first_row))
     {

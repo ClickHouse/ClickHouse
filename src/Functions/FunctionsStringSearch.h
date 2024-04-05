@@ -22,13 +22,13 @@ namespace DB
   * positionCaseInsensitive(haystack, needle)
   * positionCaseInsensitiveUTF8(haystack, needle)
   *
-  * like(haystack, pattern)        - search by the regular expression LIKE; Returns 0 or 1. Case-insensitive, but only for Latin.
-  * notLike(haystack, pattern)
+  * like(haystack, needle)        - search by the regular expression LIKE; Returns 0 or 1. Case-insensitive, but only for Latin.
+  * notLike(haystack, needle)
   *
-  * ilike(haystack, pattern) - like 'like' but case-insensitive
-  * notIlike(haystack, pattern)
+  * ilike(haystack, needle) - like 'like' but case-insensitive
+  * notIlike(haystack, needle)
   *
-  * match(haystack, pattern)       - search by regular expression re2; Returns 0 or 1.
+  * match(haystack, needle)       - search by regular expression re2; Returns 0 or 1.
   *
   * countSubstrings(haystack, needle) -- count number of occurrences of needle in haystack.
   * countSubstringsCaseInsensitive(haystack, needle)
@@ -53,7 +53,7 @@ namespace DB
   * - the first subpattern, if the regexp has a subpattern;
   * - the zero subpattern (the match part, otherwise);
   * - if not match - an empty string.
-  * extract(haystack, pattern)
+  * extract(haystack, needle)
   */
 
 namespace ErrorCodes
@@ -69,13 +69,39 @@ enum class ExecutionErrorPolicy
     Throw
 };
 
-template <typename Impl, ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw>
+enum class HaystackNeedleOrderIsConfigurable
+{
+    No,     /// function arguments are always: (haystack, needle[, position])
+    Yes     /// depending on a setting, the function arguments are (haystack, needle[, position]) or (needle, haystack[, position])
+};
+
+template <typename Impl,
+         ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,
+         HaystackNeedleOrderIsConfigurable haystack_needle_order_is_configurable = HaystackNeedleOrderIsConfigurable::No>
 class FunctionsStringSearch : public IFunction
 {
+private:
+    enum class ArgumentOrder
+    {
+        HaystackNeedle,
+        NeedleHaystack
+    };
+
+    ArgumentOrder argument_order = ArgumentOrder::HaystackNeedle;
+
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSearch>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionsStringSearch>(context); }
+
+    explicit FunctionsStringSearch([[maybe_unused]] ContextPtr context)
+    {
+        if constexpr (haystack_needle_order_is_configurable == HaystackNeedleOrderIsConfigurable::Yes)
+        {
+            if (context->getSettingsRef().function_locate_has_mysql_compatible_argument_order)
+                argument_order = ArgumentOrder::NeedleHaystack;
+        }
+    }
 
     String getName() const override { return name; }
 
@@ -105,13 +131,16 @@ public:
                 "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
                 getName(), arguments.size());
 
-        if (!isStringOrFixedString(arguments[0]))
+        const auto & haystack_type = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0] : arguments[1];
+        const auto & needle_type = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1] : arguments[0];
+
+        if (!isStringOrFixedString(haystack_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
                 arguments[0]->getName(), getName());
 
-        if (!isString(arguments[1]))
+        if (!isString(needle_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
@@ -135,8 +164,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr & column_haystack = arguments[0].column;
-        const ColumnPtr & column_needle = arguments[1].column;
+        const ColumnPtr & column_haystack = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0].column : arguments[1].column;
+        const ColumnPtr & column_needle = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1].column : arguments[0].column;
 
         ColumnPtr column_start_pos = nullptr;
         if (arguments.size() >= 3)
@@ -161,14 +190,26 @@ public:
         {
             if (col_haystack_const && col_needle_const)
             {
-                const auto is_col_start_pos_const = !column_start_pos || isColumnConst(*column_start_pos);
+                auto column_start_position_arg = column_start_pos;
+                bool is_col_start_pos_const = false;
+                if (column_start_pos)
+                {
+                    if (const ColumnConst * const_column_start_pos = typeid_cast<const ColumnConst *>(&*column_start_pos))
+                    {
+                        is_col_start_pos_const = true;
+                        column_start_position_arg = const_column_start_pos->getDataColumnPtr();
+                    }
+                }
+                else
+                    is_col_start_pos_const = true;
+
                 vec_res.resize(is_col_start_pos_const ? 1 : column_start_pos->size());
                 const auto null_map = create_null_map();
 
                 Impl::constantConstant(
                     col_haystack_const->getValue<String>(),
                     col_needle_const->getValue<String>(),
-                    column_start_pos,
+                    column_start_position_arg,
                     vec_res,
                     null_map.get());
 

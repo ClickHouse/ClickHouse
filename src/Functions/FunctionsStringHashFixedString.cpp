@@ -172,7 +172,7 @@ struct SHA512Impl256
         /// SSL library that we use, for S390X architecture only OpenSSL is supported. But the SHA512-256, SHA512_256_Init,
         /// SHA512_256_Update, SHA512_256_Final methods to calculate hash (similar to the other SHA functions) aren't available
         /// in the current version of OpenSSL that we use which necessitates the use of the EVP interface.
-        auto md_ctx = EVP_MD_CTX_create();
+        auto * md_ctx = EVP_MD_CTX_create();
         EVP_DigestInit_ex(md_ctx, EVP_sha512_256(), nullptr /*engine*/);
         EVP_DigestUpdate(md_ctx, begin, size);
         EVP_DigestFinal_ex(md_ctx, out_char_data, nullptr /*size*/);
@@ -274,12 +274,12 @@ public:
             const typename ColumnIPv6::Container & data = col_from_ip->getData();
             const auto size = col_from_ip->size();
             auto & chars_to = col_to->getChars();
-            const auto length = IPV6_BINARY_LENGTH;
+            const auto length = sizeof(IPv6::UnderlyingType);
             chars_to.resize(size * Impl::length);
             for (size_t i = 0; i < size; ++i)
             {
                 Impl::apply(
-                    reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
+                    reinterpret_cast<const char *>(&data[i]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
             }
             return col_to;
         }

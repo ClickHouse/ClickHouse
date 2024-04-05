@@ -68,7 +68,7 @@ private:
 
     StorageReplicatedMergeTree & storage;
     ReplicatedMergeTreeClusterBalancer balancer;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     const fs::path zookeeper_path;
     const fs::path cluster_path;

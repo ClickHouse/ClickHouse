@@ -7,8 +7,10 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Common/typeid_cast.h>
 
+
 namespace DB
 {
+
 bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, String & result)
 {
     return IParserBase::wrapParseImpl(pos, [&]
@@ -23,7 +25,7 @@ bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, Str
         if (ParserStringLiteral().parse(pos, ast, expected))
         {
             result = ast->as<ASTLiteral &>().value.safeGet<String>();
-            return true;
+            return !result.empty();
         }
 
         return false;

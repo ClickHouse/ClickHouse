@@ -23,7 +23,7 @@ namespace ErrorCodes
 ReplicatedMergeTreeCluster::ReplicatedMergeTreeCluster(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , balancer(*this)
-    , log(&Poco::Logger::get(storage.getStorageID().getFullTableName() + " (Cluster)"))
+    , log(getLogger(storage.getStorageID().getFullTableName() + " (Cluster)"))
     , zookeeper_path(storage.zookeeper_path)
     , cluster_path(zookeeper_path / "cluster")
     , replica_path(storage.replica_path)
