@@ -1388,8 +1388,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
     if (new_settings.max_size != actual_settings.max_size
         || new_settings.max_elements != actual_settings.max_elements)
     {
-        std::optional<EvictionCandidates> eviction_candidates;
-        bool modified_size_limits = false;
+        EvictionCandidates eviction_candidates;
+        bool limits_satisfied = false;
         {
             cache_is_being_resized.store(true, std::memory_order_relaxed);
             SCOPE_EXIT({
@@ -1399,15 +1399,12 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
             auto cache_lock = lockCache();
 
             FileCacheReserveStat stat;
-            eviction_candidates.emplace(main_priority->collectCandidatesForEviction(
-                new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */, stat, cache_lock));
+            limits_satisfied = main_priority->collectCandidatesForEviction(
+                new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */, stat, eviction_candidates, cache_lock);
 
-            eviction_candidates->removeQueueEntries(cache_lock);
+            eviction_candidates.removeQueueEntries(cache_lock);
 
-            modified_size_limits = main_priority->getSize(cache_lock) <= new_settings.max_size
-                && main_priority->getElementsCount(cache_lock) <= new_settings.max_elements;
-
-            if (modified_size_limits)
+            if (limits_satisfied)
             {
                 main_priority->modifySizeLimits(
                     new_settings.max_size, new_settings.max_elements, new_settings.slru_size_ratio, cache_lock);
@@ -1423,16 +1420,16 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
         try
         {
-            eviction_candidates->evict();
+            eviction_candidates.evict();
         }
         catch (...)
         {
             auto cache_lock = lockCache();
-            eviction_candidates->finalize(nullptr, cache_lock);
+            eviction_candidates.finalize(nullptr, cache_lock);
             throw;
         }
 
-        if (modified_size_limits)
+        if (limits_satisfied)
         {
             LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
                     actual_settings.max_size, new_settings.max_size,

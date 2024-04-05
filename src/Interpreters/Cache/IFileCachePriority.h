@@ -147,11 +147,12 @@ public:
         const CachePriorityGuard::Lock &) = 0;
 
     /// Collect eviction `candidates_num` candidates for eviction.
-    virtual EvictionCandidates collectCandidatesForEviction(
+    virtual bool collectCandidatesForEviction(
         size_t desired_size,
         size_t desired_elements_count,
         size_t max_candidates_to_evict,
         FileCacheReserveStat & stat,
+        EvictionCandidates & candidates,
         const CachePriorityGuard::Lock &) = 0;
 
     virtual bool modifySizeLimits(

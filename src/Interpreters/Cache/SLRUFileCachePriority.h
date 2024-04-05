@@ -58,11 +58,12 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::Lock &) override;
 
-    EvictionCandidates collectCandidatesForEviction(
+    bool collectCandidatesForEviction(
         size_t desired_size,
         size_t desired_elements_count,
         size_t max_candidates_to_evict,
         FileCacheReserveStat & stat,
+        EvictionCandidates & res,
         const CachePriorityGuard::Lock &) override;
 
     void shuffle(const CachePriorityGuard::Lock &) override;

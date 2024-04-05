@@ -10,12 +10,6 @@ public:
     using FinalizeEvictionFunc = std::function<void(const CachePriorityGuard::Lock & lk)>;
 
     EvictionCandidates() = default;
-    EvictionCandidates(EvictionCandidates && other) noexcept
-    {
-        candidates = std::move(other.candidates);
-        candidates_size = std::move(other.candidates_size);
-        queue_entries_to_invalidate = std::move(other.queue_entries_to_invalidate);
-    }
     ~EvictionCandidates();
 
     void add(
