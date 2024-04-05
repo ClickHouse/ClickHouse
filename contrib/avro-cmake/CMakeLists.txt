@@ -62,9 +62,12 @@ target_link_libraries (_avrocpp PRIVATE ch_contrib::snappy)
 
 # create a symlink to include headers with <avro/...>
 set(AVRO_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/include")
-ADD_CUSTOM_TARGET(avro_symlink_headers ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${AVRO_INCLUDE_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E create_symlink "${AVROCPP_ROOT_DIR}/api" "${AVRO_INCLUDE_DIR}/avro"
+ADD_CUSTOM_COMMAND(OUTPUT "${AVRO_INCLUDE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${AVRO_INCLUDE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E create_symlink "${AVROCPP_ROOT_DIR}/api" "${AVRO_INCLUDE_DIR}/avro"
+        DEPENDS "${AVROCPP_ROOT_DIR}/api"
 )
+ADD_CUSTOM_TARGET(avro_symlink_headers ALL
+        DEPENDS "${AVRO_INCLUDE_DIR}")
 add_dependencies(_avrocpp avro_symlink_headers)
 target_include_directories(_avrocpp SYSTEM BEFORE PUBLIC "${AVRO_INCLUDE_DIR}")
