@@ -24,6 +24,11 @@ public:
     explicit Chain(ProcessorPtr processor);
     explicit Chain(std::list<ProcessorPtr> processors);
 
+    void setProcessors(std::list<ProcessorPtr> processors_value)
+    {
+        processors = std::move(processors_value);
+    }
+
     bool empty() const { return processors.empty(); }
 
     size_t getNumThreads() const { return num_threads; }
