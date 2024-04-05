@@ -22,6 +22,7 @@ public:
 
     const Paths & getPaths() const override { return keys; }
     Paths & getPaths() override { return keys; }
+    void setPaths(const Paths & paths) override { keys = paths; }
 
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() override;
@@ -33,7 +34,8 @@ public:
     bool isStaticConfiguration() const override { return static_configuration; }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
-    static void addStructureToArgs(ASTs & args, const String & structure, ContextPtr context);
+    static void addStructureAndFormatToArgs(
+        ASTs & args, const String & structure, const String & format, ContextPtr context);
 
 private:
     void fromNamedCollection(const NamedCollection & collection) override;

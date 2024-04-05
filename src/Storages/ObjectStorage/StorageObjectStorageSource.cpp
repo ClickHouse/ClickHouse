@@ -106,8 +106,21 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     }
     else
     {
+        ConfigurationPtr copy_configuration = configuration->clone();
+        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        if (filter_dag)
+        {
+            auto keys = configuration->getPaths();
+            std::vector<String> paths;
+            paths.reserve(keys.size());
+            for (const auto & key : keys)
+                paths.push_back(fs::path(configuration->getNamespace()) / key);
+            VirtualColumnUtils::filterByPathOrFile(keys, paths, filter_dag, virtual_columns, local_context);
+            copy_configuration->setPaths(keys);
+        }
+
         return std::make_shared<KeysIterator>(
-            object_storage, configuration, virtual_columns, read_keys,
+            object_storage, copy_configuration, virtual_columns, read_keys,
             settings.ignore_non_existent_file, file_progress_callback);
     }
 }
@@ -247,6 +260,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         const auto max_parsing_threads = need_only_count ? std::optional<size_t>(1) : std::nullopt;
         read_buf = createReadBuffer(object_info->relative_path, object_info->metadata->size_bytes);
 
+        LOG_TEST(&Poco::Logger::get("KSSENII"), "KSSENII HEADER: {}", read_from_format_info.format_header.dumpStructure());
         auto input_format = FormatFactory::instance().getInput(
             configuration->format, *read_buf, read_from_format_info.format_header,
             getContext(), max_block_size, format_settings, max_parsing_threads,

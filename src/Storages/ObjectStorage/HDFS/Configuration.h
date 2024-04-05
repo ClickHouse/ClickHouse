@@ -21,6 +21,7 @@ public:
 
     const Paths & getPaths() const override { return paths; }
     Paths & getPaths() override { return paths; }
+    void setPaths(const Paths & paths_) override { paths = paths_; }
 
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() override { return url; }
@@ -29,7 +30,8 @@ public:
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly = true) override; /// NOLINT
     StorageObjectStorageConfigurationPtr clone() override { return std::make_shared<StorageHDFSConfiguration>(*this); }
 
-    static void addStructureToArgs(ASTs &, const String &, ContextPtr);
+    static void addStructureAndFormatToArgs(
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context);
 
     std::string getPathWithoutGlob() const override;
 

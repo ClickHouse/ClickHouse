@@ -158,10 +158,13 @@ void StorageObjectStorage<StorageSettings>::read(
     const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
+    LOG_TEST(&Poco::Logger::get("KSSENII"), "KSSENII SOURCE HEADER: {}", read_from_format_info.source_header.dumpStructure());
+    LOG_TEST(&Poco::Logger::get("KSSENII"), "KSSENII FORMAT HEADER: {}", read_from_format_info.format_header.dumpStructure());
     auto read_step = std::make_unique<ReadFromStorageObejctStorage>(
         object_storage,
         configuration,
         getName(),
+        column_names,
         getVirtualsList(),
         query_info,
         storage_snapshot,

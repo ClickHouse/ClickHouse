@@ -15,6 +15,7 @@ public:
         ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration_,
         const String & name_,
+        const Names & columns_to_read,
         const NamesAndTypesList & virtual_columns_,
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,

@@ -139,7 +139,11 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
     LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using url: {}, path: {}", url, path);
 }
 
-void StorageHDFSConfiguration::addStructureToArgs(ASTs & args, const String & structure_, ContextPtr context)
+void StorageHDFSConfiguration::addStructureAndFormatToArgs(
+    ASTs & args,
+    const String & structure_,
+    const String & format_,
+    ContextPtr context)
 {
     if (tryGetNamedCollectionWithOverrides(args, context))
     {
@@ -152,10 +156,13 @@ void StorageHDFSConfiguration::addStructureToArgs(ASTs & args, const String & st
     else
     {
         size_t count = args.size();
-        if (count == 0 || count > 3)
+        if (count == 0 || count > 4)
+        {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Expected 1 to 3 arguments in table function, got {}", count);
+                            "Expected 1 to 4 arguments in table function, got {}", count);
+        }
 
+        auto format_literal = std::make_shared<ASTLiteral>(format_);
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);
 
         /// hdfs(url)
@@ -168,15 +175,18 @@ void StorageHDFSConfiguration::addStructureToArgs(ASTs & args, const String & st
         /// hdfs(url, format)
         else if (count == 2)
         {
+            if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
+                args.back() = format_literal;
             args.push_back(structure_literal);
         }
-        /// hdfs(url, format, compression_method)
-        else if (count == 3)
+        /// hdfs(url, format, structure)
+        /// hdfs(url, format, structure, compression_method)
+        else if (count >= 3)
         {
-            auto compression_method = args.back();
-            args.pop_back();
-            args.push_back(structure_literal);
-            args.push_back(compression_method);
+            if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
+                args[1] = format_literal;
+            if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
+                args[2] = structure_literal;
         }
     }
 }

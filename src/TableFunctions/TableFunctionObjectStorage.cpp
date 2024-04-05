@@ -65,9 +65,9 @@ std::vector<size_t> TableFunctionObjectStorage<
 
 template <typename Definition, typename StorageSettings, typename Configuration>
 void TableFunctionObjectStorage<Definition, StorageSettings, Configuration>::updateStructureAndFormatArgumentsIfNeeded(
-        ASTs & args, const String & structure, const String & /* format */, const ContextPtr & context)
+        ASTs & args, const String & structure, const String & format, const ContextPtr & context)
 {
-    Configuration::addStructureToArgs(args, structure, context);
+    Configuration::addStructureAndFormatToArgs(args, structure, format, context);
 }
 
 template <typename Definition, typename StorageSettings, typename Configuration>

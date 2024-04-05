@@ -26,6 +26,7 @@ public:
 
     const Paths & getPaths() const override { return blobs_paths; }
     Paths & getPaths() override { return blobs_paths; }
+    void setPaths(const Paths & paths) override { blobs_paths = paths; }
 
     String getDataSourceDescription() override { return fs::path(connection_url) / container; }
     String getNamespace() const override { return container; }
@@ -36,7 +37,8 @@ public:
 
     void fromNamedCollection(const NamedCollection & collection) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
-    static void addStructureToArgs(ASTs & args, const String & structure, ContextPtr context);
+    static void addStructureAndFormatToArgs(
+        ASTs & args, const String & structure_, const String & format_, ContextPtr context);
 
 protected:
     using AzureClient = Azure::Storage::Blobs::BlobContainerClient;

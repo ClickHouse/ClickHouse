@@ -32,6 +32,7 @@ public:
 
     virtual const Paths & getPaths() const = 0;
     virtual Paths & getPaths() = 0;
+    virtual void setPaths(const Paths & paths) = 0;
 
     virtual String getDataSourceDescription() = 0;
     virtual String getNamespace() const = 0;

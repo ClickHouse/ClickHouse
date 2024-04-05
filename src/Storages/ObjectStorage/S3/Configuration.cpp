@@ -330,7 +330,8 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     keys = {url.key};
 }
 
-void StorageS3Configuration::addStructureToArgs(ASTs & args, const String & structure_, ContextPtr context)
+void StorageS3Configuration::addStructureAndFormatToArgs(
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context)
 {
     if (tryGetNamedCollectionWithOverrides(args, context))
     {
@@ -348,6 +349,7 @@ void StorageS3Configuration::addStructureToArgs(ASTs & args, const String & stru
         if (count == 0 || count > 6)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to 6 arguments in table function, got {}", count);
 
+        auto format_literal = std::make_shared<ASTLiteral>(format_);
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);
 
         /// s3(s3_url)

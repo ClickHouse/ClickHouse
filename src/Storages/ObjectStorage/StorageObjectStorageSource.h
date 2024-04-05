@@ -45,7 +45,7 @@ public:
 
     void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override
     {
-        setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.source_header);
+        setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
     }
 
     Chunk generate() override;

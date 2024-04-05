@@ -9,6 +9,7 @@ ReadFromStorageObejctStorage::ReadFromStorageObejctStorage(
     ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
     const String & name_,
+    const Names & columns_to_read,
     const NamesAndTypesList & virtual_columns_,
     const SelectQueryInfo & query_info_,
     const StorageSnapshotPtr & storage_snapshot_,
@@ -24,7 +25,7 @@ ReadFromStorageObejctStorage::ReadFromStorageObejctStorage(
     CurrentMetrics::Metric metric_threads_count_,
     CurrentMetrics::Metric metric_threads_active_,
     CurrentMetrics::Metric metric_threads_scheduled_)
-    : SourceStepWithFilter(DataStream{.header = info_.source_header}, info_.requested_columns.getNames(), query_info_, storage_snapshot_, context_)
+    : SourceStepWithFilter(DataStream{.header = info_.source_header}, columns_to_read, query_info_, storage_snapshot_, context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , info(std::move(info_))

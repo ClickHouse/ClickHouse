@@ -379,7 +379,8 @@ void StorageAzureBlobConfiguration::fromAST(ASTs & engine_args, ContextPtr conte
     blobs_paths = {blob_path};
 }
 
-void StorageAzureBlobConfiguration::addStructureToArgs(ASTs & args, const String & structure_, ContextPtr context)
+void StorageAzureBlobConfiguration::addStructureAndFormatToArgs(
+    ASTs & args, const String & structure_, const String & /* format */, ContextPtr context)
 {
     if (tryGetNamedCollectionWithOverrides(args, context))
     {
