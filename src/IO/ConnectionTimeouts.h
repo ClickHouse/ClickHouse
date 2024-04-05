@@ -71,6 +71,7 @@ APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DECLARE_BUILDER_FOR_MEMBER)
 
     ConnectionTimeouts & withConnectionTimeout(size_t seconds);
     ConnectionTimeouts & withConnectionTimeout(Poco::Timespan span);
+    ConnectionTimeouts & withHTTPKeepAliveMaxRequests(size_t requests);
 };
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)
@@ -113,6 +114,12 @@ inline ConnectionTimeouts & ConnectionTimeouts::withConnectionTimeout(Poco::Time
 {
     connection_timeout = span;
     secure_connection_timeout = span;
+    return *this;
+}
+
+inline ConnectionTimeouts & ConnectionTimeouts::withHTTPKeepAliveMaxRequests(size_t requests)
+{
+    http_keep_alive_max_requests = requests;
     return *this;
 }
 
