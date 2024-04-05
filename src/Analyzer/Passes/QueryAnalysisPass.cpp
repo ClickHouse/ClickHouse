@@ -776,7 +776,7 @@ struct IdentifierResolveScope
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
-    QueryTreeNodePtrWithHashWithoutAliasSet nullable_group_by_keys;
+    QueryTreeNodePtrWithHashIgnoreTypesSet nullable_group_by_keys;
     /// Here we count the number of nullable GROUP BY keys we met resolving expression.
     /// E.g. for a query `SELECT tuple(tuple(number)) FROM numbers(10) GROUP BY (number, tuple(number)) with cube`
     /// both `number` and `tuple(number)` would be in nullable_group_by_keys.
@@ -6155,12 +6155,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
         return resolved_expression_it->second;
     }
 
-    bool is_nullable_group_by_key = scope.nullable_group_by_keys.contains(node);
-    if (is_nullable_group_by_key)
-        ++scope.found_nullable_group_by_key_in_scope;
-
-    SCOPE_EXIT(scope.found_nullable_group_by_key_in_scope -= is_nullable_group_by_key);
-
     String node_alias = node->getAlias();
     ProjectionNames result_projection_names;
 
@@ -6452,10 +6446,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
 
     validateTreeSize(node, scope.context->getSettingsRef().max_expanded_ast_elements, node_to_tree_size);
 
-    if (is_nullable_group_by_key && scope.found_nullable_group_by_key_in_scope == 1 && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction())
     {
-        node = node->clone();
-        node->convertToNullable();
+        auto it = scope.nullable_group_by_keys.find(node);
+        if (it != scope.nullable_group_by_keys.end())
+        {
+            node = it->node->clone();
+            node->convertToNullable();
+        }
     }
 
     /** Update aliases after expression node was resolved.
@@ -8027,6 +8025,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasGroupBy())
         resolveGroupByNode(query_node_typed, scope);
+
+    if (scope.group_by_use_nulls)
+        resolved_expressions.clear();
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
