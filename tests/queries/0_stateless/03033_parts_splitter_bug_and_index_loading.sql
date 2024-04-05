@@ -1,5 +1,7 @@
 create table t(a UInt32, b UInt32) engine=MergeTree order by (a, b) settings index_granularity=1;
 
+system stop merges t;
+
 -- for this part the first columns is useless, so we have to use both
 insert into t select 42, number from numbers_mt(100);
 
