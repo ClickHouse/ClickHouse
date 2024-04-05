@@ -27,6 +27,8 @@
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 #include "config.h"
 
 #if USE_MYSQL

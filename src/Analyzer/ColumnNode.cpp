@@ -1,14 +1,12 @@
 #include <Analyzer/ColumnNode.h>
-
-#include <Common/SipHash.h>
-
+#include <Analyzer/TableNode.h>
+#include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-
 #include <Parsers/ASTIdentifier.h>
+#include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 
-#include <Analyzer/TableNode.h>
 
 namespace DB
 {
