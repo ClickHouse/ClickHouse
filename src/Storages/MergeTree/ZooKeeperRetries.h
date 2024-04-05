@@ -204,8 +204,8 @@ private:
         if (0 == iteration_count)
             return true;
 
-        if (process_list_element && !process_list_element->checkTimeLimitSoft())
-            return false;
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
 
         if (unconditional_retry)
         {
