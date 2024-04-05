@@ -776,6 +776,8 @@ Note that the `arrayCount` is a [higher-order function](../../sql-reference/func
 
 ## arrayDotProduct
 
+Returns the dot product of two arrays.
+
 **Syntax**
 
 ```sql
