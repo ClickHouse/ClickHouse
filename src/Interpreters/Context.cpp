@@ -1330,14 +1330,17 @@ ClassifierPtr Context::getClassifier() const
 }
 
 
-const Scalars & Context::getScalars() const
+Scalars Context::getScalars() const
 {
+    std::lock_guard lock(mutex);
     return scalars;
 }
 
 
-const Block & Context::getScalar(const String & name) const
+Block Context::getScalar(const String & name) const
 {
+    std::lock_guard lock(mutex);
+
     auto it = scalars.find(name);
     if (scalars.end() == it)
     {
@@ -1348,12 +1351,13 @@ const Block & Context::getScalar(const String & name) const
     return it->second;
 }
 
-const Block * Context::tryGetSpecialScalar(const String & name) const
+std::optional<Block> Context::tryGetSpecialScalar(const String & name) const
 {
+    std::lock_guard lock(mutex);
     auto it = special_scalars.find(name);
     if (special_scalars.end() == it)
-        return nullptr;
-    return &it->second;
+        return std::nullopt;
+    return it->second;
 }
 
 Tables Context::getExternalTables() const
@@ -1433,6 +1437,7 @@ void Context::addScalar(const String & name, const Block & block)
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
+    std::lock_guard lock(mutex);
     scalars[name] = block;
 }
 
@@ -1442,6 +1447,7 @@ void Context::addSpecialScalar(const String & name, const Block & block)
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have local scalars");
 
+    std::lock_guard lock(mutex);
     special_scalars[name] = block;
 }
 
@@ -1451,6 +1457,7 @@ bool Context::hasScalar(const String & name) const
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
+    std::lock_guard lock(mutex);
     return scalars.contains(name);
 }
 
