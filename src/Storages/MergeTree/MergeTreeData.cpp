@@ -4083,9 +4083,9 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
         resetObjectColumnsFromActiveParts(acquired_lock);
 }
 
-void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove)
+void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove, DataPartsLock * acquired_lock)
 {
-    auto lock = lockParts();
+    auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
 
     for (const auto & part : remove)
     {
@@ -6635,15 +6635,40 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
 {
     if (!isEmpty())
     {
+        for (const auto & part : precommitted_parts)
+            part->version.creation_csn.store(Tx::RolledBackCSN);
+
+        /// Remove detached parts from working set.
+        ///
+        /// It is possible to have detached parts here, only when rename (in
+        /// commit()) of detached parts had been broken (i.e. during ATTACH),
+        /// i.e. the part itself is broken.
+        DataPartsVector detached_precommitted_parts;
+        for (auto it = precommitted_parts.begin(); it != precommitted_parts.end();)
+        {
+            const auto & part = *it;
+            if (part->getDataPartStorage().getParentDirectory() == DETACHED_DIR_NAME)
+            {
+                detached_precommitted_parts.push_back(part);
+                it = precommitted_parts.erase(it);
+            }
+            else
+                ++it;
+        }
+
         WriteBufferFromOwnString buf;
         buf << "Removing parts:";
         for (const auto & part : precommitted_parts)
             buf << " " << part->getDataPartStorage().getPartDirectory();
         buf << ".";
+        if (!detached_precommitted_parts.empty())
+        {
+            buf << " Rollbacking parts state to temporary and removing from working set:";
+            for (const auto & part : detached_precommitted_parts)
+                buf << " " << part->getDataPartStorage().getPartDirectory();
+            buf << ".";
+        }
         LOG_DEBUG(data.log, "Undoing transaction {}. {}", getTID(), buf.str());
-
-        for (const auto & part : precommitted_parts)
-            part->version.creation_csn.store(Tx::RolledBackCSN);
 
         /// It would be much better with TSA...
         auto our_lock = (lock) ? DataPartsLock() : data.lockParts();
@@ -6663,6 +6688,10 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * lock)
         }
         else
         {
+            data.removePartsFromWorkingSetImmediatelyAndSetTemporaryState(
+                detached_precommitted_parts,
+                &our_lock);
+
             data.removePartsFromWorkingSet(txn,
                 DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),
                 /* clear_without_timeout = */ true, &our_lock);
