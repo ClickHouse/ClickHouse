@@ -166,12 +166,16 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
                                         static_cast<int32_t>(plaintext.size())); ok == 0)
             throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
+        __msan_unpoison(ciphertext_and_tag, out_len); /// OpenSSL uses assembly which evades msan's analysis
+
         ciphertext_len = out_len;
 
         if (int ok = EVP_EncryptFinal_ex(ctx,
                                             reinterpret_cast<uint8_t *>(ciphertext_and_tag) + out_len,
                                             reinterpret_cast<int32_t *>(&out_len)); ok == 0)
             throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+        __msan_unpoison(ciphertext_and_tag, out_len); /// OpenSSL uses assembly which evades msan's analysis
 
         ciphertext_len += out_len;
 
@@ -235,12 +239,16 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
                                         static_cast<int32_t>(ciphertext.size()) - tag_size); ok == 0)
             throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
+        __msan_unpoison(plaintext, out_len); /// OpenSSL uses assembly which evades msan's analysis
+
         plaintext_len = out_len;
 
         if (int ok = EVP_DecryptFinal_ex(ctx,
                                             reinterpret_cast<uint8_t *>(plaintext) + out_len,
                                             reinterpret_cast<int32_t *>(&out_len)); ok == 0)
             throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+        __msan_unpoison(plaintext, out_len); /// OpenSSL uses assembly which evades msan's analysis
     }
     catch (...)
     {
