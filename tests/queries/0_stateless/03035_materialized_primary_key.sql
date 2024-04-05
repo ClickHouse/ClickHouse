@@ -25,4 +25,4 @@ POPULATE AS SELECT value, id FROM test;
 
 SELECT name, primary_key
 FROM system.tables
-WHERE name LIKE 'test%';
+WHERE database = currentDatabase() AND name LIKE 'test%';
