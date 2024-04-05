@@ -259,9 +259,9 @@ bool LRUFileCachePriority::canFit(
     const size_t * max_elements_) const
 {
     return (max_size == 0
-            || (state->current_size + size - released_size_assumption <= (max_size_ ? *max_size_ : max_size)))
+            || (state->current_size + size - released_size_assumption <= (max_size_ ? *max_size_ : max_size.load())))
         && (max_elements == 0
-            || state->current_elements_num + elements - released_elements_assumption <= (max_elements_ ? *max_elements_ : max_elements));
+            || state->current_elements_num + elements - released_elements_assumption <= (max_elements_ ? *max_elements_ : max_elements.load()));
 }
 
 bool LRUFileCachePriority::collectCandidatesForEviction(
