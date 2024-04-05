@@ -3,6 +3,7 @@
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Common/UTF8Helpers.h>
 
 
@@ -149,8 +150,11 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 
     Token last_token = token_iterator.max();
+    /// Raw data in INSERT queries, which is not necessarily tokenized.
+    const char * insert_data = ast ? getInsertData(ast) : nullptr;
 
-    if (!parse_res || last_token.isError() || (!token_iterator->isEnd() && token_iterator->type != TokenType::Semicolon))
+    if ((!parse_res || last_token.isError() || (!token_iterator->isEnd() && token_iterator->type != TokenType::Semicolon))
+        && !(insert_data && expected.max_parsed_pos >= insert_data))
     {
         pos += UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(prev), expected.max_parsed_pos - prev);
 
@@ -160,10 +164,15 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         colors[pos] = Replxx::Color::BRIGHTRED;
     }
 
-    if (last_token.type == TokenType::Semicolon || last_token.type == TokenType::VerticalDelimiter)
+    if (last_token.type == TokenType::Semicolon || last_token.type == TokenType::VerticalDelimiter
+        || query.ends_with(';') || query.ends_with("\\G"))  /// This is for raw data in INSERT queries, which is not necessarily tokenized.
+    {
         ReplxxLineReader::setLastIsDelimiter(true);
+    }
     else if (last_token.type != TokenType::Whitespace)
+    {
         ReplxxLineReader::setLastIsDelimiter(false);
+    }
 }
 #endif
 
