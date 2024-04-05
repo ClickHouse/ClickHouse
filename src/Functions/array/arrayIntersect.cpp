@@ -1,20 +1,17 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/array/arrayLogicalFunction.h>
-#include <base/TypeLists.h>
-#include <Common/assert_cast.h>
+#include <Functions/array/arrayLogicalFunctionBase.h>
 
 
 namespace DB
 {
-
-class FunctionArrayIntersect : public FunctionArrayLogical
+class FunctionArrayIntersect : public FunctionArrayLogicalBase<true>
 {
 public:
     static constexpr auto name = "arrayIntersect";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayIntersect>(); }
 
-    FunctionArrayIntersect() : FunctionArrayLogical(true, name) { }
+    FunctionArrayIntersect() : FunctionArrayLogicalBase<true>(name) { }
 };
 
 
