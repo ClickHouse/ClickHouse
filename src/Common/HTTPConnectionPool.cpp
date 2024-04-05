@@ -213,7 +213,8 @@ public:
 
         --total_connections_in_group;
 
-        const size_t reduced_warning_limit = limits.warning_limit > 10 ? limits.warning_limit - 20 : 1;
+        const size_t gap = 20;
+        const size_t reduced_warning_limit = limits.warning_limit > gap ? limits.warning_limit - gap : 1;
         if (mute_warning_until > 0 && total_connections_in_group < reduced_warning_limit)
         {
             LOG_WARNING(log, "Sessions count is OK in the group {}, count {}", type, total_connections_in_group);
@@ -289,8 +290,7 @@ private:
                 auto timeouts = getTimeouts(*this);
                 auto new_connection = lock->getConnection(timeouts);
                 Session::assign(*new_connection);
-                if (Session::getKeepAliveRequest() == 0)
-                    Session::setKeepAliveRequest(1);
+                Session::setKeepAliveRequest(Session::getKeepAliveRequest() + 1);
             }
             else
             {
@@ -425,7 +425,7 @@ private:
                 ConnectionGroup::Ptr group_,
                 IHTTPConnectionPoolForEndpoint::Metrics metrics_,
                 Args &&... args)
-            : Session(args...)
+            : Session(std::forward<Args>(args)...)
             , pool(std::move(pool_))
             , group(group_)
             , metrics(std::move(metrics_))
