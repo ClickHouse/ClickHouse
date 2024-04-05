@@ -2,7 +2,8 @@
 CXXFLAGS = "@RUST_CXXFLAGS@"
 
 [source.crates-io]
-replace-with = "vendored-sources"
+registry = 'sparse+https://index.crates.io/'
+replace-with = 'local-registry'
 
-[source.vendored-sources]
-directory = "@RUST_VENDOR_DIR@"
+[source.local-registry]
+local-registry = "@RUST_VENDOR_DIR@/prql"

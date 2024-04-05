@@ -53,8 +53,6 @@ macro(configure_rustc)
     message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
     set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../contrib/rust_vendor")
-    # NOTE: requires RW access for the source dir
-    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/.cargo/config.toml.in" "${CMAKE_CURRENT_SOURCE_DIR}/.cargo/config.toml" @ONLY)
 endmacro()
 configure_rustc()
 
@@ -81,18 +79,12 @@ function(clickhouse_import_crate)
         endif()
     endif()
 
-    corrosion_import_crate(NO_STD ${ARGN} PROFILE ${profile} FLAGS --offline)
+    corrosion_import_crate(${ARGN} NO_STD PROFILE ${profile} LOCKED FLAGS --offline)
 endfunction()
 
 # Add crate from the build directory.
-#
-# Our crates has configuration files:
-# - config for cargo (see config.toml.in)
-# - and possibly config for build (build.rs.in)
-#
-# And to avoid overlaps different builds for one source directory, crate will
+# To avoid overlaps different builds for one source directory, crate will
 # be copied from source directory to the binary directory.
-file(COPY ".cargo" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 function(add_rust_subdirectory src)
     set(dst "${CMAKE_CURRENT_BINARY_DIR}/${src}")
     message(STATUS "Copy ${src} to ${dst}")
