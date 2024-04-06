@@ -37,17 +37,17 @@ Upper and lower bounds can be specified to limit Memory engine table size, effec
 - `max_rows_to_keep` — Maximum rows to keep within memory table where oldest rows are deleted on each insertion (i.e circular buffer). Max rows can exceed the stated limit if the oldest batch of rows to remove falls under the `min_rows_to_keep` limit when adding a large block.
   - Default value: `0`
 
-**Modify settings**
-```sql
-ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 1000;
-```
-
 ## Usage {#usage}
 
 
 **Initialize settings**
 ``` sql
 CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100, max_rows_to_keep = 1000;
+```
+
+**Modify settings**
+```sql
+ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 1000;
 ```
 
 **Note:** Both `bytes` and `rows` capping parameters can be set at the same time, however, the lower bounds of `max` and `min` will be adhered to.
@@ -102,3 +102,4 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' and data
 │       65536 │      10000 │
 └─────────────┴────────────┘
 ```
+
