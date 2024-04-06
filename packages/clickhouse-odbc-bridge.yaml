@@ -1,0 +1,35 @@
+# package sources should be placed in ${PWD}/root
+# nfpm should run from the same directory with a config
+name: "clickhouse-odbc-bridge"
+description: |
+  ClickHouse ODBC Bridge - is a separate process for loading ODBC drivers and interacting with external databases using the ODBC protocol.
+    ClickHouse is a column-oriented database management system
+    that allows generating analytical data reports in real time.
+
+# Common packages config
+arch: "${DEB_ARCH}" # amd64, arm64
+platform: "linux"
+version: "${CLICKHOUSE_VERSION_STRING}"
+vendor: "ClickHouse Inc."
+homepage: "https://clickhouse.com"
+license: "Apache"
+section: "database"
+priority: "optional"
+maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
+deb:
+  fields:
+    Source: clickhouse
+
+# Package specific content
+contents:
+- src: root/usr/bin/clickhouse-odbc-bridge
+  dst: /usr/bin/clickhouse-odbc-bridge
+# docs
+- src: ../AUTHORS
+  dst: /usr/share/doc/clickhouse-odbc-bridge/AUTHORS
+- src: ../CHANGELOG.md
+  dst: /usr/share/doc/clickhouse-odbc-bridge/CHANGELOG.md
+- src: ../LICENSE
+  dst: /usr/share/doc/clickhouse-odbc-bridge/LICENSE
+- src: ../README.md
+  dst: /usr/share/doc/clickhouse-odbc-bridge/README.md

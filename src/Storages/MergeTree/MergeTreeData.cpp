@@ -652,8 +652,10 @@ void MergeTreeData::checkProperties(
             if (!allow_suspicious_indices && !attach)
             {
                 const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
-                if (const auto * index_function = typeid_cast<const ASTFunction *>(index_ast->expr))
-                    checkSuspiciousIndices(index_function);
+                ASTPtr index_expression = index_ast ? index_ast->getExpression() : nullptr;
+                const auto * index_expression_ptr = index_expression ? typeid_cast<const ASTFunction *>(index_expression.get()) : nullptr;
+                if (index_expression_ptr)
+                    checkSuspiciousIndices(index_expression_ptr);
             }
 
             MergeTreeIndexFactory::instance().validate(index, attach);

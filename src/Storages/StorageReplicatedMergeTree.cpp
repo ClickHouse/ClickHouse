@@ -18,6 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/FailPoint.h>
+#include <Common/randomDelay.h>
 
 #include <Core/ServerUUID.h>
 
@@ -3129,6 +3130,10 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     Strings active_parts = get_part_set.getParts();
 
     /// Remove local parts if source replica does not have them, because such parts will never be fetched by other replicas.
+    static const auto test_delay = getContext()->getConfigRef().getUInt64("test.clone_replica.delay_before_removing_local_parts_ms", 0);
+    if (test_delay)
+        randomDelayForMaxMilliseconds(test_delay, log.load(), "cloneReplica: Before removing local parts");
+
     Strings local_parts_in_zk = zookeeper->getChildren(fs::path(replica_path) / "parts");
     Strings parts_to_remove_from_zk;
 
@@ -6548,7 +6553,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     /// TODO Allow to use quorum here.
     ReplicatedMergeTreeSink output(*this, metadata_snapshot, /* quorum */ 0, /* quorum_timeout_ms */ 0, /* max_parts_per_block */ 0,
                                    /* quorum_parallel */ false, query_context->getSettingsRef().insert_deduplicate,
-                                   /* majority_quorum */ false, query_context, /*is_attach*/true);
+                                   /* majority_quorum */ false, query_context, /* is_attach */ true, /* allow_attach_while_readonly */ true);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
@@ -10535,7 +10540,11 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
 void StorageReplicatedMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto sink = std::make_shared<ReplicatedMergeTreeSink>(*this, metadata_snapshot, 0, 0, 0, false, false, false,  getContext(), /*is_attach*/true);
+
+    auto sink = std::make_shared<ReplicatedMergeTreeSink>(
+        *this, metadata_snapshot, /* quorum */ 0, /* quorum_timeout_ms */ 0, /* max_parts_per_block */ 0, /* quorum_parallel */ false,
+        /* deduplicate */ false, /* majority_quorum */ false, getContext(), /* is_attach */ true, /* allow_attach_while_readonly */ false);
+
     for (auto part : parts)
         sink->writeExistingPart(part);
 }
