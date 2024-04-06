@@ -6443,7 +6443,7 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     {
         for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
         {
-            if (settings.enable_positional_arguments)
+            if (settings.enable_positional_arguments && scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
                 replaceNodesWithPositionalArguments(grouping_sets_keys_list_node, query_node_typed.getProjection().getNodes(), scope);
 
             resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -6465,7 +6465,7 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     }
     else
     {
-        if (settings.enable_positional_arguments)
+        if (settings.enable_positional_arguments && scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
             replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
 
         resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -7823,7 +7823,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasOrderBy())
     {
-        if (settings.enable_positional_arguments)
+        if (settings.enable_positional_arguments && scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
             replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
 
         expandOrderByAll(query_node_typed, settings);
@@ -7847,7 +7847,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasLimitBy())
     {
-        if (settings.enable_positional_arguments)
+        if (settings.enable_positional_arguments && scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
             replaceNodesWithPositionalArguments(query_node_typed.getLimitByNode(), query_node_typed.getProjection().getNodes(), scope);
 
         resolveExpressionNodeList(query_node_typed.getLimitByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
