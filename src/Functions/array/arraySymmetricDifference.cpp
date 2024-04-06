@@ -18,7 +18,9 @@ public:
 
 REGISTER_FUNCTION(ArraySymmetricDifference)
 {
-    factory.registerFunction<FunctionArraySymmetricDifference>();
+    factory.registerFunction<FunctionArraySymmetricDifference>(FunctionDocumentation{.description=R"(
+Function arraySymmetricDifference(arr1, arr2, ..., arrN) returns an array of unique elements that are not present in all input arrays.
+)", .examples{{"sum", "SELECT arraySymmetricDifference([1, 2, 3], [NULL, 2, 1]);", "[3, NULL]"}}, .categories{"Array"}});
 }
 
 }

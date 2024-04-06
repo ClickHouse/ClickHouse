@@ -17,7 +17,9 @@ public:
 
 REGISTER_FUNCTION(ArrayIntersect)
 {
-    factory.registerFunction<FunctionArrayIntersect>();
+    factory.registerFunction<FunctionArrayIntersect>(FunctionDocumentation{.description=R"(
+Function arrayIntersect(arr1, arr2, ..., arrN) returns an array of unique elements that are present in all input arrays.
+)", .examples{{"sum", "SELECT arrayIntersect([1, 2, 3], [NULL, 2, 1]);", "[1, 2]"}}, .categories{"Array"}});
 }
 
 }
