@@ -1,3 +1,4 @@
+personal_ws-1.1 en 2758 
 AArch
 ACLs
 ALTERs
@@ -262,8 +263,8 @@ ExactEdgeLengthRads
 ExecutablePool
 ExtType
 ExternalDistributed
-FFFD
 FFFFFFFF
+FFFD
 FIPS
 FOSDEM
 FQDN
@@ -550,6 +551,8 @@ MinIO
 MinMax
 MindsDB
 Mongodb
+mortonDecode
+mortonEncode
 MsgPack
 MultiPolygon
 Multiline
@@ -1029,7 +1032,6 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
-ZCurve
 ZSTDQAT
 Zabbix
 Zipkin
@@ -1144,7 +1146,7 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
-arraySymmetricDifference
+arraySymmetricalDifference
 arrayUniq
 arrayWithConstant
 arrayZip
@@ -1678,8 +1680,8 @@ hasSubsequenceCaseInsensitive
 hasSubsequenceCaseInsensitiveUTF
 hasSubsequenceUTF
 hasSubstr
-hasThreadFuzzer
 hasToken
+hasThreadFuzzer
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
@@ -1936,8 +1938,6 @@ modularization
 moduloOrZero
 mongodb
 monthName
-mortonDecode
-mortonEncode
 moscow
 msgpack
 msgpk
@@ -2077,7 +2077,6 @@ pcre
 performant
 perl
 persistency
-personal_ws-1.1 en 2758
 phpclickhouse
 pipelining
 plaintext
@@ -2556,7 +2555,6 @@ toJSONString
 toLastDayOfMonth
 toLastDayOfWeek
 toLowCardinality
-toMillisecond
 toMinute
 toModifiedJulianDay
 toModifiedJulianDayOrNull
@@ -2573,6 +2571,7 @@ toRelativeSecondNum
 toRelativeWeekNum
 toRelativeYearNum
 toSecond
+toMillisecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
@@ -2772,6 +2771,7 @@ xz
 yaml
 yandex
 youtube
+ZCurve
 zLib
 zLinux
 zabbix
