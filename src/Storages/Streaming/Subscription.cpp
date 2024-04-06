@@ -6,6 +6,15 @@
 namespace DB
 {
 
+StreamSubscription::StreamSubscription(uint64_t snapshot_) : snapshot{snapshot_}
+{
+}
+
+uint64_t StreamSubscription::getManagerSnapshot() const
+{
+    return snapshot;
+}
+
 #if defined(OS_LINUX)
 
 void StreamSubscription::push(Block block)

@@ -23,13 +23,16 @@ StreamSubscriptionPtr StreamSubscriptionManager::subscribe()
 {
     auto lock = lockExclusive();
 
-    auto subscription = std::make_shared<StreamSubscription>();
+    uint64_t cur_snapshot = subscription_id_counter.fetch_add(1);
+    auto subscription = std::make_shared<StreamSubscription>(cur_snapshot);
+
     subscriptions.push_back(subscription);
+    subscriptions_count.fetch_add(1);
 
     return subscription;
 }
 
-void StreamSubscriptionManager::pushToAll(Block block)
+void StreamSubscriptionManager::pushToAll(Block block, uint64_t snapshot)
 {
     auto lock = lockShared();
 
@@ -44,7 +47,9 @@ void StreamSubscriptionManager::pushToAll(Block block)
             continue;
         }
 
-        locked_sub->push(block);
+        // push to subscription only if it is visible in snapshot
+        if (locked_sub->getManagerSnapshot() < snapshot)
+            locked_sub->push(block);
     }
 
     if (need_clean)
@@ -54,10 +59,14 @@ void StreamSubscriptionManager::pushToAll(Block block)
     }
 }
 
-size_t StreamSubscriptionManager::getSubscriptionsCount()
+size_t StreamSubscriptionManager::getSubscriptionsCount() const
 {
-    auto lock = lockShared();
-    return subscriptions.size();
+    return subscriptions_count.load();
+}
+
+uint64_t StreamSubscriptionManager::getSnapshot() const
+{
+    return subscription_id_counter.load();
 }
 
 void StreamSubscriptionManager::clean()
@@ -66,10 +75,17 @@ void StreamSubscriptionManager::clean()
     auto it = subscriptions.begin();
 
     while (it != subscriptions.end())
+    {
         if (it->lock() == nullptr)
+        {
             subscriptions.erase(it++);
+            subscriptions_count.fetch_sub(1);
+        }
         else
+        {
             ++it;
+        }
+    }
 }
 
 }
