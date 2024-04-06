@@ -1,7 +1,9 @@
+#include <Formats/FormatFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StreamQueue/StorageStreamQueue.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 namespace DB
@@ -43,14 +45,54 @@ ColumnsDescription getColumns(ContextPtr context, const StorageID & table_id)
 
 
 StorageStreamQueue::StorageStreamQueue(
-    std::unique_ptr<StreamQueueSettings> settings_, const StorageID & table_id_, ContextPtr context_, const StorageID & source_table_id_)
+    std::unique_ptr<StreamQueueSettings> settings_,
+    const StorageID & table_id_,
+    ContextPtr context_,
+    const StorageID & source_table_id_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
+    const String & comment)
     : IStorage(table_id_)
     , WithContext(context_)
     , settings(std::move(settings_))
     , source_table_id(source_table_id_)
     , log(getLogger("StorageStreamQueue (" + table_id_.table_name + ")"))
 {
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns_);
+    storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
+
+    setInMemoryMetadata(storage_metadata);
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+
+    task = getContext()->getSchedulePool().createTask("StreamQueueTask", [this] { threadFunc(); });
+
     LOG_INFO(log, "Source table id: {}", source_table_id);
+}
+
+void StorageStreamQueue::startup()
+{
+    if (task)
+        task->activateAndSchedule();
+}
+
+void StorageStreamQueue::shutdown(bool)
+{
+    LOG_TRACE(log, "Shutting down storage...");
+
+    shutdown_called = true;
+    if (task)
+        task->deactivate();
+    LOG_TRACE(log, "Shut down storage");
+}
+
+void StorageStreamQueue::threadFunc()
+{
+    if (shutdown_called)
+        return;
+
+    task->scheduleAfter(settings->streamqueue_polling_min_timeout_ms);
 }
 
 StoragePtr createStorage(const StorageFactory::Arguments & args)
@@ -95,7 +137,8 @@ StoragePtr createStorage(const StorageFactory::Arguments & args)
     if (args.storage_def->settings)
         settings->loadFromQuery(*args.storage_def);
 
-    return std::make_shared<StorageStreamQueue>(std::move(settings), args.table_id, args.getContext(), source_storage_id);
+    return std::make_shared<StorageStreamQueue>(
+        std::move(settings), args.table_id, args.getContext(), source_storage_id, args.columns, args.constraints, args.comment);
 }
 
 void registerStorageStreamQueue(StorageFactory & factory)
