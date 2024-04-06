@@ -19,7 +19,8 @@ public:
         size_t max_elements_,
         double size_ratio_,
         LRUFileCachePriority::StatePtr probationary_state_ = nullptr,
-        LRUFileCachePriority::StatePtr protected_state_ = nullptr);
+        LRUFileCachePriority::StatePtr protected_state_ = nullptr,
+        const std::string & description_ = "none");
 
     size_t getSize(const CachePriorityGuard::Lock & lock) const override;
 
@@ -67,7 +68,7 @@ private:
     double size_ratio;
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
-    LoggerPtr log = getLogger("SLRUFileCachePriority");
+    LoggerPtr log;
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock);
 
