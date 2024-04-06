@@ -131,10 +131,10 @@ KeeperServer::KeeperServer(
     if (keeper_context->getCoordinationSettings()->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
+#if USE_ROCKSDB
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
     if (coordination_settings->use_rocksdb)
     {
-#if USE_ROCKSDB
         state_machine = nuraft::cs_new<KeeperStateMachine<KeeperRocksStorage>>(
             responses_queue_,
             snapshots_queue_,
@@ -142,11 +142,10 @@ KeeperServer::KeeperServer(
             config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
             commit_callback,
             checkAndGetSuperdigest(configuration_and_settings_->super_digest));
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "RocksDB support is disabled because ClickHouse was built without RocksDB support.");
-#endif
+        LOG_WARNING(log, "Use RocksDB as Keeper backend storage.");
     }
     else
+#endif
         state_machine = nuraft::cs_new<KeeperStateMachine<KeeperMemoryStorage>>(
             responses_queue_,
             snapshots_queue_,

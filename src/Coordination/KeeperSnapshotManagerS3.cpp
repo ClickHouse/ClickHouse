@@ -25,8 +25,6 @@
 
 #include <filesystem>
 
-namespace fs = std::filesystem;
-
 namespace DB
 {
 
