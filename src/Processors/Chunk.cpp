@@ -15,9 +15,10 @@ namespace ErrorCodes
 }
 
 Chunk::Chunk(Chunk && other) noexcept
-    : columns{std::move(other.columns)}
-    , num_rows{std::move(other.num_rows)}
+    : columns(std::move(other.columns))
+    , num_rows(std::move(other.num_rows))
 {
+    other.num_rows = 0;
     for (size_t i = 0; i < kChunkInfoCount; ++i)
         chunk_infos[i] = std::move(other.chunk_infos[i]);
 }
@@ -100,7 +101,7 @@ void Chunk::clear()
     columns.clear();
 
     for (auto & chunk_info : chunk_infos)
-        chunk_info = nullptr;
+        chunk_info.reset();
 }
 
 void Chunk::setColumns(Columns columns_, UInt64 num_rows_)
