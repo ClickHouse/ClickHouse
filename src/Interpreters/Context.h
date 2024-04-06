@@ -433,7 +433,15 @@ protected:
 
     /// Cache for storages resolved during query processing - we want to use the same storages we have resolved on
     /// analysis stage for the execution - storage can be changed by concurrently running 'EXCHANGE TABLES' query.
-    mutable std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> storage_cache;
+    struct StorageCache
+    {
+        StorageCache() {}
+        StorageCache(const StorageCache &) {}
+        std::mutex mutex;
+        std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> cache;
+    };
+
+    mutable StorageCache storage_cache;
 
 public:
     /// Some counters for current query execution.

@@ -928,7 +928,9 @@ String Context::getFilesystemCacheUser() const
 
 DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter, std::optional<Exception> * exception) const
 {
-    if (auto storage_id = storage_cache.find(id); storage_id != storage_cache.end())
+    std::lock_guard lock(storage_cache.mutex);
+
+    if (auto storage_id = storage_cache.cache.find(id); storage_id != storage_cache.cache.end())
     {
         DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(storage_id->uuid);
         if (exception && !storage.second)
@@ -939,7 +941,7 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     auto storage = storage_getter();
     if (storage.second)
         if (const auto & new_id = storage.second->getStorageID(); new_id.hasUUID())
-            storage_cache.insert(new_id);
+            storage_cache.cache.insert(new_id);
     return storage;
 }
 
