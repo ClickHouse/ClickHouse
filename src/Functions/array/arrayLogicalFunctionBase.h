@@ -382,6 +382,7 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::execute(
 
     std::vector<const ColumnType *> columns;
     columns.reserve(args);
+    // We can define whether the result is nullable by the number of nullable columns
     for (const auto & arg : arrays.args)
     {
         if constexpr (std::is_same_v<ColumnType, IColumn>)
@@ -412,6 +413,7 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::execute(
     size_t result_offset = 0;
     const size_t needed_amount = intersect ? args : 1;
 
+    // Common approach here is to count the number of occurrences of each element in each array once
     for (size_t row = 0; row < rows; ++row)
     {
         map.clear();
@@ -473,6 +475,7 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::execute(
                 prev_off[arg_num] = 0;
         }
 
+        // After we counted the number of occurrences we should get the elements directly from source arrays to keep the order
         set.clear();
         prev_off.assign(args, 0);
         bool null_added = false;
@@ -650,9 +653,8 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::executeImpl(
                 = FunctionArrayLogicalBase<intersect>::execute<DataTypeDate32::FieldType, ColumnVector<DataTypeDate32::FieldType>, true>(
                     arrays, std::move(column));
         else if (which.isDateTime())
-            result_column
-                = FunctionArrayLogicalBase<intersect>::execute<DataTypeDateTime::FieldType, ColumnVector<DataTypeDateTime::FieldType>, true>(
-                    arrays, std::move(column));
+            result_column = FunctionArrayLogicalBase<intersect>::
+                execute<DataTypeDateTime::FieldType, ColumnVector<DataTypeDateTime::FieldType>, true>(arrays, std::move(column));
         else if (which.isString())
             result_column = FunctionArrayLogicalBase<intersect>::execute<StringRef, ColumnString, false>(arrays, std::move(column));
         else if (which.isFixedString())
