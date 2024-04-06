@@ -5,9 +5,10 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
-#include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Common/BinStringDecodeHelper.h>
+#include <Common/PODArray.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include "Parsers/CommonParsers.h"
 
 #include <Parsers/DumpASTNode.h>
