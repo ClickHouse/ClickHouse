@@ -18,6 +18,8 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -47,12 +49,12 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 static void extractMergingAndGatheringColumns(
     const NamesAndTypesList & storage_columns,
     const ExpressionActionsPtr & sorting_key_expr,
     const IndicesDescription & indexes,
+    const std::vector<ProjectionDescriptionRawPtr> & projections,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names)
@@ -63,6 +65,12 @@ static void extractMergingAndGatheringColumns(
     {
         Names index_columns_vec = index.expression->getRequiredColumns();
         std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
+                  std::inserter(key_columns, key_columns.end()));
+    }
+    for (const auto & projection : projections)
+    {
+        Names projection_columns_vec = projection->getRequiredColumns();
+        std::copy(projection_columns_vec.cbegin(), projection_columns_vec.cend(),
                   std::inserter(key_columns, key_columns.end()));
     }
 
@@ -203,10 +211,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, std::move(object_columns));
 
+    prepareProjectionsToMergeAndRebuild();
+
     extractMergingAndGatheringColumns(
         global_ctx->storage_columns,
         global_ctx->metadata_snapshot->getSortingKey().expression,
         global_ctx->metadata_snapshot->getSecondaryIndices(),
+        global_ctx->projections_to_rebuild,
         ctx->merging_params,
         global_ctx->gathering_columns,
         global_ctx->gathering_column_names,
@@ -453,6 +464,65 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 }
 
 
+void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Block & block) const
+{
+    for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
+    {
+        const auto & projection = *global_ctx->projections_to_rebuild[i];
+        auto projection_block = ctx->projection_squashes[i].add(projection.calculate(block, global_ctx->context));
+        if (projection_block)
+        {
+            auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
+                *global_ctx->data, ctx->log, projection_block, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num);
+            tmp_part.finalize();
+            tmp_part.part->getDataPartStorage().commitTransaction();
+            ctx->projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
+        }
+    }
+}
+
+
+void MergeTask::ExecuteAndFinalizeHorizontalPart::constructTaskForProjectionPartsMerge() const
+{
+    auto && [name, parts] = *ctx->projection_parts_iterator;
+    const auto & projection = global_ctx->metadata_snapshot->projections.get(name);
+
+    ctx->merge_projection_parts_task_ptr = std::make_unique<MergeProjectionPartsTask>
+    (
+        name,
+        std::move(parts),
+        projection,
+        ctx->projection_block_num,
+        global_ctx->context,
+        global_ctx->holder,
+        global_ctx->mutator,
+        global_ctx->merge_entry,
+        global_ctx->time_of_merge,
+        global_ctx->new_data_part,
+        global_ctx->space_reservation
+    );
+}
+
+
+bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections()
+{
+    /// In case if there are no projections we didn't construct a task
+    if (!ctx->merge_projection_parts_task_ptr)
+        return false;
+
+    if (ctx->merge_projection_parts_task_ptr->executeStep())
+        return true;
+
+    ++ctx->projection_parts_iterator;
+
+    if (ctx->projection_parts_iterator == std::make_move_iterator(ctx->projection_parts.end()))
+        return false;
+
+    constructTaskForProjectionPartsMerge();
+
+    return true;
+}
+
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 {
     Block block;
@@ -461,6 +531,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
         global_ctx->rows_written += block.rows();
 
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
+
+        calculateProjections(block);
 
         UInt64 result_rows = 0;
         UInt64 result_bytes = 0;
@@ -483,6 +555,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
         /// Need execute again
         return true;
     }
+
+    // finalize projections
+    calculateProjections(global_ctx->merging_executor->getHeader().cloneEmpty());
+
+    ctx->projection_parts_iterator = std::make_move_iterator(ctx->projection_parts.begin());
+    if (ctx->projection_parts_iterator != std::make_move_iterator(ctx->projection_parts.end()))
+        constructTaskForProjectionPartsMerge();
 
     global_ctx->merging_executor.reset();
     global_ctx->merged_pipeline.reset();
@@ -732,24 +811,9 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
     }
 
 
-    const auto & projections = global_ctx->metadata_snapshot->getProjections();
-
-    for (const auto & projection : projections)
+    for (const auto & projection : global_ctx->projections_to_merge)
     {
-        MergeTreeData::DataPartsVector projection_parts;
-        for (const auto & part : global_ctx->future_part->parts)
-        {
-            auto actual_projection_parts = part->getProjectionParts();
-            auto it = actual_projection_parts.find(projection.name);
-            if (it != actual_projection_parts.end() && !it->second->is_broken)
-                projection_parts.push_back(it->second);
-        }
-        if (projection_parts.size() < global_ctx->future_part->parts.size())
-        {
-            LOG_DEBUG(ctx->log, "Projection {} is not merged because some parts don't have it", projection.name);
-            continue;
-        }
-
+        MergeTreeData::DataPartsVector projection_parts = global_ctx->projections_to_merge_parts[projection->name];
         LOG_DEBUG(
             ctx->log,
             "Selected {} projection_parts from {} to {}",
@@ -759,7 +823,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
 
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         projection_future_part->assign(std::move(projection_parts));
-        projection_future_part->name = projection.name;
+        projection_future_part->name = projection->name;
         // TODO (ab): path in future_part is only for merge process introspection, which is not available for merges of projection parts.
         // Let's comment this out to avoid code inconsistency and add it back after we implement projection merge introspection.
         // projection_future_part->path = global_ctx->future_part->path + "/" + projection.name + ".proj/";
@@ -767,16 +831,17 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
 
         MergeTreeData::MergingParams projection_merging_params;
         projection_merging_params.mode = MergeTreeData::MergingParams::Ordinary;
-        if (projection.type == ProjectionDescription::Type::Aggregate)
+        if (projection->type == ProjectionDescription::Type::Aggregate)
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
         ctx->tasks_for_projections.emplace_back(std::make_shared<MergeTask>(
             projection_future_part,
-            projection.metadata,
+            projection->metadata,
             global_ctx->merge_entry,
             std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, global_ctx->context),
             global_ctx->time_of_merge,
             global_ctx->context,
+            *global_ctx->holder,
             global_ctx->space_reservation,
             global_ctx->deduplicate,
             global_ctx->deduplicate_by_columns,
@@ -1134,6 +1199,56 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     global_ctx->merged_pipeline.disableProfileEventUpdate();
 
     global_ctx->merging_executor = std::make_unique<PullingPipelineExecutor>(global_ctx->merged_pipeline);
+}
+
+void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild() const
+{
+    // These merging modes may or may not reduce number of rows. It's not known until the horizontal stage is finished.
+    const bool merge_may_reduce_rows =
+        global_ctx->deduplicate ||
+        ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
+        ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
+        ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
+
+    const auto & projections = global_ctx->metadata_snapshot->getProjections();
+
+    for (const auto & projection : projections)
+    {
+        if (merge_may_reduce_rows)
+        {
+            global_ctx->projections_to_rebuild.push_back(&projection);
+            continue;
+        }
+
+        MergeTreeData::DataPartsVector projection_parts;
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            auto it = part->getProjectionParts().find(projection.name);
+            if (it != part->getProjectionParts().end())
+                projection_parts.push_back(it->second);
+        }
+        if (projection_parts.size() == global_ctx->future_part->parts.size())
+        {
+            global_ctx->projections_to_merge.push_back(&projection);
+            global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
+        }
+        else if (projection_parts.empty())
+        {
+            LOG_DEBUG(ctx->log, "Projection {} will not be merged or rebuilt because all parts don't have it", projection.name);
+        }
+        else
+        {
+            LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts don't have it", projection.name);
+            global_ctx->projections_to_rebuild.push_back(&projection);
+        }
+    }
+
+    const auto & settings = global_ctx->context->getSettingsRef();
+
+    for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
+    {
+        ctx->projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
+    }
 }
 
 
