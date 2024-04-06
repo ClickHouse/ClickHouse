@@ -141,9 +141,6 @@ void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_re
     {
         tryLogCurrentException("ThreadStatus", "Cannot initialize GlobalProfiler");
     }
-#else
-    UNUSED(global_profiler_real_time_period);
-    UNUSED(global_profiler_cpu_time_period);
 #endif
 }
 
