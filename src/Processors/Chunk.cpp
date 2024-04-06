@@ -14,7 +14,17 @@ namespace ErrorCodes
     extern const int POSITION_OUT_OF_BOUND;
 }
 
-Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_) : columns(std::move(columns_)), num_rows(num_rows_)
+Chunk::Chunk(Chunk && other) noexcept
+    : columns{std::move(other.columns)}
+    , num_rows{std::move(other.num_rows)}
+{
+    for (size_t i = 0; i < kChunkInfoCount; ++i)
+        chunk_infos[i] = std::move(other.chunk_infos[i]);
+}
+
+Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_)
+    : columns(std::move(columns_))
+    , num_rows(num_rows_)
 {
     checkNumRowsIsConsistent();
 }
@@ -22,8 +32,8 @@ Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_) : columns(std::move(columns
 Chunk::Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_)
     : columns(std::move(columns_))
     , num_rows(num_rows_)
-    , chunk_info(std::move(chunk_info_))
 {
+    chunk_infos[0] = std::move(chunk_info_);
     checkNumRowsIsConsistent();
 }
 
@@ -38,7 +48,8 @@ static Columns unmuteColumns(MutableColumns && mutable_columns)
 }
 
 Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_)
-    : columns(unmuteColumns(std::move(columns_))), num_rows(num_rows_)
+    : columns(unmuteColumns(std::move(columns_)))
+    , num_rows(num_rows_)
 {
     checkNumRowsIsConsistent();
 }
@@ -46,14 +57,50 @@ Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_)
 Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_)
     : columns(unmuteColumns(std::move(columns_)))
     , num_rows(num_rows_)
-    , chunk_info(std::move(chunk_info_))
 {
+    chunk_infos[0] = std::move(chunk_info_);
     checkNumRowsIsConsistent();
+}
+
+Chunk & Chunk::operator=(Chunk && other) noexcept
+{
+    columns = std::move(other.columns);
+
+    num_rows = other.num_rows;
+    other.num_rows = 0;
+
+    for (size_t i = 0; i < kChunkInfoCount; ++i)
+        chunk_infos[i] = std::move(other.chunk_infos[i]);
+
+    return *this;
 }
 
 Chunk Chunk::clone() const
 {
-    return Chunk(getColumns(), getNumRows(), chunk_info);
+    Chunk clonned_chunk(getColumns(), getNumRows());
+
+    for (size_t i = 0; i < kChunkInfoCount; ++i)
+        clonned_chunk.chunk_infos[i] = chunk_infos[i];
+
+    return clonned_chunk;
+}
+
+void Chunk::swap(Chunk & other) noexcept
+{
+    columns.swap(other.columns);
+    std::swap(num_rows, other.num_rows);
+
+    for (size_t i = 0; i < kChunkInfoCount; ++i)
+        chunk_infos[i].swap(other.chunk_infos[i]);
+}
+
+void Chunk::clear()
+{
+    num_rows = 0;
+    columns.clear();
+
+    for (auto & chunk_info : chunk_infos)
+        chunk_info = nullptr;
 }
 
 void Chunk::setColumns(Columns columns_, UInt64 num_rows_)
@@ -107,6 +154,24 @@ Columns Chunk::detachColumns()
 {
     num_rows = 0;
     return std::move(columns);
+}
+
+bool Chunk::hasChunkInfo(UInt8 index) const
+{
+    chassert(index < kChunkInfoCount);
+    return chunk_infos[index] != nullptr;
+}
+
+const ChunkInfoPtr & Chunk::getChunkInfo(UInt8 index) const
+{
+    chassert(index < kChunkInfoCount);
+    return chunk_infos[index];
+}
+
+void Chunk::setChunkInfo(ChunkInfoPtr chunk_info_, UInt8 index)
+{
+    chassert(index < kChunkInfoCount);
+    chunk_infos[index] = std::move(chunk_info_);
 }
 
 void Chunk::addColumn(ColumnPtr column)

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <unordered_map>
 
 namespace DB
 {
@@ -31,16 +30,12 @@ using ChunkInfoPtr = std::shared_ptr<const ChunkInfo>;
 
 class Chunk
 {
+    constexpr static UInt64 kChunkInfoCount = 8;
+
 public:
     Chunk() = default;
     Chunk(const Chunk & other) = delete;
-    Chunk(Chunk && other) noexcept
-        : columns(std::move(other.columns))
-        , num_rows(other.num_rows)
-        , chunk_info(std::move(other.chunk_info))
-    {
-        other.num_rows = 0;
-    }
+    Chunk(Chunk && other) noexcept;
 
     Chunk(Columns columns_, UInt64 num_rows_);
     Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
@@ -48,30 +43,11 @@ public:
     Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
 
     Chunk & operator=(const Chunk & other) = delete;
-    Chunk & operator=(Chunk && other) noexcept
-    {
-        columns = std::move(other.columns);
-        chunk_info = std::move(other.chunk_info);
-        num_rows = other.num_rows;
-        other.num_rows = 0;
-        return *this;
-    }
+    Chunk & operator=(Chunk && other) noexcept;
 
     Chunk clone() const;
-
-    void swap(Chunk & other) noexcept
-    {
-        columns.swap(other.columns);
-        chunk_info.swap(other.chunk_info);
-        std::swap(num_rows, other.num_rows);
-    }
-
-    void clear()
-    {
-        num_rows = 0;
-        columns.clear();
-        chunk_info.reset();
-    }
+    void swap(Chunk & other) noexcept;
+    void clear();
 
     const Columns & getColumns() const { return columns; }
     void setColumns(Columns columns_, UInt64 num_rows_);
@@ -81,9 +57,9 @@ public:
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
 
-    const ChunkInfoPtr & getChunkInfo() const { return chunk_info; }
-    bool hasChunkInfo() const { return chunk_info != nullptr; }
-    void setChunkInfo(ChunkInfoPtr chunk_info_) { chunk_info = std::move(chunk_info_); }
+    bool hasChunkInfo(UInt8 index = 0) const;
+    const ChunkInfoPtr & getChunkInfo(UInt8 index = 0) const;
+    void setChunkInfo(ChunkInfoPtr chunk_info_, UInt8 index = 0);
 
     UInt64 getNumRows() const { return num_rows; }
     UInt64 getNumColumns() const { return columns.size(); }
@@ -107,7 +83,7 @@ public:
 private:
     Columns columns;
     UInt64 num_rows = 0;
-    ChunkInfoPtr chunk_info;
+    ChunkInfoPtr chunk_infos[kChunkInfoCount] = {nullptr};
 
     void checkNumRowsIsConsistent();
 };
