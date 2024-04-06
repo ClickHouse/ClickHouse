@@ -5,6 +5,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -14,6 +15,8 @@
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+
+#include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
 
@@ -50,6 +53,36 @@ bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
 
         if (subtree_node == node)
             return true;
+
+        for (const auto & child : subtree_node->getChildren())
+        {
+            if (child)
+                nodes_to_process.push_back(child.get());
+        }
+    }
+
+    return false;
+}
+
+bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_process;
+    nodes_to_process.push_back(root);
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * subtree_node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        auto * table_node = subtree_node->as<TableNode>();
+        auto * table_function_node = subtree_node->as<TableFunctionNode>();
+
+        if (table_node || table_function_node)
+        {
+            auto table_storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+            if (table_storage->getStorageID() == storage->getStorageID())
+                return true;
+        }
 
         for (const auto & child : subtree_node->getChildren())
         {
@@ -828,6 +861,81 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(QueryTreeNodePtr 
     subquery_for_table->getJoinTree() = std::move(table_node);
     subquery_for_table->resolveProjectionColumns(std::move(projection_columns));
     return subquery_for_table;
+}
+
+/** There are no limits on the maximum size of the result for the subquery.
+  * Since the result of the query is not the result of the entire query.
+  */
+void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context)
+{
+    /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
+      * Because the result of this query is not the result of the entire query.
+      * Constraints work instead
+      *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
+      *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
+      *  which are checked separately (in the Set, Join objects).
+      */
+    Settings subquery_settings = mutable_context->getSettings();
+    subquery_settings.max_result_rows = 0;
+    subquery_settings.max_result_bytes = 0;
+    /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
+    subquery_settings.extremes = false;
+    mutable_context->setSettings(subquery_settings);
+}
+
+QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    ContextMutablePtr & context)
+{
+    auto projection_columns = columns;
+
+    QueryTreeNodes subquery_projection_nodes;
+    subquery_projection_nodes.reserve(projection_columns.size());
+
+    for (const auto & column : projection_columns)
+        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression));
+
+    if (subquery_projection_nodes.empty())
+    {
+        auto constant_data_type = std::make_shared<DataTypeUInt64>();
+        subquery_projection_nodes.push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+        projection_columns.push_back({"1", std::move(constant_data_type)});
+    }
+
+    updateContextForSubqueryExecution(context);
+
+    auto query_node = std::make_shared<QueryNode>(std::move(context));
+
+    query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
+    query_node->resolveProjectionColumns(projection_columns);
+    query_node->getJoinTree() = table_expression;
+
+    return query_node;
+}
+
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    ContextMutablePtr & context)
+{
+    auto result = buildQueryToReadColumnsFromTableExpression(columns, table_expression, context);
+    result->as<QueryNode &>().setIsSubquery(true);
+    return result;
+}
+
+QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context)
+{
+    auto context_copy = Context::createCopy(context);
+    return buildQueryToReadColumnsFromTableExpression(columns, table_expression, context_copy);
+}
+
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context)
+{
+    auto context_copy = Context::createCopy(context);
+    return buildSubqueryToReadColumnsFromTableExpression(columns, table_expression, context_copy);
 }
 
 }
