@@ -1,6 +1,5 @@
 #pragma once
 
-#include "config.h"
 #include <Core/LogsLevel.h>
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
