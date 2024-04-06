@@ -435,7 +435,7 @@ protected:
     /// analysis stage for the execution - storage can be changed by concurrently running 'EXCHANGE TABLES' query.
     struct StorageCache
     {
-        StorageCache() {}
+        StorageCache() = default;
         StorageCache(const StorageCache &) {}
         std::mutex mutex;
         std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> cache;
