@@ -282,7 +282,7 @@ public:
 
         bool withGlobs() const { return url.key.find_first_of("*?{") != std::string::npos; }
 
-        bool withWildcard() const
+        bool withPartitionIdWildcard() const
         {
             static const String PARTITION_ID_WILDCARD = "{_partition_id}";
             return url.bucket.find(PARTITION_ID_WILDCARD) != String::npos

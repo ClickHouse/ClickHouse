@@ -1194,7 +1194,7 @@ void ReadFromStorageS3Step::createIterator(const ActionsDAG::Node * predicate)
 
 void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (storage.partition_by && query_configuration.withWildcard())
+    if (storage.partition_by && query_configuration.withPartitionIdWildcard())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned S3 storage is not implemented yet");
 
     createIterator(nullptr);
@@ -1254,7 +1254,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
     auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
 
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
-    bool is_partitioned_implementation = partition_by_ast && query_configuration.withWildcard();
+    bool is_partitioned_implementation = partition_by_ast && query_configuration.withPartitionIdWildcard();
 
     if (is_partitioned_implementation)
     {
