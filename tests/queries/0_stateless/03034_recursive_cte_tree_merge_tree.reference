@@ -159,77 +159,83 @@ WITH RECURSIVE subdepartment AS
 SELECT * FROM subdepartment ORDER BY name;
 1	0	A
 -- corner case in which sub-WITH gets initialized first
-WITH RECURSIVE q AS (
-      SELECT * FROM department
-    UNION ALL
-      (WITH x AS (SELECT * FROM q)
-       SELECT * FROM x)
-    )
-SELECT * FROM q LIMIT 24;
-7	5	G
+SELECT * FROM
+(
+  WITH RECURSIVE q AS (
+        SELECT * FROM department
+      UNION ALL
+        (WITH x AS (SELECT * FROM q)
+        SELECT * FROM x)
+      )
+  SELECT * FROM q LIMIT 24
+) ORDER BY id, parent_department, name;
+0	0	ROOT
+0	0	ROOT
 0	0	ROOT
 1	0	A
-2	1	B
-3	2	C
-4	2	D
-5	0	E
-6	4	F
-7	5	G
-0	0	ROOT
+1	0	A
 1	0	A
 2	1	B
-3	2	C
-4	2	D
-5	0	E
-6	4	F
-7	5	G
-0	0	ROOT
-1	0	A
+2	1	B
 2	1	B
 3	2	C
-4	2	D
-5	0	E
-6	4	F
-WITH RECURSIVE q AS (
-      SELECT * FROM department
-    UNION ALL
-      (WITH RECURSIVE x AS (
-           SELECT * FROM department
-         UNION ALL
-           (SELECT * FROM q UNION ALL SELECT * FROM x)
-        )
-       SELECT * FROM x)
-    )
-SELECT * FROM q LIMIT 32;
-7	5	G
-6	4	F
-0	0	ROOT
-1	0	A
-2	1	B
+3	2	C
 3	2	C
 4	2	D
-5	0	E
-7	5	G
-6	4	F
-0	0	ROOT
-1	0	A
-2	1	B
-3	2	C
+4	2	D
 4	2	D
 5	0	E
-7	5	G
+5	0	E
+5	0	E
 6	4	F
+6	4	F
+6	4	F
+7	5	G
+7	5	G
+7	5	G
+SELECT * FROM
+(
+  WITH RECURSIVE q AS (
+        SELECT * FROM department
+      UNION ALL
+        (WITH RECURSIVE x AS (
+            SELECT * FROM department
+          UNION ALL
+            (SELECT * FROM q UNION ALL SELECT * FROM x)
+          )
+        SELECT * FROM x)
+      )
+  SELECT * FROM q LIMIT 32
+) ORDER BY id, parent_department, name;
+0	0	ROOT
+0	0	ROOT
+0	0	ROOT
 0	0	ROOT
 1	0	A
-2	1	B
-3	2	C
-4	2	D
-5	0	E
-7	5	G
-6	4	F
-0	0	ROOT
+1	0	A
+1	0	A
 1	0	A
 2	1	B
+2	1	B
+2	1	B
+2	1	B
+3	2	C
+3	2	C
+3	2	C
 3	2	C
 4	2	D
+4	2	D
+4	2	D
+4	2	D
 5	0	E
+5	0	E
+5	0	E
+5	0	E
+6	4	F
+6	4	F
+6	4	F
+6	4	F
+7	5	G
+7	5	G
+7	5	G
+7	5	G
