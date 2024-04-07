@@ -652,8 +652,10 @@ void MergeTreeData::checkProperties(
             if (!allow_suspicious_indices && !attach)
             {
                 const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
-                if (const auto * index_function = typeid_cast<const ASTFunction *>(index_ast->expr))
-                    checkSuspiciousIndices(index_function);
+                ASTPtr index_expression = index_ast ? index_ast->getExpression() : nullptr;
+                const auto * index_expression_ptr = index_expression ? typeid_cast<const ASTFunction *>(index_expression.get()) : nullptr;
+                if (index_expression_ptr)
+                    checkSuspiciousIndices(index_expression_ptr);
             }
 
             MergeTreeIndexFactory::instance().validate(index, attach);
@@ -5362,7 +5364,7 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
         return;
 
     if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
-        restorer.throwTableIsNotEmpty(getStorageID());
+        RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);
 }
@@ -6687,7 +6689,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         auto * place = arena.alignedAlloc(size_of_state, align_of_state);
         func->create(place);
         if (const AggregateFunctionCount * agg_count = typeid_cast<const AggregateFunctionCount *>(func.get()))
-            agg_count->set(place, value.get<UInt64>());
+            AggregateFunctionCount::set(place, value.get<UInt64>());
         else
         {
             auto value_column = func->getArgumentTypes().front()->createColumnConst(1, value)->convertToFullColumnIfConst();
@@ -8219,6 +8221,11 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
         return;
 
     DB::updateObjectColumns(object_columns, columns, part->getColumns());
+}
+
+bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const
+{
+    return !hasLightweightDeletedMask();
 }
 
 StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const

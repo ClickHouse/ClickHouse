@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/Logger.h>
+
 #include <list>
 #include <memory>
 #include <mutex>
