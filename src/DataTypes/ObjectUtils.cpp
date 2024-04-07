@@ -1054,6 +1054,14 @@ Field FieldVisitorFoldDimension::operator()(const Array & x) const
     return res;
 }
 
+Field FieldVisitorFoldDimension::operator()(const Null & x) const
+{
+    if (num_dimensions_to_fold == 0)
+        return x;
+
+    return Array();
+}
+
 void setAllObjectsToDummyTupleType(NamesAndTypesList & columns)
 {
     for (auto & column : columns)
