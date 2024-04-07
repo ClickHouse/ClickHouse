@@ -44,5 +44,8 @@ SELECT * SETTINGS use_query_cache = 1;
 SELECT * FROM information_schema.tables SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
 SELECT * FROM INFORMATION_SCHEMA.TABLES SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
 
+SELECT * FROM clusterAllReplicas('test_shard_localhost', system.one) SETTINGS use_query_cache = 1; -- {serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
+SELECT * FROM clusterAllReplicas('test_shard_localhost', 'system.one') SETTINGS use_query_cache = 1; -- {serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
+
 -- Cleanup
 SYSTEM DROP QUERY CACHE;

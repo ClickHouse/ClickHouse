@@ -6,6 +6,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/formatAST.h>
@@ -14,6 +15,7 @@
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -69,20 +71,31 @@ struct HasSystemTablesMatcher
         if (data.has_system_tables)
             return;
 
-        if (const auto * identifier = node->as<ASTTableIdentifier>())
+        String database_table; /// or whatever else we get, e.g. just a table
+
+        /// SELECT [...] FROM <table>
+        if (const auto * table_identifier = node->as<ASTTableIdentifier>())
         {
-            StorageID storage_id = identifier->getTableId();
-            if (!storage_id.hasDatabase())
-                /// The common case that a database name was not explicitly specified in the SQL. However, isPredefinedTable() is AST-based
-                /// and assumes that a database name was specified. This bites us in this edge situation:
-                ///     USE SYSTEM;
-                ///     SELECT * FROM PROCESSES; -- instead of SYSTEM.PROCESSES
-                /// In this case, don't call isPredefinedTable() (to avoid exceptions) and accept that the behavior is not 100% kosher.
-                return;
-            bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(storage_id);
-            if (is_predefined_table)
-                data.has_system_tables = true;
+            database_table = table_identifier->name();
         }
+        /// SELECT [...] FROM clusterAllReplicas(<cluster>, <table>)
+        else if (const auto * identifier = node->as<ASTIdentifier>())
+        {
+            database_table = identifier->name();
+        }
+        /// Handle SELECT [...] FROM clusterAllReplicas(<cluster>, '<table>')
+        else if (const auto * literal = node->as<ASTLiteral>())
+        {
+            const auto & value = literal->value; /// (*)
+            database_table = applyVisitor(FieldVisitorDump(), value);
+        }
+
+        /// (*) returns table in quotes, so we can't use .starts_with() for matching
+        static const re2::RE2 is_system_table(String(DatabaseCatalog::TEMPORARY_DATABASE)
+                                    + "|" + DatabaseCatalog::SYSTEM_DATABASE
+                                    + "|" + DatabaseCatalog::INFORMATION_SCHEMA
+                                    + "|" + DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
+        data.has_system_tables = re2::RE2::PartialMatch(database_table, is_system_table);
     }
 };
 
