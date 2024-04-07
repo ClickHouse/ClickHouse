@@ -955,6 +955,53 @@ private:
     std::mutex cancel_mutex;
 };
 
+static SinkToStoragePtr createStorageS3Sink(const StorageS3::Configuration & query_configuration, const ContextPtr & local_context, const Block & sample_block, std::optional<FormatSettings> format_settings, const CompressionMethod compression_method, const String & bucket, const String & key)
+{
+    if (containsGlobs(key))
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "S3 key '{}' contains globs, so the table is in readonly mode", key);
+
+    String target_key = key;
+    bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
+    bool object_already_exists = S3::objectExists(*query_configuration.client, bucket, target_key, query_configuration.url.version_id, query_configuration.request_settings);
+
+    if (!truncate_in_insert && object_already_exists)
+    {
+        if (local_context->getSettingsRef().s3_create_new_file_on_insert)
+        {
+            size_t suffix_num = 1;
+            auto pos = target_key.find_first_of('.');
+            String new_key;
+            do
+            {
+                new_key = target_key.substr(0, pos) + "." + std::to_string(suffix_num) + (pos == std::string::npos ? "" : target_key.substr(pos));
+                ++suffix_num;
+            }
+            while (S3::objectExists(*query_configuration.client, bucket, new_key, query_configuration.url.version_id, query_configuration.request_settings));
+
+            target_key = new_key;
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Object in bucket {} with key {} already exists. "
+                "If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
+                "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
+                bucket, target_key);
+        }
+    }
+
+    return std::make_shared<StorageS3Sink>(
+        query_configuration.format,
+        sample_block,
+        local_context,
+        format_settings,
+        compression_method,
+        query_configuration,
+        bucket,
+        target_key);
+}
+
 
 class PartitionedStorageS3Sink : public PartitionedSink, WithContext
 {
@@ -988,16 +1035,7 @@ public:
         auto partition_key = replaceWildcards(key, partition_id);
         validateKey(partition_key);
 
-        return std::make_shared<StorageS3Sink>(
-            format,
-            sample_block,
-            getContext(),
-            format_settings,
-            compression_method,
-            configuration,
-            partition_bucket,
-            partition_key
-        );
+        return createStorageS3Sink(configuration, getContext(), sample_block, format_settings, compression_method, partition_bucket, partition_key);
     }
 
 private:
@@ -1270,52 +1308,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             query_configuration.keys.back());
     }
     else
-    {
-        if (query_configuration.withGlobs())
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                            "S3 key '{}' contains globs, so the table is in readonly mode", query_configuration.url.key);
-
-        bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
-
-        if (!truncate_in_insert && S3::objectExists(*query_configuration.client, query_configuration.url.bucket, query_configuration.keys.back(), query_configuration.url.version_id, query_configuration.request_settings))
-        {
-            if (local_context->getSettingsRef().s3_create_new_file_on_insert)
-            {
-                size_t index = query_configuration.keys.size();
-                const auto & first_key = query_configuration.keys[0];
-                auto pos = first_key.find_first_of('.');
-                String new_key;
-                do
-                {
-                    new_key = first_key.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : first_key.substr(pos));
-                    ++index;
-                }
-                while (S3::objectExists(*query_configuration.client, query_configuration.url.bucket, new_key, query_configuration.url.version_id, query_configuration.request_settings));
-
-                query_configuration.keys.push_back(new_key);
-                configuration.keys.push_back(new_key);
-            }
-            else
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Object in bucket {} with key {} already exists. "
-                    "If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
-                    "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
-                    query_configuration.url.bucket, query_configuration.keys.back());
-            }
-        }
-
-        return std::make_shared<StorageS3Sink>(
-            query_configuration.format,
-            sample_block,
-            local_context,
-            format_settings,
-            chosen_compression_method,
-            query_configuration,
-            query_configuration.url.bucket,
-            query_configuration.keys.back());
-    }
+        return createStorageS3Sink(query_configuration, local_context, sample_block, format_settings, chosen_compression_method, query_configuration.url.bucket, query_configuration.keys.back());
 }
 
 void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)

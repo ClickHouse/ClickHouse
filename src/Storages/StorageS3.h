@@ -262,6 +262,11 @@ private:
     std::optional<size_t> tryGetNumRowsFromCache(const KeyWithInfo & key_with_info);
 };
 
+static bool containsGlobs(const String & string)
+{
+    return string.find_first_of("*?{") != std::string::npos;
+}
+
 /**
  * This class represents table engine for external S3 urls.
  * It sends HTTP GET to server when select is called and
@@ -280,7 +285,7 @@ public:
 
         void connect(const ContextPtr & context);
 
-        bool withGlobs() const { return url.key.find_first_of("*?{") != std::string::npos; }
+        bool withGlobs() const { return containsGlobs(url.key); }
 
         bool withPartitionIdWildcard() const
         {
