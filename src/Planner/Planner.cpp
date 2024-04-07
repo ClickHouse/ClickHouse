@@ -1252,7 +1252,7 @@ void Planner::buildPlanForUnionNode()
 
     if (union_node.hasRecursiveCTETable())
     {
-        auto & recursive_cte_table = *union_node.getRecursiveCTETable();
+        const auto & recursive_cte_table = *union_node.getRecursiveCTETable();
 
         ColumnsWithTypeAndName recursive_cte_columns;
         recursive_cte_columns.reserve(recursive_cte_table.columns.size());
