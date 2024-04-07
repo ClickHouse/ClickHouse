@@ -1675,9 +1675,9 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
     return {false, ast};
 }
 
-bool StorageMerge::supportsTrivialCountOptimization() const
+bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr ctx) const
 {
-    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(); }) == nullptr;
+    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(storage_snapshot, ctx); }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const
