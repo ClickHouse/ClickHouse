@@ -91,7 +91,7 @@ StorageMaterializedView::StorageMaterializedView(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    auto storage_def = query.storage;
+    auto * storage_def = query.storage;
     if (storage_def && storage_def->primary_key)
         storage_metadata.primary_key = KeyDescription::getKeyFromAST(storage_def->primary_key->ptr(),
                                                                      storage_metadata.columns,
