@@ -1280,6 +1280,11 @@ std::string ActionsDAG::dumpDAG() const
         out << "\n";
     }
 
+    out << "Input nodes:";
+    for (const auto * node : inputs)
+        out << ' ' << map[node];
+    out << '\n';
+
     out << "Output nodes:";
     for (const auto * node : outputs)
         out << ' ' << map[node];
@@ -1815,7 +1820,8 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
                                 input_node.result_name = child->result_name;
                                 child_data.to_second = &second_nodes.emplace_back(std::move(input_node));
 
-                                new_inputs.push_back(child);
+                                if (child->type != ActionType::INPUT)
+                                    new_inputs.push_back(child);
                             }
                         }
 
@@ -1856,24 +1862,63 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
     NodeRawConstPtrs second_inputs;
     NodeRawConstPtrs first_inputs;
+    std::unordered_map<std::string_view, size_t> potential_duplicate_inputs;
 
     for (const auto * input_node : inputs)
     {
-        const auto & cur = data[input_node];
-        if (cur.to_first)
+        auto & cur = data[input_node];
+
+        if (cur.to_second && !cur.to_first)
         {
+            Node new_input;
+            new_input.type = ActionType::INPUT;
+            new_input.result_type = input_node->result_type;
+            new_input.result_name = input_node->result_name;
+
+            cur.to_first = &first_nodes.emplace_back(std::move(new_input));
+        }
+
+        if (cur.to_first)
             first_inputs.push_back(cur.to_first);
 
-            if (cur.to_second)
-                first_outputs.push_back(cur.to_first);
+        if (cur.to_second)
+        {
+            first_outputs.push_back(cur.to_first);
+            potential_duplicate_inputs[input_node->result_name] = 0;
         }
     }
 
     for (const auto * input : new_inputs)
     {
-        const auto & cur = data[input];
-        second_inputs.push_back(cur.to_second);
+        auto & cur = data[input];
+
+        auto it = potential_duplicate_inputs.find(cur.to_first->result_name);
+        if (it != potential_duplicate_inputs.end())
+        {
+            size_t idx = it->second++;
+            std::string new_name = fmt::format("{}_split[{}]", cur.to_first->result_name, idx);
+
+            Node alias_node;
+            alias_node.type = ActionType::ALIAS;
+            alias_node.result_type = cur.to_first->result_type;
+            alias_node.result_name = std::move(new_name);
+            alias_node.children.push_back(cur.to_first);
+
+            Node input_node;
+            input_node.type = ActionType::INPUT;
+            input_node.result_type = alias_node.result_type;
+            input_node.result_name = alias_node.result_name;
+
+            cur.to_first = &first_nodes.emplace_back(std::move(alias_node));
+            auto * new_input = &second_nodes.emplace_back(std::move(input_node));
+
+            cur.to_second->type = ActionType::ALIAS;
+            cur.to_second->children.push_back(new_input);
+            cur.to_second = new_input;
+        }
+
         first_outputs.push_back(cur.to_first);
+        second_inputs.push_back(cur.to_second);
     }
 
     for (const auto * input_node : inputs)
@@ -2269,7 +2314,8 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     const std::string & filter_name,
     bool can_remove_filter,
     const Names & available_inputs,
-    const ColumnsWithTypeAndName & all_inputs)
+    const ColumnsWithTypeAndName & all_inputs,
+    bool split_result_can_be_true_on_default)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -2324,6 +2370,20 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return nullptr;
+
+    if (!split_result_can_be_true_on_default)
+    {
+        Block default_header;
+        for (const auto * input : actions->getInputs())
+        {
+            ColumnPtr col = input->result_type->createColumnConstWithDefaultValue(1);
+            default_header.insert({col, input->result_type, input->result_name});
+        }
+
+        default_header = actions->updateHeader(std::move(default_header));
+        if (default_header.getByPosition(0).column->getBool(0))
+            return nullptr;
+    }
 
     /// Now, when actions are created, update the current DAG.
 
