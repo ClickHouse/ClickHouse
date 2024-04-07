@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getMostSubtype.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -246,14 +247,11 @@ FunctionArrayLogicalBase<intersect>::CastArgumentsResult FunctionArrayLogicalBas
                 }
             }
         }
-        else
+        else if (!arg.type->equals(*return_type_with_nulls))
         {
             /// return_type_with_nulls is the most common subtype with possible nullable parts.
-            if (!arg.type->equals(*return_type_with_nulls))
-            {
-                column.column = castColumn(arg, return_type_with_nulls);
-                column.type = return_type_with_nulls;
-            }
+            column.column = castColumn(arg, return_type_with_nulls);
+            column.type = return_type_with_nulls;
         }
     }
 
@@ -410,6 +408,7 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::execute(
     std::vector<size_t> prev_off(args, 0);
     size_t result_offset = 0;
     const size_t needed_amount = intersect ? args : 1;
+    const size_t max_amount = intersect ? args : args - 1;
 
     // Common approach here is to count the number of occurrences of each element in each array once
     for (size_t row = 0; row < rows; ++row)
@@ -492,7 +491,7 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::execute(
             {
                 if (arg.null_map && (*arg.null_map)[i])
                 {
-                    if (!null_added && null_amount == needed_amount)
+                    if (!null_added && null_amount >= needed_amount && null_amount <= max_amount)
                     {
                         ++result_offset;
                         result_data.insertDefault();
@@ -505,7 +504,7 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::execute(
                 else if constexpr (is_numeric_column)
                 {
                     elem = columns[arg_num]->getElement(i);
-                    if (map[elem] == needed_amount && !set.find(elem))
+                    if (map[elem] >= needed_amount && map[elem] <= max_amount && !set.find(elem))
                     {
                         result_data.insertValue(elem);
                         ++result_offset;
@@ -516,7 +515,7 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::execute(
                 else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                 {
                     elem = columns[arg_num]->getDataAt(i);
-                    if (map[elem] == needed_amount && !set.find(elem))
+                    if (map[elem] >= needed_amount && map[elem] <= max_amount && !set.find(elem))
                     {
                         result_data.insertData(elem.data, elem.size);
                         ++result_offset;
@@ -528,7 +527,7 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::execute(
                 {
                     const char * data = nullptr;
                     elem = columns[arg_num]->serializeValueIntoArena(i, arena, data);
-                    if (map[elem] == needed_amount && !set.find(elem))
+                    if (map[elem] >= needed_amount && map[elem] <= max_amount && !set.find(elem))
                     {
                         std::ignore = result_data.deserializeAndInsertFromArena(elem.data);
                         set.insert(elem);
@@ -553,10 +552,59 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::execute(
     ColumnPtr result_column = std::move(result_data_ptr);
     //     The result of arrayIntersection is nullable if all arrays are nullable,
     //     result of arraySymmetricDifference can be nullable if at least one array is nullable
-    if ((intersect && nullable_amount == args) || (!intersect && nullable_amount > 0))
+    if (nullable_amount >= needed_amount)
         result_column = ColumnNullable::create(result_column, std::move(null_map_column));
     return ColumnArray::create(result_column, std::move(result_offsets_ptr));
 }
+
+//template <bool intersect>
+//DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTypes & arguments) const
+//{
+//    DataTypes nested_types;
+//    nested_types.reserve(arguments.size());
+//
+//    bool has_nothing = false;
+//    bool has_nullable = false;
+//
+//    if (arguments.empty())
+//        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
+//
+//    for (size_t i = 0; i < arguments.size(); i++)
+//    {
+//        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
+//        if (!array_type)
+//            throw Exception(
+//                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+//                "Argument {} for function {} must be an array but it has type {}.",
+//                i,
+//                getName(),
+//                arguments[i]->getName());
+//
+//        const auto & nested_type = array_type->getNestedType();
+//
+//        if (typeid_cast<const DataTypeNothing *>(nested_type.get()))
+//            has_nothing = true;
+//        else
+//            nested_types.push_back(nested_type);
+//
+//        if (nested_type->isNullable())
+//            has_nullable = true;
+//    }
+//
+//    DataTypePtr result_type;
+//
+//    if (!nested_types.empty())
+//        result_type = getMostSubtype(nested_types, false);
+//
+//    if (has_nothing)
+//        result_type = std::make_shared<DataTypeNothing>();
+//
+//    if (!intersect && has_nullable)
+//        result_type = makeNullable(result_type);
+//
+//    return std::make_shared<DataTypeArray>(result_type);
+//}
+
 
 template <bool intersect>
 DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTypes & arguments) const
@@ -564,7 +612,6 @@ DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTyp
     DataTypes nested_types;
     nested_types.reserve(arguments.size());
 
-    bool has_nothing = false;
     bool has_nullable = false;
 
     if (arguments.empty())
@@ -583,22 +630,16 @@ DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTyp
 
         const auto & nested_type = array_type->getNestedType();
 
-        if (typeid_cast<const DataTypeNothing *>(nested_type.get()))
-            has_nothing = true;
-        else
-            nested_types.push_back(nested_type);
-
+        nested_types.push_back(nested_type);
         if (nested_type->isNullable())
             has_nullable = true;
+
     }
 
     DataTypePtr result_type;
 
     if (!nested_types.empty())
-        result_type = getMostSubtype(nested_types, true);
-
-    if (has_nothing)
-        result_type = std::make_shared<DataTypeNothing>();
+        result_type = getLeastSupertype(nested_types);
 
     if (!intersect && has_nullable)
         result_type = makeNullable(result_type);
@@ -627,6 +668,8 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::executeImpl(
         data_types.push_back(arguments[i].type);
 
     auto return_type_with_nulls = getMostSubtype(data_types, true, true);
+    std::cout << "return_type_with_nulls: " << return_type_with_nulls->getName() << std::endl;
+    std::cout << "result_type: " << result_type->getName() << std::endl;
     auto casted_columns = castColumns(arguments, result_type, return_type_with_nulls);
 
     UnpackedArrays arrays = prepareArrays(casted_columns.casted, casted_columns.initial);
