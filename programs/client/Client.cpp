@@ -1,4 +1,3 @@
-#include <boost/algorithm/string/join.hpp>
 #include <cstdlib>
 #include <fcntl.h>
 #include <map>
@@ -7,7 +6,6 @@
 #include <memory>
 #include <optional>
 #include <Common/ThreadStatus.h>
-#include <Common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
@@ -19,12 +17,13 @@
 
 #include <Access/AccessControl.h>
 
-#include <Common/config_version.h>
-#include <Common/Exception.h>
-#include <Common/formatReadable.h>
-#include <Common/TerminalSize.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/TerminalSize.h>
+#include <Common/config_version.h>
+#include <Common/formatReadable.h>
 
 #include <Columns/ColumnString.h>
 #include <Poco/Util/Application.h>
@@ -44,8 +43,6 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-
-#include <Interpreters/InterpreterSetQuery.h>
 
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -1138,13 +1135,6 @@ void Client::processOptions(const OptionsDescription & options_description,
 }
 
 
-static bool checkIfStdoutIsRegularFile()
-{
-    struct stat file_stat;
-    return fstat(STDOUT_FILENO, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
-}
-
-
 void Client::processConfig()
 {
     if (!queries.empty() && config().has("queries-file"))
@@ -1180,34 +1170,7 @@ void Client::processConfig()
 
     pager = config().getString("pager", "");
 
-    is_default_format = !config().has("vertical") && !config().has("format");
-    if (is_default_format && checkIfStdoutIsRegularFile())
-    {
-        is_default_format = false;
-        std::optional<String> format_from_file_name;
-        format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDOUT_FILENO);
-        format = format_from_file_name ? *format_from_file_name : "TabSeparated";
-    }
-    else if (config().has("vertical"))
-        format = config().getString("format", "Vertical");
-    else
-        format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
-
-    format_max_block_size = config().getUInt64("format_max_block_size",
-        global_context->getSettingsRef().max_block_size);
-
-    insert_format = "Values";
-
-    /// Setting value from cmd arg overrides one from config
-    if (global_context->getSettingsRef().max_insert_block_size.changed)
-    {
-        insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
-    }
-    else
-    {
-        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
-            global_context->getSettingsRef().max_insert_block_size);
-    }
+    setDefaultFormatsFromConfiguration();
 
     global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     global_context->setQueryKindInitial();

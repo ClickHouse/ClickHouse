@@ -2,6 +2,8 @@
 #include <magic_enum.hpp>
 #include <Access/Common/SQLSecurityDefs.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 
 namespace DB
 {
@@ -16,6 +18,16 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
     extern const int UNKNOWN_UNION;
+}
+
+template <typename Type>
+constexpr auto getEnumValues()
+{
+    std::array<std::pair<std::string_view, Type>, magic_enum::enum_count<Type>()> enum_values{};
+    size_t index = 0;
+    for (auto value : magic_enum::enum_values<Type>())
+        enum_values[index++] = std::pair{magic_enum::enum_name(value), value};
+    return enum_values;
 }
 
 IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,

@@ -498,14 +498,12 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     columns->columns->children.emplace_back(create_materialized_column_declaration(version_column_name, "UInt64", UInt64(1)));
 
     /// Add minmax skipping index for _version column.
-    auto version_index = std::make_shared<ASTIndexDeclaration>();
-    version_index->name = version_column_name;
     auto index_expr = std::make_shared<ASTIdentifier>(version_column_name);
     auto index_type = makeASTFunction("minmax");
     index_type->no_empty_args = true;
-    version_index->set(version_index->expr, index_expr);
-    version_index->set(version_index->type, index_type);
+    auto version_index = std::make_shared<ASTIndexDeclaration>(index_expr, index_type, version_column_name);
     version_index->granularity = 1;
+
     ASTPtr indices = std::make_shared<ASTExpressionList>();
     indices->children.push_back(version_index);
     columns->set(columns->indices, indices);

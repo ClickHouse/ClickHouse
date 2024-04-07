@@ -92,7 +92,7 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
-    bool supportsTrivialCountOptimization() const override { return true; }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
 protected:
     friend class HDFSSource;
@@ -152,6 +152,8 @@ public:
         UInt64 max_block_size_,
         std::shared_ptr<IteratorWrapper> file_iterator_,
         bool need_only_count_);
+
+    ~HDFSSource() override;
 
     String getName() const override;
 

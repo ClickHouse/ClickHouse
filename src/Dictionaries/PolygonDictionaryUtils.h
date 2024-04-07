@@ -214,7 +214,7 @@ public:
     static constexpr Coord kEps = 1e-4f;
 
 private:
-    std::unique_ptr<ICell<ReturnCell>> root = nullptr;
+    std::unique_ptr<ICell<ReturnCell>> root;
     Coord min_x = 0, min_y = 0;
     Coord max_x = 0, max_y = 0;
     const size_t k_min_intersections;
