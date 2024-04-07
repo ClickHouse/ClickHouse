@@ -366,7 +366,7 @@ String demangleAndCollapseNames(std::optional<std::string_view> file, const char
     if (file.has_value())
     {
         std::string_view file_copy = file.value();
-        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != file_copy.npos)
+        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
             file_copy.remove_suffix(file_copy.size() - trim_pos);
         if (file_copy.ends_with("functional"))
             return "?";

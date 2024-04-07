@@ -2,6 +2,8 @@
 #include <magic_enum.hpp>
 #include <Access/Common/SQLSecurityDefs.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 
 namespace DB
 {
