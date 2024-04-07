@@ -734,13 +734,17 @@ try
     LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
 #endif
 
+    bool will_have_trace_collector = hasPHDRCache() && config().has("trace_log");
+
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(
         server_settings.max_thread_pool_size,
         server_settings.max_thread_pool_free_size,
-        server_settings.thread_pool_queue_size);
+        server_settings.thread_pool_queue_size,
+        will_have_trace_collector ? server_settings.global_profiler_real_time_period_ns : 0,
+        will_have_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
         Stopwatch watch;
