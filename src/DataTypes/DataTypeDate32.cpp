@@ -18,7 +18,7 @@ SerializationPtr DataTypeDate32::doGetDefaultSerialization() const
 
 Field DataTypeDate32::getDefault() const
 {
-    return -static_cast<Int64>(DateLUT::instance().getDayNumOffsetEpoch());
+    return -static_cast<Int64>(DateLUT::instance().getDayNumOffsetEpoch()); /// NOLINT(readability-static-accessed-through-instance)
 }
 
 void registerDataTypeDate32(DataTypeFactory & factory)

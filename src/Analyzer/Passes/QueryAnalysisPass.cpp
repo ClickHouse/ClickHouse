@@ -5793,7 +5793,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         return result_projection_names;
     }
 
-    FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters);
+    FunctionOverloadResolverPtr function = UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters); /// NOLINT(readability-static-accessed-through-instance)
     bool is_executable_udf = true;
 
     IdentifierResolveScope::ResolvedFunctionsCache * function_cache = nullptr;
@@ -5823,7 +5823,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         {
             std::vector<std::string> possible_function_names;
 
-            auto function_names = UserDefinedExecutableFunctionFactory::instance().getRegisteredNames(scope.context);
+            auto function_names = UserDefinedExecutableFunctionFactory::instance().getRegisteredNames(scope.context); /// NOLINT(readability-static-accessed-through-instance)
             possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());
 
             function_names = UserDefinedSQLFunctionFactory::instance().getAllRegisteredNames();
@@ -5841,8 +5841,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     possible_function_names.push_back(name);
             }
 
-            NamePrompter<2> name_prompter;
-            auto hints = name_prompter.getHints(function_name, possible_function_names);
+            auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
 
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
                 "Function with name '{}' does not exists. In scope {}{}",

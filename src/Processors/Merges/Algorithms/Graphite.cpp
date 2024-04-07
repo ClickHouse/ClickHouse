@@ -86,7 +86,7 @@ static const Graphite::Pattern undef_pattern =
         .regexp_str = "",
         .function = nullptr,
         .retentions = Graphite::Retentions(),
-        .type = undef_pattern.TypeUndef,
+        .type = Graphite::Pattern::TypeUndef,
 };
 
 inline static const Patterns & selectPatternsForMetricType(const Graphite::Params & params, std::string_view path)
@@ -118,18 +118,18 @@ Graphite::RollupRule selectPatternForPath(
         if (!pattern.regexp)
         {
             /// Default pattern
-            if (first_match->type == first_match->TypeUndef && pattern.type == pattern.TypeAll)
+            if (first_match->type == Graphite::Pattern::TypeUndef && pattern.type == Graphite::Pattern::TypeAll)
             {
                 /// There is only default pattern for both retention and aggregation
                 return {&pattern, &pattern};
             }
             if (pattern.type != first_match->type)
             {
-                if (first_match->type == first_match->TypeRetention)
+                if (first_match->type == Graphite::Pattern::TypeRetention)
                 {
                     return {first_match, &pattern};
                 }
-                if (first_match->type == first_match->TypeAggregation)
+                if (first_match->type == Graphite::Pattern::TypeAggregation)
                 {
                     return {&pattern, first_match};
                 }
@@ -140,23 +140,23 @@ Graphite::RollupRule selectPatternForPath(
             if (pattern.regexp->match(path.data(), path.size()))
             {
                 /// General pattern with matched path
-                if (pattern.type == pattern.TypeAll)
+                if (pattern.type == Graphite::Pattern::TypeAll)
                 {
                     /// Only for not default patterns with both function and retention parameters
                     return {&pattern, &pattern};
                 }
-                if (first_match->type == first_match->TypeUndef)
+                if (first_match->type == Graphite::Pattern::TypeUndef)
                 {
                     first_match = &pattern;
                     continue;
                 }
                 if (pattern.type != first_match->type)
                 {
-                    if (first_match->type == first_match->TypeRetention)
+                    if (first_match->type == Graphite::Pattern::TypeRetention)
                     {
                         return {first_match, &pattern};
                     }
-                    if (first_match->type == first_match->TypeAggregation)
+                    if (first_match->type == Graphite::Pattern::TypeAggregation)
                     {
                         return {&pattern, first_match};
                     }
@@ -415,24 +415,24 @@ static const Pattern & appendGraphitePattern(
 
     if (!pattern.function)
     {
-        pattern.type = pattern.TypeRetention;
+        pattern.type = Graphite::Pattern::TypeRetention;
     }
     else if (pattern.retentions.empty())
     {
-        pattern.type = pattern.TypeAggregation;
+        pattern.type = Graphite::Pattern::TypeAggregation;
     }
     else
     {
-        pattern.type = pattern.TypeAll;
+        pattern.type = Graphite::Pattern::TypeAll;
     }
 
-    if (pattern.type & pattern.TypeAggregation) /// TypeAggregation or TypeAll
+    if (pattern.type & Graphite::Pattern::TypeAggregation) /// TypeAggregation or TypeAll
         if (pattern.function->allocatesMemoryInArena())
             throw Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
                             "Aggregate function {} isn't supported in GraphiteMergeTree", pattern.function->getName());
 
     /// retention should be in descending order of age.
-    if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
+    if (pattern.type & Graphite::Pattern::TypeRetention) /// TypeRetention or TypeAll
         ::sort(pattern.retentions.begin(), pattern.retentions.end(), compareRetentions);
 
     patterns.emplace_back(pattern);

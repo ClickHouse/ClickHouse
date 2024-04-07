@@ -179,7 +179,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     }
 
     const auto & user_defined_executable_functions_factory = UserDefinedExecutableFunctionFactory::instance();
-    const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context);
+    const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context); /// NOLINT(readability-static-accessed-through-instance)
     for (const auto & function_name : user_defined_executable_functions_names)
     {
         fillRow(res_columns, function_name, 0, {0}, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);
