@@ -16,8 +16,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getMostSubtype.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/getMostSubtype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -31,9 +31,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int LOGICAL_ERROR;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 template <bool intersect>
@@ -52,7 +52,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -92,7 +93,8 @@ private:
         ColumnsWithTypeAndName casted;
     };
 
-    static CastArgumentsResult castColumns(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
+    static CastArgumentsResult
+    castColumns(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
 
     UnpackedArrays prepareArrays(const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const;
 
@@ -557,54 +559,6 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::execute(
     return ColumnArray::create(result_column, std::move(result_offsets_ptr));
 }
 
-//template <bool intersect>
-//DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTypes & arguments) const
-//{
-//    DataTypes nested_types;
-//    nested_types.reserve(arguments.size());
-//
-//    bool has_nothing = false;
-//    bool has_nullable = false;
-//
-//    if (arguments.empty())
-//        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
-//
-//    for (size_t i = 0; i < arguments.size(); i++)
-//    {
-//        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
-//        if (!array_type)
-//            throw Exception(
-//                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-//                "Argument {} for function {} must be an array but it has type {}.",
-//                i,
-//                getName(),
-//                arguments[i]->getName());
-//
-//        const auto & nested_type = array_type->getNestedType();
-//
-//        if (typeid_cast<const DataTypeNothing *>(nested_type.get()))
-//            has_nothing = true;
-//        else
-//            nested_types.push_back(nested_type);
-//
-//        if (nested_type->isNullable())
-//            has_nullable = true;
-//    }
-//
-//    DataTypePtr result_type;
-//
-//    if (!nested_types.empty())
-//        result_type = getMostSubtype(nested_types, false);
-//
-//    if (has_nothing)
-//        result_type = std::make_shared<DataTypeNothing>();
-//
-//    if (!intersect && has_nullable)
-//        result_type = makeNullable(result_type);
-//
-//    return std::make_shared<DataTypeArray>(result_type);
-//}
-
 
 template <bool intersect>
 DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTypes & arguments) const
@@ -633,7 +587,6 @@ DataTypePtr FunctionArrayLogicalBase<intersect>::getReturnTypeImpl(const DataTyp
         nested_types.push_back(nested_type);
         if (nested_type->isNullable())
             has_nullable = true;
-
     }
 
     DataTypePtr result_type;
@@ -668,8 +621,6 @@ ColumnPtr FunctionArrayLogicalBase<intersect>::executeImpl(
         data_types.push_back(arguments[i].type);
 
     auto return_type_with_nulls = getMostSubtype(data_types, true, true);
-    std::cout << "return_type_with_nulls: " << return_type_with_nulls->getName() << std::endl;
-    std::cout << "result_type: " << result_type->getName() << std::endl;
     auto casted_columns = castColumns(arguments, result_type, return_type_with_nulls);
 
     UnpackedArrays arrays = prepareArrays(casted_columns.casted, casted_columns.initial);
