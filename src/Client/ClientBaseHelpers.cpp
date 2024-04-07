@@ -105,9 +105,9 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         {Highlight::keyword, replxx::color::bold(Replxx::Color::DEFAULT)},
         {Highlight::identifier, Replxx::Color::CYAN},
         {Highlight::function, Replxx::Color::BROWN},
-        {Highlight::alias, Replxx::Color::MAGENTA},
+        {Highlight::alias, replxx::color::rgb666(0, 4, 4)},
         {Highlight::substitution, Replxx::Color::MAGENTA},
-        {Highlight::number, Replxx::Color::BRIGHTGREEN},
+        {Highlight::number, replxx::color::rgb666(0, 4, 0)},
         {Highlight::string, Replxx::Color::GREEN},
     };
 
@@ -161,7 +161,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         if (pos >= colors.size())
             pos = colors.size() - 1;
 
-        colors[pos] = Replxx::Color::BRIGHTRED;
+        colors[pos] = replxx::color::bg(replxx::color::rgb666(5, 3, 3));
     }
 
     if (last_token.type == TokenType::Semicolon || last_token.type == TokenType::VerticalDelimiter

@@ -369,7 +369,6 @@ private:
 
     const char * getName() const override { return "alias"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    Highlight highlight() const override { return Highlight::alias; }
 };
 
 

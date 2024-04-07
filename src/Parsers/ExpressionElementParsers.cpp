@@ -1491,7 +1491,7 @@ const char * ParserAlias::restricted_keywords[] =
 bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_as(Keyword::AS);
-    ParserIdentifier id_p;
+    ParserIdentifier id_p(false, Highlight::alias);
 
     bool has_as_word = s_as.ignore(pos, expected);
     if (!allow_alias_without_as_keyword && !has_as_word)
