@@ -162,6 +162,12 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
         StringRef name_ref = readColumnName(*in);
+        if (seen_columns_count >= total_columns)
+        {
+            JSONUtils::skipColon(*in);
+            skipUnknownField(name_ref);
+            continue;
+        }
         const size_t column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
@@ -186,11 +192,6 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
         {
             JSONUtils::skipColon(*in);
             readField(column_index, columns);
-        }
-        if (seen_columns_count >= total_columns)
-        {
-            skipToUnescapedNextLineOrEOF(*in);
-            break;
         }
     }
 }
