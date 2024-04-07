@@ -16,7 +16,7 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, bool color_)
      : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), color(color_), mono_block(mono_block_)
 {
-    readable_number_tip = header_.getColumns().size() == 1 && WhichDataType(header_.getDataTypes()[0]->getTypeId()).isNumber();
+    readable_number_tip = header_.getColumns().size() == 1 && isNumberOrNullableNumber(header_.getByPosition(0));
 }
 
 
@@ -310,7 +310,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             const auto & type = *header.getByPosition(j).type;
             writeValueWithPadding(*columns[j], *serializations[j], i,
                 widths[j].empty() ? max_widths[j] : widths[j][i],
-                max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+                max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumberOrNullableNumber(header.getByPosition(j)));
         }
 
         writeCString(grid_symbols.bar, out);
@@ -448,6 +448,14 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     }
 }
 
+bool PrettyBlockOutputFormat::isNumberOrNullableNumber(const ColumnWithTypeAndName & column_with_type_and_name) {
+    if (column_with_type_and_name.type->isNullable()) {
+        const auto nested_col = checkAndGetColumn<ColumnNullable>(*column_with_type_and_name.column)->getNestedColumnPtr();
+        return isNumber(nested_col->getDataType());
+    }
+    return isNumber(column_with_type_and_name.type);
+}
+
 
 void PrettyBlockOutputFormat::consume(Chunk chunk)
 {
@@ -497,7 +505,16 @@ void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
     if (!is_single_number)
         return;
 
-    auto value = columns[0]->getFloat64(0);
+    auto col = columns[0];
+
+    Float64 value = 0;
+    if (columns[0]->isNullable()) {
+        const auto & nested_col = checkAndGetColumn<ColumnNullable>(*col)->getNestedColumnPtr();
+        value = nested_col->getFloat64(0);
+    } else {
+        value = columns[0]->getFloat64(0);
+    }
+
     auto threshold = format_settings.pretty.output_format_pretty_single_large_number_tip_threshold;
 
     if (threshold && isFinite(value) && abs(value) > threshold)

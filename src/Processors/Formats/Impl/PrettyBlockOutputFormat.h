@@ -4,6 +4,8 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <Columns/ColumnNullable.h>
 
 namespace DB
 {
@@ -56,6 +58,8 @@ protected:
     }
 
     bool color;
+
+    bool isNumberOrNullableNumber(const ColumnWithTypeAndName & column_with_type_and_name);
 
 private:
     bool readable_number_tip = false;
