@@ -29,7 +29,6 @@ namespace DB
   * recursive CTE query execution.
   *
   * TODO: Improve locking in ReadFromRecursiveCTEStep.
-  * TODO: Support MergeTree.
   * TODO: Improve query analysis if query contains aggregates, JOINS, GROUP BY, ORDER BY, LIMIT, OFFSET.
   * TODO: Support SEARCH DEPTH FIRST BY, SEARCH BREADTH FIRST BY syntax.
   * TODO: Support CYCLE syntax.
