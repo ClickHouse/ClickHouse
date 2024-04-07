@@ -1750,7 +1750,7 @@ SELECT
 
 ``` text
 ┌─empty_symmetric_difference─┬─non_empty_symmetric_difference─┐
-│ []                         │ [1, 2, 3]                      │
+│ []                         │ [3]                            │
 └────────────────────────────┴────────────────────────────────┘
 ```
 

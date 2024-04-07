@@ -30,9 +30,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int LOGICAL_ERROR;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 template <bool intersect>
@@ -51,8 +51,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -92,8 +91,7 @@ private:
         ColumnsWithTypeAndName casted;
     };
 
-    static CastArgumentsResult
-    castColumns(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
+    static CastArgumentsResult castColumns(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
 
     UnpackedArrays prepareArrays(const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const;
 
