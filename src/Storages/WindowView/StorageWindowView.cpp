@@ -1710,7 +1710,7 @@ void StorageWindowView::throwIfWindowViewIsDisabled(ContextPtr local_context) co
 {
     if (disabled_due_to_analyzer || (local_context && local_context->getSettingsRef().allow_experimental_analyzer))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Experimental WINDOW VIEW feature is not supported "
-                        "with new infrastructure for query analysis (the setting 'allow_experimental_analyzer')");
+                        "in the current infrastructure for query analysis (the setting 'allow_experimental_analyzer')");
 }
 
 void registerStorageWindowView(StorageFactory & factory)
