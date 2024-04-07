@@ -102,13 +102,18 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     return indexes;
 }
 
-void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
+bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
 {
+    bool converted = false;
     for (auto & column : args)
     {
-        column.column = recursiveRemoveLowCardinality(column.column);
+        auto old_column = column.column;
+        column.column = recursiveRemoveLowCardinality(old_column);
         column.type = recursiveRemoveLowCardinality(column.type);
+        if (column.column != old_column)
+            converted = true;
     }
+    return converted;
 }
 
 }
@@ -299,8 +304,13 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
         }
         else
         {
-            convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
-            result = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, result_type, input_rows_count, dry_run);
+            if (convertLowCardinalityColumnsToFull(columns_without_low_cardinality))
+                result = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, result_type, input_rows_count, dry_run);
+            else
+            {
+                ColumnsWithTypeAndName().swap(columns_without_low_cardinality);
+                result = executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
+            }
         }
     }
     else
@@ -335,6 +345,9 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
                 ++num_full_columns;
             }
         }
+
+        if (num_sparse_columns == 0)
+            return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 
         auto columns_without_sparse = arguments;
         if (num_sparse_columns == 1 && num_full_columns == 0)
