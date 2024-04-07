@@ -1,1 +1,0 @@
-If you want to overwrite it, enable setting s3_truncate_on_insert, if you want to create a new file on each insert, enable setting s3_create_new_file_on_insert. (BAD_ARGUMENTS)
