@@ -448,8 +448,10 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     }
 }
 
-bool PrettyBlockOutputFormat::isNumberOrNullableNumber(const ColumnWithTypeAndName & column_with_type_and_name) {
-    if (column_with_type_and_name.type->isNullable()) {
+bool PrettyBlockOutputFormat::isNumberOrNullableNumber(const ColumnWithTypeAndName & column_with_type_and_name)
+{
+    if (column_with_type_and_name.type->isNullable())
+    {
         const auto nested_col = checkAndGetColumn<ColumnNullable>(*column_with_type_and_name.column)->getNestedColumnPtr();
         return isNumber(nested_col->getDataType());
     }
@@ -508,10 +510,13 @@ void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
     auto col = columns[0];
 
     Float64 value = 0;
-    if (columns[0]->isNullable()) {
+    if (columns[0]->isNullable())
+    {
         const auto & nested_col = checkAndGetColumn<ColumnNullable>(*col)->getNestedColumnPtr();
         value = nested_col->getFloat64(0);
-    } else {
+    }
+    else
+    {
         value = columns[0]->getFloat64(0);
     }
 
