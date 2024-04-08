@@ -46,14 +46,14 @@ void MemorySettings::sanityCheck() const
 {
     if (min_bytes_to_keep > max_bytes_to_keep)
         throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
-                        "`min_bytes_to_keep` setting cannot be higher than `max_bytes_to_keep`. `min_bytes_to_keep`: {}, `max_bytes_to_keep`: {}",
+                        "Setting `min_bytes_to_keep` cannot be higher than the `max_bytes_to_keep`. `min_bytes_to_keep`: {}, `max_bytes_to_keep`: {}",
                         min_bytes_to_keep,
                         max_bytes_to_keep);
 
 
     if (min_rows_to_keep > max_rows_to_keep)
         throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
-                        "`min_rows_to_keep` setting cannot be higher than `max_rows_to_keep`. `min_rows_to_keep`: {}, `max_rows_to_keep`: {}",
+                        "Setting `min_rows_to_keep` cannot be higher than the `max_rows_to_keep`. `min_rows_to_keep`: {}, `max_rows_to_keep`: {}",
                         min_rows_to_keep,
                         max_rows_to_keep);
 }

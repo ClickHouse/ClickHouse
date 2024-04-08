@@ -304,14 +304,14 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
     if (params.isSettingsAlter())
     {
         auto & settings_changes = new_metadata.settings_changes->as<ASTSetQuery &>();
-        auto copy = memory_settings;
-        copy.applyChanges(settings_changes.changes);
-        copy.sanityCheck();
+        auto changed_settings = memory_settings;
+        changed_settings.applyChanges(settings_changes.changes);
+        changed_settings.sanityCheck();
 
         /// When modifying the values of max_bytes_to_keep and max_rows_to_keep to be smaller than the old values,
         /// the old data needs to be removed.
-        if (!memory_settings.max_bytes_to_keep || memory_settings.max_bytes_to_keep > copy.max_bytes_to_keep
-            || !memory_settings.max_rows_to_keep || memory_settings.max_rows_to_keep > copy.max_rows_to_keep)
+        if (!memory_settings.max_bytes_to_keep || memory_settings.max_bytes_to_keep > changed_settings.max_bytes_to_keep
+            || !memory_settings.max_rows_to_keep || memory_settings.max_rows_to_keep > changed_settings.max_rows_to_keep)
         {
             std::lock_guard lock(mutex);
 
@@ -319,14 +319,14 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
             UInt64 new_total_rows = total_size_rows.load(std::memory_order_relaxed);
             UInt64 new_total_bytes = total_size_bytes.load(std::memory_order_relaxed);
             while (!new_data->empty()
-                   && ((copy.max_bytes_to_keep && new_total_bytes > copy.max_bytes_to_keep)
-                       || (copy.max_rows_to_keep && new_total_rows > copy.max_rows_to_keep)))
+                   && ((changed_settings.max_bytes_to_keep && new_total_bytes > changed_settings.max_bytes_to_keep)
+                       || (changed_settings.max_rows_to_keep && new_total_rows > changed_settings.max_rows_to_keep)))
             {
                 Block oldest_block = new_data->front();
                 UInt64 rows_to_remove = oldest_block.rows();
                 UInt64 bytes_to_remove = oldest_block.allocatedBytes();
-                if (new_total_bytes - bytes_to_remove < copy.min_bytes_to_keep
-                    || new_total_rows - rows_to_remove < copy.min_rows_to_keep)
+                if (new_total_bytes - bytes_to_remove < changed_settings.min_bytes_to_keep
+                    || new_total_rows - rows_to_remove < changed_settings.min_rows_to_keep)
                 {
                     break; // stop - removing next block will put us under min_bytes / min_rows threshold
                 }
@@ -341,7 +341,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
             total_size_rows.store(new_total_rows, std::memory_order_relaxed);
             total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
         }
-        memory_settings = std::move(copy);
+        memory_settings = std::move(changed_settings);
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
