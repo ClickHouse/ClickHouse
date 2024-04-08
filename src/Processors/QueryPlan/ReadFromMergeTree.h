@@ -256,6 +256,7 @@ private:
     Pipe spreadMarkRanges(RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, ActionsDAGPtr & result_projection);
 
     Pipe groupStreamsByPartition(AnalysisResult & result, ActionsDAGPtr & result_projection);
+    Pipe groupPartitionsByStreams(AnalysisResult & result);
 
     Pipe spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names);
 

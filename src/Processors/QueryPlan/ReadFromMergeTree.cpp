@@ -27,6 +27,7 @@
 #include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
 #include <Storages/MergeTree/MergeTreeIndexUSearch.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
+#include <Storages/MergeTree/MergeTreePartitionSequentialSource.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
@@ -1960,6 +1961,43 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, Actions
     return Pipe::unitePipes(std::move(pipes));
 }
 
+Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult & result)
+{
+    auto && parts_with_ranges = std::move(result.parts_with_ranges);
+
+    if (parts_with_ranges.empty())
+        return {};
+
+    const size_t partitions_cnt = std::max<size_t>(countPartitions(parts_with_ranges), 1);
+    const size_t partitions_per_stream = std::max<size_t>(1, partitions_cnt / requested_num_streams);
+
+    Pipes pipes;
+    for (auto begin = parts_with_ranges.begin(), end = begin; end != parts_with_ranges.end(); begin = end)
+    {
+        Pipes single_stream_partitions;
+
+        for (size_t i = 0; i < partitions_per_stream && end != parts_with_ranges.end(); ++i)
+        {
+            end = std::find_if(
+                end,
+                parts_with_ranges.end(),
+                [&end](const auto & part) { return end->data_part->info.partition_id != part.data_part->info.partition_id; });
+
+            RangesInDataParts partition_parts{std::make_move_iterator(begin), std::make_move_iterator(end)};
+
+            single_stream_partitions.push_back(
+                createMergeTreePartitionSequentialSource(data, storage_snapshot, std::move(partition_parts), result.column_names_to_read));
+        }
+
+        pipes.push_back(Pipe::unitePipes(std::move(single_stream_partitions)));
+
+        if (!pipes.back().empty())
+            pipes.back().resize(1);
+    }
+
+    return Pipe::unitePipes(std::move(pipes));
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto result = getAnalysisResult();
@@ -2018,9 +2056,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// NOTE: It may lead to double computation of expressions.
     ActionsDAGPtr result_projection;
 
-    Pipe pipe = output_each_partition_through_separate_port
-        ? groupStreamsByPartition(result, result_projection)
-        : spreadMarkRanges(std::move(result.parts_with_ranges), requested_num_streams, result, result_projection);
+    Pipe pipe;
+
+    if (query_info.isStream())
+        pipe = groupPartitionsByStreams(result);
+    else if (output_each_partition_through_separate_port)
+        pipe = groupStreamsByPartition(result, result_projection);
+    else
+        pipe = spreadMarkRanges(std::move(result.parts_with_ranges), requested_num_streams, result, result_projection);
 
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(query_info.storage_limits);
