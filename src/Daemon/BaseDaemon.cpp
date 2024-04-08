@@ -332,6 +332,7 @@ private:
         const std::vector<StackTrace::FramePointers> & thread_frame_pointers,
         UInt32 thread_num,
         ThreadStatus * thread_ptr) const
+    try
     {
         ThreadStatus thread_status;
 
@@ -542,6 +543,11 @@ private:
             thread_ptr->onFatalError();
 
         fatal_error_printed.test_and_set();
+    }
+    catch (...)
+    {
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+        LOG_FATAL(getLogger(__PRETTY_FUNCTION__), message);
     }
 };
 
