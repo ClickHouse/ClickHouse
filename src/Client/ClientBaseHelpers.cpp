@@ -161,7 +161,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         if (pos >= colors.size())
             pos = colors.size() - 1;
 
-        colors[pos] = replxx::color::bg(replxx::color::rgb666(5, 3, 3));
+        colors[pos] = Replxx::Color::BRIGHTRED;
     }
 
     if (last_token.type == TokenType::Semicolon || last_token.type == TokenType::VerticalDelimiter

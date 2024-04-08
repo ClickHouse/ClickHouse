@@ -2056,7 +2056,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         return MultiQueryProcessingStage::QUERIES_END;
 
     // Remove leading empty newlines and other whitespace, because they
-    // are annoying to filter in query log. This is mostly relevant for
+    // are annoying to filter in the query log. This is mostly relevant for
     // the tests.
     while (this_query_begin < all_queries_end && isWhitespaceASCII(*this_query_begin))
         ++this_query_begin;
@@ -2086,7 +2086,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         parsed_query = parseQuery(this_query_end, all_queries_end, true);
     }
-    catch (Exception & e)
+    catch (const Exception & e)
     {
         current_exception.reset(e.clone());
         return MultiQueryProcessingStage::PARSING_EXCEPTION;
@@ -2111,9 +2111,9 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // INSERT queries may have the inserted data in the query text
     // that follow the query itself, e.g. "insert into t format CSV 1;2".
     // They need special handling. First of all, here we find where the
-    // inserted data ends. In multy-query mode, it is delimited by a
+    // inserted data ends. In multi-query mode, it is delimited by a
     // newline.
-    // The VALUES format needs even more handling -- we also allow the
+    // The VALUES format needs even more handling - we also allow the
     // data to be delimited by semicolon. This case is handled later by
     // the format parser itself.
     // We can't do multiline INSERTs with inline data, because most

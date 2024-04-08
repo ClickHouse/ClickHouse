@@ -226,24 +226,27 @@ std::string getUnmatchedParenthesesErrorMessage(
 }
 
 
-const char * getInsertData(const ASTPtr & ast)
+static ASTInsertQuery * getInsertAST(const ASTPtr & ast)
 {
     /// Either it is INSERT or EXPLAIN INSERT.
-
-    ASTInsertQuery * insert = nullptr;
     if (auto * explain = ast->as<ASTExplainQuery>())
     {
         if (auto explained_query = explain->getExplainedQuery())
         {
-            insert = explained_query->as<ASTInsertQuery>();
+            return explained_query->as<ASTInsertQuery>();
         }
     }
     else
     {
-        insert = ast->as<ASTInsertQuery>();
+        return ast->as<ASTInsertQuery>();
     }
 
-    if (insert)
+    return nullptr;
+}
+
+const char * getInsertData(const ASTPtr & ast)
+{
+    if (const ASTInsertQuery * insert = getInsertAST(ast))
         return insert->data;
     return nullptr;
 }
@@ -439,11 +442,9 @@ std::pair<const char *, bool> splitMultipartQuery(
 
         ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth, max_parser_backtracks);
 
-        auto * insert = ast->as<ASTInsertQuery>();
-
-        if (insert && insert->data)
+        if (ASTInsertQuery * insert = getInsertAST(ast))
         {
-            /// Data for INSERT is broken on new line
+            /// Data for INSERT is broken on the new line
             pos = insert->data;
             while (*pos && *pos != '\n')
                 ++pos;
