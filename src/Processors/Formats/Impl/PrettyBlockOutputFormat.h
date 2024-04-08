@@ -5,7 +5,6 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <Columns/ColumnNullable.h>
 
 namespace DB
 {
