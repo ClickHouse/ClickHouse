@@ -318,7 +318,7 @@ class CiCache:
             self.update()
 
         if self.cache_data_fetched:
-            # there are no record w/o underling data - no need to fetch
+            # there are no records without fetched data - no need to fetch
             return self
 
         # clean up
