@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -30,7 +31,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
         if (types.size() != 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must be 3 arguments", getName());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires 3 arguments", getName());
 
         return getLeastSupertype(types);
     }
@@ -41,18 +42,20 @@ public:
         Columns converted_columns(arg_size);
         for (size_t arg = 0; arg < arg_size; ++arg)
             converted_columns[arg] = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
+        if (converted_columns[1]->compareAt(0, 0, *converted_columns[2], 1) > 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} the minimum value cannot be greater than the maximum value", getName());
 
         auto result_column = result_type->createColumn();
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
-          size_t best_arg = 0;
-          
-          if (converted_columns[1]->compareAt(row_num, row_num, *converted_columns[best_arg], 1) > 0)
-              best_arg = 1;
-          else if (converted_columns[2]->compareAt(row_num, row_num, *converted_columns[best_arg], 1) < 0)
-              best_arg = 2;
+            size_t best_arg = 0;
+            
+            if (converted_columns[1]->compareAt(row_num, row_num, *converted_columns[best_arg], 1) > 0)
+                best_arg = 1;
+            else if (converted_columns[2]->compareAt(row_num, row_num, *converted_columns[best_arg], 1) < 0)
+                best_arg = 2;
 
-          result_column->insertFrom(*converted_columns[best_arg], row_num);
+            result_column->insertFrom(*converted_columns[best_arg], row_num);
         }
 
         return result_column;
