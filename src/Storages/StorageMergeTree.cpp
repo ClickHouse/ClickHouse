@@ -2024,7 +2024,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     bool attach_part, ContextPtr local_context)
 {
     PartitionCommandsResultInfo results;
-    PartsTemporaryRename renamed_parts(*this, "detached/");
+    PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, local_context, renamed_parts);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)

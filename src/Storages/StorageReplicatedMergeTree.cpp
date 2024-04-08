@@ -1983,7 +1983,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
 
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
     {
-        for (const auto it = disk->iterateDirectory(fs::path(relative_data_path) / "detached/"); it->isValid(); it->next())
+        for (const auto it = disk->iterateDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME); it->isValid(); it->next())
         {
             const auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version);
 
@@ -1993,7 +1993,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             const auto part_old_name = part_info->getPartNameV1();
             const auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
 
-            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path("detached") / part_old_name)
+            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name)
                 .withPartFormatFromDisk()
                 .build();
 
@@ -2440,7 +2440,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
             {
                 String part_dir = part_to_detach->getDataPartStorage().getPartDirectory();
                 LOG_INFO(log, "Detaching {}", part_dir);
-                auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+                auto holder = getTemporaryPartDirectoryHolder(fs::path(DETACHED_DIR_NAME) / part_dir);
                 part_to_detach->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
             }
         }
@@ -2967,7 +2967,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         part = get_part();
         // The fetched part is valuable and should not be cleaned like a temp part.
         part->is_temp = false;
-        part->renameTo("detached/" + entry.new_part_name, true);
+        part->renameTo(fs::path(DETACHED_DIR_NAME) / entry.new_part_name, true);
 
         LOG_INFO(log, "Cloned part {} to detached directory", part->name);
     }
@@ -4987,7 +4987,7 @@ bool StorageReplicatedMergeTree::fetchPart(
         {
             // The fetched part is valuable and should not be cleaned like a temp part.
             part->is_temp = false;
-            part->renameTo(fs::path("detached") / part_name, true);
+            part->renameTo(fs::path(DETACHED_DIR_NAME) / part_name, true);
         }
     }
     catch (const Exception & e)
@@ -6547,7 +6547,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
         assertNotReadonly();
 
     PartitionCommandsResultInfo results;
-    PartsTemporaryRename renamed_parts(*this, "detached/");
+    PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
@@ -7022,7 +7022,7 @@ void StorageReplicatedMergeTree::getStatus(ReplicatedTableStatus & res, bool wit
             }
 
             res.log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
-            res.total_replicas = all_replicas.size();
+            res.total_replicas = UInt32(all_replicas.size());
             if (get_result[1].error == Coordination::Error::ZNONODE)
                 res.lost_part_count = 0;
             else
@@ -9986,7 +9986,7 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_n
 {
     fs::directory_iterator dir_end;
     for (const std::string & path : getDataPaths())
-        for (fs::directory_iterator dir_it{fs::path(path) / "detached/"}; dir_it != dir_end; ++dir_it)
+        for (fs::directory_iterator dir_it{fs::path(path) / DETACHED_DIR_NAME}; dir_it != dir_end; ++dir_it)
             if (dir_it->path().filename().string() == part_name)
                 return true;
     return false;
@@ -9999,7 +9999,7 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & p
 
     for (const std::string & path : getDataPaths())
     {
-        for (fs::directory_iterator dir_it{fs::path(path) / "detached/"}; dir_it != dir_end; ++dir_it)
+        for (fs::directory_iterator dir_it{fs::path(path) / DETACHED_DIR_NAME}; dir_it != dir_end; ++dir_it)
         {
             const String file_name = dir_it->path().filename().string();
             auto part_info = MergeTreePartInfo::tryParsePartName(file_name, format_version);
