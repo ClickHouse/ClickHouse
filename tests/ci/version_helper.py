@@ -357,8 +357,9 @@ def update_contributors(
 
     # format: "  1016  Alexey Arno"
     shortlog = git_runner.run("git shortlog HEAD --summary")
+    escaping = str.maketrans({"\\": "\\\\", '"': '\\"'})
     contributors = sorted(
-        [c.split(maxsplit=1)[-1].replace('"', r"\"") for c in shortlog.split("\n")],
+        [c.split(maxsplit=1)[-1].translate(escaping) for c in shortlog.split("\n")],
     )
     contributors = [f'    "{c}",' for c in contributors]
 
