@@ -97,8 +97,15 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 {
     using namespace replxx;
 
+    /// The `colors` array maps to a Unicode code point position in a string into a color.
+    /// A color is set for every position individually (not for a range).
+
+    /// Empty input.
     if (colors.empty())
         return;
+
+    /// The colors should be legible (and look gorgeous) in both dark and light themes.
+    /// When modifying this, check it in both themes.
 
     static const std::unordered_map<Highlight, Replxx::Color> type_to_color =
     {
@@ -111,11 +118,20 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         {Highlight::string, Replxx::Color::GREEN},
     };
 
+    /// We set reasonably small limits for size/depth, because we don't want the CLI to be slow.
+    /// While syntax highlighting is unneeded for long queries, which the user couldn't read anyway.
+
     const char * begin = query.data();
     const char * end = begin + query.size();
     Tokens tokens(begin, end, 1000, true);
     IParser::Pos token_iterator(tokens, static_cast<uint32_t>(1000), static_cast<uint32_t>(10000));
     Expected expected;
+
+    /// We don't do highlighting for foreign dialects, such as PRQL and Kusto.
+    /// Only normal ClickHouse SQL queries are highlighted.
+
+    /// Currently we highlight only the first query in the multi-query mode.
+
     ParserQuery parser(end);
     ASTPtr ast;
     bool parse_res = false;
@@ -138,6 +154,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         auto it = type_to_color.find(range.highlight);
         if (it != type_to_color.end())
         {
+            /// We have to map from byte positions to Unicode positions.
             pos += UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(prev), range.begin - prev);
             size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(range.begin), range.end - range.begin);
 
@@ -153,6 +170,8 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     /// Raw data in INSERT queries, which is not necessarily tokenized.
     const char * insert_data = ast ? getInsertData(ast) : nullptr;
 
+    /// Highlight the last error in red. If the parser failed or the lexer found an invalid token,
+    /// or if it didn't parse all the data (except, the data for INSERT query, which is legitimately unparsed)
     if ((!parse_res || last_token.isError() || (!token_iterator->isEnd() && token_iterator->type != TokenType::Semicolon))
         && !(insert_data && expected.max_parsed_pos >= insert_data))
     {
@@ -164,6 +183,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         colors[pos] = Replxx::Color::BRIGHTRED;
     }
 
+    /// This is a callback for the client/local app to better find query end. Note: this is a kludge, remove it.
     if (last_token.type == TokenType::Semicolon || last_token.type == TokenType::VerticalDelimiter
         || query.ends_with(';') || query.ends_with("\\G"))  /// This is for raw data in INSERT queries, which is not necessarily tokenized.
     {

@@ -48,6 +48,8 @@ struct HighlightedRange
 
 
 /** Collects variants, how parser could proceed further at rightmost position.
+  * Also collects a mapping of parsed ranges for highlighting,
+  * which is accumulated through the parsing.
   */
 struct Expected
 {
