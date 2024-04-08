@@ -90,7 +90,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
         if (!tables_p.parse(pos, database_and_tables, expected))
             return false;
 
-        if (database_and_tables->size() > 1 && kind != ASTDropQuery::Kind::Drop)
+        if (database_and_tables->as<ASTExpressionList &>().children.size() > 1 && kind != ASTDropQuery::Kind::Drop)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Only Support DROP multiple tables currently");
     }
 
@@ -131,7 +131,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 
     query->cluster = cluster_str;
 
-    if (database_and_tables && database_and_tables->size() == 1)
+    if (database_and_tables && database_and_tables->as<ASTExpressionList &>().children.size() == 1)
         node = query->getRewrittenASTsOfSingleTable()[0];
 
     return true;
