@@ -1,6 +1,7 @@
 #include <Storages/Kafka/StorageKafkaCommon.h>
 
 
+#include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
@@ -303,7 +304,6 @@ void registerStorageKafka(StorageFactory & factory)
             CHECK_KAFKA_STORAGE_ARGUMENT(15, kafka_handle_error_mode, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(16, kafka_commit_on_select, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(17, kafka_max_rows_per_message, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(18, kafka_keeper_path, 0)
         }
 
 #undef CHECK_KAFKA_STORAGE_ARGUMENT
@@ -357,20 +357,73 @@ void registerStorageKafka(StorageFactory & factory)
                 "See https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/#configuration");
         }
 
-        if (!kafka_settings->kafka_keeper_path.value.empty())
-        {
-            if (!args.getLocalContext()->getSettingsRef().allow_experimental_kafka_store_offsets_in_keeper)
+        const auto has_keeper_path = kafka_settings->kafka_keeper_path.changed && !kafka_settings->kafka_keeper_path.value.empty();
+        const auto has_replica_name = kafka_settings->kafka_replica_name.changed && !kafka_settings->kafka_replica_name.value.empty();
 
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_store_offsets_in_keeper` setting "
-                    "to enable it");
-
-            return std::make_shared<StorageKafka2>(
+        if (!has_keeper_path && !has_replica_name)
+            return std::make_shared<StorageKafka>(
                 args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
+
+        if (!args.getLocalContext()->getSettingsRef().allow_experimental_kafka_store_offsets_in_keeper)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_store_offsets_in_keeper` setting "
+                "to enable it");
+
+        if (!has_keeper_path || !has_replica_name)
+            throw Exception(
+        ErrorCodes::BAD_ARGUMENTS, "Either specify both zookeeper path and replica name or none of them");
+
+        const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        const auto is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+            && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
+
+        // TODO(antaljanosbenjamin): attach query?
+        // TODO(antaljanosbenjamin): why not on single atomic database?
+        const auto allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
+
+        auto context = args.getContext();
+        /// Unfold {database} and {table} macro on table creation, so table can be renamed.
+        if (!args.attach)
+        {
+            Macros::MacroExpansionInfo info;
+            /// NOTE: it's not recursive
+            info.expand_special_macros_only = true;
+            info.table_id = args.table_id;
+            // TODO(antaljanosbenjamin): why to skip UUID here?
+            info.table_id.uuid = UUIDHelpers::Nil;
+            kafka_settings->kafka_keeper_path.value = context->getMacros()->expand(kafka_settings->kafka_keeper_path.value, info);
+
+            info.level = 0;
+            kafka_settings->kafka_replica_name.value = context->getMacros()->expand(kafka_settings->kafka_replica_name.value, info);
         }
 
-        return std::make_shared<StorageKafka>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
+
+        auto * settings_query = args.storage_def->settings;
+        chassert(settings_query != nullptr && "Unexpected settings query in StorageKafka");
+
+        settings_query->changes.setSetting("kafka_keeper_path", kafka_settings->kafka_keeper_path.value);
+        settings_query->changes.setSetting("kafka_replica_name", kafka_settings->kafka_replica_name.value);
+
+        /// Expand other macros (such as {shard} and {replica}). We do not expand them on previous step
+        /// to make possible copying metadata files between replicas.
+        Macros::MacroExpansionInfo info;
+        info.table_id = args.table_id;
+        if (is_replicated_database)
+        {
+            auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
+            info.shard = getReplicatedDatabaseShardName(database);
+            info.replica = getReplicatedDatabaseReplicaName(database);
+        }
+        if (!allow_uuid_macro)
+            info.table_id.uuid = UUIDHelpers::Nil;
+        kafka_settings->kafka_keeper_path.value = context->getMacros()->expand(kafka_settings->kafka_keeper_path.value, info);
+
+        info.level = 0;
+        info.table_id.uuid = UUIDHelpers::Nil;
+        kafka_settings->kafka_replica_name.value = context->getMacros()->expand(kafka_settings->kafka_replica_name.value, info);
+
+        return std::make_shared<StorageKafka2>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
     };
 
     factory.registerStorage(
