@@ -436,7 +436,7 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
     if (is_mutation)
     {
-        reserved_space = storage.tryReserveSpace(total_size, future_part->parts[0]->getDataPartStorage());
+        reserved_space = StorageMergeTree::tryReserveSpace(total_size, future_part->parts[0]->getDataPartStorage());
     }
     else
     {
@@ -2024,7 +2024,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     bool attach_part, ContextPtr local_context)
 {
     PartitionCommandsResultInfo results;
-    PartsTemporaryRename renamed_parts(*this, "detached/");
+    PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, local_context, renamed_parts);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
