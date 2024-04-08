@@ -281,6 +281,7 @@ private:
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
+    std::mutex scalars_mutex;
 
     /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
     /// about next file to read from s3.
