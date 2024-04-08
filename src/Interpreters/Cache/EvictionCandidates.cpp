@@ -17,6 +17,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+EvictionCandidates::EvictionCandidates()
+    : log(getLogger("EvictionCandidates"))
+{
+}
+
 EvictionCandidates::~EvictionCandidates()
 {
     /// Here `queue_entries_to_invalidate` contains queue entries
@@ -64,8 +69,11 @@ void EvictionCandidates::add(
 
 void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & lock)
 {
-    auto log = getLogger("EvictionCandidates");
+    /// Remove queue entries of eviction candidates.
+    /// This will release space we consider to be hold for them.
+
     LOG_TEST(log, "Will remove {} eviction candidates", size());
+
     for (const auto & [key, key_candidates] : candidates)
     {
         for (const auto & candidate : key_candidates.candidates)
@@ -87,6 +95,7 @@ void EvictionCandidates::evict()
 
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::FilesystemCacheEvictMicroseconds);
 
+    /// If queue entries are already removed, then nothing to invalidate.
     if (!removed_queue_entries)
         queue_entries_to_invalidate.reserve(candidates_size);
 
@@ -184,6 +193,12 @@ void EvictionCandidates::finalize(
     on_finalize.clear();
 }
 
+bool EvictionCandidates::needFinalize() const
+{
+    /// Do we need to call finalize()?
+    return !on_finalize.empty() || !queue_entries_to_invalidate.empty();
+}
+
 void EvictionCandidates::setSpaceHolder(
     size_t size,
     size_t elements,
@@ -194,11 +209,6 @@ void EvictionCandidates::setSpaceHolder(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Space hold is already set");
     else
         hold_space = std::make_unique<IFileCachePriority::HoldSpace>(size, elements, priority, lock);
-}
-
-void EvictionCandidates::insert(EvictionCandidates && other, const CachePriorityGuard::Lock &)
-{
-    candidates.insert(make_move_iterator(other.candidates.begin()), make_move_iterator(other.candidates.end()));
 }
 
 }

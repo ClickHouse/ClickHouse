@@ -941,49 +941,47 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
     file_segment->detach(segment_lock, *this);
 
+    try
     {
-        try
+        const auto path = key_metadata->getFileSegmentPath(*file_segment);
+        if (file_segment->segment_kind == FileSegmentKind::Temporary)
         {
-            const auto path = key_metadata->getFileSegmentPath(*file_segment);
-            if (file_segment->segment_kind == FileSegmentKind::Temporary)
-            {
-                /// FIXME: For temporary file segment the requirement is not as strong because
-                /// the implementation of "temporary data in cache" creates files in advance.
-                if (fs::exists(path))
-                    fs::remove(path);
-            }
-            else if (file_segment->downloaded_size == 0)
-            {
-                chassert(!fs::exists(path));
-            }
-            else if (fs::exists(path))
-            {
+            /// FIXME: For temporary file segment the requirement is not as strong because
+            /// the implementation of "temporary data in cache" creates files in advance.
+            if (fs::exists(path))
                 fs::remove(path);
-
-                /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
-                int flags = file_segment->getFlagsForLocalRead();
-                /// Files are created with flags from file_segment->getFlagsForLocalRead()
-                /// plus optionally O_DIRECT is added, depends on query setting, so remove both.
-                OpenedFileCache::instance().remove(path, flags);
-                OpenedFileCache::instance().remove(path, flags | O_DIRECT);
-
-                LOG_TEST(key_metadata->logger(), "Removed file segment at path: {}", path);
-            }
-            else if (!can_be_broken)
-            {
-#ifdef ABORT_ON_LOGICAL_ERROR
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
-#else
-                LOG_WARNING(key_metadata->logger(), "Expected path {} to exist, while removing {}:{}",
-                            path, getKey(), file_segment->offset());
-#endif
-            }
         }
-        catch (...)
+        else if (file_segment->downloaded_size == 0)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            chassert(false);
+            chassert(!fs::exists(path));
         }
+        else if (fs::exists(path))
+        {
+            fs::remove(path);
+
+            /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
+            int flags = file_segment->getFlagsForLocalRead();
+            /// Files are created with flags from file_segment->getFlagsForLocalRead()
+            /// plus optionally O_DIRECT is added, depends on query setting, so remove both.
+            OpenedFileCache::instance().remove(path, flags);
+            OpenedFileCache::instance().remove(path, flags | O_DIRECT);
+
+            LOG_TEST(key_metadata->logger(), "Removed file segment at path: {}", path);
+        }
+        else if (!can_be_broken)
+        {
+#ifdef ABORT_ON_LOGICAL_ERROR
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
+#else
+            LOG_WARNING(key_metadata->logger(), "Expected path {} to exist, while removing {}:{}",
+                        path, getKey(), file_segment->offset());
+#endif
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        chassert(false);
     }
 
     return key_metadata->erase(it);

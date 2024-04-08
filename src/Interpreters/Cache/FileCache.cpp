@@ -1389,7 +1389,18 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         || new_settings.max_elements != actual_settings.max_elements)
     {
         EvictionCandidates eviction_candidates;
-        bool limits_satisfied = false;
+        bool modified_size_limit = false;
+
+        /// In order to not block cache for the duration of cache resize,
+        /// we do:
+        /// a. Take a cache lock.
+        ///     1. Collect eviction candidates,
+        ///     2. Remove queue entries of eviction candidates.
+        ///        This will release space we consider to be hold for them,
+        ///        so that we can safely modify size limits.
+        ///     3. Modify size limits of cache.
+        /// b. Release a cache lock.
+        ///     1. Do actual eviction from filesystem.
         {
             cache_is_being_resized.store(true, std::memory_order_relaxed);
             SCOPE_EXIT({
@@ -1399,44 +1410,58 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
             auto cache_lock = lockCache();
 
             FileCacheReserveStat stat;
-            limits_satisfied = main_priority->collectCandidatesForEviction(
-                new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */, stat, eviction_candidates, cache_lock);
-
-            eviction_candidates.removeQueueEntries(cache_lock);
-
-            if (limits_satisfied)
+            if (main_priority->collectCandidatesForEviction(
+                    new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */,
+                    stat, eviction_candidates, cache_lock))
             {
+                /// Remove only queue entries of eviction candidates.
+                eviction_candidates.removeQueueEntries(cache_lock);
+                /// Note that (in-memory) metadata about corresponding file segments
+                /// (e.g. file segment info in CacheMetadata) will be removed
+                /// only after eviction from filesystem. This is needed to avoid
+                /// a race on removal of file from filesystsem and
+                /// addition of the same file as part of a newly cached file segment.
+
+                /// Modify cache size limits.
+                /// From this point cache eviction will follow them.
                 main_priority->modifySizeLimits(
-                    new_settings.max_size, new_settings.max_elements, new_settings.slru_size_ratio, cache_lock);
+                    new_settings.max_size, new_settings.max_elements,
+                    new_settings.slru_size_ratio, cache_lock);
+
+                modified_size_limit = true;
             }
-            else
+        }
+
+        if (modified_size_limit)
+        {
+            try
             {
-                LOG_WARNING(log, "Unable to modify size limit from {} to {}, "
-                            "elements limit from {} to {}",
-                            actual_settings.max_size, new_settings.max_size,
-                            actual_settings.max_elements, new_settings.max_elements);
+                /// Do actual eviction from filesystem.
+                eviction_candidates.evict();
             }
-        }
+            catch (...)
+            {
+                if (eviction_candidates.needFinalize())
+                    eviction_candidates.finalize(nullptr, lockCache());
+                throw;
+            }
 
-        try
-        {
-            eviction_candidates.evict();
-        }
-        catch (...)
-        {
-            auto cache_lock = lockCache();
-            eviction_candidates.finalize(nullptr, cache_lock);
-            throw;
-        }
+            if (eviction_candidates.needFinalize())
+                eviction_candidates.finalize(nullptr, lockCache());
 
-        if (limits_satisfied)
-        {
             LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
                     actual_settings.max_size, new_settings.max_size,
                     actual_settings.max_elements, new_settings.max_elements);
 
             actual_settings.max_size = new_settings.max_size;
             actual_settings.max_elements = new_settings.max_elements;
+        }
+        else
+        {
+            LOG_WARNING(log, "Unable to modify size limit from {} to {}, "
+                        "elements limit from {} to {}",
+                        actual_settings.max_size, new_settings.max_size,
+                        actual_settings.max_elements, new_settings.max_elements);
         }
     }
 

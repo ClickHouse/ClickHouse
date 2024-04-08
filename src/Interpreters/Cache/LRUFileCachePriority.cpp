@@ -280,7 +280,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
     auto can_fit = [&]
     {
-        return canFit(size, 1, stat.total_stat.releasable_size, stat.total_stat.releasable_count, lock);
+        return canFit(size, elements, stat.total_stat.releasable_size, stat.total_stat.releasable_count, lock);
     };
 
     iterateForEviction(res, stat, can_fit, lock);
