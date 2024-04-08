@@ -2044,9 +2044,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;
     }
 
-    const bool is_get_or_attach = entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART;
+    bool is_get_or_attach = entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART;
 
-    if (is_get_or_attach || entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
+    if (is_get_or_attach)
     {
         /// If we already have this part or a part covering it, we do not need to do anything.
         /// The part may be still in the PreActive -> Active transition so we first search
@@ -2059,12 +2059,14 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
         if (existing_part && getZooKeeper()->exists(fs::path(replica_path) / "parts" / existing_part->name))
         {
-            if (!is_get_or_attach || entry.source_replica != replica_name)
+            if (entry.source_replica != replica_name)
                 LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.",
                     entry.new_part_name, existing_part->name);
-
             return true;
         }
+
+        if (entry.is_covered_by_future_part)
+            return false;
     }
 
     if (entry.type == LogEntry::ATTACH_PART)
@@ -3707,6 +3709,20 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     }
 }
 
+size_t StorageReplicatedMergeTree::getFetchPoolSizeLimit(const ReplicatedMergeTreeLogEntry & entry) const
+{
+    auto replicated_fetches_pool_size = getContext()->getFetchesExecutor()->getMaxTasksCount();
+    auto replicated_fetches_pool_threads= getContext()->getFetchesExecutor()->getMaxThreads();
+    size_t reserved_for_priority = static_cast<size_t>(getContext()->getServerSettings().reserve_fetch_queue_slot_for_sync_replica_ratio * replicated_fetches_pool_size);
+
+    /// We only allow priority slots in queue, not priority threads, so number of priority slots cannot exceeds number of waiting queue slots
+    reserved_for_priority = std::min(reserved_for_priority, replicated_fetches_pool_size - replicated_fetches_pool_threads);
+
+    /// If the entry has living priority tag, we could use priority slots
+    return entry.hasPriority() ? replicated_fetches_pool_size : replicated_fetches_pool_size - reserved_for_priority;
+
+}
+
 
 bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const
 {
@@ -3716,11 +3732,12 @@ bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEnt
         return false;
     }
 
-    auto replicated_fetches_pool_size = getContext()->getFetchesExecutor()->getMaxTasksCount();
+    auto fetches_pool_size_limit = getFetchPoolSizeLimit(entry);
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask].load(std::memory_order_relaxed);
-    if (busy_threads_in_pool >= replicated_fetches_pool_size)
+
+    if (busy_threads_in_pool >= fetches_pool_size_limit)
     {
-        disable_reason = fmt::format("Not executing fetch of part {} because {} fetches already executing, max {}.", entry.new_part_name, busy_threads_in_pool, replicated_fetches_pool_size);
+        disable_reason = fmt::format("Not executing fetch of part {} because {} fetches already executing, max {}.", entry.new_part_name, busy_threads_in_pool, fetches_pool_size_limit);
         return false;
     }
 
@@ -8697,6 +8714,7 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
     background_operations_assignee.trigger();
 
     std::unordered_set<String> wait_for_ids;
+    LogEntryPriorityTags wait_for_priority_tags;
     std::atomic_bool was_interrupted = false;
 
     Poco::Event target_entry_event;
@@ -8724,8 +8742,7 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
         if (wait_for_ids.empty())
             target_entry_event.set();
     };
-
-    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, sync_mode, source_replicas);
+    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, wait_for_priority_tags, sync_mode, source_replicas);
 
     if (!target_entry_event.tryWait(max_wait_milliseconds))
         return false;
