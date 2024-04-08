@@ -1,9 +1,10 @@
 #include <Planner/Planner.h>
 
-#include <Core/ProtocolDefines.h>
-#include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Core/ProtocolDefines.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 

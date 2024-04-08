@@ -2287,7 +2287,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::operator()(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
     const MergeTreeTransaction *,
-    String & out_reason) const
+    PreformattedMessage & out_reason) const
 {
     if (left)
         return canMergeTwoParts(left, right, out_reason);
@@ -2299,7 +2299,7 @@ template<typename VirtualPartsT, typename MutationsStateT>
 bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
     const MergeTreeData::DataPartPtr & left,
     const MergeTreeData::DataPartPtr & right,
-    String & out_reason) const
+    PreformattedMessage & out_reason) const
 {
     /// A sketch of a proof of why this method actually works:
     ///
@@ -2343,19 +2343,19 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
     {
         if (pinned_part_uuids_ && pinned_part_uuids_->part_uuids.contains(part->uuid))
         {
-            out_reason = "Part " + part->name + " has uuid " + toString(part->uuid) + " which is currently pinned";
+            out_reason = PreformattedMessage::create("Part {} has uuid {} which is currently pinned", part->name, part->uuid);
             return false;
         }
 
         if (inprogress_quorum_part_ && part->name == *inprogress_quorum_part_)
         {
-            out_reason = "Quorum insert for part " + part->name + " is currently in progress";
+            out_reason = PreformattedMessage::create("Quorum insert for part {} is currently in progress", part->name);
             return false;
         }
 
         if (prev_virtual_parts_ && prev_virtual_parts_->getContainingPart(part->info).empty())
         {
-            out_reason = "Entry for part " + part->name + " hasn't been read from the replication log yet";
+            out_reason = PreformattedMessage::create("Entry for part {} hasn't been read from the replication log yet", part->name);
             return false;
         }
     }
@@ -2369,7 +2369,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
     {
         if (partition_ids_hint && !partition_ids_hint->contains(left->info.partition_id))
         {
-            out_reason = fmt::format("Uncommitted block were not loaded for unexpected partition {}", left->info.partition_id);
+            out_reason = PreformattedMessage::create("Uncommitted block were not loaded for unexpected partition {}", left->info.partition_id);
             return false;
         }
 
@@ -2381,8 +2381,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
             auto block_it = block_numbers.upper_bound(left_max_block);
             if (block_it != block_numbers.end() && *block_it < right_min_block)
             {
-                out_reason = "Block number " + toString(*block_it) + " is still being inserted between parts "
-                    + left->name + " and " + right->name;
+                out_reason = PreformattedMessage::create("Block number {} is still being inserted between parts {} and {}", *block_it, left->name, right->name);
                 return false;
             }
         }
@@ -2401,7 +2400,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
             String containing_part = virtual_parts_->getContainingPart(part->info);
             if (containing_part != part->name)
             {
-                out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part;
+                out_reason = PreformattedMessage::create("Part {} has already been assigned a merge into {}", part->name, containing_part);
                 return false;
             }
         }
@@ -2418,9 +2417,9 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
             Strings covered = virtual_parts_->getPartsCoveredBy(gap_part_info);
             if (!covered.empty())
             {
-                out_reason = "There are " + toString(covered.size()) + " parts (from " + covered.front()
-                    + " to " + covered.back() + ") that are still not present or being processed by "
-                    + " other background process on this replica between " + left->name + " and " + right->name;
+                out_reason = PreformattedMessage::create("There are {} parts (from {} to {}) "
+                             "that are still not present or being processed by other background process "
+                             "on this replica between {} and {}", covered.size(), covered.front(), covered.back(), left->name, right->name);
                 return false;
             }
         }
@@ -2436,8 +2435,8 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
 
         if (left_mutation_ver != right_mutation_ver)
         {
-            out_reason = "Current mutation versions of parts " + left->name + " and " + right->name + " differ: "
-                + toString(left_mutation_ver) + " and " + toString(right_mutation_ver) + " respectively";
+            out_reason = PreformattedMessage::create("Current mutation versions of parts {} and {} differ: "
+                         "{} and {} respectively", left->name, right->name, left_mutation_ver, right_mutation_ver);
             return false;
         }
     }
@@ -2448,23 +2447,23 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
 template<typename VirtualPartsT, typename MutationsStateT>
 bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeSinglePart(
     const MergeTreeData::DataPartPtr & part,
-    String & out_reason) const
+    PreformattedMessage & out_reason) const
 {
     if (pinned_part_uuids_ && pinned_part_uuids_->part_uuids.contains(part->uuid))
     {
-        out_reason = fmt::format("Part {} has uuid {} which is currently pinned", part->name, part->uuid);
+        out_reason = PreformattedMessage::create("Part {} has uuid {} which is currently pinned", part->name, part->uuid);
         return false;
     }
 
     if (inprogress_quorum_part_ && part->name == *inprogress_quorum_part_)
     {
-        out_reason = fmt::format("Quorum insert for part {} is currently in progress", part->name);
+        out_reason = PreformattedMessage::create("Quorum insert for part {} is currently in progress", part->name);
         return false;
     }
 
     if (prev_virtual_parts_ && prev_virtual_parts_->getContainingPart(part->info).empty())
     {
-        out_reason = fmt::format("Entry for part {} hasn't been read from the replication log yet", part->name);
+        out_reason = PreformattedMessage::create("Entry for part {} hasn't been read from the replication log yet", part->name);
         return false;
     }
 
@@ -2479,7 +2478,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeSinglePart(
         String containing_part = virtual_parts_->getContainingPart(part->info);
         if (containing_part != part->name)
         {
-            out_reason = fmt::format("Part {} has already been assigned a merge into {}", part->name, containing_part);
+            out_reason = PreformattedMessage::create("Part {} has already been assigned a merge into {}", part->name, containing_part);
             return false;
         }
     }
@@ -2488,7 +2487,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeSinglePart(
 }
 
 
-bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String & out_reason) const
+bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, PreformattedMessage & out_reason) const
 {
     std::lock_guard lock(queue.state_mutex);
     for (const auto & entry : queue.queue)
@@ -2501,7 +2500,7 @@ bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const Mer
             if (part->info.isDisjoint(MergeTreePartInfo::fromPartName(part_name, queue.format_version)))
                 continue;
 
-            out_reason = fmt::format("Part {} participates in REPLACE_RANGE {} ({})", part_name, entry->new_part_name, entry->znode_name);
+            out_reason = PreformattedMessage::create("Part {} participates in REPLACE_RANGE {} ({})", part_name, entry->new_part_name, entry->znode_name);
             return true;
         }
     }
