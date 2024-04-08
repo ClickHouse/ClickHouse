@@ -6694,8 +6694,11 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         {
             for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
             {
-                for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
+                for (auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
+                {
+                    group_by_elem = group_by_elem->clone();
                     scope.nullable_group_by_keys.insert(group_by_elem);
+                }
             }
         }
     }
@@ -6713,8 +6716,15 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
 
         if (scope.group_by_use_nulls)
         {
-            for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
+            for (auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
+            {
+                /// Clone is needed cause aliases share subtrees.
+                /// If not clone, a part of GROUP BY key could be replaced to nullable
+                /// by replacing a part of alias from another subtree to nullable.
+                /// See 03023_group_by_use_nulls_analyzer_crashes
+                group_by_elem = group_by_elem->clone();
                 scope.nullable_group_by_keys.insert(group_by_elem);
+            }
         }
     }
 }
