@@ -1323,6 +1323,20 @@ def test_format_detection(cluster):
     assert result == expected_result
 
 
+def test_write_to_globbed_partitioned_path(cluster):
+    node = cluster.instances["node"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+    error = azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_data_*_{{_partition_id}}', '{account_name}', '{account_key}', 'CSV', 'auto', 'x UInt64') partition by 42 select 42",
+        expect_error="true",
+    )
+
+    assert "DATABASE_ACCESS_DENIED" in error
+
+
 def test_parallel_read(cluster):
     node = cluster.instances["node"]
     connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
