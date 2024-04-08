@@ -300,7 +300,7 @@ public:
         LoggerPtr log;
     };
 
-    ReadResult read(size_t max_rows, MarkRanges & ranges, bool add_virtual_row);
+    ReadResult read(size_t max_rows, MarkRanges & ranges);
 
     const Block & getSampleBlock() const { return result_sample_block; }
 

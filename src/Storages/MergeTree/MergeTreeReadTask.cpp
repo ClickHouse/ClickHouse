@@ -158,7 +158,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read(const BlockSizeParam
     UInt64 recommended_rows = estimateNumRows(params);
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(params.max_block_size_rows, recommended_rows));
 
-    auto read_result = range_readers.main.read(rows_to_read, mark_ranges, add_virtual_row);
+    auto read_result = range_readers.main.read(rows_to_read, mark_ranges);
 
     if (add_virtual_row)
     {

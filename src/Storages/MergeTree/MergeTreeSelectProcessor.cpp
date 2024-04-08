@@ -133,38 +133,64 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
         if (!task->getMainRangeReader().isInitialized())
             initializeRangeReaders();
-
+        add_virtual_row = false;
         if (add_virtual_row)
         {
             /// Turn on virtual row just once.
-            task->addVirtualRow();
             add_virtual_row = false;
-        }
 
-        auto res = algorithm->readFromTask(*task, block_size_params);
+            const auto & primary_key = storage_snapshot->metadata->primary_key;
 
-        if (res.row_count)
-        {
+            MergeTreeReadTask::BlockAndProgress res;
+            res.row_count = 1;
+
             /// Reorder the columns according to result_header
             Columns ordered_columns;
             ordered_columns.reserve(result_header.columns());
             for (size_t i = 0; i < result_header.columns(); ++i)
             {
-                auto name = result_header.getByPosition(i).name;
-                ordered_columns.push_back(res.block.getByName(name).column);
+                // TODO: composite pk???
+                const ColumnWithTypeAndName & type_and_name = result_header.getByPosition(i);
+                if (type_and_name.name == primary_key.column_names[0] && type_and_name.type == primary_key.data_types[0])
+                    ordered_columns.push_back(index[0]->cloneResized(1)); // TODO: use the first range pk whose range might contain results
+                else
+                    ordered_columns.push_back(type_and_name.type->createColumn()->cloneResized(1));
             }
 
             return ChunkAndProgress{
-                .chunk = Chunk(ordered_columns, res.row_count,
-                    add_part_level || res.is_virtual_row ? std::make_shared<MergeTreeReadInfo>(
-                        (add_part_level ? task->getInfo().data_part->info.level : 0), res.is_virtual_row) : nullptr),
+                .chunk = Chunk(ordered_columns, res.row_count, std::make_shared<MergeTreeReadInfo>(
+                    (add_part_level ? task->getInfo().data_part->info.level : 0), true)),
                 .num_read_rows = res.num_read_rows,
                 .num_read_bytes = res.num_read_bytes,
                 .is_finished = false};
         }
         else
         {
-            return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
+            auto res = algorithm->readFromTask(*task, block_size_params);
+
+            if (res.row_count)
+            {
+                /// Reorder the columns according to result_header
+                Columns ordered_columns;
+                ordered_columns.reserve(result_header.columns());
+                for (size_t i = 0; i < result_header.columns(); ++i)
+                {
+                    auto name = result_header.getByPosition(i).name;
+                    ordered_columns.push_back(res.block.getByName(name).column);
+                }
+
+                return ChunkAndProgress{
+                    .chunk = Chunk(ordered_columns, res.row_count,
+                        add_part_level ? std::make_shared<MergeTreeReadInfo>(
+                            (add_part_level ? task->getInfo().data_part->info.level : 0), false) : nullptr),
+                    .num_read_rows = res.num_read_rows,
+                    .num_read_bytes = res.num_read_bytes,
+                    .is_finished = false};
+            }
+            else
+            {
+                return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
+            }
         }
     }
 

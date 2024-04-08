@@ -117,7 +117,6 @@ public:
         size_t row_count = 0;
         size_t num_read_rows = 0;
         size_t num_read_bytes = 0;
-        bool is_virtual_row = false;
     };
 
     MergeTreeReadTask(
@@ -140,8 +139,6 @@ public:
 
     static Readers createReaders(const MergeTreeReadTaskInfoPtr & read_info, const Extras & extras, const MarkRanges & ranges);
     static RangeReaders createRangeReaders(const Readers & readers, const PrewhereExprInfo & prewhere_actions);
-
-    void addVirtualRow() { add_virtual_row = true; }
 
 private:
     UInt64 estimateNumRows(const BlockSizeParams & params) const;
