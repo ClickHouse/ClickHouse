@@ -9,7 +9,7 @@ sidebar_label: Embedded Dictionaries
 :::note
 In order for the functions below to work, the server config must specify the paths and addresses for getting all the embedded dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can’t be loaded, an exception is thrown.
 
-As such, the examples shown in this section cannot be run in [ClickHouse Fiddle](https://fiddle.clickhouse.com/) 
+As such, the examples shown in this section cannot be run in [ClickHouse Fiddle](https://fiddle.clickhouse.com/).
 :::
 
 For information about creating reference lists, see the section [“Dictionaries”](../../sql-reference/dictionaries/index.md).
