@@ -1077,6 +1077,10 @@ Result:
 
 ## wordShingleSimHashUTF8
 
+Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
+
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](/docs/en/sql-reference/functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+
 **Syntax**
 
 ```sql
