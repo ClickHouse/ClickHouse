@@ -82,7 +82,6 @@ client_compwords_positive = [
     "primary_key_bytes_in_memory_allocated",
     # system.dictionaries
     # FIXME: none
-    "definitely_broken_and_should_fail",
 ]
 
 local_compwords_positive = [
