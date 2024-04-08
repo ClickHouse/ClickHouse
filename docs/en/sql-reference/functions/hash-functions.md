@@ -1077,9 +1077,7 @@ Result:
 
 ## wordShingleSimHashUTF8
 
-Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](/docs/en/sql-reference/functions/bit-functions.md/#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1151,6 +1149,42 @@ Result:
 ┌───────Hash─┐
 │ 2194812424 │
 └────────────┘
+```
+
+## wyHash64
+
+Produces a 64-bit [wyHash64](https://github.com/wangyi-fudan/wyhash) hash value.
+
+**Syntax**
+
+```sql
+wyHash64(string)
+```
+
+**Arguments**
+
+- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Hash value.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT wyHash64('ClickHouse') AS Hash;
+```
+
+Result:
+
+```response
+┌─────────────────Hash─┐
+│ 12336419557878201794 │
+└──────────────────────┘
 ```
 
 ## ngramMinHash
