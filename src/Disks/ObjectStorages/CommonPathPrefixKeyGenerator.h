@@ -8,6 +8,15 @@
 namespace DB
 {
 
+/// Object storage key generator used specifically with the
+/// MetadataStorageFromPlainObjectStorage if multiple writes are allowed.
+
+/// It searches for the local (metadata) path in a pre-loaded path map.
+/// If no such path exists, it searches for the parent path, until it is found
+/// or no parent path exists.
+///
+/// The key generator ensures that the original directory hierarchy is
+/// preserved, which is required for the MergeTree family.
 class CommonPathPrefixKeyGenerator : public IObjectStorageKeysGenerator
 {
 public:
@@ -18,6 +27,7 @@ public:
     ObjectStorageKey generate(const String & path, bool is_directory) const override;
 
 private:
+    /// Longest key prefix and unresolved parts of the source path.
     std::tuple<std::string, std::vector<String>> getLongestObjectKeyPrefix(const String & path) const;
 
     const String storage_key_prefix;

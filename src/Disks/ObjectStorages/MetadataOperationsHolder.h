@@ -1,10 +1,13 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IMetadataOperation.h>
+
+/// TODO: rename to MetadataStorageTransactionState.
 #include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
 
 /**
- * Implementations for transactional operations with metadata used by MetadataStorageFromDisk.
+ * Implementations for transactional operations with metadata used by MetadataStorageFromDisk
+ * and MetadataStorageFromPlainObjectStorage.
  */
 
 namespace DB

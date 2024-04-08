@@ -46,7 +46,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
         object,
         WriteMode::Rewrite,
         /* object_attributes */ std::nullopt,
-        /* buf_size */ 4096,
+        /* buf_size */ DBMS_DEFAULT_BUFFER_SIZE,
         /* settings */ {});
 
     write_created = true;
@@ -97,7 +97,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
     if (validate_content)
     {
         std::string data;
-        auto readBuf = object_storage->readObject(object, {});
+        auto readBuf = object_storage->readObject(object);
         readStringUntilEOF(data, *readBuf);
         if (data != path_from)
             throw Exception(
@@ -111,8 +111,8 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
     auto write_buf = object_storage->writeObject(
         object,
         WriteMode::Rewrite,
-        std::nullopt,
-        /*buf_size*/ 4096,
+        /* object_attributes */ std::nullopt,
+        /*buf_size*/ DBMS_DEFAULT_BUFFER_SIZE,
         /*settings*/ {});
 
     return write_buf;
@@ -177,7 +177,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
         object,
         WriteMode::Rewrite,
         /* object_attributes */ std::nullopt,
-        /* buf_size */ 4096,
+        /* buf_size */ DBMS_DEFAULT_BUFFER_SIZE,
         /* settings */ {});
     writeString(path.string(), *buf);
     buf->finalize();

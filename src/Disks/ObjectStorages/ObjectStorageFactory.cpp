@@ -222,11 +222,10 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
            const Poco::Util::AbstractConfiguration & config,
            const std::string & config_prefix,
            const ContextPtr & context,
-           bool /* skip_access_check */) -> ObjectStoragePtr
+           bool skip_access_check) -> ObjectStoragePtr
         {
             /// send_metadata changes the filenames (includes revision), while
-            /// s3_plain do not care about this, and expect that the file name
-            /// will not be changed.
+            /// s3_plain_rewritable does not support file renaming.
             if (config.getBool(config_prefix + ".send_metadata", false))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain_rewritable does not supports send_metadata");
 
@@ -238,6 +237,10 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
 
             auto object_storage = std::make_shared<S3PlainRewritableObjectStorage>(
                 std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
+
+            /// NOTE: should we still perform this check for clickhouse-disks?
+            if (!skip_access_check)
+                checkS3Capabilities(*dynamic_cast<S3ObjectStorage *>(object_storage.get()), s3_capabilities, name);
 
             return object_storage;
         });

@@ -46,11 +46,23 @@ MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::stri
 
         StoredObject object{file.relative_path};
 
-        auto read_buf = object_storage->readObject(object, {});
-        String content;
-        readString(content, *read_buf);
+        auto read_buf = object_storage->readObject(object);
+        String local_path;
+        readStringUntilEOF(local_path, *read_buf);
 
-        result.emplace(content, remote_path.parent_path().string());
+        chassert(remote_path.has_parent_path());
+        auto res = result.emplace(local_path, remote_path.parent_path());
+
+        /// This can happen if table replication is enabled, then the same local path is written
+        /// in `prefix.path` of each replica.
+        /// TODO: should replicated tables (e.g., RMT) be explicitly disallowed?
+        if (!res.second)
+            LOG_WARNING(
+                getLogger("MetadataStorageFromPlainObjectStorage"),
+                "The local path '{}' is already mapped to a remote path '{}', ignoring: '{}'",
+                local_path,
+                res.first->second,
+                remote_path.parent_path().string());
     }
     return result;
 }
@@ -62,9 +74,6 @@ MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(Obj
     , storage_path_prefix(std::move(storage_path_prefix_))
     , path_map(std::make_shared<PathMap>(loadPathPrefixMap(object_storage->getCommonKeyPrefix(), object_storage)))
 {
-    LOG_TRACE(
-        getLogger("MetadataStorageFromPlainObjectStorage"), "MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage");
-
     if (!object_storage->isWriteOnce())
     {
         auto keys_gen = std::make_shared<CommonPathPrefixKeyGenerator>(object_storage->getCommonKeyPrefix(), metadata_mutex, path_map);
