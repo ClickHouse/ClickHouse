@@ -341,6 +341,23 @@ Configuration:
 </s3_plain>
 ```
 
+### Using S3 Plain Rewritable Storage {#s3-plain-rewritable-storage}
+A new disk type `s3_plain_rewritable` was introduced in `24.4`.
+Similar to the `s3_plain` disk type, it does not require additional storage for metadata files; instead, metadata is stored in S3.
+Unlike `s3_plain` disk type, `s3_plain_rewritable` allows executing merges and supports INSERT operations.
+[Mutations](/docs/en/sql-reference/statements/alter#mutations) and replication of tables are not supported.
+
+A use case for this disk type are non-replicated `MergeTree` tables. e.g., system tables.
+
+Configuration:
+``` xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
+```
+
 ### Using Azure Blob Storage {#azure-blob-storage}
 
 `MergeTree` family table engines can store data to [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) using a disk with type `azure_blob_storage`.

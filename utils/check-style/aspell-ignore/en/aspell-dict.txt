@@ -2321,6 +2321,7 @@ retentions
 rethrow
 retransmit
 retriable
+rewritable
 reverseUTF
 rightPad
 rightPadUTF
