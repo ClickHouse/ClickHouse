@@ -116,6 +116,7 @@ def main():
         "dmesg.log": workspace_path / "dmesg.log",
         "fatal.log": workspace_path / "fatal.log",
         "stderr.log": workspace_path / "stderr.log",
+        "queries.log": workspace_path / "queries.log",
     }
 
     compressed_server_log_path = workspace_path / "server.log.zst"

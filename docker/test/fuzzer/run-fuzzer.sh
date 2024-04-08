@@ -247,7 +247,7 @@ quit
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually, I need word splitting.
     # shellcheck disable=SC2012,SC2046
-    timeout -s TERM --preserve-status 30m clickhouse-client \
+    (timeout -s TERM --preserve-status 30m clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
@@ -255,9 +255,11 @@ quit
         --query-fuzzer-runs=1000 \
         --create-query-fuzzer-runs=50 \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
-        $NEW_TESTS_OPT \
-        > fuzzer.log \
-        2>&1 &
+        $NEW_TESTS_OPT | \
+        # stdout to queries.log
+        # stdout+stderr to fuzzer.log
+        # skip terminal output
+        tee queries.log ) > fuzzer.log 2>&1 &
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
 
@@ -444,6 +446,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
   <a href="stderr.log">stderr.log</a>
   <a href="main.log">main.log</a>
   <a href="dmesg.log">dmesg.log</a>
+  <a href="queries.log">queries.log</a>
   ${CORE_LINK}
   ${FATAL_LINK}
 </p>
