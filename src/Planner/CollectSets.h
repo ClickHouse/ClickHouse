@@ -14,7 +14,7 @@ struct SelectQueryOptions;
   */
 void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context);
 
-/// Build subqiery which we execute for IN function.
+/// Build subquery which we execute for IN function.
 /// It is needed to support `IN table` case.
 QueryTreeNodePtr makeExecutableSubqueryForIn(const QueryTreeNodePtr & in_second_argument, const ContextPtr & context);
 
