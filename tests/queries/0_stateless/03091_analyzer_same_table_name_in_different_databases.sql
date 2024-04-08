@@ -1,28 +1,28 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/61947
 SET allow_experimental_analyzer=1;
 
-DROP DATABASE IF EXISTS d1;
-DROP DATABASE IF EXISTS d2;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE DATABASE d1;
-CREATE DATABASE d2;
-CREATE TABLE d1.`1-1` (field Int8) ENGINE = Memory;
-CREATE TABLE d2.`1-1` (field Int8) ENGINE = Memory;
-CREATE TABLE d2.`2-1` (field Int8) ENGINE = Memory;
+CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.`1-1` (field Int8) ENGINE = Memory;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.`1-1` (field Int8) ENGINE = Memory;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.`2-1` (field Int8) ENGINE = Memory;
 
-INSERT INTO d1.`1-1` VALUES (1);
+INSERT INTO {CLICKHOUSE_DATABASE:Identifier}.`1-1` VALUES (1);
 
 SELECT *
-FROM d1.`1-1`
-LEFT JOIN d2.`1-1` ON d1.`1-1`.field = d2.`1-1`.field;
+FROM {CLICKHOUSE_DATABASE:Identifier}.`1-1`
+LEFT JOIN {CLICKHOUSE_DATABASE_1:Identifier}.`1-1` ON {CLICKHOUSE_DATABASE:Identifier}.`1-1`.field = {CLICKHOUSE_DATABASE_1:Identifier}.`1-1`.field;
 
 SELECT '';
 
-SELECT 'using asterisk', d1.`1-1`.*, d2.`1-1`.*
-FROM d1.`1-1`
-LEFT JOIN d2.`1-1` USING field
+SELECT 'using asterisk', {CLICKHOUSE_DATABASE:Identifier}.`1-1`.*, {CLICKHOUSE_DATABASE_1:Identifier}.`1-1`.*
+FROM {CLICKHOUSE_DATABASE:Identifier}.`1-1`
+LEFT JOIN {CLICKHOUSE_DATABASE_1:Identifier}.`1-1` USING field
 UNION ALL
-SELECT 'using field name', d1.`1-1`.field, d2.`1-1`.field
-FROM d1.`1-1`
-LEFT JOIN d2.`1-1` USING field
+SELECT 'using field name', {CLICKHOUSE_DATABASE:Identifier}.`1-1`.field, {CLICKHOUSE_DATABASE_1:Identifier}.`1-1`.field
+FROM {CLICKHOUSE_DATABASE:Identifier}.`1-1`
+LEFT JOIN {CLICKHOUSE_DATABASE_1:Identifier}.`1-1` USING field
 ORDER BY *;
