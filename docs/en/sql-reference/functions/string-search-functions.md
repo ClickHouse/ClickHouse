@@ -13,7 +13,7 @@ Case-insensitive search follows the lowercase-uppercase rules of the English lan
 `I` whereas in the Turkish language it is `İ` - results for languages other than English may be unexpected.
 :::
 
-Functions in this section also assume that the searched string (refered to in this section as `haystack`) and the search string (refered to in this section as `needle`) are single-byte encoded text. If this assumption is
+Functions in this section also assume that the searched string (referred to in this section as `haystack`) and the search string (referred to in this section as `needle`) are single-byte encoded text. If this assumption is
 violated, no exception is thrown and results are undefined. Search with UTF-8 encoded strings is usually provided by separate function
 variants. Likewise, if a UTF-8 function variant is used and the input strings are not UTF-8 encoded text, no exception is thrown and the
 results are undefined. Note that no automatic Unicode normalization is performed, however you can use the
