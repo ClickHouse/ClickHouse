@@ -793,4 +793,15 @@ bool tryGetFunctionNameInto(const IAST * ast, String & name)
     return false;
 }
 
+bool isASTLambdaFunction(const ASTFunction & function)
+{
+    if (function.name == "lambda" && function.arguments && function.arguments->children.size() == 2)
+    {
+        const auto * lambda_args_tuple = function.arguments->children.at(0)->as<ASTFunction>();
+        return lambda_args_tuple && lambda_args_tuple->name == "tuple";
+    }
+
+    return false;
+}
+
 }
