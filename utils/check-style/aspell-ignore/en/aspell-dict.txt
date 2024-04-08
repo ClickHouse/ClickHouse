@@ -29,6 +29,13 @@ Alexey
 AnyEvent
 AppleClang
 Approximative
+arrayDotProduct
+arrayEnumerateDenseRanked
+arrayEnumerateUniqRanked
+arrayFirstOrNull
+arrayLastOrNull
+arrayPartialShuffle
+arrayShuffle
 ArrayJoin
 ArrowStream
 AsyncInsertCacheSize

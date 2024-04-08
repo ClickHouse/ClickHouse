@@ -987,7 +987,7 @@ Result:
 [[1,1,1],[2,3,2],[2]]
 ```
 
-Changing `clear_depth=2`, results in elements being enumerated seperately for each row.
+Changing `clear_depth=2`, results in elements being enumerated separately for each row.
 
 Query:
 
@@ -1703,7 +1703,7 @@ Result:
 [[1,1,2,3],[4,5,1,2]]
 ```
 
-Changing `clear_depth=2` results in the enumeration occuring separetely for each row anew.
+Changing `clear_depth=2` results in the enumeration occurring separately for each row anew.
 
 Query:
 
