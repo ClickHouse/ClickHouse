@@ -49,7 +49,6 @@ public:
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t best_arg = 0;
-            
             if (converted_columns[1]->compareAt(row_num, row_num, *converted_columns[best_arg], 1) > 0)
                 best_arg = 1;
             else if (converted_columns[2]->compareAt(row_num, row_num, *converted_columns[best_arg], 1) < 0)
