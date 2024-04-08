@@ -105,4 +105,7 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 /// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
+/// Checks that node has only one source and returns it
+QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node);
+
 }
