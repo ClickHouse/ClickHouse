@@ -12,7 +12,7 @@ In order for the functions below to work, the server config must specify the pat
 As such, the examples shown in this section will throw an exception in [ClickHouse Fiddle](https://fiddle.clickhouse.com/) and in quick release and production deployments by default, unless first configured.
 :::
 
-For information about creating reference lists, see the section [“Dictionaries”](../../sql-reference/dictionaries/index#embedded-dictionaries).
+For information about creating reference lists, see the section [“Dictionaries”](../dictionaries/index#embedded-dictionaries).
 
 ## Multiple Geobases
 
@@ -374,7 +374,7 @@ Result:
 
 ### regionToPopulation
 
-Gets the population for a region. The population can be recorded in files with the geobase. See the section ["Dictionaries"](../../sql-reference/dictionaries/index#embedded-dictionaries). If the population is not recorded for the region, it returns 0. In the geobase, the population might be recorded for child regions, but not for parent regions.
+Gets the population for a region. The population can be recorded in files with the geobase. See the section ["Dictionaries"](../dictionaries/index#embedded-dictionaries). If the population is not recorded for the region, it returns 0. In the geobase, the population might be recorded for child regions, but not for parent regions.
 
 **Syntax**
 
