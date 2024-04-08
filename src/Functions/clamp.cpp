@@ -37,7 +37,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-
         size_t arg_size = arguments.size();
         Columns converted_columns(arg_size);
         for (size_t arg = 0; arg < arg_size; ++arg)

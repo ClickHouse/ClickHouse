@@ -242,7 +242,7 @@ Constrain the return value between A and B.
 **Syntax**
 
 ``` sql
-if(x, min, max)
+clamp(x, min, max)
 ```
 
 **Arguments**
@@ -258,7 +258,7 @@ If the value is less than the minimum value, return the minimum value; if it is 
 Examples:
 
 ```sql
-SELECT least(1, 2, 3) result,  toTypeName(result) type;
+SELECT clamp(1, 2, 3) result,  toTypeName(result) type;
 ```
 ```response
 ┌─result─┬─type────┐
