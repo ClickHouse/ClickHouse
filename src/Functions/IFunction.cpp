@@ -258,10 +258,17 @@ ColumnPtr IExecutableFunction::executeWithoutLowCardinalityColumns(
     return res;
 }
 
-static void convertSparseColumnsToFull(ColumnsWithTypeAndName & args)
+static bool convertSparseColumnsToFull(ColumnsWithTypeAndName & args)
 {
+    bool converted = false;
     for (auto & column : args)
-        column.column = recursiveRemoveSparse(column.column);
+    {
+        auto old_column = column.column;
+        column.column = recursiveRemoveSparse(old_column);
+        if (old_column != column.column)
+            converted = true;
+    }
+    return converted;
 }
 
 ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
@@ -346,9 +353,6 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
             }
         }
 
-        if (num_sparse_columns == 0)
-            return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
-
         auto columns_without_sparse = arguments;
         if (num_sparse_columns == 1 && num_full_columns == 0)
         {
@@ -387,8 +391,14 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
             return ColumnSparse::create(res, sparse_offsets, input_rows_count);
         }
 
-        convertSparseColumnsToFull(columns_without_sparse);
-        return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
+        if (convertSparseColumnsToFull(columns_without_sparse))
+            return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
+        else
+        {
+            ColumnsWithTypeAndName().swap(columns_without_sparse);
+            return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
+
+        }
     }
     else if (use_default_implementation_for_sparse_columns)
     {
