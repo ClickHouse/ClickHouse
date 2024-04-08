@@ -4,6 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/assert_cast.h>
+#include <Common/memchrSmall.h>
 
 
 namespace DB
@@ -84,7 +85,7 @@ public:
 
         if (max_splits) [[unlikely]]
         {
-            if (max_substrings_includes_remaining_string) [[unlikely]]
+            if (max_substrings_includes_remaining_string)
             {
                 if (splits == *max_splits - 1)
                 {
@@ -98,7 +99,7 @@ public:
                    return false;
         }
 
-        pos = reinterpret_cast<Pos>(memchr(pos, separator, end - pos));
+        pos = reinterpret_cast<Pos>(memchrSmallAllowOverflow15(pos, separator, end - pos));
         if (pos)
         {
             token_end = pos;
