@@ -2179,7 +2179,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                         dest_table_storage->getStoragePolicy()->getName());
 
     // Use the same back-pressure (delay/throw) logic as for INSERTs to be consistent and avoid possibility of exceeding part limits using MOVE PARTITION queries
-    dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, query_context, true);
+    dest_table_storage->delayInsertOrThrowIfNeeded(nullptr, local_context, true);
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();
