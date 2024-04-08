@@ -43,8 +43,7 @@ def test_cluster(start_cluster):
 
 
 def test_global_in(start_cluster):
-
-    node1.query("CREATE TABLE u(uid Int16) ENGINE=Log as select 0");
+    node1.query("CREATE TABLE u(uid Int16) ENGINE=Log as select 0")
 
     assert set(
         node1.query(
