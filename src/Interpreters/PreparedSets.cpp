@@ -106,8 +106,9 @@ SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr & context)
         auto future_tables = context->getFutureTables({required_storage});
         if (!future_tables.empty())
         {
-            set->fillSetElements();
-            if (!materializeFutureTables(context, future_tables))
+            if (!set->hasExplicitSetElements())
+                set->fillSetElements();
+            if(!materializeFutureTables(context, future_tables))
                 return nullptr;
         }
     }

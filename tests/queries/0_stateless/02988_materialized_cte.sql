@@ -50,6 +50,8 @@ CREATE TABLE tm (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO tm SELECT * FROM numbers(1000000);
 WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(10)) SELECT * FROM tm WHERE x IN (SELECT c FROM t WHERE c > 5) ORDER BY x SETTINGS force_primary_key = 1;
 WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(5)) ENGINE=Set SELECT * FROM tm WHERE x IN (t) ORDER BY x SETTINGS force_primary_key = 1;
+-- Found crash by fuzzer
+WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(5) WHERE c > toLowCardinality(5) GROUP BY number) ENGINE = Set SELECT 5 FROM tm PREWHERE x IN (t) WHERE x IN (t) ORDER BY x ASC SETTINGS force_primary_key = 1;
 DROP TABLE tm;
 
 SELECT '-- Distributed queries';
@@ -118,6 +120,8 @@ CREATE TABLE tm (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO tm SELECT * FROM numbers(1000000);
 WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(10)) SELECT * FROM tm WHERE x IN (SELECT c FROM t WHERE c > 5) ORDER BY x SETTINGS force_primary_key = 1;
 WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(5)) ENGINE=Set SELECT * FROM tm WHERE x IN (t) ORDER BY x SETTINGS force_primary_key = 1;
+-- Found crash by fuzzer
+WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(5) WHERE c > toLowCardinality(5) GROUP BY number) ENGINE = Set SELECT 5 FROM tm PREWHERE x IN (t) WHERE x IN (t) ORDER BY x ASC SETTINGS force_primary_key = 1;
 DROP TABLE tm;
 
 SELECT '-- Distributed queries';
