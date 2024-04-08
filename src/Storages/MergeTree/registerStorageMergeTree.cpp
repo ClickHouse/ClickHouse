@@ -585,7 +585,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
         auto partition_key = metadata.partition_key.expression_list_ast->clone();
-        FunctionNameNormalizer().visit(partition_key.get());
+        FunctionNameNormalizer::visit(partition_key.get());
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
             columns, partition_key, minmax_columns, primary_key_asts, context));
@@ -694,7 +694,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
         auto partition_key = metadata.partition_key.expression_list_ast->clone();
-        FunctionNameNormalizer().visit(partition_key.get());
+        FunctionNameNormalizer::visit(partition_key.get());
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
             columns, partition_key, minmax_columns, primary_key_asts, context));

@@ -21,6 +21,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -35,6 +36,8 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 
 #include <Functions/IFunction.h>
@@ -1293,6 +1296,35 @@ struct JSONExtractTree
         std::unique_ptr<Node> value;
     };
 
+    class VariantNode : public Node
+    {
+    public:
+        VariantNode(std::vector<std::unique_ptr<Node>> variant_nodes_, std::vector<size_t> order_) : variant_nodes(std::move(variant_nodes_)), order(std::move(order_)) { }
+
+        bool insertResultToColumn(IColumn & dest, const Element & element) override
+        {
+            auto & column_variant = assert_cast<ColumnVariant &>(dest);
+            for (size_t i : order)
+            {
+                auto & variant = column_variant.getVariantByGlobalDiscriminator(i);
+                if (variant_nodes[i]->insertResultToColumn(variant, element))
+                {
+                    column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(i));
+                    column_variant.getOffsets().push_back(variant.size() - 1);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+    private:
+        std::vector<std::unique_ptr<Node>> variant_nodes;
+        /// Order in which we should try variants nodes.
+        /// For example, String should be always the last one.
+        std::vector<size_t> order;
+    };
+
     static std::unique_ptr<Node> build(const char * function_name, const DataTypePtr & type)
     {
         switch (type->getTypeId())
@@ -1368,6 +1400,16 @@ struct JSONExtractTree
 
                 const auto & value_type = map_type.getValueType();
                 return std::make_unique<MapNode>(build(function_name, key_type), build(function_name, value_type));
+            }
+            case TypeIndex::Variant:
+            {
+                const auto & variant_type = static_cast<const DataTypeVariant &>(*type);
+                const auto & variants = variant_type.getVariants();
+                std::vector<std::unique_ptr<Node>> variant_nodes;
+                variant_nodes.reserve(variants.size());
+                for (const auto & variant : variants)
+                    variant_nodes.push_back(build(function_name, variant));
+                return std::make_unique<VariantNode>(std::move(variant_nodes), SerializationVariant::getVariantsDeserializeTextOrder(variants));
             }
             default:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
