@@ -633,6 +633,36 @@ private:
     std::mutex cancel_mutex;
 };
 
+namespace
+{
+    std::optional<String> checkFileExistsAndCreateNewKeyIfNeeded(const ContextPtr & context, AzureObjectStorage * object_storage, const String & path, size_t sequence_number)
+    {
+        if (context->getSettingsRef().azure_truncate_on_insert || !object_storage->exists(StoredObject(path)))
+            return std::nullopt;
+
+        if (context->getSettingsRef().azure_create_new_file_on_insert)
+        {
+            auto pos = path.find_first_of('.');
+            String new_path;
+            do
+            {
+            new_path = path.substr(0, pos) + "." + std::to_string(sequence_number) + (pos == std::string::npos ? "" : path.substr(pos));
+                ++sequence_number;
+            }
+            while (object_storage->exists(StoredObject(new_path)));
+
+            return new_path;
+        }
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Object with key {} already exists. "
+            "If you want to overwrite it, enable setting azure_truncate_on_insert, if you "
+            "want to create a new file on each insert, enable setting azure_create_new_file_on_insert",
+            path);
+    }
+}
+
 class PartitionedStorageAzureBlobSink : public PartitionedSink, WithContext
 {
 public:
@@ -659,6 +689,8 @@ public:
     {
         auto partition_key = replaceWildcards(blob, partition_id);
         validateKey(partition_key);
+        if (auto new_path = checkFileExistsAndCreateNewKeyIfNeeded(getContext(), object_storage, partition_key, 1))
+            partition_key = *new_path;
 
         return std::make_shared<StorageAzureBlobSink>(
             format,
@@ -861,37 +893,8 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode", configuration.blob_path);
 
-        bool truncate_in_insert = local_context->getSettingsRef().azure_truncate_on_insert;
-
-        if (!truncate_in_insert && object_storage->exists(StoredObject(configuration.blob_path)))
-        {
-
-            if (local_context->getSettingsRef().azure_create_new_file_on_insert)
-            {
-                size_t index = configuration.blobs_paths.size();
-                const auto & first_key = configuration.blobs_paths[0];
-                auto pos = first_key.find_first_of('.');
-                String new_key;
-
-                do
-                {
-                    new_key = first_key.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : first_key.substr(pos));
-                    ++index;
-                }
-                while (object_storage->exists(StoredObject(new_key)));
-
-                configuration.blobs_paths.push_back(new_key);
-            }
-            else
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Object in bucket {} with key {} already exists. "
-                    "If you want to overwrite it, enable setting azure_truncate_on_insert, if you "
-                    "want to create a new file on each insert, enable setting azure_create_new_file_on_insert",
-                    configuration.container, configuration.blobs_paths.back());
-            }
-        }
+        if (auto new_path = checkFileExistsAndCreateNewKeyIfNeeded(local_context, object_storage.get(), configuration.blobs_paths.back(), configuration.blobs_paths.size()))
+            configuration.blobs_paths.push_back(*new_path);
 
         return std::make_shared<StorageAzureBlobSink>(
             configuration.format,

@@ -1343,3 +1343,54 @@ def test_parallel_read(cluster):
     )
     assert int(res) == 10000
     assert_logs_contain_with_retry(node, "AzureBlobStorage readBigAt read bytes")
+
+
+def test_respect_object_existence_on_partitioned_write(cluster):
+    node = cluster.instances["node"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write42.csv', '{account_name}', '{account_key}') select 42 settings azure_truncate_on_insert=1",
+    )
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write42.csv', '{account_name}', '{account_key}')",
+    )
+
+    assert int(result) == 42
+
+    error = azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 42 settings azure_truncate_on_insert=0",
+        expect_error="true",
+    )
+
+    assert "BAD_ARGUMENTS" in error
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 43 settings azure_truncate_on_insert=1",
+    )
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write42.csv', '{account_name}', '{account_key}')",
+    )
+
+    assert int(result) == 43
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 44 settings azure_truncate_on_insert=0, azure_create_new_file_on_insert=1",
+    )
+
+    result = azure_query(
+        node,
+        f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write42.1.csv', '{account_name}', '{account_key}')",
+    )
+
+    assert int(result) == 44
