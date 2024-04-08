@@ -29,11 +29,9 @@ namespace
 
 const std::unordered_set<std::string_view> & getObfuscateKeywords()
 {
-    static std::unordered_set<std::string_view> instance;
-
-    auto initialize = [&]() mutable
+    auto initialize = []()
     {
-        instance = {
+        std::unordered_set<std::string_view> instance = {
             "!=",
             "",
             "%",
@@ -64,12 +62,10 @@ const std::unordered_set<std::string_view> & getObfuscateKeywords()
 
         auto & global_keywords = getAllKeyWords();
         std::copy(global_keywords.begin(), global_keywords.end(), std::inserter(instance, instance.begin()));
-        return true;
+        return instance;
     };
 
-    static bool initialized = initialize();
-    (void) initialized;
-
+    static std::unordered_set<std::string_view> instance = initialize();
     return instance;
 };
 
