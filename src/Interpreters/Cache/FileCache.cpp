@@ -1458,10 +1458,13 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         }
         else
         {
-            LOG_WARNING(log, "Unable to modify size limit from {} to {}, "
-                        "elements limit from {} to {}",
-                        actual_settings.max_size, new_settings.max_size,
-                        actual_settings.max_elements, new_settings.max_elements);
+            LOG_WARNING(
+                log, "Unable to modify size limit from {} to {}, elements limit from {} to {}. "
+                "`max_size` and `max_elements` settings will remain inconsistent with config.xml. "
+                "Next attempt to update them will happen on the next config reload. "
+                "You can trigger it with SYSTEM RELOAD CONFIG.",
+                actual_settings.max_size, new_settings.max_size,
+                actual_settings.max_elements, new_settings.max_elements);
         }
     }
 
