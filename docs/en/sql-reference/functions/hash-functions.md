@@ -1077,8 +1077,6 @@ Result:
 
 ## wordShingleSimHashUTF8
 
-
-
 **Syntax**
 
 ```sql
