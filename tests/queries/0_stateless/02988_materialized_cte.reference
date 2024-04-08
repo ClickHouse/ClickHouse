@@ -127,7 +127,10 @@ DelayedPorts 2 → 1
 2	b
 3	c
 3	c
--- Same test but for analyzer
+-- Materialized CTE in scalar subquery
+10
+
+----- Same test but for analyzer -----
 -- Simple tests
 (DelayedMaterializingCTEs)
 DelayedPorts 4 → 2
@@ -247,3 +250,5 @@ DelayedPorts 2 → 1
 2	b
 3	c
 3	c
+-- Materialized CTE in scalar subquery
+10

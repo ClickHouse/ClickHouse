@@ -2067,6 +2067,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze;
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, subquery_context->getViewSource(), options);
+        materializeFutureTablesIfNeeded(context, context->getFutureTables(interpreter->getQueryPlan().getRequiredStorages()));
+        auto io = interpreter->execute();
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+        io.pipeline.setProgressCallback(context->getProgressCallback());
+        io.pipeline.setProcessListElement(context->getProcessListElement());
 
         if (only_analyze)
         {

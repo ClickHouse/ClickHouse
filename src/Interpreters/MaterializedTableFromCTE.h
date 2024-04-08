@@ -31,4 +31,6 @@ struct FutureTableFromCTE : public std::enable_shared_from_this<FutureTableFromC
 };
 using FutureTableFromCTEPtr = std::shared_ptr<FutureTableFromCTE>;
 using FutureTablesFromCTE = std::vector<FutureTableFromCTEPtr>;
+
+bool materializeFutureTablesIfNeeded(ContextPtr context, const FutureTablesFromCTE & required_future_tables);
 }

@@ -2,6 +2,10 @@
 #include <Interpreters/MaterializedTableFromCTE.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 
 namespace DB
 {
@@ -34,6 +38,46 @@ std::pair<std::unique_ptr<QueryPlan>, std::shared_future<bool>> FutureTableFromC
     }
 
     return {std::move(plan), fully_materialized};
+}
+
+bool materializeFutureTablesIfNeeded(ContextPtr context, const FutureTablesFromCTE & required_future_tables)
+{
+    std::vector<std::shared_future<bool>> promise_to_materialize_future_tables;
+    QueryPipelineBuilders pipeline_to_build_future_tables;
+    for (const auto & future_table : required_future_tables)
+    {
+        auto [plan, promise] = future_table->buildPlanOrGetPromiseToMaterialize(context);
+        if (plan)
+            pipeline_to_build_future_tables.emplace_back(plan->buildQueryPipeline(
+                QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
+
+        promise_to_materialize_future_tables.push_back(std::move(promise));
+    }
+
+    if (!pipeline_to_build_future_tables.empty())
+    {
+        QueryPipelineBuilder builder;
+        if (pipeline_to_build_future_tables.size() > 1)
+            builder = QueryPipelineBuilder::unitePipelines(
+                std::move(pipeline_to_build_future_tables), context->getSettingsRef().max_threads, nullptr);
+        else
+            builder = std::move(*pipeline_to_build_future_tables.front());
+
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        pipeline.complete(std::make_shared<EmptySink>(Block()));
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
+    }
+
+    bool all_table_fully_materialized = true;
+    for (auto & promise : promise_to_materialize_future_tables)
+    {
+        promise.wait();
+        if (const auto & materialized = promise.get(); !materialized)
+            all_table_fully_materialized = false;
+    }
+
+    return all_table_fully_materialized;
 }
 
 }

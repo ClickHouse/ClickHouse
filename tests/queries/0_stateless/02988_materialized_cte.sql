@@ -74,8 +74,14 @@ SELECT key, value FROM fact_dist LEFT JOIN t ON fact_dist.key = t.c ORDER BY key
 DROP TABLE IF EXISTS fact_local;
 DROP TABLE IF EXISTS fact_dist;
 
-SELECT '-- Same test but for analyzer';
+SELECT '-- Materialized CTE in scalar subquery';
+WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(10)), (SELECT max(c) FROM t) AS scalar
+SELECT scalar + 1;
+
+SELECT '';
+SELECT '----- Same test but for analyzer -----';
 SET allow_experimental_analyzer = 1;
+
 SELECT '-- Simple tests';
 EXPLAIN PIPELINE
 WITH t1 AS MATERIALIZED (SELECT number AS c FROM numbers(5)), t2 AS MATERIALIZED (SELECT number AS c FROM numbers(5))
@@ -143,3 +149,7 @@ WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(5))
 SELECT key, value FROM fact_dist LEFT JOIN t ON fact_dist.key = t.c ORDER BY key, value;
 DROP TABLE IF EXISTS fact_local;
 DROP TABLE IF EXISTS fact_dist;
+
+SELECT '-- Materialized CTE in scalar subquery';
+WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(10)), (SELECT max(c) FROM t) AS scalar
+SELECT scalar + 1;
