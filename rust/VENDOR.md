@@ -1,17 +1,24 @@
-Each included library is treated independently (it'd be simpler to have them in a common rust project) and for each we need to save both the dependencies and the registry (so it's possible to build without registry).
+As we have multiple projects we use a workspace to manage them (it's way simpler and leads to less issues). In order
+to vendor all the dependencies we need to store both the registry and the packages themselves.
 
-To do this we use the `cargo-local-registry` utility (this requires a modern toolchain)
+* First step: (Re)-generate the Cargo.lock file (run under `workspace/`)
 
+```bash
+$ cargo generate-lockfile
+```
+
+* Generate the local registry:
+
+To install the tool if you don't already have it:
 ```bash
 cargo install --version 0.2.6 cargo-local-registry
 ```
 
-From this directory, save each library independently:
+Now run:
 
 ```bash
-cargo local-registry --git --sync prql/Cargo.lock ../contrib/rust_vendor/prql
-cargo local-registry --git --sync skim/Cargo.lock ../contrib/rust_vendor/skim
-# For skim we need to run an additional vendor to get the github patch. Awful stuff
-cd skim
-cargo vendor --no-delete --locked ../../contrib/rust_vendor/skim
+cargo local-registry --git --sync Cargo.lock ../../contrib/rust_vendor
+cargo vendor --no-delete --locked ../../contrib/rust_vendor
 ```
+
+Note that we use both commands to vendor both registry and crates. No idea why both are necessary.
