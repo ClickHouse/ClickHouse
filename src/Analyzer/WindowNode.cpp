@@ -1,11 +1,9 @@
 #include <Analyzer/WindowNode.h>
-
-#include <Common/SipHash.h>
-
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
