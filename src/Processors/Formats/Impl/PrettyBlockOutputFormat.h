@@ -59,8 +59,6 @@ protected:
 
     bool color;
 
-    bool isNumberOrNullableNumber(const ColumnWithTypeAndName & column_with_type_and_name);
-
 private:
     bool readable_number_tip = false;
     bool mono_block;

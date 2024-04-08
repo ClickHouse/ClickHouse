@@ -173,9 +173,9 @@ void PrettyCompactBlockOutputFormat::writeRow(
         if (j != 0)
             writeCString(grid_symbols.bar, out);
 
-        const auto & type = *header.getByPosition(j).type;
+        const auto & type = header.getByPosition(j).type;
         const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
-        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumberOrNullableNumber(header.getByPosition(j)));
+        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(removeNullable(type)));
     }
 
     writeCString(grid_symbols.bar, out);

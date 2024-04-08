@@ -7,6 +7,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -16,7 +17,7 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, bool color_)
      : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), color(color_), mono_block(mono_block_)
 {
-    readable_number_tip = header_.getColumns().size() == 1 && isNumberOrNullableNumber(header_.getByPosition(0));
+    readable_number_tip = header_.getColumns().size() == 1 &&  WhichDataType(removeNullable(header_.getDataTypes()[0])).isNumber();
 }
 
 
@@ -307,10 +308,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         {
             if (j != 0)
                 writeCString(grid_symbols.bar, out);
-            const auto & type = *header.getByPosition(j).type;
+            const auto & type = header.getByPosition(j).type;
             writeValueWithPadding(*columns[j], *serializations[j], i,
                 widths[j].empty() ? max_widths[j] : widths[j][i],
-                max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumberOrNullableNumber(header.getByPosition(j)));
+                max_widths[j], cut_to_width, type->shouldAlignRightInPrettyFormats(), isNumber(removeNullable(type)));
         }
 
         writeCString(grid_symbols.bar, out);
@@ -447,17 +448,6 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         write_padding();
     }
 }
-
-bool PrettyBlockOutputFormat::isNumberOrNullableNumber(const ColumnWithTypeAndName & column_with_type_and_name)
-{
-    if (column_with_type_and_name.type->isNullable())
-    {
-        const auto nested_col = checkAndGetColumn<ColumnNullable>(*column_with_type_and_name.column)->getNestedColumnPtr();
-        return isNumber(nested_col->getDataType());
-    }
-    return isNumber(column_with_type_and_name.type);
-}
-
 
 void PrettyBlockOutputFormat::consume(Chunk chunk)
 {

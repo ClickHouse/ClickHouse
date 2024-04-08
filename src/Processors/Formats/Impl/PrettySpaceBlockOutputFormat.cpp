@@ -3,6 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/Impl/PrettySpaceBlockOutputFormat.h>
 #include <Common/PODArray.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -90,10 +91,10 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             if (column != 0)
                 writeCString(" ", out);
 
-            const auto & type = *header.getByPosition(column).type;
+            const auto & type = header.getByPosition(column).type;
             auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
             writeValueWithPadding(
-                *columns[column], *serializations[column], row, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumberOrNullableNumber(header.getByPosition(column)));
+                *columns[column], *serializations[column], row, cur_width, max_widths[column], cut_to_width, type->shouldAlignRightInPrettyFormats(), isNumber(removeNullable(type)));
         }
 
         writeReadableNumberTip(chunk);
