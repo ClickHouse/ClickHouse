@@ -106,9 +106,9 @@ public:
             const ColumnString::Chars & src_chars = col_str->getChars();
             const ColumnString::Offsets & src_offsets = col_str->getOffsets();
 
-            res_offsets.reserve(src_offsets.size());
+            res_offsets.resize_exact(src_offsets.size());
             res_strings_offsets.reserve(src_offsets.size() * 5);    /// Constant 5 - at random.
-            res_strings_chars.reserve(src_chars.size());
+            res_strings_chars.reserve_exact(src_chars.size());
 
             Pos token_begin = nullptr;
             Pos token_end = nullptr;
@@ -129,7 +129,7 @@ public:
                 {
                     size_t token_size = token_end - token_begin;
 
-                    res_strings_chars.resize(res_strings_chars.size() + token_size + 1);
+                    res_strings_chars.resize_assume_reserved(res_strings_chars.size() + token_size + 1);
                     memcpySmallAllowReadWriteOverflow15(&res_strings_chars[current_dst_strings_offset], token_begin, token_size);
                     res_strings_chars[current_dst_strings_offset + token_size] = 0;
 
@@ -139,7 +139,7 @@ public:
                 }
 
                 current_dst_offset += j;
-                res_offsets.push_back(current_dst_offset);
+                res_offsets[i] = current_dst_offset;
             }
 
             return col_res;

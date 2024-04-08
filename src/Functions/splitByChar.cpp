@@ -77,14 +77,14 @@ public:
 
     bool get(Pos & token_begin, Pos & token_end)
     {
-        if (!pos)
+        if (!pos) [[unlikely]]
             return false;
 
         token_begin = pos;
 
-        if (max_splits)
+        if (max_splits) [[unlikely]]
         {
-            if (max_substrings_includes_remaining_string)
+            if (max_substrings_includes_remaining_string) [[unlikely]]
             {
                 if (splits == *max_splits - 1)
                 {
