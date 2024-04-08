@@ -1392,7 +1392,7 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
-            const auto max_parsing_threads = std::max<size_t>(settings.max_threads / file_num, 1UL);
+            const auto max_parsing_threads = std::max<size_t>(settings.max_parsing_threads / file_num, 1UL);
             input_format = FormatFactory::instance().getInput(
                 storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
                 max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
