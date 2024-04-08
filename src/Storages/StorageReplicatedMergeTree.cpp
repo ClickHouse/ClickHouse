@@ -5289,6 +5289,7 @@ void StorageReplicatedMergeTree::partialShutdown()
         auto merge_lock = merger_mutator.merges_blocker.cancel();
         auto move_lock = parts_mover.moves_blocker.cancel();
         background_operations_assignee.finish();
+        background_streaming_assignee.finish();
     }
 
     LOG_TRACE(log, "Threads finished");
@@ -5322,6 +5323,8 @@ void StorageReplicatedMergeTree::shutdown(bool)
     partialShutdown();
 
     part_moves_between_shards_orchestrator.shutdown();
+
+    /// TODO Cursors: add blocker?
 
     {
         auto lock = queue.lockQueue();
@@ -8663,6 +8666,7 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         background_moves_assignee.trigger();
     else if (action_type == ActionLocks::Cleanup)
         cleanup_thread.wakeup();
+    /// TODO Cursors: add action lock?
 }
 
 bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas)

@@ -152,6 +152,7 @@ void StorageMergeTree::startup()
     try
     {
         background_operations_assignee.start();
+        background_streaming_assignee.start();
         startBackgroundMovesIfNeeded();
         startOutdatedDataPartsLoadingTask();
     }
@@ -190,7 +191,10 @@ void StorageMergeTree::shutdown(bool)
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
+    /// TODO Cursors: add blocker?
+
     background_operations_assignee.finish();
+    background_streaming_assignee.finish();
     background_moves_assignee.finish();
 
     if (deduplication_log)
@@ -2283,6 +2287,7 @@ void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
         background_operations_assignee.trigger();
     else if (action_type == ActionLocks::PartsMove)
         background_moves_assignee.trigger();
+    /// TODO Cursors: add lock action?
 }
 
 IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(

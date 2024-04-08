@@ -90,6 +90,7 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
         changeable_settings.insert({"background_move_pool_size", {std::to_string(context->getMovesExecutor()->getMaxThreads()), ChangeableWithoutRestart::IncreaseOnly}});
         changeable_settings.insert({"background_fetches_pool_size", {std::to_string(context->getFetchesExecutor()->getMaxThreads()), ChangeableWithoutRestart::IncreaseOnly}});
         changeable_settings.insert({"background_common_pool_size", {std::to_string(context->getCommonExecutor()->getMaxThreads()), ChangeableWithoutRestart::IncreaseOnly}});
+        changeable_settings.insert({"background_streaming_pool_size", {std::to_string(context->getStreamingExecutor()->getMaxThreads()), ChangeableWithoutRestart::IncreaseOnly}});
     }
 
     const auto & config = context->getConfigRef();

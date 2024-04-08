@@ -83,6 +83,12 @@ bool BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, b
     return schedule_res;
 }
 
+bool BackgroundJobsAssignee::scheduleStreamingTask(ExecutableTaskPtr streaming_task)
+{
+    bool res = getContext()->getStreamingExecutor()->trySchedule(streaming_task);
+    res ? trigger() : postpone();
+    return res;
+}
 
 String BackgroundJobsAssignee::toString(Type type)
 {
@@ -92,6 +98,8 @@ String BackgroundJobsAssignee::toString(Type type)
             return "DataProcessing";
         case Type::Moving:
             return "Moving";
+        case Type::Streaming:
+            return "Streaming";
     }
     UNREACHABLE();
 }
@@ -118,6 +126,7 @@ void BackgroundJobsAssignee::finish()
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        getContext()->getStreamingExecutor()->removeTasksCorrespondingToStorage(storage_id);
     }
 }
 
@@ -133,6 +142,9 @@ try
             break;
         case Type::Moving:
             succeed = data.scheduleDataMovingJob(*this);
+            break;
+        case Type::Streaming:
+            succeed = data.scheduleStreamingJob(*this);
             break;
     }
 

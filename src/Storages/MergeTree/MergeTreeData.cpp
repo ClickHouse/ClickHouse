@@ -360,6 +360,7 @@ MergeTreeData::MergeTreeData(
     , parts_mover(this)
     , background_operations_assignee(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
     , background_moves_assignee(*this, BackgroundJobsAssignee::Type::Moving, getContext())
+    , background_streaming_assignee(*this, BackgroundJobsAssignee::Type::Streaming, getContext())
 {
     context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
 
@@ -427,6 +428,14 @@ MergeTreeData::MergeTreeData(
             background_moves_assignee.postpone();
         else
             background_moves_assignee.trigger();
+    };
+
+    streaming_assignee_trigger = [this] (bool delay) noexcept
+    {
+        if (delay)
+            background_streaming_assignee.postpone();
+        else
+            background_streaming_assignee.trigger();
     };
 }
 
@@ -6625,6 +6634,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
         });
     }
+
+    if (data.subscription_manager.getSubscriptionsCount() > 0)
+        data.background_streaming_assignee.trigger();
 
     clear();
 
