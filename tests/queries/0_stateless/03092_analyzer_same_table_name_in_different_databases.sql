@@ -1,18 +1,18 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/61947
 SET allow_experimental_analyzer=1;
 
-DROP DATABASE IF EXISTS d3;
-DROP DATABASE IF EXISTS d4;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE DATABASE d3;
-CREATE DATABASE d4;
-CREATE TABLE d3.`1-1` (field Int8) ENGINE = Memory;
-CREATE TABLE d4.`2-1` (field Int8) ENGINE = Memory;
-CREATE TABLE d4.`3-1` (field Int8) ENGINE = Memory;
+CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.`1-1` (field Int8) ENGINE = Memory;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.`2-1` (field Int8) ENGINE = Memory;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.`3-1` (field Int8) ENGINE = Memory;
 
-INSERT INTO d3.`1-1` VALUES (1);
+INSERT INTO {CLICKHOUSE_DATABASE:Identifier}.`1-1` VALUES (1);
 
-SELECT d3.`1-1`.*
-FROM d3.`1-1`
-LEFT JOIN d4.`2-1` ON d3.`1-1`.field = d4.`2-1`.field
-LEFT JOIN d4.`3-1` ON d4.`2-1`.field = d4.`3-1`.field;
+SELECT {CLICKHOUSE_DATABASE:Identifier}.`1-1`.*
+FROM {CLICKHOUSE_DATABASE:Identifier}.`1-1`
+LEFT JOIN {CLICKHOUSE_DATABASE_1:Identifier}.`2-1` ON {CLICKHOUSE_DATABASE:Identifier}.`1-1`.field = {CLICKHOUSE_DATABASE_1:Identifier}.`2-1`.field
+LEFT JOIN {CLICKHOUSE_DATABASE_1:Identifier}.`3-1` ON {CLICKHOUSE_DATABASE_1:Identifier}.`2-1`.field = {CLICKHOUSE_DATABASE_1:Identifier}.`3-1`.field;
