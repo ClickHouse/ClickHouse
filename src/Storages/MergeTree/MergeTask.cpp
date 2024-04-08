@@ -504,7 +504,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::constructTaskForProjectionPart
 }
 
 
-bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections()
+bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() // NOLINT
 {
     /// In case if there are no projections we didn't construct a task
     if (!ctx->merge_projection_parts_task_ptr)
