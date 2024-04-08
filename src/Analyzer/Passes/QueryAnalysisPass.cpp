@@ -2275,57 +2275,62 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
   */
 void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
 {
-    auto & node_list_typed = node_list->as<ListNode &>();
-
-    for (auto & node : node_list_typed.getNodes())
+    const auto & settings = scope.context->getSettingsRef();
+    if (settings.enable_positional_arguments && scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
-        auto * node_to_replace = &node;
+        auto & node_list_typed = node_list->as<ListNode &>();
 
-        if (auto * sort_node = node->as<SortNode>())
-            node_to_replace = &sort_node->getExpression();
-
-        auto * constant_node = (*node_to_replace)->as<ConstantNode>();
-
-        if (!constant_node
-            || (constant_node->getValue().getType() != Field::Types::UInt64 && constant_node->getValue().getType() != Field::Types::Int64))
-            continue;
-
-        UInt64 pos;
-        if (constant_node->getValue().getType() == Field::Types::UInt64)
+        for (auto & node : node_list_typed.getNodes())
         {
-            pos = constant_node->getValue().get<UInt64>();
-        }
-        else // Int64
-        {
-            auto value = constant_node->getValue().get<Int64>();
-            if (value > 0)
-                pos = value;
-            else
+            auto * node_to_replace = &node;
+
+            if (auto * sort_node = node->as<SortNode>())
+                node_to_replace = &sort_node->getExpression();
+
+            auto * constant_node = (*node_to_replace)->as<ConstantNode>();
+
+            if (!constant_node
+                || (constant_node->getValue().getType() != Field::Types::UInt64
+                    && constant_node->getValue().getType() != Field::Types::Int64))
+                continue;
+
+            UInt64 pos;
+            if (constant_node->getValue().getType() == Field::Types::UInt64)
             {
-                if (static_cast<size_t>(std::abs(value)) > projection_nodes.size())
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Negative positional argument number {} is out of bounds. Expected in range [-{}, -1]. In scope {}",
-                        value,
-                        projection_nodes.size(),
-                        scope.scope_node->formatASTForErrorMessage());
-                pos = projection_nodes.size() + value + 1;
+                pos = constant_node->getValue().get<UInt64>();
             }
-        }
+            else // Int64
+            {
+                auto value = constant_node->getValue().get<Int64>();
+                if (value > 0)
+                    pos = value;
+                else
+                {
+                    if (static_cast<size_t>(std::abs(value)) > projection_nodes.size())
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Negative positional argument number {} is out of bounds. Expected in range [-{}, -1]. In scope {}",
+                            value,
+                            projection_nodes.size(),
+                            scope.scope_node->formatASTForErrorMessage());
+                    pos = projection_nodes.size() + value + 1;
+                }
+            }
 
-        if (!pos || pos > projection_nodes.size())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Positional argument number {} is out of bounds. Expected in range [1, {}]. In scope {}",
-                pos,
-                projection_nodes.size(),
-                scope.scope_node->formatASTForErrorMessage());
+            if (!pos || pos > projection_nodes.size())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Positional argument number {} is out of bounds. Expected in range [1, {}]. In scope {}",
+                    pos,
+                    projection_nodes.size(),
+                    scope.scope_node->formatASTForErrorMessage());
 
-        --pos;
-        *node_to_replace = projection_nodes[pos]->clone();
-        if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())
-        {
-            resolved_expressions[*node_to_replace] = it->second;
+            --pos;
+            *node_to_replace = projection_nodes[pos]->clone();
+            if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())
+            {
+                resolved_expressions[*node_to_replace] = it->second;
+            }
         }
     }
 }
@@ -6674,15 +6679,12 @@ void expandTuplesInList(QueryTreeNodes & key_list)
   */
 void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
 {
-    const auto & settings = scope.context->getSettingsRef();
-
     if (query_node_typed.isGroupByWithGroupingSets())
     {
         QueryTreeNodes nullable_group_by_keys;
         for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
         {
-            if (settings.enable_positional_arguments && scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-                replaceNodesWithPositionalArguments(grouping_sets_keys_list_node, query_node_typed.getProjection().getNodes(), scope);
+            replaceNodesWithPositionalArguments(grouping_sets_keys_list_node, query_node_typed.getProjection().getNodes(), scope);
 
             // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
             // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
@@ -6701,8 +6703,7 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     }
     else
     {
-        if (settings.enable_positional_arguments && scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-            replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
+        replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
 
         // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
         // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
@@ -7853,8 +7854,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.isCTE())
         cte_in_resolve_process.insert(query_node_typed.getCTEName());
 
-    const auto & settings = scope.context->getSettingsRef();
-
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
 
     if (query_node_typed.isGroupByWithGroupingSets()
@@ -8038,8 +8037,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasOrderBy())
     {
-        if (settings.enable_positional_arguments && scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-            replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
+        replaceNodesWithPositionalArguments(query_node_typed.getOrderByNode(), query_node_typed.getProjection().getNodes(), scope);
+
+        const auto & settings = scope.context->getSettingsRef();
 
         expandOrderByAll(query_node_typed, settings);
         resolveSortNodeList(query_node_typed.getOrderByNode(), scope);
@@ -8062,8 +8062,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasLimitBy())
     {
-        if (settings.enable_positional_arguments && scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-            replaceNodesWithPositionalArguments(query_node_typed.getLimitByNode(), query_node_typed.getProjection().getNodes(), scope);
+        replaceNodesWithPositionalArguments(query_node_typed.getLimitByNode(), query_node_typed.getProjection().getNodes(), scope);
 
         resolveExpressionNodeList(query_node_typed.getLimitByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
