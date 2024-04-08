@@ -35,10 +35,32 @@ struct ASTWindowDefinition;
  * queries, so you want to feed it a lot of queries to get some interesting mix
  * of them. Normally we feed SQL regression tests to it.
  */
-struct QueryFuzzer
+class QueryFuzzer
 {
-    pcg64 fuzz_rand{randomSeed()};
-    bool debug_output = true;
+public:
+
+    QueryFuzzer(pcg64 fuzz_rand_ = randomSeed(), std::ostream * out_stream_ = &std::cout, std::ostream * debug_stream_ = &std::cerr)
+        : fuzz_rand(fuzz_rand_)
+        , out_stream(out_stream_)
+        , debug_stream(debug_stream_)
+    {
+    }
+
+    // This is the only function you have to call -- it will modify the passed
+    // ASTPtr to point to new AST with some random changes.
+    void fuzzMain(ASTPtr & ast);
+
+    ASTs getInsertQueriesForFuzzedTables(const String & full_query);
+    ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
+    void notifyQueryFailed(ASTPtr ast);
+
+    static bool isSuitableForFuzzing(const ASTCreateQuery & create);
+
+private:
+    pcg64 fuzz_rand;
+
+    std::ostream * out_stream = nullptr;
+    std::ostream * debug_stream = nullptr;
 
     // We add elements to expression lists with fixed probability. Some elements
     // are so large, that the expected number of elements we add to them is
@@ -67,10 +89,6 @@ struct QueryFuzzer
     std::unordered_map<std::string, size_t> index_of_fuzzed_table;
     std::set<IAST::Hash> created_tables_hashes;
 
-    // This is the only function you have to call -- it will modify the passed
-    // ASTPtr to point to new AST with some random changes.
-    void fuzzMain(ASTPtr & ast);
-
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
     Field fuzzField(Field field);
@@ -78,9 +96,6 @@ struct QueryFuzzer
     ASTPtr getRandomExpressionList();
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
-    ASTs getInsertQueriesForFuzzedTables(const String & full_query);
-    ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
-    void notifyQueryFailed(ASTPtr ast);
     void replaceWithColumnLike(ASTPtr & ast);
     void replaceWithTableLike(ASTPtr & ast);
     void fuzzOrderByElement(ASTOrderByElement * elem);
@@ -103,8 +118,6 @@ struct QueryFuzzer
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
-
-    static bool isSuitableForFuzzing(const ASTCreateQuery & create);
 };
 
 }

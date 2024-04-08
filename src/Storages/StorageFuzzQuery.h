@@ -35,8 +35,6 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
-
     static StorageFuzzQuery::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
 
 private:
@@ -54,8 +52,8 @@ public:
         , block_header(std::move(block_header_))
         , config(config_)
         , query(query_)
+        , fuzzer(config_.random_seed, /* out_stream= */ nullptr, /* debug_stream= */ nullptr)
     {
-        fuzzer.fuzz_rand = config_.random_seed;
     }
 
     String getName() const override { return "FuzzQuery"; }

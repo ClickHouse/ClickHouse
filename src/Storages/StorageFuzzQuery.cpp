@@ -30,15 +30,28 @@ ColumnPtr FuzzQuerySource::createColumn()
     offsets_to.resize(block_size);
     IColumn::Offset offset = 0;
 
-    for (size_t row_num = 0; row_num < block_size; ++row_num)
+    auto fuzz_base = query;
+    size_t row_num = 0;
+
+    while (row_num < block_size)
     {
-        ASTPtr new_query = query->clone();
+        ASTPtr new_query = fuzz_base->clone();
+
+        auto base_before_fuzz = fuzz_base->formatForErrorMessage();
         fuzzer.fuzzMain(new_query);
+        auto fuzzed_text = new_query->formatForErrorMessage();
 
         WriteBufferFromOwnString out;
         formatAST(*new_query, out, false);
         auto data = out.str();
         size_t data_len = data.size();
+
+        /// AST is too long, will start from the original query.
+        if (data_len > 500)
+        {
+            fuzz_base = query;
+            continue;
+        }
 
         IColumn::Offset next_offset = offset + data_len + 1;
         data_to.resize(next_offset);
@@ -49,6 +62,8 @@ ColumnPtr FuzzQuerySource::createColumn()
         offsets_to[row_num] = next_offset;
 
         offset = next_offset;
+        fuzz_base = new_query;
+        ++row_num;
     }
 
     return column;
@@ -99,52 +114,30 @@ Pipe StorageFuzzQuery::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-static constexpr std::array<std::string_view, 2> optional_configuration_keys = {"query_str", "random_seed"};
-
-void StorageFuzzQuery::processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection)
-{
-    validateNamedCollection(
-        collection,
-        std::unordered_set<std::string>(),
-        std::unordered_set<std::string>(optional_configuration_keys.begin(), optional_configuration_keys.end()));
-
-    if (collection.has("query"))
-        configuration.query = collection.get<String>("query");
-
-    if (collection.has("random_seed"))
-        configuration.random_seed = collection.get<UInt64>("random_seed");
-}
-
 StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine_args, ContextPtr local_context)
 {
     StorageFuzzQuery::Configuration configuration{};
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
+    // Supported signatures:
+    //
+    // FuzzQuery('query')
+    // FuzzQuery('query', 'random_seed')
+    if (engine_args.empty() || engine_args.size() > 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "FuzzQuery requires 1 to 2 arguments: query, random_seed");
+
+    for (auto & engine_arg : engine_args)
+        engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
+
+    auto first_arg = checkAndGetLiteralArgument<String>(engine_args[0], "query");
+    configuration.query = std::move(first_arg);
+
+    if (engine_args.size() == 2)
     {
-        StorageFuzzQuery::processNamedCollectionResult(configuration, *named_collection);
+        const auto & literal = engine_args[1]->as<const ASTLiteral &>();
+        if (!literal.value.isNull())
+            configuration.random_seed = checkAndGetLiteralArgument<UInt64>(literal, "random_seed");
     }
-    else
-    {
-        // Supported signatures:
-        //
-        // FuzzQuery('query')
-        // FuzzQuery('query', 'random_seed')
-        if (engine_args.empty() || engine_args.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "FuzzQuery requires 1 to 2 arguments: query, random_seed");
 
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
-
-        auto first_arg = checkAndGetLiteralArgument<String>(engine_args[0], "query");
-        configuration.query = std::move(first_arg);
-
-        if (engine_args.size() == 2)
-        {
-            const auto & literal = engine_args[1]->as<const ASTLiteral &>();
-            if (!literal.value.isNull())
-                configuration.random_seed = checkAndGetLiteralArgument<UInt64>(literal, "random_seed");
-        }
-    }
     return configuration;
 }
 

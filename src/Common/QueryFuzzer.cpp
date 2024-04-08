@@ -164,8 +164,8 @@ Field QueryFuzzer::fuzzField(Field field)
         {
             size_t pos = fuzz_rand() % arr.size();
             arr.erase(arr.begin() + pos);
-            if (debug_output)
-                std::cerr << "erased\n";
+            if (debug_stream)
+                *debug_stream << "erased\n";
         }
 
         if (fuzz_rand() % 5 == 0)
@@ -174,14 +174,14 @@ Field QueryFuzzer::fuzzField(Field field)
             {
                 size_t pos = fuzz_rand() % arr.size();
                 arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
-                if (debug_output)
-                    std::cerr << fmt::format("inserted (pos {})\n", pos);
+                if (debug_stream)
+                    *debug_stream << fmt::format("inserted (pos {})\n", pos);
             }
             else
             {
                 arr.insert(arr.begin(), getRandomField(0));
-                if (debug_output)
-                    std::cerr << "inserted (0)\n";
+                if (debug_stream)
+                    *debug_stream << "inserted (0)\n";
             }
 
         }
@@ -200,8 +200,8 @@ Field QueryFuzzer::fuzzField(Field field)
             size_t pos = fuzz_rand() % arr.size();
             arr.erase(arr.begin() + pos);
 
-            if (debug_output)
-                std::cerr << "erased\n";
+            if (debug_stream)
+                *debug_stream << "erased\n";
         }
 
         if (fuzz_rand() % 5 == 0)
@@ -211,15 +211,15 @@ Field QueryFuzzer::fuzzField(Field field)
                 size_t pos = fuzz_rand() % arr.size();
                 arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
 
-                if (debug_output)
-                    std::cerr << fmt::format("inserted (pos {})\n", pos);
+                if (debug_stream)
+                    *debug_stream << fmt::format("inserted (pos {})\n", pos);
             }
             else
             {
                 arr.insert(arr.begin(), getRandomField(0));
 
-                if (debug_output)
-                    std::cerr << "inserted (0)\n";
+                if (debug_stream)
+                    *debug_stream << "inserted (0)\n";
             }
 
         }
@@ -352,8 +352,8 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast)
         }
         else
         {
-            if (debug_output)
-                std::cerr << "No random column.\n";
+            if (debug_stream)
+                *debug_stream << "No random column.\n";
         }
     }
 
@@ -387,8 +387,8 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
         if (col)
             impl->children.insert(pos, col);
         else
-            if (debug_output)
-                std::cerr << "No random column.\n";
+            if (debug_stream)
+                *debug_stream << "No random column.\n";
     }
 
     // We don't have to recurse here to fuzz the children, this is handled by
@@ -1370,14 +1370,14 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     collectFuzzInfoMain(ast);
     fuzz(ast);
 
-    if (debug_output)
+    if (out_stream)
     {
-        std::cout << std::endl;
+        *out_stream << std::endl;
 
-        WriteBufferFromOStream ast_buf(std::cout, 4096);
+        WriteBufferFromOStream ast_buf(*out_stream, 4096);
         formatAST(*ast, ast_buf, false /*highlight*/);
         ast_buf.finalize();
-        std::cout << std::endl << std::endl;
+        *out_stream << std::endl << std::endl;
     }
 }
 
