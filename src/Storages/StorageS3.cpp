@@ -1307,11 +1307,6 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
         if (query_configuration.withGlobs())
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "S3 key '{}' contains globs, so the table is in readonly mode", query_configuration.url.key);
-<<<<<<< Updated upstream
-
-        bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
-=======
->>>>>>> Stashed changes
 
         if (auto new_key = checkFileExistsAndCreateNewKeyIfNeeded(local_context, configuration, query_configuration.keys.back(), query_configuration.keys.size()))
         {
