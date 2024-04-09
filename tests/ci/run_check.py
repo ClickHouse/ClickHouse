@@ -201,14 +201,17 @@ def main():
 
     ci_report_url = create_ci_report(pr_info, [])
     print("::notice ::Can run")
-    post_commit_status(
-        commit,
-        PENDING,
-        ci_report_url,
-        description,
-        CI_STATUS_NAME,
-        pr_info,
-    )
+
+    if not pr_info.is_merge_queue():
+        # we need clean CI status for MQ to merge (no pending statuses)
+        post_commit_status(
+            commit,
+            PENDING,
+            ci_report_url,
+            description,
+            CI_STATUS_NAME,
+            pr_info,
+        )
 
 
 if __name__ == "__main__":

@@ -766,6 +766,82 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;
 
+    double read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = settings.merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability;
+    std::bernoulli_distribution fault(read_split_ranges_into_intersecting_and_non_intersecting_injection_probability);
+
+    if (read_type != ReadType::ParallelReplicas &&
+        num_streams > 1 &&
+        read_split_ranges_into_intersecting_and_non_intersecting_injection_probability > 0.0 &&
+        fault(thread_local_rng) &&
+        !isQueryWithFinal() &&
+        data.merging_params.is_deleted_column.empty() &&
+        !prewhere_info)
+    {
+        NameSet column_names_set(column_names.begin(), column_names.end());
+        Names in_order_column_names_to_read(column_names);
+
+        /// Add columns needed to calculate the sorting expression
+        for (const auto & column_name : metadata_for_reading->getColumnsRequiredForSortingKey())
+        {
+            if (column_names_set.contains(column_name))
+                continue;
+
+            in_order_column_names_to_read.push_back(column_name);
+            column_names_set.insert(column_name);
+        }
+
+        auto in_order_reading_step_getter = [this, &in_order_column_names_to_read, &info](auto parts)
+        {
+            return this->read(
+                std::move(parts),
+                in_order_column_names_to_read,
+                ReadType::InOrder,
+                1 /* num_streams */,
+                0 /* min_marks_for_concurrent_read */,
+                info.use_uncompressed_cache);
+        };
+
+        auto sorting_expr = std::make_shared<ExpressionActions>(metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
+
+        SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
+            metadata_for_reading->getPrimaryKey(),
+            std::move(sorting_expr),
+            std::move(parts_with_ranges),
+            num_streams,
+            context,
+            std::move(in_order_reading_step_getter),
+            true /*split_parts_ranges_into_intersecting_and_non_intersecting_final*/,
+            true /*split_intersecting_parts_ranges_into_layers*/);
+
+        auto merging_pipes = std::move(split_ranges_result.merging_pipes);
+        auto non_intersecting_parts_ranges_read_pipe = read(std::move(split_ranges_result.non_intersecting_parts_ranges),
+            column_names,
+            read_type,
+            num_streams,
+            info.min_marks_for_concurrent_read,
+            info.use_uncompressed_cache);
+
+        if (merging_pipes.empty())
+            return non_intersecting_parts_ranges_read_pipe;
+
+        Pipes pipes;
+        pipes.resize(2);
+        pipes[0] = Pipe::unitePipes(std::move(merging_pipes));
+        pipes[1] = std::move(non_intersecting_parts_ranges_read_pipe);
+
+        auto conversion_action = ActionsDAG::makeConvertingActions(
+            pipes[0].getHeader().getColumnsWithTypeAndName(),
+            pipes[1].getHeader().getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+        pipes[0].addSimpleTransform(
+            [conversion_action](const Block & header)
+            {
+                auto converting_expr = std::make_shared<ExpressionActions>(conversion_action);
+                return std::make_shared<ExpressionTransform>(header, converting_expr);
+            });
+        return Pipe::unitePipes(std::move(pipes));
+    }
+
     return read(std::move(parts_with_ranges),
         column_names,
         read_type,
@@ -1332,8 +1408,8 @@ static void buildIndexes(
     if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
-        auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
-        auto minmax_expression_actions = data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
+        auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+        auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
 
         indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions);
         indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);

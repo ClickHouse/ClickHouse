@@ -98,7 +98,7 @@ public:
 
     bool supportUpdates() const override { return false; }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<CacheDictionary>(
                 getDictionaryID(),

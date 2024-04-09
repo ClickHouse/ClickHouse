@@ -490,14 +490,7 @@ bool HTTPHandler::authenticateUser(
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
 
-    ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
-    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
-        http_method = ClientInfo::HTTPMethod::GET;
-    else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
-        http_method = ClientInfo::HTTPMethod::POST;
-
-    session->setHTTPClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
-    session->setForwardedFor(request.get("X-Forwarded-For", ""));
+    session->setHTTPClientInfo(request);
     session->setQuotaClientKey(quota_key);
 
     /// Extract the last entry from comma separated list of forwarded_for addresses.
@@ -879,18 +872,33 @@ void HTTPHandler::processQuery(
             response.add("X-ClickHouse-Timezone", *details.timezone);
     };
 
-    auto handle_exception_in_output_format = [&](IOutputFormat & output_format)
+    auto handle_exception_in_output_format = [&](IOutputFormat & current_output_format, const String & format_name, const ContextPtr & context_, const std::optional<FormatSettings> & format_settings)
     {
-        if (settings.http_write_exception_in_output_format && output_format.supportsWritingException())
+        if (settings.http_write_exception_in_output_format && current_output_format.supportsWritingException())
         {
-            bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
-
-            ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
-            formatExceptionForClient(status.code, request, response, used_output);
-
-            output_format.setException(getCurrentExceptionMessage(false));
-            output_format.finalize();
-            used_output.exception_is_written = true;
+            /// If wait_end_of_query=true in case of an exception all data written to output format during query execution will be
+            /// ignored, so we cannot write exception message in current output format as it will be also ignored.
+            /// Instead, we create exception_writer function that will write exception in required format
+            /// and will use it later in trySendExceptionToClient when all buffers will be prepared.
+            if (buffer_until_eof)
+            {
+                auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
+                used_output.exception_writer = [format_name, header, context_, format_settings](WriteBuffer & buf, const String & message)
+                {
+                    auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
+                    output_format->setException(message);
+                    output_format->finalize();
+                };
+            }
+            else
+            {
+                bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
+                ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+                formatExceptionForClient(status.code, request, response, used_output);
+                current_output_format.setException(status.message);
+                current_output_format.finalize();
+                used_output.exception_is_written = true;
+            }
         }
     };
 
@@ -954,8 +962,16 @@ try
                 used_output.out_holder->position() = used_output.out_holder->buffer().begin();
             }
 
-            writeString(s, *used_output.out_maybe_compressed);
-            writeChar('\n', *used_output.out_maybe_compressed);
+            /// We might have special formatter for exception message.
+            if (used_output.exception_writer)
+            {
+                used_output.exception_writer(*used_output.out_maybe_compressed, s);
+            }
+            else
+            {
+                writeString(s, *used_output.out_maybe_compressed);
+                writeChar('\n', *used_output.out_maybe_compressed);
+            }
         }
 
         used_output.out_maybe_compressed->next();

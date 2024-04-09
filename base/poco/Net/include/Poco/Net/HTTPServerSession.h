@@ -56,9 +56,11 @@ namespace Net
         SocketAddress serverAddress();
         /// Returns the server's address.
 
-        size_t getKeepAliveTimeout() const { return _params->getKeepAliveTimeout().totalSeconds(); }
+        void setKeepAliveTimeout(Poco::Timespan keepAliveTimeout);
+ 
+        size_t getKeepAliveTimeout() const { return _keepAliveTimeout.totalSeconds(); }
 
-        size_t getMaxKeepAliveRequests() const { return _params->getMaxKeepAliveRequests(); }
+        size_t getMaxKeepAliveRequests() const { return _maxKeepAliveRequests; } 
 
     private:
         bool _firstRequest;
