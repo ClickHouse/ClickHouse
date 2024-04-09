@@ -67,9 +67,10 @@ static constexpr int32_t DEFAULT_CONNECTION_TIMEOUT_MS = 1000;
 }
 
 /// This is used by fmt::format to print OpNum as strings.
-/// All OpNum values shoud be in range [min, max] to be printed.
+/// All OpNum values should be in range [min, max] to be printed.
 template <>
-struct magic_enum::customize::enum_range<Coordination::OpNum> {
-  static constexpr int min = -100;
-  static constexpr int max = 1000;
+struct magic_enum::customize::enum_range<Coordination::OpNum>
+{
+    static constexpr int min = -100;
+    static constexpr int max = 1000;
 };
