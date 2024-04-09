@@ -2507,6 +2507,14 @@ Result:
 └───────────────┘
 ```
 
+**Selecting Data**
+
+You can select data from a ClickHouse table and save them into some file in the Npy format by the following command:
+
+```bash
+$ clickhouse-client --query="SELECT {column} FROM {some_table} FORMAT Npy" > {filename.npy}
+```
+
 ## LineAsString {#lineasstring}
 
 In this format, every line of input data is interpreted as a single string value. This format can only be parsed for table with a single field of type [String](/docs/en/sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](/docs/en/sql-reference/statements/create/table.md/#default) or [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized), or omitted.

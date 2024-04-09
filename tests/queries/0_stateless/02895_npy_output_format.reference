@@ -1,0 +1,60 @@
+-1
+-1
+-1
+-1
+-1
+-1
+-1
+-1
+-1
+-1
+-1
+-1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+0.1
+0.1
+0.1
+0.01
+0.01
+0.01
+npy
+npy
+npy
+npy
+npy
+npy
+array	Int8					
+array	Int16					
+array	Int32					
+array	Int64					
+array	UInt8					
+array	UInt16					
+array	UInt32					
+array	UInt64					
+array	Float32					
+array	Float64					
+array	String					
+array	String					
+[[[1],[2]],[[3],[4]]]
+[[[1],[2]],[[3],[4]]]
+[[[1],[2]],[[3],[4]]]
+[[0.1],[0.2]]
+[[0.1],[0.2]]
+[[0.1],[0.2]]
+[['abb','bbc'],['ccc','dddd']]
+[['abb','bbc'],['ccc','dddd']]
+[['abb','bbc'],['ccc','dddd']]
+array	Array(Array(Array(Int8)))					
+array	Array(Array(Float64))					
+array	Array(Array(String))					
