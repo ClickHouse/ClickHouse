@@ -13,7 +13,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Planner/CollectSets.h>
 #include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -365,7 +364,9 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
-            auto subquery_to_execute = makeExecutableSubqueryForIn(in_function_subquery_node, planner_context->getQueryContext());
+            auto subquery_to_execute = in_function_subquery_node;
+            if (subquery_to_execute->as<TableNode>())
+                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(std::move(subquery_to_execute), planner_context->getQueryContext());
 
             auto temporary_table_expression_node = executeSubqueryNode(subquery_to_execute,
                 planner_context->getMutableQueryContext(),
