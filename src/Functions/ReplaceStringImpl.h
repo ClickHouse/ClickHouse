@@ -47,7 +47,7 @@ struct ReplaceStringImpl
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
         const size_t haystack_size = haystack_offsets.size();
-        res_offsets.resize(haystack_size);
+        res_offsets.resize_exact(haystack_size);
 
         /// The current index in the array of strings.
         size_t i = 0;
@@ -61,7 +61,7 @@ struct ReplaceStringImpl
 
             /// Copy the data without changing
             res_data.resize(res_data.size() + (match - pos));
-            memcpy(&res_data[res_offset], pos, match - pos);
+            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], pos, match - pos);
 
             /// Determine which index it belongs to.
             while (i < haystack_offsets.size() && begin + haystack_offsets[i] <= match)
@@ -82,7 +82,7 @@ struct ReplaceStringImpl
             if (match + needle.size() < begin + haystack_offsets[i])
             {
                 res_data.resize(res_data.size() + replacement.size());
-                memcpy(&res_data[res_offset], replacement.data(), replacement.size());
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replacement.data(), replacement.size());
                 res_offset += replacement.size();
                 pos = match + needle.size();
                 if constexpr (replace == ReplaceStringTraits::Replace::First)
@@ -97,7 +97,7 @@ struct ReplaceStringImpl
             if (can_finish_current_string)
             {
                 res_data.resize(res_data.size() + (begin + haystack_offsets[i] - pos));
-                memcpy(&res_data[res_offset], pos, (begin + haystack_offsets[i] - pos));
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], pos, (begin + haystack_offsets[i] - pos));
                 res_offset += (begin + haystack_offsets[i] - pos);
                 res_offsets[i] = res_offset;
                 pos = begin + haystack_offsets[i];
@@ -113,7 +113,7 @@ struct ReplaceStringImpl
         ColumnString::Chars & output, ColumnString::Offset & output_offset)
     {
         output.resize(output.size() + what_size);
-        memcpy(&output[output_offset], what_start, what_size);
+        memcpySmallAllowReadWriteOverflow15(&output[output_offset], what_start, what_size);
         output_offset += what_size;
     }
 
@@ -131,7 +131,7 @@ struct ReplaceStringImpl
         const size_t haystack_size = haystack_offsets.size();
 
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(haystack_size);
+        res_offsets.resize_exact(haystack_size);
 
         ColumnString::Offset res_offset = 0;
 
@@ -205,7 +205,7 @@ struct ReplaceStringImpl
         const size_t haystack_size = haystack_offsets.size();
 
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(haystack_size);
+        res_offsets.resize_exact(haystack_size);
 
         ColumnString::Offset res_offset = 0;
 
@@ -275,7 +275,7 @@ struct ReplaceStringImpl
         const size_t haystack_size = haystack_offsets.size();
 
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(haystack_size);
+        res_offsets.resize_exact(haystack_size);
 
         ColumnString::Offset res_offset = 0;
 
@@ -357,7 +357,7 @@ struct ReplaceStringImpl
         ColumnString::Offset res_offset = 0;
         size_t haystack_size = haystack_data.size() / n;
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(haystack_size);
+        res_offsets.resize_exact(haystack_size);
 
         /// The current index in the string array.
         size_t i = 0;
@@ -374,7 +374,7 @@ struct ReplaceStringImpl
     { \
         const size_t len = begin + n * (i + 1) - pos; \
         res_data.resize(res_data.size() + len + 1); \
-        memcpy(&res_data[res_offset], pos, len); \
+        memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], pos, len); \
         res_offset += len; \
         res_data[res_offset++] = 0; \
         res_offsets[i] = res_offset; \
@@ -395,7 +395,7 @@ struct ReplaceStringImpl
 
             /// Copy unchanged part of current string.
             res_data.resize(res_data.size() + (match - pos));
-            memcpy(&res_data[res_offset], pos, match - pos);
+            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], pos, match - pos);
             res_offset += (match - pos);
 
             /// Is it true that this string no longer needs to perform conversions.
@@ -405,7 +405,7 @@ struct ReplaceStringImpl
             if (match + needle.size() <= begin + n * (i + 1))
             {
                 res_data.resize(res_data.size() + replacement.size());
-                memcpy(&res_data[res_offset], replacement.data(), replacement.size());
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], replacement.data(), replacement.size());
                 res_offset += replacement.size();
                 pos = match + needle.size();
                 if (replace == ReplaceStringTraits::Replace::First || pos == begin + n * (i + 1))
