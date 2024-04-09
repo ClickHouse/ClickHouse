@@ -860,6 +860,7 @@ Soundex
 SpanKind
 Spearman's
 SquaredDistance
+SquaredNorm
 StartTLS
 StartTime
 StartupSystemTables
