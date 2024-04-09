@@ -318,7 +318,7 @@ class CiCache:
             self.update()
 
         if self.cache_data_fetched:
-            # there are no record w/o underling data - no need to fetch
+            # there are no records without fetched data - no need to fetch
             return self
 
         # clean up
@@ -773,6 +773,7 @@ class CiOptions:
             not pr_info.is_pr() and not debug_message
         ):  # if commit_message is provided it's test/debug scenario - do not return
             # CI options can be configured in PRs only
+            # if debug_message is provided - it's a test
             return res
         message = debug_message or GitRunner(set_cwd_to_git_root=True).run(
             f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1"
@@ -790,9 +791,9 @@ class CiOptions:
             print(f"CI tags from PR body: [{matches_pr}]")
             matches = list(set(matches + matches_pr))
 
-        if "do not test" in pr_info.labels:
-            # do_not_test could be set in GH labels
-            res.do_not_test = True
+            if "do not test" in pr_info.labels:
+                # do_not_test could be set in GH labels
+                res.do_not_test = True
 
         for match in matches:
             if match.startswith("job_"):
@@ -1761,9 +1762,10 @@ def _run_test(job_name: str, run_command: str) -> int:
         run_command or CI_CONFIG.get_job_config(job_name).run_command
     ), "Run command must be provided as input argument or be configured in job config"
 
+    if CI_CONFIG.get_job_config(job_name).timeout:
+        os.environ["KILL_TIMEOUT"] = str(CI_CONFIG.get_job_config(job_name).timeout)
+
     if not run_command:
-        if CI_CONFIG.get_job_config(job_name).timeout:
-            os.environ["KILL_TIMEOUT"] = str(CI_CONFIG.get_job_config(job_name).timeout)
         run_command = "/".join(
             (os.path.dirname(__file__), CI_CONFIG.get_job_config(job_name).run_command)
         )

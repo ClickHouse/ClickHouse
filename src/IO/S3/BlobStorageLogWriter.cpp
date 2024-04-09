@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 
 #include <base/getThreadId.h>
+#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <IO/S3/Client.h>
 #include <Interpreters/Context.h>
