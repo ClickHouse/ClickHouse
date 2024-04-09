@@ -759,7 +759,7 @@ tupleIntDivOrZeroByNumber(tuple_num, div)
 Query:
 
 ``` sql
-SELECT tupleIntDivOrZeroByNumber((15, 10, 5), (5));
+SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 5);
 ```
 
 Result:
@@ -773,7 +773,7 @@ Result:
 Query:
 
 ``` sql
-SELECT tupleIntDivOrZeroByNumber((15, 10, 5), (0))
+SELECT tupleIntDivOrZeroByNumber((15, 10, 5), 0)
 ```
 
 Result:
