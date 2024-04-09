@@ -586,26 +586,26 @@ SELECT tupleConcat((1, 2), (3, 4), (true, false)) AS res
 
 ## tupleIntDiv
 
-Does integer division of two tuples, returns a tuple of the quotients.
+Does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients.
 
 **Syntax**
 
 ```sql
-tupleIntDiv(tuple1, tuple2)
+tupleIntDiv(tuple_num, tuple_div)
 ```
 
 **Parameters**
 
-- `tuple1`: tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
-- `tuple2`: tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple_div`: Tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
 
 **Returned value**
 
-- Tuple of the quotients of `tuple1` and `tuple2`. [Tuple](../data-types/tuple) of integer values.
+- Tuple of the quotients of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of integer values.
 
 **Implementation details**
 
-- If either `tuple1` or `tuple2` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+- If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
 
 **Examples**
 
@@ -639,6 +639,56 @@ Result:
 
 ## tupleIntDivByNumber
 
+Does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients.
+
+**Syntax**
+
+```sql
+tupleIntDivByNumber(tuple_num, div)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `div`: The divisor value. [Tuple](../data-types/tuple) of numeric type.
+
+**Returned value**
+
+- Tuple of the quotients of `tuple_num` and `div`. [Tuple](../data-types/tuple) of integer values.
+
+**Implementation details**
+
+- If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleIntDivByNumber((15, 10, 5),5);
+```
+
+Result:
+
+``` text
+┌─tupleIntDivByNumber((15, 10, 5), 5)─┐
+│ (3,2,1)                             │
+└─────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT tupleIntDivByNumber((15.2, 10.7, 5.5),5.8);
+```
+
+Result:
+
+``` text
+┌─tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8)─┐
+│ (2,1,0)                                     │
+└─────────────────────────────────────────────┘
+```
 
 ## Distance functions
 
