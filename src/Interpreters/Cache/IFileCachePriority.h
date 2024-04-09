@@ -156,7 +156,11 @@ public:
         EvictionCandidates & candidates,
         const CachePriorityGuard::Lock &) = 0;
 
-    virtual bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) = 0;
+    virtual bool modifySizeLimits(
+        size_t max_size_,
+        size_t max_elements_,
+        double size_ratio_,
+        const CachePriorityGuard::Lock &) = 0;
 
     /// A space holder implementation, which allows to take hold of
     /// some space in cache given that this space was freed.

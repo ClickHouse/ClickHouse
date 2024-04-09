@@ -102,7 +102,9 @@ private:
         size_t elements,
         size_t released_size_assumption,
         size_t released_elements_assumption,
-        const CachePriorityGuard::Lock &) const;
+        const CachePriorityGuard::Lock &,
+        const size_t * max_size_ = nullptr,
+        const size_t * max_elements_ = nullptr) const;
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
 
@@ -115,15 +117,15 @@ private:
     using IterateFunc = std::function<IterationResult(LockedKey &, const FileSegmentMetadataPtr &)>;
     void iterate(IterateFunc && func, const CachePriorityGuard::Lock &);
 
+    LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::Lock &);
+    LRUIterator add(EntryPtr entry, const CachePriorityGuard::Lock &);
+
     using StopConditionFunc = std::function<bool()>;
     void iterateForEviction(
         EvictionCandidates & res,
         FileCacheReserveStat & stat,
         StopConditionFunc stop_condition,
         const CachePriorityGuard::Lock &);
-
-    LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::Lock &);
-    LRUIterator add(EntryPtr entry, const CachePriorityGuard::Lock &);
 
     void holdImpl(
         size_t size,
@@ -146,7 +148,7 @@ public:
     LRUIterator & operator =(const LRUIterator & other);
     bool operator ==(const LRUIterator & other) const;
 
-    EntryPtr getEntry() const override { return *iterator; }
+    EntryPtr getEntry() const override;
 
     size_t increasePriority(const CachePriorityGuard::Lock &) override;
 

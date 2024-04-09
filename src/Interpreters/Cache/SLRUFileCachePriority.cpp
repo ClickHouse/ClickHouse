@@ -259,9 +259,6 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     const CachePriorityGuard::Lock & lock)
 {
-    if (!max_candidates_to_evict)
-        return {};
-
     const auto desired_probationary_size = getRatio(desired_size, 1 - size_ratio);
     const auto desired_probationary_elements_num = getRatio(desired_elements_count, 1 - size_ratio);
 
@@ -275,10 +272,10 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     LOG_TEST(log, "Collected {} to evict from probationary queue. Total size: {}",
              res.size(), probationary_stat.total_stat.releasable_size);
 
-    chassert(res.size() <= max_candidates_to_evict);
+    chassert(!max_candidates_to_evict || res.size() <= max_candidates_to_evict);
     chassert(res.size() == stat.total_stat.releasable_count);
 
-    if (res.size() >= max_candidates_to_evict)
+    if (max_candidates_to_evict && res.size() >= max_candidates_to_evict)
         return probationary_limit_satisfied;
 
     const auto desired_protected_size = getRatio(max_size, size_ratio);

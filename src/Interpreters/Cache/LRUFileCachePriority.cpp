@@ -17,9 +17,6 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictionSkippedFileSegments;
     extern const Event FilesystemCacheEvictionTries;
-    extern const Event FilesystemCacheEvictMicroseconds;
-    extern const Event FilesystemCacheEvictedBytes;
-    extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheEvictionSkippedEvictingFileSegments;
 }
 
@@ -257,10 +254,14 @@ bool LRUFileCachePriority::canFit(
     size_t elements,
     size_t released_size_assumption,
     size_t released_elements_assumption,
-    const CachePriorityGuard::Lock &) const
+    const CachePriorityGuard::Lock &,
+    const size_t * max_size_,
+    const size_t * max_elements_) const
 {
-    return (max_size == 0 || state->current_size + size - released_size_assumption <= max_size)
-        && (max_elements == 0 || state->current_elements_num + elements - released_elements_assumption <= max_elements);
+    return (max_size == 0
+            || (state->current_size + size - released_size_assumption <= (max_size_ ? *max_size_ : max_size.load())))
+        && (max_elements == 0
+            || state->current_elements_num + elements - released_elements_assumption <= (max_elements_ ? *max_elements_ : max_elements.load()));
 }
 
 bool LRUFileCachePriority::collectCandidatesForEviction(
@@ -330,13 +331,11 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     const CachePriorityGuard::Lock & lock)
 {
-    if (!max_candidates_to_evict)
-        return {};
-
     auto stop_condition = [&, this]()
     {
-        return (getSize(lock) <= desired_size && getElementsCount(lock) <= desired_elements_count)
-            || res.size() >= max_candidates_to_evict;
+        return canFit(0, 0, stat.total_stat.releasable_size, stat.total_stat.releasable_count,
+                      lock, &desired_size, &desired_elements_count)
+            || (max_candidates_to_evict && res.size() >= max_candidates_to_evict);
     };
     iterateForEviction(res, stat, stop_condition, lock);
     return stop_condition();
@@ -422,48 +421,29 @@ IFileCachePriority::PriorityDumpPtr LRUFileCachePriority::dump(const CachePriori
 }
 
 bool LRUFileCachePriority::modifySizeLimits(
-    size_t max_size_, size_t max_elements_, double /* size_ratio_ */, const CachePriorityGuard::Lock & lock)
+    size_t max_size_, size_t max_elements_, double /* size_ratio_ */, const CachePriorityGuard::Lock &)
 {
     if (max_size == max_size_ && max_elements == max_elements_)
         return false; /// Nothing to change.
 
-    auto check_limits_satisfied = [&]()
+    if (state->current_size > max_size_ || state->current_elements_num > max_elements_)
     {
-        return (max_size_ == 0 || state->current_size <= max_size_)
-            && (max_elements_ == 0 || state->current_elements_num <= max_elements_);
-    };
-
-    if (check_limits_satisfied())
-    {
-        max_size = max_size_;
-        max_elements = max_elements_;
-        return true;
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot modify size limits to {} in size and {} in elements: "
+                        "not enough space freed. Current size: {}/{}, elements: {}/{}",
+                        max_size_, max_elements_,
+                        state->current_size, max_size, state->current_elements_num, max_elements);
     }
-
-    auto iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
-    {
-        chassert(segment_metadata->file_segment->assertCorrectness());
-
-        if (!segment_metadata->releasable())
-            return IterationResult::CONTINUE;
-
-        auto segment = segment_metadata->file_segment;
-        locked_key.removeFileSegment(segment->offset(), segment->lock());
-
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize());
-        return IterationResult::REMOVE_AND_CONTINUE;
-    };
-
-    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::FilesystemCacheEvictMicroseconds);
-    iterate(
-        [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
-        { return check_limits_satisfied() ? IterationResult::BREAK : iterate_func(locked_key, segment_metadata); },
-        lock);
 
     max_size = max_size_;
     max_elements = max_elements_;
     return true;
+}
+
+IFileCachePriority::EntryPtr LRUFileCachePriority::LRUIterator::getEntry() const
+{
+    assertValid();
+    return *iterator;
 }
 
 void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::Lock & lock)
