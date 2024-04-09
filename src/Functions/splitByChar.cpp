@@ -83,7 +83,7 @@ public:
 
         token_begin = pos;
 
-        if (max_splits) [[unlikely]]
+        if (max_splits)
         {
             if (max_substrings_includes_remaining_string)
             {
