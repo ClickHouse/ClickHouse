@@ -386,6 +386,16 @@ endif ()
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
+option(USE_PRECISE_AS_READ_FLOAT_TEXT_IMPL "Use precise as implementation method for reading floating point numbers from decimal representation of text" OFF)
+option(USE_SIMPLE_AS_READ_FLOAT_TEXT_IMPL "Use simple as implementation method for reading floating point numbers from decimal representation of text" OFF)
+if (USE_PRECISE_AS_READ_FLOAT_TEXT_IMPL AND USE_SIMPLE_AS_READ_FLOAT_TEXT_IMPL)
+    message (FATAL_ERROR "USE_PRECISE_AS_READ_FLOAT_TEXT_IMPL and USE_SIMPLE_AS_READ_FLOAT_TEXT_IMPL are conflicting options")
+elseif (USE_PRECISE_AS_READ_FLOAT_TEXT_IMPL)
+    add_definitions(-D USE_PRECISE_AS_READ_FLOAT_TEXT_IMPL)
+elseif (USE_SIMPLE_AS_READ_FLOAT_TEXT_IMPL)
+    add_definitions(-D USE_SIMPLE_AS_READ_FLOAT_TEXT_IMPL)
+endif ()
+
 # Increase stack size on Musl. We need big stack for our recursive-descend parser.
 if (USE_MUSL)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=2097152")

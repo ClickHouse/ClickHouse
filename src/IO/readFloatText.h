@@ -597,6 +597,23 @@ template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in) { return
 template <typename T> void readFloatTextSimple(T & x, ReadBuffer & in) { readFloatTextSimpleImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in) { return readFloatTextSimpleImpl<T, bool>(x, in); }
 
+#if defined(USE_PRECISE_AS_READ_FLOAT_TEXT_IMPL) && defined(USE_SIMPLE_AS_READ_FLOAT_TEXT_IMPL)
+
+#error USE_PRECISE_AS_READ_FLOAT_TEXT_IMPL and USE_SIMPLE_AS_READ_FLOAT_TEXT_IMPL are conflicting Macros
+
+#elif defined(USE_PRECISE_AS_READ_FLOAT_TEXT_IMPL)
+
+template <typename T> void readFloatText(T & x, ReadBuffer & in) { readFloatTextPrecise(x, in); }
+template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return tryReadFloatTextPrecise(x, in); }
+template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in) { return readFloatTextPreciseImpl<T, bool, false>(x, in); }
+
+#elif defined(USE_SIMPLE_AS_READ_FLOAT_TEXT_IMPL)
+
+template <typename T> void readFloatText(T & x, ReadBuffer & in) { readFloatTextSimple(x, in); }
+template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return tryReadFloatTextSimple(x, in); }
+template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in) { return readFloatTextSimpleImpl<T, bool, false>(x, in); }
+
+#else
 
 /// Implementation that is selected as default.
 
@@ -606,4 +623,5 @@ template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return try
 /// Don't read exponent part of the number.
 template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool, false>(x, in); }
 
+#endif
 }
