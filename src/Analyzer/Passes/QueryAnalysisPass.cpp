@@ -3992,8 +3992,14 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
             }
             else if (resolved_identifier->as<ConstantNode>())
             {
-                lookup_result.resolved_identifier = resolved_identifier;
                 return lookup_result;
+            }
+            else if (auto * resolved_function = resolved_identifier->as<FunctionNode>())
+            {
+                /// Special case: scalar subquery was executed and replaced by __getScalar function.
+                /// Handle it as a constant.
+                if (resolved_function->getFunctionName() == "__getScalar")
+                    return lookup_result;
             }
 
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -6081,7 +6087,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
               */
             if (column && isColumnConst(*column) && !typeid_cast<const ColumnConst *>(column.get())->getDataColumn().isDummy() &&
-                (!hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin")))
+                !hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin") &&
+                /// Sanity check: do not convert large columns to constants
+                column->byteSize() < 1_MiB)
             {
                 /// Replace function node with result constant node
                 Field column_constant_value;

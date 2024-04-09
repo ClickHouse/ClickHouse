@@ -644,15 +644,6 @@ void logExceptionBeforeStart(
     }
 }
 
-static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
-{
-    if (auto * ast_insert_into = ast->as<ASTInsertQuery>())
-    {
-        if (ast_insert_into->watch)
-            context->setSetting("output_format_enable_streaming", 1);
-    }
-}
-
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
@@ -897,8 +888,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
-
-        setQuerySpecificSettings(ast, context);
 
         /// There is an option of probabilistic logging of queries.
         /// If it is used - do the random sampling and "collapse" the settings.
