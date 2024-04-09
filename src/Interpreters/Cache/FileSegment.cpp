@@ -6,11 +6,10 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
-#include <Common/CurrentThread.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/setThreadName.h>
 
 #include <magic_enum.hpp>

@@ -67,7 +67,7 @@ URI::URI(const std::string & uri_)
         else
         {
             mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
-            mapper["gs"] = "https://storage.googleapis.com/{bucket}";
+            mapper["gs"] = "https://{bucket}.storage.googleapis.com";
             mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
         }
 

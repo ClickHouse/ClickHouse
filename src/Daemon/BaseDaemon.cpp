@@ -1,11 +1,9 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
-#include <base/defines.h>
-#include <base/errnoToString.h>
-#include <Common/CurrentThread.h>
-#include <Common/MemoryTracker.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
+#include <base/errnoToString.h>
+#include <base/defines.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>

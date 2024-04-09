@@ -242,7 +242,7 @@ public:
     {
         Float64 x = getFloat64DataFromColumn(columns[0], row_num, this->x_type);
         Float64 y = getFloat64DataFromColumn(columns[1], row_num, this->y_type);
-        data(place).add(x, y, arena);
+        this->data(place).add(x, y, arena);
     }
 
     Float64 getFloat64DataFromColumn(const IColumn * column, size_t row_num, TypeIndex type_index) const
@@ -264,25 +264,25 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        auto & a = data(place);
-        const auto & b = data(rhs);
+        auto & a = this->data(place);
+        const auto & b = this->data(rhs);
 
         a.merge(b, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        data(place).write(buf);
+        this->data(place).write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        data(place).read(buf, arena);
+        this->data(place).read(buf, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
-        auto res = data(place).getResult(total_buckets, arena);
+        auto res = this->data(place).getResult(total_buckets, arena);
 
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());

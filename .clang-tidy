@@ -96,6 +96,7 @@ Checks: [
   '-modernize-use-default-member-init',
   '-modernize-use-emplace',
   '-modernize-use-nodiscard',
+  '-modernize-use-override',
   '-modernize-use-trailing-return-type',
 
   '-performance-inefficient-string-concatenation',

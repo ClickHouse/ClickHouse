@@ -100,7 +100,7 @@ public:
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+    bool supportsTrivialCountOptimization() const override { return true; }
 
     bool prefersLargeBlocks() const override;
 

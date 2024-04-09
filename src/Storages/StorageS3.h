@@ -352,7 +352,7 @@ public:
 
     using KeysWithInfo = StorageS3Source::KeysWithInfo;
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:
     virtual Configuration updateConfigurationAndGetCopy(const ContextPtr & local_context);

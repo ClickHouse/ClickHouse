@@ -99,7 +99,7 @@ Alias: `OCTET_LENGTH`
 Returns the length of a string in Unicode code points (not: in bytes or characters). It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
 Alias:
-- `CHAR_LENGTH`
+- `CHAR_LENGTH``
 - `CHARACTER_LENGTH`
 
 ## leftPad

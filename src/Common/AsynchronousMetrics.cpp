@@ -671,7 +671,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     ReadableSize(rss),
                     ReadableSize(difference));
 
-            MemoryTracker::setRSS(rss, free_memory_in_allocator_arenas);
+            total_memory_tracker.setRSS(rss, free_memory_in_allocator_arenas);
         }
     }
 

@@ -96,7 +96,7 @@
             <to>https://{bucket}.s3.amazonaws.com</to>
         </s3>
         <gs>
-            <to>https://storage.googleapis.com/{bucket}</to>
+            <to>https://{bucket}.storage.googleapis.com</to>
         </gs>
         <oss>
             <to>https://{bucket}.oss.aliyuncs.com</to>

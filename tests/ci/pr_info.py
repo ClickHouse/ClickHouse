@@ -26,7 +26,6 @@ NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
     ".md",
-    ".mdx",
     ".yml",
     ".txt",
     ".css",

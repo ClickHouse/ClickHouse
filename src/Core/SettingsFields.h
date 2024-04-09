@@ -1,12 +1,13 @@
 #pragma once
 
-#include <chrono>
-#include <string_view>
-#include <Core/Field.h>
-#include <Core/MultiEnum.h>
-#include <base/types.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
+#include <base/types.h>
+#include <Core/Field.h>
+#include <Core/MultiEnum.h>
+#include <boost/range/adaptor/map.hpp>
+#include <chrono>
+#include <string_view>
 
 
 namespace DB
@@ -513,21 +514,6 @@ struct SettingFieldCustom
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
-};
-
-struct SettingFieldNonZeroUInt64 : public SettingFieldUInt64
-{
-public:
-    explicit SettingFieldNonZeroUInt64(UInt64 x = 1);
-    explicit SettingFieldNonZeroUInt64(const Field & f);
-
-    SettingFieldNonZeroUInt64 & operator=(UInt64 x);
-    SettingFieldNonZeroUInt64 & operator=(const Field & f);
-
-    void parseFromString(const String & str);
-
-private:
-    void checkValueNonZero() const;
 };
 
 }

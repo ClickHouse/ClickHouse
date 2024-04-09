@@ -1940,7 +1940,8 @@ std::vector<String> QueryAnalyzer::collectIdentifierTypoHints(const Identifier &
     for (const auto & valid_identifier : valid_identifiers)
         prompting_strings.push_back(valid_identifier.getFullName());
 
-    return NamePrompter<1>::getHints(unresolved_identifier.getFullName(), prompting_strings);
+    NamePrompter<1> prompter;
+    return prompter.getHints(unresolved_identifier.getFullName(), prompting_strings);
 }
 
 /** Wrap expression node in tuple element function calls for nested paths.
@@ -6088,9 +6089,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
               */
             if (column && isColumnConst(*column) && !typeid_cast<const ColumnConst *>(column.get())->getDataColumn().isDummy() &&
-                !hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin") &&
-                /// Sanity check: do not convert large columns to constants
-                column->byteSize() < 1_MiB)
+                (!hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin")))
             {
                 /// Replace function node with result constant node
                 Field column_constant_value;

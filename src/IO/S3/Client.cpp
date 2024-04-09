@@ -1,5 +1,4 @@
 #include <IO/S3/Client.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 
 #if USE_AWS_S3

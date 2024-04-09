@@ -175,8 +175,6 @@ private:
     Settings settings;
     SelectQueryOptions select_limits;
 
-    LoggerPtr logger;
-
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the
     /// previous commands in the same stage, but at the end of each stage intermediate columns are thrown away

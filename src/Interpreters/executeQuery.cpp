@@ -644,6 +644,15 @@ void logExceptionBeforeStart(
     }
 }
 
+static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
+{
+    if (auto * ast_insert_into = ast->as<ASTInsertQuery>())
+    {
+        if (ast_insert_into->watch)
+            context->setSetting("output_format_enable_streaming", 1);
+    }
+}
+
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
@@ -888,6 +897,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
+
+        setQuerySpecificSettings(ast, context);
 
         /// There is an option of probabilistic logging of queries.
         /// If it is used - do the random sampling and "collapse" the settings.
@@ -1442,7 +1453,6 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
     OutputFormatPtr output_format;
-    String format_name;
 
     auto update_format_on_exception_if_needed = [&]()
     {
@@ -1450,7 +1460,7 @@ void executeQuery(
         {
             try
             {
-                format_name = context->getDefaultFormat();
+                String format_name = context->getDefaultFormat();
                 output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
                 if (output_format && output_format->supportsWritingException())
                 {
@@ -1491,7 +1501,7 @@ void executeQuery(
         {
             update_format_on_exception_if_needed();
             if (output_format)
-                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
+                handle_exception_in_output_format(*output_format);
         }
         throw;
     }
@@ -1533,7 +1543,7 @@ void executeQuery(
                 );
             }
 
-            format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+            String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
                                     ? getIdentifierName(ast_query_with_output->format)
                                     : context->getDefaultFormat();
 
@@ -1599,7 +1609,7 @@ void executeQuery(
         {
             update_format_on_exception_if_needed();
             if (output_format)
-                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
+                handle_exception_in_output_format(*output_format);
         }
         throw;
     }

@@ -1,27 +1,26 @@
-#include <IO/Operators.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <base/demangle.h>
-#include <Common/AtomicLogger.h>
-#include <Common/ErrorCodes.h>
-#include <Common/Exception.h>
-#include <Common/LockMemoryExceptionInThread.h>
-#include <Common/MemorySanitizer.h>
-#include <Common/SensitiveDataMasker.h>
-#include <Common/config_version.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
+#include "Exception.h"
 
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <cxxabi.h>
-
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <base/demangle.h>
 #include <Poco/String.h>
+#include <Common/ErrorCodes.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemorySanitizer.h>
+#include <Common/SensitiveDataMasker.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
+
+#include <Common/config_version.h>
 
 namespace fs = std::filesystem;
 

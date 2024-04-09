@@ -207,7 +207,7 @@ public:
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
         DB::PrefetchingHelper prefetching;
-        size_t prefetch_look_ahead = DB::PrefetchingHelper::getInitialLookAheadValue();
+        size_t prefetch_look_ahead = prefetching.getInitialLookAheadValue();
 
         size_t i = 0;
         auto prefetch_it = advanceIterator(this->begin(), prefetch_look_ahead);
@@ -216,10 +216,10 @@ public:
         {
             if constexpr (prefetch)
             {
-                if (i == DB::PrefetchingHelper::iterationsToMeasure())
+                if (i == prefetching.iterationsToMeasure())
                 {
                     prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - DB::PrefetchingHelper::getInitialLookAheadValue());
+                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - prefetching.getInitialLookAheadValue());
                 }
 
                 if (prefetch_it != end)

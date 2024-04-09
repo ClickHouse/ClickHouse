@@ -1741,7 +1741,7 @@ public:
 
     void initialize()
     {
-        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
+        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
         if (use_table_fd)
         {
             naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(table_fd, DBMS_DEFAULT_BUFFER_SIZE);
