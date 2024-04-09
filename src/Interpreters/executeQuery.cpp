@@ -316,9 +316,14 @@ QueryLogElement logQueryStart(
 
     bool log_queries = settings.log_queries && !internal;
 
+    if (!context->getQueryLog())
+        return elem;
+
     /// Log into system table start of query execution, if need.
     if (log_queries)
     {
+        auto query_log = context->getQueryLog();
+
         /// This check is not obvious, but without it 01220_scalar_optimization_in_alter fails.
         if (pipeline.initialized())
         {
@@ -345,9 +350,38 @@ QueryLogElement logQueryStart(
 
         if (elem.type >= settings.log_queries_min_type && !settings.log_queries_min_query_duration_ms.totalMilliseconds())
         {
-            if (auto query_log = context->getQueryLog())
-                query_log->add(elem);
+            if (!settings.log_query_settings && settings.log_query_settings.changed)
+                LOG_DEBUG(
+                    getLogger("executeQuery"),
+                    "Query settings will not be added to query_log since setting `log_query_settings` has been set to false."
+                    " The setting has been changed for the query");
+
+            query_log->add(elem);
         }
+        else if (elem.type < settings.log_queries_min_type)
+        {
+            if (settings.log_queries_min_type.changed)
+                LOG_DEBUG(
+                    getLogger("executeQuery"),
+                    "Query start record will not be added to query_log due to query type is bigger than `log_queries_min_type` setting."
+                    " The setting has been changed for the query");
+        }
+        else if (settings.log_queries_min_query_duration_ms.totalMilliseconds())
+        {
+            if (settings.log_queries_min_query_duration_ms.changed)
+                LOG_DEBUG(
+                    getLogger("executeQuery"),
+                    "Query start record will not be added to query_log due to `log_queries_min_query_duration_ms` > 0."
+                    " The setting has been changed for the query");
+        }
+    }
+    else if (!internal && !settings.log_queries)
+    {
+        if (settings.log_queries.changed)
+            LOG_DEBUG(
+                getLogger("executeQuery"),
+                "Query will not be added to query_log since setting `log_queries` has been set to false."
+                " The setting has been changed for the query");
     }
 
     return elem;
@@ -609,16 +643,54 @@ void logExceptionBeforeStart(
     if (settings.log_query_settings)
         elem.query_settings = std::make_shared<Settings>(context->getSettingsRef());
 
+
     if (settings.calculate_text_stack_trace)
         setExceptionStackTrace(elem);
+
     logException(context, elem);
 
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
 
-    if (settings.log_queries && elem.type >= settings.log_queries_min_type && !settings.log_queries_min_query_duration_ms.totalMilliseconds())
-        if (auto query_log = context->getQueryLog())
+    if (auto query_log = context->getQueryLog())
+    {
+        if (settings.log_queries && elem.type >= settings.log_queries_min_type
+            && !settings.log_queries_min_query_duration_ms.totalMilliseconds())
+        {
+            if (!settings.log_query_settings && settings.log_query_settings.changed)
+                LOG_DEBUG(
+                    getLogger("executeQuery"),
+                    "Query settings will not be added to query_log since setting `log_query_settings` has been set to false."
+                    " The setting has been changed for the query");
+
             query_log->add(elem);
+        }
+        else if (!settings.log_queries)
+        {
+            if (settings.log_queries.changed)
+                LOG_DEBUG(
+                    getLogger("executeQuery"),
+                    "Query will not be added to query_log since setting `log_queries` has been set to false."
+                    " The setting has been changed for the query");
+        }
+        else if (elem.type < settings.log_queries_min_type)
+        {
+            if (settings.log_queries_min_type.changed)
+                LOG_DEBUG(
+                    getLogger("executeQuery"),
+                    "Query will not be added to query_log due to query type is bigger than `log_queries_min_type` setting."
+                    " The setting has been changed for the query");
+        }
+        else if (settings.log_queries_min_query_duration_ms.totalMilliseconds())
+        {
+            if (settings.log_queries_min_query_duration_ms.changed)
+                LOG_DEBUG(
+                    getLogger("executeQuery"),
+                    "Query will not be added to query_log due to `log_queries_min_query_duration_ms` > 0 and the query failed "
+                    "before start."
+                    " The setting has been changed for the query");
+        }
+    }
 
     if (query_span)
     {
