@@ -112,8 +112,8 @@ if __name__ == "__main__":
 
     print("# clickhouse-local")
     clickhouse_local = os.environ["CLICKHOUSE_LOCAL"]
-    args.append("--wait_for_suggestions_to_load")
     args = shlex.split(clickhouse_local)
+    args.append("--wait_for_suggestions_to_load")
     [
         run_with_timeout(
             test_completion, [args[0], args, comp_word], COMPLETION_TIMEOUT_SECONDS
