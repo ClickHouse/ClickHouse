@@ -606,6 +606,7 @@ tupleIntDiv(tuple_num, tuple_div)
 **Implementation details**
 
 - If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+- An error will be thrown for division by 0. 
 
 **Examples**
 
@@ -659,13 +660,14 @@ tupleIntDivByNumber(tuple_num, div)
 **Implementation details**
 
 - If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+- An error will be thrown for division by 0. 
 
 **Examples**
 
 Query:
 
 ``` sql
-SELECT tupleIntDivByNumber((15, 10, 5),5);
+SELECT tupleIntDivByNumber((15, 10, 5), 5);
 ```
 
 Result:
@@ -679,7 +681,7 @@ Result:
 Query:
 
 ``` sql
-SELECT tupleIntDivByNumber((15.2, 10.7, 5.5),5.8);
+SELECT tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8);
 ```
 
 Result:
@@ -688,6 +690,44 @@ Result:
 ┌─tupleIntDivByNumber((15.2, 10.7, 5.5), 5.8)─┐
 │ (2,1,0)                                     │
 └─────────────────────────────────────────────┘
+```
+
+## tupleIntDivOrZero
+
+Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. Does not throw an error for 0 divisors, but rather returns the quotient as 0. 
+
+**Syntax**
+
+```sql
+tupleIntDivOrZero(tuple_num, tuple_div)
+```
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple_div`: Tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
+
+**Returned value**
+
+- Tuple of the quotients of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of integer values.
+- Returns 0 for quotients where the divisor is 0.
+
+**Implementation details**
+
+- If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor as in [tupleIntDiv](#tupleintdiv).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleIntDivOrZero((5, 10, 15),(0, 0, 0));
+```
+
+Result:
+
+``` text
+┌─tupleIntDivOrZero((5, 10, 15), (0, 0, 0))─┐
+│ (0,0,0)                                   │
+└───────────────────────────────────────────┘
 ```
 
 ## Distance functions
