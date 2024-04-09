@@ -2282,8 +2282,9 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     for (auto & node : node_list_typed.getNodes())
     {
         auto * node_to_replace = &node;
+        auto * sort_node = node->as<SortNode>();
 
-        if (auto * sort_node = node->as<SortNode>())
+        if (sort_node)
             node_to_replace = &sort_node->getExpression();
 
         auto * constant_node = (*node_to_replace)->as<ConstantNode>();
@@ -2291,12 +2292,10 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         if (!constant_node
             || (constant_node->getValue().getType() != Field::Types::UInt64 && constant_node->getValue().getType() != Field::Types::Int64))
         {
-            if (auto * function = (*node_to_replace)->as<FunctionNode>(); expand_tuples && function != nullptr && function->getFunctionName() == "tuple")
-            {
+            if (auto * function = (*node_to_replace)->as<FunctionNode>(); expand_tuples && !sort_node && function != nullptr && function->getFunctionName() == "tuple")
                 std::copy(function->getArguments().begin(), function->getArguments().end(), std::back_inserter(replaced_nodes));
-            }
             else
-                replaced_nodes.push_back(*node_to_replace);
+                replaced_nodes.push_back(node);
 
             continue;
         }
@@ -2334,7 +2333,7 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
 
         --pos;
 
-        if (auto * function = projection_nodes[pos]->as<FunctionNode>(); expand_tuples && function != nullptr && function->getFunctionName() == "tuple")
+        if (auto * function = projection_nodes[pos]->as<FunctionNode>(); expand_tuples && !sort_node && function != nullptr && function->getFunctionName() == "tuple")
         {
             for (const auto & arg : function->getArguments())
             {
@@ -2344,7 +2343,12 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
             }
         }
         else
-            replaced_nodes.push_back(projection_nodes[pos]->clone());
+        {
+            *node_to_replace = projection_nodes[pos]->clone();
+            if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())
+                resolved_expressions[*node_to_replace] = it->second;
+            replaced_nodes.push_back(node);
+        }
     }
 
     node_list_typed.getNodes() = std::move(replaced_nodes);
