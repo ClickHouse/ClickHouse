@@ -64,8 +64,22 @@ void SimpleSquashingChunksTransform::transform(Chunk & chunk)
     }
     else
     {
+        if (chunk.hasRows())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk expected to be empty, otherwise it will be lost");
+
         auto block = squashing.add({});
         chunk.setColumns(block.getColumns(), block.rows());
+
+        /// ISimpleTransform keeps output chunk (result of transform() execution) for some time and push it in the output port within subsequent prepare() call.
+        /// Because of our custom prepare() implementation we have to take care of both places where data could be buffered: `output_data` and `squashing`.
+        if (output_data.chunk.hasRows())
+        {
+            auto res = std::move(output_data.chunk);
+            output_data.chunk.clear();
+            if (chunk.hasRows())
+                res.append(chunk);
+            chunk = std::move(res);
+        }
     }
 }
 
