@@ -29,13 +29,13 @@ The `uniqCombined` function:
 
 - Calculates a hash (64-bit hash for `String` and 32-bit otherwise) for all parameters in the aggregate, then uses it in calculations.
 - Uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table.
-        - For a small number of distinct elements, an array is used. 
-        - When the set size is larger, a hash table is used. 
-        - For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
+    - For a small number of distinct elements, an array is used. 
+    - When the set size is larger, a hash table is used. 
+    - For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
 - Provides the result deterministically (it does not depend on the query processing order).
 
 :::note    
-Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
+Since it uses a 32-bit hash for non-`String` types, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64).
 :::
 
 Compared to the [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function, the `uniqCombined` function:
