@@ -255,9 +255,7 @@ def test_backup_restore_with_named_collection_azure_conf1(cluster):
     print(get_azure_file_content("test_simple_write.csv", port))
     assert get_azure_file_content("test_simple_write.csv", port) == '1,"a"\n'
 
-    backup_destination = (
-        f"AzureBlobStorage(azure_conf1, 'test_simple_write_nc_backup')"
-    )
+    backup_destination = f"AzureBlobStorage(azure_conf1, 'test_simple_write_nc_backup')"
     azure_query(
         node,
         f"BACKUP TABLE test_write_connection_string TO {backup_destination}",
@@ -301,6 +299,7 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
         == "1\ta\n"
     )
 
+
 def test_backup_restore_on_merge_tree(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
@@ -308,9 +307,7 @@ def test_backup_restore_on_merge_tree(cluster):
         node,
         f"CREATE TABLE test_simple_merge_tree(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy'",
     )
-    azure_query(
-        node, f"INSERT INTO test_simple_merge_tree VALUES (1, 'a')"
-    )
+    azure_query(node, f"INSERT INTO test_simple_merge_tree VALUES (1, 'a')")
 
     backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_backup')"
     azure_query(
@@ -322,6 +319,5 @@ def test_backup_restore_on_merge_tree(cluster):
         f"RESTORE TABLE test_simple_merge_tree AS test_simple_merge_tree_restored FROM {backup_destination};",
     )
     assert (
-            azure_query(node, f"SELECT * from test_simple_merge_tree_restored")
-            == "1\ta\n"
+        azure_query(node, f"SELECT * from test_simple_merge_tree_restored") == "1\ta\n"
     )
