@@ -54,11 +54,11 @@ CREATE TABLE system (c UInt64) ENGINE = Memory;
 SElECT * FROM system SETTINGS use_query_cache = 1;
 DROP TABLE system;
 
--- Similar queries against system.system are rejected.
+-- But queries against system.system are rejected.
 DROP TABLE IF EXISTS system.system;
 CREATE TABLE system.system (c UInt64) ENGINE = Memory;
 SElECT * FROM system.system SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
-DROP TABLE system;
+DROP TABLE system.system;
 
 -- Cleanup
 SYSTEM DROP QUERY CACHE;
