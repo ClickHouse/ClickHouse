@@ -43,6 +43,8 @@ source /utils.lib
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     echo "Azure is disabled"
+elif [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+    echo "Azure is disabled"
 else
     azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 fi
@@ -139,6 +141,32 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 fi
 
+if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+    sudo cat /etc/clickhouse-server1/config.d/filesystem_caches_path.xml \
+    | sed "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_1/</filesystem_caches_path>|" \
+    > /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp
+    mv /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp /etc/clickhouse-server1/config.d/filesystem_caches_path.xml
+
+    sudo cat /etc/clickhouse-server1/config.d/filesystem_caches_path.xml \
+    | sed "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_1/</custom_cached_disks_base_directory>|" \
+    > /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp
+    mv /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp /etc/clickhouse-server1/config.d/filesystem_caches_path.xml
+
+    mkdir -p /var/run/clickhouse-server1
+    sudo chown clickhouse:clickhouse /var/run/clickhouse-server1
+    sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server1/config.xml --daemon \
+    --pid-file /var/run/clickhouse-server1/clickhouse-server.pid \
+    -- --path /var/lib/clickhouse1/ --logger.stderr /var/log/clickhouse-server/stderr1.log \
+    --logger.log /var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server1.err.log \
+    --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 \
+    --mysql_port 19004 --postgresql_port 19005 \
+    --keeper_server.tcp_port 19181 --keeper_server.server_id 2 \
+    --prometheus.port 19988 \
+    --macros.replica r2   # It doesn't work :(
+
+    MAX_RUN_TIME=$((MAX_RUN_TIME < 9000 ? MAX_RUN_TIME : 9000))  # min(MAX_RUN_TIME, 2.5 hours)
+    MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
+fi
 
 # Wait for the server to start, but not for too long.
 for _ in {1..100}
@@ -183,6 +211,10 @@ function run_tests()
 
     if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--s3-storage')
+    fi
+
+    if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--shared-catalog')
     fi
 
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
@@ -266,6 +298,12 @@ do
         echo "$err"
         [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
     fi
+
+    if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+        err=$( { clickhouse-client --port 19000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
+        echo "$err"
+        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+    fi
 done
 
 # Stop server so we can safely read data with clickhouse-local.
@@ -275,6 +313,10 @@ sudo clickhouse stop ||:
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     sudo clickhouse stop --pid-path /var/run/clickhouse-server1 ||:
     sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
+fi
+
+if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+    sudo clickhouse stop --pid-path /var/run/clickhouse-server1 ||:
 fi
 
 rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
@@ -303,6 +345,10 @@ if [ $failed_to_save_logs -ne 0 ]; then
         if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
             clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
             clickhouse-local --path /var/lib/clickhouse2/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
+        fi
+
+        if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+            clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
         fi
     done
 fi
@@ -342,4 +388,11 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
     tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:
     tar -chf /test_output/coordination2.tar /var/lib/clickhouse2/coordination ||:
+fi
+
+if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+    rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server1.log ||:
+    zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.zst ||:
+    mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
+    tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:
 fi
