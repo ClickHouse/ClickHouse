@@ -298,7 +298,7 @@ protected:
     bool send_external_tables = false;
     NameToNameMap query_parameters; /// Dictionary with query parameters for prepared statements.
 
-    QueryFuzzer fuzzer{randomSeed(), &std::cout, &std::cerr};
+    QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
     int create_query_fuzzer_runs = 0;
 
