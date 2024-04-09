@@ -1935,6 +1935,7 @@ mmap
 mmapped
 modularization
 moduloOrZero
+moduli
 mongodb
 monthName
 moscow
@@ -2646,6 +2647,12 @@ tupleMultiplyByNumber
 tupleNegate
 tuplePlus
 tupleToNameValuePairs
+tupleIntDiv
+tupleIntDivByNumber
+tupleIntDivOrZero
+tupleIntDivOrZeroByNumber
+tupleModulo
+tupleModuloByNumber
 turbostat
 txt
 typename
