@@ -452,6 +452,9 @@ Khanna
 KittenHouse
 Klickhouse
 Kolmogorov
+Konstantin
+kostik
+kostikConsistentHash
 Korzeniewski
 Kubernetes
 LDAP
@@ -655,6 +658,7 @@ OTLP
 OUTFILE
 ObjectId
 Observability
+Oblakov
 Octonica
 Ok
 OnTime
