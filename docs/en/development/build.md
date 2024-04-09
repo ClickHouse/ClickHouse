@@ -58,6 +58,20 @@ export CC=clang-18
 export CXX=clang++-18
 ```
 
+### Install rustc (optional)
+
+First follow the steps in the official [rust documentation](https://www.rust-lang.org/tools/install) to install it.
+
+Currently ClickHouse uses vendored dependencies. Although any rust toolchain should work with these dependencies, if
+you plan to build with sanitizers the version must match exactly what's used in CI (as it's what's provided in the
+vendor submodule):
+
+```bash
+rustup toolchain install nightly-2024-04-01
+rustup default nightly-2024-04-01
+rustup component add rust-src
+```
+
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}
 
 ``` bash
@@ -97,6 +111,7 @@ The build requires the following components:
 - Ninja
 - Yasm
 - Gawk
+- rustc
 
 If all the components are installed, you may build it in the same way as the steps above.
 
