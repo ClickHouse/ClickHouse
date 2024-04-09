@@ -586,7 +586,7 @@ SELECT tupleConcat((1, 2), (3, 4), (true, false)) AS res
 
 ## tupleIntDiv
 
-Does integer division of two tuples.
+Does integer division of two tuples, returns a tuple of the quotients.
 
 **Syntax**
 
@@ -636,6 +636,9 @@ Result:
 │ (2,1,0)                                   │
 └───────────────────────────────────────────┘
 ```
+
+## tupleIntDivByNumber
+
 
 ## Distance functions
 
