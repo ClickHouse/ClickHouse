@@ -127,15 +127,15 @@ Average flight distance is around 1000 km.
 Query:
 
 ```sql
-SELECT avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) FROM opensky;
+SELECT round(avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)), 2) FROM opensky;
 ```
 
 Result:
 
 ```text
-┌─avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2))─┐
-│                                                 1041090.6360469435 │
-└────────────────────────────────────────────────────────────────────┘
+   ┌─round(avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)), 2)─┐
+1. │                                                                   1041090.67 │ -- 1.04 million
+   └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Most busy origin airports and the average distance seen {#busy-airports-average-distance}
