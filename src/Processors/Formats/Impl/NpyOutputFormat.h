@@ -58,9 +58,8 @@ private:
     Columns columns;
 
     /// static header (version 3.0)
-    constexpr static auto MAGIC_STRING = "\x93NUMPY";
-    constexpr static auto MAJOR_VERSION = '\x03';
-    constexpr static auto MINOR_VERSION = '\x00';
+    constexpr static auto STATIC_HEADER = "\x93NUMPY\x03\x00";
+    constexpr static size_t STATIC_HEADER_LENGTH = 8;
 };
 
 }

@@ -8,6 +8,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Formats/FormatFactory.h>
 
 #include <Common/assert_cast.h>
@@ -46,8 +47,11 @@ void writeNumpyStrings(const ColumnPtr & column, size_t length, WriteBuffer & bu
 
 String NpyOutputFormat::NumpyDataType::str()
 {
-    std::ostringstream dtype;
-    dtype << endianness << type << std::to_string(size);
+    WriteBufferFromOwnString dtype;
+    writeChar(endianness, dtype);
+    writeChar(type, dtype);
+    writeIntText(size, dtype);
+
     return dtype.str();
 }
 
@@ -153,36 +157,33 @@ void NpyOutputFormat::finalizeImpl()
 
 void NpyOutputFormat::writeHeader()
 {
-    std::ostringstream static_header;
-    static_header << MAGIC_STRING << MAJOR_VERSION << MINOR_VERSION;
-    String static_header_str = static_header.str();
-
-    std::ostringstream shape;
-    shape << '(' << std::to_string(num_rows) << ',';
+    WriteBufferFromOwnString shape;
+    writeIntText(num_rows, shape);
+    writeChar(',', shape);
     for (auto dim : numpy_shape)
-        shape << std::to_string(dim) << ',';
-    shape << ')';
+    {
+        writeIntText(dim, shape);
+        writeChar(',', shape);
+    }
 
-    std::ostringstream dict;
-    dict << "{'descr':'" << numpy_data_type.str() << "','fortran_order':False,'shape':" << shape.str() << ",}";
-    String dict_str = dict.str();
-    String padding_str = "\n";
+    String dict = "{'descr':'" + numpy_data_type.str() + "','fortran_order':False,'shape':(" + shape.str() + "),}";
+    String padding = "\n";
 
     /// completes the length of the header, which is divisible by 64.
-    size_t dict_length = dict_str.length() + 1;
-    size_t header_length = static_header_str.length() + sizeof(UInt32) + dict_length;
+    size_t dict_length = dict.length() + 1;
+    size_t header_length = STATIC_HEADER_LENGTH + sizeof(UInt32) + dict_length;
     if (header_length % 64)
     {
         header_length = ((header_length / 64) + 1) * 64;
-        dict_length = header_length - static_header_str.length() - sizeof(UInt32);
-        padding_str = std::string(dict_length - dict_str.length(), '\x20');
-        padding_str.back() = '\n';
+        dict_length = header_length - STATIC_HEADER_LENGTH - sizeof(UInt32);
+        padding = std::string(dict_length - dict.length(), '\x20');
+        padding.back() = '\n';
     }
 
-    out.write(static_header_str.data(), static_header_str.length());
+    out.write(STATIC_HEADER, STATIC_HEADER_LENGTH);
     writeBinaryLittleEndian(assert_cast<UInt32>(dict_length), out);
-    out.write(dict_str.data(), dict_str.length());
-    out.write(padding_str.data(), padding_str.length());
+    out.write(dict.data(), dict.length());
+    out.write(padding.data(), padding.length());
 }
 
 void NpyOutputFormat::writeColumns()
