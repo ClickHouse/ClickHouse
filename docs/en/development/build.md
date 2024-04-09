@@ -58,13 +58,16 @@ export CC=clang-18
 export CXX=clang++-18
 ```
 
-### Install rustc (optional)
+### Install Rust compiler
 
-First follow the steps in the official [rust documentation](https://www.rust-lang.org/tools/install) to install it.
+First follow the steps in the official [rust documentation](https://www.rust-lang.org/tools/install) to install `rustup`.
 
-Currently ClickHouse uses vendored dependencies. Although any rust toolchain should work with these dependencies, if
-you plan to build with sanitizers the version must match exactly what's used in CI (as it's what's provided in the
-vendor submodule):
+As with C++ dependencies, ClickHouse uses vendoring to control exactly what's installed and avoid depending on third
+party services (like the `crates.io` registry).
+
+Although in release mode any rust modern rustup toolchain version should work with this dependencies, if you plan to
+enable sanitizers you must use a version that matches the exact same `std` as the one used in CI (for which we vendor
+the crates):
 
 ```bash
 rustup toolchain install nightly-2024-04-01
