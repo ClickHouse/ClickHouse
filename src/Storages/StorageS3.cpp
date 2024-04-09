@@ -214,10 +214,8 @@ public:
         expanded_keys = expandSelectionGlob(globbed_uri.key);
         expanded_keys_iter = expanded_keys.begin();
 
-        bool no_globs_in_key = fillBufferForKey(*expanded_keys_iter);
+        fillBufferForKey(*expanded_keys_iter);
         expanded_keys_iter++;
-        if (expanded_keys_iter == expanded_keys.end() && no_globs_in_key)
-            is_finished_for_key = true;
     }
 
     KeyWithInfoPtr next(size_t)
@@ -252,6 +250,7 @@ private:
             buffer_iter = buffer.begin();
             if (read_keys)
                 read_keys->insert(read_keys->end(), buffer.begin(), buffer.end());
+            is_finished_for_key = true;
             return true;
         }
 
@@ -306,17 +305,17 @@ private:
                 return answer;
             }
 
-            if (expanded_keys_iter != expanded_keys.end())
-            {
-                bool no_globs_in_key = fillBufferForKey(*expanded_keys_iter);
-                expanded_keys_iter++;
-                if (expanded_keys_iter == expanded_keys.end() && no_globs_in_key)
-                    is_finished_for_key = true;
-                continue;
-            }
-
             if (is_finished_for_key)
-                return {};
+            {
+                if (expanded_keys_iter != expanded_keys.end())
+                {
+                    fillBufferForKey(*expanded_keys_iter);
+                    expanded_keys_iter++;
+                    continue;
+                }
+                else
+                    return {};
+            }
 
             try
             {
