@@ -613,7 +613,7 @@ tupleIntDiv(tuple_num, tuple_div)
 Query:
 
 ``` sql
-SELECT tupleIntDiv((15, 10, 5),(5, 5, 5));
+SELECT tupleIntDiv((15, 10, 5), (5, 5, 5));
 ```
 
 Result:
@@ -627,7 +627,7 @@ Result:
 Query:
 
 ``` sql
-SELECT tupleIntDiv((15, 10, 5),(5.5, 5.5, 5.5));
+SELECT tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5));
 ```
 
 Result:
@@ -665,7 +665,7 @@ tupleIntDivOrZero(tuple_num, tuple_div)
 Query:
 
 ``` sql
-SELECT tupleIntDivOrZero((5, 10, 15),(0, 0, 0));
+SELECT tupleIntDivOrZero((5, 10, 15), (0, 0, 0));
 ```
 
 Result:
@@ -689,7 +689,7 @@ tupleIntDivByNumber(tuple_num, div)
 **Parameters**
 
 - `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
-- `div`: The divisor value. [Tuple](../data-types/tuple) of numeric type.
+- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
 
 **Returned value**
 
@@ -743,7 +743,7 @@ tupleIntDivOrZeroByNumber(tuple_num, div)
 **Parameters**
 
 - `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
-- `div`: The divisor value. [Tuple](../data-types/tuple) of numeric type.
+- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
 
 **Returned value**
 
@@ -759,7 +759,7 @@ tupleIntDivOrZeroByNumber(tuple_num, div)
 Query:
 
 ``` sql
-SELECT tupleIntDivOrZeroByNumber((15, 10, 5),(5));
+SELECT tupleIntDivOrZeroByNumber((15, 10, 5), (5));
 ```
 
 Result:
@@ -773,7 +773,7 @@ Result:
 Query:
 
 ``` sql
-SELECT tupleIntDivOrZeroByNumber((15, 10, 5),(0))
+SELECT tupleIntDivOrZeroByNumber((15, 10, 5), (0))
 ```
 
 Result:
@@ -782,6 +782,78 @@ Result:
 ┌─tupleIntDivOrZeroByNumber((15, 10, 5), 0)─┐
 │ (0,0,0)                                   │
 └───────────────────────────────────────────┘
+```
+
+## tupleModulo
+
+Returns a tuple of the moduli (remainders) of division operations of two tuples.
+
+**Syntax**
+
+```sql
+tupleModulo(tuple_num, tuple_mod)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple_div`: Tuple of modulus values. [Tuple](../data-types/tuple) of numeric type.
+
+**Returned value**
+
+- Tuple of the remainders of division of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of non-zero integer values.
+- An error is thrown for division by zero.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleModulo((15, 10, 5), (5, 3, 2));
+```
+
+Result:
+
+``` text
+┌─tupleModulo((15, 10, 5), (5, 3, 2))─┐
+│ (0,1,1)                             │
+└─────────────────────────────────────┘
+```
+
+## tupleModuloByNumber
+
+Returns a tuple of the moduli (remainders) of division operations of a tuple and a given divisor.
+
+**Syntax**
+
+```sql
+tupleModuloByNumber(tuple_num, div)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
+
+**Returned value**
+
+- Tuple of the remainders of division of `tuple_num` and `div`. [Tuple](../data-types/tuple) of non-zero integer values.
+- An error is thrown for division by zero.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleModuloByNumber((15, 10, 5), 2);
+```
+
+Result:
+
+``` text
+┌─tupleModuloByNumber((15, 10, 5), 2)─┐
+│ (1,0,1)                             │
+└─────────────────────────────────────┘
 ```
 
 ## Distance functions
