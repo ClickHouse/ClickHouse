@@ -58,12 +58,14 @@ String readFieldName(ReadBuffer & buf)
 void FormInputFormat::readFormData(MutableColumns & columns)
 {
     size_t index = 0;
+    StringRef name_ref;
     while (true)
     {
         if (in->eof())
             break;
 
-        StringRef name_ref = readFieldName(*in);
+        auto tmp = readFieldName(*in);
+        name_ref = StringRef(tmp);
         auto * it = name_map.find(name_ref);
 
         if (!it)
