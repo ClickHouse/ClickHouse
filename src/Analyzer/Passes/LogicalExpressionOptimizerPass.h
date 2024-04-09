@@ -98,15 +98,15 @@ namespace DB
  * -------------------------------
  *
  * 7. Remove redundant equality checks on boolean functions.
- *  - these requndant checks cause the primary index to not be used when if the query involves any primary key columns  
+ *  - these requndant checks cause the primary index to not be used when if the query involves any primary key columns
  * -------------------------------
- * SELECT * FROM t1 WHERE a IN (n) = 1 
+ * SELECT * FROM t1 WHERE a IN (n) = 1
  * SELECT * FROM t1 WHERE a IN (n) = 0
- * 
- * will be transformed into 
- * 
- * SELECT * FROM t1 WHERE a IN (n) 
- * SELECT * FROM t1 WHERE NOT a IN (n) 
+ *
+ * will be transformed into
+ *
+ * SELECT * FROM t1 WHERE a IN (n)
+ * SELECT * FROM t1 WHERE NOT a IN (n)
  * -------------------------------
  */
 
