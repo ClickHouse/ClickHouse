@@ -584,6 +584,59 @@ SELECT tupleConcat((1, 2), (3, 4), (true, false)) AS res
 └──────────────────────┘
 ```
 
+## tupleIntDiv
+
+Does integer division of two tuples.
+
+**Syntax**
+
+```sql
+tupleIntDiv(tuple1, tuple2)
+```
+
+**Parameters**
+
+- `tuple1`: tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple2`: tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
+
+**Returned value**
+
+- Tuple of the quotients of `tuple1` and `tuple2`. [Tuple](../data-types/tuple) of integer values.
+
+**Implementation details**
+
+- If either `tuple1` or `tuple2` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleIntDiv((15, 10, 5),(5, 5, 5));
+```
+
+Result:
+
+``` text
+┌─tupleIntDiv((15, 10, 5), (5, 5, 5))─┐
+│ (3,2,1)                             │
+└─────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT tupleIntDiv((15, 10, 5),(5.5, 5.5, 5.5));
+```
+
+Result:
+
+``` text
+┌─tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5))─┐
+│ (2,1,0)                                   │
+└───────────────────────────────────────────┘
+```
+
 ## Distance functions
 
 All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).
