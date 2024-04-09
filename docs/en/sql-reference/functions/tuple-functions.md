@@ -638,6 +638,44 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
+## tupleIntDivOrZero
+
+Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0. 
+
+**Syntax**
+
+```sql
+tupleIntDivOrZero(tuple_num, tuple_div)
+```
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple_div`: Tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
+
+**Returned value**
+
+- Tuple of the quotients of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of integer values.
+- Returns 0 for quotients where the divisor is 0.
+
+**Implementation details**
+
+- If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor as in [tupleIntDiv](#tupleintdiv).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleIntDivOrZero((5, 10, 15),(0, 0, 0));
+```
+
+Result:
+
+``` text
+┌─tupleIntDivOrZero((5, 10, 15), (0, 0, 0))─┐
+│ (0,0,0)                                   │
+└───────────────────────────────────────────┘
+```
+
 ## tupleIntDivByNumber
 
 Does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients.
@@ -692,40 +730,56 @@ Result:
 └─────────────────────────────────────────────┘
 ```
 
-## tupleIntDivOrZero
+## tupleIntDivOrZeroByNumber
 
-Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. Does not throw an error for 0 divisors, but rather returns the quotient as 0. 
+Like [tupleIntDivByNumber](#tupleintdivbynumber) it does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0.
 
 **Syntax**
 
 ```sql
-tupleIntDivOrZero(tuple_num, tuple_div)
+tupleIntDivOrZeroByNumber(tuple_num, div)
 ```
 
+**Parameters**
+
 - `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
-- `tuple_div`: Tuple of divisor values. [Tuple](../data-types/tuple) of numeric type.
+- `div`: The divisor value. [Tuple](../data-types/tuple) of numeric type.
 
 **Returned value**
 
-- Tuple of the quotients of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of integer values.
+- Tuple of the quotients of `tuple_num` and `div`. [Tuple](../data-types/tuple) of integer values.
 - Returns 0 for quotients where the divisor is 0.
 
 **Implementation details**
 
-- If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor as in [tupleIntDiv](#tupleintdiv).
+- If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor as in [tupleIntDivByNumber](#tupleintdivbynumber).
 
 **Examples**
 
 Query:
 
 ``` sql
-SELECT tupleIntDivOrZero((5, 10, 15),(0, 0, 0));
+SELECT tupleIntDivOrZeroByNumber((15, 10, 5),(5));
 ```
 
 Result:
 
 ``` text
-┌─tupleIntDivOrZero((5, 10, 15), (0, 0, 0))─┐
+┌─tupleIntDivOrZeroByNumber((15, 10, 5), 5)─┐
+│ (3,2,1)                                   │
+└───────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT tupleIntDivOrZeroByNumber((15, 10, 5),(0))
+```
+
+Result:
+
+``` text
+┌─tupleIntDivOrZeroByNumber((15, 10, 5), 0)─┐
 │ (0,0,0)                                   │
 └───────────────────────────────────────────┘
 ```
