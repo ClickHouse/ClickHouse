@@ -36,7 +36,7 @@ inline bool operator!=(const QueryTreeNodeWithHash<T, compare_aliases, compare_t
 }
 
 using QueryTreeNodePtrWithHash = QueryTreeNodeWithHash<QueryTreeNodePtr>;
-using QueryTreeNodePtrWithHashIgnoreTypes = QueryTreeNodeWithHash<QueryTreeNodePtr, /*compare_aliases*/ true, /*compare_types*/ false>;
+using QueryTreeNodePtrWithHashIgnoreTypes = QueryTreeNodeWithHash<QueryTreeNodePtr, /*compare_aliases*/ false, /*compare_types*/ false>;
 using QueryTreeNodeRawPtrWithHash = QueryTreeNodeWithHash<IQueryTreeNode *>;
 using QueryTreeNodeConstRawPtrWithHash = QueryTreeNodeWithHash<const IQueryTreeNode *>;
 
