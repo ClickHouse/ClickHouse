@@ -1242,7 +1242,7 @@ private:
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
-    void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
+    void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope, bool expand_tuples = false);
 
     static void convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
 
@@ -2273,8 +2273,10 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
   * Example: SELECT id, value FROM test_table ORDER BY 1, 2;
   * Example: SELECT id, value FROM test_table LIMIT 5 BY 1, 2;
   */
-void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
+void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope, bool expand_tuples)
 {
+    QueryTreeNodes replaced_nodes;
+
     auto & node_list_typed = node_list->as<ListNode &>();
 
     for (auto & node : node_list_typed.getNodes())
@@ -2288,7 +2290,16 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
 
         if (!constant_node
             || (constant_node->getValue().getType() != Field::Types::UInt64 && constant_node->getValue().getType() != Field::Types::Int64))
+        {
+            if (auto * function = (*node_to_replace)->as<FunctionNode>(); expand_tuples && function != nullptr && function->getFunctionName() == "tuple")
+            {
+                std::copy(function->getArguments().begin(), function->getArguments().end(), std::back_inserter(replaced_nodes));
+            }
+            else
+                replaced_nodes.push_back(*node_to_replace);
+
             continue;
+        }
 
         UInt64 pos;
         if (constant_node->getValue().getType() == Field::Types::UInt64)
@@ -2322,12 +2333,21 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
                 scope.scope_node->formatASTForErrorMessage());
 
         --pos;
-        *node_to_replace = projection_nodes[pos]->clone();
-        if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())
+
+        if (auto * function = projection_nodes[pos]->as<FunctionNode>(); expand_tuples && function != nullptr && function->getFunctionName() == "tuple")
         {
-            resolved_expressions[*node_to_replace] = it->second;
+            for (const auto & arg : function->getArguments())
+            {
+                replaced_nodes.push_back(arg->clone());
+                if (auto it = resolved_expressions.find(arg); it != resolved_expressions.end())
+                    resolved_expressions[replaced_nodes.back()] = it->second;
+            }
         }
+        else
+            replaced_nodes.push_back(projection_nodes[pos]->clone());
     }
+
+    node_list_typed.getNodes() = std::move(replaced_nodes);
 }
 
 void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope)
@@ -6689,19 +6709,24 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         QueryTreeNodes nullable_group_by_keys;
         for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
         {
-            // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
-            // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
-            auto & group_by_list = grouping_sets_keys_list_node->as<ListNode &>().getNodes();
-            expandTuplesInList(group_by_list);
-
-            if (scope.group_by_use_nulls)
-                for (const auto & group_by_elem : group_by_list)
-                    nullable_group_by_keys.push_back(group_by_elem->clone());
+            if (settings.enable_positional_arguments)
+            {
+                // If positional argument references tuple - it will be expanded.
+                replaceNodesWithPositionalArguments(grouping_sets_keys_list_node, query_node_typed.getProjection().getNodes(), scope, true /*expand_tuples*/);
+            }
+            else
+            {
+                // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
+                // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
+                auto & group_by_list = grouping_sets_keys_list_node->as<ListNode &>().getNodes();
+                expandTuplesInList(group_by_list);
+            }
 
             resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-            if (settings.enable_positional_arguments)
-                replaceNodesWithPositionalArguments(grouping_sets_keys_list_node, query_node_typed.getProjection().getNodes(), scope);
+            if (scope.group_by_use_nulls)
+                for (const auto & group_by_elem : grouping_sets_keys_list_node->as<ListNode &>().getNodes())
+                    nullable_group_by_keys.push_back(group_by_elem->clone());
         }
 
         for (auto & nullable_group_by_key : nullable_group_by_keys)
@@ -6709,10 +6734,18 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     }
     else
     {
-        // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
-        // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
-        auto & group_by_list = query_node_typed.getGroupBy().getNodes();
-        expandTuplesInList(group_by_list);
+        if (settings.enable_positional_arguments)
+        {
+            // If positional argument references tuple - it will be expanded.
+            replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope, true /*expand_tuples*/);
+        }
+        else
+        {
+            // Remove redundant calls to `tuple` function. It simplifies checking if expression is an aggregation key.
+            // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
+            auto & group_by_list = query_node_typed.getGroupBy().getNodes();
+            expandTuplesInList(group_by_list);
+        }
 
         QueryTreeNodes nullable_group_by_keys;
         if (scope.group_by_use_nulls)
@@ -6722,9 +6755,6 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         }
 
         resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-        if (settings.enable_positional_arguments)
-            replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
 
         for (auto & nullable_group_by_key : nullable_group_by_keys)
             scope.nullable_group_by_keys.insert(std::move(nullable_group_by_key));
