@@ -19,7 +19,6 @@
     
 <create_query>CREATE TABLE IF NOT EXISTS table_src_{format} ENGINE = File({format}) AS test.hits</create_query>
 <create_query>CREATE TABLE IF NOT EXISTS table_dst_{format} AS test.hits</create_query>
-
 <fill_query>INSERT INTO table_src_{format} SELECT * FROM test.hits LIMIT 100000</fill_query>
 
 <query>INSERT INTO table_dst_{format} SELECT * FROM table_src_{format}</query>
