@@ -2184,7 +2184,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     {
         auto constant_node = std::make_shared<ConstantNode>(scalar_column_with_type.column, scalar_type, node);
 
-        if (constant_node->getValue().isNull())
+        if (scalar_column_with_type.column->isNullAt(0))
             node = std::make_shared<ConstantNode>(scalar_value, scalar_type, buildCastFunction(constant_node, constant_node->getResultType(), context));
         else
             node = std::move(constant_node);

@@ -126,8 +126,6 @@ protected:
 private:
     /// Mutable for lazy evaluation
     mutable ColumnPtr constant_column;
-    /// Mutable for lazy evaluation
-    mutable std::optional<Field> constant_value;
     DataTypePtr constant_type;
     QueryTreeNodePtr source_expression;
     size_t mask_id = 0;

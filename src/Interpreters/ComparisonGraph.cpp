@@ -91,7 +91,7 @@ std::string functionName(const ASTPtr & node)
 std::optional<Field> tryGetConstantValue(const QueryTreeNodePtr & node)
 {
     if (const auto * constant = node->as<ConstantNode>())
-        return {constant->getValue()};
+        return constant->getValue();
 
     return {};
 }
@@ -99,9 +99,9 @@ std::optional<Field> tryGetConstantValue(const QueryTreeNodePtr & node)
 std::optional<Field> tryGetConstantValue(const ASTPtr & node)
 {
     if (const auto * constant = node->as<ASTLiteral>())
-        return {constant->value};
+        return constant->value;
 
-    return nullptr;
+    return {};
 }
 
 template <typename Node>
@@ -519,7 +519,7 @@ void ComparisonGraph<Node>::EqualComponent::buildConstants()
     constant_index.reset();
     for (size_t i = 0; i < nodes.size(); ++i)
     {
-        if (tryGetConstantValue(nodes[i]) != nullptr)
+        if (tryGetConstantValue(nodes[i]))
         {
             constant_index = i;
             return;

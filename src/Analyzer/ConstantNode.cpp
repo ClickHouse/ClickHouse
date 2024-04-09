@@ -160,7 +160,7 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
-    return *constant_value == *rhs_typed.constant_value;
+    return constant_column->structureEquals(*rhs_typed.constant_column);
 }
 
 void ConstantNode::updateTreeHashImpl(HashState & hash_state) const
