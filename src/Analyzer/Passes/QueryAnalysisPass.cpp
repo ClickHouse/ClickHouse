@@ -6694,11 +6694,8 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         {
             for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
             {
-                for (auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
-                {
-                    group_by_elem = group_by_elem->clone();
+                for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
                     scope.nullable_group_by_keys.insert(group_by_elem);
-                }
             }
         }
     }
@@ -6716,15 +6713,8 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
 
         if (scope.group_by_use_nulls)
         {
-            for (auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
-            {
-                /// Clone is needed cause aliases share subtrees.
-                /// If not clone, a part of GROUP BY key could be replaced to nullable
-                /// by replacing a part of alias from another subtree to nullable.
-                /// See 03023_group_by_use_nulls_analyzer_crashes
-                group_by_elem = group_by_elem->clone();
+            for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
                 scope.nullable_group_by_keys.insert(group_by_elem);
-            }
         }
     }
 }
@@ -8037,7 +8027,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveGroupByNode(query_node_typed, scope);
 
     if (scope.group_by_use_nulls)
+    {
         resolved_expressions.clear();
+        /// Clone is needed cause aliases share subtrees.
+        /// If not clone, the same (shared) subtree could be resolved again with different (Nullable) type
+        /// See 03023_group_by_use_nulls_analyzer_crashes
+        for (auto & [_, node] : scope.alias_name_to_expression_node)
+            node = node->clone();
+    }
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
