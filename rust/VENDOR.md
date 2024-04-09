@@ -39,6 +39,10 @@ cargo vendor --no-delete "$CH_TOP_DIR"/contrib/rust_vendor
 cd "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/
 cargo vendor --no-delete "$CH_TOP_DIR"/contrib/rust_vendor
 
+# Remove windows only dependencies (which are really heavy and we don't want in the repo)
+rm -rf "$CH_TOP_DIR"/contrib/rust_vendor/winapi* "$CH_TOP_DIR"/contrib/rust_vendor/windows*
+
+# Cleanup the lock files we copied
 rm "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/Cargo.lock
 cd "$CH_TOP_DIR"/rust/workspace
 ```
