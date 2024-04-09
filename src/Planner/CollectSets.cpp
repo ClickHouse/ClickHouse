@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
 }
+
 namespace
 {
 
