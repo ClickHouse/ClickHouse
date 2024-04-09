@@ -868,8 +868,9 @@ void ReadFromAzureBlob::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
 SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    auto path = configuration.blobs_paths.front();
     auto sample_block = metadata_snapshot->getSampleBlock();
-    auto chosen_compression_method = chooseCompressionMethod(configuration.blobs_paths.back(), configuration.compression_method);
+    auto chosen_compression_method = chooseCompressionMethod(path, configuration.compression_method);
     auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
 
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
@@ -885,7 +886,7 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
             format_settings,
             chosen_compression_method,
             object_storage.get(),
-            configuration.blobs_paths.back());
+            path);
     }
     else
     {
@@ -893,8 +894,11 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode", configuration.blob_path);
 
-        if (auto new_path = checkFileExistsAndCreateNewKeyIfNeeded(local_context, object_storage.get(), configuration.blobs_paths.back(), configuration.blobs_paths.size()))
+        if (auto new_path = checkFileExistsAndCreateNewKeyIfNeeded(local_context, object_storage.get(), path, configuration.blobs_paths.size()))
+        {
             configuration.blobs_paths.push_back(*new_path);
+            path = *new_path;
+        }
 
         return std::make_shared<StorageAzureBlobSink>(
             configuration.format,
@@ -903,7 +907,7 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
             format_settings,
             chosen_compression_method,
             object_storage.get(),
-            configuration.blobs_paths.back());
+            path);
     }
 }
 

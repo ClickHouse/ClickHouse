@@ -1092,7 +1092,7 @@ void ReadFromHDFS::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 
 SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_insert*/)
 {
-    String current_uri = uris.back();
+    String current_uri = uris.front();
 
     bool has_wildcards = current_uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
@@ -1114,7 +1114,7 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
         if (is_path_with_globs)
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "URI '{}' contains globs, so the table is in readonly mode", uris.back());
 
-        if (auto new_uri = checkFileExistsAndCreateNewKeyIfNeeded(context_, current_uri, uris.size()))
+        if (auto new_uri = checkFileExistsAndCreateNewKeyIfNeeded(context_, uris.front(), uris.size()))
         {
             uris.push_back(*new_uri);
             current_uri = *new_uri;

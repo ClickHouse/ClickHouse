@@ -1281,6 +1281,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
 SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto query_configuration = updateConfigurationAndGetCopy(local_context);
+    auto key = query_configuration.keys.front();
 
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(query_configuration.keys.back(), query_configuration.compression_method);
@@ -1300,7 +1301,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             chosen_compression_method,
             query_configuration,
             query_configuration.url.bucket,
-            query_configuration.keys.back());
+            key);
     }
     else
     {
@@ -1308,10 +1309,11 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "S3 key '{}' contains globs, so the table is in readonly mode", query_configuration.url.key);
 
-        if (auto new_key = checkFileExistsAndCreateNewKeyIfNeeded(local_context, configuration, query_configuration.keys.back(), query_configuration.keys.size()))
+        if (auto new_key = checkFileExistsAndCreateNewKeyIfNeeded(local_context, configuration, query_configuration.keys.front(), query_configuration.keys.size()))
         {
             query_configuration.keys.push_back(*new_key);
             configuration.keys.push_back(*new_key);
+            key = *new_key;
         }
 
         return std::make_shared<StorageS3Sink>(
@@ -1322,7 +1324,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             chosen_compression_method,
             query_configuration,
             query_configuration.url.bucket,
-            query_configuration.keys.back());
+            key);
     }
 }
 
