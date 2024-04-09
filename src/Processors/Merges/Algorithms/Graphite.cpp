@@ -1,16 +1,17 @@
-#include <base/find_symbols.h>
-#include <Interpreters/Context.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
+#include <base/find_symbols.h>
+#include <base/sort.h>
 
 #include <string_view>
 #include <vector>
 #include <unordered_map>
 
 #include <fmt/format.h>
-#include <base/sort.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -61,6 +62,23 @@ RuleType ruleType(const String & s)
         throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", s);
 }
 
+void Pattern::updateHash(SipHash & hash) const
+{
+    hash.update(rule_type);
+    hash.update(regexp_str);
+    if (function)
+    {
+        hash.update(function->getName());
+        for (const auto & p : function->getParameters())
+            hash.update(toString(p));
+    }
+    for (const auto & r : retentions)
+    {
+        hash.update(r.age);
+        hash.update(r.precision);
+    }
+}
+
 static const Graphite::Pattern undef_pattern =
 { /// empty pattern for selectPatternForPath
         .rule_type = RuleTypeAll,
@@ -76,7 +94,7 @@ inline static const Patterns & selectPatternsForMetricType(const Graphite::Param
     if (params.patterns_typed)
     {
         std::string_view path_view = path;
-        if (path_view.find("?"sv) == path_view.npos)
+        if (path_view.find("?"sv) == std::string::npos)
             return params.patterns_plain;
         else
             return params.patterns_tagged;

@@ -286,7 +286,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 
     std::shared_ptr<IArchiveReader> archive_reader;
-    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator = nullptr;
+    std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;

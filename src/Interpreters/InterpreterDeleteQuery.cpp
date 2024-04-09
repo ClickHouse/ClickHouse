@@ -35,7 +35,7 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterDeleteQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    FunctionNameNormalizer::visit(query_ptr.get());
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
 
