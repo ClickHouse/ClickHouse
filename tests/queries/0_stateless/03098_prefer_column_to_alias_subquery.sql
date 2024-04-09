@@ -1,5 +1,3 @@
--- https://github.com/ClickHouse/ClickHouse/issues/47552
-
 DROP TABLE IF EXISTS clickhouse_alias_issue_1;
 DROP TABLE IF EXISTS clickhouse_alias_issue_2;
 
@@ -28,6 +26,9 @@ VALUES (1, 10), (2, 20), (3, 30);
 -- \N	30	3
 -- \N	20	2
 -- \N	10	1
+SELECT * 
+FROM
+(
 SELECT
   max(`column_1`) AS `column_1`,
 NULL AS `column_2`,
@@ -43,7 +44,9 @@ SELECT
 FROM `clickhouse_alias_issue_2`
 GROUP BY
   `id`
-SETTINGS prefer_column_name_to_alias=1;
+SETTINGS prefer_column_name_to_alias=1
+)
+ORDER BY ALL;
 
 SELECT '-------------------------';
 
@@ -74,6 +77,7 @@ FROM (
   SETTINGS prefer_column_name_to_alias=1
 ) as T1
 GROUP BY `id`
+ORDER BY ALL
 SETTINGS prefer_column_name_to_alias=1;
 
 SELECT '-------------------------';
@@ -108,6 +112,7 @@ FROM (
         SETTINGS prefer_column_name_to_alias=1
         ) as T1
     GROUP BY `id`
+    ORDER BY ALL
     SETTINGS prefer_column_name_to_alias=1
 ) as T2
 WHERE `column_1` IS NOT NULL AND `column_2` IS NOT NULL
@@ -141,6 +146,7 @@ FROM (
           `id`
         ) as T1
     GROUP BY `id`
+    ORDER BY ALL
 ) as T2
 WHERE `column_1` IS NOT NULL AND `column_2` IS NOT NULL;
 
