@@ -123,7 +123,7 @@ KeeperContext::Storage KeeperContext::getRocksDBPathFromConfig(const Poco::Util:
     const auto create_local_disk = [](const auto & path)
     {
         if (fs::exists(path))
-            fs::remove(path);
+            fs::remove_all(path);
         fs::create_directories(path);
 
         return std::make_shared<DiskLocal>("LocalRocksDBDisk", path);

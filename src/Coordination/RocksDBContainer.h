@@ -353,7 +353,7 @@ public:
 
     void insertOrReplace(KeyPtr key_data, size_t key_size, Node value)
     {
-        std::string key(key_data.release(), key_size);
+        std::string key(key_data.get(), key_size);
         insertOrReplace(key, value);
     }
 
