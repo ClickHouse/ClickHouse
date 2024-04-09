@@ -399,7 +399,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     if (!isValidKQLPos(pos))
                         return false;
 
-                    ParserKeyword s_by("by");
+                    ParserKeyword s_by(Keyword::BY);
                     if (s_by.ignore(pos, expected))
                     {
                         kql_operator = "order by";

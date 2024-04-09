@@ -190,6 +190,21 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::SYNC_REPLICA:
         case Type::WAIT_LOADING_PARTS:
         case Type::FLUSH_DISTRIBUTED:
+        {
+            if (table)
+            {
+                settings.ostr << ' ';
+                print_database_table();
+            }
+
+            if (query_settings)
+            {
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+                query_settings->formatImpl(settings, state, frame);
+            }
+
+            break;
+        }
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
@@ -349,6 +364,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         }
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::WAIT_FAILPOINT:
         {
             settings.ostr << ' ';
             print_identifier(fail_point_name);

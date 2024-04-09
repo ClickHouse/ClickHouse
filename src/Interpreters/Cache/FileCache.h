@@ -46,14 +46,14 @@ struct FileCacheReserveStat
         }
     };
 
-    Stat stat;
+    Stat total_stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
     void update(size_t size, FileSegmentKind kind, bool releasable);
 
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
-        stat += other.stat;
+        total_stat += other.total_stat;
         for (const auto & [name, stat_] : other.stat_by_kind)
             stat_by_kind[name] += stat_;
         return *this;
@@ -202,6 +202,7 @@ private:
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
     std::atomic<bool> shutdown = false;
+    std::atomic<bool> cache_is_being_resized = false;
 
     std::mutex apply_settings_mutex;
 

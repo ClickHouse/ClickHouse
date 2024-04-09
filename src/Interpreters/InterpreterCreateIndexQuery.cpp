@@ -1,10 +1,11 @@
-#include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterCreateIndexQuery.h>
 
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterCreateIndexQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -38,12 +39,12 @@ BlockIO InterpreterCreateIndexQuery::execute()
 
     }
     // Noop if allow_create_index_without_type = true. throw otherwise
-    if (!create_index.index_decl->as<ASTIndexDeclaration>()->type)
+    if (!create_index.index_decl->as<ASTIndexDeclaration>()->getType())
     {
         if (!current_context->getSettingsRef().allow_create_index_without_type)
         {
             throw Exception(ErrorCodes::INCORRECT_QUERY, "CREATE INDEX without TYPE is forbidden."
-                " SET allow_create_index_without_type=1 to ignore this statements.");
+                " SET allow_create_index_without_type=1 to ignore this statements");
         }
         else
         {

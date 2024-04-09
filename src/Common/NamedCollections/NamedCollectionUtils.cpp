@@ -17,6 +17,7 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 
+#include <filesystem>
 
 namespace fs = std::filesystem;
 
