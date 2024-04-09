@@ -9,13 +9,15 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IParser.h>
+#include <Parsers/TokenIterator.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
-#include <Common/re2.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -86,16 +88,19 @@ struct HasSystemTablesMatcher
         /// Handle SELECT [...] FROM clusterAllReplicas(<cluster>, '<table>')
         else if (const auto * literal = node->as<ASTLiteral>())
         {
-            const auto & value = literal->value; /// (*)
-            database_table = applyVisitor(FieldVisitorDump(), value);
+            const auto & value = literal->value;
+            database_table = toString(value);
         }
 
-        /// (*) returns table in quotes, so we can't use .starts_with() for matching
-        static const re2::RE2 is_system_table(String(DatabaseCatalog::TEMPORARY_DATABASE)
-                                    + "|" + DatabaseCatalog::SYSTEM_DATABASE
-                                    + "|" + DatabaseCatalog::INFORMATION_SCHEMA
-                                    + "|" + DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
-        data.has_system_tables = re2::RE2::PartialMatch(database_table, is_system_table);
+        Tokens tokens(database_table.c_str(), database_table.c_str() + database_table.size(), /*max_query_size*/ 2048, /*skip_insignificant*/ true);
+        IParser::Pos pos(tokens, /*max_depth*/ 42, /*max_backtracks*/ 42);
+        Expected expected;
+        String database;
+        String table;
+        bool successfully_parsed = parseDatabaseAndTableName(pos, expected, database, table);
+        if (successfully_parsed)
+            if (DatabaseCatalog::isPredefinedDatabase(database))
+                data.has_system_tables = true;
     }
 };
 

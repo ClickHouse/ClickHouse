@@ -44,8 +44,21 @@ SELECT * SETTINGS use_query_cache = 1;
 SELECT * FROM information_schema.tables SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
 SELECT * FROM INFORMATION_SCHEMA.TABLES SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
 
+-- System tables can be "hidden" inside e.g. table functions
 SELECT * FROM clusterAllReplicas('test_shard_localhost', system.one) SETTINGS use_query_cache = 1; -- {serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
 SELECT * FROM clusterAllReplicas('test_shard_localhost', 'system.one') SETTINGS use_query_cache = 1; -- {serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
+
+-- Criminal edge case that a user creates a table named "system". The query cache must not reject queries against it.
+DROP TABLE IF EXISTS system;
+CREATE TABLE system (c UInt64) ENGINE = Memory;
+SElECT * FROM system SETTINGS use_query_cache = 1;
+DROP TABLE system;
+
+-- Similar queries against system.system are rejected.
+DROP TABLE IF EXISTS system.system;
+CREATE TABLE system.system (c UInt64) ENGINE = Memory;
+SElECT * FROM system.system SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
+DROP TABLE system;
 
 -- Cleanup
 SYSTEM DROP QUERY CACHE;
