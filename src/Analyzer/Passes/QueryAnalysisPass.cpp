@@ -2276,61 +2276,61 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
 void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
 {
     const auto & settings = scope.context->getSettingsRef();
-    if (settings.enable_positional_arguments && scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    if (!settings.enable_positional_arguments || !scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        return;
+
+    auto & node_list_typed = node_list->as<ListNode &>();
+
+    for (auto & node : node_list_typed.getNodes())
     {
-        auto & node_list_typed = node_list->as<ListNode &>();
+        auto * node_to_replace = &node;
 
-        for (auto & node : node_list_typed.getNodes())
+        if (auto * sort_node = node->as<SortNode>())
+            node_to_replace = &sort_node->getExpression();
+
+        auto * constant_node = (*node_to_replace)->as<ConstantNode>();
+
+        if (!constant_node
+            || (constant_node->getValue().getType() != Field::Types::UInt64
+                && constant_node->getValue().getType() != Field::Types::Int64))
+            continue;
+
+        UInt64 pos;
+        if (constant_node->getValue().getType() == Field::Types::UInt64)
         {
-            auto * node_to_replace = &node;
-
-            if (auto * sort_node = node->as<SortNode>())
-                node_to_replace = &sort_node->getExpression();
-
-            auto * constant_node = (*node_to_replace)->as<ConstantNode>();
-
-            if (!constant_node
-                || (constant_node->getValue().getType() != Field::Types::UInt64
-                    && constant_node->getValue().getType() != Field::Types::Int64))
-                continue;
-
-            UInt64 pos;
-            if (constant_node->getValue().getType() == Field::Types::UInt64)
+            pos = constant_node->getValue().get<UInt64>();
+        }
+        else // Int64
+        {
+            auto value = constant_node->getValue().get<Int64>();
+            if (value > 0)
+                pos = value;
+            else
             {
-                pos = constant_node->getValue().get<UInt64>();
+                if (static_cast<size_t>(std::abs(value)) > projection_nodes.size())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Negative positional argument number {} is out of bounds. Expected in range [-{}, -1]. In scope {}",
+                        value,
+                        projection_nodes.size(),
+                        scope.scope_node->formatASTForErrorMessage());
+                pos = projection_nodes.size() + value + 1;
             }
-            else // Int64
-            {
-                auto value = constant_node->getValue().get<Int64>();
-                if (value > 0)
-                    pos = value;
-                else
-                {
-                    if (static_cast<size_t>(std::abs(value)) > projection_nodes.size())
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Negative positional argument number {} is out of bounds. Expected in range [-{}, -1]. In scope {}",
-                            value,
-                            projection_nodes.size(),
-                            scope.scope_node->formatASTForErrorMessage());
-                    pos = projection_nodes.size() + value + 1;
-                }
-            }
+        }
 
-            if (!pos || pos > projection_nodes.size())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Positional argument number {} is out of bounds. Expected in range [1, {}]. In scope {}",
-                    pos,
-                    projection_nodes.size(),
-                    scope.scope_node->formatASTForErrorMessage());
+        if (!pos || pos > projection_nodes.size())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Positional argument number {} is out of bounds. Expected in range [1, {}]. In scope {}",
+                pos,
+                projection_nodes.size(),
+                scope.scope_node->formatASTForErrorMessage());
 
-            --pos;
-            *node_to_replace = projection_nodes[pos]->clone();
-            if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())
-            {
-                resolved_expressions[*node_to_replace] = it->second;
-            }
+        --pos;
+        *node_to_replace = projection_nodes[pos]->clone();
+        if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())
+        {
+            resolved_expressions[*node_to_replace] = it->second;
         }
     }
 }
