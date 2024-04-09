@@ -46,7 +46,21 @@ Compared to the [uniq](../../../sql-reference/aggregate-functions/reference/uniq
 
 **Example**
 
+Query:
 
+```sql
+SELECT uniqCombined(number) FROM numbers(1e6);
+```
+
+Result:
+
+```response
+┌─uniqCombined(number)─┐
+│              1001148 │ -- 1.00 million
+└──────────────────────┘
+```
+
+See the example section of [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64) for an example of the difference between `uniqCombined` and `uniqCombined64` for much larger inputs.
 
 **See Also**
 
