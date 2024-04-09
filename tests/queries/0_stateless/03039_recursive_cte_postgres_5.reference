@@ -32,13 +32,14 @@
 
 -- { echoOn }
 
+SET allow_experimental_analyzer = 1;
 --
 -- test multiple WITH queries
 --
 WITH RECURSIVE
   y AS (SELECT 1 AS id),
   x AS (SELECT * FROM y UNION ALL SELECT id+1 FROM x WHERE id < 5)
-SELECT * FROM x;
+SELECT * FROM x ORDER BY id;
 1
 2
 3
@@ -48,7 +49,7 @@ SELECT * FROM x;
 WITH RECURSIVE
     x AS (SELECT * FROM y UNION ALL SELECT id+1 FROM x WHERE id < 5),
     y AS (SELECT 1 AS id)
- SELECT * FROM x;
+ SELECT * FROM x ORDER BY id;
 1
 2
 3
@@ -59,7 +60,7 @@ WITH RECURSIVE
      (SELECT 1 AS id UNION ALL SELECT id+1 FROM x WHERE id < 5),
    y AS
      (SELECT 1 AS id UNION ALL SELECT id+1 FROM y WHERE id < 10)
- SELECT y.*, x.* FROM y LEFT JOIN x USING (id);
+ SELECT y.*, x.* FROM y LEFT JOIN x USING (id) ORDER BY y.id;
 1	1
 2	2
 3	3
@@ -75,7 +76,7 @@ WITH RECURSIVE
      (SELECT 1 AS id UNION ALL SELECT id+1 FROM x WHERE id < 5),
    y AS
      (SELECT 1 AS id UNION ALL SELECT id+1 FROM x WHERE id < 10)
- SELECT y.*, x.* FROM y LEFT JOIN x USING (id);
+ SELECT y.*, x.* FROM y LEFT JOIN x USING (id) ORDER BY y.id;
 1	1
 2	2
 3	3
@@ -89,32 +90,32 @@ WITH RECURSIVE
      (SELECT * FROM x UNION ALL SELECT * FROM x),
    z AS
      (SELECT * FROM x UNION ALL SELECT id+1 FROM z WHERE id < 10)
- SELECT * FROM z;
+ SELECT * FROM z ORDER BY id;
 1
 2
-3
 2
 3
-4
+3
 3
 4
-5
+4
 4
 5
-6
+5
 5
 6
-7
+6
 6
 7
-8
+7
 7
 8
-9
+8
 8
 9
-10
 9
+9
+10
 10
 10
 WITH RECURSIVE
@@ -124,57 +125,57 @@ WITH RECURSIVE
      (SELECT * FROM x UNION ALL SELECT * FROM x),
    z AS
      (SELECT * FROM y UNION ALL SELECT id+1 FROM z WHERE id < 10)
- SELECT * FROM z;
+ SELECT * FROM z ORDER BY id;
 1
 1
 2
 2
-3
-3
 2
 2
 3
 3
-4
-4
+3
+3
 3
 3
 4
 4
-5
-5
+4
+4
 4
 4
 5
 5
-6
-6
+5
+5
 5
 5
 6
 6
-7
-7
+6
+6
 6
 6
 7
 7
-8
-8
+7
+7
 7
 7
 8
 8
-9
-9
+8
+8
 8
 8
 9
 9
-10
-10
 9
 9
+9
+9
+10
+10
 10
 10
 10

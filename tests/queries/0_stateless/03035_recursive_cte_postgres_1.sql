@@ -32,6 +32,8 @@
 
 -- { echoOn }
 
+SET allow_experimental_analyzer = 1;
+
 -- WITH RECURSIVE
 
 -- sum of 1..100

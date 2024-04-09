@@ -171,7 +171,11 @@ private:
 
         auto & query_to_execute = recursive_step > 0 ? recursive_query : non_recursive_query;
         ++recursive_step;
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, SelectQueryOptions{});
+
+        SelectQueryOptions select_query_options;
+        select_query_options.merge_tree_enable_remove_parts_from_snapshot_optimization = false;
+
+        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, select_query_options);
         auto pipeline_builder = interpreter->buildQueryPipeline();
 
         pipeline_builder.addSimpleTransform([&](const Block & in_header)

@@ -74,12 +74,12 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
         const auto * subtree_node = nodes_to_process.back();
         nodes_to_process.pop_back();
 
-        auto * table_node = subtree_node->as<TableNode>();
-        auto * table_function_node = subtree_node->as<TableFunctionNode>();
+        const auto * table_node = subtree_node->as<TableNode>();
+        const auto * table_function_node = subtree_node->as<TableFunctionNode>();
 
         if (table_node || table_function_node)
         {
-            auto table_storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+            const auto & table_storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
             if (table_storage->getStorageID() == storage->getStorageID())
                 return true;
         }
