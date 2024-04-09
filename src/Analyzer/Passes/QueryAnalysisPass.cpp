@@ -2276,7 +2276,7 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
 void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
 {
     const auto & settings = scope.context->getSettingsRef();
-    if (!settings.enable_positional_arguments || !scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    if (!settings.enable_positional_arguments || scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return;
 
     auto & node_list_typed = node_list->as<ListNode &>();
