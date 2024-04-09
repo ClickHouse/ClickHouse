@@ -467,7 +467,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, reader.end);
+            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
