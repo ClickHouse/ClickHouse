@@ -144,7 +144,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             }
             else
             {
-                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context);
+                FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context); /// NOLINT(readability-static-accessed-through-instance)
 
                 if (!function_builder)
                     function_builder = function_factory.get(function->name, context);
