@@ -141,7 +141,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                         async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
 
                     if (auto err = socket->impl()->socketError())
-                        socket->impl()->error(err); // Throws an exception
+                        socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
 
                     socket->setBlocking(true);
                 }
