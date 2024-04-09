@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/randomDelay.h>
@@ -21,7 +22,6 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>
-#include <iterator>
 #include <base/sort.h>
 
 
@@ -803,7 +803,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`tmp_prefix` and `part_name` cannot be empty or contain '.' or '/' characters.");
 
     auto part_dir = tmp_prefix + part_name;
-    auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? "detached/" : "");
+    auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? MergeTreeData::DETACHED_DIR_NAME : "");
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
 
     /// Create temporary part storage to write sent files.

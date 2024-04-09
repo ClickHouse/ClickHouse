@@ -1844,7 +1844,7 @@ try
 }
 catch (...)
 {
-    if (startsWith(new_relative_path, "detached/"))
+    if (startsWith(new_relative_path, fs::path(MergeTreeData::DETACHED_DIR_NAME) / ""))
     {
         // Don't throw when the destination is to the detached folder. It might be able to
         // recover in some cases, such as fetching parts into multi-disks while some of the
@@ -1957,7 +1957,7 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const S
                                        DetachedPartInfo::DETACH_REASONS.end(),
                                        prefix) != DetachedPartInfo::DETACH_REASONS.end());
     if (auto path = getRelativePathForPrefix(prefix, /* detached */ true, broken))
-        return "detached/" + *path;
+        return fs::path(MergeTreeData::DETACHED_DIR_NAME) / *path;
     return {};
 }
 
