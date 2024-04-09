@@ -1,8 +1,10 @@
 #include <Columns/ColumnConst.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionTokens.h>
-#include <Functions/FunctionFactory.h>
 #include <Functions/Regexps.h>
+#include <base/map.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/assert_cast.h>
 
@@ -148,11 +150,59 @@ public:
 
 using FunctionSplitByRegexp = FunctionTokens<SplitByRegexpImpl>;
 
+/// Fallback splitByRegexp to splitByChar when its 1st argument is a trivial char for better performance
+class SplitByRegexpOverloadResolver : public IFunctionOverloadResolver
+{
+public:
+    static constexpr auto name = "splitByRegexp";
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<SplitByRegexpOverloadResolver>(context); }
+
+    explicit SplitByRegexpOverloadResolver(ContextPtr context_) : context(context_), split_by_regexp(FunctionSplitByRegexp::create(context))
+    {
+    }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return SplitByRegexpImpl::getNumberOfArguments(); }
+    bool isVariadic() const override { return SplitByRegexpImpl::isVariadic(); }
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    {
+        bool should_fallback_to_split_by_char = false;
+        const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
+        if (!col)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}. "
+                "Must be constant string.",
+                arguments[0].column->getName(),
+                getName());
+
+        String pattern = col->getValue<String>();
+        if (pattern.size() == 1 && regex_symbols.count(pattern[0]) == 0)
+            should_fallback_to_split_by_char = true;
+
+        if (should_fallback_to_split_by_char)
+            return FunctionFactory::instance().getImpl("splitByChar", context)->build(arguments);
+        else
+            return std::make_unique<FunctionToFunctionBaseAdaptor>(
+                split_by_regexp, collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return split_by_regexp->getReturnTypeImpl(arguments);
+    }
+
+private:
+    ContextPtr context;
+    FunctionPtr split_by_regexp;
+    inline static const std::unordered_set<char> regex_symbols = {'^', '$', '\\', '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|'};
+};
 }
 
 REGISTER_FUNCTION(SplitByRegexp)
 {
-    factory.registerFunction<FunctionSplitByRegexp>();
+    factory.registerFunction<SplitByRegexpOverloadResolver>();
 }
 
 }
