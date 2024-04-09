@@ -52,7 +52,7 @@ public:
         , block_header(std::move(block_header_))
         , config(config_)
         , query(query_)
-        , fuzzer(config_.random_seed, /* out_stream= */ nullptr, /* debug_stream= */ nullptr)
+        , fuzzer(config_.random_seed)
     {
     }
 
