@@ -2783,6 +2783,7 @@ wordShingleSimHashUTF
 wordshingleMinHash
 writability
 wrt
+wyHash
 xcode
 xeus
 xkcd

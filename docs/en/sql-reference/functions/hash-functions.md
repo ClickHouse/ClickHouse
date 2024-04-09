@@ -1192,6 +1192,42 @@ Result:
 └────────────┘
 ```
 
+## wyHash64
+
+Produces a 64-bit [wyHash64](https://github.com/wangyi-fudan/wyhash) hash value.
+
+**Syntax**
+
+```sql
+wyHash64(string)
+```
+
+**Arguments**
+
+- `string` — String. [String](/docs/en/sql-reference/data-types/string.md).
+
+**Returned value**
+
+- Hash value.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT wyHash64('ClickHouse') AS Hash;
+```
+
+Result:
+
+```response
+┌─────────────────Hash─┐
+│ 12336419557878201794 │
+└──────────────────────┘
+```
+
 ## ngramMinHash
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
