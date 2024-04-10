@@ -167,21 +167,8 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        bool fallback_to_split_by_char = false;
-        const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
-        if (!col)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}. "
-                "Must be constant string.",
-                arguments[0].column->getName(),
-                getName());
-
-        String pattern = col->getValue<String>();
-        if (pattern.size() == 1 && regex_symbols.count(pattern[0]) == 0)
-            fallback_to_split_by_char = true;
-
-        if (fallback_to_split_by_char)
+        /// If the first argument is a trivial char, fallback splitByRegexp to splitByChar for better performance
+        if (couldFallbackToSplitByChar(arguments))
             return FunctionFactory::instance().getImpl("splitByChar", context)->build(arguments);
         else
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
@@ -194,9 +181,33 @@ public:
     }
 
 private:
+    bool couldFallbackToSplitByChar(const ColumnsWithTypeAndName & arguments) const
+    {
+        const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
+        if (!col)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}. "
+                "Must be constant string.",
+                arguments[0].column->getName(),
+                getName());
+
+        String pattern = col->getValue<String>();
+        if (pattern.size() == 1)
+        {
+            auto re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+
+            std::string required_substring;
+            bool is_trivial;
+            bool required_substring_is_prefix;
+            re->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+            return is_trivial;
+        }
+        return false;
+    }
+
     ContextPtr context;
     FunctionPtr split_by_regexp;
-    inline static const std::unordered_set<char> regex_symbols = {'^', '$', '\\', '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|'};
 };
 }
 
