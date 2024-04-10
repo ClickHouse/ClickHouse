@@ -510,26 +510,31 @@ private:
         void set(size_t level)
         {
             check(level);
-            mask |= uint64_t(1) << level;
+            if (level)
+                mask |= (uint64_t(1) << (level - 1));
         }
 
         void reset(size_t level)
         {
             check(level);
-            mask &= ~(uint64_t(1) << level);
+            if (level)
+                mask &= ~(uint64_t(1) << (level - 1));
         }
 
         void add(Levels levels) { mask |= levels.mask; }
 
-        size_t max() const { return 63 - __builtin_clzll(mask); }
+        size_t max() const
+        {
+            return mask ? (64 - __builtin_clzll(mask)) : 0;
+        }
 
     private:
         uint64_t mask = 0;
 
         void check(size_t level)
         {
-            if (level >= 63)
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Maximum lambda depth exceeded. Maximum 63.");
+            if (level > 64)
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Maximum lambda depth exceeded. Maximum 64.");
         }
     };
 
