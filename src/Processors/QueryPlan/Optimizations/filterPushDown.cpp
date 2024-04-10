@@ -362,7 +362,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         if (!stream_header.has(stream_filter_node->result_name))
             return false;
 
-        auto & alias_node = stream_filter.addAlias(*stream_filter_node, "__filter" + stream_filter_node->result_name);
+        const auto & alias_node = stream_filter.addAlias(*stream_filter_node, "__filter" + stream_filter_node->result_name);
         stream_filter_output_nodes.insert(stream_filter_output_nodes.begin(), &alias_node);
         return true;
     };
