@@ -167,7 +167,7 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        bool should_fallback_to_split_by_char = false;
+        bool fallback_to_split_by_char = false;
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
         if (!col)
             throw Exception(
@@ -179,9 +179,9 @@ public:
 
         String pattern = col->getValue<String>();
         if (pattern.size() == 1 && regex_symbols.count(pattern[0]) == 0)
-            should_fallback_to_split_by_char = true;
+            fallback_to_split_by_char = true;
 
-        if (should_fallback_to_split_by_char)
+        if (fallback_to_split_by_char)
             return FunctionFactory::instance().getImpl("splitByChar", context)->build(arguments);
         else
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
