@@ -171,10 +171,16 @@ public:
     {
         /// If the first argument is a trivial char, fallback splitByRegexp to splitByChar for better performance
         if (couldFallbackToSplitByChar(arguments))
+        {
+            std::cout << "could fallback" << std::endl;
             return FunctionFactory::instance().getImpl("splitByChar", context)->build(arguments);
+        }
         else
+        {
+            std::cout << "could not fallback" << std::endl;
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 split_by_regexp, collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
+        }
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -203,7 +209,7 @@ private:
             bool is_trivial;
             bool required_substring_is_prefix;
             re->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
-            return is_trivial;
+            return is_trivial && required_substring == pattern;
         }
         return false;
     }

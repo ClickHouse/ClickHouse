@@ -4,7 +4,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/assert_cast.h>
-#include <Common/memchrSmall.h>
 
 
 namespace DB
@@ -115,7 +114,7 @@ public:
                    return false;
         }
 
-        pos = reinterpret_cast<Pos>(memchrSmallAllowOverflow15(pos, separator, end - pos));
+        pos = reinterpret_cast<Pos>(memchr(pos, separator, end - pos));
         if (pos)
         {
             token_end = pos;
