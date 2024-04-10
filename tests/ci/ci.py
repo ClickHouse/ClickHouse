@@ -318,7 +318,7 @@ class CiCache:
             self.update()
 
         if self.cache_data_fetched:
-            # there are no record w/o underling data - no need to fetch
+            # there are no records without fetched data - no need to fetch
             return self
 
         # clean up
@@ -773,6 +773,7 @@ class CiOptions:
             not pr_info.is_pr() and not debug_message
         ):  # if commit_message is provided it's test/debug scenario - do not return
             # CI options can be configured in PRs only
+            # if debug_message is provided - it's a test
             return res
         message = debug_message or GitRunner(set_cwd_to_git_root=True).run(
             f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1"
@@ -790,9 +791,9 @@ class CiOptions:
             print(f"CI tags from PR body: [{matches_pr}]")
             matches = list(set(matches + matches_pr))
 
-        if "do not test" in pr_info.labels:
-            # do_not_test could be set in GH labels
-            res.do_not_test = True
+            if "do not test" in pr_info.labels:
+                # do_not_test could be set in GH labels
+                res.do_not_test = True
 
         for match in matches:
             if match.startswith("job_"):
@@ -1756,6 +1757,32 @@ def _upload_build_profile_data(
             logging.error("Failed to insert binary_size_file for the build, continue")
 
 
+def _add_build_to_version_history(
+    pr_info: PRInfo,
+    job_report: JobReport,
+    version: str,
+    docker_tag: str,
+    ch_helper: ClickHouseHelper,
+) -> None:
+    # with some probability we will not silently break this logic
+    assert pr_info.sha and pr_info.commit_html_url and pr_info.head_ref and version
+
+    data = {
+        "check_start_time": job_report.start_time,
+        "pull_request_number": pr_info.number,
+        "pull_request_url": pr_info.pr_html_url,
+        "commit_sha": pr_info.sha,
+        "commit_url": pr_info.commit_html_url,
+        "version": version,
+        "docker_tag": docker_tag,
+        "git_ref": pr_info.head_ref,
+    }
+
+    print(f"::notice ::Log Adding record to versions history: {data}")
+
+    ch_helper.insert_event_into(db="default", table="version_history", event=data)
+
+
 def _run_test(job_name: str, run_command: str) -> int:
     assert (
         run_command or CI_CONFIG.get_job_config(job_name).run_command
@@ -2113,6 +2140,15 @@ def main() -> int:
             ch_helper.insert_events_into(
                 db="default", table="checks", events=prepared_events
             )
+
+            if "DockerServerImage" in args.job_name and indata is not None:
+                _add_build_to_version_history(
+                    pr_info,
+                    job_report,
+                    indata["version"],
+                    indata["build"],
+                    ch_helper,
+                )
         else:
             # no job report
             print(f"No job report for {[args.job_name]} - do nothing")
