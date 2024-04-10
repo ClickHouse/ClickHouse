@@ -121,7 +121,7 @@ void RestorerFromBackup::run(Mode mode)
         restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
 
     /// Do renaming in the create queries according to the renaming config.
-    renaming_map = makeRenamingMapFromBackupQuery(restore_query_elements);
+    renaming_map = BackupUtils::makeRenamingMap(restore_query_elements);
 
     /// Calculate the root path in the backup for restoring, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
     findRootPathsInBackup();
@@ -420,7 +420,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     }
 
     QualifiedTableName table_name = renaming_map.getNewTableName(table_name_in_backup);
-    if (skip_if_inner_table && isInnerTableShouldBeSkippedForBackup(table_name))
+    if (skip_if_inner_table && BackupUtils::isInnerTable(table_name))
         return;
 
     auto read_buffer = backup->readFile(*metadata_path);
@@ -766,7 +766,7 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
 
             ASTPtr existing_database_def = database->getCreateDatabaseQuery();
             ASTPtr database_def_from_backup = database_info.create_database_query;
-            if (!compareRestoredDatabaseDef(*existing_database_def, *database_def_from_backup, context->getGlobalContext()))
+            if (!BackupUtils::compareRestoredDatabaseDef(*existing_database_def, *database_def_from_backup, context->getGlobalContext()))
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_DATABASE,
@@ -937,7 +937,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
         {
             ASTPtr existing_table_def = database->getCreateTableQuery(resolved_id.table_name, context);
             ASTPtr table_def_from_backup = table_info.create_table_query;
-            if (!compareRestoredTableDef(*existing_table_def, *table_def_from_backup, context->getGlobalContext()))
+            if (!BackupUtils::compareRestoredTableDef(*existing_table_def, *table_def_from_backup, context->getGlobalContext()))
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,

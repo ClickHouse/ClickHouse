@@ -122,7 +122,7 @@ BackupEntries BackupEntriesCollector::run()
         = BackupSettings::Util::filterHostIDs(backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
 
     /// Do renaming in the create queries according to the renaming config.
-    renaming_map = makeRenamingMapFromBackupQuery(backup_query_elements);
+    renaming_map = BackupUtils::makeRenamingMap(backup_query_elements);
 
     /// Calculate the root path for collecting backup entries, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
     calculateRootPathInBackup();
@@ -569,7 +569,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     auto filter_by_table_name = [&](const String & table_name)
     {
-        if (isInnerTableShouldBeSkippedForBackup(database_name, table_name))
+        if (BackupUtils::isInnerTable(database_name, table_name))
             return false;
 
         if (database_info.tables.contains(table_name))

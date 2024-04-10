@@ -8,10 +8,10 @@
 #include <Common/setThreadName.h>
 
 
-namespace DB
+namespace DB::BackupUtils
 {
 
-DDLRenamingMap makeRenamingMapFromBackupQuery(const ASTBackupQuery::Elements & elements)
+DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
 {
     DDLRenamingMap map;
 
@@ -120,12 +120,12 @@ bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, con
     return compareRestoredTableDef(restored_database_create_query, create_query_from_backup, global_context);
 }
 
-bool isInnerTableShouldBeSkippedForBackup(const QualifiedTableName & table_name)
+bool isInnerTable(const QualifiedTableName & table_name)
 {
-    return isInnerTableShouldBeSkippedForBackup(table_name.database, table_name.table);
+    return isInnerTable(table_name.database, table_name.table);
 }
 
-bool isInnerTableShouldBeSkippedForBackup(const String & /* database_name */, const String & table_name)
+bool isInnerTable(const String & /* database_name */, const String & table_name)
 {
     /// We skip inner tables of materialized views.
     return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.");
