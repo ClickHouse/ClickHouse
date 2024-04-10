@@ -3721,8 +3721,23 @@ namespace
         return std::make_shared<DataTypeEnum<Type>>(std::move(values));
     }
 
-    std::optional<NameAndTypePair> getNameAndDataTypeFromField(const google::protobuf::FieldDescriptor * field_descriptor, bool skip_unsupported_fields, bool allow_repeat = true)
+    std::optional<NameAndTypePair> getNameAndDataTypeFromField(
+        const google::protobuf::FieldDescriptor * field_descriptor, bool skip_unsupported_fields, bool allow_repeat);
+
+    std::optional<NameAndTypePair> getNameAndDataTypeFromFieldRecursive(
+        const google::protobuf::FieldDescriptor * field_descriptor,
+        bool skip_unsupported_fields,
+        bool allow_repeat,
+        std::unordered_set<const google::protobuf::FieldDescriptor *> & pending_resolution)
     {
+        if (pending_resolution.contains(field_descriptor))
+        {
+            if (skip_unsupported_fields)
+                return std::nullopt;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support type recursion ({})", field_descriptor->full_name());
+        }
+        pending_resolution.emplace(field_descriptor);
+
         if (allow_repeat && field_descriptor->is_map())
         {
             auto name_and_type = getNameAndDataTypeFromField(field_descriptor, skip_unsupported_fields, false);
@@ -3804,7 +3819,8 @@ namespace
                 else if (message_descriptor->field_count() == 1)
                 {
                     const auto * nested_field_descriptor = message_descriptor->field(0);
-                    auto nested_name_and_type = getNameAndDataTypeFromField(nested_field_descriptor, skip_unsupported_fields);
+                    auto nested_name_and_type
+                        = getNameAndDataTypeFromFieldRecursive(nested_field_descriptor, skip_unsupported_fields, true, pending_resolution);
                     if (!nested_name_and_type)
                         return std::nullopt;
                     return NameAndTypePair{field_descriptor->name() + "_" + nested_name_and_type->name, nested_name_and_type->type};
@@ -3815,7 +3831,8 @@ namespace
                     Strings nested_names;
                     for (int i = 0; i != message_descriptor->field_count(); ++i)
                     {
-                        auto nested_name_and_type = getNameAndDataTypeFromField(message_descriptor->field(i), skip_unsupported_fields);
+                        auto nested_name_and_type = getNameAndDataTypeFromFieldRecursive(
+                            message_descriptor->field(i), skip_unsupported_fields, true, pending_resolution);
                         if (!nested_name_and_type)
                             continue;
                         nested_types.push_back(nested_name_and_type->type);
@@ -3830,6 +3847,14 @@ namespace
         }
 
         UNREACHABLE();
+    }
+
+    std::optional<NameAndTypePair> getNameAndDataTypeFromField(
+        const google::protobuf::FieldDescriptor * field_descriptor, bool skip_unsupported_fields, bool allow_repeat = true)
+    {
+        /// Keep track of the fields that are pending resolution to avoid recursive types, which are unsupported
+        std::unordered_set<const google::protobuf::FieldDescriptor *> pending_resolution{};
+        return getNameAndDataTypeFromFieldRecursive(field_descriptor, skip_unsupported_fields, allow_repeat, pending_resolution);
     }
 }
 
