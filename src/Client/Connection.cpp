@@ -1224,14 +1224,14 @@ void Connection::setDescription()
     auto resolved_address = getResolvedAddress();
     description = host + ":" + toString(port);
 
+    full_description = description;
+
     if (resolved_address)
     {
         auto ip_address = resolved_address->host().toString();
         if (host != ip_address)
-            description += ", " + ip_address;
+            full_description += ", " + ip_address;
     }
-
-    full_description = description;
 
     if (const auto * socket_ = getSocket())
     {
