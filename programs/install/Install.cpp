@@ -46,12 +46,12 @@ INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
   *
   * The following steps are performed:
   *
-  * - copying the binary to binary directory (/usr/local/bin (Apple macOS) or /usr/bin (Others)).
+  * - copying the binary to binary directory (/usr/bin/)
   * - creation of symlinks for tools.
   * - creation of clickhouse user and group.
-  * - creation of config directory (/etc/clickhouse-server).
+  * - creation of config directory (/etc/clickhouse-server/).
   * - creation of default configuration files.
-  * - creation of a directory for logs (/var/log/clickhouse-server).
+  * - creation of a directory for logs (/var/log/clickhouse-server/).
   * - creation of a data directory if not exists.
   * - setting a password for default user.
   * - choose an option to listen connections.
@@ -227,6 +227,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
 #if defined (OS_DARWIN)
+            /// https://stackoverflow.com/a/36734569/22422288
             ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "where to install binaries")
 #else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "where to install binaries")
@@ -1221,6 +1222,7 @@ int mainEntryClickHouseStart(int argc, char ** argv)
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
 #if defined (OS_DARWIN)
+            /// https://stackoverflow.com/a/36734569/22422288
             ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "directory with binary")
 #else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "directory with binary")
@@ -1341,6 +1343,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
             ("help,h", "produce help message")
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
 #if defined (OS_DARWIN)
+            /// https://stackoverflow.com/a/36734569/22422288
             ("binary-path", po::value<std::string>()->default_value("usr/local/bin"), "directory with binary")
 #else
             ("binary-path", po::value<std::string>()->default_value("usr/bin"), "directory with binary")
