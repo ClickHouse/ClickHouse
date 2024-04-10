@@ -6726,11 +6726,11 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
                 expandTuplesInList(group_by_list);
             }
 
-            resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
             if (scope.group_by_use_nulls)
                 for (const auto & group_by_elem : grouping_sets_keys_list_node->as<ListNode &>().getNodes())
                     nullable_group_by_keys.push_back(group_by_elem->clone());
+
+            resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         }
 
         for (auto & nullable_group_by_key : nullable_group_by_keys)
