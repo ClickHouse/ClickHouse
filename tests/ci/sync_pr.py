@@ -16,12 +16,13 @@ def main():
     assert pr_info.merged_pr, "BUG. merged PR number could not been determined"
 
     prs = gh.get_pulls_from_search(
-        query=f"type:pr [Sync] ClickHouse/ClickHouse#{pr_info.merged_pr}",
+        query=f"head:sync-upstream/pr/{pr_info.merged_pr} org:ClickHouse type:pr",
         repo="ClickHouse/clickhouse-private",
     )
     if len(prs) > 1:
-        print(f"WARNING: More than one PR found [{prs}]")
-    elif len(prs) == 0:
+        print(f"WARNING: More than one PR found [{prs}] - exiting")
+        sys.exit(0)
+    if len(prs) == 0:
         print("WARNING: No Sync PR found")
         sys.exit(0)
 
@@ -35,7 +36,7 @@ def main():
         print(f"WARNING: Unknown Sync PR [{pr.number}] state [{pr.state}] - exiting")
         sys.exit(0)
 
-    print(f"NOTE: Trying to merge Sync PR [{pr.number}]")
+    print(f"Trying to merge Sync PR [{pr.number}]")
     if pr.draft:
         gh.toggle_pr_draft(pr)
     pr.merge()
