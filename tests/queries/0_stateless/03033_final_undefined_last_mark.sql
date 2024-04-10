@@ -18,4 +18,6 @@ INSERT INTO account_test
 INSERT INTO account_test
     SELECT * FROM (SELECT * FROM generateRandom('id UInt64, row_ver UInt64',1234) LIMIT 1000) WHERE row_ver > 14098131981223776000;
 
+SELECT 'GOOD', * FROM account_test FINAL WHERE id = 11338881281426660955 SETTINGS split_parts_ranges_into_intersecting_and_non_intersecting_final = 0;
 SELECT 'GOOD', * FROM account_test FINAL WHERE id = 11338881281426660955 SETTINGS split_parts_ranges_into_intersecting_and_non_intersecting_final = 1;
+
