@@ -521,45 +521,6 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## dotProduct
-
-Calculates the scalar product of two tuples of the same size.
-
-**Syntax**
-
-```sql
-dotProduct(tuple1, tuple2)
-```
-
-Alias: `scalarProduct`.
-
-**Arguments**
-
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-
-**Returned value**
-
-- Scalar product.
-
-Type: [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT dotProduct((1, 2), (2, 3));
-```
-
-Result:
-
-```text
-┌─dotProduct((1, 2), (2, 3))─┐
-│                          8 │
-└────────────────────────────┘
-```
-
 ## tupleConcat
 
 Combines tuples passed as arguments.

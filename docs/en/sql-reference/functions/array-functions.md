@@ -784,7 +784,7 @@ Returns the dot product of two arrays.
 arrayDotProduct(vector1, vector2)
 ```
 
-Alias: `scalarProduct`
+Alias: `scalarProduct`, `dotProduct`
 
 **Parameters**
 
