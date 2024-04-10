@@ -27,4 +27,6 @@ OPTIMIZE TABLE old_school_table FINAL; -- and horizontal merge
 
 SELECT * FROM old_school_table ORDER BY key;
 
+SELECT 1 FROM old_school_table PREWHERE 35 ORDER BY key ASC FORMAT Null;
+
 DROP TABLE IF EXISTS old_school_table;
