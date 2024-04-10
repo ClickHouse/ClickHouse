@@ -192,11 +192,11 @@ public:
                 UInt32 scale = 0;
                 if (isDateTime64(arguments[0].type))
                     scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type.get()).getScale();
-                if (interval_type->getKind() == IntervalKind::Nanosecond)
+                if (interval_type->getKind() == IntervalKind::Kind::Nanosecond)
                     scale = (9 > scale) ? 9 : scale;
-                else if (interval_type->getKind() == IntervalKind::Microsecond)
+                else if (interval_type->getKind() == IntervalKind::Kind::Microsecond)
                     scale = (6 > scale) ? 6 : scale;
-                else if (interval_type->getKind() == IntervalKind::Millisecond)
+                else if (interval_type->getKind() == IntervalKind::Kind::Millisecond)
                     scale = (3 > scale) ? 3 : scale;
 
                 const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
@@ -272,15 +272,15 @@ private:
         {
             switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
             {
-                case IntervalKind::Nanosecond:
-                case IntervalKind::Microsecond:
-                case IntervalKind::Millisecond:
+                case IntervalKind::Kind::Nanosecond:
+                case IntervalKind::Kind::Microsecond:
+                case IntervalKind::Kind::Millisecond:
                     if (isDate(time_data_type) || isDateTime(time_data_type))
                         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal interval kind for argument data type {}", isDate(time_data_type) ? "Date" : "DateTime");
                     break;
-                case IntervalKind::Second:
-                case IntervalKind::Minute:
-                case IntervalKind::Hour:
+                case IntervalKind::Kind::Second:
+                case IntervalKind::Kind::Minute:
+                case IntervalKind::Kind::Hour:
                     if (isDate(time_data_type))
                         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal interval kind for argument data type Date");
                     break;
@@ -299,28 +299,28 @@ private:
 
         switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
         {
-            case IntervalKind::Nanosecond:
-                return execute<TimeDataType, ReturnType, IntervalKind::Nanosecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
-            case IntervalKind::Microsecond:
-                return execute<TimeDataType, ReturnType, IntervalKind::Microsecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
-            case IntervalKind::Millisecond:
-                return execute<TimeDataType, ReturnType, IntervalKind::Millisecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
-            case IntervalKind::Second:
-                return execute<TimeDataType, ReturnType, IntervalKind::Second>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
-            case IntervalKind::Minute:
-                return execute<TimeDataType, ReturnType, IntervalKind::Minute>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
-            case IntervalKind::Hour:
-                return execute<TimeDataType, ReturnType, IntervalKind::Hour>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
-            case IntervalKind::Day:
-                return execute<TimeDataType, ReturnType, IntervalKind::Day>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
-            case IntervalKind::Week:
-                return execute<TimeDataType, ReturnType, IntervalKind::Week>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
-            case IntervalKind::Month:
-                return execute<TimeDataType, ReturnType, IntervalKind::Month>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
-            case IntervalKind::Quarter:
-                return execute<TimeDataType, ReturnType, IntervalKind::Quarter>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
-            case IntervalKind::Year:
-                return execute<TimeDataType, ReturnType, IntervalKind::Year>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+            case IntervalKind::Kind::Nanosecond:
+                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Nanosecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+            case IntervalKind::Kind::Microsecond:
+                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Microsecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+            case IntervalKind::Kind::Millisecond:
+                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Millisecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+            case IntervalKind::Kind::Second:
+                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Second>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+            case IntervalKind::Kind::Minute:
+                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Minute>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+            case IntervalKind::Kind::Hour:
+                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Hour>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+            case IntervalKind::Kind::Day:
+                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Day>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+            case IntervalKind::Kind::Week:
+                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Week>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+            case IntervalKind::Kind::Month:
+                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Month>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+            case IntervalKind::Kind::Quarter:
+                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Quarter>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+            case IntervalKind::Kind::Year:
+                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Year>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
         }
 
         std::unreachable();
@@ -331,11 +331,11 @@ private:
     {
         switch (unit)
         {
-            case IntervalKind::Millisecond:
+            case IntervalKind::Kind::Millisecond:
                 return 1'000;
-            case IntervalKind::Microsecond:
+            case IntervalKind::Kind::Microsecond:
                 return 1'000'000;
-            case IntervalKind::Nanosecond:
+            case IntervalKind::Kind::Nanosecond:
                 return 1'000'000'000;
             default:
                 return 1;
@@ -424,7 +424,7 @@ private:
 
                 if (isDate(result_type)) /// The result should be a date and the calculations were as datetime.
                     result_data[i] += (origin + offset) / SECONDS_PER_DAY;
-                else if (unit == IntervalKind::Week || unit == IntervalKind::Month || unit == IntervalKind::Quarter || unit == IntervalKind::Year)
+                else if (unit == IntervalKind::Kind::Week || unit == IntervalKind::Kind::Month || unit == IntervalKind::Kind::Quarter || unit == IntervalKind::Kind::Year)
                 {
                     if (isDateTime64(result_type)) /// We need to have the right scale for offset, origin already has the right scale.
                         offset *= scale_endtime;

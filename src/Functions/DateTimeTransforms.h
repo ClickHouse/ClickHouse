@@ -703,7 +703,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
         else
         {
             if (weeks < Int64_max_value / 7) // Check if multiplication doesn't overflow Int64 value
-                return ToStartOfInterval<IntervalKind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
+                return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
             else
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} * 7 is out of bounds for type Int64", weeks);
         }
@@ -765,7 +765,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
         else
         {
             if (quarters < Int64_max_value / 3) // Check if multiplication doesn't overflow Int64 value
-               return ToStartOfInterval<IntervalKind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
+               return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
             else
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} * 3 is out of bounds for type Int64", quarters);
         }
@@ -794,7 +794,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
         else
         {
             if (years < Int64_max_value / 12) // Check if multiplication doesn't overflow Int64 value
-                return ToStartOfInterval<IntervalKind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
+                return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
             else
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} * 12 is out of bounds for type Int64", years);
         }
