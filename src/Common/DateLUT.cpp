@@ -184,9 +184,14 @@ DateLUT::DateLUT()
 
 const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
 {
-    std::lock_guard lock(mutex);
+    // First check without acquiring the lock
+    auto it = impls.find(time_zone);
+    if (it != impls.end() && it->second)
+        return *it->second;
 
-    auto it = impls.emplace(time_zone, nullptr).first;
+    // Acquire the lock and check again
+    std::lock_guard lock(mutex);
+    it = impls.emplace(time_zone, nullptr).first;
     if (!it->second)
         it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));
 
