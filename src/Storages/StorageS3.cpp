@@ -207,7 +207,7 @@ public:
         , list_objects_scheduler(threadPoolCallbackRunner<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
         , file_progress_callback(file_progress_callback_)
     {
-        if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
+        if (globbed_uri.bucket.find_first_of("*?{") != std::string::npos)
             throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Expression can not have wildcards inside bucket name");
 
         const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));

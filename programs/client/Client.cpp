@@ -17,12 +17,13 @@
 
 #include <Access/AccessControl.h>
 
-#include <Common/config_version.h>
-#include <Common/Exception.h>
-#include <Common/formatReadable.h>
-#include <Common/TerminalSize.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/TerminalSize.h>
+#include <Common/config_version.h>
+#include <Common/formatReadable.h>
 
 #include <Columns/ColumnString.h>
 #include <Poco/Util/Application.h>
@@ -933,8 +934,8 @@ void Client::addOptions(OptionsDescription & options_description)
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
-        ("ssh-key-file", po::value<std::string>(), "File containing ssh private key needed for authentication. If not set does password authentication.")
-        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for imported ssh key.")
+        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
+        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
