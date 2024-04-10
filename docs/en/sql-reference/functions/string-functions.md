@@ -325,12 +325,12 @@ upperUTF8(input)
 Query:
 
 ``` sql
-SELECT upperUTF8('value') as Upperutf8;
+SELECT upperUTF8('München') as Upperutf8;
 ```
 
 ``` response
 ┌─Upperutf8─┐
-│ VALUE     │
+│ MÜNCHEN   │
 └───────────┘
 ```
 
