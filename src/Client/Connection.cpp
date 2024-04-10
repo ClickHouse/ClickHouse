@@ -615,7 +615,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     out->next();
 
     fiu_do_on(FailPoints::receive_timeout_on_table_status_response, {
-        sleepForSeconds(5);
+        sleepForSeconds(10);
         throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Injected timeout exceeded while reading from socket ({}:{})", host, port);
     });
 
