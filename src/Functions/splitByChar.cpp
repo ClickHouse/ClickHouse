@@ -4,7 +4,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/assert_cast.h>
-#include <Common/memchrSmall.h>
 
 
 namespace DB
@@ -35,6 +34,7 @@ private:
     std::optional<size_t> max_splits;
     size_t splits;
     bool max_substrings_includes_remaining_string;
+    ssize_t result_reserve_size = -1;
 
 public:
     static constexpr auto name = "splitByChar";
@@ -67,6 +67,21 @@ public:
 
         max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
         max_splits = extractMaxSplits(arguments, 2);
+
+
+        const ColumnString * col_str = checkAndGetColumn<ColumnString>(arguments[strings_argument_position].column.get());
+        if (col_str)
+        {
+            const ColumnString::Chars & src_chars = col_str->getChars();
+            /// Consider use case: splitByChar(' ', 'a b c'), where input chars is "a b c\0", output chars is "a\0", "b\0", "c\0".
+            /// The size of output chars should never exceeds input chars
+            result_reserve_size = src_chars.size();
+        }
+    }
+
+    ssize_t getResultReserveSize() const
+    {
+        return result_reserve_size;
     }
 
     void set(Pos pos_, Pos end_)
@@ -99,7 +114,6 @@ public:
                    return false;
         }
 
-        // pos = reinterpret_cast<Pos>(memchrSmallAllowOverflow15(pos, separator, end - pos));
         pos = reinterpret_cast<Pos>(memchr(pos, separator, end - pos));
         if (pos)
         {

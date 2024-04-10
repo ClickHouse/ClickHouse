@@ -37,6 +37,8 @@ public:
 
     void init(const ColumnsWithTypeAndName & /*arguments*/, bool /*max_substrings_includes_remaining_string*/) {}
 
+    ssize_t getResultReserveSize() const { return -1; }
+
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
