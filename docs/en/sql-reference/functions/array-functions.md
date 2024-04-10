@@ -1476,7 +1476,7 @@ Result:
 
 ## arrayPartialShuffle
 
-Given an input array of cardinality `N`, returns an array of size N where elements in the range `[1...limit]`are shuffled and the remaining elements in the range `(limit...n]` are unshuffled.
+Given an input array of cardinality `N`, returns an array of size N where elements in the range `[1...limit]` are shuffled and the remaining elements in the range `(limit...n]` are unshuffled.
 
 **Syntax**
 
@@ -1514,7 +1514,7 @@ SELECT arrayPartialShuffle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 1)
 
 Result:
 
-The order of elements is preserved (`[2,3,4,5], [7,8,9,10]`) except for the 2 shuffled elements `[1, 6]`. No `seed` is provided so the function selects its own randomly.
+The order of elements is preserved (`[2,3,4,5], [7,8,9,10]`) except for the two shuffled elements `[1, 6]`. No `seed` is provided so the function selects its own randomly.
 
 ```response
 [6,2,3,4,5,1,7,8,9,10]
@@ -1528,7 +1528,7 @@ Query:
 SELECT arrayPartialShuffle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 2);
 ```
 
-The order of elements is preserved (`[4, 5, 6, 7, 8], [10]`) except for the 4 shuffled elements `[1, 2, 3, 9]`.
+The order of elements is preserved (`[4, 5, 6, 7, 8], [10]`) except for the four shuffled elements `[1, 2, 3, 9]`.
 
 Result: 
 ```response
