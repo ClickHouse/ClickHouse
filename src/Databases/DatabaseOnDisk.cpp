@@ -352,6 +352,62 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     fs::remove(table_metadata_path_drop);
 }
 
+void DatabaseOnDisk::dropDetachedTable(ContextPtr local_context, const String & table_name, bool /*sync*/) {
+
+    /// Check that table detached (doesn't exists still exists metadata)
+    if (isTableExist(table_name, getContext()))
+        throw Exception(
+            ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
+
+    assert(fs::exists(getObjectMetadataPath(table_name)));        
+    const String table_metadata_path = getObjectMetadataPath(table_name);
+        
+    const String table_metadata_path_drop = table_metadata_path + drop_suffix;
+    const String table_data_path_relative = GetTableDataPathFromDetachedMetadata(local_context, table_metadata_path);
+
+    if (table_data_path_relative.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is empty");
+
+    bool renamed = false;
+    try
+    {
+        LOG_DEBUG(log, "remove permanently flag");
+        removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
+
+        LOG_DEBUG(log, "rename metadata for removing from {} to {}", table_metadata_path, table_metadata_path_drop);
+        fs::rename(table_metadata_path, table_metadata_path_drop);
+
+        renamed = true;
+
+        fs::path table_data_dir(local_context->getPath() + table_data_path_relative);
+
+        LOG_DEBUG(log, "remove data from {}", table_data_dir.string());
+
+        if (fs::exists(table_data_dir))
+            fs::remove_all(table_data_dir);
+        
+    }
+    catch (...)
+    {
+        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
+        if (renamed)
+            fs::rename(table_metadata_path_drop, table_metadata_path);
+        throw;
+    }
+
+    LOG_INFO(log, "remove renamed metadata {}", table_metadata_path_drop);
+    fs::remove(table_metadata_path_drop);
+
+    LOG_DEBUG(log, "finish drop table_name={}", table_name);
+}
+
+String DatabaseOnDisk::GetTableDataPathFromDetachedMetadata(ContextPtr local_context, const String& table_metadata_path) const {
+    ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, table_metadata_path);
+    auto & create_detached = ast_detached->as<ASTCreateQuery &>();
+
+    return getTableDataPath(create_detached);
+}
+
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const
 {
     std::lock_guard lock(mutex);
