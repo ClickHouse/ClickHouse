@@ -16,6 +16,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
+#include <Common/logger_useful.h>
 
 #include <cstring>
 #include <algorithm>
@@ -703,8 +704,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
         if (field_type == Field::Types::Float64)
         {
             const auto float_value = constant_field_value.get<Float64>();
-            if (float_value == std::numeric_limits<Float64>::infinity() || float_value == std::numeric_limits<Float64>::quiet_NaN()
-                || float_value == std::numeric_limits<Float64>::signaling_NaN())
+            if (float_value == std::numeric_limits<Float64>::infinity() || std::isnan(float_value))
             {
                 throw Exception(
                     DB::ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
