@@ -340,13 +340,10 @@ bool InterpreterInsertQuery::shouldAddSquashingFroStorage(const StoragePtr & tab
 {
     auto context_ptr = getContext();
     const Settings & settings = context_ptr->getSettingsRef();
-    const ASTInsertQuery * query = nullptr;
-    if (query_ptr)
-        query = query_ptr->as<ASTInsertQuery>();
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-    return !(settings.distributed_foreground_insert && table->isRemote()) && !async_insert && !no_squash && !(query && query->watch);
+    return !(settings.distributed_foreground_insert && table->isRemote()) && !async_insert && !no_squash;
 }
 
 Chain InterpreterInsertQuery::buildPreSinkChain(
@@ -429,7 +426,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     std::vector<Chain> presink_chains;
     std::vector<Chain> sink_chains;
-    if (!distributed_pipeline || query.watch)
+    if (!distributed_pipeline)
     {
         /// Number of streams works like this:
         ///  * For the SELECT, use `max_threads`, or `max_insert_threads`, or whatever
@@ -560,11 +557,6 @@ BlockIO InterpreterInsertQuery::execute()
                 }
             }
         }
-        else if (query.watch)
-        {
-            InterpreterWatchQuery interpreter_watch{ query.watch, getContext() };
-            pipeline = interpreter_watch.buildQueryPipeline();
-        }
 
         ThreadGroupPtr running_group;
         if (current_thread)
@@ -591,7 +583,7 @@ BlockIO InterpreterInsertQuery::execute()
     {
         res.pipeline = std::move(*distributed_pipeline);
     }
-    else if (query.select || query.watch)
+    else if (query.select)
     {
         const auto & header = presink_chains.at(0).getInputHeader();
         auto actions_dag = ActionsDAG::makeConvertingActions(

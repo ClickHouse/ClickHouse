@@ -18,12 +18,9 @@
 #include <filesystem>
 #include <map>
 #include <mutex>
-#include <sstream>
 #include <unordered_map>
 #include <fmt/format.h>
 #include <libunwind.h>
-
-#include "config.h"
 
 #include <boost/algorithm/string/split.hpp>
 
@@ -481,7 +478,17 @@ void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, si
     toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
 }
 
-using StackTraceCache = std::map<StackTraceTriple, String, std::less<>>;
+struct CacheEntry
+{
+    std::optional<String> stacktrace_string;
+    bool to_string_in_progress = false;
+
+    std::condition_variable cv;
+};
+
+using CacheEntryPtr = std::shared_ptr<CacheEntry>;
+
+using StackTraceCache = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
 
 static StackTraceCache & cacheInstance()
 {
@@ -493,23 +500,63 @@ static std::mutex stacktrace_cache_mutex;
 
 String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
 {
+    const StackTraceRefTriple key{pointers, offset, size};
+
     /// Calculation of stack trace text is extremely slow.
     /// We use simple cache because otherwise the server could be overloaded by trash queries.
     /// Note that this cache can grow unconditionally, but practically it should be small.
-    std::lock_guard lock{stacktrace_cache_mutex};
-
+    std::unique_lock lock{stacktrace_cache_mutex};
+    CacheEntryPtr cache_entry;
     StackTraceCache & cache = cacheInstance();
-    const StackTraceRefTriple key{pointers, offset, size};
-
     if (auto it = cache.find(key); it != cache.end())
-        return it->second;
+    {
+        cache_entry = it->second;
+    }
     else
+    {
+        auto [new_it, inserted] = cache.emplace(StackTraceTriple{pointers, offset, size}, std::make_shared<CacheEntry>());
+        chassert(inserted);
+        cache_entry = new_it->second;
+    }
+
+    if (!cache_entry->to_string_in_progress && cache_entry->stacktrace_string.has_value())
+        return *cache_entry->stacktrace_string;
+
+    if (cache_entry->to_string_in_progress)
+    {
+        cache_entry->cv.wait(lock, [&]{ return !cache_entry->to_string_in_progress; });
+
+        if (cache_entry->stacktrace_string.has_value())
+            return *cache_entry->stacktrace_string;
+    }
+
+    cache_entry->to_string_in_progress = true;
+
+    lock.unlock();
+
+    String stacktrace_string;
+    try
     {
         DB::WriteBufferFromOwnString out;
         toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
-
-        return cache.emplace(StackTraceTriple{pointers, offset, size}, out.str()).first->second;
+        stacktrace_string = out.str();
     }
+    catch (...)
+    {
+        lock.lock();
+        cache_entry->to_string_in_progress = false;
+        lock.unlock();
+        cache_entry->cv.notify_one();
+        throw;
+    }
+
+    lock.lock();
+    cache_entry->to_string_in_progress = false;
+    cache_entry->stacktrace_string = stacktrace_string;
+    lock.unlock();
+
+    cache_entry->cv.notify_all();
+    return stacktrace_string;
 }
 
 std::string StackTrace::toString() const

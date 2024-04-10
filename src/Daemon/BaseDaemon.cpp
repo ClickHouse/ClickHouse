@@ -332,6 +332,7 @@ private:
         const std::vector<StackTrace::FramePointers> & thread_frame_pointers,
         UInt32 thread_num,
         ThreadStatus * thread_ptr) const
+    try
     {
         ThreadStatus thread_status;
 
@@ -519,7 +520,7 @@ private:
             }
         }
 
-        /// ClickHouse Keeper does not link to some part of Settings.
+        /// ClickHouse Keeper does not link to some parts of Settings.
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
         /// List changed settings.
         if (!query_id.empty())
@@ -537,11 +538,17 @@ private:
         }
 #endif
 
-        /// When everything is done, we will try to send these error messages to client.
+        /// When everything is done, we will try to send these error messages to the client.
         if (thread_ptr)
             thread_ptr->onFatalError();
 
         fatal_error_printed.test_and_set();
+    }
+    catch (...)
+    {
+        /// onFault is called from the std::thread, and it should catch all exceptions; otherwise, you can get unrelated fatal errors.
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+        LOG_FATAL(getLogger(__PRETTY_FUNCTION__), message);
     }
 };
 
@@ -665,7 +672,7 @@ void BaseDaemon::reloadConfiguration()
       */
     config_path = config().getString("config-file", getDefaultConfigFileName());
     ConfigProcessor config_processor(config_path, false, true);
-    config_processor.setConfigPath(fs::path(config_path).parent_path());
+    ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
     if (last_configuration != nullptr)
