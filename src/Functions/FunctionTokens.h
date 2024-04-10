@@ -61,8 +61,6 @@ private:
 public:
     static constexpr auto name = Generator::name;
 
-    static constexpr bool tokens_maybe_overlapped = std::is_same_v<Generator, URLHierarchy> || std::is_same_v<Generator, URLPathHierarchy>;
-
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTokens>(context); }
 
     explicit FunctionTokens<Generator>(ContextPtr context)
@@ -113,10 +111,7 @@ public:
 
             res_offsets.resize_exact(src_offsets.size());
             res_strings_offsets.reserve(src_offsets.size() * 5);    /// Constant 5 - at random.
-            if constexpr (!tokens_maybe_overlapped)
-                res_strings_chars.reserve_exact(src_chars.size());
-            else
-                res_strings_chars.reserve(src_chars.size());
+            res_strings_chars.reserve(src_chars.size());
 
             Pos token_begin = nullptr;
             Pos token_end = nullptr;
@@ -136,12 +131,7 @@ public:
                 while (generator.get(token_begin, token_end))
                 {
                     size_t token_size = token_end - token_begin;
-
-                    if constexpr (!tokens_maybe_overlapped)
-                        res_strings_chars.resize_assume_reserved(res_strings_chars.size() + token_size + 1);
-                    else
-                        res_strings_chars.resize(res_strings_chars.size() + token_size + 1);
-
+                    res_strings_chars.resize(res_strings_chars.size() + token_size + 1);
                     memcpySmallAllowReadWriteOverflow15(&res_strings_chars[current_dst_strings_offset], token_begin, token_size);
                     res_strings_chars[current_dst_strings_offset + token_size] = 0;
 
