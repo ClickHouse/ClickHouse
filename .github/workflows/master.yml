@@ -23,6 +23,10 @@ jobs:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
+      - name: Check sync PR
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 sync_pr.py || :
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
